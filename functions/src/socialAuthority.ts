@@ -16,6 +16,7 @@ export const CHALLENGE_CREATE_MINUTE_LIMIT = 3;
 export const CHALLENGE_CREATE_HOUR_LIMIT = 20;
 export const CHALLENGE_REACTION_MINUTE_LIMIT = 10;
 export const CHALLENGE_REACTION_HOUR_LIMIT = 100;
+export const MAX_LEAGUE_MEMBER_RESULTS = 50;
 export const VERIFIED_EVIDENCE_SOURCE = "noum-server-evaluator";
 export const CHALLENGE_REACTIONS = [
   "🔥", "👏", "💪", "🤯", "🏆", "❤️",
@@ -24,12 +25,15 @@ export const CHALLENGE_REACTIONS = [
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const LEAGUE_BUCKET_PATTERN =
+  /^(bronze|silver|gold|platinum|diamond)_\d{4}-W\d{2}$/;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 const MIN_SESSION_DATE_MS = Date.UTC(2020, 0, 1);
 const MAX_SESSION_DURATION_SECONDS = 4 * 60 * 60;
 const ROLLING_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 const MAX_REFERENCE_CHALLENGES = 100;
-const MAX_REFERENCE_LEAGUES = 4;
+const MAX_REFERENCE_LEAGUES = 16;
+const MAX_REFERENCE_FRIENDS = 200;
 
 export type LeagueTier =
   "bronze" | "silver" | "gold" | "platinum" | "diamond";
@@ -61,6 +65,16 @@ export interface SetChallengeReactionInput {
   reaction: ChallengeReaction;
 }
 
+export interface GetPeerProfileInput {
+  schemaVersion: 1;
+  accountID: string;
+}
+
+export interface ListLeagueMembersInput {
+  schemaVersion: 1;
+  limit: number;
+}
+
 export interface VerifiedSessionEvidence {
   sessionID: string;
   score: number;
@@ -88,6 +102,8 @@ export interface StoredSocialState {
   practiceDays: string[];
   ratingEvents: RatingEvent[];
   currentBucket: string | null;
+  latestEvidenceDateMs: number | null;
+  latestEvidenceSessionID: string | null;
   displayName: string;
   updatedAtMs: number;
 }
@@ -168,6 +184,7 @@ export interface ChallengeEnvelope {
 export interface SocialReferenceManifest {
   leagueMembershipPaths: string[];
   challengeIDs: string[];
+  friendAccountIDs: string[];
 }
 
 export function isSocialRecord(
@@ -205,15 +222,19 @@ function validatedBoundedString(
   return value;
 }
 
-export function validateFirebaseUID(value: unknown): string {
+function isValidFirebaseUID(value: unknown): value is string {
   const hasControlCharacter = typeof value === "string" &&
     Array.from(value).some((character) => {
       const code = character.charCodeAt(0);
       return code < 32 || code === 127;
     });
-  if (typeof value !== "string" || value !== value.trim() ||
-      value.length < 1 || value.length > 128 || value.includes("/") ||
-      hasControlCharacter) {
+  return typeof value === "string" && value === value.trim() &&
+    value.length >= 1 && value.length <= 128 && !value.includes("/") &&
+    !hasControlCharacter;
+}
+
+export function validateFirebaseUID(value: unknown): string {
+  if (!isValidFirebaseUID(value)) {
     throw new HttpsError("invalid-argument", "Invalid participant account.");
   }
   return value;
@@ -282,6 +303,31 @@ export function validateSetChallengeReactionRequest(
     challengeID: validatedUUID(data.challengeID, "challenge ID"),
     reaction: data.reaction as ChallengeReaction,
   };
+}
+
+export function validateGetPeerProfileRequest(
+  data: unknown
+): GetPeerProfileInput {
+  if (!isSocialRecord(data) || data.schemaVersion !== SOCIAL_SCHEMA_VERSION ||
+      !hasExactKeys(data, ["schemaVersion", "accountID"])) {
+    throw new HttpsError("invalid-argument", "Invalid peer-profile request.");
+  }
+  return {
+    schemaVersion: 1,
+    accountID: validateFirebaseUID(data.accountID),
+  };
+}
+
+export function validateListLeagueMembersRequest(
+  data: unknown
+): ListLeagueMembersInput {
+  if (!isSocialRecord(data) || data.schemaVersion !== SOCIAL_SCHEMA_VERSION ||
+      !hasExactKeys(data, ["schemaVersion", "limit"]) ||
+      typeof data.limit !== "number" || !Number.isInteger(data.limit) ||
+      data.limit < 1 || data.limit > MAX_LEAGUE_MEMBER_RESULTS) {
+    throw new HttpsError("invalid-argument", "Invalid league-list request.");
+  }
+  return {schemaVersion: 1, limit: data.limit};
 }
 
 export function socialDateMilliseconds(value: unknown): number | null {
@@ -446,15 +492,9 @@ export function calculateCurrentStreak(
     if (!days.has(keyAt(cursor))) return 0;
   }
   let streak = 0;
-  let graceUsed = false;
   for (let checked = 0; checked <= SOCIAL_PRACTICE_DAY_LIMIT; checked += 1) {
-    if (days.has(keyAt(cursor))) {
-      streak += 1;
-    } else if (!graceUsed) {
-      graceUsed = true;
-    } else {
-      break;
-    }
+    if (!days.has(keyAt(cursor))) break;
+    streak += 1;
     cursor.setUTCDate(cursor.getUTCDate() - 1);
   }
   return streak;
@@ -476,6 +516,8 @@ export function storedSocialState(
       practiceDays: [],
       ratingEvents: [],
       currentBucket: null,
+      latestEvidenceDateMs: null,
+      latestEvidenceSessionID: null,
       displayName,
       updatedAtMs: nowMs,
     };
@@ -493,8 +535,20 @@ export function storedSocialState(
       !value.practiceDays.every((day) => typeof day === "string") ||
       !Array.isArray(value.ratingEvents) ||
       !value.ratingEvents.every(validRatingEvent) ||
-      !(value.currentBucket === null || typeof value.currentBucket === "string") ||
-      typeof value.displayName !== "string" ||
+      !(value.currentBucket === null ||
+        (typeof value.currentBucket === "string" &&
+         LEAGUE_BUCKET_PATTERN.test(value.currentBucket))) ||
+      !(value.latestEvidenceDateMs === null ||
+        (typeof value.latestEvidenceDateMs === "number" &&
+         Number.isFinite(value.latestEvidenceDateMs) &&
+         value.latestEvidenceDateMs >= MIN_SESSION_DATE_MS)) ||
+      !(value.latestEvidenceSessionID === null ||
+        (typeof value.latestEvidenceSessionID === "string" &&
+         UUID_PATTERN.test(value.latestEvidenceSessionID))) ||
+      ((value.latestEvidenceDateMs === null) !==
+       (value.latestEvidenceSessionID === null)) ||
+      typeof value.displayName !== "string" || value.displayName.length < 1 ||
+      value.displayName.length > MAX_DISPLAY_NAME_CHARS ||
       typeof value.updatedAtMs !== "number" || !Number.isFinite(value.updatedAtMs)) {
     throw new Error("Corrupt server social state.");
   }
@@ -515,6 +569,7 @@ export function advanceSocialState(
   displayName: string,
   nowMs: number
 ): AdvancedSocialState {
+  assertEvidenceFollowsState(previous, evidence);
   const currentWeekKey = isoWeekKey(nowMs);
   const sessionWeekKey = isoWeekKey(evidence.dateMs);
   const weeklyReps = (previous.weekKey === currentWeekKey ?
@@ -563,6 +618,8 @@ export function advanceSocialState(
       practiceDays,
       ratingEvents,
       currentBucket,
+      latestEvidenceDateMs: evidence.dateMs,
+      latestEvidenceSessionID: evidence.sessionID,
       displayName,
       updatedAtMs: nowMs,
     },
@@ -578,6 +635,24 @@ export function advanceSocialState(
       updatedAt: nowMs / 1_000,
     },
   };
+}
+
+function assertEvidenceFollowsState(
+  previous: StoredSocialState,
+  evidence: VerifiedSessionEvidence
+): void {
+  const previousDate = previous.latestEvidenceDateMs;
+  const previousID = previous.latestEvidenceSessionID;
+  if (previousDate === null || previousID === null) return;
+  if (evidence.dateMs < previousDate ||
+      (evidence.dateMs === previousDate &&
+       evidence.sessionID <= previousID)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Competitive evidence must be processed in recording order.",
+      {reason: "out-of-order-evidence"}
+    );
+  }
 }
 
 export function profileFromSocialState(
@@ -601,6 +676,77 @@ export function profileFromSocialState(
     leagueTier,
     updatedAt: state.updatedAtMs / 1_000,
   };
+}
+
+export function validateStoredPublicProfile(
+  value: unknown,
+  accountID: string
+): PublicProfileEnvelope {
+  const validTier = isSocialRecord(value) &&
+    (value.leagueTier === null || value.leagueTier === "bronze" ||
+     value.leagueTier === "silver" || value.leagueTier === "gold" ||
+     value.leagueTier === "platinum" || value.leagueTier === "diamond");
+  if (!isSocialRecord(value) || !hasExactKeys(value, [
+    "accountID", "displayName", "rating", "peakRating", "currentStreak",
+    "weeklyReps", "weeklyDelta", "leagueTier", "updatedAt",
+  ]) || value.accountID !== accountID ||
+      typeof value.displayName !== "string" ||
+      value.displayName.length < 1 ||
+      value.displayName.length > MAX_DISPLAY_NAME_CHARS ||
+      typeof value.rating !== "number" || !Number.isInteger(value.rating) ||
+      value.rating < 100 || value.rating > 1_000 ||
+      typeof value.peakRating !== "number" ||
+      !Number.isInteger(value.peakRating) ||
+      value.peakRating < value.rating || value.peakRating > 1_000 ||
+      typeof value.currentStreak !== "number" ||
+      !Number.isInteger(value.currentStreak) || value.currentStreak < 0 ||
+      value.currentStreak > 10_000 ||
+      typeof value.weeklyReps !== "number" ||
+      !Number.isInteger(value.weeklyReps) || value.weeklyReps < 0 ||
+      value.weeklyReps > 10_000 ||
+      typeof value.weeklyDelta !== "number" ||
+      !Number.isInteger(value.weeklyDelta) ||
+      Math.abs(value.weeklyDelta) > 10_000 || !validTier ||
+      !isServerTimestamp(value.updatedAt)) {
+    throw new Error("Corrupt server public profile.");
+  }
+  const updatedAt = socialDateMilliseconds(value.updatedAt);
+  if (updatedAt === null) throw new Error("Corrupt server profile timestamp.");
+  return {
+    accountID,
+    displayName: value.displayName,
+    rating: value.rating,
+    peakRating: value.peakRating,
+    currentStreak: value.currentStreak,
+    weeklyReps: value.weeklyReps,
+    weeklyDelta: value.weeklyDelta,
+    leagueTier: value.leagueTier as LeagueTier | null,
+    updatedAt: updatedAt / 1_000,
+  };
+}
+
+export function validateTrustedSocialState(value: unknown): StoredSocialState {
+  try {
+    if (!isSocialRecord(value) || value.schemaVersion !== 2) throw new Error();
+    return storedSocialState(value, "", 0);
+  } catch {
+    throw new HttpsError(
+      "failed-precondition",
+      "Trusted league state is not available.",
+      {reason: "trusted-social-state-unavailable"}
+    );
+  }
+}
+
+export function assertSocialReferenceCutoverComplete(value: unknown): void {
+  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
+      value.status !== "complete" || !isServerTimestamp(value.completedAt)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Account deletion is waiting for the legacy social index.",
+      {reason: "social-reference-cutover-incomplete"}
+    );
+  }
 }
 
 export function stableLegacyUUID(accountID: string): string {
@@ -879,13 +1025,18 @@ export function validateSocialReferenceManifest(
   accountID: string
 ): SocialReferenceManifest {
   if (value === undefined || value === null) {
-    return {leagueMembershipPaths: [], challengeIDs: []};
+    return {
+      leagueMembershipPaths: [],
+      challengeIDs: [],
+      friendAccountIDs: [],
+    };
   }
   if (!isSocialRecord(value)) {
     throw new Error("Corrupt server social references.");
   }
   const leagueMembershipPaths = value.leagueMembershipPaths;
   const challengeIDs = value.challengeIDs;
+  const friendAccountIDs = value.friendAccountIDs;
   if (!Array.isArray(leagueMembershipPaths) ||
       leagueMembershipPaths.length > MAX_REFERENCE_LEAGUES ||
       !leagueMembershipPaths.every((path) =>
@@ -893,7 +1044,11 @@ export function validateSocialReferenceManifest(
       !Array.isArray(challengeIDs) ||
       challengeIDs.length > MAX_REFERENCE_CHALLENGES ||
       !challengeIDs.every((id) =>
-        typeof id === "string" && UUID_PATTERN.test(id))) {
+        typeof id === "string" && UUID_PATTERN.test(id)) ||
+      !Array.isArray(friendAccountIDs) ||
+      friendAccountIDs.length > MAX_REFERENCE_FRIENDS ||
+      !friendAccountIDs.every((id) =>
+        isValidFirebaseUID(id) && id !== accountID)) {
     throw new Error("Corrupt server social references.");
   }
   return {
@@ -901,6 +1056,7 @@ export function validateSocialReferenceManifest(
     challengeIDs: [...new Set(
       (challengeIDs as string[]).map((id) => id.toUpperCase())
     )],
+    friendAccountIDs: [...new Set(friendAccountIDs as string[])],
   };
 }
 
@@ -927,6 +1083,7 @@ export function socialReferenceManifestIncludingChallenge(
   return {
     leagueMembershipPaths: references.leagueMembershipPaths,
     challengeIDs: [...references.challengeIDs, canonicalChallengeID],
+    friendAccountIDs: references.friendAccountIDs,
   };
 }
 
@@ -934,6 +1091,6 @@ function validLeagueMembershipPath(value: unknown, accountID: string): boolean {
   if (typeof value !== "string") return false;
   const parts = value.split("/");
   return parts.length === 4 && parts[0] === "leagues" &&
-    /^[a-z]+_\d{4}-W\d{2}$/.test(parts[1]) &&
+    LEAGUE_BUCKET_PATTERN.test(parts[1]) &&
     parts[2] === "members" && parts[3] === accountID;
 }

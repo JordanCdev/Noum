@@ -63,14 +63,25 @@ export interface DeepgramGrantDependencies {
   signal?: AbortSignal;
 }
 
-/** Ordered deletion steps. Firebase Auth must remain last. */
-export const ACCOUNT_DELETION_STEPS = [
+/**
+ * Ordered deletion steps. The exact social worklist is a data finalizer: it
+ * runs only after every dependent cleanup succeeds. Auth follows it, while
+ * the pending-deletion tombstone remains until Auth is gone.
+ */
+const ACCOUNT_DELETION_DEPENDENT_STEPS = [
   "userTree",
   "publicProfile",
   "leagueMemberships",
   "challenges",
+  "friendLinks",
   "rateLimits",
+] as const;
+
+export const ACCOUNT_DELETION_STEPS = [
+  ...ACCOUNT_DELETION_DEPENDENT_STEPS,
+  "socialReferenceManifest",
   "authUser",
+  "deletionTombstone",
 ] as const;
 
 export type AccountDeletionStep = typeof ACCOUNT_DELETION_STEPS[number];
@@ -356,18 +367,17 @@ export function accountDeletionLogMetadata(
 }
 
 /**
- * Runs all Firestore cleanup steps even when one fails, but never deletes the
- * Auth user or reports success after a partial data failure.
+ * Runs all dependent cleanup steps even when one fails. The exact worklist,
+ * Auth user, and write-blocking tombstone finalize strictly in that order and
+ * only after every dependent cleanup succeeds.
  * @param {AccountDeletionWork} work Injected deletion operations.
  * @return {Promise<void>} Resolves only after complete deletion.
  */
 export async function executeAccountDeletionPlan(
   work: AccountDeletionWork
 ): Promise<void> {
-  const dataSteps = ACCOUNT_DELETION_STEPS.slice(0, -1) as
-    AccountDeletionStep[];
   const failures: AccountDeletionStep[] = [];
-  for (const step of dataSteps) {
+  for (const step of ACCOUNT_DELETION_DEPENDENT_STEPS) {
     try {
       await work[step]();
     } catch {
@@ -377,9 +387,15 @@ export async function executeAccountDeletionPlan(
   if (failures.length > 0) {
     throw new AccountDeletionPartialError(failures);
   }
-  try {
-    await work.authUser();
-  } catch {
-    throw new AccountDeletionPartialError(["authUser"]);
+  for (const step of [
+    "socialReferenceManifest",
+    "authUser",
+    "deletionTombstone",
+  ] as const) {
+    try {
+      await work[step]();
+    } catch {
+      throw new AccountDeletionPartialError([step]);
+    }
   }
 }

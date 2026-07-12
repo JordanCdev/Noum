@@ -269,11 +269,15 @@ function deletionWork(
   ])) as AccountDeletionWork;
 }
 
-test("deletion plan keeps Auth last and reports complete success", async () => {
+test("deletion plan finalizes references, Auth, then tombstone", async () => {
   const calls: AccountDeletionStep[] = [];
   await executeAccountDeletionPlan(deletionWork(calls));
   assert.deepEqual(calls, ACCOUNT_DELETION_STEPS);
-  assert.equal(calls.at(-1), "authUser");
+  assert.deepEqual(calls.slice(-3), [
+    "socialReferenceManifest",
+    "authUser",
+    "deletionTombstone",
+  ]);
 });
 
 test(
@@ -289,10 +293,26 @@ test(
         JSON.stringify(error.failedSteps) ===
           JSON.stringify(["publicProfile", "challenges"])
     );
-    assert.deepEqual(calls, ACCOUNT_DELETION_STEPS.slice(0, -1));
+    assert.deepEqual(calls, ACCOUNT_DELETION_STEPS.slice(0, -3));
+    assert.equal(calls.includes("socialReferenceManifest"), false);
     assert.equal(calls.includes("authUser"), false);
+    assert.equal(calls.includes("deletionTombstone"), false);
   }
 );
+
+test("manifest finalization failure keeps Auth and tombstone", async () => {
+  const calls: AccountDeletionStep[] = [];
+  await assert.rejects(
+    () => executeAccountDeletionPlan(deletionWork(
+      calls,
+      ["socialReferenceManifest"]
+    )),
+    (error: unknown) => error instanceof AccountDeletionPartialError &&
+      error.failedSteps[0] === "socialReferenceManifest"
+  );
+  assert.equal(calls.includes("authUser"), false);
+  assert.equal(calls.includes("deletionTombstone"), false);
+});
 
 test(
   "deletion plan reports an Auth failure after all data succeeds",
@@ -304,6 +324,7 @@ test(
         error.failedSteps.length === 1 &&
         error.failedSteps[0] === "authUser"
     );
-    assert.deepEqual(calls, ACCOUNT_DELETION_STEPS);
+    assert.deepEqual(calls, ACCOUNT_DELETION_STEPS.slice(0, -1));
+    assert.equal(calls.includes("deletionTombstone"), false);
   }
 );

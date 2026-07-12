@@ -8,6 +8,7 @@ import {
   INITIAL_RATING,
   advanceSocialState,
   assertEvidenceBoundToChallenge,
+  assertSocialReferenceCutoverComplete,
   calculateCurrentStreak,
   calculateRatingDelta,
   challengeEnvelope,
@@ -19,10 +20,13 @@ import {
   stableLegacyUUID,
   storedSocialState,
   validateCreateChallengeRequest,
+  validateGetPeerProfileRequest,
+  validateListLeagueMembersRequest,
   validateRecordPeerSessionRequest,
   validateReciprocalFriendLinks,
   validateSetChallengeReactionRequest,
   validateSocialReferenceManifest,
+  validateStoredPublicProfile,
   validateSubmitChallengeResultRequest,
   validateVerifiedSessionEvidence,
 } from "./socialAuthority.js";
@@ -109,6 +113,14 @@ test("validates and canonicalizes every exact social request", () => {
     challengeID,
     reaction: "👏",
   }), {schemaVersion: 1, challengeID, reaction: "👏"});
+  assert.deepEqual(validateGetPeerProfileRequest({
+    schemaVersion: 1,
+    accountID: "firebase-opponent",
+  }), {schemaVersion: 1, accountID: "firebase-opponent"});
+  assert.deepEqual(validateListLeagueMembersRequest({
+    schemaVersion: 1,
+    limit: 20,
+  }), {schemaVersion: 1, limit: 20});
 });
 
 test("rejects identity, authority, and oversized request fields", () => {
@@ -132,6 +144,12 @@ test("rejects identity, authority, and oversized request fields", () => {
   }));
   assert.throws(() => validateSetChallengeReactionRequest({
     schemaVersion: 1, challengeID, reaction: "🚀",
+  }));
+  assert.throws(() => validateGetPeerProfileRequest({
+    schemaVersion: 1, accountID: "peer", rating: 1_000,
+  }));
+  assert.throws(() => validateListLeagueMembersRequest({
+    schemaVersion: 1, limit: 51,
   }));
 });
 
@@ -176,12 +194,12 @@ test("ports RatingEngine delta exactly", () => {
   assert.equal(calculateRatingDelta(1_000, 10), 0);
 });
 
-test("ISO week and one-grace-day streak stay deterministic", () => {
+test("ISO week and strict consecutive-day streak stay deterministic", () => {
   assert.equal(isoWeekKey(Date.UTC(2025, 11, 29)), "2026-W01");
   assert.equal(isoWeekKey(Date.UTC(2026, 0, 5)), "2026-W02");
   assert.equal(calculateCurrentStreak([
     "2026-07-11", "2026-07-09", "2026-07-08",
-  ], nowMs), 3);
+  ], nowMs), 1);
   assert.equal(calculateCurrentStreak([
     "2026-07-11", "2026-07-08",
   ], nowMs), 1);
@@ -208,6 +226,69 @@ test("advances public rating only from verified evidence", () => {
   assert.equal(result.profile.weeklyReps, 1);
   assert.equal(result.profile.leagueTier, "silver");
   assert.equal(result.state.currentBucket, "silver_2026-W28");
+});
+
+test("competitive rating rejects evidence processed out of recording order", () => {
+  const initial = storedSocialState(null, "Jordan", nowMs);
+  const first = advanceSocialState(
+    initial,
+    validateVerifiedSessionEvidence(evidence(), sessionID, nowMs + 2_000),
+    "firebase-user",
+    "Jordan",
+    nowMs
+  ).state;
+  const olderID = "9713738E-D9ED-4337-986E-09205089D42E";
+  const older = validateVerifiedSessionEvidence(evidence({
+    sessionID: olderID,
+    completedAt: timestamp(nowMs - 1),
+    attestedAt: timestamp(nowMs + 1),
+  }), olderID, nowMs + 2_000);
+  assert.throws(
+    () => advanceSocialState(first, older, "firebase-user", "Jordan", nowMs),
+    (error: unknown) => (error as {details?: {reason?: string}})
+      .details?.reason === "out-of-order-evidence"
+  );
+  const sameTimeLowerID = "0713738E-D9ED-4337-986E-09205089D42E";
+  const tied = validateVerifiedSessionEvidence(evidence({
+    sessionID: sameTimeLowerID,
+  }), sameTimeLowerID, nowMs + 2_000);
+  assert.throws(
+    () => advanceSocialState(first, tied, "firebase-user", "Jordan", nowMs),
+    (error: unknown) => (error as {details?: {reason?: string}})
+      .details?.reason === "out-of-order-evidence"
+  );
+});
+
+test("public profiles and legacy cutover proof validate strictly", () => {
+  const profile = {
+    accountID: "firebase-user",
+    displayName: "Jordan",
+    rating: 413,
+    peakRating: 413,
+    currentStreak: 1,
+    weeklyReps: 1,
+    weeklyDelta: 13,
+    leagueTier: "silver",
+    updatedAt: timestamp(nowMs),
+  };
+  assert.equal(
+    validateStoredPublicProfile(profile, "firebase-user").updatedAt,
+    nowMs / 1_000
+  );
+  assert.throws(() => validateStoredPublicProfile(
+    {...profile, accountID: "forged"},
+    "firebase-user"
+  ));
+  assert.doesNotThrow(() => assertSocialReferenceCutoverComplete({
+    schemaVersion: 1,
+    status: "complete",
+    completedAt: timestamp(nowMs),
+  }));
+  assert.throws(
+    () => assertSocialReferenceCutoverComplete(undefined),
+    (error: unknown) => (error as {details?: {reason?: string}})
+      .details?.reason === "social-reference-cutover-incomplete"
+  );
 });
 
 test("prompt binding rejects mismatched and expired evidence", () => {
@@ -326,19 +407,40 @@ test("exact deletion manifests reject injected or unbounded paths", () => {
       "leagues/silver_2026-W28/members/firebase-user",
     ],
     challengeIDs: [challengeID],
+    friendAccountIDs: ["firebase-opponent"],
   }, "firebase-user"), {
     leagueMembershipPaths: [
       "leagues/silver_2026-W28/members/firebase-user",
     ],
     challengeIDs: [challengeID],
+    friendAccountIDs: ["firebase-opponent"],
   });
   assert.throws(() => validateSocialReferenceManifest({
     leagueMembershipPaths: ["profiles_public/victim"],
     challengeIDs: [],
+    friendAccountIDs: [],
   }, "firebase-user"));
   assert.throws(() => validateSocialReferenceManifest({
     leagueMembershipPaths: [],
     challengeIDs: Array.from({length: 101}, () => challengeID),
+    friendAccountIDs: [],
+  }, "firebase-user"));
+  const legacyMemberships = Array.from({length: 5}, (_, index) =>
+    `leagues/silver_2026-W${String(index + 1).padStart(2, "0")}/` +
+      "members/firebase-user"
+  );
+  assert.equal(validateSocialReferenceManifest({
+    leagueMembershipPaths: legacyMemberships,
+    challengeIDs: [],
+    friendAccountIDs: [],
+  }, "firebase-user").leagueMembershipPaths.length, 5);
+  assert.throws(() => validateSocialReferenceManifest({
+    leagueMembershipPaths: Array.from({length: 17}, (_, index) =>
+      `leagues/silver_2025-W${String(index + 1).padStart(2, "0")}/` +
+        "members/firebase-user"
+    ),
+    challengeIDs: [],
+    friendAccountIDs: [],
   }, "firebase-user"));
 });
 
@@ -350,6 +452,7 @@ test("challenge references preserve a complete bounded deletion manifest", () =>
   ), {
     leagueMembershipPaths: [],
     challengeIDs: [challengeID],
+    friendAccountIDs: [],
   });
   const challengeIDs = Array.from({length: 100}, (_, index) =>
     `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`
@@ -358,6 +461,7 @@ test("challenge references preserve a complete bounded deletion manifest", () =>
   assert.throws(() => socialReferenceManifestIncludingChallenge({
     leagueMembershipPaths: [],
     challengeIDs,
+    friendAccountIDs: [],
   }, "firebase-user", challengeID));
 });
 

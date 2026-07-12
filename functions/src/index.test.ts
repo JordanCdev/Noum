@@ -205,6 +205,14 @@ test("account deletion uses exact server-owned social references", () => {
   assert.match(source, /validateSocialReferenceManifest\(/);
   assert.match(source, /references\.leagueMembershipPaths/);
   assert.match(source, /references\.challengeIDs/);
+  assert.match(source, /references\.friendAccountIDs/);
+  const rateStart = source.indexOf("rateLimits: async");
+  const finalizerStart = source.indexOf("socialReferenceManifest: async");
+  assert.equal(rateStart >= 0 && finalizerStart > rateStart, true);
+  assert.equal(
+    source.slice(rateStart, finalizerStart).includes("_socialReferences"),
+    false
+  );
 });
 
 test("only complete STOP generations are accepted", () => {

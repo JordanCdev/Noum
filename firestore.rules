@@ -5,15 +5,16 @@ service cloud.firestore {
 
     // Assumed social data model:
     // - profiles_public/{uid}: bounded display name plus server-authored
-    //   competitive aggregates. Authenticated direct-get only; never list.
+    //   competitive aggregates. Callable reads only; clients cannot get/list.
     // - leagues/{bucket}/members/{uid}: the same non-PII aggregate shape,
-    //   queryable only inside one explicit league bucket.
+    //   callable reads only; clients cannot get/list.
     // - challenges/{uuid}: immutable participant metadata and prompt only.
     // - challenges/{uuid}/submissions/{uid}: that participant's private result.
     // - challenges/{uuid}/combined/result: materialized only after both private
     //   submissions exist; both participants may then read the combined result.
     // - underscore-prefixed social collections: callable/runtime-only evidence,
-    //   replay, rate-limit, relationship, and exact-deletion reference state.
+    //   replay, rate-limit, relationship, cutover, tombstone, and exact-
+    //   deletion reference state.
 
     function isAuthenticated() {
       return request.auth != null;
@@ -21,6 +22,16 @@ service cloud.firestore {
 
     function isOwner(accountID) {
       return isAuthenticated() && request.auth.uid == accountID;
+    }
+
+    function deletionPending(accountID) {
+      return exists(
+        /databases/$(database)/documents/_accountDeletionState/$(accountID)
+      );
+    }
+
+    function isWritableOwner(accountID) {
+      return isOwner(accountID) && !deletionPending(accountID);
     }
 
     function validDisplayName(value) {
@@ -59,7 +70,7 @@ service cloud.firestore {
     }
 
     function updatesOnlyDisplayName(accountID) {
-      return isOwner(accountID)
+      return isWritableOwner(accountID)
              && validPublicProfile(request.resource.data, accountID)
              && request.resource.data.diff(resource.data)
                   .affectedKeys().hasOnly(['displayName']);
@@ -86,6 +97,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /_socialReferenceCutover/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_accountDeletionState/{document=**} {
+      allow read, write: if false;
+    }
+
     match /_verifiedSessionEvidence/{document=**} {
       allow read, write: if false;
     }
@@ -98,21 +117,17 @@ service cloud.firestore {
     // Per-path user-subtree schemas are a separate hardening change because
     // profile, progress, session, and recommendation documents differ.
     match /users/{accountID}/{document=**} {
-      allow read, write: if isOwner(accountID);
+      allow read: if isOwner(accountID);
+      allow write: if isWritableOwner(accountID);
     }
 
     match /profiles_public/{accountID} {
-      allow get: if isAuthenticated();
-      allow list, create, delete: if false;
+      allow get, list, create, delete: if false;
       allow update: if updatesOnlyDisplayName(accountID);
     }
 
     match /leagues/{bucket}/members/{accountID} {
-      allow get: if isAuthenticated();
-      allow list: if isAuthenticated()
-                  && request.query.limit != null
-                  && request.query.limit <= 50;
-      allow create, delete: if false;
+      allow get, list, create, delete: if false;
       allow update: if updatesOnlyDisplayName(accountID);
     }
 

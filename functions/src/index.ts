@@ -33,6 +33,7 @@ import {
   CHALLENGE_REACTION_MINUTE_LIMIT,
   SOCIAL_SCHEMA_VERSION,
   advanceSocialState,
+  assertSocialReferenceCutoverComplete,
   assertEvidenceBoundToChallenge,
   challengeEnvelope,
   challengeSide,
@@ -47,12 +48,16 @@ import {
   validateChallengeSubmission,
   validateCombinedChallengeResult,
   validateCreateChallengeRequest,
+  validateGetPeerProfileRequest,
+  validateListLeagueMembersRequest,
   validateReciprocalFriendLinks,
   validateRecordPeerSessionRequest,
   validateSetChallengeReactionRequest,
   validateSocialReferenceManifest,
   validateStoredChallenge,
+  validateStoredPublicProfile,
   validateSubmitChallengeResultRequest,
+  validateTrustedSocialState,
   validateVerifiedSessionEvidence,
   type ChallengeSubmission,
   type PublicProfileEnvelope,
@@ -565,8 +570,11 @@ export function nextRateState(
 export async function enforceRateLimit(uid: string): Promise<void> {
   const firestore = getFirestore();
   const ref = firestore.collection("_serverRateLimits").doc(uid);
+  const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
   await firestore.runTransaction(async (transaction) => {
+    const deletionSnapshot = await transaction.get(deletionRef);
     const snapshot = await transaction.get(ref);
+    assertAccountDeletionNotPending(deletionSnapshot.exists);
     const data = snapshot.exists ? snapshot.data() : undefined;
     const current = isRecord(data?.coachChat) ?
       data.coachChat as Partial<WindowRateState> :
@@ -698,8 +706,11 @@ export const coachChat = onCall(
 async function enforceTranscriptionTokenRateLimit(uid: string): Promise<void> {
   const firestore = getFirestore();
   const ref = firestore.collection("_serverRateLimits").doc(uid);
+  const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
   await firestore.runTransaction(async (transaction) => {
+    const deletionSnapshot = await transaction.get(deletionRef);
     const snapshot = await transaction.get(ref);
+    assertAccountDeletionNotPending(deletionSnapshot.exists);
     const data = snapshot.exists ? snapshot.data() : undefined;
     const current = isRecord(data?.transcriptionToken) ?
       data.transcriptionToken as Partial<WindowRateState> : undefined;
@@ -825,6 +836,19 @@ function socialProfileDisplayName(value: unknown): string {
 type SocialRateOperation = "challengeCreate" | "challengeReaction";
 
 /**
+ * Rejects every social mutation while account deletion is pending.
+ * @param {boolean} pending Whether the server tombstone exists.
+ */
+function assertAccountDeletionNotPending(pending: boolean): void {
+  if (!pending) return;
+  throw new HttpsError(
+    "failed-precondition",
+    "Account deletion is already in progress.",
+    {reason: "account-deletion-pending"}
+  );
+}
+
+/**
  * Consumes a server-only fixed-window social-operation budget.
  * @param {string} uid Verified Firebase account ID.
  * @param {SocialRateOperation} operation Protected operation name.
@@ -840,8 +864,11 @@ async function enforceSocialRateLimit(
 ): Promise<void> {
   const firestore = getFirestore();
   const ref = firestore.collection("_serverRateLimits").doc(uid);
+  const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
   await firestore.runTransaction(async (transaction) => {
+    const deletionSnapshot = await transaction.get(deletionRef);
     const snapshot = await transaction.get(ref);
+    assertAccountDeletionNotPending(deletionSnapshot.exists);
     const data = snapshot.data();
     const current = isRecord(data?.[operation]) ?
       data?.[operation] as Partial<WindowRateState> : undefined;
@@ -860,6 +887,97 @@ async function enforceSocialRateLimit(
     transaction.set(ref, {[operation]: decision.state}, {merge: true});
   });
 }
+
+export const getPeerProfile = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateGetPeerProfileRequest(request.data);
+    if (input.accountID === uid) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Choose another speaker's profile."
+      );
+    }
+    const firestore = getFirestore();
+    const snapshots = await firestore.getAll(
+      firestore.collection("_accountDeletionState").doc(uid),
+      firestore.collection("_accountDeletionState").doc(input.accountID),
+      firestore.collection("_socialFriendLinks").doc(uid)
+        .collection("friends").doc(input.accountID),
+      firestore.collection("_socialFriendLinks").doc(input.accountID)
+        .collection("friends").doc(uid),
+      firestore.collection("profiles_public").doc(input.accountID)
+    );
+    assertAccountDeletionNotPending(snapshots[0].exists || snapshots[1].exists);
+    validateReciprocalFriendLinks(
+      snapshots[2].data(),
+      snapshots[3].data(),
+      uid,
+      input.accountID
+    );
+    if (!snapshots[4].exists) {
+      throw new HttpsError("not-found", "Peer profile not found.");
+    }
+    return {
+      schemaVersion: SOCIAL_SCHEMA_VERSION,
+      profile: validateStoredPublicProfile(
+        snapshots[4].data(),
+        input.accountID
+      ),
+    };
+  }
+);
+
+export const listLeagueMembers = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateListLeagueMembersRequest(request.data);
+    const firestore = getFirestore();
+    const [deletionSnapshot, stateSnapshot] = await firestore.getAll(
+      firestore.collection("_accountDeletionState").doc(uid),
+      firestore.collection("_socialState").doc(uid)
+    );
+    assertAccountDeletionNotPending(deletionSnapshot.exists);
+    const state = validateTrustedSocialState(stateSnapshot.data());
+    if (!state.currentBucket) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Trusted league state is not available.",
+        {reason: "trusted-social-state-unavailable"}
+      );
+    }
+    const snapshot = await firestore.collection("leagues")
+      .doc(state.currentBucket).collection("members")
+      .orderBy("rating", "desc").limit(input.limit).get();
+    return {
+      schemaVersion: SOCIAL_SCHEMA_VERSION,
+      bucket: state.currentBucket,
+      members: snapshot.docs.map((document) =>
+        validateStoredPublicProfile(document.data(), document.id)
+      ),
+    };
+  }
+);
 
 export const recordPeerSession = onCall(
   {
@@ -885,12 +1003,15 @@ export const recordPeerSession = onCall(
       .doc(uid).collection("sessions").doc(input.sessionID);
     const referencesRef = firestore.collection("_socialReferences").doc(uid);
     const publicProfileRef = firestore.collection("profiles_public").doc(uid);
+    const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
 
     return firestore.runTransaction(async (transaction) => {
+      const deletionSnapshot = await transaction.get(deletionRef);
       const evidenceSnapshot = await transaction.get(evidenceRef);
       const stateSnapshot = await transaction.get(stateRef);
       const markerSnapshot = await transaction.get(markerRef);
       const referencesSnapshot = await transaction.get(referencesRef);
+      assertAccountDeletionNotPending(deletionSnapshot.exists);
       const evidence = validateVerifiedSessionEvidence(
         evidenceSnapshot.data(),
         input.sessionID,
@@ -951,6 +1072,7 @@ export const recordPeerSession = onCall(
       transaction.set(referencesRef, {
         leagueMembershipPaths: membershipPath ? [membershipPath] : [],
         challengeIDs: references.challengeIDs,
+        friendAccountIDs: references.friendAccountIDs,
         updatedAt,
       });
       if (advanced.state.currentBucket) {
@@ -1029,6 +1151,16 @@ export const createChallenge = onCall(
       const opponentFriendLink = await transaction.get(
         firestore.collection("_socialFriendLinks").doc(input.opponentAccountID)
           .collection("friends").doc(uid)
+      );
+      const creatorDeletion = await transaction.get(
+        firestore.collection("_accountDeletionState").doc(uid)
+      );
+      const opponentDeletion = await transaction.get(
+        firestore.collection("_accountDeletionState")
+          .doc(input.opponentAccountID)
+      );
+      assertAccountDeletionNotPending(
+        creatorDeletion.exists || opponentDeletion.exists
       );
       validateReciprocalFriendLinks(
         creatorFriendLink.data(),
@@ -1144,11 +1276,20 @@ export const submitChallengeResult = onCall(
       const ownSubmissionRef = submissions.doc(uid);
       const otherSubmissionRef = submissions.doc(otherAccountID);
       const combinedRef = challengeRef.collection("combined").doc("result");
+      const ownDeletionRef = firestore.collection("_accountDeletionState")
+        .doc(uid);
+      const otherDeletionRef = firestore.collection("_accountDeletionState")
+        .doc(otherAccountID);
+      const ownDeletionSnapshot = await transaction.get(ownDeletionRef);
+      const otherDeletionSnapshot = await transaction.get(otherDeletionRef);
       const evidenceSnapshot = await transaction.get(evidenceRef);
       const replaySnapshot = await transaction.get(replayRef);
       const ownSubmissionSnapshot = await transaction.get(ownSubmissionRef);
       const otherSubmissionSnapshot = await transaction.get(otherSubmissionRef);
       const combinedSnapshot = await transaction.get(combinedRef);
+      assertAccountDeletionNotPending(
+        ownDeletionSnapshot.exists || otherDeletionSnapshot.exists
+      );
 
       if (ownSubmissionSnapshot.exists) {
         const ownSubmission = validateChallengeSubmission(
@@ -1304,9 +1445,18 @@ export const setChallengeReaction = onCall(
       const otherSubmissionRef = challengeRef.collection("submissions")
         .doc(otherAccountID);
       const combinedRef = challengeRef.collection("combined").doc("result");
+      const ownDeletionSnapshot = await transaction.get(
+        firestore.collection("_accountDeletionState").doc(uid)
+      );
+      const otherDeletionSnapshot = await transaction.get(
+        firestore.collection("_accountDeletionState").doc(otherAccountID)
+      );
       const ownSnapshot = await transaction.get(ownSubmissionRef);
       const otherSnapshot = await transaction.get(otherSubmissionRef);
       const combinedSnapshot = await transaction.get(combinedRef);
+      assertAccountDeletionNotPending(
+        ownDeletionSnapshot.exists || otherDeletionSnapshot.exists
+      );
       if (!ownSnapshot.exists || !otherSnapshot.exists ||
           !combinedSnapshot.exists) {
         throw new HttpsError(
@@ -1418,6 +1568,26 @@ export const deleteAccount = onCall(
 
     assertAppleRevocationSupported(providerIDs);
     const firestore = getFirestore();
+    const deletionStateRef = firestore.collection("_accountDeletionState")
+      .doc(uid);
+    await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(deletionStateRef);
+      const existingStartedAt = socialDateMilliseconds(
+        snapshot.data()?.startedAt
+      );
+      transaction.set(deletionStateRef, {
+        schemaVersion: 1,
+        status: "pending",
+        accountID: uid,
+        requestID,
+        startedAt: Timestamp.fromMillis(existingStartedAt ?? startedAt),
+        updatedAt: Timestamp.now(),
+      });
+    });
+    const cutoverSnapshot = await firestore
+      .collection("_socialReferenceCutover").doc("current").get();
+    assertSocialReferenceCutoverComplete(cutoverSnapshot.data());
+
     const work: AccountDeletionWork = {
       userTree: async () => {
         await firestore.recursiveDelete(
@@ -1462,7 +1632,6 @@ export const deleteAccount = onCall(
             const candidate = challenge[`${otherSide}AccountID`];
             otherAccountID = typeof candidate === "string" ? candidate : null;
           }
-          await firestore.recursiveDelete(challengeRef);
           if (otherAccountID) {
             const otherReferencesRef = firestore
               .collection("_socialReferences").doc(otherAccountID);
@@ -1484,6 +1653,43 @@ export const deleteAccount = onCall(
               });
             });
           }
+          await firestore.recursiveDelete(challengeRef);
+        }
+      },
+      friendLinks: async () => {
+        const snapshot = await firestore.collection("_socialReferences")
+          .doc(uid).get();
+        const references = validateSocialReferenceManifest(
+          snapshot.data(),
+          uid
+        );
+        for (const friendAccountID of references.friendAccountIDs) {
+          const friendReferencesRef = firestore
+            .collection("_socialReferences").doc(friendAccountID);
+          const ownLinkRef = firestore.collection("_socialFriendLinks")
+            .doc(uid).collection("friends").doc(friendAccountID);
+          const reciprocalLinkRef = firestore.collection("_socialFriendLinks")
+            .doc(friendAccountID).collection("friends").doc(uid);
+          await firestore.runTransaction(async (transaction) => {
+            const friendReferencesSnapshot = await transaction.get(
+              friendReferencesRef
+            );
+            if (friendReferencesSnapshot.exists) {
+              const friendReferences = validateSocialReferenceManifest(
+                friendReferencesSnapshot.data(),
+                friendAccountID
+              );
+              transaction.set(friendReferencesRef, {
+                ...friendReferences,
+                friendAccountIDs: friendReferences.friendAccountIDs.filter(
+                  (candidate) => candidate !== uid
+                ),
+                updatedAt: Timestamp.now(),
+              });
+            }
+            transaction.delete(ownLinkRef);
+            transaction.delete(reciprocalLinkRef);
+          });
         }
       },
       rateLimits: async () => {
@@ -1493,15 +1699,17 @@ export const deleteAccount = onCall(
             firestore.collection("_socialState").doc(uid)
           ),
           firestore.recursiveDelete(
-            firestore.collection("_socialReferences").doc(uid)
-          ),
-          firestore.recursiveDelete(
             firestore.collection("_verifiedSessionEvidence").doc(uid)
           ),
           firestore.recursiveDelete(
             firestore.collection("_socialFriendLinks").doc(uid)
           ),
         ]);
+      },
+      socialReferenceManifest: async () => {
+        await firestore.recursiveDelete(
+          firestore.collection("_socialReferences").doc(uid)
+        );
       },
       authUser: async () => {
         if (!authUserExists) return;
@@ -1510,6 +1718,9 @@ export const deleteAccount = onCall(
         } catch (error) {
           if (!isAuthUserNotFound(error)) throw error;
         }
+      },
+      deletionTombstone: async () => {
+        await deletionStateRef.delete();
       },
     };
 
