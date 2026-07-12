@@ -2625,8 +2625,37 @@ struct CoachLiveEvaluationTests {
             if let value = AICoachChatService.usableAPIKey(LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")) {
                 return value
             }
+            if let value = AICoachChatService.usableAPIKey(sourceAIConfigValue(forKey: keyName)) {
+                return value
+            }
         }
         return nil
+    }
+
+    /// Manual live evals run from a simulator test host while production builds
+    /// correctly exclude `AIConfig.plist` from app resources. Resolve the
+    /// gitignored developer config from the source checkout only for a
+    /// compile-flagged live run; never copy it into the app or an artifact.
+    private static func sourceAIConfigValue(forKey key: String) -> String? {
+        #if NOUM_LIVE_AI_EVAL
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let configURL = repoRoot
+            .appendingPathComponent("Noum", isDirectory: true)
+            .appendingPathComponent("AIConfig.plist")
+        guard let data = try? Data(contentsOf: configURL),
+              let plist = try? PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+              ) as? [String: Any] else {
+            return nil
+        }
+        return plist[key] as? String
+        #else
+        return nil
+        #endif
     }
 
     private static func liveHTTP(
