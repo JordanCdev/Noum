@@ -36,9 +36,13 @@ node scripts/migrate-social-reference-cutover.mjs --project=noum-d0b6f \
   --apply --confirm-project=noum-d0b6f
 ```
 
-Legacy league purge additionally requires `--purge-legacy-leagues` and
-`--approve-purge=DELETE_LEGACY_LEAGUES`. The script writes the global cutover
-marker only after every selected backfill/purge operation succeeds.
+Apply fails closed while any legacy client-authored public profile or league
+row exists. After reviewing the backup and obtaining explicit destructive
+approval, quarantining that data additionally requires
+`--purge-legacy-social` and `--approve-purge=DELETE_LEGACY_SOCIAL`. The script
+deletes both legacy profile and league documents and writes the global cutover
+marker only after every selected backfill/purge operation succeeds. It never
+promotes legacy ratings, streaks, or league values into trusted server state.
 
 Verification and deployment:
 

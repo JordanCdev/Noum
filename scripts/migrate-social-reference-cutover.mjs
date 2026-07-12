@@ -27,19 +27,20 @@ Usage:
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
     --apply --confirm-project=PROJECT_ID
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
-    --apply --confirm-project=PROJECT_ID --purge-legacy-leagues \\
-    --approve-purge=DELETE_LEGACY_LEAGUES
+    --apply --confirm-project=PROJECT_ID --purge-legacy-social \\
+    --approve-purge=DELETE_LEGACY_SOCIAL
 
 Default mode is remote-read-only. Every run writes an ignored local JSON
 backup. --apply backfills exact manifests and writes the global cutover marker
-only after all writes succeed. Purge requires both explicit destructive flags.
+only after all writes succeed. Existing client-authored profiles or league rows
+make apply fail closed unless both explicit legacy-social purge flags are given.
 `);
   process.exit(0);
 }
 
 const projectID = valueFor("--project") ?? process.env.GCLOUD_PROJECT;
 const apply = flag("--apply");
-const purgeLegacyLeagues = flag("--purge-legacy-leagues");
+const purgeLegacySocial = flag("--purge-legacy-social");
 const confirmedProject = valueFor("--confirm-project");
 const purgeApproval = valueFor("--approve-purge");
 
@@ -47,12 +48,12 @@ if (!projectID) throw new Error("Pass --project=PROJECT_ID.");
 if (apply && confirmedProject !== projectID) {
   throw new Error("--apply requires --confirm-project to match --project.");
 }
-if (purgeLegacyLeagues && !apply) {
+if (purgeLegacySocial && !apply) {
   throw new Error("Legacy purge requires --apply.");
 }
-if (purgeLegacyLeagues && purgeApproval !== "DELETE_LEGACY_LEAGUES") {
+if (purgeLegacySocial && purgeApproval !== "DELETE_LEGACY_SOCIAL") {
   throw new Error(
-    "Legacy purge requires --approve-purge=DELETE_LEGACY_LEAGUES."
+    "Legacy purge requires --approve-purge=DELETE_LEGACY_SOCIAL."
   );
 }
 
@@ -84,7 +85,8 @@ async function boundedSnapshot(query, label, limit) {
   return snapshot;
 }
 
-const [profiles, memberships, challenges, friendLinks, existingManifests] =
+const [profiles, memberships, challenges, friendLinks, existingManifests,
+  existingCutover] =
   await Promise.all([
     boundedSnapshot(
       firestore.collection("profiles_public"),
@@ -111,7 +113,15 @@ const [profiles, memberships, challenges, friendLinks, existingManifests] =
       "existing social manifests",
       GLOBAL_LIMITS.manifests
     ),
+    firestore.collection("_socialReferenceCutover").doc("current").get(),
   ]);
+
+if (apply && existingCutover.exists) {
+  throw new Error(
+    "Apply refused: the social reference cutover already exists. " +
+    "This migration is one-time only."
+  );
+}
 
 const manifests = new Map();
 function manifestFor(accountID) {
@@ -133,6 +143,15 @@ function manifestFor(accountID) {
 
 for (const profile of profiles.docs) manifestFor(profile.id);
 
+if (apply && !purgeLegacySocial &&
+    (profiles.size > 0 || memberships.size > 0)) {
+  throw new Error(
+    "Apply refused: legacy client-authored profiles or league rows exist. " +
+    "Review the backup, obtain explicit approval, and use " +
+    "--purge-legacy-social with its confirmation token."
+  );
+}
+
 for (const document of existingManifests.docs) {
   const accountID = document.id;
   const data = document.data();
@@ -142,7 +161,7 @@ for (const document of existingManifests.docs) {
       throw new Error(`Existing manifest ${accountID} has invalid ${field}.`);
     }
   }
-  if (!purgeLegacyLeagues) {
+  if (!purgeLegacySocial) {
     for (const path of data.leagueMembershipPaths) {
       manifest.leagueMembershipPaths.add(path);
     }
@@ -173,7 +192,7 @@ for (const document of leagueDocuments) {
   if (!LEAGUE_PATH_PATTERN.test(document.ref.path)) {
     throw new Error(`Membership path is invalid at ${document.ref.path}.`);
   }
-  if (!purgeLegacyLeagues) {
+  if (!purgeLegacySocial) {
     manifestFor(accountID).leagueMembershipPaths.add(document.ref.path);
   } else {
     manifestFor(accountID);
@@ -253,6 +272,10 @@ const backup = {
   challenges: serializable(challenges),
   friendLinks: serializable(friendLinks),
   existingManifests: serializable(existingManifests),
+  existingCutover: existingCutover.exists ? {
+    path: existingCutover.ref.path,
+    data: existingCutover.data(),
+  } : null,
 };
 const backupDirectory = resolve(process.cwd(), "backups");
 await mkdir(backupDirectory, {recursive: true});
@@ -271,7 +294,8 @@ const summary = {
   challengeDocuments: challenges.size,
   friendLinkDocuments: friendLinks.size,
   manifestAccounts: manifests.size,
-  purgeLegacyLeagues,
+  purgeLegacySocial,
+  cutoverAlreadyExists: existingCutover.exists,
 };
 process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 
@@ -290,7 +314,8 @@ for (const [accountID, manifest] of manifests) {
     updatedAt: FieldValue.serverTimestamp(),
   }));
 }
-if (purgeLegacyLeagues) {
+if (purgeLegacySocial) {
+  for (const document of profiles.docs) writes.push(writer.delete(document.ref));
   for (const document of leagueDocuments) writes.push(writer.delete(document.ref));
 }
 try {
@@ -309,7 +334,8 @@ await firestore.collection("_socialReferenceCutover").doc("current").set({
     challengeDocuments: challenges.size,
     friendLinkDocuments: friendLinks.size,
     manifestAccounts: manifests.size,
-    purgedLegacyLeagues: purgeLegacyLeagues,
+    purgedLegacyProfiles: purgeLegacySocial,
+    purgedLegacyLeagues: purgeLegacySocial,
   },
 });
 process.stdout.write("Backfill committed; global cutover is now complete.\n");
