@@ -1461,6 +1461,42 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertEqual(preflight["passCount"], preflight["checkCount"])
         self.assertIn("Static ops preflight", preflight["validationBoundary"])
 
+    def test_operational_static_preflight_accepts_display_name_only_profile_helper(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            rules_path = root / "firestore.rules"
+            rules = rules_path.read_text(encoding="utf-8")
+            rules = rules.replace(
+                """    match /profiles_public/{accountID} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == accountID
+        && request.resource.data.keys().hasOnly(['accountID']);
+    }
+""",
+                """    function updatesOnlyDisplayName(accountID) {
+      return request.auth != null
+        && request.auth.uid == accountID
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['displayName']);
+    }
+    match /profiles_public/{accountID} {
+      allow get: if request.auth != null;
+      allow list, create, delete: if false;
+      allow update: if updatesOnlyDisplayName(accountID);
+    }
+""",
+            )
+            rules_path.write_text(rules, encoding="utf-8")
+
+            preflight = gate.operational_static_preflight(root)
+
+        self.assertNotIn(
+            "firestoreRulesPublicProfileWriteGuard",
+            [item["key"] for item in preflight["failures"]],
+        )
+
     def test_operational_static_preflight_rejects_unsafe_client_config_membership(self):
         mutations = {
             "AIConfigBundled": ("            AIConfig.plist,\n", ""),

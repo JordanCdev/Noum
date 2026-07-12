@@ -2042,6 +2042,17 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "Restore firestore.rules.",
     )
     if firestore_rules is not None:
+        public_profile_guard_present = (
+            "match /profiles_public/{accountID}" in firestore_rules and
+            (
+                "request.resource.data.keys().hasOnly" in firestore_rules or
+                (
+                    "function updatesOnlyDisplayName(accountID)" in firestore_rules and
+                    "affectedKeys().hasOnly(['displayName'])" in firestore_rules and
+                    "allow update: if updatesOnlyDisplayName(accountID);" in firestore_rules
+                )
+            )
+        )
         add(
             "firestoreRulesPrivateUsers",
             "firestoreRulesPrivateUsers",
@@ -2054,8 +2065,7 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         add(
             "firestoreRulesPublicProfileWriteGuard",
             "firestoreRulesPublicProfileWriteGuard",
-            "match /profiles_public/{accountID}" in firestore_rules and
-            "request.resource.data.keys().hasOnly" in firestore_rules,
+            public_profile_guard_present,
             "publicProfileGuardPresent",
             "Public profile writes must be field-limited and account-owned.",
             "Repair profiles_public write guards in firestore.rules.",
