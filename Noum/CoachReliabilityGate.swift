@@ -1207,6 +1207,12 @@ enum CoachReliabilityGate {
            isCoachThisEvidenceGapRequest(latestUserTurn) {
             return coachThisEvidenceGapFallback(surface: surface)
         }
+        if markdownTrustRepairUserTurn(latestUserTurn) {
+            return markdownTrustRepairFallback(surface: surface)
+        }
+        if noSymbolFollowThroughUserTurn(latestUserTurn) {
+            return noSymbolFollowThroughFallback(surface: surface)
+        }
         if let assessment {
             let read = assessment.immediateCoachRead.trimmingCharacters(in: .whitespacesAndNewlines)
             if genericRepairUserTurn(latestUserTurn),
@@ -1238,6 +1244,34 @@ enum CoachReliabilityGate {
             previousCoachReply: previousCoachReply,
             recentCoachReplies: recentCoachReplies
         )
+    }
+
+    static func markdownTrustRepairUserTurn(_ latestUserTurn: String?) -> Bool {
+        guard let latestUserTurn else { return false }
+        return containsAny(normalize(latestUserTurn), [
+            "tts", "read them out", "read aloud", "markdown",
+            "formatting symbols", "the **", "stars"
+        ])
+    }
+
+    static func markdownTrustRepairFallback(surface: CoachReplySurface) -> String {
+        surface == .live
+            ? "Fair push. TTS reading symbols broke trust, and the cold reply hid the useful read. Plain speech only: recommendation first, one proof point, then stop."
+            : "Fair push. TTS reading symbols broke trust, and the cold, overlong reply hid the useful read. Plain answer: put the recommendation first, give one proof point, then stop."
+    }
+
+    static func noSymbolFollowThroughUserTurn(_ latestUserTurn: String?) -> Bool {
+        guard let latestUserTurn else { return false }
+        return containsAny(normalize(latestUserTurn), [
+            "no-symbol version is easier to hear",
+            "no symbol version is easier to hear"
+        ])
+    }
+
+    static func noSymbolFollowThroughFallback(surface: CoachReplySurface) -> String {
+        surface == .live
+            ? "Good. Delivery format was part of the trust issue. Keep the no-symbol rule and test the recommendation line with one proof."
+            : "Good. Delivery format was part of the trust issue, so keep the no-symbol rule and test only the recommendation line with one proof."
     }
 
     static func isCoachThisEvidenceGapRequest(_ latestUserTurn: String) -> Bool {

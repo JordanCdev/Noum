@@ -152,6 +152,51 @@ struct CoachLiveEvaluationTests {
         #expect(visible.text != prior)
     }
 
+    @Test func liveHarnessAppliesPipelineContentRejectedFallback() {
+        let assessment = CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: "Did the plain version work?",
+            directVerdict: "Delivery format was part of the trust issue.",
+            confidence: 0.30,
+            evidenceUsed: [],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Keep the no-symbol rule and test the recommendation line with one proof.",
+            responseMode: .immediateOnly
+        )
+        let turn = "The no-symbol version is easier to hear."
+        let recovered = Self.livePipelineOutcome(
+            .failure(.contentRejected),
+            assessment: assessment,
+            turnDepth: .quickMove,
+            history: [],
+            latestUserTurn: turn
+        )
+
+        guard case .reply(let reply) = recovered else {
+            Issue.record("Expected the pipeline content-rejected fallback")
+            return
+        }
+        #expect(reply == CoachReliabilityGate.noSymbolFollowThroughFallback(surface: .text))
+        let visible = Self.finalVisibleReply(
+            providerReply: reply,
+            history: [],
+            latestUserTurn: turn,
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5,
+            proofTestRecentlyRepeated: false
+        )
+        #expect(visible.finalIssues.isEmpty)
+        #expect(AICoachChatService.semanticQualityIssue(
+            in: visible.text,
+            latestUserTurn: turn,
+            turnDepth: .quickMove,
+            assessment: assessment
+        ) == nil)
+    }
+
     @Test func liveHarnessRecordsImmediateReadOnlyAfterStoreVisibilityTransition() async {
         let shown = await Self.verifyImmediateCoachReadVisibility(
             expected: true,
@@ -879,7 +924,7 @@ struct CoachLiveEvaluationTests {
             )
             let localImmediateVisibleAt = immediateCoachReadShown ? Date() : nil
 
-            let outcome = await service.reply(
+            let providerOutcome = await service.reply(
                 history: history,
                 systemPrompt: system,
                 userContext: context,
@@ -899,6 +944,13 @@ struct CoachLiveEvaluationTests {
                 onProviderAttemptEvent: { event in
                     providerAttemptEvents.append(event)
                 }
+            )
+            let outcome = Self.livePipelineOutcome(
+                providerOutcome,
+                assessment: judgement.assessment,
+                turnDepth: judgement.turnDepth,
+                history: history,
+                latestUserTurn: fixture.latestUserTurn
             )
             let turnCompletedAt = Date()
             let records = diagnostics.records
@@ -1844,6 +1896,37 @@ struct CoachLiveEvaluationTests {
         let finalIssues: [CoachReliabilityIssue]
     }
 
+    /// Mirror the pipeline-owned recovery after every configured provider has
+    /// rejected a turn on content quality. The shipping path converts this one
+    /// failure class into a bounded deterministic assessment reply before the
+    /// final reliability/finalization step; live evidence must do the same.
+    private static func livePipelineOutcome(
+        _ providerOutcome: ChatOutcome,
+        assessment: CoachAssessment?,
+        turnDepth: CoachTurnDepth,
+        history: [CoachMessage],
+        latestUserTurn: String
+    ) -> ChatOutcome {
+        let previousCoachReply = history.last { $0.role == .coach }?.text
+        let recentCoachReplies = Array(history
+            .reversed()
+            .filter { $0.role == .coach }
+            .map(\.text)
+            .prefix(4))
+        guard let fallback = CoachReplyPipeline.contentRejectedFallbackText(
+            for: providerOutcome,
+            assessment: assessment,
+            turnDepth: turnDepth,
+            surface: .text,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies,
+            latestUserTurn: latestUserTurn
+        ) else {
+            return providerOutcome
+        }
+        return .reply(fallback)
+    }
+
     /// Mirror the shipping `CoachReplyPipeline` last mile before scoring live
     /// evidence. Provider/service output is first evaluated for reliability;
     /// a blocking verdict substitutes the same deterministic fallback the user
@@ -2174,7 +2257,7 @@ struct CoachLiveEvaluationTests {
         )
         let localImmediateVisibleAt = immediateCoachReadShown ? Date() : nil
 
-        let outcome = await service.reply(
+        let providerOutcome = await service.reply(
             history: history,
             systemPrompt: system,
             userContext: context,
@@ -2194,6 +2277,13 @@ struct CoachLiveEvaluationTests {
             onProviderAttemptEvent: { event in
                 providerAttemptEvents.append(event)
             }
+        )
+        let outcome = Self.livePipelineOutcome(
+            providerOutcome,
+            assessment: judgement.assessment,
+            turnDepth: judgement.turnDepth,
+            history: history,
+            latestUserTurn: fixture.latestUserTurn
         )
         let turnCompletedAt = Date()
         let records = diagnostics.records

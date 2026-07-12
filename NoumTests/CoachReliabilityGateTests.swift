@@ -1467,6 +1467,49 @@ struct CoachReliabilityGateTests {
         #expect(!fallbackVerdict.blocked)
     }
 
+    @Test func markdownTTSComplaintUsesAPlainSpecificRepairFallback() {
+        let assessment = CoachAssessment(
+            turnDepth: .trustRepair,
+            surface: .text,
+            questionRestatement: "Why does the voice read the symbols?",
+            directVerdict: "The repair is to name the miss first, then answer with one useful move.",
+            confidence: 0.33,
+            evidenceUsed: [],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Repair the same answer in plain speech: no markdown, one specific read, one move.",
+            responseMode: .expandable
+        )
+        let turn = "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
+        let fallback = CoachReliabilityGate.truthfulFallback(
+            turnDepth: .trustRepair,
+            assessment: assessment,
+            surface: .text,
+            previousCoachReply: "Here is a long formatted report with several tips.",
+            recentCoachReplies: [],
+            latestUserTurn: turn
+        )
+
+        #expect(fallback == CoachReliabilityGate.markdownTrustRepairFallback(surface: .text))
+        #expect(!fallback.contains("**"))
+        #expect(!fallback.lowercased().contains("markdown"))
+        let fallbackVerdict = CoachReliabilityGate.evaluate(
+            replyText: fallback,
+            previousCoachReply: "Here is a long formatted report with several tips.",
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+        #expect(fallbackVerdict.issues.isEmpty)
+        #expect(AICoachChatService.semanticQualityIssue(
+            in: fallback,
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: assessment
+        ) == nil)
+    }
+
     @Test func narrowedRepeatFollowUpDoesNotTripDiscourseLoopWhenReplyNamesExactLine() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Repeat the final sentence only: ask, period, because that isolates the confidence leak. If you add a qualifier after it, rewrite that same line until it ends cleanly.",
