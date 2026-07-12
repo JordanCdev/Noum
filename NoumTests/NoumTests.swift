@@ -7868,11 +7868,11 @@ struct PeakGlowGatingTests {
     }
 
     @Test func flatPeakSilenceGlow() {
-        let store = RatingStore.shared
-        store.markPeakGlowConsumed()
-        // Fire the hook with no peak movement — must be a silent no-op.
-        store.notePeakReachedForGlow()
-        #expect(!store.pendingPeakGlow,
+        #expect(!RatingStore.shouldRaisePeakGlow(
+            hasRatedEvidence: true,
+            weekPeakRating: 700,
+            lastShownPeak: 700
+        ),
                 "Flat peak (no movement) must not raise glow.")
     }
 
@@ -7880,27 +7880,20 @@ struct PeakGlowGatingTests {
         // Brand rule from `never_punish_shame.md`: drops are silent.
         // Even if `weekPeakRating` somehow decreased (week boundary
         // reset, etc.), the glow must not fire.
-        let store = RatingStore.shared
-        store.markPeakGlowConsumed()
-
-        var seeded = store.rating
-        let downPeak = max(100, seeded.weekPeakRating - 50)
-        seeded.weekPeakRating = downPeak
-        store.replaceForDebug(seeded)
-        store.notePeakReachedForGlow()
-
-        #expect(!store.pendingPeakGlow,
+        #expect(!RatingStore.shouldRaisePeakGlow(
+            hasRatedEvidence: true,
+            weekPeakRating: 650,
+            lastShownPeak: 700
+        ),
                 "Downward peak must never raise glow — no punish-shame on regression.")
     }
 
     @Test func initialRatingSilencesPeakGlow() {
-        let store = RatingStore.shared
-        store.replaceForDebug(.initial)
-        store.markPeakGlowConsumed()
-
-        store.notePeakReachedForGlow()
-
-        #expect(!store.pendingPeakGlow,
+        #expect(!RatingStore.shouldRaisePeakGlow(
+            hasRatedEvidence: false,
+            weekPeakRating: 400,
+            lastShownPeak: 0
+        ),
                 "The default 400 starting line must not trigger a personal-best glow.")
     }
 
@@ -26194,58 +26187,43 @@ struct M25ShareableCardTests {
     @Test func friendsSectionEmptyHidesByReturningEmptyArray() {
         // When the friends list is empty, the helper returns [] so the
         // section never renders. The view checks `friendsPeak.isEmpty`.
-        let manager = FriendsManager.shared
-        let snapshot = manager.friends
-        defer { restoreFriends(snapshot, manager: manager) }
-        for friend in snapshot { manager.removeFriend(id: friend.id) }
-        let friends = ShareableSessionCard.topFriendsPeak()
+        let friends = ShareableSessionCard.topFriendsPeak(friends: [])
         #expect(friends.isEmpty)
     }
 
     @Test func friendsSectionExcludesFriendsWithUnknownPeak() {
         // A friend with no synced peak rating is a "—" in the friends
         // section — we'd rather hide them than print noise.
-        let manager = FriendsManager.shared
-        let snapshot = manager.friends
-        defer { restoreFriends(snapshot, manager: manager) }
-        for friend in snapshot { manager.removeFriend(id: friend.id) }
-
-        manager.addFriend(NoumFriend(
+        let source = [NoumFriend(
             id: UUID(),
             displayName: "Synced Friend",
             addedAt: Date(),
             addedVia: .manual,
             lastKnownPeakRating: 700
-        ))
-        manager.addFriend(NoumFriend(
+        ), NoumFriend(
             id: UUID(),
             displayName: "Awaiting Sync",
             addedAt: Date(),
             addedVia: .manual,
             lastKnownPeakRating: nil
-        ))
-        let friends = ShareableSessionCard.topFriendsPeak()
+        )]
+        let friends = ShareableSessionCard.topFriendsPeak(friends: source)
         #expect(friends.count == 1)
         #expect(friends.first?.displayName == "Synced Friend")
     }
 
     @Test func friendsSectionRanksByPeakAndCapsAtThree() {
-        let manager = FriendsManager.shared
-        let snapshot = manager.friends
-        defer { restoreFriends(snapshot, manager: manager) }
-        for friend in snapshot { manager.removeFriend(id: friend.id) }
-
         let peaks = [560, 820, 690, 740, 610]
-        for (i, peak) in peaks.enumerated() {
-            manager.addFriend(NoumFriend(
+        let source = peaks.enumerated().map { i, peak in
+            NoumFriend(
                 id: UUID(),
                 displayName: "Friend \(i)",
                 addedAt: Date(),
                 addedVia: .manual,
                 lastKnownPeakRating: peak
-            ))
+            )
         }
-        let friends = ShareableSessionCard.topFriendsPeak()
+        let friends = ShareableSessionCard.topFriendsPeak(friends: source)
         #expect(friends.count == 3)
         #expect(friends[0].peakRating == 820)
         #expect(friends[1].peakRating == 740)
@@ -26324,10 +26302,6 @@ struct M25ShareableCardTests {
         store.replaceFromRemote(stamped)
     }
 
-    private func restoreFriends(_ snapshot: [NoumFriend], manager: FriendsManager) {
-        for friend in manager.friends { manager.removeFriend(id: friend.id) }
-        for friend in snapshot { manager.addFriend(friend) }
-    }
 }
 
 // MARK: - M25 Stream 2 — IM stack overhaul

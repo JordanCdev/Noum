@@ -308,9 +308,11 @@ extension ShareableSessionCard {
     /// reads as noise. Returns empty when the friend list itself is
     /// empty or has no synced peaks yet, which collapses the section
     /// in the card.
-    @MainActor
-    static func topFriendsPeak(manager: FriendsManager, limit: Int = 3) -> [FriendPeak] {
-        manager.friends
+    nonisolated static func topFriendsPeak(
+        friends: [NoumFriend],
+        limit: Int = 3
+    ) -> [FriendPeak] {
+        friends
             .compactMap { friend -> FriendPeak? in
                 guard let peak = friend.lastKnownPeakRating else { return nil }
                 return FriendPeak(
@@ -323,6 +325,11 @@ extension ShareableSessionCard {
             .sorted { $0.peakRating > $1.peakRating }
             .prefix(limit)
             .map { $0 }
+    }
+
+    @MainActor
+    static func topFriendsPeak(manager: FriendsManager, limit: Int = 3) -> [FriendPeak] {
+        topFriendsPeak(friends: manager.friends, limit: limit)
     }
 
     /// Convenience overload that reads from the shared manager.

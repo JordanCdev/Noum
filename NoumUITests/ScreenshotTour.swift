@@ -409,7 +409,11 @@ final class ScreenshotTour: XCTestCase {
     @MainActor
     private func launchSeeded() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CLOUD_CONSENT"
+        ]
         app.launch()
         return app
     }
@@ -423,7 +427,11 @@ final class ScreenshotTour: XCTestCase {
         extraEnvironment: [String: String] = [:]
     ) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs + ["-DeepLink", deepLink]
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CLOUD_CONSENT"
+        ] + extraArgs + ["-DeepLink", deepLink]
         app.launchEnvironment.merge(extraEnvironment) { _, newValue in newValue }
         app.launch()
         // AppShell resolves launch deep links before the destination tab is
@@ -439,7 +447,11 @@ final class ScreenshotTour: XCTestCase {
     @MainActor
     private func launchSeededWith(extraArgs: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CLOUD_CONSENT"
+        ] + extraArgs
         app.launch()
         _ = app.wait(for: .runningForeground, timeout: 10)
         return app

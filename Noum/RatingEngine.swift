@@ -448,11 +448,22 @@ final class RatingStore: ObservableObject {
     /// Safe to call unconditionally — the strictly-greater guard means a
     /// flat or downward swing is a silent no-op.
     func notePeakReachedForGlow() {
-        guard rating.hasRatedEvidence else { return }
         let lastShown = loadLastShownPeak()
-        guard rating.weekPeakRating > lastShown else { return }
+        guard Self.shouldRaisePeakGlow(
+            hasRatedEvidence: rating.hasRatedEvidence,
+            weekPeakRating: rating.weekPeakRating,
+            lastShownPeak: lastShown
+        ) else { return }
         pendingPeakGlow = true
         saveLastShownPeak(rating.weekPeakRating)
+    }
+
+    nonisolated static func shouldRaisePeakGlow(
+        hasRatedEvidence: Bool,
+        weekPeakRating: Int,
+        lastShownPeak: Int
+    ) -> Bool {
+        hasRatedEvidence && weekPeakRating > lastShownPeak
     }
 
     /// Called after the Home glow card finishes its display window. Clears

@@ -35,6 +35,11 @@ enum PracticeMicrophonePermissionState: Equatable {
     }
 
     static func current() -> PracticeMicrophonePermissionState {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_MICROPHONE_GRANTED") {
+            return .granted
+        }
+        #endif
         switch AVAudioApplication.shared.recordPermission {
         case .granted: return .granted
         case .denied: return .denied
@@ -267,6 +272,9 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private static func resolveProvider() -> any TranscriptionProvider {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_START_FAILURE") {
+            return UITestUnavailableTranscriptionProvider()
+        }
         let selected = UserDefaults.standard.string(forKey: "transcriptionProvider")
         return makeProvider(for: TranscriptionProviderID.resolved(fromStoredValue: selected))
         #else
@@ -1043,6 +1051,20 @@ class SpeechRecognizerViewModel: ObservableObject {
         TranscriptionQualityStore.shared.record(metric)
     }
 }
+
+#if DEBUG
+/// Deterministic UI-test seam for the provider-start recovery path. It is
+/// selected only by an explicit launch argument and cannot enter Release.
+private struct UITestUnavailableTranscriptionProvider: TranscriptionProvider {
+    let name = "Unavailable UI test provider"
+    let identifier = "ui-test-unavailable"
+
+    func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
+        _ = config
+        throw TranscriptionSessionError.transport("UI test provider start failure")
+    }
+}
+#endif
 #endif
 
 struct PracticeSession: Identifiable, Codable {

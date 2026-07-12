@@ -4820,7 +4820,15 @@ final class AISettingsManager: ObservableObject {
     // MARK: - Cloud-processing consent
 
     var isCloudProcessingAllowed: Bool {
-        cloudProcessingConsent?.isCurrent(
+        #if DEBUG
+        // Cloud-dependent UI tests opt in explicitly. The normal seed does
+        // not grant this, so denial/no-transmission coverage keeps exercising
+        // the production account-scoped consent boundary.
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_CLOUD_CONSENT") {
+            return true
+        }
+        #endif
+        return cloudProcessingConsent?.isCurrent(
             disclosureVersion: Self.disclosureVersion,
             processorManifestVersion: Self.processorManifestVersion
         ) == true

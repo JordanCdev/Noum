@@ -17,6 +17,8 @@ Noum itself does not store your email address, phone number, or password in Noum
 
 When Google Sign-In is used, Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types. Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. The data available to that SDK depends on the Google account and sign-in flow.
 
+It declares no tracking. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes.
+
 ### Coaching Profile
 During onboarding, you may provide:
 - Speaking context (e.g., "work", "interviews")
@@ -44,6 +46,8 @@ When you use a production cloud AI coaching feature, Noum sends the information 
 For **Ask Noum**, this includes your current message, a bounded number of recent conversation turns, and bounded coaching context and session evidence. When available and relevant, that context may include your coaching profile and goals, recent session metrics or transcript evidence, saved proof quotes, coaching memory, plans, reflections, or an upcoming speaking moment. Noum limits the context assembled for each request; it does not send an unbounded copy of your on-device history.
 
 In production, Ask Noum sends your current message, bounded recent conversation turns, and bounded coaching context and session evidence through a Firebase Functions endpoint. The function then sends the bounded request to Google Vertex AI (Gemini). Firebase Authentication and Firebase App Check tokens accompany that request to authenticate the caller, verify the app request, and protect the service from abuse. Firebase Functions processes the bounded request as an application-service intermediary; Noum does not use this transport for advertising or cross-app tracking.
+
+This covers production Ask Noum messages, bounded recent turns, and bounded coaching context/session evidence sent through Firebase Functions; Firebase Authentication and App Check tokens or attestation data used to secure that transport.
 
 Other supported production AI features may send a speech transcript and related coaching context, and may send selected video frames only when you explicitly request visual feedback. Google and Firebase process data under their API terms, privacy policies, account settings, and retention practices. Those practices can include retention for service operation, safety, abuse prevention, or legal compliance; Noum does not promise zero provider-side retention.
 

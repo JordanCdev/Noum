@@ -243,6 +243,7 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)
         finishButton.tap()
+        allowCloudProcessingIfPresented(in: app)
 
         XCTAssertTrue(
             app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 10),
@@ -301,7 +302,12 @@ final class NoumUITests: XCTestCase {
     @MainActor
     func testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_FIRST_VALUE_LOOP"]
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_FIRST_VALUE_LOOP",
+            "UI_TESTING_CLOUD_CONSENT"
+        ]
         app.launch()
 
         try completeCoachingOnboarding(in: app)
@@ -393,6 +399,19 @@ final class NoumUITests: XCTestCase {
         } else {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
         }
+    }
+
+    @MainActor
+    private func allowCloudProcessingIfPresented(in app: XCUIApplication) {
+        let disclosure = app.descendants(matching: .any)["cloudProcessing.disclosure"]
+        guard disclosure.waitForExistence(timeout: 5) else { return }
+        let allow = app.buttons["cloudProcessing.allow"]
+        scrollUntilHittable(allow, in: app, attempts: 8)
+        XCTAssertTrue(
+            allow.waitForExistence(timeout: 3) && allow.isHittable,
+            "First-run cloud disclosure must provide an actionable Allow control."
+        )
+        allow.tap()
     }
 
     @MainActor

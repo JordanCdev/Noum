@@ -12,6 +12,9 @@ final class HomePracticePathPolishUITests: XCTestCase {
         app.launchArguments += [
             "UI_TESTING",
             "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CLOUD_CONSENT",
+            "UI_TESTING_MICROPHONE_GRANTED",
+            "UI_TESTING_TRANSCRIPTION_START_FAILURE",
             "-DeepLink",
             "noum://practice/ah-counter"
         ]

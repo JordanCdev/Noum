@@ -78,6 +78,7 @@ final class FocusedPracticeSetupUITests: XCTestCase {
         // gate without embedding a provider credential or making a request.
         let app = launchSeededAt(
             "noum://practice/conversation",
+            extraArguments: ["UI_TESTING_CLOUD_CONSENT"],
             extraEnvironment: ["BACKEND_BASE_URL": "https://noum-ui-test.invalid"]
         )
         defer { app.terminate() }
@@ -162,12 +163,14 @@ final class FocusedPracticeSetupUITests: XCTestCase {
     @MainActor
     private func launchSeededAt(
         _ deepLink: String,
+        extraArguments: [String] = [],
         extraEnvironment: [String: String] = [:]
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
             "UI_TESTING",
-            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_FORCE"
+        ] + extraArguments + [
             "-DeepLink",
             deepLink
         ]
