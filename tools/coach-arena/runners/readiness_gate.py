@@ -2042,6 +2042,24 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "Restore firestore.rules.",
     )
     if firestore_rules is not None:
+        private_user_guard_present = (
+            (
+                "match /users/{accountID}/{document=**}" in firestore_rules and
+                "request.auth.uid == accountID" in firestore_rules
+            ) or (
+                "match /users/{accountID}" in firestore_rules and
+                "function isOwner(accountID)" in firestore_rules and
+                "function isWritableOwner(accountID)" in firestore_rules and
+                all(
+                    path in firestore_rules for path in [
+                        "match /profile/{profileID}",
+                        "match /progress/{progressID}",
+                        "match /sessions/{sessionID}",
+                        "match /recommendations/{recommendationID}",
+                    ]
+                )
+            )
+        )
         public_profile_guard_present = (
             "match /profiles_public/{accountID}" in firestore_rules and
             (
@@ -2056,8 +2074,7 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         add(
             "firestoreRulesPrivateUsers",
             "firestoreRulesPrivateUsers",
-            "match /users/{accountID}/{document=**}" in firestore_rules and
-            "request.auth.uid == accountID" in firestore_rules,
+            private_user_guard_present,
             "privateUserRulePresent",
             "Private user documents must be scoped to the signed-in account.",
             "Repair firestore.rules private user ownership guard.",

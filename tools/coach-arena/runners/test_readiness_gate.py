@@ -1497,6 +1497,41 @@ class ReadinessGateTests(unittest.TestCase):
             [item["key"] for item in preflight["failures"]],
         )
 
+    def test_operational_static_preflight_accepts_bounded_private_user_paths(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            rules_path = root / "firestore.rules"
+            rules = rules_path.read_text(encoding="utf-8")
+            rules = rules.replace(
+                """    match /users/{accountID}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == accountID;
+    }
+""",
+                """    function isOwner(accountID) {
+      return request.auth != null && request.auth.uid == accountID;
+    }
+    function isWritableOwner(accountID) {
+      return isOwner(accountID);
+    }
+    match /users/{accountID} {
+      allow read, write: if isWritableOwner(accountID);
+      match /profile/{profileID} { allow read, write: if isWritableOwner(accountID); }
+      match /progress/{progressID} { allow read, write: if isWritableOwner(accountID); }
+      match /sessions/{sessionID} { allow read, write: if isWritableOwner(accountID); }
+      match /recommendations/{recommendationID} { allow read, write: if isWritableOwner(accountID); }
+    }
+""",
+            )
+            rules_path.write_text(rules, encoding="utf-8")
+
+            preflight = gate.operational_static_preflight(root)
+
+        self.assertNotIn(
+            "firestoreRulesPrivateUsers",
+            [item["key"] for item in preflight["failures"]],
+        )
+
     def test_operational_static_preflight_rejects_unsafe_client_config_membership(self):
         mutations = {
             "AIConfigBundled": ("            AIConfig.plist,\n", ""),
