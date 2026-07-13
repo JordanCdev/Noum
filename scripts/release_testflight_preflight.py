@@ -74,6 +74,8 @@ FORBIDDEN_ARCHIVE_CONFIGS = {
     "TranscriptionProviders.plist",
 }
 STOREKIT_PRODUCT_CONSTANTS = ("monthlyID", "annualID")
+SOURCE_COMMIT_INFO_KEY = "NoumSourceGitCommit"
+SOURCE_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 APPLE_SERVICE_BINARY_MARKERS = (
     b"/AuthenticationServices.framework/AuthenticationServices",
     b"/StoreKit.framework/StoreKit",
@@ -246,6 +248,29 @@ def _google_bundle_matches(repo_root: Path) -> bool:
     return google.get("BUNDLE_ID") == EXPECTED_TARGETS["Noum"]["bundle"]
 
 
+def current_source_commit(repo_root: Path) -> str | None:
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    value = completed.stdout.strip().lower()
+    return value if completed.returncode == 0 and SOURCE_COMMIT_PATTERN.fullmatch(value) else None
+
+
+def source_tree_is_clean(repo_root: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "status", "--porcelain", "--untracked-files=all"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0 and not completed.stdout.strip()
+
+
 def _storekit_product_ids(repo_root: Path) -> tuple[str, ...]:
     try:
         source = (repo_root / "Noum/PremiumManager.swift").read_text(encoding="utf-8")
@@ -293,6 +318,7 @@ def archive_checks(
     archive_path: Path | None,
     scanner: Callable[[Path], bool] | None = None,
     expected_version: tuple[str | None, str | None] | None = None,
+    expected_source_commit: str | None = None,
     uuid_reader: Callable[[Path], frozenset[tuple[str, str]]] | None = None,
 ) -> list[Check]:
     if archive_path is None:
@@ -363,6 +389,20 @@ def archive_checks(
             version_shape,
             "app and extensions align with Release version/build" if version_shape else "missing or mismatched version/build metadata",
             "Set aligned MARKETING_VERSION and CURRENT_PROJECT_VERSION values before archiving.",
+        )
+    )
+    archived_source_commit = product_infos.get("Noum", {}).get(SOURCE_COMMIT_INFO_KEY)
+    source_commit_bound = bool(
+        expected_source_commit
+        and SOURCE_COMMIT_PATTERN.fullmatch(expected_source_commit)
+        and archived_source_commit == expected_source_commit
+    )
+    checks.append(
+        check(
+            "archiveSourceCommitBound",
+            source_commit_bound,
+            "archive embeds the exact clean source commit" if source_commit_bound else "archive source commit missing or stale",
+            "Build from a clean checkout with the preflight so the exact Git commit is embedded in the app Info.plist.",
         )
     )
 
@@ -501,6 +541,7 @@ def repository_checks(
     settings_collected: bool,
     archive_path: Path | None,
     scanner: Callable[[Path], bool] | None = None,
+    expected_source_commit: str | None = None,
     uuid_reader: Callable[[Path], frozenset[tuple[str, str]]] | None = None,
 ) -> list[Check]:
     expected_names = set(EXPECTED_TARGETS)
@@ -598,12 +639,14 @@ def repository_checks(
         settings.get("Noum", {}).get("MARKETING_VERSION"),
         settings.get("Noum", {}).get("CURRENT_PROJECT_VERSION"),
     )
+    expected_source_commit = expected_source_commit or current_source_commit(repo_root)
     checks.extend(
         archive_checks(
             repo_root,
             archive_path,
             scanner=scanner,
             expected_version=expected_version,
+            expected_source_commit=expected_source_commit,
             uuid_reader=uuid_reader,
         )
     )
@@ -967,6 +1010,7 @@ def build_unsigned_archive(
     archive_path: Path,
     derived_data: Path,
     source_packages: Path | None,
+    source_commit: str | None,
 ) -> Check:
     if archive_path.exists():
         return check(
@@ -981,6 +1025,13 @@ def build_unsigned_archive(
             False,
             "local SourcePackages cache missing",
             "Pass --source-packages; this preflight will not resolve packages over the network.",
+        )
+    if source_commit is None or not source_tree_is_clean(repo_root):
+        return check(
+            "unsignedArchiveBuild",
+            False,
+            "source checkout is dirty or has no exact Git commit",
+            "Commit the intended source and remove unrelated untracked files before building release evidence.",
         )
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     derived_data.mkdir(parents=True, exist_ok=True)
@@ -1004,6 +1055,7 @@ def build_unsigned_archive(
         "-disableAutomaticPackageResolution",
         "CODE_SIGNING_ALLOWED=NO",
         "CODE_SIGNING_REQUIRED=NO",
+        f"INFOPLIST_KEY_{SOURCE_COMMIT_INFO_KEY}={source_commit}",
     ]
     completed = subprocess.run(
         command,
@@ -1124,6 +1176,7 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = REPO_ROOT
     source_packages = resolve_source_packages(repo_root, args.source_packages)
     settings, settings_collected = collect_build_settings(repo_root, source_packages)
+    source_commit = current_source_commit(repo_root)
 
     archive_path: Path | None = None
     build_check: Check | None = None
@@ -1138,6 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
             archive_path,
             derived_data,
             source_packages,
+            source_commit,
         )
         if not build_check.passed:
             archive_path = None
@@ -1149,6 +1203,7 @@ def main(argv: list[str] | None = None) -> int:
         settings,
         settings_collected,
         archive_path,
+        expected_source_commit=source_commit,
     )
     if build_check is not None:
         repo_checks.insert(0, build_check)

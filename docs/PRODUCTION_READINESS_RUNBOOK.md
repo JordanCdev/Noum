@@ -131,7 +131,8 @@ The command fails closed and reports three separate sections:
 - repository/build correctness: Release identifiers, automatic-signing shape,
   source entitlements, App Attest production selection, extension embedding,
   the StoreKit 2 source contract, export options, source-aligned archive
-  versions, generic-iPhoneOS/arm64 products, exact extension points, binary-
+  versions, the exact clean Git commit embedded in the app, generic-iPhoneOS/
+  arm64 products, exact extension points, binary-
   matched dSYMs, compiled StoreKit/AuthenticationServices paths, app-owned
   privacy/export metadata, and the redacted bundle scan;
 - local paid-team/provisioning authority: counts of valid Apple Distribution
@@ -146,6 +147,10 @@ The command fails closed and reports three separate sections:
 The report never prints certificate names, team identifiers, profile names, or
 profile UUIDs. It never requests provisioning updates, signs an archive, exports
 an IPA, or uploads a build. A green repository section proves release shape only.
+The unsigned archive builder refuses a dirty checkout and embeds the exact
+40-character source commit in `NoumSourceGitCommit`; an existing archive whose
+value is absent or differs from the inspected checkout fails closed even when
+its marketing/build versions happen to match.
 The complete command must remain nonzero while either the local signing authority
 or independently collected external evidence is missing.
 

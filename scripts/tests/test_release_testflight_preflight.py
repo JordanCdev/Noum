@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import plistlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,6 +24,7 @@ SPEC.loader.exec_module(release)
 TEST_DISTRIBUTION_CERTIFICATE = b"noum-test-distribution-certificate"
 TEST_DISTRIBUTION_FINGERPRINT = hashlib.sha1(TEST_DISTRIBUTION_CERTIFICATE).hexdigest().upper()
 TEST_DWARF_UUIDS = frozenset({("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "arm64")})
+TEST_SOURCE_COMMIT = "a" * 40
 
 
 def write_plist(path: Path, value: dict) -> None:
@@ -163,6 +165,7 @@ _ = AppStore.sync()
                 }
             if target == "Noum":
                 info["ITSAppUsesNonExemptEncryption"] = False
+                info[release.SOURCE_COMMIT_INFO_KEY] = TEST_SOURCE_COMMIT
             write_plist(
                 archive / relative / "Info.plist",
                 info,
@@ -200,6 +203,7 @@ _ = AppStore.sync()
             True,
             self.archive,
             scanner=lambda _: True,
+            expected_source_commit=TEST_SOURCE_COMMIT,
             uuid_reader=lambda _: TEST_DWARF_UUIDS,
         )
 
@@ -208,6 +212,29 @@ _ = AppStore.sync()
         parsed = release.parse_build_settings(output)
         self.assertEqual(parsed["Noum"]["PRODUCT_BUNDLE_IDENTIFIER"], "com.jordancoaten.noum")
         self.assertEqual(parsed["NoumWidget"]["PRODUCT_BUNDLE_IDENTIFIER"], "com.jordancoaten.noum.NoumWidget")
+
+    def test_source_commit_binding_requires_a_clean_git_checkout(self) -> None:
+        repository = self.root / "source-binding-repository"
+        repository.mkdir()
+        subprocess.run(["git", "init", "-q", str(repository)], check=True)
+        (repository / "tracked.txt").write_text("release source\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repository), "add", "tracked.txt"], check=True)
+        subprocess.run(
+            [
+                "git", "-C", str(repository),
+                "-c", "user.name=Noum Test",
+                "-c", "user.email=noum-test@example.invalid",
+                "commit", "-q", "-m", "fixture",
+            ],
+            check=True,
+        )
+
+        commit = release.current_source_commit(repository)
+        self.assertRegex(commit or "", release.SOURCE_COMMIT_PATTERN)
+        self.assertTrue(release.source_tree_is_clean(repository))
+
+        (repository / "untracked.txt").write_text("not part of release\n", encoding="utf-8")
+        self.assertFalse(release.source_tree_is_clean(repository))
 
     def test_repository_contract_accepts_complete_unsigned_archive(self) -> None:
         checks = self._repository_checks()
@@ -253,6 +280,14 @@ _ = AppStore.sync()
         write_plist(path, value)
         checks = self._repository_checks()
         self.assertFalse(next(item for item in checks if item.key == "archiveVersionMetadata").passed)
+
+    def test_archive_must_match_the_exact_source_commit(self) -> None:
+        path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"
+        value = plistlib.loads(path.read_bytes())
+        value[release.SOURCE_COMMIT_INFO_KEY] = "b" * 40
+        write_plist(path, value)
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "archiveSourceCommitBound").passed)
 
     def test_archive_rejects_simulator_platform_shape(self) -> None:
         path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"

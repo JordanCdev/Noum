@@ -67,8 +67,9 @@ redacted. Passing the local source or signing sections is not production
 evidence. The overall command remains nonzero until real physical-TestFlight and
 operational-launch artifacts are independently collected and accepted. The
 archive section also rejects a simulator-shaped or version-drifted archive,
-stale dSYMs, missing compiled StoreKit/Apple-authentication paths, and missing
-app-owned privacy/export metadata. Installed App Store profiles only count when
+an archive not bound to the exact clean source commit, stale dSYMs, missing
+compiled StoreKit/Apple-authentication paths, and missing app-owned privacy/
+export metadata. Installed App Store profiles only count when
 their embedded distribution certificate matches an installed valid identity.
 
 ## 2. Initialize a non-passing run
