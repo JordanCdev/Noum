@@ -4,7 +4,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 
 Audit date: 2026-07-13
 
-Audited checkout: `6db20dbc6abf74e8c750c4cf2a0efdaed503d431`
+Audited checkout: `40d5e90306eb7d8939606d885cf84c9024331fa9`
 
 Integrated branch: `ux-overhaul`
 
@@ -275,14 +275,14 @@ substrate, but it is not a cohort analytics service.
 
 | Evidence item | Classification | Result on 2026-07-13 |
 |---|---|---|
-| Full integrated Swift regression | **Proved** | The complete `NoumTests` target passed 3,868/3,868 tests with zero failures or skips on the iPhone 17 Pro simulator, using the local Swift package cache, disabled automatic package resolution, disabled code signing, and no provider keys. This is still simulator evidence, not physical-device or TestFlight proof. |
+| Full integrated Swift regression | **Proved** | The complete `NoumTests` target passed 3,872/3,872 tests with zero failures or skips on the iPhone 17 Pro simulator, using the local Swift package cache, disabled automatic package resolution, disabled code signing, and no provider keys. This is still simulator evidence, not physical-device or TestFlight proof. |
 | Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests` (including the production transcript path and recording-error mapper), `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
-| Coach-arena contracts | **Proved** | 119 Node tests and 105 Python tests passed. |
-| Release-evidence workflow contracts | **Proved** | 26 tests passed. They prove fail-closed tooling, full-commit history-scan binding, and validator agreement—not that external evidence exists. |
-| Legacy endpoint and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests and 15 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
-| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `6db20dbc` and coach fingerprint `sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`; 53 conversations/109 turns pass the app-path floor. |
-| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T04:47:58+00:00` embeds `6db20dbc` / `sha256:71ba…d0bb`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
+| Coach-arena contracts | **Proved** | 119 Node tests and 107 Python tests passed. |
+| Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. |
+| Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 24 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
+| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `40d5e903` and coach fingerprint `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`; 53 conversations/109 turns pass the app-path floor. |
+| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T05:47:00+00:00` embeds `40d5e903` / `sha256:6164…d18d`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 18/18 static checks. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
 | Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. |
 
@@ -293,7 +293,7 @@ substrate, but it is not a cohort analytics service.
 | Current-source live-provider transcript sweep | **Weak evidence** | One artifact is present but rejected for source commit/fingerprint mismatch, missing/malformed required long-form coverage, production-floor failure, and provider retry/refusal pressure. It is 0/1 passing. |
 | Blinded professional-coach calibration | **Missing** | `coach-chat-conversation-expert-calibration-results-v2.json` is absent. The calibration-input packet is not a result. |
 | Longitudinal real-user transfer outcomes | **Missing** | `coach-real-user-transfer-outcomes-v3.json` is absent. Local fixtures cannot earn this row. |
-| Physical-device TestFlight QA | **Missing** | `coach-real-device-testflight-qa-v2.json` is absent. Simulator and direct development-device builds cannot count as TestFlight evidence. |
+| Physical-device TestFlight QA | **Missing** | `coach-real-device-testflight-qa-v3.json` is absent. Its fail-closed contract requires exactly 14 named surfaces and 77 named checks from the same independently verified physical TestFlight build; simulator and direct development-device builds cannot count. |
 | Operational launch checklist | **Missing** | `coach-operational-launch-checklist-v2.json` is absent. |
 | Required sidecar set as a whole | **Missing** | 1/5 files is present and 0/5 passes the staging contract. |
 
@@ -321,7 +321,7 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-Keep the committed `6db20dbc` canonical app-path baseline intact, run the full
+Keep the committed `40d5e903` canonical app-path baseline intact, run the full
 Noum unit/UI regression set against the final integrated checkout, and
 regenerate the canonical report only if integration changes the coach source
 fingerprint. This protects local evidence freshness and catches integration

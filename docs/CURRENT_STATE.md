@@ -14,18 +14,28 @@ prerequisites and a fully redacted, full-history secret adjudication bound to a
 40-character reachable Git commit. The legacy AWS probe sends no credential,
 retains no response body, never calls Deepgram, and accepts only `401`/`403`
 (protected) or `404`/`410` (disabled) across all five documented routes. The
-local Apple preflight separately verifies repository/archive shape, installed
-distribution authority, and independently collected TestFlight evidence. Its
-unsigned archive checks pass, while this Mac has zero valid Apple Distribution
-identities and zero matching App Store profiles; no sign, export, upload, or
-Apple-account mutation was attempted.
+Firebase cloud probe is pinned to the production project, region, and operations
+channel and has a no-network regression contract. Two cached Firebase CLI user
+sessions were exposed by the CLI during inspection; both must be revoked,
+release access reauthenticated, and closure independently verified before any
+cloud deployment or release evidence is accepted.
+
+The local Apple preflight separately verifies repository/archive shape,
+installed distribution authority, and independently collected evidence. It
+binds an archive to the exact clean source commit, validates device binaries,
+dSYMs, extension points, compiled StoreKit/authentication paths, privacy/export
+metadata, and identity-bound App Store profiles. The physical TestFlight schema
+now requires exactly 14 named surfaces and 77 named checks from one independently
+verified build. This Mac still has zero valid Apple Distribution identities and
+zero matching App Store profiles; no sign, export, upload, or Apple-account
+mutation was attempted.
 
 The canonical Swift app-path evidence was regenerated offline from the real
-XCTest bridge at source commit `6db20dbc` and coach fingerprint
-`sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`.
+XCTest bridge at source commit `40d5e903` and coach fingerprint
+`sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`.
 All 109 traces are source-matched; all 50 scored fixtures pass at a 79.76 average
 with zero local score, coverage, real-pipeline, or trace-quality failures. The
-full integrated `NoumTests` target passes 3,868/3,868 tests with no failures or
+full integrated `NoumTests` target passes 3,872/3,872 tests with no failures or
 skips. The readiness gate also passes 18/18 static checks and 3/3 hosted-privacy probes.
 Production remains **NO-GO at 18/100** because none of the five independent
 external artifacts passes: live-provider sweep, blinded professional review,

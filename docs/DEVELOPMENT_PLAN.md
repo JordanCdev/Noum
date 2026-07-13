@@ -20,7 +20,7 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
 | Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration and unsupported locales fail closed | Bind a deidentified source-evidence package, complete professional/longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals |
 | Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof |
-| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, atomic live evidence, exact launch-prerequisite/history-scan validation, a status-only five-route containment probe, and a redacted Apple signing/TestFlight preflight are implemented | Revoke the leaked legacy Deepgram credential, protect/disable every legacy route, audit provider usage/billing, install paid-team distribution authority, and complete physical-device and release-policy verification |
+| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, atomic live evidence, exact launch-prerequisite/history-scan validation, a status-only five-route containment probe, source-bound Apple archive preflight, and the exact 14-surface/77-check TestFlight evidence contract are implemented | Revoke the leaked legacy Deepgram credential and both exposed Firebase CLI sessions, protect/disable every legacy route, audit provider usage/billing, install paid-team distribution authority, and complete physical-device and release-policy verification |
 | Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented; both research experiment contracts default to unassigned | Product approval and real cohort analysis, protected social cutover, and calibrated language expansion |
 
 The supported local evidence refresh is:
@@ -50,7 +50,9 @@ Production readiness still requires independently sourced professional-coach,
 longitudinal real-user, physical TestFlight, and operational release evidence,
 plus a fresh current-source zero-refusal live-provider sweep. The legacy AWS
 endpoint must also be disabled/protected and its leaked Deepgram credential
-revoked before release. The current provider
+revoked before release. Both Firebase CLI sessions exposed during the release
+inspection must also be revoked, reauthenticated, and independently verified.
+The current provider
 environment has returned Gemini HTTP 429 and DeepSeek HTTP 402; those operational
 failures must be resolved rather than hidden by a generated artifact.
 

@@ -8,12 +8,12 @@ These are fixture-backed synthetic conversations for done-state review.
 > Real-pipeline evidence passes: `True`.
 > Report-internal source freshness passes: `True`.
 > Sidecar source freshness passes: `True`.
-> Current git commit: `6db20dbc`.
-> Report trace git commit(s): `6db20dbc`.
-> Current coach source fingerprint: `sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`.
-> Report trace coach source fingerprint(s): `sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`.
-> Sidecar git commit: `6db20dbc`.
-> Sidecar coach source fingerprint: `sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`.
+> Current git commit: `40d5e903`.
+> Report trace git commit(s): `40d5e903`.
+> Current coach source fingerprint: `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`.
+> Report trace coach source fingerprint(s): `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`.
+> Sidecar git commit: `40d5e903`.
+> Sidecar coach source fingerprint: `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`.
 
 ## authoritative-distance-001
 
