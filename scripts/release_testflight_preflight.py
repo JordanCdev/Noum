@@ -609,7 +609,22 @@ def repository_checks(
     uuid_reader: Callable[[Path], frozenset[tuple[str, str]]] | None = None,
 ) -> list[Check]:
     expected_names = set(EXPECTED_TARGETS)
+    expected_source_commit = expected_source_commit or current_source_commit(repo_root)
+    source_checkout_bound = source_commit_is_current_and_clean(
+        repo_root,
+        expected_source_commit,
+    )
     checks = [
+        check(
+            "sourceCheckoutBound",
+            source_checkout_bound,
+            (
+                "clean checkout at the exact source commit"
+                if source_checkout_bound
+                else "checkout dirty, missing, or moved from the source commit"
+            ),
+            "Restore the exact clean checkout before inspecting or building a release archive.",
+        ),
         check(
             "releaseBuildSettingsCollected",
             settings_collected,
@@ -709,7 +724,6 @@ def repository_checks(
         settings.get("Noum", {}).get("MARKETING_VERSION"),
         settings.get("Noum", {}).get("CURRENT_PROJECT_VERSION"),
     )
-    expected_source_commit = expected_source_commit or current_source_commit(repo_root)
     checks.extend(
         archive_checks(
             repo_root,

@@ -78,12 +78,17 @@ class PreflightTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self._write_repository_fixture()
-        self.archive = self._write_archive_fixture()
+        self.source_commit = self._commit_repository_fixture()
+        self.archive = self._write_archive_fixture(self.source_commit)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
     def _write_repository_fixture(self) -> None:
+        (self.root / ".gitignore").write_text(
+            "Noum.xcarchive/\ngenerated/\nDerivedData/\nSourcePackages/\n",
+            encoding="utf-8",
+        )
         write_plist(
             self.root / "Noum.entitlements",
             {
@@ -137,7 +142,24 @@ _ = AppStore.sync()
         path.parent.mkdir(parents=True)
         path.write_text(project, encoding="utf-8")
 
-    def _write_archive_fixture(self) -> Path:
+    def _commit_repository_fixture(self) -> str:
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(
+            [
+                "git", "-C", str(self.root),
+                "-c", "user.name=Noum Test",
+                "-c", "user.email=noum-test@example.invalid",
+                "-c", "commit.gpgsign=false",
+                "commit", "-q", "-m", "fixture",
+            ],
+            check=True,
+        )
+        source_commit = release.current_source_commit(self.root)
+        self.assertRegex(source_commit or "", release.SOURCE_COMMIT_PATTERN)
+        return source_commit or ""
+
+    def _write_archive_fixture(self, source_commit: str) -> Path:
         archive = self.root / "Noum.xcarchive"
         write_plist(
             archive / "Info.plist",
@@ -168,7 +190,7 @@ _ = AppStore.sync()
                 }
             if target == "Noum":
                 info["ITSAppUsesNonExemptEncryption"] = False
-                info[release.SOURCE_COMMIT_INFO_KEY] = TEST_SOURCE_COMMIT
+                info[release.SOURCE_COMMIT_INFO_KEY] = source_commit
             write_plist(
                 archive / relative / "Info.plist",
                 info,
@@ -206,7 +228,7 @@ _ = AppStore.sync()
             True,
             self.archive,
             scanner=lambda _: True,
-            expected_source_commit=TEST_SOURCE_COMMIT,
+            expected_source_commit=self.source_commit,
             uuid_reader=lambda _: TEST_DWARF_UUIDS,
         )
 
@@ -244,6 +266,17 @@ _ = AppStore.sync()
     def test_repository_contract_accepts_complete_unsigned_archive(self) -> None:
         checks = self._repository_checks()
         self.assertTrue(all(item.passed for item in checks), [item for item in checks if not item.passed])
+
+    def test_repository_contract_rejects_dirty_checkout_even_when_archive_commit_matches(self) -> None:
+        (self.root / "untracked-release-source.txt").write_text(
+            "not represented by the archive commit\n",
+            encoding="utf-8",
+        )
+
+        checks = self._repository_checks()
+
+        self.assertFalse(next(item for item in checks if item.key == "sourceCheckoutBound").passed)
+        self.assertTrue(next(item for item in checks if item.key == "archiveSourceCommitBound").passed)
 
     def test_release_app_attest_must_be_production(self) -> None:
         settings = valid_settings()

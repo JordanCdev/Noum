@@ -150,7 +150,9 @@ an IPA, or uploads a build. A green repository section proves release shape only
 The unsigned archive builder refuses a dirty checkout and embeds the exact
 40-character source commit in `NoumSourceGitCommit`; an existing archive whose
 value is absent or differs from the inspected checkout fails closed even when
-its marketing/build versions happen to match.
+its marketing/build versions happen to match. Existing-archive inspection also
+refuses a dirty or moved checkout, so a matching `HEAD` alone cannot attest the
+source being reviewed.
 The complete command must remain nonzero while either the local signing authority
 or independently collected external evidence is missing.
 
