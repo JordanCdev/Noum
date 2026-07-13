@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 2,
-  "updatedAt": "2026-07-11",
+  "manifestVersion": 3,
+  "updatedAt": "2026-07-13",
   "processors": [
     {
       "id": "deepgram",
@@ -51,8 +51,8 @@
     {
       "id": "firebase",
       "name": "Firebase (Google)",
-      "data": "Bounded production coaching requests and Authentication and App Check proof; account identity and optional sync data are processed separately for account functionality",
-      "purpose": "Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, and vendor-declared diagnostics",
+      "data": "Bounded production coaching requests and Authentication and App Check proof; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
+      "purpose": "Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics",
       "termsLabel": "Firebase Terms",
       "termsURL": "https://firebase.google.com/terms",
       "appearsInCloudProcessingDisclosure": true

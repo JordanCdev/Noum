@@ -3019,6 +3019,47 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         ),
     )
 
+    processor_disclosure_generator = (
+        root / "scripts/release-generate-processor-disclosures.py"
+    )
+    processor_disclosure_status = "generatorMissing"
+    processor_disclosures_fresh = False
+    if processor_disclosure_generator.is_file():
+        try:
+            result = subprocess.run(
+                [sys.executable, str(processor_disclosure_generator), "--check"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            processor_disclosures_fresh = result.returncode == 0
+            processor_disclosure_status = (
+                "generatedOutputsFresh"
+                if processor_disclosures_fresh
+                else f"generationCheckFailed:{result.returncode}"
+            )
+        except subprocess.TimeoutExpired:
+            processor_disclosure_status = "generationCheckTimedOut"
+        except OSError as exc:
+            processor_disclosure_status = f"generationCheckError:{type(exc).__name__}"
+    add(
+        "processorDisclosureGenerationFreshness",
+        "processorDisclosureGenerationFreshness",
+        processor_disclosures_fresh,
+        processor_disclosure_status,
+        (
+            "The versioned processor manifest must match the generated in-app, "
+            "hosted, and Swift consent disclosures."
+        ),
+        (
+            "Update privacy/processors.json, regenerate with "
+            "scripts/release-generate-processor-disclosures.py, and review the "
+            "material consent-version change."
+        ),
+    )
+
     privacy_manifest_path = root / "Noum/PrivacyInfo.xcprivacy"
     privacy_manifest = None
     privacy_manifest_error = None

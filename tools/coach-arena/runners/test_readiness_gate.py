@@ -47,6 +47,11 @@ def write_static_ops_repo(root):
     (root / "Noum").mkdir(parents=True, exist_ok=True)
     (root / "Noum.xcodeproj").mkdir(parents=True, exist_ok=True)
     (root / "docs").mkdir(parents=True, exist_ok=True)
+    (root / "scripts").mkdir(parents=True, exist_ok=True)
+    (root / "scripts/release-generate-processor-disclosures.py").write_text(
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
     (root / ".gitignore").write_text(
         (
             "Noum/AIConfig.plist\n"
@@ -2025,6 +2030,23 @@ class ReadinessGateTests(unittest.TestCase):
                     "aiConfigRepositorySecretBoundary",
                     [item["key"] for item in preflight["failures"]],
                 )
+
+    def test_operational_static_preflight_rejects_stale_processor_disclosures(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            (root / "scripts/release-generate-processor-disclosures.py").write_text(
+                "raise SystemExit(1)\n",
+                encoding="utf-8",
+            )
+
+            preflight = gate.operational_static_preflight(root)
+
+        failure = next(
+            item for item in preflight["failures"]
+            if item["key"] == "processorDisclosureGenerationFreshness"
+        )
+        self.assertEqual(failure["observed"], "generationCheckFailed:1")
 
     def test_operational_static_preflight_requires_user_content_privacy_disclosures(self):
         required_types = {

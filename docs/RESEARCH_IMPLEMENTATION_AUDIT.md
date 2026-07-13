@@ -283,7 +283,7 @@ substrate, but it is not a cohort analytics service.
 | Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 27 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
 | App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `40d5e903` and coach fingerprint `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`; 53 conversations/109 turns pass the app-path floor. |
 | Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T05:47:00+00:00` embeds `40d5e903` / `sha256:6164…d18d`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
-| Operational static repository wiring | **Proved** | Readiness reports 18/18 static checks. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
+| Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
 | Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. |
 
 ## External proof gates
@@ -348,6 +348,8 @@ sidecars; missing proof should remain missing.
 - A structured first-value receipt never counts as a spoken rep or unlocks
   speech-derived evidence, progress, or rewards.
 - Cloud consent off never instantiates a cloud transcription provider.
+- A material processor-manifest change invalidates earlier cloud consent, and
+  generated Swift, bundled-policy, and hosted-policy disclosures must remain exact.
 - Provider fallback occurs before streaming; one rep's audio is never sent to
   two transcription providers.
 - Recommendation response is association, not proof that a drill caused change.

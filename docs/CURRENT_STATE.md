@@ -20,6 +20,13 @@ sessions were exposed by the CLI during inspection; both must be revoked,
 release access reauthenticated, and closure independently verified before any
 cloud deployment or release evidence is accepted.
 
+The processor source of truth is now manifest v3. It explicitly covers Firebase
+Installations and versioned Remote Config processing, regenerates the Swift,
+bundled-policy, and hosted-policy disclosures from one reviewed manifest, and
+therefore makes earlier cloud consent stale. The authoritative readiness command
+now runs that generation check itself, so direct readiness invocation cannot
+report a clean static preflight while policy or consent surfaces have drifted.
+
 The local Apple preflight separately verifies repository/archive shape,
 installed distribution authority, and independently collected evidence. It
 binds an archive to the exact clean source commit, validates device binaries,
@@ -36,7 +43,7 @@ XCTest bridge at source commit `40d5e903` and coach fingerprint
 All 109 traces are source-matched; all 50 scored fixtures pass at a 79.76 average
 with zero local score, coverage, real-pipeline, or trace-quality failures. The
 full integrated `NoumTests` target passes 3,872/3,872 tests with no failures or
-skips. The readiness gate also passes 18/18 static checks and 3/3 hosted-privacy probes.
+skips. The readiness gate also passes 19/19 static checks and 3/3 hosted-privacy probes.
 Production remains **NO-GO at 18/100** because none of the five independent
 external artifacts passes: live-provider sweep, blinded professional review,
 longitudinal real-user transfer, physical TestFlight QA, and operational launch

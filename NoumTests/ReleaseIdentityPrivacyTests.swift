@@ -51,7 +51,7 @@ struct ReleaseIdentityPrivacyTests {
     @Test("One versioned manifest drives production processor disclosure")
     func processorManifestIsProductionScoped() {
         #expect(AISettingsManager.processorManifestVersion == CloudProcessorManifest.version)
-        #expect(CloudProcessorManifest.version == 2)
+        #expect(CloudProcessorManifest.version == 3)
         #expect(Set(CloudProcessorManifest.processors.map(\.id)) == Set([
             "deepgram",
             "apple-speech",
@@ -70,6 +70,10 @@ struct ReleaseIdentityPrivacyTests {
         #expect(CloudProcessorManifest.processors.allSatisfy {
             $0.termsURL.scheme == "https"
         })
+        let firebase = CloudProcessorManifest.processors.first { $0.id == "firebase" }
+        #expect(firebase?.data.contains("Firebase installation data") == true)
+        #expect(firebase?.data.contains("Remote Config") == true)
+        #expect(firebase?.purpose.contains("first-run configuration") == true)
     }
 
     @Test("Decline and stale disclosure versions keep cloud processing closed")
