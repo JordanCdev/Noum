@@ -275,6 +275,9 @@ and team identifiers redacted from the packet:
 - the monthly and annual product identifiers compiled from
   `Noum/PremiumManager.swift` exist in App Store Connect with complete
   subscription-group, localization, price, review, and availability metadata;
+- the marketing version and build number are newer than the previously released
+  or uploaded candidate, and App Store change notes are drafted for that exact
+  version/build pair;
 - agreements, tax, and banking state does not block sale; and
 - the independently verified command/review output is bound to the same build.
 

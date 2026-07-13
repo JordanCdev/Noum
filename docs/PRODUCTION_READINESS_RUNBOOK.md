@@ -395,6 +395,8 @@ ready only when:
   no longer parked
 - Sign in with Apple, paid-team archive signing, and App Store Connect StoreKit
   products are configured and verified
+- the candidate marketing version/build number is newer than the prior release
+  or TestFlight upload, and change notes are drafted for that exact candidate
 - real-device TestFlight evidence is attached
 - external coach calibration and longitudinal user outcomes are attached
 - the operational launch checklist is complete against the release candidate
