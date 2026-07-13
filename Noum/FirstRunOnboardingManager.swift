@@ -1,4 +1,10 @@
 import Foundation
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
+#if canImport(Speech)
+import Speech
+#endif
 
 // MARK: - Fast-lane draft
 
@@ -175,6 +181,72 @@ struct ActivationExperimentExposureContext: Equatable {
     let microphonePermission: PermissionState
     let speechPermission: PermissionState
     let locale: Locale
+
+    init(
+        microphonePermission: PermissionState,
+        speechPermission: PermissionState,
+        locale: Locale
+    ) {
+        self.microphonePermission = microphonePermission
+        self.speechPermission = speechPermission
+        self.locale = locale
+    }
+
+    init?(numerics: [String: Int]) {
+        guard let microphoneRaw = numerics["microphonePermission"],
+              let microphonePermission = PermissionState(rawValue: microphoneRaw),
+              let speechRaw = numerics["speechPermission"],
+              let speechPermission = PermissionState(rawValue: speechRaw),
+              let localeRaw = numerics["locale"],
+              let locale = Locale(rawValue: localeRaw) else { return nil }
+        self.init(
+            microphonePermission: microphonePermission,
+            speechPermission: speechPermission,
+            locale: locale
+        )
+    }
+
+    /// Captures the same bounded environment snapshot for every experiment
+    /// exposure. It is called only when the assigned surface actually appears,
+    /// never while assignment is being resolved.
+    static func capture(practiceLocale: PracticeLocale) -> Self {
+        let microphonePermission: PermissionState
+        #if canImport(AVFoundation)
+        switch PracticeMicrophonePermissionState.current() {
+        case .unknown: microphonePermission = .unknown
+        case .undetermined: microphonePermission = .undetermined
+        case .denied: microphonePermission = .denied
+        case .granted: microphonePermission = .granted
+        }
+        #else
+        microphonePermission = .unknown
+        #endif
+
+        let speechPermission: PermissionState
+        #if canImport(Speech)
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .notDetermined: speechPermission = .undetermined
+        case .denied, .restricted: speechPermission = .denied
+        case .authorized: speechPermission = .granted
+        @unknown default: speechPermission = .unknown
+        }
+        #else
+        speechPermission = .unknown
+        #endif
+
+        let locale: Locale
+        switch practiceLocale {
+        case .enUS: locale = .englishUS
+        case .esES: locale = .spanishES
+        case .frFR: locale = .frenchFR
+        }
+
+        return Self(
+            microphonePermission: microphonePermission,
+            speechPermission: speechPermission,
+            locale: locale
+        )
+    }
 
     var numerics: [String: Int] {
         [

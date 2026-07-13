@@ -124,6 +124,7 @@ struct SummaryView: View {
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var flowEventLog = FlowEventLog.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
@@ -539,6 +540,50 @@ struct SummaryView: View {
         )
     }
 
+    private var reviewExperimentPresentation: ReviewExperimentPresentation {
+        ReviewExperimentContract.presentation(in: flowEventLog.events)
+    }
+
+    /// The only Test B presentation gate. Unassigned accounts and the explicit
+    /// treatment keep the shipping finalizer-owned prescription; only an exact
+    /// control assignment substitutes a neutral replay that writes no adaptive
+    /// recommendation exposure or acceptance.
+    @ViewBuilder
+    private var reviewExperimentActionCard: some View {
+        switch reviewExperimentPresentation {
+        case .genericReview:
+            SummaryGenericReviewActionCard(
+                presentation: .make(for: currentMode),
+                onStart: onPracticeAgain
+            )
+        case .outcomeLoop:
+            SummaryPrescriptionActionCard(
+                prescription: summaryPrescription,
+                legacyDrill: drillRecommendation,
+                onStartMiniDrill: { drill in
+                    activeMiniDrill = drill
+                },
+                onStartDrill: onStartDrill,
+                imAvailable: IMModeAvailability.isAvailable,
+                onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
+                onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
+            )
+        }
+    }
+
+    private func recordReviewExperimentExposureIfNeeded() {
+        guard let assignment = ReviewExperimentContract.persistedAssignment(
+            in: flowEventLog.events
+        ) else { return }
+        flowEventLog.recordReviewExperimentExposure(
+            assignment: assignment,
+            presentation: reviewExperimentPresentation,
+            context: ActivationExperimentExposureContext.capture(
+                practiceLocale: localeSettings.current
+            )
+        )
+    }
+
     /// The per-scenario tone-drill signal, shared with Home and the mode
     /// picker. When set, the post-rep "Looking ahead" card prescribes the
     /// exact scenario + tone to re-drill instead of a generic mode nudge.
@@ -761,18 +806,9 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
-                            SummaryPrescriptionActionCard(
-                                prescription: summaryPrescription,
-                                legacyDrill: drillRecommendation,
-                                onStartMiniDrill: { drill in
-                                    activeMiniDrill = drill
-                                },
-                                onStartDrill: onStartDrill,
-                                imAvailable: IMModeAvailability.isAvailable,
-                                onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
-                                onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
-                            )
+                            reviewExperimentActionCard
                             .cardEntrance(2)
+                            .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
@@ -835,18 +871,9 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
-                            SummaryPrescriptionActionCard(
-                                prescription: summaryPrescription,
-                                legacyDrill: drillRecommendation,
-                                onStartMiniDrill: { drill in
-                                    activeMiniDrill = drill
-                                },
-                                onStartDrill: onStartDrill,
-                                imAvailable: IMModeAvailability.isAvailable,
-                                onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
-                                onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
-                            )
+                            reviewExperimentActionCard
                             .cardEntrance(2)
+                            .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
@@ -1297,7 +1324,8 @@ struct SummaryView: View {
                         }
                     }
 
-                    if let goalOutcomeRead {
+                    if reviewExperimentPresentation.showsGoalOutcome,
+                       let goalOutcomeRead {
                         // This card is evidence and goal movement, not a second
                         // prescription. The finalized NextAction above owns the
                         // Summary's only launch.

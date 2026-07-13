@@ -37,6 +37,9 @@ enum FlowKind: String, Codable, CaseIterable {
 enum TransformationKPIEventStage {
     static let activationExperimentAssigned = "activation.experimentAssigned"
     static let activationExperimentExposed = "activation.experimentExposed"
+    static let reviewExperimentAssigned = "review.experimentAssigned"
+    static let reviewExperimentExposed = "review.experimentExposed"
+    static let reviewSurfaceOpened = "review.surfaceOpened"
     static let structuredStarted = "activation.structuredStarted"
     static let structuredValueDelivered = "activation.structuredValueDelivered"
     static let liveUpgradeTapped = "activation.liveUpgradeTapped"
@@ -208,6 +211,71 @@ final class FlowEventLog: ObservableObject {
         ))
     }
 
+    /// Freezes the first exact-token Review assignment for this account. The
+    /// flow ledger remains the only durable owner, so account export, deletion,
+    /// and switching keep the same behavior as the rest of the diagnostics.
+    @discardableResult
+    func recordReviewExperimentAssignment(
+        _ proposed: ReviewExperimentAssignment
+    ) -> ReviewExperimentAssignment {
+        if let existing = ReviewExperimentContract.persistedAssignment(in: events) {
+            return existing
+        }
+        log(FlowEvent.make(
+            createdAt: proposed.assignedAt,
+            correlationId: proposed.correlationID,
+            flow: .other,
+            stage: TransformationKPIEventStage.reviewExperimentAssigned,
+            reason: "externally configured review assignment",
+            numerics: [
+                "experimentVersion": proposed.version,
+                "variant": proposed.variant.rawValue,
+            ]
+        ))
+        return proposed
+    }
+
+    /// Records only a presentation that actually mounted. Assignment alone is
+    /// never treated as exposure, and an event with a mismatched presentation
+    /// is ignored.
+    func recordReviewExperimentExposure(
+        assignment: ReviewExperimentAssignment,
+        presentation: ReviewExperimentPresentation,
+        context: ActivationExperimentExposureContext,
+        now: Date = Date()
+    ) {
+        let expected: ReviewExperimentPresentation = assignment.variant == .genericReviewControl
+            ? .genericReview
+            : .outcomeLoop
+        guard presentation == expected else { return }
+        var numerics = context.numerics
+        numerics["experimentVersion"] = assignment.version
+        numerics["variant"] = assignment.variant.rawValue
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: assignment.correlationID,
+            flow: .other,
+            stage: TransformationKPIEventStage.reviewExperimentExposed,
+            reason: "assigned review presentation appeared",
+            numerics: numerics
+        ))
+    }
+
+    /// Marks the first account-local visit to Review without storing which
+    /// session, prompt, or transcript the user inspected.
+    func recordReviewSurfaceOpened(now: Date = Date()) {
+        guard !events.contains(where: {
+            $0.stage == TransformationKPIEventStage.reviewSurfaceOpened
+        }) else { return }
+        log(FlowEvent.make(
+            createdAt: now,
+            correlationId: UUID(),
+            flow: .other,
+            stage: TransformationKPIEventStage.reviewSurfaceOpened,
+            reason: "review surface opened"
+        ))
+    }
+
     /// Records the user-visible prescription denominator. The caller supplies
     /// one durable correlation ID for the exposure so a later tap can be paired
     /// without storing the recommendation text or fingerprint in telemetry.
@@ -356,6 +424,18 @@ final class FlowEventLog: ObservableObject {
                 }
                 .min(by: { $0.createdAt < $1.createdAt })
         }
+        let reviewAssignment = ReviewExperimentContract.persistedAssignment(in: ordered)
+        let reviewExposure = reviewAssignment.flatMap { assignment in
+            ordered
+                .filter {
+                    $0.stage == TransformationKPIEventStage.reviewExperimentExposed
+                        && $0.correlationId == assignment.correlationID
+                        && $0.createdAt >= assignment.assignedAt
+                        && $0.numerics["experimentVersion"] == assignment.version
+                        && $0.numerics["variant"] == assignment.variant.rawValue
+                }
+                .min(by: { $0.createdAt < $1.createdAt })
+        }
         let pinned = Array([
             ordered.filter { $0.stage == "activation.firstEligible" }
                 .min(by: { $0.createdAt < $1.createdAt }),
@@ -367,6 +447,16 @@ final class FlowEventLog: ObservableObject {
                 })
             },
             exposure,
+            reviewAssignment.flatMap { frozen in
+                ordered.first(where: {
+                    $0.stage == TransformationKPIEventStage.reviewExperimentAssigned
+                        && $0.correlationId == frozen.correlationID
+                        && $0.createdAt == frozen.assignedAt
+                })
+            },
+            reviewExposure,
+            ordered.filter { $0.stage == TransformationKPIEventStage.reviewSurfaceOpened }
+                .min(by: { $0.createdAt < $1.createdAt }),
             ordered.filter { $0.stage == TransformationKPIEventStage.structuredValueDelivered }
                 .min(by: { $0.createdAt < $1.createdAt }),
             ordered.first(where: { $0.stage.hasPrefix("transformation.helpfulness") }),
@@ -382,6 +472,9 @@ struct TransformationKPIReport: Equatable {
     /// Account-local assignment/exposure attribution. Outcomes remain separate
     /// report fields so assignment is never mistaken for delivered value.
     let activationExperimentAttribution: ActivationExperimentAttribution?
+    /// Account-local Test B assignment, actual rendered exposure, and the
+    /// first later persisted nonfixture rep. This is not a population result.
+    let reviewExperimentAttribution: ReviewExperimentAttribution?
     /// A durable spoken practice session exists. Structured first value never
     /// satisfies this field, preserving its historical speech-evidence meaning.
     let firstRepCompleted: Bool
@@ -522,6 +615,10 @@ struct TransformationKPIReport: Equatable {
 
         return TransformationKPIReport(
             activationExperimentAttribution: ActivationExperimentContract.attribution(in: events),
+            reviewExperimentAttribution: ReviewExperimentContract.attribution(
+                in: events,
+                sessions: sessions
+            ),
             firstRepCompleted: firstRep != nil,
             timeToFirstRepSeconds: timeToFirstRep,
             firstValueCompleted: firstValue != nil,

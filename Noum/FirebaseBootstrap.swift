@@ -18,6 +18,14 @@ import FirebaseRemoteConfig
 #endif
 
 public enum FirebaseBootstrap {
+    /// A process-local readiness edge for Test B only. Remote Config defaults
+    /// are installed synchronously, but `fetchAndActivate` completes later.
+    /// NoumApp observes this edge to retry Review assignment against the newly
+    /// active snapshot without disturbing the route-frozen activation test.
+    static let reviewRemoteConfigActivationDidComplete = Notification.Name(
+        "noum.reviewRemoteConfigActivationDidComplete"
+    )
+
     private static let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Noum",
         category: "FirebaseBootstrap"
@@ -83,6 +91,7 @@ public enum FirebaseBootstrap {
         let defaults: [String: NSObject] = [
             "ai_stream_url": "" as NSString,
             ActivationExperimentContract.remoteConfigKey: "" as NSString,
+            ReviewExperimentContract.remoteConfigKey: "" as NSString,
         ]
         rc.setDefaults(defaults)
         rc.fetchAndActivate { status, error in
@@ -91,9 +100,18 @@ public enum FirebaseBootstrap {
             } else {
                 Self.log.info("Remote Config status: \(status.rawValue, privacy: .public)")
             }
+            Self.signalReviewRemoteConfigActivationCompleted()
         }
         #endif
     }()
+
+    /// Injecting a center keeps the signal directly verifiable without
+    /// starting Firebase or network services in the unit-test host.
+    static func signalReviewRemoteConfigActivationCompleted(
+        using center: NotificationCenter = .default
+    ) {
+        center.post(name: reviewRemoteConfigActivationDidComplete, object: nil)
+    }
 
     static var hasConfigurationPlist: Bool {
         Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil

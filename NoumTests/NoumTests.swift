@@ -135,6 +135,19 @@ struct FirebaseBootstrapTests {
         #expect(FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: true, configured: true))
     }
 
+    @Test func reviewExperimentReceivesRemoteConfigActivationCompletionSignal() {
+        let center = NotificationCenter()
+        let expectation = XCTNSNotificationExpectation(
+            name: FirebaseBootstrap.reviewRemoteConfigActivationDidComplete,
+            object: nil,
+            notificationCenter: center
+        )
+
+        FirebaseBootstrap.signalReviewRemoteConfigActivationCompleted(using: center)
+
+        #expect(XCTWaiter.wait(for: [expectation], timeout: 0.1) == .completed)
+    }
+
     @Test func appConfiguresFirebaseBeforeDelegateAndStateOwnersInitialize() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

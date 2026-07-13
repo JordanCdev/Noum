@@ -70,6 +70,7 @@ struct NoumApp: App {
     @State private var holdsFastLaneResult = false
     @State private var activationExperimentAssignment: ActivationExperimentAssignment?
     @State private var activationExperimentResolvedAccountID: String?
+    @State private var reviewExperimentResolvedAccountID: String?
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
@@ -229,6 +230,7 @@ struct NoumApp: App {
             await MainActor.run {
                 FlowEventLog.shared.reloadForCurrentAccount()
                 resolveActivationExperimentForHydratedAccountIfNeeded()
+                resolveReviewExperimentForHydratedAccountIfNeeded()
                 FlowEventLog.shared.recordActiveDay()
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
             }
@@ -241,9 +243,23 @@ struct NoumApp: App {
             Task { @MainActor in
                 FlowEventLog.shared.reloadForCurrentAccount()
                 resolveActivationExperimentForHydratedAccountIfNeeded()
+                resolveReviewExperimentForHydratedAccountIfNeeded()
                 if authManager.currentAccountID != nil {
                     FlowEventLog.shared.recordActiveDay()
                 }
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: FirebaseBootstrap.reviewRemoteConfigActivationDidComplete
+            )
+        ) { _ in
+            // Remote Config defaults are available before Firebase's active
+            // snapshot. Retry only Test B when activation finishes; Test A's
+            // route-freeze guard and mounted route remain untouched.
+            Task { @MainActor in
+                reviewExperimentResolvedAccountID = nil
+                resolveReviewExperimentForHydratedAccountIfNeeded()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -401,10 +417,53 @@ struct NoumApp: App {
         return activationExperimentResolvedAccountID == accountID
     }
 
+    /// Resolves Test B once per hydrated account and active Remote Config
+    /// snapshot. `FlowEventLog` is the durable assignment owner, so the
+    /// bootstrap completion edge can safely retry an initially unassigned
+    /// account without ever replacing a recorded assignment.
+    @MainActor
+    private func resolveReviewExperimentForHydratedAccountIfNeeded() {
+        guard authManager.initialAccountHydrationState == .ready,
+              let accountID = authManager.currentAccountID,
+              reviewExperimentResolvedAccountID != accountID else { return }
+
+        let events = FlowEventLog.shared.events
+        let persisted = ReviewExperimentContract.persistedAssignment(in: events)
+        if persisted == nil {
+            let hasPriorExposure = ReviewExperimentContract.hasPriorReviewExposure(
+                events: events,
+                sessions: PracticeSessionStore.shared.sessions
+            )
+            let eligible = reviewExperimentBuildAllowsEnrollment
+                && ReviewExperimentContract.isEligibleForNewAssignment(
+                    hasHydratedAccountStores: true,
+                    isDeveloper: authManager.isDeveloper,
+                    isUITesting: isUITesting,
+                    hasPriorReviewExposure: hasPriorExposure
+                )
+            if let assignment = ReviewExperimentContract.resolveAssignment(
+                configuredValue: activeReviewExperimentConfiguration,
+                isEligible: eligible
+            ) {
+                FlowEventLog.shared.recordReviewExperimentAssignment(assignment)
+            }
+        }
+
+        reviewExperimentResolvedAccountID = accountID
+    }
+
     private var activationExperimentBuildAllowsEnrollment: Bool {
         #if DEBUG
         // Developer builds and UI overrides are excluded from cohorts. Pure
         // contract tests exercise both variants without enrolling the host.
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    private var reviewExperimentBuildAllowsEnrollment: Bool {
+        #if DEBUG
         return false
         #else
         return true
@@ -424,6 +483,17 @@ struct NoumApp: App {
         #endif
     }
 
+    /// Reads only FirebaseBootstrap's active snapshot. Missing, unknown, or
+    /// not-yet-fetched values remain nil/empty and cannot enroll the account.
+    private var activeReviewExperimentConfiguration: String? {
+        #if canImport(FirebaseCore) && canImport(FirebaseRemoteConfig)
+        guard FirebaseApp.app() != nil else { return nil }
+        return RemoteConfig.remoteConfig()[ReviewExperimentContract.remoteConfigKey].stringValue
+        #else
+        return nil
+        #endif
+    }
+
     private func recordActivationExperimentExposure(route: FirstRunOnboardingGate.RootRoute) {
         guard activationExperimentResolvedForCurrentAccount,
               let activationExperimentAssignment else { return }
@@ -435,45 +505,9 @@ struct NoumApp: App {
     }
 
     private var activationExperimentExposureContext: ActivationExperimentExposureContext {
-        ActivationExperimentExposureContext(
-            microphonePermission: activationMicrophonePermission,
-            speechPermission: activationSpeechPermission,
-            locale: activationLocale
+        ActivationExperimentExposureContext.capture(
+            practiceLocale: localeSettings.current
         )
-    }
-
-    private var activationMicrophonePermission: ActivationExperimentExposureContext.PermissionState {
-        #if canImport(AVFoundation)
-        switch PracticeMicrophonePermissionState.current() {
-        case .unknown: return .unknown
-        case .undetermined: return .undetermined
-        case .denied: return .denied
-        case .granted: return .granted
-        }
-        #else
-        return .unknown
-        #endif
-    }
-
-    private var activationSpeechPermission: ActivationExperimentExposureContext.PermissionState {
-        #if canImport(Speech)
-        switch SFSpeechRecognizer.authorizationStatus() {
-        case .notDetermined: return .undetermined
-        case .denied, .restricted: return .denied
-        case .authorized: return .granted
-        @unknown default: return .unknown
-        }
-        #else
-        return .unknown
-        #endif
-    }
-
-    private var activationLocale: ActivationExperimentExposureContext.Locale {
-        switch localeSettings.current {
-        case .enUS: return .englishUS
-        case .esES: return .spanishES
-        case .frFR: return .frenchFR
-        }
     }
 
     private func completeFirstRunOnboarding() {

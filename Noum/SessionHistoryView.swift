@@ -229,6 +229,9 @@ struct SessionHistoryView: View {
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("history.screen")
+        .onAppear {
+            FlowEventLog.shared.recordReviewSurfaceOpened()
+        }
         .toolbar {
             if !isAppTabRoot {
                 ToolbarItem(placement: .topBarTrailing) {
