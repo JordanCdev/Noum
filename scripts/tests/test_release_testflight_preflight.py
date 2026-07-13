@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import plistlib
 import sys
 import tempfile
@@ -17,6 +18,11 @@ assert SPEC is not None and SPEC.loader is not None
 release = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = release
 SPEC.loader.exec_module(release)
+
+
+TEST_DISTRIBUTION_CERTIFICATE = b"noum-test-distribution-certificate"
+TEST_DISTRIBUTION_FINGERPRINT = hashlib.sha1(TEST_DISTRIBUTION_CERTIFICATE).hexdigest().upper()
+TEST_DWARF_UUIDS = frozenset({("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "arm64")})
 
 
 def write_plist(path: Path, value: dict) -> None:
@@ -58,6 +64,7 @@ def app_store_profile(target: str, expires: datetime | None = None) -> dict:
         "TeamIdentifier": ["TESTTEAM1"],
         "ExpirationDate": expires or datetime.now(timezone.utc) + timedelta(days=30),
         "Entitlements": entitlements,
+        "DeveloperCertificates": [TEST_DISTRIBUTION_CERTIFICATE],
     }
 
 
@@ -102,6 +109,18 @@ class PreflightTests(unittest.TestCase):
                 "stripSwiftSymbols": True,
             },
         )
+        premium_source = """
+import StoreKit
+static let monthlyID = "com.noum.pro.monthly"
+static let annualID = "com.noum.pro.annual"
+let productIDs = [monthlyID, annualID]
+_ = Product.products(for: productIDs)
+_ = Transaction.currentEntitlements
+_ = AppStore.sync()
+"""
+        premium_path = self.root / "Noum/PremiumManager.swift"
+        premium_path.parent.mkdir(parents=True, exist_ok=True)
+        premium_path.write_text(premium_source, encoding="utf-8")
         project = """
 /* Begin PBXCopyFilesBuildPhase section */
     NoumWidget.appex in Embed App Extensions
@@ -115,18 +134,74 @@ class PreflightTests(unittest.TestCase):
 
     def _write_archive_fixture(self) -> Path:
         archive = self.root / "Noum.xcarchive"
+        write_plist(
+            archive / "Info.plist",
+            {
+                "ArchiveVersion": 2,
+                "ApplicationProperties": {
+                    "ApplicationPath": "Applications/Noum.app",
+                    "Architectures": ["arm64"],
+                    "CFBundleIdentifier": release.EXPECTED_TARGETS["Noum"]["bundle"],
+                },
+            },
+        )
         for target, relative in release.ARCHIVED_PRODUCTS.items():
+            executable = target
+            info = {
+                "CFBundleIdentifier": release.EXPECTED_TARGETS[target]["bundle"],
+                "CFBundleShortVersionString": "1.1",
+                "CFBundleVersion": "2",
+                "CFBundleExecutable": executable,
+                "CFBundlePackageType": "APPL" if target == "Noum" else "XPC!",
+                "CFBundleSupportedPlatforms": ["iPhoneOS"],
+                "DTPlatformName": "iphoneos",
+                "MinimumOSVersion": "17.0",
+            }
+            if target in release.ARCHIVED_EXTENSION_POINTS:
+                info["NSExtension"] = {
+                    "NSExtensionPointIdentifier": release.ARCHIVED_EXTENSION_POINTS[target]
+                }
+            if target == "Noum":
+                info["ITSAppUsesNonExemptEncryption"] = False
             write_plist(
                 archive / relative / "Info.plist",
-                {
-                    "CFBundleIdentifier": release.EXPECTED_TARGETS[target]["bundle"],
-                    "CFBundleShortVersionString": "1.1",
-                    "CFBundleVersion": "2",
-                },
+                info,
             )
-        for name in ("Noum.app.dSYM", "NoumWidget.appex.dSYM", "NoumMessages.appex.dSYM"):
-            (archive / "dSYMs" / name).mkdir(parents=True)
+            binary = archive / relative / executable
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            markers = b"fixture-binary"
+            if target == "Noum":
+                markers += b"\0".join(
+                    (
+                        *release.APPLE_SERVICE_BINARY_MARKERS,
+                        b"com.noum.pro.monthly",
+                        b"com.noum.pro.annual",
+                    )
+                )
+            binary.write_bytes(markers)
+            wrapper = relative.name
+            dsym_binary = archive / "dSYMs" / f"{wrapper}.dSYM/Contents/Resources/DWARF" / executable
+            dsym_binary.parent.mkdir(parents=True, exist_ok=True)
+            dsym_binary.write_bytes(b"fixture-dsym")
+        write_plist(
+            archive / release.ARCHIVED_PRODUCTS["Noum"] / "PrivacyInfo.xcprivacy",
+            {
+                "NSPrivacyTracking": False,
+                "NSPrivacyCollectedDataTypes": [],
+                "NSPrivacyAccessedAPITypes": [],
+            },
+        )
         return archive
+
+    def _repository_checks(self, settings: dict[str, dict[str, str]] | None = None):
+        return release.repository_checks(
+            self.root,
+            settings or valid_settings(),
+            True,
+            self.archive,
+            scanner=lambda _: True,
+            uuid_reader=lambda _: TEST_DWARF_UUIDS,
+        )
 
     def test_parse_build_settings_keeps_target_sections(self) -> None:
         output = """Build settings for action build and target Noum:\n    PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum\nBuild settings for action build and target NoumWidget:\n    PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.NoumWidget\n"""
@@ -135,29 +210,19 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(parsed["NoumWidget"]["PRODUCT_BUNDLE_IDENTIFIER"], "com.jordancoaten.noum.NoumWidget")
 
     def test_repository_contract_accepts_complete_unsigned_archive(self) -> None:
-        checks = release.repository_checks(
-            self.root,
-            valid_settings(),
-            True,
-            self.archive,
-            scanner=lambda _: True,
-        )
+        checks = self._repository_checks()
         self.assertTrue(all(item.passed for item in checks), [item for item in checks if not item.passed])
 
     def test_release_app_attest_must_be_production(self) -> None:
         settings = valid_settings()
         settings["Noum"]["APP_ATTEST_ENVIRONMENT"] = "development"
-        checks = release.repository_checks(
-            self.root, settings, True, self.archive, scanner=lambda _: True
-        )
+        checks = self._repository_checks(settings)
         self.assertFalse(next(item for item in checks if item.key == "releaseAppAttestProduction").passed)
 
     def test_bundle_identifier_drift_fails_target_shape(self) -> None:
         settings = valid_settings()
         settings["NoumWidget"]["PRODUCT_BUNDLE_IDENTIFIER"] = "com.example.widget"
-        checks = release.repository_checks(
-            self.root, settings, True, self.archive, scanner=lambda _: True
-        )
+        checks = self._repository_checks(settings)
         self.assertFalse(next(item for item in checks if item.key == "releaseTargetSigningShape").passed)
 
     def test_export_options_cannot_pin_team_or_profile(self) -> None:
@@ -165,9 +230,7 @@ class PreflightTests(unittest.TestCase):
         value = plistlib.loads(path.read_bytes())
         value["teamID"] = "TESTTEAM1"
         write_plist(path, value)
-        checks = release.repository_checks(
-            self.root, valid_settings(), True, self.archive, scanner=lambda _: True
-        )
+        checks = self._repository_checks()
         self.assertFalse(next(item for item in checks if item.key == "appStoreExportOptionsSafe").passed)
 
     def test_ignored_provider_config_in_archive_fails(self) -> None:
@@ -175,14 +238,72 @@ class PreflightTests(unittest.TestCase):
             self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "AIConfig.plist",
             {"fixture": True},
         )
-        checks = release.archive_checks(self.root, self.archive, scanner=lambda _: True)
+        checks = release.archive_checks(
+            self.root,
+            self.archive,
+            scanner=lambda _: True,
+            uuid_reader=lambda _: TEST_DWARF_UUIDS,
+        )
         self.assertFalse(next(item for item in checks if item.key == "archiveIgnoredConfigsExcluded").passed)
+
+    def test_archive_versions_must_match_each_other_and_release_settings(self) -> None:
+        path = self.archive / release.ARCHIVED_PRODUCTS["NoumWidget"] / "Info.plist"
+        value = plistlib.loads(path.read_bytes())
+        value["CFBundleVersion"] = "3"
+        write_plist(path, value)
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "archiveVersionMetadata").passed)
+
+    def test_archive_rejects_simulator_platform_shape(self) -> None:
+        path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"
+        value = plistlib.loads(path.read_bytes())
+        value["DTPlatformName"] = "iphonesimulator"
+        value["CFBundleSupportedPlatforms"] = ["iPhoneSimulator"]
+        write_plist(path, value)
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "archiveDevicePlatformShape").passed)
+
+    def test_archive_rejects_stale_dsym_uuid(self) -> None:
+        def mismatched(path: Path) -> frozenset[tuple[str, str]]:
+            if ".dSYM" in str(path):
+                return frozenset({("FFFFFFFF-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "arm64")})
+            return TEST_DWARF_UUIDS
+
+        checks = release.archive_checks(
+            self.root,
+            self.archive,
+            scanner=lambda _: True,
+            uuid_reader=mismatched,
+        )
+        self.assertFalse(next(item for item in checks if item.key == "archiveSymbolsPresent").passed)
+
+    def test_archive_requires_compiled_storekit_and_apple_auth_paths(self) -> None:
+        binary = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Noum"
+        binary.write_bytes(b"fixture-without-apple-service-markers")
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "archiveAppleServiceCodePaths").passed)
+
+    def test_archive_requires_app_owned_privacy_and_export_metadata(self) -> None:
+        (self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "PrivacyInfo.xcprivacy").unlink()
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "archiveAppStoreMetadata").passed)
+
+    def test_source_storekit_contract_requires_distinct_products(self) -> None:
+        path = self.root / "Noum/PremiumManager.swift"
+        source = path.read_text(encoding="utf-8")
+        path.write_text(
+            source.replace('static let annualID = "com.noum.pro.annual"', 'static let annualID = "com.noum.pro.monthly"'),
+            encoding="utf-8",
+        )
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "sourceStoreKitContract").passed)
 
     def test_distribution_authority_requires_identity_and_three_profiles(self) -> None:
         checks = release.authority_checks(
             valid_settings(),
             {"valid": 2, "development": 2, "distribution": 0},
             [],
+            distribution_fingerprints=frozenset(),
         )
         self.assertFalse(all(item.passed for item in checks))
         self.assertFalse(next(item for item in checks if item.key == "appleDistributionIdentity").passed)
@@ -193,6 +314,7 @@ class PreflightTests(unittest.TestCase):
             valid_settings(),
             {"valid": 1, "development": 0, "distribution": 1},
             profiles,
+            distribution_fingerprints=frozenset({TEST_DISTRIBUTION_FINGERPRINT}),
         )
         self.assertTrue(all(item.passed for item in checks), checks)
 
@@ -204,6 +326,7 @@ class PreflightTests(unittest.TestCase):
             valid_settings(),
             {"valid": 1, "development": 0, "distribution": 1},
             [profile],
+            distribution_fingerprints=frozenset({TEST_DISTRIBUTION_FINGERPRINT}),
         )
         self.assertFalse(next(item for item in checks if item.key == "appStoreProfileNoumWidget").passed)
 
@@ -214,8 +337,20 @@ class PreflightTests(unittest.TestCase):
             valid_settings(),
             {"valid": 1, "development": 0, "distribution": 1},
             [profile],
+            distribution_fingerprints=frozenset({TEST_DISTRIBUTION_FINGERPRINT}),
         )
         self.assertFalse(next(item for item in checks if item.key == "appStoreProfileNoumMessages").passed)
+
+    def test_profile_must_contain_installed_distribution_identity(self) -> None:
+        profiles = [app_store_profile(target) for target in ("Noum", "NoumWidget", "NoumMessages")]
+        checks = release.authority_checks(
+            valid_settings(),
+            {"valid": 1, "development": 0, "distribution": 1},
+            profiles,
+            distribution_fingerprints=frozenset({"F" * 40}),
+        )
+        self.assertFalse(all(item.passed for item in checks))
+        self.assertFalse(next(item for item in checks if item.key == "appStoreProfileNoum").passed)
 
     def test_external_evidence_is_required(self) -> None:
         checks = release.evidence_checks(None)
@@ -270,14 +405,19 @@ class PreflightTests(unittest.TestCase):
 
     def test_identity_summary_never_returns_names_or_hashes(self) -> None:
         raw = (
-            '  1) ABCDEF "Apple Development: Sensitive Name (TESTTEAM1)"\n'
-            '  2) FEDCBA "Apple Distribution: Sensitive Name (TESTTEAM1)"\n'
+            f'  1) {"A" * 40} "Apple Development: Sensitive Name (TESTTEAM1)"\n'
+            f'  2) {TEST_DISTRIBUTION_FINGERPRINT} "Apple Distribution: Sensitive Name (TESTTEAM1)"\n'
             '     2 valid identities found\n'
         )
         summary = release.identity_counts(raw)
         self.assertEqual(summary, {"valid": 2, "development": 1, "distribution": 1})
         self.assertNotIn("Sensitive", repr(summary))
         self.assertNotIn("TESTTEAM1", repr(summary))
+        self.assertNotIn(TEST_DISTRIBUTION_FINGERPRINT, repr(summary))
+        self.assertEqual(
+            release.distribution_identity_fingerprints(raw),
+            frozenset({TEST_DISTRIBUTION_FINGERPRINT}),
+        )
 
 
 if __name__ == "__main__":

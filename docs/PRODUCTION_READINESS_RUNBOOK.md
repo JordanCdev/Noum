@@ -126,13 +126,18 @@ The command fails closed and reports three separate sections:
 
 - repository/build correctness: Release identifiers, automatic-signing shape,
   source entitlements, App Attest production selection, extension embedding,
-  export options, unsigned archive products and dSYMs, and the redacted bundle
-  scan;
+  the StoreKit 2 source contract, export options, source-aligned archive
+  versions, generic-iPhoneOS/arm64 products, exact extension points, binary-
+  matched dSYMs, compiled StoreKit/AuthenticationServices paths, app-owned
+  privacy/export metadata, and the redacted bundle scan;
 - local paid-team/provisioning authority: counts of valid Apple Distribution
   identities and matching, unexpired App Store profiles for the main app,
-  Widget, and Messages extension; and
+  Widget, and Messages extension. A profile only counts when its embedded
+  distribution certificate matches an installed valid identity; and
 - external TestFlight/launch evidence: acceptance of the physical-TestFlight
-  and operational-launch artifacts by the existing readiness validator.
+  and operational-launch artifacts by the existing readiness validator, with
+  explicit rows for the Apple release-services prerequisite and physical
+  StoreKit purchase/restore proof.
 
 The report never prints certificate names, team identifiers, profile names, or
 profile UUIDs. It never requests provisioning updates, signs an archive, exports
@@ -174,6 +179,16 @@ installation from TestFlight, and the physical-device sweep remain external
 operator work and must be captured through the evidence workflow below. An
 unsigned archive, simulator run, or direct Xcode development install cannot
 close `noRealDeviceTestFlightVerification`.
+
+The current `coach-real-device-testflight-qa-v2` schema structurally validates
+the four high-risk rows in VISION: Live Activity, AI prompt latency, soundscape
+audio session, and StoreKit purchase/restore. It does not turn the other manual
+rows in `docs/TESTFLIGHT_QA.md` into structured evidence. You must still complete
+and independently sign off the same-build physical TestFlight checks for App
+Check/real-microphone transcription, consent and reconnect behavior, Sign in
+with Apple, account deletion, notifications, widgets, accessibility, and the
+remaining mode smoke tests. Do not describe the four-row artifact alone as the
+complete M14 device sweep.
 
 ## Live Cloud Operations Probe
 
