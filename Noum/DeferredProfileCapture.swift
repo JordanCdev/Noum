@@ -97,6 +97,11 @@ final class DeferredProfileCaptureManager: ObservableObject {
     /// prompts the user has already seen or already answered in onboarding.
     func consider(sessionCount: Int, profile: CoachingProfile?) {
         guard sessionCount > 0 else { return }
+        // A user may enter the shell after the permissionless first-value
+        // exercise while their full CoachingProfile is still deferred. A
+        // later spoken rep must not schedule a prompt whose submit path has no
+        // profile to update; the quiet setup-resume card owns that state.
+        guard profile != nil else { return }
         guard pendingPrompt == nil else { return }
 
         // Pick the highest-priority unseen prompt that matches the

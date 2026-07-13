@@ -49,7 +49,9 @@ struct CoachingOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    var onComplete: (() -> Void)? = nil
+    private let prefill: CoachingProfileDraft?
+    private let onComplete: (() -> Void)?
+    private let onDefer: (() -> Void)?
 
     @State private var screen: OnboardingScreen = .intro
     @State private var speakingContext: SpeakingContext = .work
@@ -73,6 +75,16 @@ struct CoachingOnboardingView: View {
     @FocusState private var overlayEditorFocused: Bool
     @Namespace private var headerNamespace
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
+
+    init(
+        prefill: CoachingProfileDraft? = nil,
+        onComplete: (() -> Void)? = nil,
+        onDefer: (() -> Void)? = nil
+    ) {
+        self.prefill = prefill
+        self.onComplete = onComplete
+        self.onDefer = onDefer
+    }
 
     private enum InputField: Hashable {
         case customChallenge
@@ -255,6 +267,18 @@ struct CoachingOnboardingView: View {
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("coaching.start")
+
+                if let onDefer, !isEditingExistingProfile {
+                    Button(action: onDefer) {
+                        Text("Explore first")
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("coaching.defer")
+                    .accessibilityHint("Returns to Noum. Your two earlier choices stay saved.")
+                }
             }
         }
         .padding(24)
@@ -1143,20 +1167,31 @@ struct CoachingOnboardingView: View {
     }
 
     private func loadExistingProfile() {
-        guard !isRealFirstRunUITesting else { return }
-        guard let profile = coachingProfileStore.profile else { return }
-        isEditingExistingProfile = true
-        speakingContext = profile.speakingContext
-        biggestChallenge = profile.biggestChallenge
-        customChallengeText = profile.customChallengeText ?? ""
-        usesCustomChallenge = !customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        // Pre-fill the picker from the user's real prior choice (nil-safe: a
-        // legacy profile that was never genuinely chosen leaves the picker
-        // empty so they pick deliberately when editing).
-        speakingStyleGoal = profile.chosenStyleGoal
-        coachingGoal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
-        whyNow = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
-        successVision = profile.successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !isRealFirstRunUITesting, let profile = coachingProfileStore.profile {
+            isEditingExistingProfile = true
+            speakingContext = profile.speakingContext
+            biggestChallenge = profile.biggestChallenge
+            customChallengeText = profile.customChallengeText ?? ""
+            usesCustomChallenge = !customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Pre-fill the picker from the user's real prior choice (nil-safe: a
+            // legacy profile that was never genuinely chosen leaves the picker
+            // empty so they pick deliberately when editing).
+            speakingStyleGoal = profile.chosenStyleGoal
+            coachingGoal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+            whyNow = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+            successVision = profile.successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+            return
+        }
+
+        // A fast-lane draft owns only the two choices the user actually made.
+        // It can prefill full setup, but must never invent a voice goal or
+        // promote itself into a complete CoachingProfile.
+        if let prefill {
+            speakingContext = prefill.speakingContext
+            biggestChallenge = prefill.speakingChallenge
+            customChallengeText = ""
+            usesCustomChallenge = false
+        }
     }
 
     private var displayedChallengeTitle: String {

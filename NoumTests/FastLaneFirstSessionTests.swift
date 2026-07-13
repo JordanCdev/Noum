@@ -441,4 +441,14 @@ struct FastLaneFirstSessionTests {
         #expect(defaults.data(forKey: keyA) == nil)
         #expect(defaults.data(forKey: keyB) != nil)
     }
+
+    @Test func deferredProfilePromptsWaitForACompleteProfile() {
+        let manager = DeferredProfileCaptureManager.shared
+        manager.resetForUITesting()
+        defer { manager.resetForUITesting() }
+
+        manager.consider(sessionCount: 1, profile: nil)
+
+        #expect(manager.pendingPrompt == nil)
+    }
 }

@@ -60,9 +60,12 @@ struct NoumApp: App {
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
     @State private var showFirstRepCloudProcessingConsent = false
+    @State private var firstRunPostValueChoice: FirstRunOnboardingGate.PostValueChoice?
+    @State private var holdsFastLaneResult = false
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
+    private let isFastLaneUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_FAST_LANE")
 
     init() {
         // Firebase is configured by `firebaseReady` (first stored property)
@@ -146,6 +149,7 @@ struct NoumApp: App {
             PracticeSessionStore.shared.endSession()
             ProfileManager.shared.replaceFromRemote(0)
             CoachingProfileStore.shared.replaceForDebug(nil)
+            CoachingProfileStore.shared.resetOnboardingDraftForDebug()
             AchievementStore.shared.resetForDebug()
             SkillProgressionStore.shared.reset()
             FirstRepCelebrationManager.shared.resetForDebug()
@@ -275,15 +279,28 @@ struct NoumApp: App {
                 }
             }
         case .ready:
-            if shouldShowFirstRunOnboarding {
-                // First-run setup is the app's temporary root, not a cover above
-                // Home. This makes the intake feel deliberate and prevents a
-                // child sheet from racing account hydration.
-                CoachingOnboardingView {
-                    completeFirstRunOnboarding()
-                }
+            switch firstRunRootRoute {
+            case .fastLane:
+                FastLaneOnboardingView(
+                    profileStore: coachingProfileStore,
+                    onValueDelivered: persistStructuredFirstValue,
+                    onCompleteSetup: openFullCoachingSetup,
+                    onEnterApp: enterAppAfterStructuredValue
+                )
                 .interactiveDismissDisabled(true)
-            } else {
+            case .fullOnboarding:
+                // Full setup remains the only route that publishes a complete
+                // CoachingProfile. Fast-lane choices prefill it without
+                // inventing the still-unanswered voice choice.
+                CoachingOnboardingView(
+                    prefill: coachingProfileStore.onboardingDraft,
+                    onComplete: completeFirstRunOnboarding,
+                    onDefer: coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true
+                        ? enterAppAfterStructuredValue
+                        : nil
+                )
+                .interactiveDismissDisabled(true)
+            case .appShell:
                 AppShellView()
             }
         case .needsIdentity, .establishingGuest, .hydratingStores:
@@ -291,22 +308,31 @@ struct NoumApp: App {
         }
     }
 
-    /// Presents onboarding only after the current durable account's stores are
-    /// hydrated. The saved CoachingProfile is the sole completion truth.
-    private var shouldShowFirstRunOnboarding: Bool {
-        FirstRunOnboardingGate.shouldPresent(
-            hasDurableIdentity: AuthManager.hasDurableIdentity(
-                accountID: authManager.currentAccountID,
-                providerRawValue: authManager.currentAuthProviderRawValue
-            ),
-            hasHydratedAccountStores: authManager.initialAccountHydrationState.hasHydratedAccountStores,
+    /// Root policy after account hydration. Existing real-first-run UI tests
+    /// retain their legacy full-onboarding route unless they explicitly opt in
+    /// to the new permissionless fast lane.
+    private var firstRunRootRoute: FirstRunOnboardingGate.RootRoute {
+        if isRealFirstRunUITesting, !isFastLaneUITesting {
+            return coachingProfileStore.profile == nil ? .fullOnboarding : .appShell
+        }
+        if holdsFastLaneResult, coachingProfileStore.profile == nil {
+            return .fastLane
+        }
+        return FirstRunOnboardingGate.rootRoute(
             hasCoachingProfile: coachingProfileStore.profile != nil,
+            draft: coachingProfileStore.onboardingDraft,
+            postValueChoice: firstRunPostValueChoice,
             isUITesting: isUITesting && !isRealFirstRunUITesting
         )
     }
 
     private func completeFirstRunOnboarding() {
         guard coachingProfileStore.profile != nil else { return }
+        if firstRunPostValueChoice == .completeCoachingSetup {
+            firstRunPostValueChoice = .enterApp
+            holdsFastLaneResult = false
+            return
+        }
         guard aiSettings.isCloudProcessingAllowed else {
             showFirstRepCloudProcessingConsent = true
             return
@@ -317,6 +343,41 @@ struct NoumApp: App {
     private func prepareFirstRepLaunch() {
         _ = AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true)
         DeepLinkRouter.shared.pending = URL(string: "noum://practice/timed")
+    }
+
+    private func persistStructuredFirstValue(_ result: StructuredFirstValueResult) -> Bool {
+        guard let draft = coachingProfileStore.onboardingDraft else { return false }
+        // Keep the result surface mounted while the published receipt changes
+        // root-route eligibility. If persistence fails, the response remains
+        // local to the view and no activation event is emitted.
+        holdsFastLaneResult = true
+        guard coachingProfileStore.recordStructuredFirstValue(result: result) else {
+            holdsFastLaneResult = false
+            return false
+        }
+
+        let elapsedMilliseconds = Int(Date().timeIntervalSince(draft.createdAt) * 1_000)
+        FlowEventLog.shared.logOnce(FlowEvent.make(
+            correlationId: draft.correlationID,
+            flow: .other,
+            stage: TransformationKPIEventStage.structuredValueDelivered,
+            reason: "structure-only first value delivered",
+            numerics: [
+                "durationMs": min(60_000, max(0, elapsedMilliseconds)),
+                "wordCount": min(600, max(0, result.wordCount)),
+            ]
+        ))
+        return true
+    }
+
+    private func openFullCoachingSetup() {
+        holdsFastLaneResult = false
+        firstRunPostValueChoice = .completeCoachingSetup
+    }
+
+    private func enterAppAfterStructuredValue() {
+        holdsFastLaneResult = false
+        firstRunPostValueChoice = .enterApp
     }
 
     /// Routes an incoming `noum://` URL to the right surface.

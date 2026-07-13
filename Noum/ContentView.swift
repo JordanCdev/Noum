@@ -389,6 +389,7 @@ struct ContentView: View {
     @State private var pathCelebrationProof: ProofMoment? = nil
     @State private var showBigMomentIntake: Bool = false
     @State private var showGoalReview: Bool = false
+    @State private var showDeferredCoachingSetup = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let launchedWithDeepLink = ProcessInfo.processInfo.arguments.contains("-DeepLink")
@@ -510,6 +511,13 @@ struct ContentView: View {
             )
         ) {
             CoachingOnboardingView()
+        }
+        .fullScreenCover(isPresented: $showDeferredCoachingSetup) {
+            CoachingOnboardingView(
+                prefill: coachingProfileStore.onboardingDraft,
+                onComplete: { showDeferredCoachingSetup = false },
+                onDefer: { showDeferredCoachingSetup = false }
+            )
         }
         // Tier promotion celebration. Surfaces over the home with a
         // tinted radial gradient + sparkle ribbon. Cleared when the
@@ -984,6 +992,13 @@ struct ContentView: View {
             .cardEntrance(0)
         }
 
+        if coachingProfileStore.profile == nil,
+           coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true {
+            deferredCoachingSetupCard
+                .padding(.horizontal, Spacing.screenH)
+                .cardEntrance(1)
+        }
+
         if presentation.showsAskNoum {
             homeAskNoumRow
                 .padding(.horizontal, Spacing.screenH)
@@ -1153,6 +1168,52 @@ struct ContentView: View {
         if showAllHomeCards && authManager.isDeveloper {
             secondaryDiscoveryCard.cardEntrance(4)
         }
+    }
+
+    /// Quiet continuation for people who chose to explore after the
+    /// permissionless first-value exercise. The receipt unlocks navigation,
+    /// not profile-gated coaching claims; completing this card is still the
+    /// only way to publish a full CoachingProfile.
+    private var deferredCoachingSetupCard: some View {
+        Button {
+            showDeferredCoachingSetup = true
+        } label: {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 44, height: 44)
+                    .background(AppColor.brandBlue.opacity(0.08), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Complete coaching setup")
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text("Add how you want to sound so Noum can tailor spoken practice.")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Spacing.xs)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.coachingSetup.resume")
+        .accessibilityHint("Opens the remaining coaching profile setup. Your earlier choices are prefilled.")
     }
 
     @ViewBuilder

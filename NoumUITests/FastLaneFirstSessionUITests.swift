@@ -23,14 +23,18 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         XCTAssertTrue(workContext.waitForExistence(timeout: 5))
         XCTAssertTrue(ramblingChallenge.waitForExistence(timeout: 5))
         assertMinimumTapTarget(workContext)
-        assertMinimumTapTarget(ramblingChallenge)
         workContext.tap()
+        scrollUntilHittable(ramblingChallenge, in: app)
+        assertMinimumTapTarget(ramblingChallenge)
+        XCTAssertTrue(ramblingChallenge.isHittable)
         ramblingChallenge.tap()
 
         let begin = app.buttons["fastLane.begin"]
         XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        scrollUntilHittable(begin, in: app)
         assertMinimumTapTarget(begin)
         XCTAssertTrue(begin.isEnabled)
+        XCTAssertTrue(begin.isHittable)
         begin.tap()
 
         let response = app.descendants(matching: .any)["fastLane.response"]
@@ -60,7 +64,7 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["One next move"].exists)
         XCTAssertTrue(app.staticTexts["Evidence boundary"].exists)
 
-        let evidenceBoundary = result.descendants(matching: .staticText)
+        let evidenceBoundary = app.staticTexts
             .matching(NSPredicate(
                 format: "label CONTAINS[c] 'A written rehearsal can show answer shape'"
             ))
