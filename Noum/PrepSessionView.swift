@@ -160,6 +160,7 @@ struct PrepSessionView: View {
                 .foregroundStyle(AppColor.brandBlue)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 12)
+                .frame(minHeight: 44)
                 .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
             }
             .buttonStyle(.plain)

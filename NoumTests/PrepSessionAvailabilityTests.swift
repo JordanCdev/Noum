@@ -139,7 +139,10 @@ struct PrepSessionAvailabilityTests {
         #expect(readiness.coveredModes == [.timed])
         #expect(readiness.coveredCount == 1)
         #expect(readiness.level == .underway)
-        #expect(readiness.displayLine(for: plan.steps).contains("remain untested"))
+        #expect(
+            readiness.displayLine(for: plan.steps)
+                == "You've completed 1 of 3 planned rehearsal shapes. Pressure round and audience simulation remain untested until available; Timed fallback reps are available."
+        )
         #expect(step(.suddenDeath, in: plan).readinessLabel.contains("Timed fallback offered"))
     }
 

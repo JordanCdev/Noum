@@ -171,7 +171,9 @@ struct PrepSessionReadiness: Equatable {
         let unavailableNames = uncoveredUnavailable
             .map { Self.shapeName(for: $0.mode) }
             .joined(separator: " and ")
-        let availabilityNote = "\(unavailableNames.capitalized) \(uncoveredUnavailable.count == 1 ? "remains" : "remain") untested until available; Timed fallback \(uncoveredUnavailable.count == 1 ? "is" : "reps are") available."
+        let sentenceUnavailableNames = unavailableNames.prefix(1).uppercased()
+            + String(unavailableNames.dropFirst())
+        let availabilityNote = "\(sentenceUnavailableNames) \(uncoveredUnavailable.count == 1 ? "remains" : "remain") untested until available; Timed fallback \(uncoveredUnavailable.count == 1 ? "is" : "reps are") available."
 
         switch level {
         case .notStarted:

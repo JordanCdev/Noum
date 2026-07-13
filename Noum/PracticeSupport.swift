@@ -5068,6 +5068,12 @@ final class AISettingsManager: ObservableObject {
 
     var isCloudProcessingAllowed: Bool {
         #if DEBUG
+        // A denial fixture must win over persisted consent and the positive
+        // fixture so availability tests can prove the fail-closed UI on a
+        // reused simulator without mutating account data.
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_NO_CLOUD_CONSENT") {
+            return false
+        }
         // Cloud-dependent UI tests opt in explicitly. The normal seed does
         // not grant this, so denial/no-transmission coverage keeps exercising
         // the production account-scoped consent boundary.
