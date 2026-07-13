@@ -6133,6 +6133,15 @@ struct CoachChatConversationCorpusTests {
     }
 
     @MainActor
+    static func dumpGoalStyleCalibrationPacketForXCTestBridge() throws {
+        let packet = try GoalStyleCalibrationFixtures.packet()
+        try Self.dumpEvaluationArtifactIfRequested(
+            packet.encodedSortedJSON(),
+            fileName: GoalStyleCalibrationPacket.artifactFileName
+        )
+    }
+
+    @MainActor
     static func dumpProductionReadinessManifestForXCTestBridge() throws {
         let manifest = try Self.productionReadinessEvidenceManifestFromCurrentArtifacts()
         try Self.dumpEvaluationArtifactIfRequested(
@@ -6177,6 +6186,10 @@ final class CoachChatConversationArtifactDumpXCTest: XCTestCase {
 
     func testDumpExpertCalibrationPacket() throws {
         try CoachChatConversationCorpusTests.dumpExpertCalibrationPacketForXCTestBridge()
+    }
+
+    func testDumpGoalStyleCalibrationPacket() throws {
+        try CoachChatConversationCorpusTests.dumpGoalStyleCalibrationPacketForXCTestBridge()
     }
 
     func testDumpProductionReadinessManifest() throws {
