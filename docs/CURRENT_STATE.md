@@ -1,5 +1,32 @@
 # Noum — Current state
 
+## 2026-07-14 — Prep fallback behavior is proved through the rendered route
+
+Prep Session's existing stable-shape availability model now has rendered
+simulator evidence for the cloud-consent-denied state. A DEBUG-only denial
+fixture takes precedence over both persisted consent and the positive consent
+fixture, so a reused simulator deterministically exercises the production
+fail-closed availability boundary without creating another state owner. The
+existing Prep planner still owns the planned rehearsal identity and the
+existing availability projection still owns the runnable destination.
+
+The rendered plan shows Pressure and audience shapes as unavailable, offers
+honest Timed fallbacks, and keeps those fallback reps from counting as coverage
+of the planned shapes. The readiness sentence now preserves product casing
+instead of title-casing every word, and each step action has a 44-point minimum
+touch target. The UI test follows the Pressure fallback into the real Timed
+flow and proves that its category-bounded prompt arrives exactly as rendered by
+the handoff; the moment title and transcript are never placed in navigation.
+
+The final focused iPhone 17 Pro simulator run passed 23/23 tests with zero
+failures or skips: the new end-to-end UI case plus Prep availability, Timed
+prompt handoff, and release identity/privacy contracts. Both retained UI-test
+attachments were visually checked after the copy correction, alongside a light
+five-tab screenshot sweep. This is simulator and source evidence only.
+Physical-device/TestFlight behavior, live-provider execution, professional
+calibration, longitudinal outcomes, and launch operations remain unearned;
+production readiness is still NO-GO.
+
 ## 2026-07-14 — Active-week Phrase Bank execution reaches the real Home
 
 The research audit's weekly rewrite loop now has rendered execution evidence.

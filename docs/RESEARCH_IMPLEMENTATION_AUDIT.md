@@ -5,7 +5,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`936b32aaed84b737fd628cc47491896288c803f6`
+`6db7457fba622893f320bae297de49b988822d44`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -18,14 +18,16 @@ source fingerprint.
 Last complete source-bound evidence checkout:
 `80fbf6d25cfda2b46932a0b0a1a963d156fe7b52`
 
-The explicit-style, rendered-Home, availability, Prep/Train, weekly-phrase,
-Timed-prompt, and privacy-document changes after that evidence checkout now have
-a complete current-working-tree regression: all 3,924 `NoumTests` tests across
-406 suites passed with zero failures, and an unsigned Release simulator build
-succeeded. The canonical coach-evidence refresh from that clean source boundary
-also passes app-path, real-pipeline, and trace-quality gates. The current four-mode
-availability contract is **Proved** at its pure/source boundary; that does not
-prove rendered SwiftUI behavior or the report's wider destination catalog.
+The previously recorded complete regression passed all 3,924 `NoumTests` tests
+across 406 suites with zero failures and an unsigned Release simulator build.
+Later rendered Home and Prep changes are covered by their focused simulator runs
+below; the 3,924-test suite has not been rerun at this inspected commit. The
+canonical coach-evidence refresh from its clean source boundary also passes
+app-path, real-pipeline, and trace-quality gates. The current four-mode
+availability contract is **Proved** at its pure/source boundary, and Prep's
+locked-shape fallback is additionally proved through its rendered route. That
+does not prove rendered behavior for every recommendation surface or the
+report's wider destination catalog.
 
 Integrated branch: `ux-overhaul`
 
@@ -180,7 +182,7 @@ coach.
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
 | Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. Source inspection shows Home and Train consume the shared availability projection; focused unit tests prove projection values, exposure fingerprints, setup/destination, and launch acceptance/fallback semantics. They do not mount either SwiftUI view or execute the real `recordShown`/`markTapped` calls. Home owns its visible exposure; the phantom `ContentView` path and unread global snapshot were removed. This row remains incomplete because the report's wider destination catalog and a rendered end-to-end card/deep-link contract are absent. |
-| Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, and no false acceptance. Prep-specific tests preserve the planned rehearsal identity, render honest Timed fallback copy/setup, withhold false readiness credit, prevent a fallback from upgrading at tap, and route unavailable pressure/audience shapes with a category-bounded prompt containing neither the moment title nor transcript. This is source/pure-projection proof, not rendered UI or the report's wider destination catalog. |
+| Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, and no false acceptance. Prep-specific tests preserve the planned rehearsal identity, render honest Timed fallback copy/setup, withhold false readiness credit, prevent a fallback from upgrading at tap, and route unavailable pressure/audience shapes with a category-bounded prompt containing neither the moment title nor transcript. A focused iPhone 17 Pro simulator UI test now mounts the real Prep surface with both planned shapes locked, verifies the honest readiness labels and 44-point action, follows the Pressure fallback, and proves the exact category prompt reaches Timed. Other recommendation surfaces and the report's wider destination catalog remain outside this rendered proof. |
 
 ### 4. Fast-lane first session
 
@@ -246,7 +248,7 @@ different.
 | PR-1 | High filler burden chooses Ah Counter or Sudden Death | **Incomplete** | Severe filler evidence does trigger one corrective action, commonly a focused filler drill, but there is no literal destination assertion restricting it to those two modes. |
 | PR-2 | Pacing issues choose pace training | **Incomplete** | Pace-focused drill inventory and next-action inputs exist, but the selected report-specific routing assertion is absent. |
 | PR-3 | Interpersonal-pressure goals bias toward Roleplay | **Missing** | The established engine can route IM conversation, not the separate Roleplay curriculum requested by the report. |
-| PR-4 | Locked modes fall back gracefully | **Proved** | The shared four-mode matrix covers locked-at-render and capability-lost-at-tap paths without stale setup/copy/confidence or false acceptance. Prep adds stable planned-shape identity, honest fallback copy/setup, no false readiness credit, no capability-return upgrade, and a route-bound, category-only prompt for unavailable pressure/audience shapes. A matrix for the report's broader destination catalog still does not exist and remains captured by the separate incomplete routing row. |
+| PR-4 | Locked modes fall back gracefully | **Proved** | The shared four-mode matrix covers locked-at-render and capability-lost-at-tap paths without stale setup/copy/confidence or false acceptance. Prep adds stable planned-shape identity, honest fallback copy/setup, no false readiness credit, no capability-return upgrade, and a route-bound, category-only prompt for unavailable pressure/audience shapes. The 2026-07-14 simulator UI test and retained attachments prove the locked Prep copy, touch target, real fallback route, and exact Timed prompt in rendered SwiftUI. This is not physical-device/TestFlight evidence, and a matrix for the report's broader destination catalog still does not exist. |
 | FL-1 | Fresh install reaches a first rep without auth | **Contradicted** | It reaches structured first value without login credentials, after durable guest identity. It does not claim that typing is a rep. |
 | FL-2 | Denied microphone does not dead-end | **Proved** | The written rehearsal path is permissionless, and upgrade routing is separately tested. |
 | FL-3 | Completed first rep resumes full onboarding later | **Incomplete** | Structured first value resumes prefilled full onboarding and later spoken practice; the literal initial spoken-rep case is not the fast-lane contract. |
@@ -299,16 +301,17 @@ substrate, but it is not a cohort analytics service.
 Source binding matters here. The `40d5e903` rows remain valid historical evidence
 for that named baseline. The current canonical artifact is bound to clean source
 commit `80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; focused checks
-prove their narrowed contracts and the completed full regression proves the
-integrated test target.
+prove their narrowed contracts and the completed full regression proves its
+recorded integrated source boundary.
 
-| Evidence item | Classification | Result on 2026-07-13 |
+| Evidence item | Classification | Result |
 |---|---|---|
-| Full integrated Swift regression for the newer source | **Proved** | The final integrated current working tree passed 3,924/3,924 `NoumTests` tests across 406 suites with zero failures. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. Its unsigned Release simulator build also succeeded. |
+| Recorded full integrated Swift regression | **Proved** | The recorded integrated source boundary passed 3,924/3,924 `NoumTests` tests across 406 suites with zero failures. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. Its unsigned Release simulator build also succeeded. Later rendered Home and Prep commits have focused coverage, not a rerun of this complete suite. |
 | Selected pre-baseline Swift product/test contracts | **Proved** | At `40d5e903`, focused simulator tests passed for goal calibration/outcomes, rewrite, Phrase Bank, prescription, fast lane, local speech, privacy, KPI, and experiment contracts. They remain valid for that named source boundary, not as a substitute for the final full run. |
 | Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. App-path rows carry an explicit styled, neutral, or unknown semantic expectation. Styled turns require a passed gate and typed assessment; known neutral turns require `notEvaluated` without typed assessment; unknown IDs fail closed. The 25 supplemental arena scenarios are explicitly neutral at construction, so missing fixtures cannot silently inherit neutrality. Fabricated/default voice telemetry remains rejected. The refreshed commit-bound report preserves this contract with 23 styled, 27 neutral, and zero invalid selected traces. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
 | Rendered active-week phrase execution | **Proved** | On 2026-07-14, `testActiveWeekPhraseLaunchesExactPromptFromHome` passed on the iPhone 17 Pro simulator and retained an attachment of the exact saved line in Timed's thinking phase. The same 19-test focused run passed `ForwardPlanPhraseHandoffTests`, `PhrasePracticeIntentTests`, and `TimedPracticePromptHandoffTests`, including account binding and exact-once consumption. This is simulator/source evidence, not physical-device, TestFlight, or longitudinal outcome evidence. |
+| Rendered Prep availability fallback | **Proved** | On 2026-07-14, a combined 23-test focused run passed the real locked-shape Prep UI flow plus `PrepSessionAvailabilityTests`, `TimedPracticePromptHandoffTests`, and `ReleaseIdentityPrivacyTests`, with zero failures or skips. Retained attachments `prep-locked-shapes-timed-fallbacks` and `prep-pressure-fallback-exact-timed-prompt` were visually checked after the readiness-copy correction. They prove honest planned-shape status, Timed fallback actions, a 44-point target, and the exact category prompt at the destination on the iPhone 17 Pro simulator—not physical-device or TestFlight behavior. |
 | Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and the current 126-test Python runner suite pass. The canonical artifact is refreshed from `80fbf6d2` and its current coach-source fingerprint. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
 | Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate now revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
 | Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
