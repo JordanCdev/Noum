@@ -275,7 +275,7 @@ struct SummaryView: View {
     /// consulted only as the explicit first-rep / below-floor / legacy
     /// fallback encoded by `SummaryPrescriptionProjection`.
     private var summaryPrescription: SummaryPrescriptionProjection {
-        let action = committedFinalization?.nextAction ?? finalizedNextAction
+        let action = finalizedActionForSummary
         let existingSetup = existingIMPrescriptionSetup(for: action)
         return SummaryPrescriptionProjection.resolve(
             nextAction: action,
@@ -283,6 +283,26 @@ struct SummaryView: View {
             existingScenario: existingSetup?.scenario,
             existingTone: existingSetup?.tone
         )
+    }
+
+    /// Keeps the existing prescribed-rep UI fixture deterministic after the
+    /// Summary moved from a separate goal card action to the finalizer-owned
+    /// projection. Production always returns the actual finalized decision.
+    private var finalizedActionForSummary: NextAction? {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_GOAL_OUTCOME_TIMED") {
+            return NextAction(
+                primary: .practiceMode(
+                    .timed,
+                    reason: "Run one comparable Timed rep against the same target."
+                ),
+                secondary: nil,
+                reasoning: "The established goal read has enough evidence for one comparable follow-up.",
+                confidenceLevel: .established
+            )
+        }
+        #endif
+        return committedFinalization?.nextAction ?? finalizedNextAction
     }
 
     /// Preserve an already-computed IM scenario/tone only when the finalized

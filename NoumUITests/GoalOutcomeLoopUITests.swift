@@ -15,9 +15,12 @@ final class GoalOutcomeLoopUITests: XCTestCase {
 
         dismissProgressionIfNeeded(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["summary.postRepVerdict"].waitForExistence(timeout: 15))
-        openDetails(in: app)
 
-        let practice = app.buttons["goalOutcome.practice"]
+        XCTAssertFalse(
+            app.buttons["goalOutcome.practice"].exists,
+            "Goal movement is evidence; the finalizer-owned Summary action must be the only prescription."
+        )
+        let practice = app.buttons["summary.postRepVerdict.fullRetry"]
         scrollUntilHittable(practice, in: app, attempts: 10)
         XCTAssertTrue(practice.waitForExistence(timeout: 5))
         practice.tap()
@@ -80,10 +83,25 @@ final class GoalOutcomeLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Phrase bank"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["No saved phrases"].exists)
 
+        let practicePhrase = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "phraseBank.practice.")
+        ).firstMatch
+        XCTAssertTrue(
+            practicePhrase.waitForExistence(timeout: 5),
+            "A saved rewrite should be practiceable through the existing Timed handoff."
+        )
+        XCTAssertGreaterThanOrEqual(practicePhrase.frame.height, 44)
+
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "on-device-rewrite-phrase-bank"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        practicePhrase.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
+            "Practising a saved phrase should launch the existing Timed destination."
+        )
     }
 
     @MainActor
