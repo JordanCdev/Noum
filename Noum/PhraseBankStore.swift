@@ -43,6 +43,7 @@ struct PhraseBankEntry: Codable, Equatable, Identifiable {
 final class PhraseBankStore: ObservableObject {
     static let shared = PhraseBankStore()
     static let maximumEntries = 40
+    nonisolated static let maximumTextCharacters = 320
     static let storageKeyPrefix = "phraseBank.entries"
 
     @Published private(set) var entries: [PhraseBankEntry] = []
@@ -135,7 +136,7 @@ final class PhraseBankStore: ObservableObject {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalized.count >= 3 else { return nil }
-        let bounded = String(normalized.prefix(320))
+        let bounded = String(normalized.prefix(Self.maximumTextCharacters))
         let sensitivePatterns = [
             #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
             #"(?:\+?\d[\s().-]*){8,}"#,

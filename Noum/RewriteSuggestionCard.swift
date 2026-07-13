@@ -24,6 +24,7 @@ struct RewriteSuggestionCard: View {
     let weakness: AIRewriteService.Weakness
     var targetDimension: String? = nil
     var transcriptConfidence: Double? = nil
+    var onPracticePhrase: ((PhrasePracticeIntent) -> Void)? = nil
 
     @StateObject private var phraseBank = PhraseBankStore.shared
     @State private var rewrite: Rewrite?
@@ -81,7 +82,10 @@ struct RewriteSuggestionCard: View {
             showOriginal = false
         }
         .sheet(isPresented: $showPhraseBank) {
-            PhraseBankSheet(store: phraseBank)
+            PhraseBankSheet(
+                store: phraseBank,
+                onPracticePhrase: onPracticePhrase
+            )
         }
     }
 
@@ -320,8 +324,9 @@ struct RewriteSuggestionCard: View {
 }
 
 @available(iOS 17.0, *)
-private struct PhraseBankSheet: View {
+struct PhraseBankSheet: View {
     @ObservedObject var store: PhraseBankStore
+    var onPracticePhrase: ((PhrasePracticeIntent) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -343,6 +348,29 @@ private struct PhraseBankSheet: View {
                             Text(metadata(for: entry))
                                 .font(Typography.caption)
                                 .foregroundStyle(.secondary)
+
+                            if let intent = Self.practiceIntent(
+                                for: entry,
+                                onPracticePhrase: onPracticePhrase
+                            ) {
+                                Button {
+                                    Self.performPractice(
+                                        intent,
+                                        onPracticePhrase: onPracticePhrase,
+                                        dismiss: { dismiss() }
+                                    )
+                                } label: {
+                                    Label("Practice phrase", systemImage: "timer")
+                                        .font(Typography.caption.weight(.semibold))
+                                        .foregroundStyle(AppColor.modeTimed)
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Practice phrase")
+                                .accessibilityHint("Starts Timed Practice with this saved phrase.")
+                                .accessibilityIdentifier("phraseBank.practice.\(entry.id.uuidString)")
+                            }
                         }
                         .padding(.vertical, 4)
                         .swipeActions {
@@ -368,6 +396,26 @@ private struct PhraseBankSheet: View {
     private func metadata(for entry: PhraseBankEntry) -> String {
         let voice = entry.voice?.title ?? "General"
         return "\(voice) · \(entry.intensity.title) change · \(entry.weakness.humanLabel)"
+    }
+
+    /// Keeps the action absent unless an owner can route it and the saved
+    /// phrase still passes the store's privacy boundary.
+    nonisolated static func practiceIntent(
+        for entry: PhraseBankEntry,
+        onPracticePhrase: ((PhrasePracticeIntent) -> Void)?
+    ) -> PhrasePracticeIntent? {
+        guard onPracticePhrase != nil else { return nil }
+        return PhrasePracticeIntent(entry: entry)
+    }
+
+    nonisolated static func performPractice(
+        _ intent: PhrasePracticeIntent,
+        onPracticePhrase: ((PhrasePracticeIntent) -> Void)?,
+        dismiss: () -> Void
+    ) {
+        guard let onPracticePhrase else { return }
+        onPracticePhrase(intent)
+        dismiss()
     }
 }
 
