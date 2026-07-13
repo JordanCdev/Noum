@@ -10,14 +10,23 @@ import coach_arena as arena
 def complete_app_path_trace():
     return {
         "candidateSource": "appPathReport",
-        "context": {"conversationID": "c1", "surface": "text"},
+        "context": {
+            "conversationID": "c1",
+            "surface": "text",
+            "semanticGateExpectation": "passedWithTypedAssessment",
+            "semanticGateProvenanceMismatch": False,
+        },
         "retrieval": {"retrievedCardIDs": ["card-1"], "queryPresent": True},
         "memory": {
             "turnDepth": "groundedRead",
+            "typedAssessmentPresent": True,
             "assessmentConfidence": 0.42,
             "proofTestHash": "proof-1",
         },
-        "reasoning": {"qualityGateOutcome": "accepted"},
+        "reasoning": {
+            "semanticGateOutcome": "passed",
+            "qualityGateOutcome": "accepted",
+        },
         "prompt": {"source": "CoachReplyPipeline app-path test"},
         "provider": {"name": "mocked-provider"},
         "rawReply": "Run one 60-second rep.",
@@ -94,6 +103,24 @@ def scored_trace_result(index, *, reply=None, trajectory_cache_hit=True):
     return result
 
 
+def neutral_app_path_result():
+    result = scored_result()
+    result["fixture"] = {
+        "id": "declared-neutral-fixture",
+        "turnType": "quickMove",
+    }
+    trace = result["trace"]
+    trace["context"]["semanticGateExpectation"] = (
+        "notEvaluatedWithoutTypedAssessment"
+    )
+    trace["memory"]["turnDepth"] = "quickMove"
+    trace["memory"]["typedAssessmentPresent"] = False
+    trace["memory"].pop("assessmentConfidence")
+    trace["memory"].pop("proofTestHash")
+    trace["reasoning"]["semanticGateOutcome"] = "notEvaluated"
+    return result
+
+
 def gold_fixture(fixture_id):
     fixtures = json.loads(arena.DEFAULT_FIXTURES.read_text(encoding="utf-8"))
     for fixture in fixtures:
@@ -123,6 +150,107 @@ def app_fixture(overrides=None):
 
 
 class AppPathBoundaryTests(unittest.TestCase):
+    def test_declared_neutral_trace_does_not_require_styled_assessment_fields(self):
+        audit = arena.trace_quality_audit([neutral_app_path_result()])
+
+        self.assertTrue(audit["passes"], audit["failures"])
+        self.assertEqual(
+            audit["semanticAssessmentProvenance"]["neutralCount"],
+            1,
+        )
+        self.assertEqual(audit["semanticAssessmentProvenance"]["invalidCount"], 0)
+        self.assertEqual(audit["assessmentConfidence"]["missingCount"], 0)
+        self.assertEqual(audit["proofTest"]["missingCount"], 0)
+
+    def test_ungrounded_neutral_empty_retrieval_still_fails_trace_quality(self):
+        result = neutral_app_path_result()
+        result["trace"]["retrieval"] = {
+            "retrievedCardIDs": [],
+            "queryPresent": True,
+            "hasDiagnosis": False,
+            "diagnosticReason": "No cards matched turn",
+        }
+
+        audit = arena.trace_quality_audit([result])
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["retrieval"]["emptyRetrievedCardsCount"], 1)
+        self.assertEqual(audit["retrieval"]["allowedEmptyRetrievedCardsCount"], 0)
+
+    def test_declared_neutral_trace_rejects_fabricated_assessment_telemetry(self):
+        result = neutral_app_path_result()
+        result["trace"]["memory"]["assessmentConfidence"] = 0.20
+        result["trace"]["memory"]["proofTestHash"] = "fabricated-neutral-proof"
+
+        audit = arena.trace_quality_audit([result])
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["semanticAssessmentProvenance"]["invalidCount"], 1)
+        self.assertTrue(any(
+            "invalid semantic assessment provenance" in failure
+            for failure in audit["failures"]
+        ))
+
+    def test_styled_trace_missing_assessment_fields_fails_closed(self):
+        result = scored_result()
+        result["trace"]["memory"].pop("assessmentConfidence")
+        result["trace"]["memory"].pop("proofTestHash")
+
+        audit = arena.trace_quality_audit([result])
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["semanticAssessmentProvenance"]["invalidCount"], 1)
+        self.assertEqual(audit["assessmentConfidence"]["missingCount"], 1)
+        self.assertEqual(audit["proofTest"]["missingCount"], 1)
+
+    def test_unknown_and_legacy_trace_provenance_fail_closed(self):
+        unknown = scored_result()
+        unknown["trace"]["context"]["semanticGateExpectation"] = (
+            "unknownFixtureFailClosed"
+        )
+        legacy = scored_trace_result(2)
+        legacy["trace"]["context"].pop("semanticGateExpectation")
+
+        audit = arena.trace_quality_audit([unknown, legacy])
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["semanticAssessmentProvenance"]["invalidCount"], 2)
+
+    def test_app_path_adapter_carries_row_owned_neutral_provenance(self):
+        exported = complete_app_path_trace()
+        exported["context"].pop("semanticGateExpectation")
+        exported["context"].pop("semanticGateProvenanceMismatch")
+        exported["memory"].pop("typedAssessmentPresent")
+        exported["memory"].pop("assessmentConfidence")
+        exported["memory"].pop("proofTestHash")
+        exported["reasoning"]["semanticGateOutcome"] = "notEvaluated"
+        turn = {
+            "turnIndex": 0,
+            "userTurn": "What should I do next?",
+            "semanticGateExpectation": "notEvaluatedWithoutTypedAssessment",
+            "semanticGateOutcome": "notEvaluated",
+            "typedAssessmentPresent": False,
+            "assessmentConfidence": None,
+            "proofTestHash": None,
+            "arenaTrace": exported,
+        }
+
+        trace = arena.app_path_trace(
+            {"conversationID": "neutral", "sourceFixtureID": "neutral-source"},
+            turn,
+            {"surface": "text"},
+            Path("/tmp/app-path.json"),
+            "explicitAlias",
+        )
+
+        self.assertEqual(
+            trace["context"]["semanticGateExpectation"],
+            "notEvaluatedWithoutTypedAssessment",
+        )
+        self.assertIs(trace["memory"]["typedAssessmentPresent"], False)
+        self.assertFalse(trace["context"]["semanticGateProvenanceMismatch"])
+        self.assertEqual(arena.trace_semantic_gate_provenance(trace), "neutral")
+
     def test_thin_evidence_empty_retrieval_is_intentional(self):
         result = scored_result()
         result["trace"]["memory"]["assessmentConfidence"] = 0.20

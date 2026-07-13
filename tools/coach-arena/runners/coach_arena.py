@@ -3,6 +3,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -1380,6 +1381,31 @@ def app_path_trace(row, turn, report, source_path, match_source):
         context.setdefault("userTurn", turn.get("userTurn"))
         context.setdefault("surface", report.get("surface"))
         context.setdefault("matchSource", match_source)
+        provenance_mismatch = merge_trace_field(
+            context,
+            "semanticGateExpectation",
+            turn.get("semanticGateExpectation"),
+        )
+        memory = dict(trace.get("memory") or {})
+        for field in (
+            "typedAssessmentPresent",
+            "assessmentConfidence",
+            "proofTestHash",
+        ):
+            provenance_mismatch = merge_trace_field(
+                memory,
+                field,
+                turn.get(field),
+            ) or provenance_mismatch
+        trace["memory"] = memory
+        reasoning = dict(trace.get("reasoning") or {})
+        provenance_mismatch = merge_trace_field(
+            reasoning,
+            "semanticGateOutcome",
+            turn.get("semanticGateOutcome"),
+        ) or provenance_mismatch
+        trace["reasoning"] = reasoning
+        context["semanticGateProvenanceMismatch"] = provenance_mismatch
         trace["context"] = context
         trace.setdefault("retrieval", turn.get("retrievalTrace"))
         cache = dict(trace.get("cache") or {})
@@ -1405,11 +1431,14 @@ def app_path_trace(row, turn, report, source_path, match_source):
             "turnIndex": turn.get("turnIndex"),
             "userTurn": turn.get("userTurn"),
             "surface": report.get("surface"),
-            "matchSource": match_source
+            "matchSource": match_source,
+            "semanticGateExpectation": turn.get("semanticGateExpectation"),
+            "semanticGateProvenanceMismatch": False,
         },
         "retrieval": turn.get("retrievalTrace"),
         "memory": {
             "turnDepth": turn.get("turnDepth"),
+            "typedAssessmentPresent": turn.get("typedAssessmentPresent"),
             "assessmentConfidence": turn.get("assessmentConfidence"),
             "proofTestHash": turn.get("proofTestHash"),
             "proofTestRecentlyRepeated": turn.get("proofTestRecentlyRepeated")
@@ -1451,6 +1480,14 @@ def app_path_trace(row, turn, report, source_path, match_source):
             "deterministicAssessmentFallbackApplied": turn.get("deterministicAssessmentFallbackApplied")
         }
     }
+
+
+def merge_trace_field(container, field, source_value):
+    """Merge a row-owned app-path field and report any trace disagreement."""
+    if field in container and container.get(field) != source_value:
+        return True
+    container[field] = source_value
+    return False
 
 
 def run_replay_command(command, fixture):
@@ -1868,6 +1905,52 @@ def trace_audit(results):
     }
 
 
+def valid_assessment_confidence(value):
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and 0.0 <= float(value) <= 1.0
+    )
+
+
+def trace_semantic_gate_provenance(trace):
+    context = trace.get("context") or {}
+    memory = trace.get("memory") or {}
+    reasoning = trace.get("reasoning") or {}
+    if context.get("semanticGateProvenanceMismatch") is True:
+        return "invalid"
+
+    expectation = context.get("semanticGateExpectation")
+    outcome = reasoning.get("semanticGateOutcome")
+    typed_assessment_present = memory.get("typedAssessmentPresent")
+    confidence = memory.get("assessmentConfidence")
+    proof_hash = memory.get("proofTestHash")
+
+    if expectation == "passedWithTypedAssessment":
+        if (
+            outcome == "passed"
+            and typed_assessment_present is True
+            and valid_assessment_confidence(confidence)
+            and isinstance(proof_hash, str)
+            and bool(proof_hash.strip())
+        ):
+            return "styled"
+        return "invalid"
+    if expectation == "notEvaluatedWithoutTypedAssessment":
+        if (
+            outcome == "notEvaluated"
+            and typed_assessment_present is False
+            and confidence is None
+            and proof_hash is None
+        ):
+            return "neutral"
+        return "invalid"
+    # Unknown expectations and legacy traces without an explicit declaration
+    # may not inherit the neutral exception.
+    return "invalid"
+
+
 def trace_quality_audit(results):
     real_pipeline_items = [
         item for item in results
@@ -1879,6 +1962,11 @@ def trace_quality_audit(results):
     missing_final_reply_fixture_ids = []
     confidence_values = []
     missing_confidence_fixture_ids = []
+    invalid_confidence_fixture_ids = []
+    styled_expectation_fixture_ids = []
+    styled_provenance_fixture_ids = []
+    neutral_provenance_fixture_ids = []
+    invalid_provenance_fixture_ids = []
     trajectory_cache_hit_fixture_ids = []
     trajectory_cache_miss_fixture_ids = []
     missing_trajectory_cache_fixture_ids = []
@@ -1899,12 +1987,24 @@ def trace_quality_audit(results):
         context = trace.get("context") or {}
         cache = trace.get("cache") or {}
         surface = context.get("surface")
+        semantic_provenance = trace_semantic_gate_provenance(trace)
+        expectation = context.get("semanticGateExpectation")
+
+        if expectation == "passedWithTypedAssessment":
+            styled_expectation_fixture_ids.append(fixture_id)
+        if semantic_provenance == "styled":
+            styled_provenance_fixture_ids.append(fixture_id)
+        elif semantic_provenance == "neutral":
+            neutral_provenance_fixture_ids.append(fixture_id)
+        else:
+            invalid_provenance_fixture_ids.append(fixture_id)
 
         proof_hash = memory.get("proofTestHash")
-        if isinstance(proof_hash, str) and proof_hash.strip():
-            proof_hash_counts.setdefault(proof_hash, []).append(fixture_id)
-        else:
-            missing_proof_fixture_ids.append(fixture_id)
+        if expectation == "passedWithTypedAssessment":
+            if isinstance(proof_hash, str) and proof_hash.strip():
+                proof_hash_counts.setdefault(proof_hash, []).append(fixture_id)
+            else:
+                missing_proof_fixture_ids.append(fixture_id)
 
         reply_hash = normalized_reply_hash(trace.get("finalReply") or item.get("reply"))
         if reply_hash:
@@ -1913,10 +2013,13 @@ def trace_quality_audit(results):
             missing_final_reply_fixture_ids.append(fixture_id)
 
         confidence = memory.get("assessmentConfidence")
-        if isinstance(confidence, (int, float)):
-            confidence_values.append(round(float(confidence), 2))
-        else:
-            missing_confidence_fixture_ids.append(fixture_id)
+        if expectation == "passedWithTypedAssessment":
+            if valid_assessment_confidence(confidence):
+                confidence_values.append(round(float(confidence), 2))
+            elif confidence is None:
+                missing_confidence_fixture_ids.append(fixture_id)
+            else:
+                invalid_confidence_fixture_ids.append(fixture_id)
 
         trajectory_cache_hit = cache.get("trajectoryCacheHit")
         if isinstance(trajectory_cache_hit, bool):
@@ -1960,7 +2063,10 @@ def trace_quality_audit(results):
         [len(fixture_ids) for fixture_ids in proof_hash_counts.values()],
         default=0
     )
-    max_proof_hash_reuse_allowed = max(3, (len(real_pipeline_items) + 4) // 5)
+    max_proof_hash_reuse_allowed = max(
+        3,
+        (len(styled_expectation_fixture_ids) + 4) // 5,
+    )
     repeated_reply_hashes = {
         reply_hash: fixture_ids
         for reply_hash, fixture_ids in reply_hash_counts.items()
@@ -1977,6 +2083,11 @@ def trace_quality_audit(results):
     min_trajectory_cache_hits = 1 if real_pipeline_items else 0
     confidence_distinct_count = len(set(confidence_values))
     failures = []
+    if invalid_provenance_fixture_ids:
+        failures.append(
+            f"{len(invalid_provenance_fixture_ids)} real-pipeline trace(s) "
+            "have invalid semantic assessment provenance"
+        )
     if missing_proof_fixture_ids:
         failures.append(f"{len(missing_proof_fixture_ids)} real-pipeline trace(s) missing proofTestHash")
     if missing_final_reply_fixture_ids:
@@ -1992,12 +2103,17 @@ def trace_quality_audit(results):
             "finalReply reused exactly across "
             f"{max_reply_hash_reuse} real-pipeline fixtures"
         )
-    if real_pipeline_items and confidence_distinct_count < min(3, len(real_pipeline_items)):
+    if (
+        styled_expectation_fixture_ids
+        and confidence_distinct_count < min(3, len(styled_expectation_fixture_ids))
+    ):
         failures.append(
             f"assessmentConfidence has only {confidence_distinct_count} distinct rounded value(s)"
         )
     if missing_confidence_fixture_ids:
         failures.append(f"{len(missing_confidence_fixture_ids)} real-pipeline trace(s) missing assessmentConfidence")
+    if invalid_confidence_fixture_ids:
+        failures.append(f"{len(invalid_confidence_fixture_ids)} real-pipeline trace(s) have invalid assessmentConfidence")
     if missing_trajectory_cache_fixture_ids:
         failures.append(f"{len(missing_trajectory_cache_fixture_ids)} real-pipeline trace(s) missing trajectoryCacheHit")
     if real_pipeline_items and len(trajectory_cache_hit_fixture_ids) < min_trajectory_cache_hits:
@@ -2023,6 +2139,14 @@ def trace_quality_audit(results):
         "eligibleTraceCount": len(real_pipeline_items),
         "passes": bool(real_pipeline_items) and not failures,
         "failures": sorted(set(failures)),
+        "semanticAssessmentProvenance": {
+            "styledCount": len(styled_provenance_fixture_ids),
+            "styledFixtureIDs": styled_provenance_fixture_ids[:10],
+            "neutralCount": len(neutral_provenance_fixture_ids),
+            "neutralFixtureIDs": neutral_provenance_fixture_ids[:10],
+            "invalidCount": len(invalid_provenance_fixture_ids),
+            "invalidFixtureIDs": invalid_provenance_fixture_ids[:10],
+        },
         "proofTest": {
             "missingCount": len(missing_proof_fixture_ids),
             "missingFixtureIDs": missing_proof_fixture_ids[:10],
@@ -2055,6 +2179,8 @@ def trace_quality_audit(results):
         "assessmentConfidence": {
             "missingCount": len(missing_confidence_fixture_ids),
             "missingFixtureIDs": missing_confidence_fixture_ids[:10],
+            "invalidCount": len(invalid_confidence_fixture_ids),
+            "invalidFixtureIDs": invalid_confidence_fixture_ids[:10],
             "distinctRoundedCount": confidence_distinct_count,
             "min": min(confidence_values) if confidence_values else None,
             "max": max(confidence_values) if confidence_values else None
@@ -2114,7 +2240,7 @@ def empty_retrieval_is_intentional(trace, retrieval):
     if (
         "no cards matched turn" in diagnostic and
         retrieval.get("hasDiagnosis") is False and
-        isinstance(assessment_confidence, (int, float)) and
+        valid_assessment_confidence(assessment_confidence) and
         float(assessment_confidence) <= 0.20
     ):
         return True
@@ -2551,6 +2677,7 @@ def render_markdown(report):
         proof_test = trace_quality.get("proofTest") or {}
         final_reply = trace_quality.get("finalReply") or {}
         confidence = trace_quality.get("assessmentConfidence") or {}
+        semantic_provenance = trace_quality.get("semanticAssessmentProvenance") or {}
         trajectory_cache = trace_quality.get("trajectoryCache") or {}
         retrieval = trace_quality.get("retrieval") or {}
         latency = trace_quality.get("latency") or {}
@@ -2560,6 +2687,9 @@ def render_markdown(report):
             "",
             f"- Eligible real-pipeline traces: `{trace_quality.get('eligibleTraceCount', 0)}`",
             f"- Passes: `{trace_quality.get('passes')}`",
+            f"- Styled assessment traces: `{semantic_provenance.get('styledCount')}`",
+            f"- Declared-neutral assessment traces: `{semantic_provenance.get('neutralCount')}`",
+            f"- Invalid assessment-provenance traces: `{semantic_provenance.get('invalidCount')}`",
             f"- Unique proof-test hashes: `{proof_test.get('uniqueHashCount')}`",
             f"- Max proof-test hash reuse: `{proof_test.get('maxHashReuse')}`",
             f"- Max proof-test hash reuse allowed: `{proof_test.get('maxHashReuseAllowed')}`",

@@ -719,7 +719,11 @@ enum CoachChatConversationCorpus {
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "live-latency-short-044",
-            userTurn: "Quickly, what do I do next?",
+            // This latency fixture is intentionally profile-neutral, but it is
+            // not evidence-free. Name the already-observed close in the user
+            // turn so the real retriever can ground the scripted close move
+            // instead of accepting an ungrounded provider target.
+            userTurn: "Quickly, what do I do next about the close?",
             coachReply: "The close is the lever, so make the final sentence the ask, then stop."
         ),
         explicitNeutralArenaAppPathScript(
@@ -2847,6 +2851,13 @@ struct CoachChatConversationCorpusTests {
                 $0.semanticGateExpectationSatisfied
         })
         #expect(appPathTurns.allSatisfy { $0.retrievalTrace != nil })
+        let liveLatencyRow = try #require(report.rows.first {
+            $0.sourceFixtureID == "live-latency-short-044"
+        })
+        let liveLatencyRetrieval = try #require(liveLatencyRow.turns.first?.retrievalTrace)
+        #expect(liveLatencyRetrieval.retrievedCardIDs.contains {
+            $0.contains("close")
+        })
         #expect(appPathTurns.allSatisfy { $0.arenaTrace != nil })
         let appPathPromptModules = appPathTurns.compactMap { $0.arenaTrace?.prompt.modules }
         #expect(appPathPromptModules.count == expectedTurnCount)
