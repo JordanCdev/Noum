@@ -9,7 +9,9 @@
 # Optional authenticated probe (once the backend requires it):
 #   BACKEND_API_KEY=... NOUM_ACCOUNT_ID=... NOUM_AUTH_PROVIDER=apple ./scripts/verify_deepgram_endpoint.sh
 #
-# The robust signal is step 1 (unauthenticated probe must be non-200). Step 2's
+# The robust signal is step 1 (unauthenticated probe must be non-200). The script
+# exits nonzero while that invariant is violated, so CI/operator workflows cannot
+# mistake a printed warning for a passing credential-incident check. Step 2's
 # scope inspection depends on Deepgram's auth/token endpoint behaviour — treat it
 # as best-effort and confirm against current Deepgram docs.
 set -euo pipefail
@@ -18,6 +20,7 @@ set -euo pipefail
 trap 'rm -f /tmp/dg_unauth.json /tmp/dg_auth.json 2>/dev/null || true' EXIT INT TERM
 
 BASE="${BACKEND_BASE_URL:-}"
+verification_status=0
 if [[ -z "$BASE" ]]; then
   PLIST="$(cd "$(dirname "$0")/.." && pwd)/Noum/BackendConfig.plist"
   if [[ -f "$PLIST" ]]; then
@@ -85,6 +88,7 @@ code=$(curl -s -o /tmp/dg_unauth.json -w '%{http_code}' -H 'X-Noum-Account-ID: p
 echo "HTTP $code"
 if [[ "$code" == "200" ]]; then
   echo "STILL LEAKING — endpoint returned 200 to an unauthenticated caller."
+  verification_status=1
   echo "   Inspecting the leaked key's scope (pre-fix diagnostic):"
   check_scope "$(extract_key /tmp/dg_unauth.json)"
   validate_response /tmp/dg_unauth.json
@@ -108,3 +112,4 @@ fi
 
 echo
 echo "Pass criteria: step 1 = non-200; authenticated key (step 2) = usage:write only, with a short expiry."
+exit "$verification_status"
