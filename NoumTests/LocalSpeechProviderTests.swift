@@ -48,6 +48,36 @@ struct LocalSpeechProviderTests {
         #expect(await fallback.starts == 0)
     }
 
+    @Test func semanticFillerDetectionDoesNotChangeWithProviderHints() {
+        let transcript = "Um, I like the direction, so the next step is clear."
+        let prompt = "What is the next step?"
+        let routes: [(TranscriptionProviderID, TranscriptUpdate)] = [
+            (.local, update(transcript, providerFillers: nil)),
+            (.deepgram, update(transcript, providerFillers: ["um", "like", "so"])),
+            (.google, update(transcript, providerFillers: [])),
+            (.aws, update(transcript, providerFillers: ["um"])),
+        ]
+
+        let signatures = routes.map { _, update in
+            FillerWordDetector.detections(in: update.text, prompt: prompt).map {
+                "\($0.word.lowercased())|\($0.range.location)|\($0.range.length)|\($0.confidence)"
+            }
+        }
+
+        #expect(Set(routes.map(\.0)) == Set(TranscriptionProviderID.allCases))
+        #expect(signatures.dropFirst().allSatisfy { $0 == signatures[0] })
+        #expect(signatures[0].contains { $0.hasPrefix("um|") })
+    }
+
+    @Test func unsupportedOnDeviceLocaleExplainsTheDeviceBoundary() {
+        let message = LocalSpeechError
+            .onDeviceRecognitionUnavailable("es-ES")
+            .errorDescription
+
+        #expect(message == "On-device transcription isn't available for es-ES on this device.")
+        #expect(message?.contains("on this device") == true)
+    }
+
     @Test func cloudStartupFallbackProducesContentFreeNotice() {
         let notice = SpeechRecognizerViewModel.routeNotice(
             requestedCloud: true,
@@ -98,6 +128,20 @@ struct LocalSpeechProviderTests {
             sampleRate: 16_000,
             encoding: .pcmSigned16Bit,
             enableFillerWordDetection: false
+        )
+    }
+
+    private func update(
+        _ text: String,
+        providerFillers: [String]?
+    ) -> TranscriptUpdate {
+        TranscriptUpdate(
+            text: text,
+            isFinal: true,
+            confidence: 0.94,
+            words: nil,
+            providerFillerWords: providerFillers,
+            latencyMs: 20
         )
     }
 }

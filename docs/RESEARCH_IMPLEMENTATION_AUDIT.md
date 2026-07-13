@@ -181,7 +181,7 @@ coach.
 | Persisted cloud-disabled choice | **Proved** | The existing `AISettingsManager` consent owner persists the choice and production construction tests prove no cloud route when it is off. |
 | Automatically fall back for missing credentials/network/cloud | **Incomplete** | Setup failure can fall back before audio begins. Once either provider starts, a mid-rep failure stops honestly and offers retry; audio is never replayed to a second provider. The report's broad runtime failover promise is intentionally narrower. |
 | Graceful failover banner | **Proved** | Requested-cloud/resolved-local startup produces one content-free, accessibility-labelled notice. Deliberate local use and successful cloud stay quiet. |
-| Helpful unsupported-locale state | **Weak evidence** | `LocalSpeechError` has device/locale-specific user copy, but the targeted suite does not exercise real `SFSpeechRecognizer` locale availability on hardware. |
+| Helpful unsupported-locale state | **Weak evidence** | `LocalSpeechProviderTests` locks the device/locale-specific `LocalSpeechError` copy, including the device boundary. Real `SFSpeechRecognizer` locale availability and rendered presentation still require physical-device/TestFlight evidence. |
 
 ### 6. Privacy and consent centre
 
@@ -230,8 +230,8 @@ different.
 | FL-4 | Returning users do not see fast lane again | **Proved** | Completed profile precedence and account-scoped gate behavior are tested. |
 | TR-1 | Missing AWS credentials still allows local practice | **Proved** | Local construction has no AWS dependency. The premise is stale because AWS is not the Release primary. |
 | TR-2 | Cloud-disabled preference persists | **Proved** | Existing consent persistence and no-cloud construction tests pass. |
-| TR-3 | Switching providers does not break filler detection | **Weak evidence** | Both providers feed the shared finalized-transcript/filler pipeline, but no physical or focused provider-switch/filler test was found. |
-| TR-4 | Unsupported locale shows a helpful message | **Weak evidence** | Localized error copy exists, but hardware locale availability and UI presentation were not exercised in this audit. |
+| TR-3 | Switching providers does not break filler detection | **Proved** | A focused provider-neutral contract passes equivalent local, Deepgram, Google, and AWS transcript updates—with deliberately different provider filler hints—through the shared semantic detector and asserts identical detections. This proves between-route behavior locally; the product intentionally does not switch providers mid-audio-stream. |
+| TR-4 | Unsupported locale shows a helpful message | **Weak evidence** | A focused test locks the exact device/locale-specific error message and its device-boundary explanation. Hardware locale availability and rendered UI presentation remain unverified. |
 | PC-1 | Cloud toggle changes provider selection | **Proved** | Production consent-on/off construction is directly tested. |
 | PC-2 | Export creates and cleans up ZIP | **Proved** | `AccountDataExportServiceTests` verify the real temporary ZIP and its deletion. |
 | PC-3 | Deletion entry point visibility follows account state | **Weak evidence** | The source condition is explicitly `authManager.isSignedIn`; a focused rendered visibility test was not found. |
@@ -276,7 +276,7 @@ substrate, but it is not a cohort analytics service.
 | Evidence item | Classification | Result on 2026-07-13 |
 |---|---|---|
 | Full integrated Swift regression | **Proved** | The complete `NoumTests` target passed 3,868/3,868 tests with zero failures or skips on the iPhone 17 Pro simulator, using the local Swift package cache, disabled automatic package resolution, disabled code signing, and no provider keys. This is still simulator evidence, not physical-device or TestFlight proof. |
-| Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests`, `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
+| Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests` (including provider-neutral filler detection and unsupported-locale copy), `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
 | Coach-arena contracts | **Proved** | 119 Node tests and 105 Python tests passed. |
 | Release-evidence workflow contracts | **Proved** | 26 tests passed. They prove fail-closed tooling, full-commit history-scan binding, and validator agreement—not that external evidence exists. |
 | Legacy endpoint and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests and 15 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
