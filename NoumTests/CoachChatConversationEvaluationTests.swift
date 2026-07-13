@@ -4408,7 +4408,14 @@ struct CoachChatConversationCorpusTests {
         )
 
         #expect(loaded?.qualifiesForReadiness == true)
-        #expect(loaded?.summary.passedRequiredSurfaceCount == 4)
+        #expect(
+            loaded?.summary.passedRequiredSurfaceCount ==
+                CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.count
+        )
+        #expect(
+            loaded?.summary.passedRequiredCheckCount ==
+                CoachRealDeviceTestFlightEvidence.requiredCheckCount
+        )
         #expect(loaded?.deviceModel == "iPhone 15 Pro")
     }
 
