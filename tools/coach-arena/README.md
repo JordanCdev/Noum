@@ -81,6 +81,7 @@ ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 # Launch-readiness gate from the latest app-path report
 ./tools/coach-arena/run.sh readiness
 ./tools/coach-arena/run.sh readiness --dump-dir /private/tmp/noum-coach-eval --no-fail
+./tools/coach-arena/run.sh readiness --release-evidence-run /secure/noum-release-evidence/rc-<build> --no-fail
 ./tools/coach-arena/run.sh readiness --repo-root /path/to/Noum --no-fail
 ./tools/coach-arena/run.sh readiness --probe-live --no-fail
 ```
@@ -118,8 +119,9 @@ and `sourceCoachFingerprint` match the sidecars in the dump directory, and the
 staged artifact carries the required latest-fixture coverage, long-form
 conversation coverage, provider evidence, immediate-read telemetry, confidence
 variety, proof-test variety, trajectory-cache coverage, and clean
-production-floor rows. A placeholder or stale JSON file stays blocked even if
-the filename is present.
+production-floor rows. The published atomic-capture provenance and non-test
+transport identity/diagnostics are required by readiness itself. A placeholder
+or stale JSON file stays blocked even if the filename is present.
 
 ### Canonical live-provider evidence sweep
 
@@ -222,7 +224,9 @@ conversations), `extract <voice|--json>` (print the extracted system prompt),
 >= 85, and external evidence artifacts are present; also audits required
 sidecar presence in `NOUM_COACH_EVAL_DUMP_DIR` or `--dump-dir`, plus static
 Firebase/privacy/TestFlight-QA repo wiring via `--repo-root`; pass
-`--probe-live` to hard-block on public privacy URL reachability/content), and
+`--release-evidence-run` for the validated attachment-backed run that promoted
+the four managed external artifacts, and `--probe-live` to hard-block on public
+privacy URL reachability/content), and
 `python` (direct access to the legacy engine; do not use it for app-path
 readiness unless you pass `--app-path-report`, otherwise it grades reference
 examples).

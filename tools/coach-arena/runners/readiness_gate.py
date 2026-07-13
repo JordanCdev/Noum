@@ -19,6 +19,7 @@ REPO_ROOT = ARENA_ROOT.parents[1]
 DEFAULT_REPORT = ARENA_ROOT / "reports" / "app-path" / "latest.json"
 CANONICAL_APP_PATH_REPORT_DIR = ARENA_ROOT / "reports" / "app-path"
 DEFAULT_DUMP_DIR = Path(os.environ.get("NOUM_COACH_EVAL_DUMP_DIR", "/private/tmp/noum-coach-eval"))
+DEFAULT_RELEASE_EVIDENCE_RUN_DIR = os.environ.get("NOUM_RELEASE_EVIDENCE_RUN_DIR")
 READINESS_MANIFEST_FILE = "coach-vision-production-readiness-evidence-manifest-v1.json"
 READINESS_MANIFEST_SCHEMA = "coach-vision-production-readiness-evidence-manifest-v1"
 READY_CLAIM = "productionReadyEvidenceAvailable"
@@ -28,6 +29,29 @@ SOURCE_SIDECARS = [
     "source-git-commit.txt",
     "source-coach-fingerprint.txt",
 ]
+
+RELEASE_EVIDENCE_MANAGED_ARTIFACTS = [
+    "coach-chat-conversation-expert-calibration-results-v2.json",
+    "coach-real-user-transfer-outcomes-v3.json",
+    "coach-real-device-testflight-qa-v3.json",
+    "coach-operational-launch-checklist-v2.json",
+]
+RELEASE_EVIDENCE_RUN_MANIFEST_FILE = "release-evidence-run-v1.json"
+RELEASE_EVIDENCE_RUN_MANIFEST_SCHEMA = "noum-release-evidence-run-v1"
+RELEASE_EVIDENCE_VALIDATION_SCHEMA = "noum-release-evidence-validation-v1"
+RELEASE_EVIDENCE_PROMOTION_RECEIPT_FILE = "promotion-receipt-v1.json"
+RELEASE_EVIDENCE_PROMOTION_RECEIPT_SCHEMA = (
+    "noum-release-evidence-promotion-receipt-v1"
+)
+LIVE_EVIDENCE_ATTESTATION_SCHEMA = "coach-live-capture-attestation-v1"
+LIVE_EVIDENCE_PRODUCER = (
+    "NoumTests/CoachLiveEvaluationTests.liveGeminiRepliesClearFixtureRubric"
+)
+SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+NON_LIVE_PROVIDER_IDENTITY_PATTERN = re.compile(
+    r"(?:^|[\s_./()-])(?:replay|fixture|template|scripted|synthetic|mock|stub|fake|test)(?:$|[\s_./()-])",
+    re.IGNORECASE,
+)
 
 COACH_SOURCE_STATUS_PATHS = [
     "Noum/AICoachChatService.swift",
@@ -120,6 +144,7 @@ EVIDENCE_REQUIREMENTS = {
             "longFormConversationFailureIDs",
             "longFormConversations",
             "providerChain",
+            "liveEvidenceProvenance",
             "passesProductionFloor",
             "passesRunReadinessFloor",
             "summary",
@@ -1046,6 +1071,270 @@ def source_freshness_gate_failures(source_audit):
     return failures
 
 
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def default_release_evidence_validator(run_dir, repo_root):
+    tool = REPO_ROOT / "tools" / "release-evidence" / "release_evidence.py"
+    if not tool.is_file():
+        return {
+            "passes": False,
+            "failureCount": 1,
+            "failures": ["releaseEvidenceValidatorMissing"],
+        }
+    environment = os.environ.copy()
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    command = [
+        sys.executable,
+        str(tool),
+        "validate",
+        "--run-dir",
+        str(run_dir),
+        "--repo-root",
+        str(repo_root),
+        "--json",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {
+            "passes": False,
+            "failureCount": 1,
+            "failures": ["releaseEvidenceValidatorExecutionFailed"],
+        }
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {
+            "passes": False,
+            "failureCount": 1,
+            "failures": ["releaseEvidenceValidatorOutputInvalid"],
+        }
+    if not isinstance(payload, dict):
+        return {
+            "passes": False,
+            "failureCount": 1,
+            "failures": ["releaseEvidenceValidatorOutputInvalid"],
+        }
+    if result.returncode != 0 and payload.get("passes") is True:
+        payload = dict(payload)
+        payload["passes"] = False
+        failures = list(payload.get("failures") or [])
+        failures.append("releaseEvidenceValidatorExitMismatch")
+        payload["failures"] = failures
+        payload["failureCount"] = len(failures)
+    return payload
+
+
+def release_evidence_run_audit(
+    release_evidence_run,
+    dump_dir,
+    repo_root,
+    validator=default_release_evidence_validator,
+):
+    boundary = (
+        "Launch readiness requires the validated attachment-backed release run "
+        "to remain available. Its promotion receipt, source binding, and four "
+        "managed artifact hashes must match the active evidence dump exactly."
+    )
+    if release_evidence_run is None or not str(release_evidence_run).strip():
+        return {
+            "runDir": None,
+            "passes": False,
+            "failures": ["releaseEvidenceRunMissing"],
+            "validationBoundary": boundary,
+            "validator": None,
+            "artifactBindings": [],
+        }
+
+    run_dir = Path(release_evidence_run).expanduser().resolve()
+    dump_dir = Path(dump_dir).expanduser().resolve()
+    repo_root = Path(repo_root).expanduser().resolve()
+    failures = []
+    if not run_dir.is_dir():
+        return {
+            "runDir": str(run_dir),
+            "passes": False,
+            "failures": ["releaseEvidenceRunNotDirectory"],
+            "validationBoundary": boundary,
+            "validator": None,
+            "artifactBindings": [],
+        }
+
+    validation = validator(run_dir, repo_root)
+    if not isinstance(validation, dict):
+        validation = {
+            "passes": False,
+            "failureCount": 1,
+            "failures": ["releaseEvidenceValidatorOutputInvalid"],
+        }
+    if validation.get("passes") is not True:
+        failures.append("releaseEvidenceRunValidationFailed")
+    if validation.get("schemaVersion") != RELEASE_EVIDENCE_VALIDATION_SCHEMA:
+        failures.append("releaseEvidenceValidatorSchemaMismatch")
+    if validation.get("passes") is True and (
+        validation.get("failureCount") != 0
+        or bool(validation.get("failures"))
+    ):
+        failures.append("releaseEvidenceValidatorResultInconsistent")
+    validated_run_dir = trimmed_non_empty(validation.get("runDir"))
+    if validated_run_dir is None:
+        failures.append("releaseEvidenceValidatorRunMissing")
+    else:
+        try:
+            if Path(validated_run_dir).expanduser().resolve() != run_dir:
+                failures.append("releaseEvidenceValidatorRunMismatch")
+        except OSError:
+            failures.append("releaseEvidenceValidatorRunMismatch")
+
+    def load_object(path, missing_failure, malformed_failure):
+        if not path.is_file():
+            failures.append(missing_failure)
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            failures.append(malformed_failure)
+            return {}
+        if not isinstance(payload, dict):
+            failures.append(malformed_failure)
+            return {}
+        return payload
+
+    manifest = load_object(
+        run_dir / RELEASE_EVIDENCE_RUN_MANIFEST_FILE,
+        "releaseEvidenceRunManifestMissing",
+        "releaseEvidenceRunManifestInvalid",
+    )
+    receipt = load_object(
+        run_dir / RELEASE_EVIDENCE_PROMOTION_RECEIPT_FILE,
+        "releaseEvidencePromotionReceiptMissing",
+        "releaseEvidencePromotionReceiptInvalid",
+    )
+    if manifest and manifest.get("schemaVersion") != RELEASE_EVIDENCE_RUN_MANIFEST_SCHEMA:
+        failures.append("releaseEvidenceRunManifestSchemaMismatch")
+    if receipt and receipt.get("schemaVersion") != RELEASE_EVIDENCE_PROMOTION_RECEIPT_SCHEMA:
+        failures.append("releaseEvidencePromotionReceiptSchemaMismatch")
+    if receipt and receipt.get("existingReadinessValidatorAcceptedManagedArtifacts") is not True:
+        failures.append("releaseEvidencePromotionReceiptNotValidatorAccepted")
+    if receipt and receipt.get("launchReadyClaimed") is not False:
+        failures.append("releaseEvidencePromotionReceiptClaimInvalid")
+    receipt_dump_dir = trimmed_non_empty(receipt.get("dumpDir"))
+    if receipt and receipt_dump_dir is None:
+        failures.append("releaseEvidencePromotionReceiptDumpMissing")
+    elif receipt_dump_dir is not None:
+        try:
+            if Path(receipt_dump_dir).expanduser().resolve() != dump_dir:
+                failures.append("releaseEvidencePromotionReceiptDumpMismatch")
+        except OSError:
+            failures.append("releaseEvidencePromotionReceiptDumpMismatch")
+
+    dump_binding = {}
+    for sidecar, binding_key in [
+        ("source-git-commit.txt", "sourceGitCommit"),
+        ("source-coach-fingerprint.txt", "sourceCoachFingerprint"),
+    ]:
+        try:
+            value = (dump_dir / sidecar).read_text(encoding="utf-8").strip()
+        except OSError:
+            value = ""
+        if not value:
+            failures.append(f"releaseEvidenceDumpSourceMissing={sidecar}")
+        dump_binding[binding_key] = value
+    manifest_binding = manifest.get("sourceBinding") if isinstance(manifest.get("sourceBinding"), dict) else {}
+    receipt_binding = receipt.get("sourceBinding") if isinstance(receipt.get("sourceBinding"), dict) else {}
+    for key, value in dump_binding.items():
+        if manifest and manifest_binding.get(key) != value:
+            failures.append(f"releaseEvidenceRunSourceMismatch={key}")
+        if receipt and receipt_binding.get(key) != value:
+            failures.append(f"releaseEvidenceReceiptSourceMismatch={key}")
+
+    receipt_artifacts = receipt.get("artifacts") if isinstance(receipt.get("artifacts"), dict) else {}
+    artifact_bindings = []
+    for artifact_name in RELEASE_EVIDENCE_MANAGED_ARTIFACTS:
+        run_path = run_dir / artifact_name
+        dump_path = dump_dir / artifact_name
+        receipt_digest = receipt_artifacts.get(artifact_name)
+        run_digest = None
+        dump_digest = None
+        try:
+            if run_path.is_file():
+                run_digest = sha256_file(run_path)
+            else:
+                failures.append(f"releaseEvidenceRunArtifactMissing={artifact_name}")
+            if dump_path.is_file():
+                dump_digest = sha256_file(dump_path)
+            else:
+                failures.append(f"releaseEvidenceDumpArtifactMissing={artifact_name}")
+        except OSError:
+            failures.append(f"releaseEvidenceArtifactUnreadable={artifact_name}")
+        if not isinstance(receipt_digest, str) or SHA256_PATTERN.fullmatch(receipt_digest) is None:
+            failures.append(f"releaseEvidenceReceiptHashInvalid={artifact_name}")
+        if (
+            run_digest is not None
+            and dump_digest is not None
+            and receipt_digest is not None
+            and not (run_digest == dump_digest == receipt_digest)
+        ):
+            failures.append(f"releaseEvidenceArtifactHashMismatch={artifact_name}")
+        artifact_bindings.append({
+            "artifact": artifact_name,
+            "runSHA256": run_digest,
+            "dumpSHA256": dump_digest,
+            "receiptSHA256": receipt_digest,
+            "matches": bool(
+                run_digest is not None
+                and run_digest == dump_digest == receipt_digest
+            ),
+        })
+
+    failures = list(dict.fromkeys(failures))
+    return {
+        "runDir": str(run_dir),
+        "passes": not failures,
+        "failures": failures,
+        "validationBoundary": boundary,
+        "validator": {
+            "schemaVersion": validation.get("schemaVersion"),
+            "passes": validation.get("passes") is True,
+            "failureCount": validation.get("failureCount"),
+            "failures": validation.get("failures") or [],
+        },
+        "artifactBindings": artifact_bindings,
+    }
+
+
+def release_evidence_run_gate_failures(audit):
+    if audit and audit.get("passes") is True:
+        return []
+    observed = ",".join((audit or {}).get("failures") or ["missingAudit"])
+    return [{
+        "label": "attachmentBackedReleaseEvidenceRun",
+        "observed": observed,
+        "gate": (
+            "The final release gate must validate the original attachment-backed "
+            "evidence run and match its promotion receipt to the active dump."
+        ),
+        "nextStep": (
+            "Pass --release-evidence-run for the validated run used to promote "
+            "the four managed external evidence artifacts, then rerun readiness."
+        ),
+    }]
+
+
 def computed_launch_ready(
     readiness,
     local_gates,
@@ -1055,6 +1344,7 @@ def computed_launch_ready(
     ops_live_probe=None,
     source_freshness_audit=None,
     report_source_audit=None,
+    release_evidence_audit=None,
 ):
     artifact_failures = artifact_gate_failures(artifact_audit) if artifact_audit else []
     manifest_failures = (
@@ -1073,6 +1363,9 @@ def computed_launch_ready(
         report_source_gate_failures(report_source_audit)
         if report_source_audit else []
     )
+    release_evidence_failures = release_evidence_run_gate_failures(
+        release_evidence_audit
+    )
     return (
         computed_production_ready(readiness) and
         not report_source_failures and
@@ -1080,6 +1373,7 @@ def computed_launch_ready(
         not source_failures and
         not artifact_failures and
         not manifest_failures and
+        not release_evidence_failures and
         not ops_failures and
         not ops_live_failures
     )
@@ -1507,7 +1801,127 @@ def professional_calibration_contract_failures(payload, context=None):
     return deduped
 
 
-def live_provider_sweep_contract_failures(payload, source_expectations=None):
+def all_live_operational_rows(payload):
+    rows = [row for row in payload.get("rows", []) if isinstance(row, dict)]
+    for conversation in payload.get("longFormConversations", []):
+        if not isinstance(conversation, dict):
+            continue
+        nested = conversation.get("rows")
+        if isinstance(nested, list):
+            rows.extend(row for row in nested if isinstance(row, dict))
+    return rows
+
+
+def live_identity_looks_non_live(value):
+    value = trimmed_non_empty(value)
+    return (
+        value is None
+        or NON_LIVE_PROVIDER_IDENTITY_PATTERN.search(value) is not None
+    )
+
+
+def live_provider_runtime_provenance_failures(payload):
+    """Require transport-path identities and telemetry for every live row."""
+    failures = []
+    provider_chain = payload.get("providerChain")
+    if not isinstance(provider_chain, list) or not provider_chain:
+        failures.append("liveProviderChainMissing")
+    else:
+        for identity in provider_chain:
+            if live_identity_looks_non_live(identity):
+                failures.append(f"nonLiveProviderChainIdentity={identity!r}")
+
+    for index, row in enumerate(all_live_operational_rows(payload)):
+        row_id = row_identifier(row) or f"row-{index + 1}"
+        if (
+            live_identity_looks_non_live(row.get("providerChosen"))
+            or live_identity_looks_non_live(row.get("providerModel"))
+        ):
+            failures.append(f"nonLiveProviderIdentity={row_id}")
+
+        attempts = strict_int(row.get("providerAttemptCount"))
+        retries = strict_int(row.get("providerRetryCount"))
+        refusals = strict_int(row.get("providerRefusalCount"))
+        completion = finite_number(row.get("timeToCompleteReplyMs"))
+        if attempts is None or attempts < 1:
+            failures.append(f"providerAttemptTelemetryMissing={row_id}")
+        if retries is None or retries < 0:
+            failures.append(f"providerRetryTelemetryMissing={row_id}")
+        if refusals is None or refusals < 0:
+            failures.append(f"providerRefusalTelemetryMissing={row_id}")
+        if completion is None or completion < 0:
+            failures.append(f"providerCompletionLatencyMissing={row_id}")
+
+        diagnostics = row.get("diagnostics")
+        if not isinstance(diagnostics, list) or not diagnostics:
+            failures.append(f"providerDiagnosticsMissing={row_id}")
+            continue
+        has_latency = False
+        has_verified_transport_success = False
+        for diagnostic in diagnostics:
+            if not isinstance(diagnostic, dict):
+                failures.append(f"providerDiagnosticMalformed={row_id}")
+                continue
+            latency = finite_number(diagnostic.get("latencyMs"))
+            status_code = strict_int(diagnostic.get("statusCode"))
+            diagnostic_is_well_formed = (
+                not live_identity_looks_non_live(diagnostic.get("provider"))
+                and trimmed_non_empty(diagnostic.get("outcome")) is not None
+                and trimmed_non_empty(diagnostic.get("reason")) is not None
+            )
+            if not diagnostic_is_well_formed:
+                failures.append(f"providerDiagnosticMalformed={row_id}")
+            if latency is not None and latency >= 0:
+                has_latency = True
+            if (
+                diagnostic_is_well_formed
+                and diagnostic.get("outcome") == "success"
+                and status_code is not None
+                and 200 <= status_code < 300
+                and latency is not None
+                and latency >= 0
+            ):
+                has_verified_transport_success = True
+        if not has_latency:
+            failures.append(f"providerDiagnosticLatencyMissing={row_id}")
+        if not has_verified_transport_success:
+            failures.append(f"providerTransportSuccessMissing={row_id}")
+    return list(dict.fromkeys(failures))
+
+
+def published_live_evidence_provenance_failures(payload):
+    provenance = payload.get("liveEvidenceProvenance")
+    if not isinstance(provenance, dict):
+        return ["publishedLiveEvidenceProvenanceMissing"]
+    expected = {
+        "schemaVersion": LIVE_EVIDENCE_ATTESTATION_SCHEMA,
+        "producer": LIVE_EVIDENCE_PRODUCER,
+        "executionMode": "liveProviderProductionPath",
+        "candidateSource": "providerNetworkResponse",
+        "usesReplayResponses": False,
+        "usesFixtureResponses": False,
+        "usesTemplateResponses": False,
+    }
+    failures = [
+        f"publishedLiveEvidenceProvenanceMismatch={key}"
+        for key, expected_value in expected.items()
+        if provenance.get(key) != expected_value
+    ]
+    if trimmed_non_empty(provenance.get("runID")) is None:
+        failures.append("publishedLiveEvidenceRunIDMissing")
+    if not usable_iso8601_timestamp(provenance.get("capturedAt")):
+        failures.append("publishedLiveEvidenceTimestampInvalid")
+    capture_sha = trimmed_non_empty(provenance.get("captureSHA256"))
+    if capture_sha is None or SHA256_PATTERN.fullmatch(capture_sha) is None:
+        failures.append("publishedLiveEvidenceCaptureSHA256Invalid")
+    return failures
+
+
+def live_provider_sweep_contract_failures(
+    payload,
+    source_expectations=None,
+    require_published_provenance=True,
+):
     failures = []
     source_expectations = source_expectations or {}
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -1803,6 +2217,10 @@ def live_provider_sweep_contract_failures(payload, source_expectations=None):
         or repeated_proof_count > 0
     ):
         failures.append("weakProofTestVariety")
+
+    failures.extend(live_provider_runtime_provenance_failures(payload))
+    if require_published_provenance:
+        failures.extend(published_live_evidence_provenance_failures(payload))
 
     deduped = []
     for failure in failures:
@@ -3344,6 +3762,8 @@ def build_readiness_status(
     repo_root=REPO_ROOT,
     probe_live=False,
     fetch_url=default_fetch_url,
+    release_evidence_run=DEFAULT_RELEASE_EVIDENCE_RUN_DIR,
+    release_evidence_validator=default_release_evidence_validator,
 ):
     local_readiness = readiness_from_report(report)
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
@@ -3365,6 +3785,15 @@ def build_readiness_status(
     ops_failures = operational_static_gate_failures(ops_preflight)
     ops_live_probe = operational_live_probe(repo_root, fetch_url) if probe_live else None
     ops_live_failures = operational_live_gate_failures(ops_live_probe)
+    release_evidence_audit = release_evidence_run_audit(
+        release_evidence_run,
+        dump_dir,
+        repo_root,
+        validator=release_evidence_validator,
+    )
+    release_evidence_failures = release_evidence_run_gate_failures(
+        release_evidence_audit
+    )
     launch_ready = computed_launch_ready(
         readiness,
         local_gates,
@@ -3374,6 +3803,7 @@ def build_readiness_status(
         ops_live_probe,
         source_audit,
         report_audit,
+        release_evidence_audit,
     )
     reported_ready = summary.get("visionProductionReady")
     blockers = readiness.get("blockers") if readiness else None
@@ -3394,6 +3824,7 @@ def build_readiness_status(
         "localBlockingRequirements": local_failures,
         "artifactBlockingRequirements": artifact_failures,
         "readinessManifestBlockingRequirements": manifest_failures,
+        "releaseEvidenceBlockingRequirements": release_evidence_failures,
         "operationalStaticBlockingRequirements": ops_failures,
         "operationalLiveBlockingRequirements": ops_live_failures,
         "vision": {
@@ -3411,6 +3842,7 @@ def build_readiness_status(
         "blockingRequirements": blocking_requirements(readiness),
         "artifactAudit": artifact_audit,
         "readinessManifestAudit": manifest_audit,
+        "releaseEvidenceRunAudit": release_evidence_audit,
         "sourceFreshnessAudit": source_audit,
         "operationalStaticPreflight": ops_preflight,
         "operationalLiveProbe": ops_live_probe,
@@ -3424,6 +3856,7 @@ def render_markdown(status):
     local = status["localGates"]
     report_source = status.get("reportSourceAudit") or {}
     manifest_audit = status.get("readinessManifestAudit") or {}
+    release_evidence_audit = status.get("releaseEvidenceRunAudit") or {}
     lines = [
         "# Coach Production Readiness Gate",
         "",
@@ -3432,6 +3865,7 @@ def render_markdown(status):
         f"- Report family: `{status.get('reportFamily')}`",
         f"- Canonical app-path report: `{report_source.get('passes')}`",
         f"- Current Swift readiness manifest: `{manifest_audit.get('passes')}`",
+        f"- Attachment-backed release evidence: `{release_evidence_audit.get('passes')}`",
         f"- Launch gate ready: `{status.get('launchReady')}`",
         f"- Local score/coverage gates pass: `{local.get('scoreThresholdsPass')}`",
         f"- Real-pipeline evidence passes: `{local.get('realPipelineEvidencePasses')}`",
@@ -3510,6 +3944,27 @@ def render_markdown(status):
             lines.append(f"  Gate: {requirement['gate']}")
             lines.append(f"  Next: {requirement['nextStep']}")
         lines.append("")
+
+    release_evidence_requirements = status.get("releaseEvidenceBlockingRequirements") or []
+    if release_evidence_requirements:
+        lines.extend(["## Release Evidence Workflow Failures", ""])
+        for requirement in release_evidence_requirements:
+            lines.append(
+                f"- `{requirement['label']}` observed `{requirement.get('observed')}`"
+            )
+            lines.append(f"  Gate: {requirement['gate']}")
+            lines.append(f"  Next: {requirement['nextStep']}")
+        lines.append("")
+
+    lines.extend([
+        "## Release Evidence Run",
+        "",
+        f"- Run: `{release_evidence_audit.get('runDir')}`",
+        f"- Validated and promotion-bound: `{release_evidence_audit.get('passes')}`",
+    ])
+    if release_evidence_audit.get("validationBoundary"):
+        lines.append(f"- Boundary: {release_evidence_audit['validationBoundary']}")
+    lines.append("")
 
     ops_requirements = status["operationalStaticBlockingRequirements"]
     if ops_requirements:
@@ -3688,6 +4143,15 @@ def main(argv=None):
     parser.add_argument("--dump-dir", default=str(DEFAULT_DUMP_DIR))
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument(
+        "--release-evidence-run",
+        default=DEFAULT_RELEASE_EVIDENCE_RUN_DIR,
+        help=(
+            "Validated attachment-backed release-evidence run used to promote "
+            "the four managed external artifacts. Defaults to "
+            "NOUM_RELEASE_EVIDENCE_RUN_DIR."
+        ),
+    )
+    parser.add_argument(
         "--probe-live",
         action="store_true",
         help="Probe public operational URLs and include failures in launchReady.",
@@ -3704,6 +4168,7 @@ def main(argv=None):
         Path(args.dump_dir),
         Path(args.repo_root),
         probe_live=args.probe_live,
+        release_evidence_run=args.release_evidence_run,
     )
     if args.json:
         print(json.dumps(status, indent=2, sort_keys=True))

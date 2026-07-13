@@ -29,7 +29,7 @@
 #                         in staging and publish atomically only when fully valid
 #   ./run.sh live-evidence --capture live.json --attestation attestation.json
 #                         consume an explicitly attested real live capture
-#   ./run.sh readiness [report.json] [--dump-dir dir] [--repo-root dir] [--probe-live] [--no-fail]
+#   ./run.sh readiness [report.json] [--dump-dir dir] [--release-evidence-run dir] [--repo-root dir] [--probe-live] [--no-fail]
 #                         evaluate the VISION production-readiness gate from
 #                         an app-path report; exits nonzero until launch evidence exists
 #   ./run.sh python ...   run the legacy Python engine directly (unsafe default:

@@ -44,6 +44,7 @@ readiness.
 ## Fast Verdict
 
 ```bash
+export NOUM_RELEASE_EVIDENCE_RUN_DIR=/secure/noum-release-evidence/rc-<build>
 ./tools/coach-arena/run.sh app-path
 ./tools/coach-arena/run.sh readiness
 ./tools/coach-arena/run.sh readiness --probe-live
@@ -68,6 +69,13 @@ and the selected evidence directory contains:
 - `source-git-commit.txt`
 - `source-coach-fingerprint.txt`
 
+and `--release-evidence-run` (or `NOUM_RELEASE_EVIDENCE_RUN_DIR`) identifies the
+validated attachment-backed run that promoted the four managed external
+artifacts. The run must remain available, its validator must pass, its source
+binding and promotion receipt must match the selected dump, and all four hashes
+must be identical in the run, receipt, and dump. Complete JSON without that
+chain of custody cannot make `launchReady` true.
+
 and the selected repo root passes static operational preflight:
 
 - `firebase.json` points Firestore deploys at `firestore.rules`
@@ -91,6 +99,7 @@ sidecars:
 
 ```bash
 ./tools/coach-arena/run.sh readiness --dump-dir /private/tmp/noum-coach-eval --no-fail
+./tools/coach-arena/run.sh readiness --release-evidence-run /secure/noum-release-evidence/rc-<build> --no-fail
 ./tools/coach-arena/run.sh readiness --repo-root /path/to/Noum --no-fail
 ./tools/coach-arena/run.sh readiness --probe-live --no-fail
 ```
@@ -100,7 +109,9 @@ missing files, malformed JSON, missing `schemaVersion`, wrong schema versions,
 and missing top-level evidence sections. The Swift manifest loaders still decide
 whether those files actually earn the VISION rows by validating source
 freshness, counts, warnings, coverage floors, reviewer diversity, real-device
-proof, and real-world outcome quality.
+proof, and real-world outcome quality. Separately, the release-run audit invokes
+the attachment-aware validator and verifies promotion/source/hash continuity;
+neither audit manufactures external proof.
 
 The operational static preflight is also local-only. It cannot prove Firestore
 rules were deployed, the privacy URL is live, App Store privacy disclosures were
@@ -133,7 +144,8 @@ export SOURCE_PACKAGES_PATH="${SOURCE_PACKAGES_PATH:-$PWD/.build/fast-lane-relea
   --source-packages "$SOURCE_PACKAGES_PATH" \
   --build-unsigned-archive "/private/tmp/Noum-unsigned-<build>.xcarchive" \
   --derived-data "/private/tmp/Noum-unsigned-derived-<build>" \
-  --evidence-dir "$NOUM_COACH_EVAL_DUMP_DIR"
+  --evidence-dir "$NOUM_COACH_EVAL_DUMP_DIR" \
+  --release-evidence-run "$NOUM_RELEASE_EVIDENCE_RUN_DIR"
 ```
 
 The command fails closed and reports three separate sections:

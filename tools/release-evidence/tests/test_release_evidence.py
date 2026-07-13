@@ -583,6 +583,35 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
         self.assertTrue(receipt["existingReadinessValidatorAcceptedManagedArtifacts"])
         self.assertFalse(receipt["launchReadyClaimed"])
 
+        audit = release.GATE.release_evidence_run_audit(
+            self.run_dir,
+            target,
+            REPO_ROOT,
+            validator=lambda run_dir, repo_root: release.validate_run(
+                run_dir,
+                repo_root,
+            ),
+        )
+        self.assertTrue(audit["passes"], audit["failures"])
+
+        manifest = release.read_json(self.run_dir / release.RUN_MANIFEST_FILE)
+        attachment = self.run_dir / manifest["evidenceIndex"][0]["path"]
+        attachment.write_text("TEST-ONLY attachment changed after promotion\n", encoding="utf-8")
+        tampered_audit = release.GATE.release_evidence_run_audit(
+            self.run_dir,
+            target,
+            REPO_ROOT,
+            validator=lambda run_dir, repo_root: release.validate_run(
+                run_dir,
+                repo_root,
+            ),
+        )
+        self.assertFalse(tampered_audit["passes"])
+        self.assertIn(
+            "releaseEvidenceRunValidationFailed",
+            tampered_audit["failures"],
+        )
+
     def test_reviewer_cannot_self_attest_as_calibration_coordinator(self):
         fill_complete_fixture(self.run_dir)
         path = self.run_dir / release.MANAGED_ARTIFACTS["professionalCalibration"][0]

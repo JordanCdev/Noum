@@ -965,6 +965,12 @@ def evidence_checks(readiness: dict[str, Any] | None) -> list[Check]:
     if readiness is None:
         return [
             check(
+                "attachmentBackedReleaseEvidence",
+                False,
+                "no validated attachment-backed release-evidence run supplied",
+                "Pass --release-evidence-run for the run that promoted the external artifacts, then rerun preflight.",
+            ),
+            check(
                 "physicalTestFlightEvidence",
                 False,
                 "no validated evidence directory supplied",
@@ -990,6 +996,12 @@ def evidence_checks(readiness: dict[str, Any] | None) -> list[Check]:
             ),
         ]
 
+    release_evidence_audit = readiness.get("releaseEvidenceRunAudit")
+    attachment_backed_release_evidence = bool(
+        isinstance(release_evidence_audit, dict)
+        and release_evidence_audit.get("passes") is True
+    )
+
     def accepted(blocker: str) -> bool:
         artifact = _artifact_status(readiness, blocker)
         return bool(
@@ -1001,6 +1013,16 @@ def evidence_checks(readiness: dict[str, Any] | None) -> list[Check]:
     testflight = accepted("noRealDeviceTestFlightVerification")
     operational = accepted("operationalLaunchChecklistIncomplete")
     return [
+        check(
+            "attachmentBackedReleaseEvidence",
+            attachment_backed_release_evidence,
+            (
+                "readiness accepted the attachment-backed release-evidence run"
+                if attachment_backed_release_evidence
+                else "release-evidence run missing or rejected by readiness"
+            ),
+            "A structurally valid device or launch JSON cannot replace the validated attachment-backed release-evidence run.",
+        ),
         check(
             "physicalTestFlightEvidence",
             testflight,
@@ -1186,7 +1208,11 @@ def build_unsigned_archive(
     )
 
 
-def collect_readiness(repo_root: Path, evidence_dir: Path | None) -> dict[str, Any] | None:
+def collect_readiness(
+    repo_root: Path,
+    evidence_dir: Path | None,
+    release_evidence_run: Path | None = None,
+) -> dict[str, Any] | None:
     if evidence_dir is None or not evidence_dir.is_dir():
         return None
     command = [
@@ -1199,6 +1225,8 @@ def collect_readiness(repo_root: Path, evidence_dir: Path | None) -> dict[str, A
         "--json",
         "--no-fail",
     ]
+    if release_evidence_run is not None:
+        command.extend(["--release-evidence-run", str(release_evidence_run)])
     completed = subprocess.run(
         command,
         cwd=repo_root,
@@ -1282,6 +1310,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Existing coach-evidence dump validated by the current readiness gate.",
     )
     parser.add_argument(
+        "--release-evidence-run",
+        default=os.environ.get("NOUM_RELEASE_EVIDENCE_RUN_DIR"),
+        help=(
+            "Access-controlled release-evidence run to revalidate alongside the "
+            "promoted dump; defaults to NOUM_RELEASE_EVIDENCE_RUN_DIR."
+        ),
+    )
+    parser.add_argument(
         "--prepare-source-bound-info-plist",
         metavar="PATH",
         help="From a clean checkout, copy the protected app Info.plist to PATH and bind it to the exact source commit for an authorized signed archive.",
@@ -1348,7 +1384,16 @@ def main(argv: list[str] | None = None) -> int:
 
     evidence_dir_value = args.evidence_dir or os.environ.get("NOUM_COACH_EVAL_DUMP_DIR")
     evidence_dir = Path(evidence_dir_value).expanduser().resolve() if evidence_dir_value else None
-    readiness = collect_readiness(repo_root, evidence_dir)
+    release_evidence_run = (
+        Path(args.release_evidence_run).expanduser().resolve()
+        if args.release_evidence_run
+        else None
+    )
+    readiness = collect_readiness(
+        repo_root,
+        evidence_dir,
+        release_evidence_run,
+    )
     evidence = evidence_checks(readiness)
 
     sections = (

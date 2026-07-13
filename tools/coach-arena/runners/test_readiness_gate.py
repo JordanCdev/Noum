@@ -1,6 +1,7 @@
 import json
 import plistlib
 import re
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -186,8 +187,25 @@ def live_provider_row(row_id, index, turn_depth=None, immediate_expected=True, r
     return {
         "fixtureID": row_id,
         "turnDepth": turn_depth or gate.LIVE_REQUIRED_TURN_DEPTHS[index % len(gate.LIVE_REQUIRED_TURN_DEPTHS)],
-        "providerChosen": "Gemini",
-        "providerModel": "gemini-test",
+        "providerChosen": "Google Cloud",
+        "providerModel": "gemini-3.5-flash",
+        "providerAttemptCount": 1,
+        "providerRetryCount": 0,
+        "providerRefusalCount": 0,
+        "timeToCompleteReplyMs": 900 + index,
+        "diagnostics": [{
+            "provider": "Google Cloud",
+            "model": "gemini-3.5-flash",
+            "outcome": "success",
+            "reason": "Transport succeeded",
+            "statusCode": 200,
+            "latencyMs": 850 + index,
+        }, {
+            "provider": "Google Cloud",
+            "model": "gemini-3.5-flash",
+            "outcome": "success",
+            "reason": "Reply accepted",
+        }],
         "timeToFirstVisibleTokenMs": 420 + index,
         "assessmentConfidence": 0.62 + ((index % 4) * 0.04),
         "trajectoryCacheHit": index % 5 == 0,
@@ -249,7 +267,19 @@ def complete_live_provider_evidence(source_fingerprint="sha256:test-source", git
         "longFormConversationIDsPassingProductionFloor": list(gate.LIVE_REQUIRED_LONG_FORM_IDS),
         "longFormConversationFailureIDs": [],
         "longFormConversations": long_form,
-        "providerChain": ["Gemini (gemini-test)"],
+        "providerChain": ["Google Cloud (gemini-3.5-flash)"],
+        "liveEvidenceProvenance": {
+            "schemaVersion": gate.LIVE_EVIDENCE_ATTESTATION_SCHEMA,
+            "producer": gate.LIVE_EVIDENCE_PRODUCER,
+            "executionMode": "liveProviderProductionPath",
+            "candidateSource": "providerNetworkResponse",
+            "runID": "live-2026-07-13T12-00-00Z",
+            "capturedAt": "2026-07-13T12:00:00Z",
+            "captureSHA256": f"sha256:{'a' * 64}",
+            "usesReplayResponses": False,
+            "usesFixtureResponses": False,
+            "usesTemplateResponses": False,
+        },
         "passesProductionFloor": True,
         "passesRunReadinessFloor": True,
         "summary": {
@@ -261,7 +291,7 @@ def complete_live_provider_evidence(source_fingerprint="sha256:test-source", git
             "assessmentConfidenceDistinctRoundedCount": 4,
             "uniqueProofTestHashCount": len(rows),
             "repeatedProofTestHashCount": 0,
-            "maxProviderRetryCount": 1,
+            "maxProviderRetryCount": 0,
             "totalProviderRefusalCount": 0,
             "firstVisibleTokenMaxMs": 520,
         },
@@ -622,6 +652,55 @@ def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_c
     (root / "source-git-commit.txt").write_text(git_commit, encoding="utf-8")
 
 
+def write_valid_release_evidence_run(dump_dir):
+    dump_dir = Path(dump_dir)
+    run_dir = dump_dir / "release-evidence-run"
+    run_dir.mkdir()
+    source_binding = {
+        "sourceGitCommit": (dump_dir / "source-git-commit.txt").read_text(encoding="utf-8"),
+        "sourceCoachFingerprint": (
+            dump_dir / "source-coach-fingerprint.txt"
+        ).read_text(encoding="utf-8"),
+    }
+    (run_dir / gate.RELEASE_EVIDENCE_RUN_MANIFEST_FILE).write_text(
+        json.dumps({
+            "schemaVersion": gate.RELEASE_EVIDENCE_RUN_MANIFEST_SCHEMA,
+            "sourceBinding": source_binding,
+        }),
+        encoding="utf-8",
+    )
+    artifact_hashes = {}
+    for artifact_name in gate.RELEASE_EVIDENCE_MANAGED_ARTIFACTS:
+        payload = (dump_dir / artifact_name).read_bytes()
+        run_artifact = run_dir / artifact_name
+        run_artifact.write_bytes(payload)
+        artifact_hashes[artifact_name] = gate.sha256_file(run_artifact)
+    (run_dir / gate.RELEASE_EVIDENCE_PROMOTION_RECEIPT_FILE).write_text(
+        json.dumps({
+            "schemaVersion": gate.RELEASE_EVIDENCE_PROMOTION_RECEIPT_SCHEMA,
+            "promotedAtISO8601": "2026-07-13T12:00:00Z",
+            "dumpDir": str(dump_dir.resolve()),
+            "sourceBinding": source_binding,
+            "artifacts": artifact_hashes,
+            "existingReadinessValidatorAcceptedManagedArtifacts": True,
+            "launchReadyClaimed": False,
+        }),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def accepting_release_evidence_validator(run_dir, repo_root):
+    del repo_root
+    return {
+        "schemaVersion": gate.RELEASE_EVIDENCE_VALIDATION_SCHEMA,
+        "runDir": str(Path(run_dir).resolve()),
+        "passes": True,
+        "failureCount": 0,
+        "failures": [],
+    }
+
+
 def successful_privacy_fetch(url):
     return {
         "status": 200,
@@ -701,12 +780,15 @@ class ReadinessGateTests(unittest.TestCase):
             root = Path(temp_dir)
             write_static_ops_repo(root)
             write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
 
             status = gate.build_readiness_status(
                 report,
                 canonical_report_path(),
                 root,
                 root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertTrue(status["vision"]["productionReady"])
@@ -781,7 +863,7 @@ class ReadinessGateTests(unittest.TestCase):
             [item["label"] for item in status["artifactBlockingRequirements"]],
         )
 
-    def test_launch_ready_can_pass_when_all_gates_and_artifacts_are_present(self):
+    def test_launch_ready_rejects_complete_json_without_attachment_backed_run(self):
         readiness = {
             "score": 85,
             "maximumAllowedScore": 100,
@@ -800,11 +882,129 @@ class ReadinessGateTests(unittest.TestCase):
                 root,
             )
 
-        self.assertTrue(status["launchReady"])
+        self.assertFalse(status["launchReady"])
+        self.assertEqual(
+            status["releaseEvidenceRunAudit"]["failures"],
+            ["releaseEvidenceRunMissing"],
+        )
+        self.assertEqual(
+            [item["label"] for item in status["releaseEvidenceBlockingRequirements"]],
+            ["attachmentBackedReleaseEvidenceRun"],
+        )
         self.assertEqual(status["artifactBlockingRequirements"], [])
         self.assertEqual(status["artifactAudit"]["presentArtifactCount"], 5)
         self.assertEqual(status["artifactAudit"]["presentSourceSidecarCount"], 2)
         self.assertEqual(status["operationalStaticBlockingRequirements"], [])
+
+    def test_launch_ready_can_pass_with_validated_promotion_bound_release_run(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
+            )
+
+        self.assertTrue(status["launchReady"])
+        self.assertTrue(status["releaseEvidenceRunAudit"]["passes"])
+        self.assertEqual(status["releaseEvidenceBlockingRequirements"], [])
+
+    def test_release_run_hash_mismatch_blocks_launch(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
+            artifact_name = gate.RELEASE_EVIDENCE_MANAGED_ARTIFACTS[0]
+            (release_run / artifact_name).write_text("{}", encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
+            )
+
+        self.assertFalse(status["launchReady"])
+        self.assertIn(
+            f"releaseEvidenceArtifactHashMismatch={artifact_name}",
+            status["releaseEvidenceRunAudit"]["failures"],
+        )
+
+    def test_release_validator_subprocess_is_scoped_to_selected_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_dir = root / "release-run"
+            run_dir.mkdir()
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps({
+                    "schemaVersion": gate.RELEASE_EVIDENCE_VALIDATION_SCHEMA,
+                    "runDir": str(run_dir),
+                    "passes": True,
+                    "failureCount": 0,
+                    "failures": [],
+                }),
+                stderr="",
+            )
+            with mock.patch.object(gate.subprocess, "run", return_value=completed) as run:
+                result = gate.default_release_evidence_validator(run_dir, root)
+
+        self.assertTrue(result["passes"])
+        command = run.call_args.args[0]
+        self.assertIn(str(run_dir), command)
+        self.assertEqual(run.call_args.kwargs["cwd"], root)
+
+    def test_inconsistent_release_validator_result_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
+
+            def inconsistent_validator(run_dir, repo_root):
+                del repo_root
+                return {
+                    "schemaVersion": gate.RELEASE_EVIDENCE_VALIDATION_SCHEMA,
+                    "runDir": str(run_dir),
+                    "passes": True,
+                    "failureCount": 1,
+                    "failures": ["unexpectedFailure"],
+                }
+
+            audit = gate.release_evidence_run_audit(
+                release_run,
+                root,
+                root,
+                validator=inconsistent_validator,
+            )
+
+        self.assertFalse(audit["passes"])
+        self.assertIn(
+            "releaseEvidenceValidatorResultInconsistent",
+            audit["failures"],
+        )
 
     def test_launch_ready_rejects_structurally_empty_external_evidence(self):
         readiness = {
@@ -1014,12 +1214,15 @@ class ReadinessGateTests(unittest.TestCase):
             root = Path(temp_dir)
             write_static_ops_repo(root)
             write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
 
             status = gate.build_readiness_status(
                 report,
                 canonical_report_path(),
                 root,
                 root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertFalse(status["launchReady"])
@@ -1041,12 +1244,15 @@ class ReadinessGateTests(unittest.TestCase):
             root = Path(temp_dir)
             write_static_ops_repo(root)
             write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
 
             status = gate.build_readiness_status(
                 report_with_readiness(readiness),
                 diagnostic_path,
                 root,
                 root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertFalse(status["launchReady"])
@@ -1274,6 +1480,48 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertNotIn(
             "sourceFreshnessFailures",
             gate.EVIDENCE_REQUIREMENTS["noLiveProviderTranscriptSweep"]["requiredTopLevelKeys"],
+        )
+
+    def test_live_sweep_contract_requires_published_capture_provenance(self):
+        payload = complete_live_provider_evidence()
+        payload.pop("liveEvidenceProvenance")
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertIn("publishedLiveEvidenceProvenanceMissing", failures)
+
+    def test_live_sweep_contract_rejects_non_live_runtime_identity(self):
+        payload = complete_live_provider_evidence()
+        payload["rows"][0]["providerModel"] = "gemini-test"
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertIn(
+            f"nonLiveProviderIdentity={gate.LIVE_REQUIRED_FIXTURE_IDS[0]}",
+            failures,
+        )
+
+    def test_live_sweep_contract_rejects_altered_published_provenance(self):
+        payload = complete_live_provider_evidence()
+        payload["liveEvidenceProvenance"]["usesReplayResponses"] = True
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertIn(
+            "publishedLiveEvidenceProvenanceMismatch=usesReplayResponses",
+            failures,
+        )
+
+    def test_live_sweep_allows_accepted_record_after_timed_transport_success(self):
+        payload = complete_live_provider_evidence()
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertFalse(
+            any(reason.startswith("providerDiagnosticMalformed=") for reason in failures)
+        )
+        self.assertFalse(
+            any(reason.startswith("providerTransportSuccessMissing=") for reason in failures)
         )
 
     def test_live_sweep_contract_rejects_boolean_numeric_telemetry(self):
@@ -1624,12 +1872,15 @@ class ReadinessGateTests(unittest.TestCase):
             root = Path(temp_dir)
             write_static_ops_repo(root)
             write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
 
             status = gate.build_readiness_status(
                 report,
                 canonical_report_path(),
                 root,
                 root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertTrue(status["launchReady"])
@@ -1700,6 +1951,7 @@ class ReadinessGateTests(unittest.TestCase):
                 source_fingerprint=current_fingerprint,
                 git_commit="abc123",
             )
+            release_run = write_valid_release_evidence_run(root)
             report = report_with_readiness(readiness)
             report["results"] = [{
                 "trace": {
@@ -1713,6 +1965,8 @@ class ReadinessGateTests(unittest.TestCase):
                 canonical_report_path(),
                 root,
                 root,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertTrue(status["launchReady"])
@@ -1737,6 +1991,7 @@ class ReadinessGateTests(unittest.TestCase):
                 source_fingerprint=current_fingerprint,
                 git_commit="abc123",
             )
+            release_run = write_valid_release_evidence_run(root)
             report = report_with_readiness(readiness)
             report["results"] = [{
                 "trace": {
@@ -1755,6 +2010,8 @@ class ReadinessGateTests(unittest.TestCase):
                     canonical_report_path(),
                     root,
                     root,
+                    release_evidence_run=release_run,
+                    release_evidence_validator=accepting_release_evidence_validator,
                 )
 
         self.assertTrue(status["launchReady"])
@@ -2146,6 +2403,7 @@ class ReadinessGateTests(unittest.TestCase):
             root = Path(temp_dir)
             write_static_ops_repo(root)
             write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
 
             status = gate.build_readiness_status(
                 report_with_readiness(readiness),
@@ -2154,6 +2412,8 @@ class ReadinessGateTests(unittest.TestCase):
                 root,
                 probe_live=True,
                 fetch_url=fetch_404,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertFalse(status["launchReady"])
@@ -2174,6 +2434,7 @@ class ReadinessGateTests(unittest.TestCase):
             root = Path(temp_dir)
             write_static_ops_repo(root)
             write_complete_evidence(root)
+            release_run = write_valid_release_evidence_run(root)
 
             status = gate.build_readiness_status(
                 report_with_readiness(readiness),
@@ -2182,6 +2443,8 @@ class ReadinessGateTests(unittest.TestCase):
                 root,
                 probe_live=True,
                 fetch_url=successful_privacy_fetch,
+                release_evidence_run=release_run,
+                release_evidence_validator=accepting_release_evidence_validator,
             )
 
         self.assertTrue(status["launchReady"])

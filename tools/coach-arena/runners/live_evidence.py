@@ -16,7 +16,6 @@ import datetime as dt
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -43,30 +42,12 @@ LIVE_CREDENTIAL_KEYS = (
     "OPENAI_API_KEY",
     "DEEPSEEK_API_KEY",
 )
-NON_LIVE_IDENTITY_PATTERN = re.compile(
-    r"(?:^|[\s_./()-])(?:replay|fixture|template|scripted|synthetic|mock|stub|fake|test)(?:$|[\s_./()-])",
-    re.IGNORECASE,
-)
-
-
 class LiveEvidenceError(RuntimeError):
     """Expected operator or evidence failure, safe to print without a traceback."""
 
 
 def trimmed(value):
     return value.strip() if isinstance(value, str) and value.strip() else None
-
-
-def strict_nonnegative_int(value):
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        return None
-    return value
-
-
-def strict_nonnegative_number(value):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-        return None
-    return value
 
 
 def sha256_bytes(data):
@@ -122,94 +103,6 @@ def read_source_expectations(dump_dir, require_current_checkout=True):
     return values
 
 
-def all_operational_rows(payload):
-    rows = [row for row in payload.get("rows", []) if isinstance(row, dict)]
-    for conversation in payload.get("longFormConversations", []):
-        if not isinstance(conversation, dict):
-            continue
-        nested = conversation.get("rows")
-        if isinstance(nested, list):
-            rows.extend(row for row in nested if isinstance(row, dict))
-    return rows
-
-
-def identity_looks_non_live(value):
-    value = trimmed(value)
-    return value is None or NON_LIVE_IDENTITY_PATTERN.search(value) is not None
-
-
-def live_provenance_failures(payload):
-    """Reject generated candidates and incomplete operational telemetry.
-
-    The readiness validator owns quality/coverage thresholds. These checks are
-    deliberately provenance-only: every row must name a non-test provider and
-    model and retain provider attempts, retries, refusals, completion latency,
-    and diagnostic records from the real transport path.
-    """
-    failures = []
-    provider_chain = payload.get("providerChain")
-    if not isinstance(provider_chain, list) or not provider_chain:
-        failures.append("liveProviderChainMissing")
-    else:
-        for identity in provider_chain:
-            if identity_looks_non_live(identity):
-                failures.append(f"nonLiveProviderChainIdentity={identity!r}")
-
-    for index, row in enumerate(all_operational_rows(payload)):
-        row_id = readiness_gate.row_identifier(row) or f"row-{index + 1}"
-        provider = row.get("providerChosen")
-        model = row.get("providerModel")
-        if identity_looks_non_live(provider) or identity_looks_non_live(model):
-            failures.append(f"nonLiveProviderIdentity={row_id}")
-
-        attempts = strict_nonnegative_int(row.get("providerAttemptCount"))
-        retries = strict_nonnegative_int(row.get("providerRetryCount"))
-        refusals = strict_nonnegative_int(row.get("providerRefusalCount"))
-        completion = strict_nonnegative_number(row.get("timeToCompleteReplyMs"))
-        if attempts is None or attempts < 1:
-            failures.append(f"providerAttemptTelemetryMissing={row_id}")
-        if retries is None:
-            failures.append(f"providerRetryTelemetryMissing={row_id}")
-        if refusals is None:
-            failures.append(f"providerRefusalTelemetryMissing={row_id}")
-        if completion is None:
-            failures.append(f"providerCompletionLatencyMissing={row_id}")
-
-        diagnostics = row.get("diagnostics")
-        if not isinstance(diagnostics, list) or not diagnostics:
-            failures.append(f"providerDiagnosticsMissing={row_id}")
-            continue
-        has_latency = False
-        has_verified_transport_success = False
-        for diagnostic in diagnostics:
-            if not isinstance(diagnostic, dict):
-                failures.append(f"providerDiagnosticMalformed={row_id}")
-                continue
-            if (
-                identity_looks_non_live(diagnostic.get("provider"))
-                or trimmed(diagnostic.get("outcome")) is None
-                or trimmed(diagnostic.get("reason")) is None
-            ):
-                failures.append(f"providerDiagnosticMalformed={row_id}")
-            if strict_nonnegative_number(diagnostic.get("latencyMs")) is not None:
-                has_latency = True
-            status_code = strict_nonnegative_int(diagnostic.get("statusCode"))
-            if (
-                diagnostic.get("outcome") == "success"
-                and status_code is not None
-                and 200 <= status_code < 300
-                and not identity_looks_non_live(diagnostic.get("provider"))
-                and strict_nonnegative_number(diagnostic.get("latencyMs")) is not None
-            ):
-                has_verified_transport_success = True
-        if not has_latency:
-            failures.append(f"providerDiagnosticLatencyMissing={row_id}")
-        if not has_verified_transport_success:
-            failures.append(f"providerTransportSuccessMissing={row_id}")
-
-    return list(dict.fromkeys(failures))
-
-
 def attestation_failures(attestation, capture_digest, payload, source_expectations):
     if not isinstance(attestation, dict):
         return ["captureAttestationMalformed"]
@@ -256,16 +149,23 @@ def artifact_contract_failures(payload, source_expectations):
     failures = []
     if payload.get("schemaVersion") != requirement["expectedSchemaVersion"]:
         failures.append("schemaVersionMismatch")
-    missing = [key for key in requirement["requiredTopLevelKeys"] if key not in payload]
+    # The Swift capture is validated before atomic_publish adds the canonical
+    # publication provenance. Readiness requires that field on the promoted
+    # artifact, but the pre-publication candidate must not be expected to forge it.
+    capture_required_keys = [
+        key for key in requirement["requiredTopLevelKeys"]
+        if key != "liveEvidenceProvenance"
+    ]
+    missing = [key for key in capture_required_keys if key not in payload]
     if missing:
         failures.append("missingTopLevelKeys=" + ",".join(missing))
     failures.extend(
         readiness_gate.live_provider_sweep_contract_failures(
             payload,
             source_expectations=source_expectations,
+            require_published_provenance=False,
         )
     )
-    failures.extend(live_provenance_failures(payload))
     return list(dict.fromkeys(failures))
 
 

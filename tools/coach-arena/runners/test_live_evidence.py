@@ -27,6 +27,7 @@ def complete_real_live_capture():
         source_fingerprint=SOURCE_EXPECTATIONS["source-coach-fingerprint.txt"],
         git_commit=SOURCE_EXPECTATIONS["source-git-commit.txt"],
     )
+    payload.pop("liveEvidenceProvenance", None)
     payload["providerChain"] = ["Google Cloud (gemini-3.5-flash)"]
     for index, row in enumerate(operational_rows(payload)):
         row["providerChosen"] = "Google Cloud"
@@ -112,6 +113,13 @@ class LiveEvidenceTests(unittest.TestCase):
             "providerNetworkResponse",
         )
         self.assertFalse(published["liveEvidenceProvenance"]["usesReplayResponses"])
+        self.assertEqual(
+            live.readiness_gate.live_provider_sweep_contract_failures(
+                published,
+                source_expectations=SOURCE_EXPECTATIONS,
+            ),
+            [],
+        )
 
     def test_replay_fixture_and_template_identities_are_rejected(self):
         for identity in [

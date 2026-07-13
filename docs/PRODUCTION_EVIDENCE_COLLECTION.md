@@ -447,8 +447,14 @@ NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
 
 ./tools/coach-arena/run.sh readiness \
   --dump-dir "$NOUM_COACH_EVAL_DUMP_DIR" \
+  --release-evidence-run "$RUN" \
   --probe-live
 ```
+
+The final gate revalidates `$RUN` and requires its promotion receipt, source
+binding, and four managed-artifact SHA-256 values to match the active dump.
+Deleting the run, substituting an unvalidated run, or changing either copy of an
+artifact fails closed even when the JSON still satisfies its structural schema.
 
 Do not release unless the complete command exits zero and every additional
 security, social, Apple, signed-device, accessibility, and TestFlight item in

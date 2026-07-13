@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+import json
+import os
 import plistlib
 import stat
 import subprocess
@@ -12,6 +14,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "release_testflight_preflight.py"
@@ -478,8 +481,44 @@ _ = AppStore.sync()
         checks = release.evidence_checks(None)
         self.assertFalse(all(item.passed for item in checks))
 
+    def test_readiness_forwards_explicit_release_evidence_run(self) -> None:
+        evidence_dir = self.root / "evidence"
+        evidence_dir.mkdir()
+        release_evidence_run = self.root / "secure-release-evidence-run"
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({"artifactAudit": {"requiredArtifacts": []}}),
+        )
+
+        with patch.object(release.subprocess, "run", return_value=completed) as run:
+            readiness = release.collect_readiness(
+                self.root,
+                evidence_dir,
+                release_evidence_run,
+            )
+
+        self.assertIsNotNone(readiness)
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command[-2:],
+            ["--release-evidence-run", str(release_evidence_run)],
+        )
+
+    def test_release_evidence_run_defaults_from_environment(self) -> None:
+        release_evidence_run = self.root / "environment-release-evidence-run"
+
+        with patch.dict(
+            os.environ,
+            {"NOUM_RELEASE_EVIDENCE_RUN_DIR": str(release_evidence_run)},
+        ):
+            args = release.parse_args([])
+
+        self.assertEqual(args.release_evidence_run, str(release_evidence_run))
+
     def test_existing_validator_must_accept_both_external_artifacts(self) -> None:
         readiness = {
+            "releaseEvidenceRunAudit": {"passes": True},
             "artifactAudit": {
                 "requiredArtifacts": [
                     {
@@ -496,6 +535,51 @@ _ = AppStore.sync()
             }
         }
         self.assertTrue(all(item.passed for item in release.evidence_checks(readiness)))
+
+    def test_attachment_backed_run_is_required_when_external_json_passes(self) -> None:
+        readiness = {
+            "releaseEvidenceRunAudit": {
+                "passes": False,
+                "failures": ["releaseEvidenceRunMissing"],
+            },
+            "artifactAudit": {
+                "requiredArtifacts": [
+                    {
+                        "blocker": "noRealDeviceTestFlightVerification",
+                        "passesLightweightContract": True,
+                        "activeBlocker": False,
+                    },
+                    {
+                        "blocker": "operationalLaunchChecklistIncomplete",
+                        "passesLightweightContract": True,
+                        "activeBlocker": False,
+                    },
+                ]
+            },
+        }
+
+        checks = release.evidence_checks(readiness)
+        self.assertFalse(
+            next(
+                item for item in checks
+                if item.key == "attachmentBackedReleaseEvidence"
+            ).passed
+        )
+        self.assertTrue(
+            next(item for item in checks if item.key == "physicalTestFlightEvidence").passed
+        )
+        self.assertTrue(
+            next(item for item in checks if item.key == "operationalLaunchEvidence").passed
+        )
+
+        green = release.Check("fixture", True, "redacted", "none")
+        payload = release.result_payload((
+            release.Section("repository", "Repository", (green,)),
+            release.Section("authority", "Authority", (green,)),
+            release.Section("evidence", "Evidence", tuple(checks)),
+        ))
+        self.assertFalse(payload["passed"])
+        self.assertEqual(payload["verdict"], "BLOCKED")
 
     def test_direct_development_install_status_cannot_pass(self) -> None:
         readiness = {

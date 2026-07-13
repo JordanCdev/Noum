@@ -56,6 +56,14 @@ Externally earned reviewer, longitudinal, TestFlight, and operational evidence
 is collected through `tools/release-evidence/run.sh`; its templates fail by
 default and cannot be promoted without source binding, real hashed attachments,
 independent verification, and acceptance by the existing readiness validator.
+The final readiness calculation now requires that validated run to remain
+available and proves exact promotion-receipt, source-binding, and artifact-hash
+continuity with the active dump. The live-provider row likewise requires the
+published atomic-capture provenance and per-row production transport telemetry;
+schema-only or placeholder JSON cannot earn either boundary. The embedded live
+provenance remains an operator assertion bound to the supplied capture bytes,
+not independently signed cryptographic proof, so production acceptance still
+depends on the controlled live-capture workflow and truthful operator custody.
 
 Production readiness still requires independently sourced professional-coach,
 longitudinal real-user, physical TestFlight, and operational release evidence,

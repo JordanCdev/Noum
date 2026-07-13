@@ -308,19 +308,20 @@ integrated test target.
 | Selected pre-baseline Swift product/test contracts | **Proved** | At `40d5e903`, focused simulator tests passed for goal calibration/outcomes, rewrite, Phrase Bank, prescription, fast lane, local speech, privacy, KPI, and experiment contracts. They remain valid for that named source boundary, not as a substitute for the final full run. |
 | Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. App-path rows carry an explicit styled, neutral, or unknown semantic expectation. Styled turns require a passed gate and typed assessment; known neutral turns require `notEvaluated` without typed assessment; unknown IDs fail closed. The 25 supplemental arena scenarios are explicitly neutral at construction, so missing fixtures cannot silently inherit neutrality. Fabricated/default voice telemetry remains rejected. The refreshed commit-bound report preserves this contract with 23 styled, 27 neutral, and zero invalid selected traces. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
-| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and the current 118-test Python runner suite pass. The canonical artifact is refreshed from `80fbf6d2` and its current coach-source fingerprint. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
-| Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. |
-| Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 28 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
+| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and the current 126-test Python runner suite pass. The canonical artifact is refreshed from `80fbf6d2` and its current coach-source fingerprint. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
+| Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate now revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
+| Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
+| Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 31 signing/TestFlight preflight tests passed. The preflight forwards and independently requires the explicit attachment-backed run accepted by readiness. These results prove local tooling behavior only. |
 | App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `80fbf6d2` and coach fingerprint `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`; 53 conversations/109 turns pass the app-path floor with no source warnings. |
 | Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T10:20:06+00:00` embeds `80fbf6d2` / `sha256:8087e26d…ca71`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero local fixture failures. It is still local real-pipeline/target-shape evidence, not external provider, reviewer, longitudinal, or device proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
-| Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. |
+| Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. No validated attachment-backed release run is available to the gate, and none of the external rows is earned. |
 
 ## External proof gates
 
 | Required artifact/gate | Classification | Current authoritative result |
 |---|---|---|
-| Current-source live-provider transcript sweep | **Weak evidence** | One artifact is present but rejected for source commit/fingerprint mismatch, missing/malformed required long-form coverage, production-floor failure, and provider retry/refusal pressure. It is 0/1 passing. |
+| Current-source live-provider transcript sweep | **Weak evidence** | One artifact is present but rejected for source commit/fingerprint mismatch, missing published atomic-capture provenance, a non-live fallback identity in one failed row, missing/malformed required long-form coverage, production-floor failure, and provider retry/refusal pressure. It is 0/1 passing. |
 | Blinded professional-coach calibration | **Missing** | `coach-chat-conversation-expert-calibration-results-v2.json` is absent. The calibration-input packet is not a result. |
 | Longitudinal real-user transfer outcomes | **Missing** | `coach-real-user-transfer-outcomes-v3.json` is absent. Local fixtures cannot earn this row. |
 | Physical-device TestFlight QA | **Missing** | `coach-real-device-testflight-qa-v3.json` is absent. Its fail-closed contract requires exactly 14 named surfaces and 77 named checks from the same independently verified physical TestFlight build; simulator and direct development-device builds cannot count. |
@@ -351,13 +352,15 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-The safe local source/evidence refresh is complete. Keep `40d5e903` as a named
+The safe local source/evidence refresh and final-gate provenance hardening are
+complete. Keep `40d5e903` as a named
 historical baseline and `80fbf6d2` as the current canonical source boundary.
 Future coach-source changes must rerun the same atomic refresh and preserve the
 provenance contract: explicitly styled rows pass only with typed assessment,
 declared-neutral rows remain truthfully `notEvaluated`, and unknown fixture IDs
-fail closed. Local reruns cannot raise production readiness past the external
-cap by themselves.
+fail closed. The gate also requires the original validated release run and
+promotion receipt to remain available. Local reruns cannot raise production
+readiness past the external cap by themselves.
 
 ### External or approval-gated
 
