@@ -244,6 +244,115 @@ enum RoleplayEngine {
         }
     }
 
+    // MARK: Structured first value
+
+    /// Projects a written rehearsal onto content/structure dimensions only.
+    /// This path deliberately does not call `axisScores(for:)`: that spoken
+    /// roleplay projection includes filler ratio and composure, neither of
+    /// which can be inferred honestly from typed text.
+    ///
+    /// The result carries no numeric score and the response is never retained.
+    /// Callers may persist only `result.metadata` through `FirstValueReceipt`.
+    static func evaluateStructuredFirstValue(
+        response: String,
+        prompt: StructuredFirstValuePrompt
+    ) -> StructuredFirstValueResult? {
+        let signals = analyze(response)
+        guard signals.wordCount >= 8 else { return nil }
+        guard prompt.rubric.count >= 2 else { return nil }
+
+        let values = structuredAxisValues(for: signals)
+        let ranked = prompt.rubric.enumerated().map { index, axis in
+            (index: index, axis: axis, value: values[axis] ?? 0)
+        }
+        // Preserve authored rubric order on ties so the result is deterministic
+        // across launches and platforms.
+        let strength = ranked.max {
+            if $0.value == $1.value { return $0.index > $1.index }
+            return $0.value < $1.value
+        }!
+        let next = ranked.min {
+            if $0.value == $1.value { return $0.index < $1.index }
+            return $0.value < $1.value
+        }!
+
+        return StructuredFirstValueResult(
+            promptID: prompt.id,
+            wordCount: signals.wordCount,
+            strengthAxis: strength.axis,
+            nextAxis: next.axis,
+            strength: structuredStrengthCopy(for: strength.axis),
+            nextMove: structuredNextMoveCopy(for: next.axis)
+        )
+    }
+
+    private static func structuredAxisValues(
+        for signals: ResponseSignals
+    ) -> [StructuredFirstValueAxis: Double] {
+        var directness = signals.hasEarlyDirectAnswer ? 0.75 : 0.35
+        if signals.wordCount < 10 { directness -= 0.10 }
+
+        var evidence = Double(signals.evidenceMarkerCount) * 0.30
+        if signals.wordCount >= 10 { evidence += 0.20 }
+
+        var listening = Double(signals.acknowledgementMarkerCount) * 0.40
+        listening += min(0.35, Double(signals.questionSignalCount) * 0.20)
+        if signals.wordCount >= 8 { listening += 0.15 }
+
+        var ownership = Double(signals.ownershipMarkerCount) * 0.40
+        if signals.wordCount >= 8 { ownership += 0.15 }
+
+        var constructiveness = Double(signals.actionMarkerCount) * 0.35
+        if signals.hasEarlyDirectAnswer { constructiveness += 0.20 }
+        if signals.wordCount >= 10 { constructiveness += 0.15 }
+
+        var inquiry = Double(signals.questionSignalCount) * 0.35
+        if signals.acknowledgementMarkerCount > 0 { inquiry += 0.20 }
+
+        return [
+            .directness: clamp(directness),
+            .evidence: clamp(evidence),
+            .listening: clamp(listening),
+            .ownership: clamp(ownership),
+            .constructiveness: clamp(constructiveness),
+            .inquiry: clamp(inquiry),
+        ]
+    }
+
+    private static func structuredStrengthCopy(for axis: StructuredFirstValueAxis) -> String {
+        switch axis {
+        case .directness:
+            return "Your main point appears early, so the response is easy to follow."
+        case .evidence:
+            return "You support the point with a reason or concrete detail."
+        case .listening:
+            return "You acknowledge what the other person shared before moving forward."
+        case .ownership:
+            return "You name your part clearly instead of avoiding the decision."
+        case .constructiveness:
+            return "You turn the response toward a useful next step."
+        case .inquiry:
+            return "Your question creates room for the other person to respond."
+        }
+    }
+
+    private static func structuredNextMoveCopy(for axis: StructuredFirstValueAxis) -> String {
+        switch axis {
+        case .directness:
+            return "Lead with one clear answer before adding context."
+        case .evidence:
+            return "Add one specific fact, example, or reason that supports the point."
+        case .listening:
+            return "Name what you heard before offering your response."
+        case .ownership:
+            return "State your part and what you would change next time."
+        case .constructiveness:
+            return "Finish with one practical action or next step."
+        case .inquiry:
+            return "End with one genuine question that invites a useful answer."
+        }
+    }
+
     /// Weighted score in 0...1 over `rubric`'s criteria. A rubric criterion
     /// whose label doesn't match a known axis contributes a neutral 0.5
     /// rather than crashing — keeps this robust to future rubric axes

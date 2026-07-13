@@ -4338,16 +4338,32 @@ final class CoachingProfileStore: ObservableObject {
     static let shared = CoachingProfileStore()
 
     @Published private(set) var profile: CoachingProfile?
+    @Published private(set) var onboardingDraft: CoachingProfileDraft?
 
-    private let accountKey = "NoumAccountID"
-    private let providerKey = "NoumAccountProvider"
-    private let profileKeyPrefix = "coachingProfile."
+    nonisolated static let draftKeyPrefix = "coachingProfileDraft."
+    private static let profileKeyPrefix = "coachingProfile."
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
+    private let providerRawValueProvider: () -> String?
 
-    private init() {
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: @escaping () -> String? = {
+            KeychainHelper.load(key: "NoumAccountID")
+        },
+        providerRawValueProvider: @escaping () -> String? = {
+            KeychainHelper.load(key: "NoumAccountProvider")
+        }
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider
+        self.providerRawValueProvider = providerRawValueProvider
         // Start with nil profile; AuthManager's initial account hydration
         // will call reloadForCurrentAccount() after the first run-loop cycle,
         // avoiding synchronous Keychain + UserDefaults + JSON decode during
         // @StateObject creation.
+        profile = nil
+        onboardingDraft = nil
     }
 
     var needsOnboarding: Bool {
@@ -4372,6 +4388,94 @@ final class CoachingProfileStore: ObservableObject {
         try persist(profile)
     }
 
+    /// Save the two fast-lane choices without manufacturing a complete
+    /// `CoachingProfile`. Re-selecting the same choices preserves the stable
+    /// correlation ID; changing them before value begins a fresh receipt path.
+    @discardableResult
+    func saveDraft(
+        context: SpeakingContext,
+        challenge: SpeakingChallenge,
+        now: Date = Date()
+    ) -> Bool {
+        let prior = onboardingDraft
+        let keepsIdentity = prior?.speakingContext == context
+            && prior?.speakingChallenge == challenge
+        let draft = CoachingProfileDraft(
+            correlationID: keepsIdentity ? (prior?.correlationID ?? UUID()) : UUID(),
+            speakingContext: context,
+            speakingChallenge: challenge,
+            createdAt: keepsIdentity ? (prior?.createdAt ?? now) : now,
+            updatedAt: now,
+            firstValueReceipt: keepsIdentity ? prior?.firstValueReceipt : nil
+        )
+        return saveDraft(draft)
+    }
+
+    @discardableResult
+    func saveDraft(_ draft: CoachingProfileDraft) -> Bool {
+        // A verified complete profile always wins. A stale view must not be
+        // able to recreate partial activation state after onboarding finishes.
+        guard profile == nil else { return false }
+        do {
+            try persistDraft(draft)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Content-free convenience API for the structured result surface. The
+    /// typed response is never accepted by this store and therefore cannot be
+    /// serialized accidentally.
+    @discardableResult
+    func recordStructuredFirstValue(
+        wordCount: Int,
+        now: Date = Date()
+    ) -> Bool {
+        guard let draft = onboardingDraft, wordCount >= 8 else { return false }
+        if let existing = draft.firstValueReceipt {
+            return existing.modality == .structuredText
+        }
+        let metadata = StructuredFirstValueMetadata(
+            promptID: StructuredFirstValueCatalog.prompt(for: draft.speakingContext).id,
+            wordCount: wordCount
+        )
+        return saveDraft(draft.recording(.structured(metadata: metadata, completedAt: now)))
+    }
+
+    /// Richer overload for a caller that already holds the deterministic
+    /// evaluator result. It persists only the result's content-free metadata.
+    @discardableResult
+    func recordStructuredFirstValue(
+        result: StructuredFirstValueResult,
+        now: Date = Date()
+    ) -> Bool {
+        guard let draft = onboardingDraft, result.wordCount >= 8 else { return false }
+        let prompt = StructuredFirstValueCatalog.prompt(for: draft.speakingContext)
+        guard result.promptID == prompt.id,
+              prompt.rubric.contains(result.strengthAxis),
+              prompt.rubric.contains(result.nextAxis) else { return false }
+        if let existing = draft.firstValueReceipt {
+            return existing.modality == .structuredText
+        }
+        return saveDraft(draft.recording(.structured(result, completedAt: now)))
+    }
+
+    /// Called only after a real Timed `PracticeSession` has been durably
+    /// appended. Unlike `AutoGuidedFirstRep`, this never marks completion at
+    /// the routing fork.
+    @discardableResult
+    func recordSpokenFirstValue(
+        sessionID: UUID,
+        now: Date = Date()
+    ) -> Bool {
+        guard let draft = onboardingDraft else { return false }
+        if let existing = draft.firstValueReceipt {
+            return existing.modality == .spokenTimed && existing.sessionID == sessionID
+        }
+        return saveDraft(draft.recording(.spokenTimed(sessionID: sessionID, completedAt: now)))
+    }
+
     private func persist(_ profile: CoachingProfile) throws {
         guard let accountID = currentAccountID else {
             throw CoachingProfilePersistenceError.missingAccount
@@ -4391,12 +4495,13 @@ final class CoachingProfileStore: ObservableObject {
         // in the chosen voice naturally.
         let previousVoice = self.profile?.speakingStyleGoal
         let key = profileKey(for: accountID)
-        UserDefaults.standard.set(data, forKey: key)
-        guard UserDefaults.standard.data(forKey: key) == data else {
+        defaults.set(data, forKey: key)
+        guard defaults.data(forKey: key) == data else {
             throw CoachingProfilePersistenceError.verificationFailed
         }
 
         self.profile = profile
+        clearOnboardingDraft(for: accountID)
         syncProfileIfPossible(profile, accountID: accountID)
         paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
         refreshTrajectoryCache()
@@ -4426,7 +4531,7 @@ final class CoachingProfileStore: ObservableObject {
                 current.paraphrasedGoal = paraphrase
                 self.profile = current
                 if let data = try? JSONEncoder().encode(current) {
-                    UserDefaults.standard.set(data, forKey: self.profileKey(for: accountID))
+                    self.defaults.set(data, forKey: self.profileKey(for: accountID))
                 }
                 self.syncProfileIfPossible(current, accountID: accountID)
                 self.refreshTrajectoryCache()
@@ -4437,15 +4542,35 @@ final class CoachingProfileStore: ObservableObject {
     func reloadForCurrentAccount() {
         guard let accountID = currentAccountID else {
             profile = nil
+            onboardingDraft = nil
             return
         }
 
-        profile = Self.loadProfile(forKey: profileKey(for: accountID))
+        profile = Self.loadProfile(
+            forKey: profileKey(for: accountID),
+            defaults: defaults
+        )
+        if profile != nil {
+            // Profile wins after a crash between verified profile persistence
+            // and draft cleanup.
+            clearOnboardingDraft(for: accountID)
+        } else {
+            onboardingDraft = Self.loadDraft(
+                for: accountID,
+                defaults: defaults
+            )
+            if defaults.data(forKey: Self.draftKey(for: accountID)) != nil,
+               onboardingDraft == nil {
+                // Corrupt or incoherent drafts recover to a clean fast lane.
+                defaults.removeObject(forKey: Self.draftKey(for: accountID))
+            }
+        }
         refreshTrajectoryCache()
     }
 
     func endSession() {
         profile = nil
+        onboardingDraft = nil
         refreshTrajectoryCache()
     }
 
@@ -4456,12 +4581,20 @@ final class CoachingProfileStore: ObservableObject {
         guard currentAccountID == accountID else { return }
         self.profile = profile
         if let profile, let data = try? JSONEncoder().encode(profile) {
-            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
+            defaults.set(data, forKey: profileKey(for: accountID))
+            clearOnboardingDraft(for: accountID)
         }
         refreshTrajectoryCache()
     }
 
     #if DEBUG
+    /// Clears only the current account's partial activation state. UI tests
+    /// use this to start from a deterministic fast-lane receipt state without
+    /// deleting a complete coaching profile or touching another account.
+    func resetOnboardingDraftForDebug() {
+        clearOnboardingDraft(for: currentAccountID ?? "guest")
+    }
+
     /// Debug-only injector for `DevSeedData`. Writes the profile against
     /// the current account ID (Keychain) or the `"guest"` namespace when
     /// no account is set, and refreshes the published `profile` so SwiftUI
@@ -4471,9 +4604,10 @@ final class CoachingProfileStore: ObservableObject {
     func replaceForDebug(_ profile: CoachingProfile?) {
         let accountID = currentAccountID ?? "guest"
         if let profile, let data = try? JSONEncoder().encode(profile) {
-            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
+            defaults.set(data, forKey: profileKey(for: accountID))
+            clearOnboardingDraft(for: accountID)
         } else {
-            UserDefaults.standard.removeObject(forKey: profileKey(for: accountID))
+            defaults.removeObject(forKey: profileKey(for: accountID))
         }
         self.profile = profile
         refreshTrajectoryCache()
@@ -4481,21 +4615,59 @@ final class CoachingProfileStore: ObservableObject {
     #endif
 
     private func profileKey(for accountID: String) -> String {
-        "\(profileKeyPrefix)\(accountID)"
+        "\(Self.profileKeyPrefix)\(accountID)"
     }
 
     private var currentAccountID: String? {
-        KeychainHelper.load(key: accountKey)
+        accountIDProvider()
     }
 
     private var currentProviderRawValue: String? {
-        KeychainHelper.load(key: providerKey)
+        providerRawValueProvider()
     }
 
-    private static func loadProfile(forKey key: String) -> CoachingProfile? {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    nonisolated static func draftKey(for accountID: String) -> String {
+        "\(draftKeyPrefix)\(accountID)"
+    }
+
+    nonisolated static func loadDraft(
+        for accountID: String,
+        defaults: UserDefaults = .standard
+    ) -> CoachingProfileDraft? {
+        guard let data = defaults.data(forKey: draftKey(for: accountID)),
+              let draft = try? JSONDecoder().decode(CoachingProfileDraft.self, from: data),
+              draft.isCoherent else { return nil }
+        return draft
+    }
+
+    private static func loadProfile(
+        forKey key: String,
+        defaults: UserDefaults
+    ) -> CoachingProfile? {
+        guard let data = defaults.data(forKey: key),
               let profile = try? JSONDecoder().decode(CoachingProfile.self, from: data) else { return nil }
         return profile
+    }
+
+    private func persistDraft(_ draft: CoachingProfileDraft) throws {
+        guard let accountID = currentAccountID else {
+            throw CoachingProfilePersistenceError.missingAccount
+        }
+        guard draft.isCoherent,
+              let data = try? JSONEncoder().encode(draft) else {
+            throw CoachingProfilePersistenceError.encodingFailed
+        }
+        let key = Self.draftKey(for: accountID)
+        defaults.set(data, forKey: key)
+        guard defaults.data(forKey: key) == data else {
+            throw CoachingProfilePersistenceError.verificationFailed
+        }
+        onboardingDraft = draft
+    }
+
+    private func clearOnboardingDraft(for accountID: String) {
+        defaults.removeObject(forKey: Self.draftKey(for: accountID))
+        onboardingDraft = nil
     }
 
     private func refreshTrajectoryCache() {

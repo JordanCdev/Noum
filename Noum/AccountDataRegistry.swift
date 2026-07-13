@@ -382,7 +382,7 @@ extension AccountDataRegistry {
 
         var items: [AccountDataParticipant] = [
             participant("ai-consent", [.accountKey(prefix: "cloudProcessingConsent."), .accountKey(prefix: "hasAcknowledgedAIDisclosure.")], reload: { AISettingsManager.shared.reloadForCurrentAccount() }, end: { AISettingsManager.shared.endSession() }),
-            participant("coaching-profile", [.accountKey(prefix: "coachingProfile.")], reload: { CoachingProfileStore.shared.reloadForCurrentAccount() }, end: { CoachingProfileStore.shared.endSession() }),
+            participant("coaching-profile", [.accountKey(prefix: "coachingProfile."), .accountKey(prefix: CoachingProfileStore.draftKeyPrefix)], reload: { CoachingProfileStore.shared.reloadForCurrentAccount() }, end: { CoachingProfileStore.shared.endSession() }),
             participant("practice-sessions", [.accountKey(prefix: "practiceSessions.")], reload: { PracticeSessionStore.shared.reloadForCurrentAccount() }, end: { PracticeSessionStore.shared.endSession() }),
             participant("skill-trends", [.accountKey(prefix: "skillTrendSnapshots.")], reload: { SkillTrendStore.shared.reloadForCurrentAccount() }, end: { SkillTrendStore.shared.endSession() }),
             participant("baseline", [.accountKey(prefix: "communicationBaseline."), .accountKey(prefix: "pressureProfile.")], reload: { BaselineStore.shared.reloadForCurrentAccount() }, end: { BaselineStore.shared.endSession() }),
