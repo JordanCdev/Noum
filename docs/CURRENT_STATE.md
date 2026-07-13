@@ -1,5 +1,73 @@
 # Noum — Current state
 
+## 2026-07-13 — Explicit style provenance, coherent availability, and weekly phrase execution
+
+Goal-aware behavior now fails closed unless the user explicitly chose a style.
+`CoachingProfile.chosenStyleGoal` is the behavioral trust boundary;
+`speakingStyleGoal` remains only a compatibility value for decoding and writing
+older profiles. A legacy payload that has no `chosenStyleGoal` key stays readable
+but resolves to no chosen style. It does not inherit a tailored rubric, score
+bonus, trend, rewrite, coach prompt, plan, proof, note, or identity-shaped copy.
+Changing or clearing the explicit choice also invalidates or filters cached plan,
+proof, note, and AI-derived context whose voice provenance no longer matches.
+
+Recommendation measurement now belongs to the surface the user can actually
+see. `HomeCoachCard` derives one `HomeCoachRecommendationExposure` from its
+rendered blueprint, records that exact title/focus/target/mode on appearance, and
+uses the same surface-owned projection for its tap ledger. The former unread
+`ContentView` recommendation fetch/cache/task path and the device-global
+`LastNextActionSnapshot` write were removed. Summary remains owned by the
+finalized `SessionFinalizer` / `NextActionEngine` action; Home and Train keep
+their established projections rather than pretending to consume a global
+prescription they never rendered. The shared `NextActionModeAvailability`
+projection now combines the current rated-evidence unlock with live IM
+capability for Summary, Home, Train, both Ask Noum recommendation paths, and
+Prep Session. An unavailable mode is resolved before render so visible copy,
+setup, exposure, tap identity, and destination describe the same available rep;
+stale scenario/tone and fallback evidence/confidence are suppressed, while an
+established IM focus/target is retained because a provider outage does not erase
+coaching evidence. Train derives its title, reason, focus, target, setup, and
+route from one immutable `TrainRecommendationProjection` per render. Prep keeps
+the original planned mode as its rehearsal/readiness identity but uses a separate
+availability-resolved launch projection, so a runnable Timed fallback cannot
+pretend Pressure or audience simulation was completed. Defensive tap-time
+resolution rechecks live capability, fails closed to Timed if capability was
+lost after render, and never silently upgrades a Timed fallback when capability
+returns. When an unavailable Pressure or audience step falls back, Prep adds a
+category-bounded prompt that contains neither the user's moment title nor a
+transcript. The same opaque route-token contract carries that prompt to Timed
+without changing the planned mode that readiness measures.
+
+The weekly digest now accepts the optional explicit `chosenStyleGoal`. With a
+choice it adds restrained, goal-specific practice framing; without one it stays
+generic and never invents numeric movement. The persisted four-week
+`ForwardPlan` remains the weekly focus/mode/target/rationale/progress owner. A
+Phrase Bank row can now explicitly attach its entry ID to the current plan week;
+the phrase store remains the only text owner. The write is bound to the plan ID
+the user saw, deletion removes the link, and missing or newly unsafe entries fail
+closed. Home resolves the current-week link and launches its bounded transient
+prompt through `TimedPracticePromptHandoff`, without another weekly store or a
+duplicated transcript. That handoff keeps at most one bounded prompt in process,
+binds it to the active account and exact Timed route, and consumes it once. The
+opaque navigation token contains no prompt text or account identifier; account
+teardown clears the handoff, and the former unscoped prompt/word defaults keys
+are purged rather than migrated because their provenance is unknowable.
+
+Focused post-change verification passed the explicit-style trust-boundary suites
+(238 tests, zero failures), weekly-digest goal-copy suite (4 unique tests, zero
+failures), and unified availability run (69 tests across six suites, zero
+failures or skips), including the exhaustive four-mode ×
+four-availability-snapshot × live-IM matrix. The final integrated current
+working tree then passed all 3,920 `NoumTests` tests across 406 suites with zero
+failures, and its unsigned Release simulator build succeeded. The intentional
+neutral cold-start coach fixture remains required live-provider coverage but
+correctly carries no typed style assessment; evidence telemetry now rejects a
+fabricated/default voice for that fixture and fails closed when a styled or
+unknown fixture lacks its required assessment. The historical `40d5e903`
+app-path artifact and 3,872-test run documented below remain valid only for that
+named source. The canonical coach evidence still needs regeneration after the
+integrated implementation is committed to a clean source boundary.
+
 ## 2026-07-13 — Research closure audit, evidence integrity, and release authority
 
 The original research report is now mapped requirement by requirement across
@@ -26,12 +94,17 @@ bundled-policy, and hosted-policy disclosures from one reviewed manifest, and
 therefore makes earlier cloud consent stale. The authoritative readiness command
 now runs that generation check itself, so direct readiness invocation cannot
 report a clean static preflight while policy or consent surfaces have drifted.
+This proves repository generation freshness, not that the manifest-v3 body is
+already deployed. After safe release authentication is restored, compare the
+live `web.app` body with the generated disclosure and redeploy if they differ.
 
 The local Apple preflight separately verifies repository/archive shape,
 installed distribution authority, and independently collected evidence. It
 binds an archive to the exact clean source commit, validates device binaries,
 dSYMs, extension points, compiled StoreKit/authentication paths, privacy/export
-metadata, and identity-bound App Store profiles. The physical TestFlight schema
+metadata, and identity-bound App Store profiles. Existing-archive inspection
+also rejects a dirty or moved checkout even when the embedded commit matches.
+The physical TestFlight schema
 now requires exactly 14 named surfaces and 77 named checks from one independently
 verified build. This Mac still has zero valid Apple Distribution identities and
 zero matching App Store profiles; no sign, export, upload, or Apple-account
@@ -43,7 +116,9 @@ XCTest bridge at source commit `40d5e903` and coach fingerprint
 All 109 traces are source-matched; all 50 scored fixtures pass at a 79.76 average
 with zero local score, coverage, real-pipeline, or trace-quality failures. The
 full integrated `NoumTests` target passes 3,872/3,872 tests with no failures or
-skips. The readiness gate also passes 19/19 static checks and 3/3 hosted-privacy probes.
+skips. The readiness gate also passes 19/19 static checks and 3/3 hosted-privacy
+probes; the latter prove public Noum-policy reachability, not exact manifest-v3
+body freshness.
 Production remains **NO-GO at 18/100** because none of the five independent
 external artifacts passes: live-provider sweep, blinded professional review,
 longitudinal real-user transfer, physical TestFlight QA, and operational launch
@@ -194,9 +269,12 @@ exposure or acceptance event.
 Saved rewrites are now reusable behavior rather than an archive. A valid Phrase
 Bank row can create a bounded, transient `PhrasePracticeIntent`, seed the existing
 one-shot Timed prompt handoff, and launch through the existing Summary navigation
-callback. The phrase store remains the only persistence owner and continues to
-apply its account scope, identifier rejection, deduplication, export, and deletion
-rules. Unsupported Spanish and French sessions are stopped before rewrite
+callback. It can also attach its ID—never copied phrase text—to the active
+`ForwardPlan` week. Home resolves that account-owned entry into the same transient
+Timed intent; a changed plan, deleted entry, or failed privacy sanitization cannot
+be launched. The phrase store remains the only text persistence owner and
+continues to apply its account scope, identifier rejection, deduplication, export,
+and deletion rules. Unsupported Spanish and French sessions are stopped before rewrite
 eligibility, on-device English heuristics, provider resolution/transport, or
 English goal-outcome inference. `PracticeLocale` and `LocaleSettingsManager`
 remain the locale owners.
@@ -511,7 +589,10 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   bypass the consent owner.
 - **Backend:** Firebase Auth (Apple, Google, anonymous), Firestore
   via `BackendSyncManager`, optional REST backend for vended AWS
-  credentials. Privacy posture documented in `Noum/Noum/PRIVACY_*.md`.
+  credentials. Current privacy behavior and release authority are documented in
+  `Noum/PrivacyPolicy.md`, `privacy/processors.json`, and
+  `docs/PRODUCTION_READINESS_RUNBOOK.md`; the `Noum/PRIVACY_*.md` files are
+  superseded historical records only.
 - **AI providers:** Google Gemini, OpenAI, and DeepSeek for coaching
   analysis (`AINPCChatService`, `AIInsightsService`, `GoalParaphraseService`),
   configured in `AIConfig.plist`. Google Cloud TTS for IM voice playback
@@ -852,7 +933,8 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   optional Pressure Mode, optional thinking time).
 - `Noum/Noum/SuddenDeathPracticeView.swift` — pressure mode where one
   filler ends the round. Now exposes a per-mode difficulty
-  (Easy/Medium/Hard) that scales filler tolerance and start-window.
+  (Easy/Medium/Hard) that scales the start window and XP while preserving
+  zero filler tolerance at every difficulty.
 - `Noum/Noum/AhCounterView.swift` — free-form speak with live filler
   and pacing tracking.
 - `Noum/Noum/IMPracticeView.swift` — live AI conversation reps with
@@ -861,7 +943,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   `PREPStackView.swift` — focused mini-drills layered on top of the
   main modes.
 - `Noum/Noum/PressureTimerEngine.swift` — auto-ramping round configs:
-  start window 12s→3s, filler tolerance 3→0, follow-ups in R2/3/5,
+  start window 12s→3s, zero filler tolerance throughout, follow-ups in R2/3/5,
   fresh prompt in R4.
 - `Noum/Noum/LiveEloquenceHUD.swift` — in-session detection chip; pops
   briefly when `EloquenceEngine` recognises a rhetorical device mid-rep.
@@ -999,12 +1081,13 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   — M4 v1: unique-content-word ratio + top 3 repeated content words
   after stop-word + filler filtering. Card hides for sessions under
   20 content words.
-- `Noum/Noum/PrivacyInfo.xcprivacy` — App Store privacy manifest
-  declaring data collection categories (audio, name, user ID,
-  product interaction, crash + performance), API usage reasons
+- `Noum/PrivacyInfo.xcprivacy` — App Store privacy manifest declaring linked,
+  non-tracking App Functionality data for audio, other user content,
+  photos/videos, name, user ID, and product interaction. It declares API reasons
   (UserDefaults `CA92.1`, system boot time `35F9.1`, file timestamp
-  `C617.1`), and `NSPrivacyTracking=false`. Required for App Store
-  submission since May 2024.
+  `C617.1`) and `NSPrivacyTracking=false`; it does not declare the superseded
+  Noum-owned crash/performance categories. Required for App Store submission
+  since May 2024.
 - `Noum/Noum/SoundscapeEngine.swift` + `Noum/Noum/SoundscapePickerView.swift`
   — pre-rep ambience generator (`AVAudioSourceNode`-based pink/brown
   noise + sine drones), 4 modes (Off/Focus/Calm/Steady), Pro-gated for
@@ -1066,8 +1149,11 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
 - `Noum/Noum/PublicProfileSnapshot.swift` — Codable subset written to
   `profiles_public/{accountID}` and to `leagues/{bucket}/members/{id}`.
   Read by friends + league.
-- `FIRESTORE_RULES.md` (project root) — rules required to deploy the M2
-  collections safely (peer-readable but owner-write only).
+- `FIRESTORE_RULES.md` and `firestore.rules` (project root) — reviewed local
+  social authorization contracts. They must not be deployed alone: owner-written
+  ratings/results are not trusted evidence. Production activation requires the
+  guarded backup/quarantine, private-profile migration, trusted evidence
+  producer, and coordinated rules/functions cutover in the release runbook.
 
 ### Premium & infra
 - `Noum/Noum/PremiumManager.swift` — StoreKit 2 (Monthly/Annual),
@@ -1198,9 +1284,10 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   Inspire Your Audience) with concrete objectives and curated prompts.
   Reachable from the practice picker; project context is handed off
   to `TimedPracticeView` via `SpeechProjectContext.current`.
-- **Speech-to-text** — three providers (AWS Transcribe streaming,
-  Deepgram WS, Google Speech V2) with quality metrics tracked per
-  provider.
+- **Speech-to-text** — Release consent-off uses `LocalSpeechProvider`; consent-on
+  uses the authenticated Deepgram route with a bounded local setup fallback.
+  AWS Transcribe and Google Speech V2 remain development/compatibility providers,
+  with quality metrics tracked per resolved provider.
 - **Filler word detection** — semantic ("like" as simile vs filler),
   prompt-echo aware, confidence-graded. Not a naive keyword match.
 - **Pace / WPM** — computed, mode + tone + scenario aware, persisted
@@ -1269,19 +1356,19 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   than mislead. `PitchSummaryCard` shows a horizontal Varied↔Monotone
   meter alongside coach copy. Legacy `PracticeSession` JSON decodes
   cleanly with nil pitchMetrics.
-- **Word of the day (M9)** — `WordOfTheDayCatalog` ships 30 curated
+- **Word of the day (M9)** — `WordOfTheDayCatalog` ships 142 curated
   entries (word, part-of-speech, definition, 30s prompt suggestion, and
-  inflected acceptedForms list). `entry(for:)` hashes the ISO day key
-  to pick deterministically — same day, same word, no backend.
+  inflected acceptedForms list). `entry(for:accountID:)` uses a stable FNV-1a
+  seed from the ISO day and account — same day and account, same word, no backend.
   `WordOfTheDayManager` (per-account) scans today's session transcripts
   for any acceptedForm using a word-boundary safe tokenizer (matches
   app-wide `wordCount` semantics) so substrings of unrelated words don't
   trigger. "Used" stamps a per-day set in UserDefaults so a future
-  vocabulary-streak surface can read from it. `WordOfTheDayTile` on
-  populated home shows the word + definition + suggested prompt;
-  "Try it" seeds `timedPractice.suggestedPrompt` and pushes
-  `AppDestination.timedPractice`. `SessionFinalizer` triggers
-  evaluation after each session. Catalog covers ~30 days; needs growth
+  vocabulary-streak surface can read from it. `HomeUtilityStrip` shows the word
+  and its used-today state; "Try it" offers the suggested prompt to the
+  account- and route-bound `TimedPracticePromptHandoff` and pushes
+  `AppDestination.timedPracticePrompt(token:)`. `SessionFinalizer` triggers
+  evaluation after each session. Catalog covers ~142 days; needs growth
   to ~365 to satisfy the "no repeats inside a year" target.
 - **Daily challenges (M8)** — `DailyChallenge.swift` defines 8 strict
   challenge kinds keyed to real `PracticeSession` fields (held pause
@@ -1310,8 +1397,8 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   dates stored, badge animations, plus a hierarchical
   `AchievementsTreeView` that visualises locked/unlocked branches.
 - **Difficulty levels — Timed and Sudden Death** — Easy / Medium /
-  Hard for both. Sudden Death difficulty scales filler tolerance and
-  start-window.
+  Hard for both. Sudden Death difficulty scales its start window and XP;
+  every difficulty remains zero-tolerance for fillers.
 - **Topic / prompt generation (M7)** — 200+ curated prompts in
   `PracticeTopics.swift` across 8 themes, plus a 70/30 mix with
   `AIPromptGeneratorService`. The AI generator is an actor that mirrors
@@ -1363,8 +1450,9 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   empty states: "Awaiting sync" when no friend has been backend-synced;
   "No linked friends" when all friends are local-only; "You lead" when
   the user's peak exceeds every friend's; "Tied with [name]" when
-  matched. Friend peer reads need `FIRESTORE_RULES.md` deployed for
-  real data — card handles empty `members` arrays correctly today.
+  matched. Friend peer reads require the complete guarded social cutover, not a
+  standalone `FIRESTORE_RULES.md` deployment; the card handles empty `members`
+  arrays while the production surface remains unavailable.
 - **Recommendation engine** — `RecommendationBiasEngine` +
   `CoachingPlanner` produce next-best-mode + reason, with
   `RecommendationLearningStore` tracking whether following the
@@ -1382,15 +1470,16 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
 - **Deep linking** — `noum://` URL scheme registered. `DeepLinkRouter`
   buffers the URL; `ContentView` consumes it once it owns the nav
   stack. Routes: `/lesson/<id>`, `/practice`, `/friend/<id>`.
-- **Friends / async challenges (M2 v1)** — round-trip via Firestore
-  shared docs at `challenges/{id}` is shipped. Each participant writes
-  their own slice and reads the doc. Friend invitation by QR code
-  carries the inviter's `accountID` so peer stats can be fetched.
-- **Weekly league (M2 v1)** — `LeagueManager` writes the user's
-  snapshot to `leagues/{tier}_{ISO-year}-W{week}/members/{accountID}`
-  after every session. `LeagueView` reads top 20 of the current bucket.
-  Tier is derived from rating (Bronze < 300, Silver < 500, Gold < 700,
-  Platinum < 850, Diamond ≥ 850).
+- **Friends / async challenges (M2 v1)** — local client and Firestore contract
+  code exists for shared `challenges/{id}` documents and account-ID invitations,
+  but the production actions must remain unavailable until the guarded social
+  cutover completes.
+- **Weekly league (M2 v1)** — the local client can project a snapshot into
+  `leagues/{tier}_{ISO-year}-W{week}/members/{accountID}` and `LeagueView` can
+  read the current bucket's top 20. Those client-authored ratings/results are not
+  trusted production evidence; activation waits for the server-side evidence
+  producer and coordinated rules/functions cutover. Tier remains derived from
+  rating (Bronze < 300, Silver < 500, Gold < 700, Platinum < 850, Diamond ≥ 850).
 - **Settings** — production-quality refactor with hero profile, Pro/
   Free state, manage-subscription deep link, typed deletion confirm,
   haptics master gate, mic permission status, "Your data" sheet,
@@ -1440,12 +1529,12 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
 
 ### Stubbed / placeholder
 
-- **Goal-driven coaching feedback in mid-session UI** — the goal is
-  captured and now reaches post-session coaching surfaces:
+- **Goal-driven coaching feedback in mid-session UI** — when a style is
+  explicitly chosen, it reaches post-session coaching surfaces:
   `NextActionEngine.recommend` appends a goal-aligned suffix to the
   reasoning when the chosen drill targets an aligned skill area, and
   `MiniDrillResultView` shows a "Closer to your <voice> voice" capsule
-  on successful drills that align with the user's
+  on successful drills that align with the user's chosen
   `SpeakingStyleGoal`. Alignment map lives on
   `SpeakingStyleGoal.alignedSkillAreas` in `DrillSystem.swift` (e.g.
   `.concise` → `[conciseSpeaking, structure, fillerReduction]`).
@@ -1531,7 +1620,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   (new) sits under the subtitle of the home `suggestionLink` and reads
   "Toward your <voice> voice" when the chosen voice and the recommended
   mode line up. Silent in three honest paths: no `CoachingProfile`, no
-  `SpeakingStyleGoal` on the profile, or the alignment intersection is
+  explicit `chosenStyleGoal` on the profile, or the alignment intersection is
   empty (warm-voice users on a sudden-death recommendation see nothing,
   not a fake nudge). The set design ensures every voice has at least one
   aligned mode (so the chip is reachable for everyone) AND every voice has
@@ -1545,7 +1634,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   still compiles), and the card renders the existing `VoiceAlignmentChip`
   underneath the body copy with `AppColor.tint(for:)` mirroring the
   mode-color contract used by the home tile. `SummaryView.lookingAheadHint`
-  passes `coachingProfileStore.profile?.speakingStyleGoal` through. The
+  passes `coachingProfileStore.profile?.chosenStyleGoal` through. The
   same three honest silent paths apply on the post-rep surface — no
   profile, no voice goal, or off-mode alignment — so the post-session
   surface respects the same restraint the home surface respects. Six
@@ -1556,7 +1645,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   silent mode; the legacy initializer back-compat is locked. Closes the
   goal-aware coaching loop end-to-end — every surface the app uses to
   recommend, frame, or report on a user's next move now reads from the
-  same `SpeakingStyleGoal` source of truth.
+  same optional `chosenStyleGoal` source of truth.
   **The drill picker itself is now goal-aware too**: seventh surface,
   closes the inside of the loop. Earlier work covered every *display*
   of the next move (pre-rep banner, mid-rep HUD, post-rep momentum,
@@ -1579,13 +1668,14 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   `alignedSkillAreas` is a `Set` without order). So a brand-new user
   who picks "warm" gets a pace-control drill from their first
   session, not a structure drill. `NextActionEngine.standardDrill`
-  resolves `SpeakingStyleGoal` from `NextActionInput.styleGoal` and
+  resolves the optional explicit `SpeakingStyleGoal` from
+  `NextActionInput.styleGoal` and
   passes it through; `SessionFinalizer` also threads the voice into
   the Coach Note `primaryFocus` lookup so the "leverage" line stays
   aligned with the skill the drill is about to train (no more "your
   biggest opportunity is structure" appearing next to a pace drill).
   `SummaryView.drillRecommendationV2` reads
-  `coachingProfileStore.profile?.speakingStyleGoal` too, so the
+  `coachingProfileStore.profile?.chosenStyleGoal` too, so the
   view-tier preview matches the persisted recommendation. Ten unit
   tests in `GoalAwareDrillSelectionTests` lock the contract: bias
   breaks ties at the developing tier, bias never overrides
@@ -1604,7 +1694,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   recommended mode than the one just finished, so the in-the-moment
   drill stays the hero. The blueprint's `focus` and `target` fields
   remain home-screen only.
-- **Hosted privacy policy URL** — the bundled `PrivacyPolicy.md` is
+- **Hosted privacy policy URL (historical pre-deploy state)** — the bundled `PrivacyPolicy.md` is
   now rendered in-app via `PrivacyPolicyView`, reachable from
   Settings → Privacy & Data → Privacy policy. `public/privacy.html`
   + `public/index.html` are staged and `firebase.json` has the
@@ -1618,7 +1708,9 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   (`npx -y firebase-tools@latest --version` returned
   `zsh:1: command not found: npx`). Operational next step: run the
   literal deploy command from an authenticated machine with Firebase
-  CLI, or add approved Firebase CLI tooling to this workspace.
+  CLI, or add approved Firebase CLI tooling to this workspace. This entry is
+  superseded by the 2026-07-11 verified-deployment entry above; it is retained
+  only as dated history and must not be read as the current hosting status.
 - **SpeakingRatingCard placeholder — resolved.** When
   `rating.ratingHistory` is empty `RatingHistoryChart` returns
   `EmptyView()` from the chart slot, collapsing it entirely. The
@@ -1725,12 +1817,13 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
   contract so a future refactor that drops `relativeTo:` fails the test
   suite.
-- **Firebase tooling is available; local emulators still need Java** —
-  Node 22, npm, and Firebase CLI 15.23.0 are available and authenticated for
-  `noum-d0b6f`. Functions lint, build, and the 22-test transport suite pass.
+- **Firebase tooling exists; the recorded authentication is no longer trusted** —
+  Node 22, npm, and Firebase CLI 15.23.0 are installed, but the two CLI sessions
+  exposed during the 2026-07-13 inspection must be revoked before any authenticated
+  use. Functions lint, build, and the current local transport/schema suites pass.
   The Auth/Firestore/Functions emulator integration command cannot start on
-  this Mac until a Java runtime is installed; deployment remains a deliberate
-  release action rather than part of local UI verification.
+  this Mac until a Java runtime is installed; deployment remains a deliberate,
+  newly authenticated release action rather than part of local UI verification.
 
 ## 2026-07-11 — cohesive UI, language, and journey pass
 

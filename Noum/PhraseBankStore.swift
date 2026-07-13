@@ -41,7 +41,11 @@ struct PhraseBankEntry: Codable, Equatable, Identifiable {
 @available(iOS 17.0, macOS 12.0, *)
 @MainActor
 final class PhraseBankStore: ObservableObject {
-    static let shared = PhraseBankStore()
+    static let shared = PhraseBankStore(entriesDidChange: { validEntryIDs in
+        ForwardPlanStore.shared.reconcilePracticePhraseReferences(
+            validEntryIDs: validEntryIDs
+        )
+    })
     static let maximumEntries = 40
     nonisolated static let maximumTextCharacters = 320
     static let storageKeyPrefix = "phraseBank.entries"
@@ -50,13 +54,16 @@ final class PhraseBankStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
+    private let entriesDidChange: ((Set<UUID>) -> Void)?
 
     init(
         defaults: UserDefaults = .standard,
-        accountIDProvider: (() -> String?)? = nil
+        accountIDProvider: (() -> String?)? = nil,
+        entriesDidChange: ((Set<UUID>) -> Void)? = nil
     ) {
         self.defaults = defaults
         self.accountIDProvider = accountIDProvider ?? { Self.defaultAccountIDProvider() }
+        self.entriesDidChange = entriesDidChange
         load()
     }
 
@@ -111,6 +118,7 @@ final class PhraseBankStore: ObservableObject {
     func remove(id: UUID) {
         entries.removeAll { $0.id == id }
         persist()
+        notifyEntriesChanged()
     }
 
     func reloadForCurrentAccount() {
@@ -168,12 +176,17 @@ final class PhraseBankStore: ObservableObject {
         guard let data = defaults.data(forKey: currentKey),
               let decoded = try? JSONDecoder().decode([PhraseBankEntry].self, from: data) else {
             entries = []
+            notifyEntriesChanged()
             return
         }
         entries = Array(decoded
             .filter { Self.sanitizedText($0.text) != nil }
             .sorted { $0.savedAt > $1.savedAt }
             .prefix(Self.maximumEntries))
+        // Persist the filtered/capped archive so invalid legacy rows are not
+        // reconsidered on every launch, then reconcile any plan references.
+        persist()
+        notifyEntriesChanged()
     }
 
     private func sortAndPersist() {
@@ -182,11 +195,16 @@ final class PhraseBankStore: ObservableObject {
             entries.removeLast(entries.count - Self.maximumEntries)
         }
         persist()
+        notifyEntriesChanged()
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         defaults.set(data, forKey: currentKey)
+    }
+
+    private func notifyEntriesChanged() {
+        entriesDidChange?(Set(entries.map(\.id)))
     }
 
     private static func defaultAccountIDProvider() -> String? {

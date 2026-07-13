@@ -85,6 +85,19 @@ struct PracticeModePrescriptionCopy {
             return nil
         }
     }
+
+    static func defaultRecommendationReason(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:
+            return "Helps when your answers end early."
+        case .suddenDeath:
+            return "Sharpens composure under live pressure."
+        case .ahCounter:
+            return "Cleans openings and steadies rhythm."
+        case .imConversation:
+            return "Trains realistic social or work pressure."
+        }
+    }
 }
 
 struct PracticeModeAvailability: Equatable {
@@ -218,6 +231,86 @@ struct PracticeModeGoalGrounding {
     }
 }
 
+/// One immutable presentation snapshot for Train's recommended-rep hero.
+///
+/// The recommendation engine's cached blueprint is intentionally unresolved:
+/// capability can change between that cache write and SwiftUI's next render.
+/// This projection applies the current capability snapshot once, then carries
+/// every visible field and launch setup from that same resolved blueprint so a
+/// Timed fallback can never inherit Conversation Practice or Pressure Drill
+/// copy while `.onChange` catches up.
+struct TrainRecommendationProjection {
+    let blueprint: RecommendationBiasBlueprint
+    let mode: PracticeMode
+    let title: String
+    let reason: String
+    let focus: String
+    let target: String
+    let scenario: IMConversationScenario?
+    let tone: IMTargetTone?
+    let suggestedTheme: PromptTheme
+
+    static var initialBlueprint: RecommendationBiasBlueprint {
+        timedBlueprint(theme: .all, source: .coldStart)
+    }
+
+    static func resolve(
+        blueprint: RecommendationBiasBlueprint,
+        availability: NextActionModeAvailability,
+        visibleModes: [PracticeMode]
+    ) -> TrainRecommendationProjection {
+        let capabilityResolved = availability.resolving(blueprint)
+        let visibleBlueprint = visibleModes.contains(capabilityResolved.recommendedMode)
+            ? capabilityResolved
+            : timedFallback(from: capabilityResolved)
+        let dynamicReason = [visibleBlueprint.whyNow, visibleBlueprint.whyMode]
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let reason = CoachDisplayCopy.normalized(
+            dynamicReason ?? PracticeModePrescriptionCopy.defaultRecommendationReason(
+                for: visibleBlueprint.recommendedMode
+            )
+        )
+
+        return TrainRecommendationProjection(
+            blueprint: visibleBlueprint,
+            mode: visibleBlueprint.recommendedMode,
+            title: visibleBlueprint.recommendedMode.displayLabel,
+            reason: reason,
+            focus: visibleBlueprint.focus,
+            target: visibleBlueprint.target,
+            scenario: visibleBlueprint.recommendedScenario,
+            tone: visibleBlueprint.recommendedTone,
+            suggestedTheme: visibleBlueprint.suggestedTheme
+        )
+    }
+
+    private static func timedFallback(
+        from blueprint: RecommendationBiasBlueprint
+    ) -> RecommendationBiasBlueprint {
+        timedBlueprint(theme: blueprint.suggestedTheme, source: blueprint.source)
+    }
+
+    private static func timedBlueprint(
+        theme: PromptTheme,
+        source: RecommendationBlueprintSource
+    ) -> RecommendationBiasBlueprint {
+        let timedBenefit = RecommendationBiasEngine.playbook.first { $0.mode == .timed }
+        return RecommendationBiasBlueprint(
+            recommendedMode: .timed,
+            recommendedTone: nil,
+            recommendedScenario: nil,
+            focus: "First clear read",
+            target: "Complete one rated rep",
+            modeBenefit: timedBenefit?.benefit ?? "Builds a clean, rated speaking baseline.",
+            whyMode: timedBenefit?.bestFor ?? "Timed Practice creates a clear rated starting point.",
+            whyNow: "Timed Practice is ready now.",
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: theme,
+            source: source
+        )
+    }
+}
+
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
@@ -226,6 +319,7 @@ struct PracticeModeSelectionView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
@@ -234,24 +328,10 @@ struct PracticeModeSelectionView: View {
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var goalRefresh = GoalRefreshManager.shared
-    @State private var cachedRecommendedMode: PracticeMode?
-    @State private var cachedRecommendedFocus: String?
-    @State private var cachedRecommendedTarget: String?
-    /// Dynamic per-user "why this mode" line produced by the
-    /// `RecommendationBiasEngine`. Falls back to the static
-    /// `ModeOption.recommendedReason` when nil (cold start, no
-    /// session history).
-    @State private var cachedRecommendedReason: String?
-    /// IM scenario + tone the `RecommendationBiasEngine` wants this user
-    /// to drill next, carried by the blueprint only when the recommended
-    /// mode is IM (a per-scenario tone drill or the goal-based default).
-    /// Threaded into `appDestination(for: .imConversation)` so launching
-    /// IM from the picker prefills the same scenario + tone the Home
-    /// coach card does — the drill is offered wherever the user lands,
-    /// not just on Home. Both nil when IM isn't the recommendation, so
-    /// the IM setup falls back to the normal scenario grid.
-    @State private var cachedRecommendedScenario: IMConversationScenario?
-    @State private var cachedRecommendedTone: IMTargetTone?
+    /// The engine result stays unresolved in state. The hero resolves this
+    /// whole blueprint against one live capability snapshot each render,
+    /// preventing independently cached mode/copy/setup fields from drifting.
+    @State private var cachedRecommendationBlueprint = TrainRecommendationProjection.initialBlueprint
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
@@ -292,13 +372,14 @@ struct PracticeModeSelectionView: View {
         let instruction: String
         let systemImage: String
         let tint: Color
-        /// Pre-baked single line shown only when this mode is the recommended pick.
-        /// Never user-derived — designed to read on-voice for any speaker.
-        let recommendedReason: String
         var id: PracticeMode { mode }
     }
 
     private var options: [ModeOption] {
+        modeOptions(imConversationAvailable: IMModeAvailability.isAvailable)
+    }
+
+    private func modeOptions(imConversationAvailable: Bool) -> [ModeOption] {
         [
             ModeOption(
                 mode: .timed,
@@ -306,8 +387,7 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Build a full answer with structure and a soft clock.",
                 instruction: "Lead with the answer, then add one concrete example.",
                 systemImage: "clock.fill",
-                tint: AppColor.modeTimed,
-                recommendedReason: "Helps when your answers end early."
+                tint: AppColor.modeTimed
             ),
             ModeOption(
                 mode: .suddenDeath,
@@ -315,8 +395,7 @@ struct PracticeModeSelectionView: View {
                 subtitle: "A hard clock with zero filler tolerance.",
                 instruction: "Answer once and keep your composure under the clock.",
                 systemImage: "bolt.fill",
-                tint: AppColor.modeSuddenDeath,
-                recommendedReason: "Sharpens composure under live pressure."
+                tint: AppColor.modeSuddenDeath
             ),
             ModeOption(
                 mode: .ahCounter,
@@ -324,28 +403,35 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Speak freely while Noum tracks fillers and pacing.",
                 instruction: "Pause instead of filling the space.",
                 systemImage: "waveform.and.mic",
-                tint: AppColor.modeAhCounter,
-                recommendedReason: "Cleans openings and steadies rhythm."
+                tint: AppColor.modeAhCounter
             )
-        ] + (IMModeAvailability.isAvailable ? [
+        ] + (imConversationAvailable ? [
             ModeOption(
                 mode: .imConversation,
                 title: PracticeMode.imConversation.displayLabel,
                 subtitle: "Live conversation reps with tone and pressure control.",
                 instruction: "Hold one clear point through the back-and-forth.",
                 systemImage: "message.badge.waveform.fill",
-                tint: AppColor.modeIM,
-                recommendedReason: "Trains realistic social or work pressure."
+                tint: AppColor.modeIM
             )
         ] : [])
     }
 
+    private var renderedRecommendation: TrainRecommendationProjection {
+        let imAvailable = IMModeAvailability.isAvailable
+        let renderedOptions = modeOptions(imConversationAvailable: imAvailable)
+        return TrainRecommendationProjection.resolve(
+            blueprint: cachedRecommendationBlueprint,
+            availability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: imAvailable
+            ),
+            visibleModes: renderedOptions.map(\.mode)
+        )
+    }
+
     private var recommendedMode: PracticeMode {
-        let candidate = cachedRecommendedMode ?? .timed
-        guard PracticeModeAvailability.isUnlocked(candidate, rating: ratingStore.rating) else {
-            return .timed
-        }
-        return candidate
+        renderedRecommendation.mode
     }
 
     private var recommendedOption: ModeOption {
@@ -378,19 +464,35 @@ struct PracticeModeSelectionView: View {
         return primaryOption.tint
     }
 
-    private var showsFloatingStartCTA: Bool {
-        crutchSelected || paceSelected || selectedMode != recommendedMode
-    }
-
     // MARK: - Body
 
     var body: some View {
-        ReadingScreenScaffold(
+        let imAvailable = IMModeAvailability.isAvailable
+        let renderedOptions = modeOptions(imConversationAvailable: imAvailable)
+        let recommendation = TrainRecommendationProjection.resolve(
+            blueprint: cachedRecommendationBlueprint,
+            availability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: imAvailable
+            ),
+            visibleModes: renderedOptions.map(\.mode)
+        )
+        let recommendationOption = renderedOptions.first {
+            $0.mode == recommendation.mode
+        } ?? renderedOptions[0]
+        let showsFloatingStartCTA = crutchSelected
+            || paceSelected
+            || selectedMode != recommendation.mode
+        return ReadingScreenScaffold(
             title: "Train",
             subtitle: "Choose one focused rep, or continue your curriculum.",
             bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
         ) {
-            recommendedRepHero
+            recommendedRepHero(
+                recommendation,
+                option: recommendationOption,
+                showsFloatingStartCTA: showsFloatingStartCTA
+            )
             practiceLibrary
         }
         .navigationTitle("")
@@ -402,9 +504,9 @@ struct PracticeModeSelectionView: View {
             }
         }
         .task {
-            computeRecommendation()
-            if options.contains(where: { $0.mode == recommendedMode }) {
-                selectedMode = recommendedMode
+            let recommendation = computeRecommendation()
+            if options.contains(where: { $0.mode == recommendation.mode }) {
+                selectedMode = recommendation.mode
             }
             if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
                 selectedMode = .timed
@@ -416,21 +518,29 @@ struct PracticeModeSelectionView: View {
             PracticeModeQuickStart.clearCrutch()
         }
         .onChange(of: skillTrendStore.snapshots.count) { _, _ in
-            computeRecommendation()
-            selectedMode = recommendedMode
+            let recommendation = computeRecommendation()
+            selectedMode = recommendation.mode
             crutchSelected = false
             paceSelected = false
+        }
+        .onChange(of: IMModeAvailability.isAvailable) { _, _ in
+            refreshRecommendationForCapabilityChange()
+        }
+        .onChange(of: ratingStore.rating.hasRatedEvidence) { _, _ in
+            refreshRecommendationForCapabilityChange()
         }
     }
 
     // MARK: - Recommended Rep
 
-    private var recommendedRepHero: some View {
-        let option = recommendedOption
-        let reason = CoachDisplayCopy.normalized(cachedRecommendedReason ?? option.recommendedReason)
+    private func recommendedRepHero(
+        _ recommendation: TrainRecommendationProjection,
+        option: ModeOption,
+        showsFloatingStartCTA: Bool
+    ) -> some View {
         let instruction = PracticeModePrescriptionCopy.prescriptionLine(
-            focus: cachedRecommendedFocus,
-            target: cachedRecommendedTarget
+            focus: recommendation.focus,
+            target: recommendation.target
         ) ?? option.instruction
         return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top, spacing: Spacing.md) {
@@ -441,7 +551,7 @@ struct PracticeModeSelectionView: View {
                         .font(Typography.caption)
                         .foregroundStyle(option.tint)
 
-                    Text(option.title)
+                    Text(recommendation.title)
                         .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -450,22 +560,22 @@ struct PracticeModeSelectionView: View {
             }
 
             CoachBriefSurface(
-                observation: reason,
+                observation: recommendation.reason,
                 nextMove: instruction,
                 tint: option.tint
             )
 
             if !showsFloatingStartCTA {
-                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
-                    selectedMode = option.mode
+                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: option.tint) {
+                    selectedMode = recommendation.mode
                     crutchSelected = false
                     paceSelected = false
-                    recommendationLearningStore.markTapped(mode: option.mode)
-                    // The recommended rep is a prescription: one tap launches it.
-                    // Quick start preserves the user's saved setup while avoiding
-                    // another confirmation screen.
-                    PracticeModeQuickStart.arm(for: option.mode)
-                    navigationPath.append(appDestination(for: option.mode))
+                    launchMode(
+                        recommendation.mode,
+                        recommendation: recommendation,
+                        quickStart: true,
+                        recordsRecommendationAcceptance: true
+                    )
                 }
                 .accessibilityIdentifier("practiceModes.recommendedHero.begin")
             }
@@ -477,10 +587,15 @@ struct PracticeModeSelectionView: View {
             // this rep. Restrained, mirrors the Impromptu redesign's gear-hidden
             // settings rather than a second loud button.
             Button {
-                selectedMode = option.mode
+                selectedMode = recommendation.mode
                 crutchSelected = false
                 paceSelected = false
-                navigationPath.append(appDestination(for: option.mode))
+                launchMode(
+                    recommendation.mode,
+                    recommendation: recommendation,
+                    quickStart: false,
+                    recordsRecommendationAcceptance: false
+                )
             } label: {
                 Label(PracticeModePrescriptionCopy.adjustLabel, systemImage: "slider.horizontal.3")
                     .font(.footnote.weight(.semibold))
@@ -499,10 +614,11 @@ struct PracticeModeSelectionView: View {
     }
 
     private func recommendedSuccessMarker(tint: Color) -> some View {
-        Group {
+        let recommendation = renderedRecommendation
+        return Group {
             if let line = PracticeModePrescriptionCopy.prescriptionLine(
-                focus: cachedRecommendedFocus,
-                target: cachedRecommendedTarget
+                focus: recommendation.focus,
+                target: recommendation.target
             ) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "target")
@@ -888,8 +1004,9 @@ struct PracticeModeSelectionView: View {
     // MARK: - Mode Card
 
     private func modeCard(_ option: ModeOption) -> some View {
+        let recommendation = renderedRecommendation
         let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
-        let isRecommended = option.mode == recommendedMode
+        let isRecommended = option.mode == recommendation.mode
         let isExpanded = expandedModes.contains(option.mode)
         let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
 
@@ -961,7 +1078,7 @@ struct PracticeModeSelectionView: View {
                         }
 
                         if isRecommended {
-                            Text(cachedRecommendedReason ?? option.recommendedReason)
+                            Text(recommendation.reason)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(option.tint)
                                 .padding(.top, 2)
@@ -1111,8 +1228,11 @@ struct PracticeModeSelectionView: View {
         let title = quickStartLabel(for: option.mode)
         return Button {
             CoachHaptic.selectionTap()
-            PracticeModeQuickStart.arm(for: option.mode)
-            navigationPath.append(appDestination(for: option.mode))
+            launchMode(
+                option.mode,
+                quickStart: true,
+                recordsRecommendationAcceptance: false
+            )
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
@@ -1495,7 +1615,11 @@ struct PracticeModeSelectionView: View {
                 selectedMode = .timed
                 navigationPath.append(AppDestination.timedPractice)
             } else {
-                navigationPath.append(appDestination(for: selectedMode))
+                launchMode(
+                    selectedMode,
+                    quickStart: false,
+                    recordsRecommendationAcceptance: false
+                )
             }
         } label: {
             Text(ctaLabel)
@@ -1529,14 +1653,17 @@ struct PracticeModeSelectionView: View {
 
     // MARK: - Recommendation Engine
 
-    private func computeRecommendation() {
+    @discardableResult
+    private func computeRecommendation() -> TrainRecommendationProjection {
+        let imAvailable = IMModeAvailability.isAvailable
+        let renderedOptions = modeOptions(imConversationAvailable: imAvailable)
         let context = RecommendationBiasContextBuilder.context(
             profile: coachingProfileStore.profile,
             sessions: sessionStore.sessions,
             sessionStreak: sessionStreak,
             daysSinceLastSession: daysSinceLastSession,
             coachMemory: coachMemoryStore.currentMemory,
-            imAvailable: IMModeAvailability.isAvailable,
+            imAvailable: imAvailable,
             recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
         )
@@ -1545,52 +1672,26 @@ struct PracticeModeSelectionView: View {
             trends: trends,
             sessionCount: sessionStore.sessions.count
         )?.applying(to: context.blueprint) ?? context.blueprint
-        let blueprint = visibleBlueprint(from: coherentBlueprint)
-        cachedRecommendedMode = blueprint.recommendedMode
-        cachedRecommendedFocus = blueprint.focus
-        cachedRecommendedTarget = blueprint.target
-        cachedRecommendedScenario = blueprint.recommendedScenario
-        cachedRecommendedTone = blueprint.recommendedTone
-        // Prefer `whyNow` (the situational hook) over `whyMode` (the
-        // mode-benefit), but fall back gracefully and ignore empty
-        // strings so we never render a blank line.
-        let dynamic = [blueprint.whyNow, blueprint.whyMode]
-            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-        cachedRecommendedReason = dynamic
-        recordRecommendationShown(blueprint)
+        cachedRecommendationBlueprint = coherentBlueprint
+        let recommendation = TrainRecommendationProjection.resolve(
+            blueprint: coherentBlueprint,
+            availability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: imAvailable
+            ),
+            visibleModes: renderedOptions.map(\.mode)
+        )
+        recordRecommendationShown(recommendation)
+        return recommendation
     }
 
-    private func visibleBlueprint(from blueprint: RecommendationBiasBlueprint) -> RecommendationBiasBlueprint {
-        let canShowMode = options.contains { $0.mode == blueprint.recommendedMode }
-        let isUnlocked = PracticeModeAvailability.isUnlocked(blueprint.recommendedMode, rating: ratingStore.rating)
-        guard canShowMode, isUnlocked else {
-            let timedBenefit = RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })
-            return RecommendationBiasBlueprint(
-                recommendedMode: .timed,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                focus: "First clear read",
-                target: "Complete one rated rep",
-                modeBenefit: timedBenefit?.benefit ?? "Builds a clean, rated speaking baseline.",
-                whyMode: timedBenefit?.bestFor ?? "Timed Practice creates a clear rated starting point.",
-                whyNow: canShowMode
-                    ? PracticeModePrescriptionCopy.pressureLockedDisplayHint
-                    : "Timed Practice is ready now.",
-                suggestedTimedDifficulty: nil,
-                suggestedTheme: blueprint.suggestedTheme,
-                source: blueprint.source
-            )
-        }
-        return blueprint
-    }
-
-    private func recordRecommendationShown(_ blueprint: RecommendationBiasBlueprint) {
+    private func recordRecommendationShown(_ recommendation: TrainRecommendationProjection) {
         recommendationLearningStore.recordShown(
-            fingerprint: recommendationFingerprint(for: blueprint),
-            title: recommendedOption.title,
-            focus: blueprint.focus,
-            target: blueprint.target,
-            mode: blueprint.recommendedMode,
+            fingerprint: recommendationFingerprint(for: recommendation.blueprint),
+            title: recommendation.title,
+            focus: recommendation.focus,
+            target: recommendation.target,
+            mode: recommendation.mode,
             isAIBacked: false
         )
     }
@@ -1607,31 +1708,59 @@ struct PracticeModeSelectionView: View {
             profileKey,
             blueprint.source.trackingLabel,
             blueprint.recommendedMode.rawValue,
+            blueprint.recommendedScenario?.rawValue ?? "no-scenario",
+            blueprint.recommendedTone?.rawValue ?? "no-tone",
+            blueprint.suggestedTheme.rawValue,
             blueprint.focus,
             blueprint.target,
             recent
         ].joined(separator: ".")
     }
 
-    private func appDestination(for mode: PracticeMode) -> AppDestination {
-        switch mode {
-        case .timed:
-            return .timedPractice
-        case .suddenDeath:
-            return .suddenDeathPractice
-        case .ahCounter:
-            return .ahCounterPractice
-        case .imConversation:
-            if IMModeAvailability.isAvailable {
-                // Honour the engine's recommended scenario + tone (set
-                // only when IM is the recommendation — a tone drill or the
-                // goal-based default). Both nil otherwise, so a free-choice
-                // IM launch still opens the normal scenario grid.
-                return .imPractice(scenario: cachedRecommendedScenario, tone: cachedRecommendedTone)
-            } else {
-                return .timedPractice
+    private func launchMode(
+        _ displayedMode: PracticeMode,
+        recommendation: TrainRecommendationProjection? = nil,
+        quickStart: Bool,
+        recordsRecommendationAcceptance: Bool
+    ) {
+        let launchRecommendation = recommendation ?? renderedRecommendation
+        let carriesRecommendationSetup = displayedMode == launchRecommendation.mode
+        let imAvailable = IMModeAvailability.isAvailable
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: displayedMode,
+            scenario: displayedMode == .imConversation && carriesRecommendationSetup
+                ? launchRecommendation.scenario
+                : nil,
+            tone: displayedMode == .imConversation && carriesRecommendationSetup
+                ? launchRecommendation.tone
+                : nil,
+            imAvailable: imAvailable,
+            modeAvailability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: imAvailable
+            )
+        )
+        if launch.acceptsDisplayedPrescription {
+            if quickStart {
+                PracticeModeQuickStart.arm(for: launch.launchedMode)
             }
+            if recordsRecommendationAcceptance {
+                recommendationLearningStore.markTapped(mode: launch.launchedMode)
+            }
+        } else {
+            // The capability changed after this mode rendered. Route safely,
+            // but do not arm/log an operational fallback the user never saw.
+            PracticeModeQuickStart.clear()
+            selectedMode = launch.launchedMode
         }
+        navigationPath.append(launch.destination)
+    }
+
+    private func refreshRecommendationForCapabilityChange() {
+        let recommendation = computeRecommendation()
+        selectedMode = recommendation.mode
+        crutchSelected = false
+        paceSelected = false
     }
 
     // MARK: - Recent-session signals (feed RecommendationBiasEngine)

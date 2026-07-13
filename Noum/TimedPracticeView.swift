@@ -662,6 +662,9 @@ struct TimedPracticeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
     @Binding var navigationPath: NavigationPath
+    /// Present only for a seeded launch. Ordinary Timed routes deliberately do
+    /// not consume a pending prompt from another surface.
+    var promptHandoffToken: UUID? = nil
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -862,7 +865,6 @@ struct TimedPracticeView: View {
                 // for them; for the auto-guided rep it drops the 15s countdown
                 // and keeps the prompt visible for this rep only.
                 fastStartActive = AutoGuidedFirstRep.consumeFastStartOnce()
-                wordOfTheDayTarget = consumeSeededWord()
                 speechVM.prepareForInteractiveUse()
                 prewarmTTS()
                 enforcePremiumFeatureAvailability()
@@ -882,12 +884,9 @@ struct TimedPracticeView: View {
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
             let seededPrompt = consumeSeededPrompt()
-            wordOfTheDayTarget = consumeSeededWord()
             if question.isEmpty {
-                // Word-of-the-day path — if home tile seeded a one-shot
-                // neutral prompt, use it directly. Today's word is carried
-                // separately as a cue so the topic never does the user's
-                // vocabulary work for them.
+                // A route-bound producer may supply one exact prompt. Ordinary
+                // Timed routes fall through to the established topic engine.
                 if let seeded = seededPrompt {
                     question = seeded
                 } else {
@@ -999,15 +998,10 @@ struct TimedPracticeView: View {
     }
 
     private func consumeSeededPrompt() -> String? {
-        let defaults = UserDefaults.standard
-        defer { defaults.removeObject(forKey: "timedPractice.suggestedPrompt") }
-        return normalizedSeed(defaults.string(forKey: "timedPractice.suggestedPrompt"))
-    }
-
-    private func consumeSeededWord() -> String? {
-        let defaults = UserDefaults.standard
-        defer { defaults.removeObject(forKey: "timedPractice.suggestedWord") }
-        return normalizedSeed(defaults.string(forKey: "timedPractice.suggestedWord"))
+        guard let promptHandoffToken else { return nil }
+        return normalizedSeed(
+            TimedPracticePromptHandoff.shared.consume(token: promptHandoffToken)
+        )
     }
 
     private func normalizedSeed(_ value: String?) -> String? {

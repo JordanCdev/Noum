@@ -326,12 +326,13 @@ struct ChallengePickFriendSheet: View {
                         Spacer()
 
                         Button {
-                            UserDefaults.standard.set(
-                                challenge.prompt,
-                                forKey: "timedPractice.suggestedPrompt"
-                            )
+                            guard let token = TimedPracticePromptHandoff.shared.offerToken(
+                                challenge.prompt
+                            ) else { return }
                             challenges.armSubmission(for: challenge)
-                            speakOffNavPath.append(AppDestination.timedPractice)
+                            speakOffNavPath.append(
+                                AppDestination.timedPracticePrompt(token: token)
+                            )
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "mic.fill")
@@ -364,6 +365,11 @@ struct ChallengePickFriendSheet: View {
                     .navigationDestination(for: AppDestination.self) { destination in
                         if case .timedPractice = destination {
                             TimedPracticeView(navigationPath: $speakOffNavPath)
+                        } else if case .timedPracticePrompt(let token) = destination {
+                            TimedPracticeView(
+                                navigationPath: $speakOffNavPath,
+                                promptHandoffToken: token
+                            )
                         }
                     }
                 } else {

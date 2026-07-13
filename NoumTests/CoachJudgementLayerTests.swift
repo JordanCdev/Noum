@@ -3327,7 +3327,7 @@ struct CoachTypedFallbackTests {
         let expertise = await KnowledgeRetriever.retrieveReranked(
             query: fixture.latestUserTurn,
             lever: fixture.trends.first?.skillArea,
-            voice: fixture.profile?.speakingStyleGoal,
+            voice: fixture.profile?.chosenStyleGoal,
             hasDiagnosis: !fixture.sessions.isEmpty
         )
         return CoachContextBuilder.userContext(
@@ -3998,8 +3998,17 @@ struct CoachReplyPipelineProvisionalReadTests {
         let suiteName = "CoachReplyPipelineProvisionalReadTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
+        guard let profile = Self.explicitProfile(
+            fixtureID: "authoritative-distance-deep-assessment"
+        ) else {
+            Issue.record("Missing explicitly chosen authoritative evaluation profile")
+            return
+        }
+        let previousProfile = CoachingProfileStore.shared.profile
+        CoachingProfileStore.shared.replaceForDebug(profile)
         CoachAssessmentCache.shared.invalidate()
         defer {
+            CoachingProfileStore.shared.replaceForDebug(previousProfile)
             CoachAssessmentCache.shared.invalidate()
             defaults.removePersistentDomain(forName: suiteName)
         }
@@ -4056,9 +4065,16 @@ struct CoachReplyPipelineProvisionalReadTests {
         let suiteName = "CoachReplyPipelineHistoryProgressionTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
+        guard let profile = Self.explicitProfile(fixtureID: "pace-control-next-rep") else {
+            Issue.record("Missing explicitly chosen pace-control evaluation profile")
+            return
+        }
+        let previousProfile = CoachingProfileStore.shared.profile
+        CoachingProfileStore.shared.replaceForDebug(profile)
         CoachAssessmentCache.shared.invalidate()
         UserTrajectoryCache.shared.invalidate()
         defer {
+            CoachingProfileStore.shared.replaceForDebug(previousProfile)
             CoachAssessmentCache.shared.invalidate()
             UserTrajectoryCache.shared.invalidate()
             defaults.removePersistentDomain(forName: suiteName)
@@ -4133,6 +4149,16 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(secondProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
         #expect(secondProof != firstProof)
         #expect(await scriptedHTTP.callCount == 2)
+    }
+
+    private static func explicitProfile(fixtureID: String) -> CoachingProfile? {
+        guard let profile = CoachChatEvaluationCorpus.fixtures.first(where: {
+            $0.id == fixtureID
+        })?.profile,
+        profile.chosenStyleGoal != nil else {
+            return nil
+        }
+        return profile
     }
 
     private actor CoachReplyPipelineScriptedHTTP {

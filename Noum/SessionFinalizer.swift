@@ -357,6 +357,10 @@ enum SessionFinalizer {
                 sessionCount: sessionStore.sessions.count,
                 streakDays: rawHistoryStreak,
                 styleGoal: explicitStyleGoal.title,
+                modeAvailability: NextActionModeAvailability(
+                    rating: RatingStore.shared.rating,
+                    imConversationAvailable: IMModeAvailability.isAvailable
+                ),
                 recommendationOutcomes: RecommendationLearningStore.shared.outcomes
             )
             return NextActionEngine.recommend(input: input)

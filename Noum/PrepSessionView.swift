@@ -36,6 +36,8 @@ struct PrepSessionView: View {
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
 
     var body: some View {
         ScrollView {
@@ -57,10 +59,12 @@ struct PrepSessionView: View {
         if let moment = bigMomentStore.activeMoment,
            let days = bigMomentStore.daysUntil(moment),
            days >= 0 {
+            let modeAvailability = currentModeAvailability
             let plan = PrepSessionPlanner.plan(
                 bigMoment: moment,
                 daysRemaining: days,
-                voice: coachingProfileStore.profile?.chosenStyleGoal
+                voice: coachingProfileStore.profile?.chosenStyleGoal,
+                modeAvailability: modeAvailability
             )
             introCard(plan: plan, moment: moment, days: days)
             stepsCard(plan: plan)
@@ -148,7 +152,7 @@ struct PrepSessionView: View {
                 launch(step: step)
             } label: {
                 HStack(spacing: 4) {
-                    Text("Start this rep")
+                    Text(step.startLabel)
                         .font(.footnote.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.caption2.weight(.bold))
@@ -160,6 +164,7 @@ struct PrepSessionView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 30)
+            .accessibilityHint(step.rationale)
             .accessibilityIdentifier("prepSession.step.\(index).begin")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -193,13 +198,13 @@ struct PrepSessionView: View {
                 HStack(spacing: 8) {
                     Image(systemName: done ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(done ? AppColor.positive : Color.secondary.opacity(0.5))
-                    Text(PrepSessionReadiness.shapeName(for: step.mode).capitalized)
+                    Text(step.readinessLabel)
                         .font(.subheadline)
                         .foregroundStyle(done ? .primary : .secondary)
                     Spacer()
                 }
             }
-            Text(readiness.line)
+            Text(readiness.displayLine(for: plan.steps))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -228,28 +233,48 @@ struct PrepSessionView: View {
 
     // MARK: - Launchers
 
-    /// Push the appropriate practice destination. We don't observe
+    /// Resolve the rendered action again at tap time, then push the shared
+    /// practice destination. When a planned pressure/audience shape must fall
+    /// back to Timed, carry one category-bounded prompt so the destination
+    /// fulfills the card's rehearsal promise. We don't observe
     /// completion in the MVP — the user navigates back to this view
     /// after each rep finishes (SummaryView's Home button pops to
     /// root; user re-enters prep via the home CTA if they want to
     /// continue the sequence). A future pass can chain via sheet
     /// presentation + completion handlers.
     private func launch(step: PrepRepStep) {
-        switch step.mode {
-        case .timed:
-            navigationPath.append(AppDestination.timedPractice)
-        case .suddenDeath:
-            navigationPath.append(AppDestination.suddenDeathPractice)
-        case .ahCounter:
-            navigationPath.append(AppDestination.ahCounterPractice)
-        case .imConversation:
-            // No preferred scenario/tone — IM mode generates from its
-            // own catalog. The PrepSessionPlanner's IMScenarioConfig
-            // is metadata for a future deeper integration (seeding the
-            // IM scenario picker with category-specific personas); for
-            // MVP we land the user in standard IM mode.
-            navigationPath.append(AppDestination.imPractice(scenario: nil, tone: nil))
+        let imAvailable = IMModeAvailability.isAvailable
+        let tapAvailability = NextActionModeAvailability(
+            rating: ratingStore.rating,
+            imConversationAvailable: imAvailable
+        )
+        let launch = step.resolvingLaunchForTap(
+            modeAvailability: tapAvailability,
+            imAvailable: imAvailable
+        )
+        if launch.destination == .timedPractice,
+           let moment = bigMomentStore.activeMoment,
+           let prompt = PrepSessionPlanner.timedFallbackPrompt(
+               for: step.mode,
+               category: moment.category
+           ),
+           let token = TimedPracticePromptHandoff.shared.offerToken(prompt) {
+            navigationPath.append(
+                AppDestination.timedPracticePrompt(token: token)
+            )
+        } else {
+            navigationPath.append(launch.destination)
         }
+    }
+
+    /// The stores remain the state owners. Reading the published consent here
+    /// makes provider/consent changes invalidate this view's rendered plan.
+    private var currentModeAvailability: NextActionModeAvailability {
+        _ = aiSettings.cloudProcessingConsent
+        return NextActionModeAvailability(
+            rating: ratingStore.rating,
+            imConversationAvailable: IMModeAvailability.isAvailable
+        )
     }
 }
 

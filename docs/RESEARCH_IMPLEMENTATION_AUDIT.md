@@ -4,7 +4,29 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 
 Audit date: 2026-07-13
 
-Audited checkout: `40d5e90306eb7d8939606d885cf84c9024331fa9`
+Committed implementation inspected through:
+`0c2ec54cb58f6a70c00cf50d2ff50ad1918619eb`
+
+Additional integrated working-tree implementation: unified four-mode
+availability, Train's atomic recommendation projection, Prep's stable-shape
+availability fallback with category-bounded Timed prompts, the Phrase
+Bank→active-week handoff, the account- and route-bound Timed prompt owner, and
+explicit quarantine of superseded privacy-audit documents. Their focused
+source/test results are recorded below; they do not yet have a commit-bound
+source fingerprint.
+
+Last complete source-bound evidence checkout:
+`40d5e90306eb7d8939606d885cf84c9024331fa9`
+
+The explicit-style, rendered-Home, availability, Prep/Train, weekly-phrase,
+Timed-prompt, and privacy-document changes after that evidence checkout now have
+a complete current-working-tree regression: all 3,920 `NoumTests` tests across
+406 suites passed with zero failures, and an unsigned Release simulator build
+succeeded. The canonical coach-evidence refresh remains pending until those
+changes are committed to a clean source boundary. The current four-mode
+availability contract is **Proved** at its pure/source boundary; that does not
+prove rendered SwiftUI behavior, the report's wider destination catalog, or
+make the older source-bound coach artifact current.
 
 Integrated branch: `ux-overhaul`
 
@@ -91,7 +113,7 @@ coach.
 
 | Audit surface | Classification | Verdict |
 |---|---|---|
-| Goal-attainment product direction | **Proved** | Current goal rubrics, goal-aware review, adaptive next action, progress surfaces, and weekly/real-world context form real connective tissue across existing modes. |
+| Goal-attainment product direction | **Proved** | When the user explicitly selects a style, current goal rubrics, goal-aware review, adaptive next action, progress surfaces, and weekly/real-world context form real connective tissue across existing modes. Without that provenance the style layer stays neutral. |
 | Literal six-feature prompt bundle | **Incomplete** | Large parts exist, but public numeric style scoring, humorous/calm goals, a true under-60-second spoken rep, the requested full prescription destination set, mid-stream provider failover, and a single unified privacy centre do not. |
 | Report acceptance-test contract | **Incomplete** | Many equivalent safety and persistence tests pass; several literal examples are absent or contradicted by the safer current contract. |
 | KPI instrumentation | **Incomplete** | Account-local event derivation is strong. Population rates, medians, cohorts, experiment inference, and a numeric goal-score slope are not implemented. |
@@ -106,8 +128,8 @@ coach.
 | Noum has a broad five-tab product with drills, roleplay/IM, lessons, path, projects, social, review, and coaching surfaces | **Proved** | `AppShellView`, `AppDestination`, the mode catalog, Review/Profile/Path/Projects/Lessons, and social routes remain present. The report was right that inventory breadth can obscure the next action. |
 | The verified Release route is AWS/cloud-only and uses direct app credential injection | **Contradicted** | Release now requests short-lived Deepgram access through the authenticated, App Check-enforced Firebase callable and can stay local. The historical unauthenticated AWS/credential incident remains open, so the stale implementation premise does not remove the security blocker. |
 | There is no local/offline transcription fallback | **Contradicted** | `LocalSpeechProvider` requires Apple on-device recognition; Release consent-off selects it without constructing cloud, and the automatic route can fall back locally before streaming starts. |
-| There is style intake but no closed goal loop | **Contradicted** | Six canonical goals feed qualitative rubrics, Summary/Review/Profile outcome reads, rewrite eligibility, coach context, next-action reasoning, and milestone sharing. What remains absent is the report's public per-session 0–100 identity score. |
-| Review does not translate into an exact next action | **Contradicted** | `SessionFinalizer` and `NextActionEngine` persist one primary recommendation, and `SummaryPrescriptionProjection` renders/routes the finalized action. The report's wider destination inventory is still incomplete. |
+| There is style intake but no closed goal loop | **Contradicted** | An explicit `chosenStyleGoal` can feed qualitative rubrics, Summary/Review/Profile outcome reads, rewrite eligibility, coach context, next-action reasoning, weekly copy, and milestone sharing. A missing legacy key fails closed to no chosen style; `speakingStyleGoal` is compatibility storage, not consent. What remains absent is the report's public per-session 0–100 identity score. |
+| Review does not translate into an exact next action | **Contradicted** | `SessionFinalizer` and `NextActionEngine` finalize one primary recommendation for the active Summary, and `SummaryPrescriptionProjection` renders/routes that decision. The report's wider destination inventory is still incomplete; Noum does not maintain a second device-global prescription snapshot. |
 | Privacy controls need to be created from scratch | **Contradicted** | Settings already exposes cloud consent, processor disclosure, Your Data, export, signed-in deletion, notifications, and policy links through existing owners. The information architecture is distributed rather than a new parallel centre/store. |
 | Accessibility identifiers and reduced-motion handling exist | **Proved** | Source and tests contain both contracts. Their behavior across the large custom-card surface on physical devices remains weak evidence until TestFlight QA. |
 
@@ -115,11 +137,11 @@ coach.
 
 | Report transition | Classification | Current boundary |
 |---|---|---|
-| Choose communication goal → baseline rep | **Proved** | Canonical goal selection persists through the established profile owner and is available to spoken session finalization. |
+| Choose communication goal → baseline rep | **Proved** | Explicit canonical style selection persists as `chosenStyleGoal` through the established profile owner and is available to spoken session finalization. Legacy profiles without that key remain readable but neutral. |
 | Baseline rep → goal scorecard | **Contradicted** | Noum shows an evidence-bounded qualitative goal read, not the proposed numeric identity scorecard. |
 | Goal read → auto-prescribed drill | **Incomplete** | The chosen goal and goal movement inform coach reasoning, while `NextActionEngine` owns the action. It does not consume the report's nonexistent numeric dimension breakdown or reach every proposed destination. |
 | Prescribed drill → rep review → rewritten example | **Proved** | Existing routing, Review, evidence-gated rewrite, comparison, and Phrase Bank create this local loop for supported goals and evidence. |
-| Rewrite → next micro-goal → weekly progress | **Incomplete** | Saved phrases can seed another Timed rep and weekly goal-aware context exists, but there is no single persisted report-shaped micro-goal object organising the whole week. |
+| Rewrite → next micro-goal → weekly progress | **Proved** | A saved phrase can seed Timed immediately or be explicitly attached by ID to the active week of the existing four-week `ForwardPlan`, which remains the focus/mode/target/rationale/progress owner. The write is plan-ID bound, deleted/unsafe links fail closed, and Home resolves the current-week phrase into the existing transient Timed handoff. No second weekly or phrase-text owner was added. Rendered/device execution remains separate QA. |
 
 ## Recommendation and deliverable matrix
 
@@ -127,7 +149,8 @@ coach.
 
 | Report requirement or output | Classification | Current implementation and exact gap |
 |---|---|---|
-| Reuse onboarding/profile goal ownership | **Proved** | `SpeakingStyleGoal` stays in `CoachingProfileStore`/draft and is projected into the existing coach/session loop; no parallel goal store was added. |
+| Reuse onboarding/profile goal ownership | **Proved** | Optional `chosenStyleGoal` stays in `CoachingProfileStore`/draft and is the only style value projected into behavioral coaching. `speakingStyleGoal` remains compatibility storage; no parallel goal store was added. |
+| Preserve explicit choice provenance | **Proved** | Profiles that predate the `chosenStyleGoal` key decode with no chosen style instead of inferring consent from a historical default. Goal rubrics, scoring/copy enrichments, AI/cache inputs, plans, proofs, and post-rep notes fail closed or filter incompatible provenance. |
 | Support `authoritative`, `concise`, `humorous`, `warm`, and `calm` | **Incomplete** | Canonical goals are authoritative, warm, concise, persuasive, executive, and storytelling. Humorous and calm are deliberately absent; tests pin that absence. |
 | Compute a public 0–100 style score for every session | **Contradicted** | The product deliberately exposes `GoalOutcomeRead` as qualitative evidence/movement. `GoalStyleCalibrationCandidate` can produce a versioned 0–100 candidate only for access-controlled professional calibration and is explicitly disconnected from product views, stores, analytics, sessions, and export. |
 | Work from transcript text alone | **Missing** | No public score contract accepts a raw transcript as its complete input. The calibration engine accepts a `CoachAssessment` plus evidence references, and unsupported locales fail closed. |
@@ -141,10 +164,10 @@ coach.
 |---|---|---|
 | “Make me more X” review tied to the chosen goal | **Proved** | `AIRewriteService` consumes the canonical chosen voice and weakness context; `RewriteSuggestionCard` is gated by evidence, locale, length, ambiguity, and identifier safety. |
 | “More/less” slider control | **Contradicted** | The shipped control is a discrete light/medium/strong segmented choice. There is no continuous more/less slider, avoiding false precision. |
-| Generate light, medium, and strong variants | **Incomplete** | All three intensities exist and are deterministic in the safe fallback, but the card selects and shows one intensity at a time rather than presenting three simultaneous suggestions. Humorous rewriting is absent because the goal is absent. |
+| Generate light, medium, and strong variants | **Contradicted** | All three intensities exist and can be generated deterministically, but the restrained card generates and displays the selected intensity sequentially rather than producing three simultaneous suggestions. That is a deliberate readability choice, not literal delivery of the report's three-at-once output. Humorous rewriting remains withheld because that goal is unsupported. |
 | Preserve meaning and sensitive entities | **Proved** | `AIRewriteSemanticGuardTests` cover anchors, negation, numbers, currency, percentages, names, entities, contractions, and scope; unsafe edits are withheld. |
 | Compare original and suggestion | **Proved** | The card exposes original/suggestion comparison without mutating the source session. |
-| Save and restore a reusable phrase-bank entry | **Proved** | `PhraseBankStore` is account-scoped, bounded, deduplicated, identifier-resistant, export/deletion-owned, and can seed Timed through transient `PhrasePracticeIntent`. |
+| Save and restore a reusable phrase-bank entry | **Proved** | `PhraseBankStore` is account-scoped, bounded, deduplicated, identifier-resistant, export/deletion-owned, and can seed Timed through transient `PhrasePracticeIntent`. Prompt text then stays in the process-local `TimedPracticePromptHandoff`; only an opaque route token enters navigation. |
 | Reusable suggestion model and review card | **Proved** | The shipped types have different names from the prompt but provide the requested model/card responsibilities through existing AI rewrite abstractions. |
 | Offline heuristic fallback | **Proved** | Provider failure uses the conservative deterministic on-device rewrite; unsupported locales stop before English heuristics. |
 | Hide suggestions for a too-short transcript | **Proved** | Eligibility returns `.tooShort` below the bounded input floor and the UI withholds the card. |
@@ -157,8 +180,8 @@ coach.
 | Up to two alternatives | **Incomplete** | `NextAction` can hold one optional secondary, but `SummaryPrescriptionProjection` deliberately renders only the primary. There is no two-alternative product card. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
-| Home/Train card and deep link | **Incomplete** | Summary and persisted home-facing next-action substrate exist and current modes route through shared destinations. There is no report-shaped Train card spanning the full requested catalog. |
-| Availability/locked-mode fallback | **Incomplete** | Nil finalized action falls back to the existing drill, and unavailable IM routing has a tested fallback. There is no general availability-gate matrix for every requested destination. |
+| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. Source inspection shows Home and Train consume the shared availability projection; focused unit tests prove projection values, exposure fingerprints, setup/destination, and launch acceptance/fallback semantics. They do not mount either SwiftUI view or execute the real `recordShown`/`markTapped` calls. Home owns its visible exposure; the phantom `ContentView` path and unread global snapshot were removed. This row remains incomplete because the report's wider destination catalog and a rendered end-to-end card/deep-link contract are absent. |
+| Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, and no false acceptance. Prep-specific tests preserve the planned rehearsal identity, render honest Timed fallback copy/setup, withhold false readiness credit, prevent a fallback from upgrading at tap, and route unavailable pressure/audience shapes with a category-bounded prompt containing neither the moment title nor transcript. This is source/pure-projection proof, not rendered UI or the report's wider destination catalog. |
 
 ### 4. Fast-lane first session
 
@@ -192,16 +215,17 @@ coach.
 | Export ZIP entry point | **Proved** | `AccountDataExportServiceTests` validate manifest/data entries, exclusions, CRC-readable ZIP output, safe paths, and cleanup. |
 | Account deletion entry point | **Proved** | The account card shows deletion only when signed in, requires typed confirmation, and routes through the existing callable contract. |
 | Notifications/privacy summary | **Proved** | Both are present in Settings, using existing notification and consent owners. |
-| A single `PrivacyCentreView` | **Incomplete** | The user-facing controls exist across the Settings privacy card, Your Data, Account, and Notifications sections. No unified view with the report's name exists. |
+| Transient Timed prompt isolation | **Proved** | `TimedPracticePromptHandoff` keeps one bounded prompt in process, binds it to the active account and exact opaque route token, consumes it once, and clears it during account teardown. A mismatched token cannot steal a newer prompt; navigation carries no user text/account ID, and the former unscoped prompt/word defaults keys are purged rather than migrated. App termination naturally drops the in-memory value. |
+| A single `PrivacyCentreView` | **Contradicted** | The user-facing trust story deliberately stays within the established Settings privacy card, Your Data, Account, and Notifications owners. A new named centre would duplicate navigation and state ownership without adding a missing control. |
 | A new `PrivacyPreferencesStore` | **Contradicted** | Creating it would duplicate `AISettingsManager`, notification state, auth/account state, and export/deletion ownership. The architecture correctly extends the existing owners. |
-| Copy verified against live production behavior | **Weak evidence** | Code and processor-manifest contracts align locally, but the current audit did not probe production, App Store privacy disclosures, or a signed build. |
+| Copy verified against live production behavior | **Weak evidence** | Code and processor-manifest contracts align locally. Superseded audit/remediation/execution documents are explicitly marked historical and source-guarded so they cannot masquerade as current operations. The narrow hosted probe still proves only reachability—not an exact manifest-v3 body match, production processor behavior, App Store privacy disclosures, or a signed build. |
 
 ### 7. Remaining roadmap opportunities
 
 | Opportunity | Classification | Current implementation and exact gap |
 |---|---|---|
 | Multi-language expansion beyond en-US/es-ES/fr-FR | **Missing** | UI/provider locale plumbing covers those locales, while AI rewrite and goal calibration fail closed outside their supported English contract. No calibrated new locale corpus exists. |
-| Weekly habit/streak coaching organised around one speaking goal | **Incomplete** | Daily goals, streak protection, weekly digest/check-in, Big Moments, and goal-aware context exist. A single selected speaking goal is not yet the sole organising unit of the entire weekly loop. |
+| Weekly habit/streak coaching organised around one speaking goal | **Proved** | The persisted `ForwardPlan` provides four weekly focuses, modes, targets, rationales, and derived progress alongside streak protection and check-ins. Weekly digest copy is goal-specific only when `chosenStyleGoal` is present and otherwise stays generic. A saved rewrite can be explicitly attached by ID to the active week and launched from Home through the account- and route-bound Timed handoff without duplicating phrase text or weekly state. Real cohort effect remains unproved. |
 | Progress sharing for goal milestones | **Proved** | Established qualitative outcomes can offer opt-in, transcript-free, evidence-bounded milestone notes. Real-user desirability and sharing behavior remain unproved. |
 | Deeper humour-specific training | **Missing** | There is no humorous identity, rubric, rewrite, scoring, or calibrated training track. |
 
@@ -213,17 +237,17 @@ different.
 | ID | Report test | Classification | Evidence or gap |
 |---|---|---|---|
 | GS-1 | Clearly concise answer scores higher than a rambling answer | **Missing** | No raw-transcript, product 0–100 comparison test exists. Current tests score assessment evidence for calibration, not two answer strings. |
-| GS-2 | Onboarding-selected goal persists | **Proved** | Profile/account persistence and goal resolution tests cover canonical choices and account boundaries. |
+| GS-2 | Onboarding-selected goal persists | **Proved** | Profile/account persistence and goal resolution tests cover explicit canonical choices and account boundaries; legacy payloads without the provenance key decode to no chosen style rather than an inferred default. |
 | GS-3 | Unsupported or missing transcript returns low confidence without crashing | **Contradicted** | Missing dimensions produce bounded insufficiency/no synthetic score; unsupported locales throw/fail closed before candidate creation rather than return a low-confidence product score. |
 | GS-4 | Fixed transcript input is deterministic | **Incomplete** | Calibration output and fingerprint are deterministic for fixed assessment evidence, but there is no transcript-only scoring entry point. |
 | RW-1 | Suggestions preserve semantic intent | **Proved** | Semantic-guard suites cover anchors, entities, negation, quantities, and unsafe change rejection across all intensities. |
-| RW-2 | Phrase Bank saves and restores | **Proved** | Account-scoped round-trip, dedupe, cap, identifier rejection, and practice-intent tests pass. |
+| RW-2 | Phrase Bank saves and restores | **Proved** | Account-scoped round-trip, dedupe, cap, identifier rejection, and practice-intent tests pass. Active-week projection contracts additionally cover immutable plan updates, legacy decoding, exact entry resolution, deletion cleanup, missing/unsafe fail-closed behavior, and a content-free route token for the transient prompt; rendered account persistence remains device QA. |
 | RW-3 | Feature works offline with heuristic templates | **Proved** | Deterministic on-device fallback and vocabulary-bounded rewrite tests pass. |
 | RW-4 | Too-short transcript shows no suggestion | **Proved** | Eligibility and withheld-card behavior are directly tested. |
 | PR-1 | High filler burden chooses Ah Counter or Sudden Death | **Incomplete** | Severe filler evidence does trigger one corrective action, commonly a focused filler drill, but there is no literal destination assertion restricting it to those two modes. |
 | PR-2 | Pacing issues choose pace training | **Incomplete** | Pace-focused drill inventory and next-action inputs exist, but the selected report-specific routing assertion is absent. |
 | PR-3 | Interpersonal-pressure goals bias toward Roleplay | **Missing** | The established engine can route IM conversation, not the separate Roleplay curriculum requested by the report. |
-| PR-4 | Locked modes fall back gracefully | **Incomplete** | Nil-action and unavailable-IM fallbacks pass; a full locked-state matrix for all requested destinations does not exist. |
+| PR-4 | Locked modes fall back gracefully | **Proved** | The shared four-mode matrix covers locked-at-render and capability-lost-at-tap paths without stale setup/copy/confidence or false acceptance. Prep adds stable planned-shape identity, honest fallback copy/setup, no false readiness credit, no capability-return upgrade, and a route-bound, category-only prompt for unavailable pressure/audience shapes. A matrix for the report's broader destination catalog still does not exist and remains captured by the separate incomplete routing row. |
 | FL-1 | Fresh install reaches a first rep without auth | **Contradicted** | It reaches structured first value without login credentials, after durable guest identity. It does not claim that typing is a rep. |
 | FL-2 | Denied microphone does not dead-end | **Proved** | The written rehearsal path is permissionless, and upgrade routing is separately tested. |
 | FL-3 | Completed first rep resumes full onboarding later | **Incomplete** | Structured first value resumes prefilled full onboarding and later spoken practice; the literal initial spoken-rep case is not the fast-lane contract. |
@@ -235,7 +259,7 @@ different.
 | PC-1 | Cloud toggle changes provider selection | **Proved** | Production consent-on/off construction is directly tested. |
 | PC-2 | Export creates and cleans up ZIP | **Proved** | `AccountDataExportServiceTests` verify the real temporary ZIP and its deletion. |
 | PC-3 | Deletion entry point visibility follows account state | **Proved** | Focused UI tests render both branches of the existing `authManager.isSignedIn` owner: the durable local guest/account path exposes `settings.account.delete`, while explicitly signed-out Settings exposes login and no deletion control. |
-| PC-4 | Privacy summary copy matches actual behavior | **Weak evidence** | Local routing/manifest contracts match the copy, but production processor, policy, and signed-device behavior were not independently verified. |
+| PC-4 | Privacy summary copy matches actual behavior | **Weak evidence** | Local routing/manifest contracts match the copy, and superseded privacy documents are visibly quarantined by a source test. Production processor, hosted-policy body, App Store disclosure, and signed-device behavior were not independently verified. |
 
 ## KPI audit
 
@@ -251,7 +275,7 @@ substrate, but it is not a cohort analytics service.
 | Practice sessions per active user per week | **Proved** | **Missing** | Active days and sessions per active week are derived locally; no population aggregation exists. |
 | Goal-score improvement over 7/28 days | **Contradicted** | **Missing** | The public metric is qualitative goal follow-up/movement, not numeric goal-score improvement or a causal slope. |
 | Session-review open rate | **Proved** | **Missing** | Account-local eligible-session/review-open counts exist. |
-| Prescriptions accepted rate | **Proved** | **Missing** | Acceptance is correctly shown-to-tap, excluding orphan taps; it is not a population result. |
+| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces, and the shared launch projection records acceptance only when the displayed mode is the mode actually launched. A tap-time operational fallback routes safely but is excluded from acceptance. No population result exists. |
 | Notification opt-in after first value | **Proved** | **Missing** | Decisions before value are excluded and the local conversion signal exists. |
 | D1/D7/D28 retention | **Proved** | **Missing** | Account-local active-day return anchors exist; there is no retention cohort. |
 | Cloud-to-local fallback rate | **Proved** | **Missing** | Only cloud-requested routes resolved locally enter the denominator; deliberate local sessions are excluded. |
@@ -273,14 +297,22 @@ substrate, but it is not a cohort analytics service.
 
 ## Local implementation evidence
 
+Source binding matters here. The `40d5e903` rows remain valid evidence for that
+named baseline, but they are not current-checkout proof after `0c2ec54c` changed
+coach and product source. Focused post-baseline checks prove the narrowed
+contracts they exercised, and the completed full regression proves the final
+integrated working tree. Only the clean-commit coach-evidence refresh remains
+before the canonical artifact can make a source-bound current claim.
+
 | Evidence item | Classification | Result on 2026-07-13 |
 |---|---|---|
-| Full integrated Swift regression | **Proved** | The complete `NoumTests` target passed 3,872/3,872 tests with zero failures or skips on the iPhone 17 Pro simulator, using the local Swift package cache, disabled automatic package resolution, disabled code signing, and no provider keys. This is still simulator evidence, not physical-device or TestFlight proof. |
-| Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests` (including the production transcript path and recording-error mapper), `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
+| Full integrated Swift regression for the newer source | **Proved** | The final integrated current working tree passed 3,920/3,920 `NoumTests` tests across 406 suites with zero failures. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. Its unsigned Release simulator build also succeeded. |
+| Selected pre-baseline Swift product/test contracts | **Proved** | At `40d5e903`, focused simulator tests passed for goal calibration/outcomes, rewrite, Phrase Bank, prescription, fast lane, local speech, privacy, KPI, and experiment contracts. They remain valid for that named source boundary, not as a substitute for the final full run. |
+| Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. The neutral cold-start fixture remains required live-provider coverage but correctly has no typed style assessment; fabricated/default voice telemetry is rejected, while styled and unknown fixtures fail closed without their required assessment. These focused results complement the complete current-working-tree regression but do not replace the pending commit-bound coach-evidence refresh. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
-| Coach-arena contracts | **Proved** | 119 Node tests and 107 Python tests passed. |
+| Coach-arena contracts at the evidence baseline | **Weak evidence** | 119 Node tests and 108 Python tests passed, but the canonical source fingerprint predates `0c2ec54c`; rerun the arena and refresh source-bound evidence on the final checkout. |
 | Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. |
-| Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 27 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
+| Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 28 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
 | App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `40d5e903` and coach fingerprint `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`; 53 conversations/109 turns pass the app-path floor. |
 | Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T05:47:00+00:00` embeds `40d5e903` / `sha256:6164…d18d`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
@@ -308,7 +340,7 @@ credential revocation, or production traffic.
 | Replacement transcription boundary in source | **Proved** | Release construction uses the authenticated Firebase/Deepgram route with local fallback. This is product substrate, not a signed-device or live-service proof. |
 | Historical Deepgram/AWS incident closed | **Missing** | The runbook still requires legacy credential revocation, disabling/authenticating every legacy endpoint, and provider usage/billing audit. |
 | Protected social cutover | **Missing** | Production backup/quarantine, explicit disposition, trusted server-authored evidence, migration dry run, and coordinated rules/functions deployment remain approval-gated. |
-| Hosted Firebase privacy page | **Proved** | The readiness live probe passes 3/3 checks for `https://noum-d0b6f.web.app/privacy`. This proves public reachability only, not App Store disclosure review or the custom domain. |
+| Hosted Firebase privacy page | **Proved** | The readiness live probe passes 3/3 checks for `https://noum-d0b6f.web.app/privacy`. This proves that a Noum policy endpoint is publicly reachable; it does not prove the manifest-v3 generated body was redeployed after the latest processor change, App Store disclosure review, or the custom domain. |
 | `noum.app` custom privacy domain | **Missing** | The runbook records it as parked at GoDaddy pending DNS, TLS, and policy verification. |
 | Sign in with Apple entitlement in the app | **Proved** | `Noum.entitlements` contains the capability. |
 | Sign in with Apple Firebase/provider configuration | **Missing** | External Apple/Firebase configuration remains unchecked in `docs/TESTFLIGHT_QA.md`. |
@@ -321,12 +353,11 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-Keep the committed `40d5e903` canonical app-path baseline intact, run the full
-Noum unit/UI regression set against the final integrated checkout, and
-regenerate the canonical report only if integration changes the coach source
-fingerprint. This protects local evidence freshness and catches integration
-regressions. It cannot raise production readiness past the external cap by
-itself.
+Keep the committed `40d5e903` canonical app-path baseline intact as historical
+evidence. The full Noum regression against the final integrated working tree is
+complete; commit that source cleanly and regenerate the canonical report because
+`0c2ec54c` and later work changed coach source. This restores local evidence
+freshness but cannot raise production readiness past the external cap by itself.
 
 ### External or approval-gated
 

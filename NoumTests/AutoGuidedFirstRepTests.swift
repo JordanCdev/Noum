@@ -14,13 +14,15 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AutoGuidedFirstRepTests {
+    private let accountID = "auto-guided-tests"
 
     /// Pristine state for the current account before/after each assertion.
     private func cleanState() {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: AutoGuidedFirstRep.enabledOverrideKey)
-        defaults.removeObject(forKey: "timedPractice.suggestedPrompt")
+        defaults.removeObject(forKey: TimedPracticePromptHandoff.legacyDefaultsKey)
         defaults.removeObject(forKey: AutoGuidedFirstRep.fastStartOnceKey)
+        TimedPracticePromptHandoff.shared.clear()
         PracticeModeQuickStart.clear()
         AutoGuidedFirstRep.resetForDebug() // clears the per-account one-shot + fast-start
     }
@@ -28,7 +30,10 @@ struct AutoGuidedFirstRepTests {
     @Test func defaultsOffUntilSignedDeviceActivationGatePasses() {
         cleanState()
         #expect(AutoGuidedFirstRep.enabled == false)
-        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(
+            hasCompletedOnboarding: true,
+            accountID: accountID
+        ))
         cleanState()
     }
 
@@ -36,12 +41,20 @@ struct AutoGuidedFirstRepTests {
         cleanState()
         UserDefaults.standard.set(true, forKey: AutoGuidedFirstRep.enabledOverrideKey)
         #expect(AutoGuidedFirstRep.enabled == true)
-        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: false))
-        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(
+            hasCompletedOnboarding: false,
+            accountID: accountID
+        ))
+        let preparation = AutoGuidedFirstRep.prepareLaunch(
+            hasCompletedOnboarding: true,
+            accountID: accountID
+        )
+        #expect(preparation != nil)
+        #expect(preparation?.promptToken != nil)
         #expect(PracticeModeQuickStart.consume(for: .timed))
         #expect(AutoGuidedFirstRep.consumeFastStartOnce())
         #expect(
-            UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt")
+            TimedPracticePromptHandoff.shared.pendingPrompt(accountID: accountID)
                 == AutoGuidedFirstRep.framingPrompt
         )
         cleanState()
@@ -58,24 +71,33 @@ struct AutoGuidedFirstRepTests {
     @Test func oneShotNeverRefires() {
         cleanState()
         UserDefaults.standard.set(true, forKey: AutoGuidedFirstRep.enabledOverrideKey)
-        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(
+            hasCompletedOnboarding: true,
+            accountID: accountID
+        ))
         #expect(AutoGuidedFirstRep.firstRepCompleted == true)
-        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(
+            hasCompletedOnboarding: true,
+            accountID: accountID
+        ))
 
         // Debug reset re-arms it for felt-QA.
         AutoGuidedFirstRep.resetForDebug()
         #expect(AutoGuidedFirstRep.firstRepCompleted == false)
-        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(
+            hasCompletedOnboarding: true,
+            accountID: accountID
+        ))
         cleanState()
     }
 
-    @Test func seedFramingPromptWritesTheExactEngineKey() {
+    @Test func seedFramingPromptUsesTheTimedEngineHandoff() {
         cleanState()
-        AutoGuidedFirstRep.seedFramingPrompt()
-        // Must be the exact key TimedPracticeView.consumeSeededPrompt reads,
-        // so the guided rep starts on the supplied prompt (low time-to-word).
+        AutoGuidedFirstRep.seedFramingPrompt(accountID: accountID)
+        // Must use the exact one-shot handoff Timed Practice consumes, so the
+        // guided rep starts on the supplied prompt (low time-to-word).
         #expect(
-            UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt")
+            TimedPracticePromptHandoff.shared.pendingPrompt(accountID: accountID)
                 == AutoGuidedFirstRep.framingPrompt
         )
         #expect(AutoGuidedFirstRep.framingPrompt.isEmpty == false)
@@ -130,13 +152,13 @@ struct AutoGuidedFirstRepTests {
 
     @Test func accountTransitionClearsEveryPendingLaunchHandshake() {
         cleanState()
-        AutoGuidedFirstRep.seedFramingPrompt()
+        AutoGuidedFirstRep.seedFramingPrompt(accountID: accountID)
         AutoGuidedFirstRep.armFastStartOnce()
         PracticeModeQuickStart.arm(for: .timed)
 
         AutoGuidedFirstRep.cancelPendingLaunch()
 
-        #expect(UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt") == nil)
+        #expect(TimedPracticePromptHandoff.shared.pendingPrompt(accountID: accountID) == nil)
         #expect(!AutoGuidedFirstRep.consumeFastStartOnce())
         #expect(!PracticeModeQuickStart.consume(for: .timed))
         cleanState()

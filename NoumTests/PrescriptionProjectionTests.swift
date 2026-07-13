@@ -87,6 +87,7 @@ struct PrescriptionProjectionTests {
         #expect(projection.title == PracticeMode.timed.displayLabel)
         #expect(projection.reason == NextActionModeAvailability.suddenDeathFallbackReason)
         #expect(projection.evidence == nil)
+        #expect(projection.confidenceLabel == nil)
         #expect(projection.destination(imAvailable: true) == .timedPractice)
     }
 
@@ -123,7 +124,7 @@ struct PrescriptionProjectionTests {
         #expect(projected.variation.id == fallback.variation.id)
     }
 
-    @Test func imFullRepPreservesExistingSetupAndFallsBackToTimedWhenUnavailable() {
+    @Test func unavailableImProjectionFallsBackBeforeRenderAndDropsStaleSetupAndEvidence() {
         let projection = SummaryPrescriptionProjection.resolve(
             nextAction: nextAction(
                 .practiceMode(.imConversation, reason: "Test this tone in a live exchange."),
@@ -132,7 +133,41 @@ struct PrescriptionProjectionTests {
             ),
             fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
             existingScenario: .difficultConversation,
-            existingTone: .calm
+            existingTone: .calm,
+            modeAvailability: NextActionModeAvailability(
+                suddenDeathAvailable: true,
+                imConversationAvailable: false
+            )
+        )
+
+        #expect(projection.fullRepMode == .timed)
+        #expect(projection.title == PracticeMode.timed.displayLabel)
+        #expect(projection.reason == NextActionModeAvailability.imConversationFallbackReason)
+        #expect(projection.evidence == nil)
+        #expect(projection.confidenceLabel == nil)
+        guard case .fullRep(let mode, let scenario, let tone) = projection.kind else {
+            Issue.record("Expected a full-rep projection")
+            return
+        }
+        #expect(mode == .timed)
+        #expect(scenario == nil)
+        #expect(tone == nil)
+        // Decision-time unavailability remains authoritative even if the
+        // tap-time provider probe later reads available.
+        #expect(projection.destination(imAvailable: true) == .timedPractice)
+    }
+
+    @Test func availableImProjectionPreservesSetupButRechecksAvailabilityAtTap() {
+        let projection = SummaryPrescriptionProjection.resolve(
+            nextAction: nextAction(
+                .practiceMode(.imConversation, reason: "Test this tone in a live exchange."),
+                reasoning: "The next useful demand is relational rather than scripted.",
+                confidence: .moderate
+            ),
+            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
+            existingScenario: .difficultConversation,
+            existingTone: .calm,
+            modeAvailability: .allAvailable
         )
 
         #expect(projection.destination(imAvailable: true) == .imPractice(
@@ -140,6 +175,32 @@ struct PrescriptionProjectionTests {
             tone: .calm
         ))
         #expect(projection.destination(imAvailable: false) == .timedPractice)
+        let fallbackLaunch = projection.launch(imAvailable: false)
+        #expect(fallbackLaunch?.displayedMode == .imConversation)
+        #expect(fallbackLaunch?.launchedMode == .timed)
+        #expect(fallbackLaunch?.acceptsDisplayedPrescription == false)
+        let acceptedLaunch = projection.launch(imAvailable: true)
+        #expect(acceptedLaunch?.launchedMode == .imConversation)
+        #expect(acceptedLaunch?.acceptsDisplayedPrescription == true)
+    }
+
+    @Test func finalizerResolvedAvailabilityFallbackDoesNotRegainConfidence() {
+        let fallbackReason = NextActionModeAvailability.imConversationFallbackReason
+        let projection = SummaryPrescriptionProjection.resolve(
+            nextAction: nextAction(
+                .practiceMode(.timed, reason: fallbackReason),
+                reasoning: fallbackReason,
+                confidence: .established,
+                availabilityFallbackFrom: .imConversation
+            ),
+            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
+            modeAvailability: .allAvailable
+        )
+
+        #expect(projection.fullRepMode == .timed)
+        #expect(projection.reason == fallbackReason)
+        #expect(projection.evidence == nil)
+        #expect(projection.confidenceLabel == nil)
     }
 
     @Test func imFullRepWithoutExistingSetupRoutesToTheUnprefilledPicker() {
@@ -149,7 +210,8 @@ struct PrescriptionProjectionTests {
                 reasoning: "The first signal needs one comparable rep.",
                 confidence: .tentative
             ),
-            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill)
+            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
+            modeAvailability: .allAvailable
         )
 
         #expect(projection.destination(imAvailable: true) == .imPractice(scenario: nil, tone: nil))
@@ -221,13 +283,15 @@ struct PrescriptionProjectionTests {
     private func nextAction(
         _ primary: ActionRecommendation,
         reasoning: String,
-        confidence: BaselineConfidence
+        confidence: BaselineConfidence,
+        availabilityFallbackFrom: PracticeMode? = nil
     ) -> NextAction {
         NextAction(
             primary: primary,
             secondary: nil,
             reasoning: reasoning,
-            confidenceLevel: confidence
+            confidenceLevel: confidence,
+            availabilityFallbackFrom: availabilityFallbackFrom
         )
     }
 

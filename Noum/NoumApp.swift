@@ -520,8 +520,19 @@ struct NoumApp: App {
     }
 
     private func prepareFirstRepLaunch() {
-        _ = AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true)
-        DeepLinkRouter.shared.pending = URL(string: "noum://practice/timed")
+        let preparation = AutoGuidedFirstRep.prepareLaunch(
+            hasCompletedOnboarding: true
+        )
+        var components = URLComponents(string: "noum://practice/timed")
+        if let token = preparation?.promptToken {
+            components?.queryItems = [
+                URLQueryItem(
+                    name: AppTab.timedPromptTokenQueryName,
+                    value: token.uuidString
+                )
+            ]
+        }
+        DeepLinkRouter.shared.pending = components?.url
     }
 
     private func persistStructuredFirstValue(_ result: StructuredFirstValueResult) -> Bool {

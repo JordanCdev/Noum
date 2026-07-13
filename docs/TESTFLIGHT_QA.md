@@ -11,7 +11,7 @@ attachment kinds are documented in `docs/PRODUCTION_EVIDENCE_COLLECTION.md`.
 Pre-flight security, deployment, Apple configuration, upload, and triage work
 stays in `coach-operational-launch-checklist-v2.json`.
 
-**Current verdict (2026-07-11): NO-GO for external TestFlight or App Store
+**Current verdict (2026-07-13): NO-GO for external TestFlight or App Store
 release.** Checked infrastructure items below are configuration evidence only;
 they do not override an unchecked release blocker or signed-device test.
 
@@ -23,6 +23,11 @@ they do not override an unchecked release blocker or signed-device test.
       remain an open incident. Revoke the credentials, disable or authenticate
       every legacy transcription/IM/TTS route, and audit provider usage and
       billing before inviting external users.
+- [ ] **Firebase release sessions re-established safely** — revoke both cached
+      Firebase CLI sessions exposed during the 2026-07-13 inspection,
+      reauthenticate the required release account, and obtain independent
+      verification. Historical CLI output is not proof that this workspace is
+      currently or safely authenticated.
 - [x] **Production transcription boundary configured** — the release app uses
       the Firebase `transcriptionToken` callable, which requires Firebase Auth
       and App Check, rate-limits by UID, and returns short-lived Deepgram access
@@ -33,15 +38,23 @@ they do not override an unchecked release blocker or signed-device test.
       the legacy client-authored social data, complete the explicit cutover,
       and deploy a trusted server-side session-evidence producer. Then rerun
       emulator authorization/replay tests and deploy the reviewed rules and
-      functions together. Until then, league/challenge actions must remain
+      functions together. Before that deployment, inventory private profile
+      enum values and migrate any unknown legacy value explicitly so the
+      stricter Codable-aligned write contract cannot strand an existing profile.
+      Until then, league/challenge actions must remain
       unavailable rather than accepting client-authored ratings or results.
       Only after that gate passes, the coordinated release includes
       `firebase deploy --only firestore:rules`; this command is recorded here
       for the approved cutover, not as authorization to run it now.
 - [x] **Firebase Hosting privacy page deployed** — verify
-      `https://noum-d0b6f.web.app/privacy` returns the current styled Noum
-      policy. This is the live privacy URL currently used by the app. The
-      repeatable deployment command is `firebase deploy --only hosting`.
+      `https://noum-d0b6f.web.app/privacy` returns a styled Noum policy. This
+      checked item proves the live hosting endpoint exists; it does not prove
+      the manifest-v3 generated body was redeployed after the latest processor
+      change. The URL is the live privacy URL currently used by the app. The
+      repeatable deployment command is `firebase deploy --only hosting`, but it
+      is not authorized from this workspace until the exposed-session closure
+      above is complete. After authorized verification or deployment, compare
+      the hosted body with the generated disclosure before release sign-off.
 - [ ] **Custom privacy domain connected** — `noum.app` is still serving parked
       GoDaddy DNS, so `https://noum.app/privacy` is not proof of Noum's hosted
       policy. Point the domain at Firebase Hosting and verify TLS plus policy
@@ -137,6 +150,41 @@ they do not override an unchecked release blocker or signed-device test.
 - [ ] Cut the Crutch
 - [ ] One Lesson (any of the five)
 - [ ] One path node unlock
+
+## Supplemental research-loop regression
+
+These checks supplement the fixed 14-surface/77-check release-evidence schema;
+they do not silently change or satisfy that independent contract.
+
+- [ ] On Train with no rated evidence, a Pressure recommendation resolves as
+      one coherent Timed card: title, rationale, focus/target, CTA, and route all
+      describe Timed. Repeat with Conversation unavailable; no stale scenario or
+      tone survives.
+- [ ] Leave Train visible while Pressure or Conversation capability is removed,
+      then tap the previously rendered action. It falls back to Timed without
+      logging acceptance of the unavailable mode. Capability returning does not
+      silently upgrade a Timed fallback the user already saw.
+- [ ] Open Prep with Pressure locked and Conversation unavailable. The three
+      planned rehearsal shapes remain distinct, fallback steps use honest Timed
+      labels/routes, and completing Timed does not mark Pressure or audience
+      simulation rehearsed. Each unavailable pressure/audience step receives a
+      category-appropriate prompt containing no custom moment title or transcript,
+      and that prompt appears only on the Timed route launched from that step.
+- [ ] Save a safe rewrite, open Phrase bank, choose “Use in Week N”, and confirm
+      Home offers the current-week saved-line action. Tap it and verify Timed
+      receives that exact bounded prompt once.
+- [ ] Delete or replace the assigned phrase, regenerate/change the current plan,
+      and cross a plan-week boundary before tapping an older Home action. Each
+      stale path is withheld or shows the unavailable message rather than
+      launching old text.
+- [ ] Arm a saved phrase, then sign out or switch accounts before Timed consumes
+      it. The next account receives no prompt; relaunching the app also clears
+      the process-local handoff.
+- [ ] Arm prompts from two different surfaces, or abandon one route before a
+      later prompt is armed. Open each captured Timed destination in turn: a
+      stale/abandoned token consumes nothing, the newer matching token receives
+      only its own prompt once, and neither route can steal or replace the
+      other's visible launch intent.
 
 ## Settings + lifecycle
 

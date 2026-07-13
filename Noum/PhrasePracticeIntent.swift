@@ -26,3 +26,59 @@ struct PhrasePracticeIntent: Equatable {
         suggestedPrompt = prompt
     }
 }
+
+/// Stable target for attaching a Phrase Bank entry to the week the user is
+/// actually in. Callers capture this value when they render an action, then
+/// pass its plan identity back to `ForwardPlanStore` so regeneration cannot
+/// redirect a delayed tap into a different plan.
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanPhraseTarget: Equatable {
+    let planID: UUID
+    let weekIndex: Int
+    let assignedEntryID: UUID?
+}
+
+/// Read-only projection joining the existing Forward Plan and Phrase Bank
+/// owners. It persists no text and fails closed when a linked phrase has been
+/// removed or no longer passes the Phrase Bank privacy boundary.
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanPhraseProjection: Equatable {
+    let target: ForwardPlanPhraseTarget
+    let entry: PhraseBankEntry
+    let practiceIntent: PhrasePracticeIntent
+
+    static func target(
+        plan: ForwardPlan?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ForwardPlanPhraseTarget? {
+        guard let plan,
+              let week = plan.currentWeek(now: now, calendar: calendar) else {
+            return nil
+        }
+        return ForwardPlanPhraseTarget(
+            planID: plan.id,
+            weekIndex: week.weekIndex,
+            assignedEntryID: plan.practicePhraseEntryID(forWeek: week.weekIndex)
+        )
+    }
+
+    static func resolve(
+        plan: ForwardPlan?,
+        entries: [PhraseBankEntry],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ForwardPlanPhraseProjection? {
+        guard let target = target(plan: plan, now: now, calendar: calendar),
+              let entryID = target.assignedEntryID,
+              let entry = entries.first(where: { $0.id == entryID }),
+              let practiceIntent = PhrasePracticeIntent(entry: entry) else {
+            return nil
+        }
+        return ForwardPlanPhraseProjection(
+            target: target,
+            entry: entry,
+            practiceIntent: practiceIntent
+        )
+    }
+}

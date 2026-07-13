@@ -83,7 +83,6 @@ struct RewriteSuggestionCard: View {
         }
         .sheet(isPresented: $showPhraseBank) {
             PhraseBankSheet(
-                store: phraseBank,
                 onPracticePhrase: onPracticePhrase
             )
         }
@@ -325,8 +324,12 @@ struct RewriteSuggestionCard: View {
 
 @available(iOS 17.0, *)
 struct PhraseBankSheet: View {
-    @ObservedObject var store: PhraseBankStore
     var onPracticePhrase: ((PhrasePracticeIntent) -> Void)? = nil
+    @StateObject private var store = PhraseBankStore.shared
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var bigMomentStore = BigMomentStore.shared
+    @State private var assignmentError: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -371,11 +374,44 @@ struct PhraseBankSheet: View {
                                 .accessibilityHint("Starts Timed Practice with this saved phrase.")
                                 .accessibilityIdentifier("phraseBank.practice.\(entry.id.uuidString)")
                             }
+
+                            if let target = currentWeekTarget {
+                                let isAssigned = target.assignedEntryID == entry.id
+                                Button {
+                                    assign(entry, to: target)
+                                } label: {
+                                    Label(
+                                        isAssigned ? "In Week \(target.weekIndex)" : "Use in Week \(target.weekIndex)",
+                                        systemImage: isAssigned ? "checkmark.circle.fill" : "calendar.badge.plus"
+                                    )
+                                    .font(Typography.caption.weight(.semibold))
+                                    .foregroundStyle(isAssigned ? .secondary : AppColor.pro)
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isAssigned)
+                                .accessibilityIdentifier("phraseBank.planWeek.\(entry.id.uuidString)")
+                                .accessibilityLabel(
+                                    isAssigned
+                                        ? "This phrase is in Week \(target.weekIndex) of your plan"
+                                        : "Use this phrase in Week \(target.weekIndex) of your plan"
+                                )
+                                .accessibilityHint(
+                                    isAssigned
+                                        ? ""
+                                        : "Makes this saved line the phrase carried into this week's practice."
+                                )
+                            }
                         }
                         .padding(.vertical, 4)
                         .swipeActions {
                             Button(role: .destructive) {
-                                store.remove(id: entry.id)
+                                ForwardPlanPhraseCoordinator.remove(
+                                    entryID: entry.id,
+                                    phraseBank: store,
+                                    planStore: forwardPlanStore
+                                )
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -390,6 +426,41 @@ struct PhraseBankSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+        .alert(
+            "Couldn't update this week",
+            isPresented: Binding(
+                get: { assignmentError != nil },
+                set: { if !$0 { assignmentError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { assignmentError = nil }
+        } message: {
+            Text(assignmentError ?? "Your plan changed. Try again.")
+        }
+    }
+
+    private var currentPlan: ForwardPlan? {
+        forwardPlanStore.currentPlan(
+            activeBigMomentID: bigMomentStore.activeMoment?.id,
+            chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
+        )
+    }
+
+    private var currentWeekTarget: ForwardPlanPhraseTarget? {
+        ForwardPlanPhraseProjection.target(plan: currentPlan)
+    }
+
+    private func assign(_ entry: PhraseBankEntry, to target: ForwardPlanPhraseTarget) {
+        guard ForwardPlanPhraseCoordinator.assign(
+            entryID: entry.id,
+            renderedTarget: target,
+            currentPlan: currentPlan,
+            phraseBank: store,
+            planStore: forwardPlanStore
+        ) else {
+            assignmentError = "Your active plan changed before the phrase was attached. Try once more."
+            return
         }
     }
 

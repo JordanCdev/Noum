@@ -52,6 +52,19 @@ struct CoachLiveEvaluationTests {
         #expect(fixtures.map(\.id) == CoachChatEvaluationCorpus.latestManualEvalFixtureIDs)
     }
 
+    @Test func typedJudgementSelectionKeepsIntentionalColdStartNeutral() {
+        let selected = Self.selectedFixtures(env: [
+            "NOUM_LIVE_AI_FIXTURES": "latest-transcript"
+        ])
+        let coldStart = selected.first { $0.id == "cold-start-interview-baseline" }
+        let explicitlyStyled = Self.explicitVoiceFixtures(selected)
+
+        #expect(coldStart?.profile == nil)
+        #expect(!explicitlyStyled.contains { $0.id == "cold-start-interview-baseline" })
+        #expect(explicitlyStyled.count == selected.count - 1)
+        #expect(explicitlyStyled.allSatisfy { $0.profile?.chosenStyleGoal != nil })
+    }
+
     @Test func readinessPresetSelectsLatestTranscriptAndRequiredLongFormConversations() {
         let env = [
             "NOUM_LIVE_AI_FIXTURES": "readiness"
@@ -235,16 +248,24 @@ struct CoachLiveEvaluationTests {
             surface: .text,
             recentProofTests: []
         )
-        let carried = Self.updatedRecentProofTests([], adding: first.assessment.nextProofTest)
+        guard let firstAssessment = first.assessment else {
+            Issue.record("Explicitly styled fixture did not produce an assessment")
+            return
+        }
+        let carried = Self.updatedRecentProofTests([], adding: firstAssessment.nextProofTest)
         let second = Self.judgement(
             for: fixture,
             history: Self.history(for: fixture),
             surface: .text,
             recentProofTests: carried
         )
+        guard let secondAssessment = second.assessment else {
+            Issue.record("Explicitly styled fixture lost its assessment")
+            return
+        }
 
         #expect(!carried.isEmpty)
-        #expect(second.assessment.nextProofTest != first.assessment.nextProofTest)
+        #expect(secondAssessment.nextProofTest != firstAssessment.nextProofTest)
         #expect(second.assessmentCacheHit == false)
         CoachAssessmentCache.shared.invalidate()
         UserTrajectoryCache.shared.invalidate()
@@ -253,9 +274,11 @@ struct CoachLiveEvaluationTests {
     @Test func readinessSweepRetainsFullProofHistoryForRunLevelDiversity() {
         CoachAssessmentCache.shared.invalidate()
         UserTrajectoryCache.shared.invalidate()
-        let fixtures = Self.selectedFixtures(env: [
-            "NOUM_LIVE_AI_FIXTURES": "readiness"
-        ])
+        let fixtures = Self.explicitVoiceFixtures(
+            Self.selectedFixtures(env: [
+                "NOUM_LIVE_AI_FIXTURES": "readiness"
+            ])
+        )
         var recentProofTests: [String] = []
         var proofKeys: [String] = []
 
@@ -266,7 +289,11 @@ struct CoachLiveEvaluationTests {
                 surface: .text,
                 recentProofTests: recentProofTests
             )
-            let proofTest = judgement.assessment.nextProofTest
+            guard let assessment = judgement.assessment else {
+                Issue.record("Explicitly styled readiness fixture \(fixture.id) had no assessment")
+                return
+            }
+            let proofTest = assessment.nextProofTest
             #expect(!Self.proofTestRecentlyRepeated(
                 proofTest,
                 in: recentProofTests
@@ -607,6 +634,57 @@ struct CoachLiveEvaluationTests {
         #expect(report.summary.softPushbackCount == 1)
     }
 
+    @Test func liveEvaluationSummaryExcludesNeutralColdStartFromJudgementDistributions() {
+        let styledRows = [
+            ("styled-a", 0.64, "proof-a"),
+            ("styled-b", 0.72, "proof-b"),
+            ("styled-c", 0.80, "proof-c")
+        ].map { row in
+            let (fixtureID, confidence, proofHash) = row
+            return Self.sampleLiveReportRow(
+                fixtureID: fixtureID,
+                liveProductionFloor: true,
+                assessmentConfidence: confidence,
+                assessmentProofTestHash: proofHash,
+                replyWordCount: Int(confidence * 100),
+                providerRetryCount: 0,
+                providerRefusalCount: 0,
+                timeToFirstVisibleTokenMs: 220,
+                userPushbackWithinTwoTurns: false,
+                coldnessComplaintFlag: false,
+                softPushbackFlag: false
+            )
+        }
+        let neutral = Self.sampleLiveReportRow(
+            fixtureID: "cold-start-interview-baseline",
+            liveProductionFloor: true,
+            assessmentConfidence: 0,
+            assessmentProofTestHash: "unused",
+            replyWordCount: 16,
+            providerRetryCount: 0,
+            providerRefusalCount: 0,
+            timeToFirstVisibleTokenMs: 260,
+            userPushbackWithinTwoTurns: false,
+            coldnessComplaintFlag: false,
+            softPushbackFlag: false,
+            includeTypedAssessment: false
+        )
+
+        let report = CoachLiveEvaluationReport.make(
+            providerChain: ["Google Gemini (gemini-test)"],
+            rows: styledRows + [neutral]
+        )
+
+        #expect(report.passesRunReadinessFloor)
+        #expect(report.summary.assessmentConfidenceDistinctRoundedCount == 3)
+        #expect(report.summary.uniqueProofTestHashCount == 3)
+        #expect(report.summary.immediateCoachReadExpectedCount == 3)
+        #expect(neutral.assessmentConfidence == nil)
+        #expect(neutral.assessmentProofTestHash == nil)
+        #expect(!neutral.immediateCoachReadExpected)
+        #expect(!neutral.immediateCoachReadShown)
+    }
+
     @Test func liveEvaluationReportCarriesLongFormConversationCoverage() {
         let latestRow = Self.sampleLiveReportRow(
             fixtureID: "latest",
@@ -775,9 +853,10 @@ struct CoachLiveEvaluationTests {
     @Test func latestTranscriptJudgementSignalsAreNotFlatBeforeProviderRun() {
         CoachAssessmentCache.shared.invalidate()
         UserTrajectoryCache.shared.invalidate()
-        let fixtures = Self.selectedFixtures(env: [
+        let selectedFixtures = Self.selectedFixtures(env: [
             "NOUM_LIVE_AI_FIXTURES": "latest-transcript"
         ])
+        let fixtures = Self.explicitVoiceFixtures(selectedFixtures)
         var recentProofTests: [String] = []
         var assessments: [CoachAssessment] = []
 
@@ -788,10 +867,14 @@ struct CoachLiveEvaluationTests {
                 surface: .text,
                 recentProofTests: recentProofTests
             )
-            assessments.append(judgement.assessment)
+            guard let assessment = judgement.assessment else {
+                Issue.record("Explicitly styled transcript fixture \(fixture.id) had no assessment")
+                return
+            }
+            assessments.append(assessment)
             recentProofTests = Self.updatedRecentProofTests(
                 recentProofTests,
-                adding: judgement.assessment.nextProofTest
+                adding: assessment.nextProofTest
             )
         }
 
@@ -799,7 +882,9 @@ struct CoachLiveEvaluationTests {
         let proofKeys = Set(assessments.map { Self.proofTestKey($0.nextProofTest) })
         let verdicts = Set(assessments.map { $0.directVerdict })
 
-        #expect(assessments.count == CoachChatEvaluationCorpus.latestManualEvalFixtureIDs.count)
+        #expect(assessments.count == selectedFixtures.filter {
+            $0.profile?.chosenStyleGoal != nil
+        }.count)
         #expect(roundedConfidences.count >= 2, "latest transcript sweep should not pin every assessmentConfidence to one value")
         #expect(assessments.contains { $0.confidence > CoachReliabilityGate.floorConfidence })
         #expect(proofKeys.count >= 3, "latest transcript sweep should not reuse one canned proofTest")
@@ -847,7 +932,7 @@ struct CoachLiveEvaluationTests {
 
         emit("# Noum Chat With Noum Live Transcripts")
         emit("")
-        emit("Purpose: live transcript capture through the Ask Noum chat service, context builder, retrieved coaching expertise, quote guard, professional-coach gate, and typed judgement pass.")
+        emit("Purpose: live transcript capture through the Ask Noum chat service, context builder, retrieved coaching expertise, quote guard, professional-coach gate, and explicit-style-only typed judgement pass.")
         emit("Secrets: API keys and request bodies are not written to this report.")
         emit("reportPath: \(resolvedOutputPath)")
         emit("jsonReportPath: \(resolvedJSONOutputPath)")
@@ -865,7 +950,7 @@ struct CoachLiveEvaluationTests {
             let expertise = await KnowledgeRetriever.retrieveReranked(
                 query: fixture.latestUserTurn,
                 lever: fixture.trends.first?.skillArea,
-                voice: fixture.profile?.speakingStyleGoal,
+                voice: fixture.profile?.chosenStyleGoal,
                 hasDiagnosis: !fixture.sessions.isEmpty
             )
             var context = Self.liveContext(for: fixture, coachingExpertise: expertise)
@@ -877,26 +962,33 @@ struct CoachLiveEvaluationTests {
                 surface: .text,
                 recentProofTests: recentLiveProofTests
             )
-            let proofTestRecentlyRepeated = Self.proofTestRecentlyRepeated(
-                judgement.assessment.nextProofTest,
-                in: recentLiveProofTests
-            )
-            recentLiveProofTests = Self.updatedRecentProofTests(
-                recentLiveProofTests,
-                adding: judgement.assessment.nextProofTest,
-                // These fixtures represent independent users, but the run-level
-                // readiness audit intentionally requires every assessment shape
-                // to differ. Retain the whole preset while generating the sweep
-                // so the deterministic reasoning pass can exercise its full
-                // candidate set instead of forgetting fixture one at fixture
-                // eight and then failing the artifact's global diversity rule.
-                limit: fixtures.count
-            )
-            context += "\n" + CoachPromptBundle.contextBlock(
-                assessment: judgement.assessment,
-                rubric: judgement.rubric,
-                surface: .text
-            )
+            let assessment = judgement.assessment
+            let proofTestRecentlyRepeated = assessment.map {
+                Self.proofTestRecentlyRepeated(
+                    $0.nextProofTest,
+                    in: recentLiveProofTests
+                )
+            } ?? false
+            if let assessment {
+                recentLiveProofTests = Self.updatedRecentProofTests(
+                    recentLiveProofTests,
+                    adding: assessment.nextProofTest,
+                    // These fixtures represent independent users, but the run-level
+                    // readiness audit intentionally requires every assessment shape
+                    // to differ. Retain the whole preset while generating the sweep
+                    // so the deterministic reasoning pass can exercise its full
+                    // candidate set instead of forgetting fixture one at fixture
+                    // eight and then failing the artifact's global diversity rule.
+                    limit: fixtures.count
+                )
+            }
+            if let assessment, let rubric = judgement.rubric {
+                context += "\n" + CoachPromptBundle.contextBlock(
+                    assessment: assessment,
+                    rubric: rubric,
+                    surface: .text
+                )
+            }
             let recentTimed = fixture.sessions
                 .filter { $0.mode == .timed }
                 .max(by: { $0.date < $1.date })
@@ -912,16 +1004,23 @@ struct CoachLiveEvaluationTests {
             var providerAttemptEvents: [CoachProviderAttemptEvent] = []
             var firstStreamedVisibleAt: Date?
             let turnStartedAt = Date()
-            let immediateCoachReadExpected = Self.immediateCoachReadExpected(
-                turnDepth: judgement.turnDepth,
-                surface: .text,
-                responseMode: judgement.assessment.responseMode
-            )
-            let immediateCoachReadShown = await Self.verifyImmediateCoachReadVisibility(
-                expected: immediateCoachReadExpected,
-                userTurn: fixture.latestUserTurn,
-                immediateRead: judgement.assessment.immediateCoachRead
-            )
+            let immediateCoachReadExpected = assessment.map {
+                Self.immediateCoachReadExpected(
+                    turnDepth: judgement.turnDepth,
+                    surface: .text,
+                    responseMode: $0.responseMode
+                )
+            } ?? false
+            let immediateCoachReadShown: Bool
+            if let assessment {
+                immediateCoachReadShown = await Self.verifyImmediateCoachReadVisibility(
+                    expected: immediateCoachReadExpected,
+                    userTurn: fixture.latestUserTurn,
+                    immediateRead: assessment.immediateCoachRead
+                )
+            } else {
+                immediateCoachReadShown = false
+            }
             let localImmediateVisibleAt = immediateCoachReadShown ? Date() : nil
 
             let providerOutcome = await service.reply(
@@ -930,7 +1029,7 @@ struct CoachLiveEvaluationTests {
                 userContext: context,
                 grounding: grounding,
                 turnDepth: judgement.turnDepth,
-                assessment: judgement.assessment,
+                assessment: assessment,
                 surface: .text,
                 preferredTier: requestedTier,
                 onStreamedPartialVisible: { _ in
@@ -947,7 +1046,7 @@ struct CoachLiveEvaluationTests {
             )
             let outcome = Self.livePipelineOutcome(
                 providerOutcome,
-                assessment: judgement.assessment,
+                assessment: assessment,
                 turnDepth: judgement.turnDepth,
                 history: history,
                 latestUserTurn: fixture.latestUserTurn
@@ -984,14 +1083,13 @@ struct CoachLiveEvaluationTests {
                 for: providerChoice,
                 requestedTier: requestedTier
             )
-            let assessmentProofTestHash = CoachReplyPipeline.proofTestHash(
-                for: judgement.assessment.nextProofTest
-            )
-            let assessmentCacheAgeMs = Self.latencyMs(
-                from: judgement.assessmentGeneratedAt,
-                to: turnCompletedAt
-            )
-            let missingEvidence = judgement.assessment.missingEvidence
+            let assessmentProofTestHash = assessment.map {
+                CoachReplyPipeline.proofTestHash(for: $0.nextProofTest)
+            }
+            let assessmentCacheAgeMs = judgement.assessmentGeneratedAt.map {
+                Self.latencyMs(from: $0, to: turnCompletedAt)
+            }
+            let missingEvidence = assessment?.missingEvidence ?? []
             let brainIDs = expertise.map { $0.id }
             let diagnosticRows = newRecords.map(CoachLiveDiagnosticReportRecord.make)
             emit("")
@@ -1010,19 +1108,19 @@ struct CoachLiveEvaluationTests {
             emit("timeToFirstVisibleTokenSource: \(telemetry.timeToFirstVisibleTokenSource.rawValue)")
             emit("timeToCompleteReplyMs: \(timeToCompleteReplyMs)")
             emit("trajectoryCacheHit: \(judgement.trajectory.cacheHit)")
-            emit("assessmentCacheHit: \(judgement.assessmentCacheHit)")
-            emit("assessmentCacheAgeMs: \(assessmentCacheAgeMs)")
-            emit("assessmentConfidence: \(String(format: "%.2f", judgement.assessment.confidence))")
-            emit("assessmentProofTestHash: \(assessmentProofTestHash)")
-            emit("assessmentVerdict: \(judgement.assessment.directVerdict)")
-            emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
-            emit("assessmentResponseMode: \(judgement.assessment.responseMode.rawValue)")
+            emit("assessmentCacheHit: \(judgement.assessmentCacheHit.map { String($0) } ?? "not-applicable")")
+            emit("assessmentCacheAgeMs: \(assessmentCacheAgeMs.map { String($0) } ?? "not-applicable")")
+            emit("assessmentConfidence: \(assessment.map { String(format: "%.2f", $0.confidence) } ?? "not-applicable")")
+            emit("assessmentProofTestHash: \(assessmentProofTestHash ?? "not-applicable")")
+            emit("assessmentVerdict: \(assessment?.directVerdict ?? "not-applicable")")
+            emit("assessmentImmediateRead: \(assessment?.immediateCoachRead ?? "not-applicable")")
+            emit("assessmentResponseMode: \(assessment?.responseMode.rawValue ?? "not-applicable")")
             emit("immediateCoachReadExpected: \(immediateCoachReadExpected)")
             emit("immediateCoachReadShown: \(immediateCoachReadShown)")
             if !missingEvidence.isEmpty {
                 emit("missingEvidence: \(missingEvidence.joined(separator: " | "))")
             }
-            emit("proofTest: \(judgement.assessment.nextProofTest)")
+            emit("proofTest: \(assessment?.nextProofTest ?? "not-applicable")")
             emit("proofTestRecentlyRepeated: \(proofTestRecentlyRepeated)")
             emit("userPushbackWithinTwoTurns: \(trustSignals.userPushbackWithinTwoTurns)")
             emit("coldnessComplaintFlag: \(trustSignals.coldnessComplaintFlag)")
@@ -1041,7 +1139,7 @@ struct CoachLiveEvaluationTests {
                     history: history,
                     latestUserTurn: fixture.latestUserTurn,
                     turnDepth: judgement.turnDepth,
-                    assessment: judgement.assessment,
+                    assessment: assessment,
                     evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated
                 )
@@ -1066,7 +1164,7 @@ struct CoachLiveEvaluationTests {
                 let semanticIssue = AICoachChatService.semanticQualityIssue(
                     in: reply,
                     turnDepth: judgement.turnDepth,
-                    assessment: judgement.assessment
+                    assessment: assessment
                 )
                 let vision = AICoachChatService.coachVisionEvaluation(
                     reply: reply,
@@ -1078,7 +1176,7 @@ struct CoachLiveEvaluationTests {
                     ),
                     systemContext: context,
                     turnDepth: judgement.turnDepth,
-                    assessment: judgement.assessment,
+                    assessment: assessment,
                     surface: .text
                 )
 
@@ -1129,15 +1227,15 @@ struct CoachLiveEvaluationTests {
                     trajectoryCacheHit: judgement.trajectory.cacheHit,
                     assessmentCacheHit: judgement.assessmentCacheHit,
                     assessmentCacheAgeMs: assessmentCacheAgeMs,
-                    assessmentConfidence: judgement.assessment.confidence,
+                    assessmentConfidence: assessment?.confidence,
                     assessmentProofTestHash: assessmentProofTestHash,
-                    assessmentVerdict: judgement.assessment.directVerdict,
-                    assessmentImmediateRead: judgement.assessment.immediateCoachRead,
-                    assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                    assessmentVerdict: assessment?.directVerdict,
+                    assessmentImmediateRead: assessment?.immediateCoachRead,
+                    assessmentResponseMode: assessment?.responseMode.rawValue,
                     immediateCoachReadExpected: immediateCoachReadExpected,
                     immediateCoachReadShown: immediateCoachReadShown,
                     missingEvidence: missingEvidence,
-                    proofTest: judgement.assessment.nextProofTest,
+                    proofTest: assessment?.nextProofTest,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                     userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
                     coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
@@ -1193,15 +1291,15 @@ struct CoachLiveEvaluationTests {
                     trajectoryCacheHit: judgement.trajectory.cacheHit,
                     assessmentCacheHit: judgement.assessmentCacheHit,
                     assessmentCacheAgeMs: assessmentCacheAgeMs,
-                    assessmentConfidence: judgement.assessment.confidence,
+                    assessmentConfidence: assessment?.confidence,
                     assessmentProofTestHash: assessmentProofTestHash,
-                    assessmentVerdict: judgement.assessment.directVerdict,
-                    assessmentImmediateRead: judgement.assessment.immediateCoachRead,
-                    assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                    assessmentVerdict: assessment?.directVerdict,
+                    assessmentImmediateRead: assessment?.immediateCoachRead,
+                    assessmentResponseMode: assessment?.responseMode.rawValue,
                     immediateCoachReadExpected: immediateCoachReadExpected,
                     immediateCoachReadShown: immediateCoachReadShown,
                     missingEvidence: missingEvidence,
-                    proofTest: judgement.assessment.nextProofTest,
+                    proofTest: assessment?.nextProofTest,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                     userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
                     coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
@@ -1444,9 +1542,14 @@ struct CoachLiveEvaluationTests {
             // hidden behind a clean top-level summary.
             let operationalRows = operationalRows ?? rows
             let failures = rows.filter { !$0.liveProductionFloor }
-            let proofHashCounts = Dictionary(grouping: rows.map(\.assessmentProofTestHash), by: { $0 })
+            let proofHashes = rows.compactMap { row -> String? in
+                let value = row.assessmentProofTestHash?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return value.isEmpty ? nil : value
+            }
+            let proofHashCounts = Dictionary(grouping: proofHashes, by: { $0 })
             let repeatedProofHashCount = proofHashCounts.values.filter { $0.count > 1 }.count
-            let confidences = rows.map(\.assessmentConfidence)
+            let confidences = rows.compactMap(\.assessmentConfidence)
             let roundedConfidences = Set(confidences.map { String(format: "%.2f", $0) })
             let wordCounts = rows.compactMap(\.replyWordCount)
             let firstVisible = operationalRows.compactMap(\.timeToFirstVisibleTokenMs)
@@ -1466,6 +1569,7 @@ struct CoachLiveEvaluationTests {
                     rowCount: rows.count,
                     productionFloorFailureCount: productionFloorFailureCount,
                     repeatedProofTestHashCount: repeatedProofHashCount,
+                    assessmentCount: confidences.count,
                     assessmentConfidenceDistinctRoundedCount: roundedConfidences.count,
                     replyWordCounts: wordCounts,
                     immediateCoachReadMissingCount: missingImmediateCoachReadRows.count,
@@ -1505,6 +1609,7 @@ struct CoachLiveEvaluationTests {
             rowCount: Int,
             productionFloorFailureCount: Int,
             repeatedProofTestHashCount: Int,
+            assessmentCount: Int,
             assessmentConfidenceDistinctRoundedCount: Int,
             replyWordCounts: [Int],
             immediateCoachReadMissingCount: Int,
@@ -1522,7 +1627,7 @@ struct CoachLiveEvaluationTests {
             if repeatedProofTestHashCount > 0 {
                 warnings.append(.repeatedProofTestHash)
             }
-            if rowCount >= 3 && assessmentConfidenceDistinctRoundedCount <= 1 {
+            if assessmentCount >= 3 && assessmentConfidenceDistinctRoundedCount <= 1 {
                 warnings.append(.flatAssessmentConfidence)
             }
             if replyWordCounts.count >= 3,
@@ -1563,17 +1668,17 @@ struct CoachLiveEvaluationTests {
         let timeToFirstVisibleTokenSource: String
         let timeToCompleteReplyMs: Int
         let trajectoryCacheHit: Bool
-        let assessmentCacheHit: Bool
-        let assessmentCacheAgeMs: Int
-        let assessmentConfidence: Double
-        let assessmentProofTestHash: String
-        let assessmentVerdict: String
-        let assessmentImmediateRead: String
-        let assessmentResponseMode: String
+        let assessmentCacheHit: Bool?
+        let assessmentCacheAgeMs: Int?
+        let assessmentConfidence: Double?
+        let assessmentProofTestHash: String?
+        let assessmentVerdict: String?
+        let assessmentImmediateRead: String?
+        let assessmentResponseMode: String?
         let immediateCoachReadExpected: Bool
         let immediateCoachReadShown: Bool
         let missingEvidence: [String]
-        let proofTest: String
+        let proofTest: String?
         let proofTestRecentlyRepeated: Bool
         let userPushbackWithinTwoTurns: Bool
         let coldnessComplaintFlag: Bool
@@ -1632,9 +1737,10 @@ struct CoachLiveEvaluationTests {
         turnDepth: CoachTurnDepth = .groundedRead,
         surface: CoachReplySurface = .text,
         assessmentResponseMode: CoachAssessment.ResponseMode = .immediateOnly,
-        immediateCoachReadShown: Bool = true
+        immediateCoachReadShown: Bool = true,
+        includeTypedAssessment: Bool = true
     ) -> CoachLiveEvaluationReportRow {
-        let immediateCoachReadExpected = Self.immediateCoachReadExpected(
+        let immediateCoachReadExpected = includeTypedAssessment && Self.immediateCoachReadExpected(
             turnDepth: turnDepth,
             surface: surface,
             responseMode: assessmentResponseMode
@@ -1657,17 +1763,17 @@ struct CoachLiveEvaluationTests {
                 : TimeToFirstVisibleTokenSource.completedReplyProxy.rawValue,
             timeToCompleteReplyMs: 1_000,
             trajectoryCacheHit: true,
-            assessmentCacheHit: false,
-            assessmentCacheAgeMs: 20,
-            assessmentConfidence: assessmentConfidence,
-            assessmentProofTestHash: assessmentProofTestHash,
-            assessmentVerdict: "Verdict",
-            assessmentImmediateRead: "Immediate read",
-            assessmentResponseMode: assessmentResponseMode.rawValue,
+            assessmentCacheHit: includeTypedAssessment ? false : nil,
+            assessmentCacheAgeMs: includeTypedAssessment ? 20 : nil,
+            assessmentConfidence: includeTypedAssessment ? assessmentConfidence : nil,
+            assessmentProofTestHash: includeTypedAssessment ? assessmentProofTestHash : nil,
+            assessmentVerdict: includeTypedAssessment ? "Verdict" : nil,
+            assessmentImmediateRead: includeTypedAssessment ? "Immediate read" : nil,
+            assessmentResponseMode: includeTypedAssessment ? assessmentResponseMode.rawValue : nil,
             immediateCoachReadExpected: immediateCoachReadExpected,
-            immediateCoachReadShown: immediateCoachReadShown,
+            immediateCoachReadShown: includeTypedAssessment && immediateCoachReadShown,
             missingEvidence: [],
-            proofTest: "Run a short proof test.",
+            proofTest: includeTypedAssessment ? "Run a short proof test." : nil,
             proofTestRecentlyRepeated: false,
             userPushbackWithinTwoTurns: userPushbackWithinTwoTurns,
             coldnessComplaintFlag: coldnessComplaintFlag,
@@ -2199,7 +2305,7 @@ struct CoachLiveEvaluationTests {
         let expertise = await KnowledgeRetriever.retrieveReranked(
             query: fixture.latestUserTurn,
             lever: fixture.trends.first?.skillArea,
-            voice: fixture.profile?.speakingStyleGoal,
+            voice: fixture.profile?.chosenStyleGoal,
             hasDiagnosis: !fixture.sessions.isEmpty
         )
         let recentUserTurns = history
@@ -2217,19 +2323,23 @@ struct CoachLiveEvaluationTests {
             surface: .text,
             recentProofTests: recentProofTests
         )
-        let proofTestRecentlyRepeated = Self.proofTestRecentlyRepeated(
-            judgement.assessment.nextProofTest,
-            in: recentProofTests
-        )
-        recentProofTests = Self.updatedRecentProofTests(
-            recentProofTests,
-            adding: judgement.assessment.nextProofTest
-        )
-        context += "\n" + CoachPromptBundle.contextBlock(
-            assessment: judgement.assessment,
-            rubric: judgement.rubric,
-            surface: .text
-        )
+        let assessment = judgement.assessment
+        let proofTestRecentlyRepeated = assessment.map {
+            Self.proofTestRecentlyRepeated($0.nextProofTest, in: recentProofTests)
+        } ?? false
+        if let assessment {
+            recentProofTests = Self.updatedRecentProofTests(
+                recentProofTests,
+                adding: assessment.nextProofTest
+            )
+        }
+        if let assessment, let rubric = judgement.rubric {
+            context += "\n" + CoachPromptBundle.contextBlock(
+                assessment: assessment,
+                rubric: rubric,
+                surface: .text
+            )
+        }
         let recentTimed = fixture.sessions
             .filter { $0.mode == .timed }
             .max(by: { $0.date < $1.date })
@@ -2245,16 +2355,23 @@ struct CoachLiveEvaluationTests {
         var providerAttemptEvents: [CoachProviderAttemptEvent] = []
         var firstStreamedVisibleAt: Date?
         let turnStartedAt = Date()
-        let immediateCoachReadExpected = Self.immediateCoachReadExpected(
-            turnDepth: judgement.turnDepth,
-            surface: .text,
-            responseMode: judgement.assessment.responseMode
-        )
-        let immediateCoachReadShown = await Self.verifyImmediateCoachReadVisibility(
-            expected: immediateCoachReadExpected,
-            userTurn: fixture.latestUserTurn,
-            immediateRead: judgement.assessment.immediateCoachRead
-        )
+        let immediateCoachReadExpected = assessment.map {
+            Self.immediateCoachReadExpected(
+                turnDepth: judgement.turnDepth,
+                surface: .text,
+                responseMode: $0.responseMode
+            )
+        } ?? false
+        let immediateCoachReadShown: Bool
+        if let assessment {
+            immediateCoachReadShown = await Self.verifyImmediateCoachReadVisibility(
+                expected: immediateCoachReadExpected,
+                userTurn: fixture.latestUserTurn,
+                immediateRead: assessment.immediateCoachRead
+            )
+        } else {
+            immediateCoachReadShown = false
+        }
         let localImmediateVisibleAt = immediateCoachReadShown ? Date() : nil
 
         let providerOutcome = await service.reply(
@@ -2263,7 +2380,7 @@ struct CoachLiveEvaluationTests {
             userContext: context,
             grounding: grounding,
             turnDepth: judgement.turnDepth,
-            assessment: judgement.assessment,
+            assessment: assessment,
             surface: .text,
             preferredTier: requestedTier,
             onStreamedPartialVisible: { _ in
@@ -2280,7 +2397,7 @@ struct CoachLiveEvaluationTests {
         )
         let outcome = Self.livePipelineOutcome(
             providerOutcome,
-            assessment: judgement.assessment,
+            assessment: assessment,
             turnDepth: judgement.turnDepth,
             history: history,
             latestUserTurn: fixture.latestUserTurn
@@ -2317,14 +2434,13 @@ struct CoachLiveEvaluationTests {
             for: providerChoice,
             requestedTier: requestedTier
         )
-        let assessmentProofTestHash = CoachReplyPipeline.proofTestHash(
-            for: judgement.assessment.nextProofTest
-        )
-        let assessmentCacheAgeMs = Self.latencyMs(
-            from: judgement.assessmentGeneratedAt,
-            to: turnCompletedAt
-        )
-        let missingEvidence = judgement.assessment.missingEvidence
+        let assessmentProofTestHash = assessment.map {
+            CoachReplyPipeline.proofTestHash(for: $0.nextProofTest)
+        }
+        let assessmentCacheAgeMs = judgement.assessmentGeneratedAt.map {
+            Self.latencyMs(from: $0, to: turnCompletedAt)
+        }
+        let missingEvidence = assessment?.missingEvidence ?? []
         let brainIDs = expertise.map { $0.id }
         let diagnosticRows = newRecords.map(CoachLiveDiagnosticReportRecord.make)
         emit("")
@@ -2337,12 +2453,12 @@ struct CoachLiveEvaluationTests {
         emit("providerModel: \(providerChoice?.model ?? "none")")
         emit("timeToFirstVisibleTokenMs: \(telemetry.timeToFirstVisibleTokenMs.map(String.init) ?? "unknown")")
         emit("timeToCompleteReplyMs: \(timeToCompleteReplyMs)")
-        emit("assessmentConfidence: \(String(format: "%.2f", judgement.assessment.confidence))")
-        emit("assessmentProofTestHash: \(assessmentProofTestHash)")
-        emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
+        emit("assessmentConfidence: \(assessment.map { String(format: "%.2f", $0.confidence) } ?? "not-applicable")")
+        emit("assessmentProofTestHash: \(assessmentProofTestHash ?? "not-applicable")")
+        emit("assessmentImmediateRead: \(assessment?.immediateCoachRead ?? "not-applicable")")
         emit("immediateCoachReadExpected: \(immediateCoachReadExpected)")
         emit("immediateCoachReadShown: \(immediateCoachReadShown)")
-        emit("proofTest: \(judgement.assessment.nextProofTest)")
+        emit("proofTest: \(assessment?.nextProofTest ?? "not-applicable")")
         emit("proofTestRecentlyRepeated: \(proofTestRecentlyRepeated)")
 
         switch outcome {
@@ -2352,7 +2468,7 @@ struct CoachLiveEvaluationTests {
                 history: history,
                 latestUserTurn: fixture.latestUserTurn,
                 turnDepth: judgement.turnDepth,
-                assessment: judgement.assessment,
+                assessment: assessment,
                 evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated
             )
@@ -2378,7 +2494,7 @@ struct CoachLiveEvaluationTests {
             let semanticIssue = AICoachChatService.semanticQualityIssue(
                 in: reply,
                 turnDepth: judgement.turnDepth,
-                assessment: judgement.assessment
+                assessment: assessment
             )
             let vision = AICoachChatService.coachVisionEvaluation(
                 reply: reply,
@@ -2386,7 +2502,7 @@ struct CoachLiveEvaluationTests {
                 quoteGuard: quoteGuard,
                 systemContext: context,
                 turnDepth: judgement.turnDepth,
-                assessment: judgement.assessment,
+                assessment: assessment,
                 surface: .text
             )
             let liveProductionFloor = Self.liveProductionFloor(
@@ -2426,15 +2542,15 @@ struct CoachLiveEvaluationTests {
                 trajectoryCacheHit: judgement.trajectory.cacheHit,
                 assessmentCacheHit: judgement.assessmentCacheHit,
                 assessmentCacheAgeMs: assessmentCacheAgeMs,
-                assessmentConfidence: judgement.assessment.confidence,
+                assessmentConfidence: assessment?.confidence,
                 assessmentProofTestHash: assessmentProofTestHash,
-                assessmentVerdict: judgement.assessment.directVerdict,
-                assessmentImmediateRead: judgement.assessment.immediateCoachRead,
-                assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                assessmentVerdict: assessment?.directVerdict,
+                assessmentImmediateRead: assessment?.immediateCoachRead,
+                assessmentResponseMode: assessment?.responseMode.rawValue,
                 immediateCoachReadExpected: immediateCoachReadExpected,
                 immediateCoachReadShown: immediateCoachReadShown,
                 missingEvidence: missingEvidence,
-                proofTest: judgement.assessment.nextProofTest,
+                proofTest: assessment?.nextProofTest,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                 userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
                 coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
@@ -2478,15 +2594,15 @@ struct CoachLiveEvaluationTests {
                 trajectoryCacheHit: judgement.trajectory.cacheHit,
                 assessmentCacheHit: judgement.assessmentCacheHit,
                 assessmentCacheAgeMs: assessmentCacheAgeMs,
-                assessmentConfidence: judgement.assessment.confidence,
+                assessmentConfidence: assessment?.confidence,
                 assessmentProofTestHash: assessmentProofTestHash,
-                assessmentVerdict: judgement.assessment.directVerdict,
-                assessmentImmediateRead: judgement.assessment.immediateCoachRead,
-                assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                assessmentVerdict: assessment?.directVerdict,
+                assessmentImmediateRead: assessment?.immediateCoachRead,
+                assessmentResponseMode: assessment?.responseMode.rawValue,
                 immediateCoachReadExpected: immediateCoachReadExpected,
                 immediateCoachReadShown: immediateCoachReadShown,
                 missingEvidence: missingEvidence,
-                proofTest: judgement.assessment.nextProofTest,
+                proofTest: assessment?.nextProofTest,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                 userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
                 coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
@@ -2588,6 +2704,17 @@ struct CoachLiveEvaluationTests {
         return wanted.compactMap { id in all.first { $0.id == id } }
     }
 
+    /// The typed judgement layer is voice-rubric based, so only fixtures with
+    /// explicit choice provenance may enter it. The intentional cold-start
+    /// fixture remains unstyled; silently assigning it a legacy/default voice
+    /// would make the evaluation harness violate the same trust boundary as
+    /// production.
+    private static func explicitVoiceFixtures(
+        _ fixtures: [CoachChatEvaluationFixture]
+    ) -> [CoachChatEvaluationFixture] {
+        fixtures.filter { $0.profile?.chosenStyleGoal != nil }
+    }
+
     private static func selectedLongFormConversations(
         env: [String: String] = ProcessInfo.processInfo.environment
     ) -> [CoachChatConversationFixture] {
@@ -2623,10 +2750,10 @@ struct CoachLiveEvaluationTests {
     private struct JudgementContext {
         let turnDepth: CoachTurnDepth
         let trajectory: UserTrajectoryCacheResult
-        let rubric: ActiveGoalRubric
-        let assessment: CoachAssessment
-        let assessmentCacheHit: Bool
-        let assessmentGeneratedAt: Date
+        let rubric: ActiveGoalRubric?
+        let assessment: CoachAssessment?
+        let assessmentCacheHit: Bool?
+        let assessmentGeneratedAt: Date?
     }
 
     private static func judgement(
@@ -2650,7 +2777,14 @@ struct CoachLiveEvaluationTests {
             coachMemory: nil
         )
         guard let rubric = GoalRubricStore.activeRubric(for: fixture.profile) else {
-            preconditionFailure("Coach evaluation fixtures must declare an explicit voice")
+            return JudgementContext(
+                turnDepth: turnDepth,
+                trajectory: trajectory,
+                rubric: nil,
+                assessment: nil,
+                assessmentCacheHit: nil,
+                assessmentGeneratedAt: nil
+            )
         }
         let assessmentResult = CoachAssessmentCache.shared.assessment(
             turnDepth: turnDepth,

@@ -98,8 +98,8 @@ Where the product is now **underweight** for coach parity:
   networking meeting, date, leadership conversation, or speech goes better.
   Noum needs outcome check-ins tied to real moments, including the user's read
   of audience reaction, not only better in-app repetitions.
-- **Goal capture used to be a write-once event** — now goals shape
-  every surface in the M14 coaching loop, including drill *selection*
+- **Goal capture used to be a write-once event** — now an explicitly chosen
+  style shapes the M14 coaching loop, including drill *selection*
   (a small `+10` priority bonus on goal-aligned trends inside
   `TrendAnalyzer.primaryFocus`, plus a day-one fallback to the
   voice's canonical lever when there's no trend data) and verdict
@@ -114,9 +114,14 @@ Where the product is now **underweight** for coach parity:
   fillers + sustained duration, etc. Restraint matches the copy
   enrichments: 0 when no goal, 0 when delivery doesn't fit (no
   double-penalty layered on top of the existing dimension weights).
-  Score, copy, and drill are all goal-aware end-to-end. The next standard is
-  intervention-aware: did that prescribed work help this specific user's
-  stated goal, and what should the coach change next?
+  Score, copy, and drill are goal-aware end-to-end only when
+  `chosenStyleGoal` proves that choice. Legacy `speakingStyleGoal` values remain
+  readable compatibility data but never authorize tailored coaching; an
+  unchosen profile stays neutral. Weekly digest copy follows the same boundary,
+  and current plans/proofs/notes are filtered or invalidated when their voice
+  provenance no longer matches. The next standard is intervention-aware: did
+  that prescribed work help this specific user's stated goal, and what should
+  the coach change next?
 - **Real-device QA gaps:** Live Activity can't be exercised on
   simulator, and `NoumWatch` is detached from the iOS scheme until
   the watchOS 26.2 simulator runtime is installed locally.
@@ -127,9 +132,12 @@ Where the product is now **underweight** for coach parity:
 session loop, multi-mode practice, scoring, rating, achievements,
 premium gating, settings, and account lifecycle all ship. M1 (daily-
 rhythm), M2 (peer pull), and M3 (path-journey gameplay v1) are landed
-end-to-end. M2 is gated on Firestore rules deployment
-(`FIRESTORE_RULES.md` at the project root) before public launch — the
-iOS code is the minimum contract; the rules enforce write isolation.
+locally. M2 must remain unavailable in production until the guarded social
+cutover is complete: back up and quarantine legacy client-authored rows,
+inventory/migrate incompatible private-profile enum values, deploy a trusted
+server-side evidence producer, and then deploy the reviewed rules/functions as
+one authorized operation. Source rules alone do not make the social surface
+safe.
 
 The lessons system (Duolingo-style 5×3-step×0–5-crown) is shipped and
 fed into the path so the curriculum and the path are one progression
@@ -202,7 +210,7 @@ all of the following for an individual user:
 
 ## Next milestone
 
-**Name:** _M14 — Open the loop: deploy Firestore rules + host privacy URL + ship to TestFlight._
+**Name:** _M14 — Open the loop: close release gates + ship to TestFlight._
 
 M14 is a launch gate, not a change in ambition. Shipping a stable build is
 necessary so the coach-parity work can be tested with real people, real
@@ -238,20 +246,29 @@ session would be worse than a deterministic template fallback.)
 - `PracticeLocalePickerSheet` strings ("Full curated pool — 200+
   prompts, 8 themes.") are themselves not yet localised.
 
-**Why this next:** the product is feature-complete enough to ship.
-The remaining blockers are operational, not engineering: the
-`FIRESTORE_RULES.md` rules need to be deployed for the league + peer
-surfaces to work in production; a public privacy-policy URL needs
-to be hosted for the App Store submission to succeed; and the
-existing build needs to be QA'd on real hardware before TestFlight.
+**Why this next:** the product is feature-complete enough to enter release
+closure. The remaining release gates are externally earned evidence and
+operator-owned actions, not authorization to add more local feature surface. The
+hosted policy already exists at `https://noum-d0b6f.web.app/privacy`; custom-domain
+DNS remains a separate operator-owned launch prerequisite, not a reason to claim
+that no public policy exists. The reviewed Firestore rules/functions still need
+the guarded social
+cutover and authorized coordinated production deploy, and the source-bound build
+still needs real-hardware/TestFlight QA.
 
 **Definition of done:**
-- `firebase deploy --only firestore:rules` from the documented rules.
-- Public privacy-policy URL hosted (Firebase Hosting or similar) and
-  wired into Settings → Privacy & Data.
-- TestFlight build cut against a real device, with the four
-  high-risk surfaces (Live Activity, AI prompt latency, soundscape
-  audio session, paywall purchase) verified manually.
+- Guarded social backup/quarantine, private-profile inventory/migration,
+  trusted evidence production, and coordinated rules/functions deployment.
+- Hosted policy and the Settings link verified against the generated processor
+  disclosure; custom-domain DNS/TLS/content cutover is completed as the
+  operational checklist requires.
+- Historical credential/endpoint and exposed Firebase-session incidents closed,
+  with independent verification and provider usage/billing audit.
+- A source-bound TestFlight build installed on physical hardware and the exact
+  14-surface/77-check schema completed for that same build.
+- All five independent launch artifacts accepted: current-source live-provider
+  sweep, blinded professional review, longitudinal real-user transfer,
+  physical TestFlight QA, and operational launch sign-off.
 - Out-of-box: bug fixes from real-device QA.
 
 **Out of scope for this milestone:**

@@ -1,8 +1,16 @@
-# Noum Privacy Remediation Plan
+# Historical Noum Privacy Remediation Plan — Superseded
+
+> **Historical snapshot only. Do not execute this plan against the current
+> product.** It was derived from the superseded 14 April 2026 audit and retains
+> legacy architecture and already-completed remediation for traceability.
+> Current privacy behavior and release work are owned by
+> [PrivacyPolicy.md](PrivacyPolicy.md), the generated
+> [processor manifest](../privacy/processors.json), and the
+> [production-readiness runbook](../docs/PRODUCTION_READINESS_RUNBOOK.md).
 
 **Date:** 2026-04-14
 **Based on:** PRIVACY_AUDIT.md (same date)
-**Status:** Implementation plan — not legal advice
+**Status:** Superseded historical plan — not an operational or legal reference
 
 ---
 
@@ -805,4 +813,6 @@ These items require input from a lawyer or compliance professional. Do not try t
 
 ---
 
-*This document is the implementation companion to PRIVACY_AUDIT.md. Use together for planning and execution.*
+*This document is retained only as the historical implementation companion to
+the superseded `PRIVACY_AUDIT.md`; do not use either file for current planning
+or execution.*

@@ -472,6 +472,10 @@ struct AskNoumView: View {
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
+    /// Established mode suggestions depend on account-scoped cloud consent.
+    /// Observing the existing owner makes a consent change rebuild the visible
+    /// launch projection before the user taps it.
+    @StateObject private var aiSettings = AISettingsManager.shared
 
     @State private var draft: String = ""
     @State private var didLandFirstAppear = false
@@ -669,7 +673,7 @@ struct AskNoumView: View {
                                         .id("revisedReadFollowUp")
                                 case .nextMove:
                                     coachNextMovePanel(
-                                        destination: suggestedModeDestination,
+                                        launch: suggestedModeLaunch,
                                         chips: followUpChips ?? []
                                     )
                                     .id("coachNextMove")
@@ -1147,7 +1151,11 @@ struct AskNoumView: View {
     /// hero would start. No new routing logic.
     private func beginFirstRep() {
         CoachHaptic.selectionTap()
-        let blueprint = RecommendationBiasContextBuilder.context(
+        let availability = NextActionModeAvailability(
+            rating: ratingStore.rating,
+            imConversationAvailable: IMModeAvailability.isAvailable
+        )
+        let blueprint = availability.resolving(RecommendationBiasContextBuilder.context(
             profile: coachingProfileStore.profile,
             sessions: sessionStore.sessions,
             sessionStreak: streakFreezeManager.currentStreak,
@@ -1156,11 +1164,12 @@ struct AskNoumView: View {
             imAvailable: IMModeAvailability.isAvailable,
             recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
-        ).blueprint
+        ).blueprint)
         navigationPath.append(
             SummaryLookingAheadRouter.destination(
                 for: blueprint,
-                imAvailable: IMModeAvailability.isAvailable
+                imAvailable: IMModeAvailability.isAvailable,
+                modeAvailability: availability
             )
         )
     }
@@ -1418,20 +1427,31 @@ struct AskNoumView: View {
         )
     }
 
-    /// A3: the single launchable practice destination the LATEST coach reply
-    /// points at, if any. Lifecycle is implicit + clean: it is computed from
-    /// `store.messages.last` only, so it appears under the freshest coach reply
-    /// that names a mode, is superseded the moment a new turn lands, and is
-    /// dismissed by navigating away on tap. Nil while awaiting a reply, on a
-    /// user turn, or when the reply names no mode (no card rather than a guess).
-    private var suggestedModeDestination: AppDestination? {
+    /// A3: the single capability-resolved practice launch the LATEST coach
+    /// reply points at, if any. Lifecycle is implicit + clean: it is computed
+    /// from `store.messages.last` only, so it appears under the freshest coach
+    /// reply that names a mode, is superseded the moment a new turn lands, and
+    /// is dismissed by navigating away on tap. Nil while awaiting a reply, on
+    /// a user turn, or when the reply names no mode (no card rather than a
+    /// guess). Reading the published consent makes its availability dependency
+    /// explicit to SwiftUI.
+    private var suggestedModeLaunch: AskNoumModeSuggestion.LaunchProjection? {
+        _ = aiSettings.cloudProcessingConsent
         guard !store.isAwaitingReply,
               let last = store.messages.last,
               last.role == .coach,
               !last.isPending,
               !last.text.isEmpty
         else { return nil }
-        return AskNoumModeSuggestion.detect(in: last.text)
+        let imAvailable = IMModeAvailability.isAvailable
+        return AskNoumModeSuggestion.launchProjection(
+            in: last.text,
+            modeAvailability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: imAvailable
+            ),
+            imAvailable: imAvailable
+        )
     }
 
     /// The ONE continuation surface the current turn earned, resolved by the
@@ -1445,7 +1465,7 @@ struct AskNoumView: View {
             goalProposalEligible: shouldShowGoalProposal,
             hypothesisAckEligible: shouldShowHypothesisAck,
             revisedReadFollowUpEligible: shouldShowRevisedReadFollowUp,
-            nextMoveAvailable: suggestedModeDestination != nil || layout.primary != nil
+            nextMoveAvailable: suggestedModeLaunch != nil || layout.primary != nil
         )
     }
 
@@ -2123,9 +2143,12 @@ struct AskNoumView: View {
     }
 
     @ViewBuilder
-    private func coachNextMovePanel(destination: AppDestination?, chips: [String]) -> some View {
+    private func coachNextMovePanel(
+        launch: AskNoumModeSuggestion.LaunchProjection?,
+        chips: [String]
+    ) -> some View {
         let layout = Self.coachOptionLayout(for: chips)
-        if destination != nil || layout.primary != nil {
+        if launch != nil || layout.primary != nil {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Next move")
                     .font(Typography.caption.weight(.semibold))
@@ -2134,20 +2157,26 @@ struct AskNoumView: View {
 
                 Button {
                     CoachHaptic.selectionTap()
-                    if let destination {
-                        if let quickStartMode = AskNoumModeSuggestion.quickStartMode(for: destination) {
-                            PracticeModeQuickStart.arm(for: quickStartMode)
-                        }
-                        navigationPath.append(destination)
+                    if let launch {
+                        let imAvailable = IMModeAvailability.isAvailable
+                        let tapLaunch = launch.resolvingForTap(
+                            modeAvailability: NextActionModeAvailability(
+                                rating: ratingStore.rating,
+                                imConversationAvailable: imAvailable
+                            ),
+                            imAvailable: imAvailable
+                        )
+                        PracticeModeQuickStart.arm(for: tapLaunch.quickStartMode)
+                        navigationPath.append(tapLaunch.destination)
                     } else if let primary = layout.primary {
                         send(primary)
                     }
                 } label: {
                     HStack(alignment: .center, spacing: 8) {
-                        Image(systemName: destination == nil ? "arrow.up.right.circle.fill" : "play.circle.fill")
+                        Image(systemName: launch == nil ? "arrow.up.right.circle.fill" : "play.circle.fill")
                             .font(Typography.caption.weight(.bold))
                             .foregroundStyle(AppColor.pro)
-                        Text(primaryNextMoveLabel(destination: destination, fallback: layout.primary))
+                        Text(primaryNextMoveLabel(launch: launch, fallback: layout.primary))
                             .font(Typography.caption.weight(.semibold))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
@@ -2168,7 +2197,7 @@ struct AskNoumView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("askNoum.nextMove.primary")
-                .accessibilityLabel(primaryNextMoveAccessibilityLabel(destination: destination, fallback: layout.primary))
+                .accessibilityLabel(primaryNextMoveAccessibilityLabel(launch: launch, fallback: layout.primary))
 
                 if !layout.overflow.isEmpty {
                     Menu {
@@ -2194,16 +2223,22 @@ struct AskNoumView: View {
         }
     }
 
-    private func primaryNextMoveLabel(destination: AppDestination?, fallback: String?) -> String {
-        if let destination {
-            return AskNoumModeSuggestion.label(for: destination)
+    private func primaryNextMoveLabel(
+        launch: AskNoumModeSuggestion.LaunchProjection?,
+        fallback: String?
+    ) -> String {
+        if let launch {
+            return launch.label
         }
         return fallback ?? "Continue"
     }
 
-    private func primaryNextMoveAccessibilityLabel(destination: AppDestination?, fallback: String?) -> String {
-        if let destination {
-            return AskNoumModeSuggestion.label(for: destination)
+    private func primaryNextMoveAccessibilityLabel(
+        launch: AskNoumModeSuggestion.LaunchProjection?,
+        fallback: String?
+    ) -> String {
+        if let launch {
+            return launch.label
         }
         return "Follow up: \(fallback ?? "Continue")"
     }

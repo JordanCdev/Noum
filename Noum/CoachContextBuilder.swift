@@ -973,7 +973,11 @@ enum CoachContextBuilder {
             // since setting this moment, so the coach can nudge the remaining
             // rehearsal rather than re-explaining the moment.
             let prepReadiness = PrepSessionPlanner.readiness(
-                plan: PrepSessionPlanner.plan(bigMoment: moment, daysRemaining: days),
+                plan: PrepSessionPlanner.plan(
+                    bigMoment: moment,
+                    daysRemaining: days,
+                    modeAvailability: .failClosed
+                ),
                 sessions: sessions,
                 momentCreatedAt: moment.createdAt
             )

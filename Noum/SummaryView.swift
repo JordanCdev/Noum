@@ -106,7 +106,7 @@ struct SummaryView: View {
     /// the stale summary shouldn't be reachable via the back chevron).
     /// Receives the `AppDestination` rather than recomputing it inside
     /// the path closure because the destination depends on view-side
-    /// state (`summaryRecommendation` + `IMModeAvailability.isAvailable`)
+    /// state (the resolved Summary prescription + live IM availability)
     /// the init doesn't have in scope. Defaults nil → the
     /// `LookingAheadCard` stays the pre-round-19 descriptive-only nudge.
     var onStartLookingAhead: ((AppDestination) -> Void)?
@@ -286,7 +286,11 @@ struct SummaryView: View {
             nextAction: action,
             fallbackDrill: drillRecommendationV2,
             existingScenario: existingSetup?.scenario,
-            existingTone: existingSetup?.tone
+            existingTone: existingSetup?.tone,
+            modeAvailability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: IMModeAvailability.isAvailable
+            )
         )
     }
 
@@ -570,7 +574,7 @@ struct SummaryView: View {
                     activeMiniDrill = drill
                 },
                 onStartDrill: onStartDrill,
-                imAvailable: IMModeAvailability.isAvailable,
+                resolveIMAvailability: { IMModeAvailability.isAvailable },
                 onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
                 onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
             )
@@ -1268,11 +1272,10 @@ struct SummaryView: View {
                                 transcriptConfidence: sessionStore.sessions.first?.transcriptConfidence,
                                 onPracticePhrase: onStartLookingAhead.map { launch in
                                     { intent in
-                                        UserDefaults.standard.set(
-                                            intent.suggestedPrompt,
-                                            forKey: "timedPractice.suggestedPrompt"
-                                        )
-                                        launch(.timedPractice)
+                                        guard let token = TimedPracticePromptHandoff.shared.offerToken(
+                                            intent.suggestedPrompt
+                                        ) else { return }
+                                        launch(.timedPracticePrompt(token: token))
                                     }
                                 }
                             )
@@ -2152,13 +2155,17 @@ struct SummaryView: View {
         )
     }
 
-    private func startFullRepPrescription(mode: PracticeMode, destination: AppDestination) {
+    private func startFullRepPrescription(launch: PracticeModeLaunchProjection) {
         guard let onStartLookingAhead else { return }
-        // `recordShown` is idempotent on the fingerprint, so this also covers
-        // a very fast tap before SwiftUI's onAppear callback settles.
-        recordFullRepPrescriptionShown(mode: mode)
-        recommendationLearningStore.markTapped(mode: mode)
-        onStartLookingAhead(destination)
+        if launch.acceptsDisplayedPrescription {
+            // `recordShown` is idempotent on the fingerprint, so this also
+            // covers a very fast tap before SwiftUI's onAppear settles.
+            recordFullRepPrescriptionShown(mode: launch.displayedMode)
+            recommendationLearningStore.markTapped(mode: launch.displayedMode)
+        }
+        // An operational capability change still routes safely, but it is not
+        // counted as acceptance of a mode the user did not tap.
+        onStartLookingAhead(launch.destination)
     }
 
     // MARK: - Setup & Logic

@@ -58,6 +58,11 @@ struct ForwardPlan: Codable, Equatable {
     /// True when the AI provider produced the plan; false when the
     /// deterministic rule-based fallback ran.
     let isAIBacked: Bool
+    /// Optional links from a plan week to a phrase the user explicitly saved
+    /// in the existing account-scoped Phrase Bank. The plan stores only the
+    /// entry identifier, never another copy of the phrase or its source
+    /// transcript. Missing/deleted entries therefore fail closed to no phrase.
+    let practicePhraseEntryIDsByWeek: [Int: UUID]?
 
     init(
         id: UUID = UUID(),
@@ -65,7 +70,8 @@ struct ForwardPlan: Codable, Equatable {
         generatedAt: Date = Date(),
         bigMomentID: UUID? = nil,
         voiceAtGeneration: SpeakingStyleGoal? = nil,
-        isAIBacked: Bool
+        isAIBacked: Bool,
+        practicePhraseEntryIDsByWeek: [Int: UUID]? = nil
     ) {
         self.id = id
         self.weeks = weeks
@@ -73,6 +79,7 @@ struct ForwardPlan: Codable, Equatable {
         self.bigMomentID = bigMomentID
         self.voiceAtGeneration = voiceAtGeneration
         self.isAIBacked = isAIBacked
+        self.practicePhraseEntryIDsByWeek = practicePhraseEntryIDsByWeek
     }
 
     // MARK: - Calendar projection
@@ -125,6 +132,72 @@ struct ForwardPlan: Codable, Equatable {
     ) -> Bool {
         isInvalidated(by: activeBigMomentID)
             || voiceAtGeneration != chosenStyleGoal
+    }
+
+    /// Resolve the user-selected phrase link for one real plan week. Invalid
+    /// week indices and stale identifiers are deliberately ignored by callers
+    /// rather than inventing a replacement phrase.
+    func practicePhraseEntryID(forWeek weekIndex: Int) -> UUID? {
+        guard weeks.contains(where: { $0.weekIndex == weekIndex }) else {
+            return nil
+        }
+        return practicePhraseEntryIDsByWeek?[weekIndex]
+    }
+
+    /// Immutable update used by `ForwardPlanStore`, preserving the generated
+    /// plan's identity/provenance while changing only the user's explicit
+    /// week-to-phrase execution choice.
+    func assigningPracticePhrase(entryID: UUID, toWeek weekIndex: Int) -> ForwardPlan? {
+        guard weeks.contains(where: { $0.weekIndex == weekIndex }) else {
+            return nil
+        }
+        var assignments = practicePhraseEntryIDsByWeek ?? [:]
+        assignments[weekIndex] = entryID
+        return ForwardPlan(
+            id: id,
+            weeks: weeks,
+            generatedAt: generatedAt,
+            bigMomentID: bigMomentID,
+            voiceAtGeneration: voiceAtGeneration,
+            isAIBacked: isAIBacked,
+            practicePhraseEntryIDsByWeek: assignments
+        )
+    }
+
+    /// Clear every link to a removed Phrase Bank entry without touching the
+    /// generated plan. Keeping this operation on the existing plan owner avoids
+    /// a second handoff store and prevents dead references from accumulating.
+    func removingPracticePhrase(entryID: UUID) -> ForwardPlan {
+        let assignments = (practicePhraseEntryIDsByWeek ?? [:]).filter {
+            $0.value != entryID
+        }
+        return ForwardPlan(
+            id: id,
+            weeks: weeks,
+            generatedAt: generatedAt,
+            bigMomentID: bigMomentID,
+            voiceAtGeneration: voiceAtGeneration,
+            isAIBacked: isAIBacked,
+            practicePhraseEntryIDsByWeek: assignments.isEmpty ? nil : assignments
+        )
+    }
+
+    /// Remove links whose text owner no longer contains the referenced entry.
+    /// This covers explicit deletion, archive-cap eviction, and load-time
+    /// filtering without making the plan a second phrase owner.
+    func reconcilingPracticePhrases(validEntryIDs: Set<UUID>) -> ForwardPlan {
+        let assignments = (practicePhraseEntryIDsByWeek ?? [:]).filter {
+            validEntryIDs.contains($0.value)
+        }
+        return ForwardPlan(
+            id: id,
+            weeks: weeks,
+            generatedAt: generatedAt,
+            bigMomentID: bigMomentID,
+            voiceAtGeneration: voiceAtGeneration,
+            isAIBacked: isAIBacked,
+            practicePhraseEntryIDsByWeek: assignments.isEmpty ? nil : assignments
+        )
     }
 }
 
@@ -204,6 +277,58 @@ final class ForwardPlanStore: ObservableObject {
         UserDefaults.standard.removeObject(forKey: planKey(for: accountID))
     }
 
+    /// Attach one explicitly saved Phrase Bank entry to a specific week of the
+    /// currently rendered plan. `expectedPlanID` prevents a delayed sheet tap
+    /// from mutating a newly regenerated plan that the user never saw.
+    @discardableResult
+    fileprivate func assignPracticePhrase(
+        entryID: UUID,
+        toWeek weekIndex: Int,
+        expectedPlanID: UUID
+    ) -> Bool {
+        guard let accountID = currentAccountID,
+              let plan = activePlan,
+              plan.id == expectedPlanID,
+              let updated = plan.assigningPracticePhrase(
+                entryID: entryID,
+                toWeek: weekIndex
+              ) else {
+            return false
+        }
+        activePlan = updated
+        persist(updated, accountID: accountID)
+        return true
+    }
+
+    /// Called when a Phrase Bank entry is deleted. The phrase store remains the
+    /// text owner; the plan owner only removes its identifier reference.
+    fileprivate func removePracticePhraseReference(entryID: UUID) {
+        guard let accountID = currentAccountID,
+              let plan = activePlan,
+              plan.practicePhraseEntryIDsByWeek?.values.contains(entryID) == true else {
+            return
+        }
+        let updated = plan.removingPracticePhrase(entryID: entryID)
+        activePlan = updated
+        persist(updated, accountID: accountID)
+    }
+
+    /// Reconcile the plan's ID-only links whenever the shared Phrase Bank
+    /// changes. Account switching remains safe because both owners reload from
+    /// the same account registry before this callback runs.
+    func reconcilePracticePhraseReferences(validEntryIDs: Set<UUID>) {
+        guard let accountID = currentAccountID,
+              let plan = activePlan else {
+            return
+        }
+        let updated = plan.reconcilingPracticePhrases(
+            validEntryIDs: validEntryIDs
+        )
+        guard updated != plan else { return }
+        activePlan = updated
+        persist(updated, accountID: accountID)
+    }
+
     /// True when there's an active plan AND its `bigMomentID` still matches
     /// the currently-active BigMoment. UI gating reads this instead of
     /// `activePlan != nil` so a stale plan doesn't claim to be live.
@@ -260,5 +385,61 @@ final class ForwardPlanStore: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: key),
               let plan = try? JSONDecoder().decode(ForwardPlan.self, from: data) else { return nil }
         return plan
+    }
+}
+
+/// The only mutation boundary joining Phrase Bank membership to the current
+/// Forward Plan. The sheet passes the exact target it rendered; this coordinator
+/// rechecks live plan currentness, week, existing assignment, entry membership,
+/// and phrase safety immediately before writing.
+@available(iOS 17.0, macOS 12.0, *)
+@MainActor
+enum ForwardPlanPhraseCoordinator {
+    nonisolated static func validatesAssignment(
+        entryID: UUID,
+        renderedTarget: ForwardPlanPhraseTarget,
+        currentPlan: ForwardPlan?,
+        entries: [PhraseBankEntry]
+    ) -> Bool {
+        guard let liveTarget = ForwardPlanPhraseProjection.target(plan: currentPlan),
+              liveTarget == renderedTarget,
+              let entry = entries.first(where: { $0.id == entryID }),
+              PhrasePracticeIntent(entry: entry) != nil else {
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    static func assign(
+        entryID: UUID,
+        renderedTarget: ForwardPlanPhraseTarget,
+        currentPlan: ForwardPlan?,
+        phraseBank: PhraseBankStore,
+        planStore: ForwardPlanStore
+    ) -> Bool {
+        guard let liveTarget = ForwardPlanPhraseProjection.target(plan: currentPlan),
+              validatesAssignment(
+                entryID: entryID,
+                renderedTarget: renderedTarget,
+                currentPlan: currentPlan,
+                entries: phraseBank.entries
+              ) else {
+            return false
+        }
+        return planStore.assignPracticePhrase(
+            entryID: entryID,
+            toWeek: liveTarget.weekIndex,
+            expectedPlanID: liveTarget.planID
+        )
+    }
+
+    static func remove(
+        entryID: UUID,
+        phraseBank: PhraseBankStore,
+        planStore: ForwardPlanStore
+    ) {
+        phraseBank.remove(id: entryID)
+        planStore.removePracticePhraseReference(entryID: entryID)
     }
 }

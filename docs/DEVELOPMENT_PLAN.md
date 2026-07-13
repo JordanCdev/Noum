@@ -7,6 +7,16 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Implementation has moved beyond the last complete `40d5e903` evidence baseline.
+The newer explicit-style, rendered-Home ownership, unified four-mode
+availability, Train/Prep projection, active-week phrase handoff, and historical
+privacy-document quarantine work, including the account- and route-bound Timed
+prompt handoff, passed the final integrated current-working-tree regression:
+3,920 tests across 406 suites with zero failures. Its unsigned Release simulator
+build also succeeded. A clean commit and source-bound coach-evidence refresh are
+the remaining local steps before this plan treats the canonical evidence as
+current.
+
 ## Current execution status — 2026-07-13
 
 The research plan is no longer a greenfield specification. Noum already reuses
@@ -19,9 +29,9 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Baseline and contracts | Implemented as account-local, content-free diagnostics | Keep cohort claims honest; population analytics still requires a privacy decision |
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
 | Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration and unsupported locales fail closed | Bind a deidentified source-evidence package, complete professional/longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals |
-| Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof |
-| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, a versioned single-source processor manifest with readiness-enforced generation freshness, atomic live evidence, exact launch-prerequisite/history-scan validation, a status-only five-route containment probe, source-bound Apple archive preflight, and the exact 14-surface/77-check TestFlight evidence contract are implemented | Revoke the leaked legacy Deepgram credential and both exposed Firebase CLI sessions, protect/disable every legacy route, audit provider usage/billing, install paid-team distribution authority, and complete physical-device and release-policy verification |
-| Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented; both research experiment contracts default to unassigned | Product approval and real cohort analysis, protected social cutover, and calibrated language expansion |
+| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's single coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented; unavailable Prep pressure/audience steps receive category-bounded Timed prompts without changing readiness identity; the unread global prescription snapshot was removed; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof |
+| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, a process-local account- and route-bound Timed prompt handoff, a versioned single-source processor manifest with readiness-enforced generation freshness, Codable-aligned private-profile Firestore validation, atomic live evidence, exact launch-prerequisite/history-scan validation, a status-only five-route containment probe, source-bound Apple archive preflight, and the exact 14-surface/77-check TestFlight evidence contract are implemented | Revoke the leaked legacy Deepgram credential and both exposed Firebase CLI sessions, inventory/migrate any unknown private-profile enum values before rules deployment, protect/disable every legacy route, audit provider usage/billing, install paid-team distribution authority, and complete physical-device and release-policy verification |
+| Retention and expansion | Local KPI, persisted `ForwardPlan`, weekly check-in, explicit-style-aware weekly digest, goal-movement substrate, and an ID-only Phrase Bank handoff into the active week are implemented; both research experiment contracts default to unassigned | Obtain product approval and real cohort analysis, protected social cutover, calibrated language expansion, and signed-device verification of the weekly phrase loop |
 
 The supported local evidence refresh is:
 
@@ -94,7 +104,10 @@ The existing five-tab shell, practice modes, session history, coach, and account
 ### Deliverables
 
 - Audit the current branch against the report. Mark each recommendation as `existing`, `partial`, or `missing`; the repository already contains related work such as `LocalSpeechProvider.swift` and prior goal-aware scoring artifacts.
-- Keep `CoachingProfile.chosenStyleGoal` as the single shared speaking-goal persistence path. Do not create parallel onboarding/profile goal models.
+- Keep optional `CoachingProfile.chosenStyleGoal` as the single behavioral
+  speaking-style trust boundary. `speakingStyleGoal` remains compatibility
+  storage only; never infer an explicit choice from it or create a parallel
+  onboarding/profile goal model.
 - Reuse `GoalOutcomeRead`, `RewriteSuggestion`, the finalized `NextAction`, and their evidence/confidence semantics. Do not create the report's proposed parallel score or prescription owners.
 - Keep content-free activation, value, review, prescription, provider-route, retention, notification, and qualitative-outcome events in the account-scoped `FlowEventLog`.
 - Establish a privacy threat model for audio, transcripts, credentials, exports, and deletion.
@@ -105,8 +118,11 @@ The existing five-tab shell, practice modes, session history, coach, and account
 
 ### Acceptance criteria
 
-- One canonical goal value is available from onboarding, session analysis, review, profile, and prescription code.
-- Existing sessions and users without a goal remain readable and receive a low-confidence/default state.
+- One optional canonical chosen-style value is available from onboarding,
+  session analysis, review, profile, and prescription code.
+- Existing sessions and legacy profiles without `chosenStyleGoal` remain
+  readable and receive a neutral no-style state, not tailored low-confidence
+  identity feedback derived from the compatibility value.
 - Assigned first-run exposures include bounded permission state, locale, version, and variant without recording raw audio, transcript content, or typed responses. Provider route remains a separate practice event.
 
 ## 4. Phase 1 — Fast-lane first session
@@ -174,7 +190,7 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
 ### Implementation
 
 - Reuse `GoalRubricStore`, `CoachReasoningPass`, and `GoalOutcomeRead` across
-  Summary, Review, and Profile.
+  Summary, Review, and Profile only when `chosenStyleGoal` is present.
 - Use established transcript/session signals only when their evidence floor is
   met; weak or contradictory evidence stays insufficient, forming, or mixed.
 - Keep next action owned by `SessionFinalizer` / `NextActionEngine`, not the
@@ -200,8 +216,17 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
 
 - Extend the existing `AIRewriteService`, `RewriteSuggestionCard`, and
   `PhraseBankStore`; do not create parallel goal-rewrite owners.
-- For each selected transcript snippet, provide light, medium, and strong rewrites.
-- Preserve meaning; show original versus suggestion; allow saving a phrase to a reusable, account-scoped phrase bank that is covered by export and deletion, then practice that phrase through the existing Timed one-shot prompt handoff.
+- Offer light, medium, and strong as discrete intensities, but generate and
+  display only the currently selected rewrite. Do not turn the restrained card
+  into three simultaneous competing suggestions.
+- Preserve meaning; show original versus suggestion; allow saving a phrase to a
+  reusable, account-scoped phrase bank that is covered by export and deletion,
+  then practice it through `TimedPracticePromptHandoff`. The prompt remains
+  process-local, is bounded to the active account and exact opaque route token,
+  and is consumed once; prompt text and account identity never enter navigation
+  state. A saved phrase may be explicitly attached to the active `ForwardPlan`
+  week by ID, without copying phrase text, and Home may resolve that link into
+  the same transient Timed intent.
 - Provide deterministic heuristic templates when an AI service is unavailable.
 
 ### 3B. Adaptive next-rep prescription
@@ -211,8 +236,25 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
   `GoalPrescriptionEngine`.
 - Output exactly one best next rep with a short rationale. Historical Review
   may replay a recorded setup but does not record adaptive acceptance.
-- Reuse existing destinations: timed, sudden death, ah counter, Cut the Crutch, pace training, roleplay, lessons, speech projects, and path.
-- Respect availability/permission gates and fall back to a viable mode.
+- Keep the current strategic destination contract to the four established
+  `PracticeMode` routes plus existing focused mini-drills. Cut the Crutch, pace
+  training, Roleplay, Lessons, Speech Projects, and Path remain separate product
+  domains until an explicit router/measurement decision expands that contract.
+- The shared implementation resolves availability from the current rating/
+  unlock state and IM capability, then uses that projected snapshot for visible
+  copy, exposure/tap measurement, and routing. It rechecks operational
+  capability at tap; a loss fails closed to Timed without crediting acceptance
+  for the previously visible mode. It clears incompatible scenario/tone/
+  evidence/confidence and preserves established-user context rather than
+  falsely resetting every fallback to a first-rep message.
+- Train carries its recommended title, reason, focus, target, scenario/tone, and
+  destination in one resolved presentation snapshot. Prep retains each original
+  planned mode as the unique readiness identity while a separate launch
+  projection presents honest Timed copy and routing for unavailable exercises;
+  fallback reps do not earn Pressure or audience-simulation readiness credit.
+  For those two unavailable shapes, Prep creates only a category-bounded prompt
+  (never the user's moment title or transcript) and carries it through the same
+  opaque route-token handoff.
 
 ### Acceptance criteria
 
@@ -258,6 +300,10 @@ is not a numeric goal-score slope.
 - Surface cloud transcription on/off, data export, account deletion entry point,
   processor/configuration behavior, and a plain-language data summary.
 - Reuse `AccountDataExportService` and existing Firestore/account rules.
+- Keep user-authored Timed seeds out of global persistence. The shared handoff
+  must stay process-local, account-bound, route-bound, bounded, one-shot, and
+  cleared on account teardown; legacy unscoped prompt/word keys are purged
+  without migration.
 - Remove any production dependency on long-lived client-embedded AWS credentials; use temporary credentials or a server-mediated flow.
 - Treat the still-live legacy unauthenticated AWS credential endpoint as a hard
   release blocker even though the replacement Firebase callable is healthy.
@@ -268,14 +314,21 @@ is not a numeric goal-score slope.
 - Toggling cloud mode changes runtime provider selection and persists across relaunch.
 - Export and deletion entry points are reachable and accurately describe exclusions/retention.
 - Privacy copy is reviewed against the actual provider and storage behavior.
+- A stale, abandoned, or different-account Timed route cannot consume another
+  route's prompt, and app termination leaves no prompt content on disk.
 
 ## 8. Phase 5 — Retention and expansion
 
 The local substrate exists, but expansion claims remain gated on activation and
 core-loop validation.
 
-- Weekly goal dashboard and one micro-goal per week.
-- Streaks/notifications tied to the selected speaking goal, not generic activity.
+- Reuse the persisted four-week `ForwardPlan` and its derived progress rather than
+  creating a second weekly-goal store. The implemented Phrase Bank handoff stores
+  only an entry ID on the active week, binds writes to the rendered plan ID,
+  removes links when entries are deleted, and fails closed when an entry is
+  missing or unsafe. Home turns the resolved link into a Timed rep.
+- Keep streaks generic when no style was explicitly chosen; when one was chosen,
+  weekly notification copy may reference it without inventing numeric progress.
 - Expand language coverage and locale-specific filler heuristics beyond the verified en-US/es-ES/fr-FR path.
 - Shareable goal milestones using existing social/league infrastructure.
 - Deeper humour-specific training only after the qualitative outcome system is
@@ -303,7 +356,9 @@ Track these as the release scorecard:
 - Structured-to-spoken tap intent, later persisted spoken completion, and
   typed-coach-to-live entry as separate funnels.
 - Practice sessions per active user per week.
-- Session-review open rate and content-free shown-to-tap prescription acceptance rate.
+- Session-review open rate and content-free shown-to-tap prescription acceptance
+  rate, measured only from the exact Summary, Home, or Train projection that
+  rendered and actioned the recommendation.
 - Calibrated goal improvement after 7 and 28 days; until then, label the local
   follow-up read as an early-improvement proportion rather than a score slope.
 - D1, D7, and D28 retention.

@@ -2589,6 +2589,18 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
     ]
     static let minimumTrajectoryCacheHitRatio = 0.10
 
+    /// A live row may omit typed judgement telemetry only when the source
+    /// fixture intentionally has no explicit style choice. Unknown IDs and all
+    /// explicitly styled fixtures fail closed to the full telemetry contract.
+    static func requiresTypedAssessment(for fixtureID: String) -> Bool {
+        guard let fixture = CoachChatEvaluationCorpus.fixtures.first(where: {
+            $0.id == fixtureID
+        }) else {
+            return true
+        }
+        return fixture.profile?.chosenStyleGoal != nil
+    }
+
     let schemaVersion: String
     let sourceGitCommit: String?
     let sourceCoachFingerprint: String?
@@ -3063,18 +3075,32 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
             let replyText = (reply ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let quality = (qualityIssue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let semantic = (semanticGateIssue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return !(turnDepth ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            let baseTelemetryPresent =
+                !(turnDepth ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 timeToFirstVisibleTokenMs != nil &&
                 trajectoryCacheHit != nil &&
-                assessmentConfidence != nil &&
-                !proofHash.isEmpty &&
                 !replyText.isEmpty &&
                 passesRubric != nil &&
                 visionPassesProductionFloor != nil &&
                 !quality.isEmpty &&
                 !semantic.isEmpty &&
-                reliabilityIssues != nil &&
-                ((immediateCoachReadExpected ?? false) ? immediateCoachReadShown == true : true)
+                reliabilityIssues != nil
+            guard baseTelemetryPresent else { return false }
+
+            if CoachLiveProviderSweepEvidence.requiresTypedAssessment(for: fixtureID) {
+                return assessmentConfidence != nil &&
+                    !proofHash.isEmpty &&
+                    ((immediateCoachReadExpected ?? false) ? immediateCoachReadShown == true : true)
+            }
+
+            // The neutral cold-start row is evidence of the fail-closed path:
+            // no inferred/default style rubric and no provisional read derived
+            // from one. Reject a fabricated assessment just as firmly as a
+            // missing assessment on an explicitly styled row.
+            return assessmentConfidence == nil &&
+                proofHash.isEmpty &&
+                immediateCoachReadExpected != true &&
+                immediateCoachReadShown != true
         }
 
         var hasCleanProductionTelemetry: Bool {

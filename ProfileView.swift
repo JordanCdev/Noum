@@ -1218,7 +1218,8 @@ struct ProfileTransferStatusContent: Equatable {
             let plan = PrepSessionPlanner.plan(
                 bigMoment: activeMoment,
                 daysRemaining: clampedDays,
-                voice: voice
+                voice: voice,
+                modeAvailability: .failClosed
             )
             let readiness = PrepSessionPlanner.readiness(
                 plan: plan,

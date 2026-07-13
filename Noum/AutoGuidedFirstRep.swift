@@ -76,19 +76,43 @@ enum AutoGuidedFirstRep {
 
     // MARK: Launch preparation
 
-    /// Arms the existing Timed quick-start path once, after profile persistence
-    /// succeeds. The caller still queues the canonical
-    /// `noum://practice/timed` route whether this returns true or false.
-    @discardableResult
-    static func prepareLaunchIfNeeded(hasCompletedOnboarding: Bool) -> Bool {
+    struct LaunchPreparation: Equatable {
+        /// Opaque, process-local route identity. It carries no prompt or
+        /// account content and is nil only when defensive account lookup made
+        /// the prompt unavailable.
+        let promptToken: UUID?
+    }
+
+    /// Production form used by the onboarding router so the exact Timed
+    /// destination carries the prompt token it prepared.
+    static func prepareLaunch(
+        hasCompletedOnboarding: Bool,
+        accountID: String? = nil
+    ) -> LaunchPreparation? {
         guard enabled, hasCompletedOnboarding, !firstRepCompleted else {
-            return false
+            return nil
         }
         markFirstRepCompleted()
-        seedFramingPrompt()
+        let promptToken = seedFramingPrompt(accountID: accountID)
         armFastStartOnce()
         PracticeModeQuickStart.arm(for: .timed)
-        return true
+        return LaunchPreparation(promptToken: promptToken)
+    }
+
+    /// Arms the existing Timed quick-start path once, after profile persistence
+    /// succeeds. The caller still queues the canonical
+    /// `noum://practice/timed` route whether this returns true or false. Tests
+    /// and compatibility callers can use this Boolean form; production routing
+    /// uses `prepareLaunch` so it can carry the opaque token.
+    @discardableResult
+    static func prepareLaunchIfNeeded(
+        hasCompletedOnboarding: Bool,
+        accountID: String? = nil
+    ) -> Bool {
+        prepareLaunch(
+            hasCompletedOnboarding: hasCompletedOnboarding,
+            accountID: accountID
+        ) != nil
     }
 
     // MARK: Prompt seeding
@@ -98,13 +122,18 @@ enum AutoGuidedFirstRep {
     /// answerable, ~20–30s.
     static let framingPrompt = "Tell me about something you did this week that you're proud of."
 
-    /// Seed the opener into the exact key the Timed engine already consumes
-    /// (`TimedPracticeView.consumeSeededPrompt`), so the guided rep starts on a
-    /// supplied prompt instead of awaiting topic generation — keeping
-    /// time-to-first-word low. Reuses the existing seeding contract; does not
-    /// invent a new key.
-    static func seedFramingPrompt() {
-        UserDefaults.standard.set(framingPrompt, forKey: "timedPractice.suggestedPrompt")
+    /// Seed the opener into the process-local, account-bound handoff consumed by
+    /// `TimedPracticeView`, so the guided rep starts on a supplied prompt
+    /// without persisting user-visible content under a device-global key.
+    @discardableResult
+    static func seedFramingPrompt(accountID: String? = nil) -> UUID? {
+        if let accountID {
+            return TimedPracticePromptHandoff.shared.offerToken(
+                framingPrompt,
+                accountID: accountID
+            )
+        }
+        return TimedPracticePromptHandoff.shared.offerToken(framingPrompt)
     }
 
     // MARK: Fast start (per-rep one-shot)
@@ -138,7 +167,7 @@ enum AutoGuidedFirstRep {
     /// deletion so a different account can never inherit the prompt or mic
     /// auto-begin handshake.
     static func cancelPendingLaunch() {
-        UserDefaults.standard.removeObject(forKey: "timedPractice.suggestedPrompt")
+        TimedPracticePromptHandoff.shared.clear()
         UserDefaults.standard.removeObject(forKey: fastStartOnceKey)
         PracticeModeQuickStart.clear()
     }

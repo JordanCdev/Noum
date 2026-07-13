@@ -15,6 +15,31 @@ import Foundation
 // Pure + fully unit-testable; no SwiftUI, no model call.
 enum AskNoumModeSuggestion {
 
+    /// One coherent practice launch for the established Ask Noum next-move
+    /// card. The label, Quick Start handshake, and navigation destination are
+    /// all derived from `mode`, so an unavailable recommendation can never
+    /// advertise or arm a different exercise from the one it opens.
+    struct LaunchProjection: Equatable {
+        let mode: PracticeMode
+        let label: String
+        let quickStartMode: PracticeMode
+        let destination: AppDestination
+
+        /// Recheck only the mode that was actually rendered. Capability gains
+        /// do not silently upgrade a visible Timed fallback into a different
+        /// exercise at tap time; capability loss may only fail closed to Timed.
+        func resolvingForTap(
+            modeAvailability: NextActionModeAvailability,
+            imAvailable: Bool
+        ) -> LaunchProjection {
+            AskNoumModeSuggestion.launchProjection(
+                requestedMode: mode,
+                modeAvailability: modeAvailability,
+                imAvailable: imAvailable
+            )
+        }
+    }
+
     /// The single launchable destination implied by a coach reply, or nil.
     static func detect(in reply: String) -> AppDestination? {
         let t = reply.lowercased()
@@ -51,10 +76,31 @@ enum AskNoumModeSuggestion {
         return nil
     }
 
+    /// Detect and resolve the launch against the capability snapshot that owns
+    /// the rendered card. Sudden Death fails closed without rated evidence; IM
+    /// requires both the decision-time snapshot and the live availability
+    /// guard. Timed and Filler Control remain available in every snapshot.
+    static func launchProjection(
+        in reply: String,
+        modeAvailability: NextActionModeAvailability,
+        imAvailable: Bool
+    ) -> LaunchProjection? {
+        guard let detected = detect(in: reply),
+              let requestedMode = quickStartMode(for: detected) else {
+            return nil
+        }
+        return launchProjection(
+            requestedMode: requestedMode,
+            modeAvailability: modeAvailability,
+            imAvailable: imAvailable
+        )
+    }
+
     /// Short, action-shaped label for the launch card per destination.
     static func label(for destination: AppDestination) -> String {
         switch destination {
-        case .timedPractice:       return "Start Timed Practice"
+        case .timedPractice, .timedPracticePrompt:
+            return "Start Timed Practice"
         case .suddenDeathPractice: return "Start Pressure Drill"
         case .ahCounterPractice:   return "Start Filler Control"
         case .imPractice:          return "Start Conversation Practice"
@@ -67,7 +113,7 @@ enum AskNoumModeSuggestion {
     /// behaves like a human coach handing you the rep, not another setup stop.
     static func quickStartMode(for destination: AppDestination) -> PracticeMode? {
         switch destination {
-        case .timedPractice:
+        case .timedPractice, .timedPracticePrompt:
             return .timed
         case .suddenDeathPractice:
             return .suddenDeath
@@ -78,5 +124,27 @@ enum AskNoumModeSuggestion {
         default:
             return nil
         }
+    }
+
+    private static func launchProjection(
+        requestedMode: PracticeMode,
+        modeAvailability: NextActionModeAvailability,
+        imAvailable: Bool
+    ) -> LaunchProjection {
+        let sharedProjection = PracticeModeLaunchProjection.resolve(
+            displayedMode: requestedMode,
+            imAvailable: imAvailable,
+            modeAvailability: modeAvailability
+        )
+        // The shared projection is the final defensive authority. Ask Noum
+        // only adds its action-shaped copy and Quick Start handshake around
+        // the route every recommendation surface resolves through.
+        let resolvedMode = sharedProjection.launchedMode
+        return LaunchProjection(
+            mode: resolvedMode,
+            label: label(for: sharedProjection.destination),
+            quickStartMode: resolvedMode,
+            destination: sharedProjection.destination
+        )
     }
 }

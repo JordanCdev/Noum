@@ -1,8 +1,16 @@
-# Noum — Privacy Execution Package
+# Historical Noum Privacy Execution Package — Superseded
 
-> Generated: April 2025
+> **Historical snapshot only. Do not execute these tickets against the current
+> product.** This package was built from superseded privacy documents and keeps
+> legacy architecture and decisions for traceability. Current operations are
+> owned by [PrivacyPolicy.md](PrivacyPolicy.md), the generated
+> [processor manifest](../privacy/processors.json), and the
+> [production-readiness runbook](../docs/PRODUCTION_READINESS_RUNBOOK.md).
+
+> Generated: Historical date unresolved; the former "April 2025" label predates
+> the April 2026 source audit and is not authoritative.
 > Scope: Solo-founder iOS app preparing for premium App Store launch
-> Prerequisite: PRIVACY_AUDIT.md and PRIVACY_REMEDIATION.md
+> Historical inputs: superseded `PRIVACY_AUDIT.md` and `PRIVACY_REMEDIATION.md`
 
 ---
 

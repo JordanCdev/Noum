@@ -11,6 +11,10 @@ import AVFAudio
 enum AppDestination: Hashable {
     case practiceSelection
     case timedPractice
+    /// A seeded Timed route bound to one process-local prompt handoff. The
+    /// opaque token carries no user content and prevents another Timed route
+    /// from consuming or replacing the visible launch's prompt.
+    case timedPracticePrompt(token: UUID)
     case suddenDeathPractice
     case ahCounterPractice
     case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
@@ -106,58 +110,91 @@ enum SummaryPracticeAgainRouter {
 /// non-IM mode), the scenario/tone are nil and the router still routes
 /// cleanly to the plain practice destination for that mode.
 ///
-/// IM mode is gated by `imAvailable` so the caller can hand up the same
-/// `IMModeAvailability.isAvailable` flag that the other launch surfaces
-/// honor. When IM is the recommendation but IM Mode is unconfigured on
-/// the device, the router falls back to `.timedPractice` — so the
-/// recommendation never sends the user to a surface that can't run. Pure
-/// data in, pure destination out — no SwiftUI, no nav path, no
-/// availability lookups; the caller owns those.
-///
-/// As of round 17, both `HomeCoachCard.destination()` (zero-arg as of
-/// round 18) and `ContentView.practiceAppDestination(for:)` route their
-/// destination calculation through this router so the mode-to-destination
-/// mapping and the IM-unavailable fallback live in exactly one place.
-/// `ContentView` calls the lower-level
-/// `destination(for:scenario:tone:imAvailable:)` overload because its
-/// private `PracticeSuggestion` value type holds the three fields the
-/// router reads outside a full `RecommendationBiasBlueprint`;
-/// `HomeCoachCard` holds the blueprint directly and calls the
-/// blueprint-shaped overload.
+/// Mode mapping and fail-closed capability defenses live in exactly one
+/// place. Callers supply both the decision-time capability snapshot and the
+/// live IM probe. A gated mode falls back to `.timedPractice`, and IM is
+/// checked again at tap time in case its provider became unavailable after
+/// the recommendation rendered. Surfaces holding a full recommendation use
+/// the blueprint overload; Summary uses the lower-level overload while
+/// preserving the availability snapshot that shaped its visible copy.
 enum SummaryLookingAheadRouter {
     static func destination(
         for blueprint: RecommendationBiasBlueprint,
-        imAvailable: Bool
+        imAvailable: Bool,
+        modeAvailability: NextActionModeAvailability = .failClosed
     ) -> AppDestination {
         destination(
             for: blueprint.recommendedMode,
             scenario: blueprint.recommendedScenario,
             tone: blueprint.recommendedTone,
-            imAvailable: imAvailable
+            imAvailable: imAvailable,
+            modeAvailability: modeAvailability
         )
     }
 
-    /// Lower-level form for callers that hold the recommended mode +
-    /// scenario + tone outside a full `RecommendationBiasBlueprint`
-    /// (e.g. `ContentView`'s private `PracticeSuggestion` value type).
-    /// Behavior is identical to the blueprint overload — the blueprint
-    /// form delegates straight through to this one — so both call sites
-    /// get the same mode-to-destination mapping and the same IM-
-    /// unavailable fallback to `.timedPractice` without re-deriving them.
+    /// Lower-level form for callers that already projected the recommended
+    /// mode + optional IM setup. `modeAvailability` is the decision-time
+    /// snapshot; `imAvailable` is checked again at tap time so a provider that
+    /// becomes unavailable after rendering still falls back safely.
     static func destination(
         for mode: PracticeMode,
         scenario: IMConversationScenario?,
         tone: IMTargetTone?,
-        imAvailable: Bool
+        imAvailable: Bool,
+        modeAvailability: NextActionModeAvailability = .failClosed
     ) -> AppDestination {
+        guard modeAvailability.isAvailable(mode) else {
+            return .timedPractice
+        }
         switch mode {
         case .timed: return .timedPractice
         case .suddenDeath: return .suddenDeathPractice
         case .ahCounter: return .ahCounterPractice
         case .imConversation:
-            guard imAvailable else { return .timedPractice }
+            guard imAvailable, modeAvailability.imConversationAvailable else {
+                return .timedPractice
+            }
             return .imPractice(scenario: scenario, tone: tone)
         }
+    }
+}
+
+/// The route-level truth used by action surfaces after a recommendation has
+/// already rendered. `displayedMode` remains available for exposure identity;
+/// `launchedMode` is what actually opens after the live capability defense.
+/// A mismatch is an operational fallback, not acceptance of the displayed
+/// adaptive prescription.
+struct PracticeModeLaunchProjection: Equatable {
+    let displayedMode: PracticeMode
+    let launchedMode: PracticeMode
+    let destination: AppDestination
+
+    var acceptsDisplayedPrescription: Bool {
+        displayedMode == launchedMode
+    }
+
+    static func resolve(
+        displayedMode: PracticeMode,
+        scenario: IMConversationScenario? = nil,
+        tone: IMTargetTone? = nil,
+        imAvailable: Bool,
+        modeAvailability: NextActionModeAvailability
+    ) -> PracticeModeLaunchProjection {
+        let destination = SummaryLookingAheadRouter.destination(
+            for: displayedMode,
+            scenario: scenario,
+            tone: tone,
+            imAvailable: imAvailable,
+            modeAvailability: modeAvailability
+        )
+        let launchedMode: PracticeMode = destination == .timedPractice
+            ? .timed
+            : displayedMode
+        return PracticeModeLaunchProjection(
+            displayedMode: displayedMode,
+            launchedMode: launchedMode,
+            destination: destination
+        )
     }
 }
 

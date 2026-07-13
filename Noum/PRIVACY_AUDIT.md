@@ -1,8 +1,21 @@
-# Noum Privacy & Data Audit
+# Historical Noum Privacy & Data Audit — Superseded
+
+> **Historical snapshot only. Do not use this file as the current operational
+> data-flow or release reference.** It records findings from 14 April 2026 and
+> intentionally preserves the architecture observed at that time, including
+> legacy AWS, bundled-secret, export, and retention gaps that have since changed.
+> Current behavior and user disclosures are owned by
+> [PrivacyPolicy.md](PrivacyPolicy.md), the generated
+> [processor manifest](../privacy/processors.json), and the
+> [production-readiness runbook](../docs/PRODUCTION_READINESS_RUNBOOK.md).
+> Production now uses explicit cloud consent, a short-lived authenticated
+> Deepgram credential, and Apple's on-device Speech fallback where available;
+> release readiness must be judged from those canonical sources and their
+> executable freshness checks.
 
 **Date:** 2026-04-14
 **Scope:** Full codebase audit of Noum iOS app
-**Status:** Operational reference — not legal sign-off
+**Status:** Superseded historical audit — not an operational or legal reference
 
 ---
 

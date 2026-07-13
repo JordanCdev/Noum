@@ -2,12 +2,13 @@
 
 Source of truth: `docs/VISION.md`.
 
-This runbook is for the M14 launch gate: Firestore rules, hosted privacy URL,
+This runbook is for the M14 launch gate: guarded social rules/functions cutover,
+verification of the already-hosted privacy policy, custom-domain completion,
 TestFlight, and proof that Chat with Noum is ready for production use. A green
 local eval or smoke flow is evidence, but it is not enough to claim production
 readiness.
 
-## Current Recovery Status (2026-07-11)
+## Current Recovery Status (2026-07-13)
 
 **Release verdict: NO-GO for external TestFlight or App Store release.**
 
@@ -20,8 +21,12 @@ readiness.
   `docs/SECURITY_deepgram_key_endpoint.md` remains open. The replacement path
   does not revoke the exposed legacy credentials, disable every legacy route,
   or provide the missing usage and billing audit.
-- `https://noum-d0b6f.web.app/privacy` is live and serves the current Noum
-  policy. The custom `noum.app` domain is still parked at GoDaddy; it must not be
+- `https://noum-d0b6f.web.app/privacy` is live and serves a Noum policy. That
+  proves the hosting endpoint exists, not that manifest-v3 generated content has
+  been redeployed since the latest processor change. Compare the live body with
+  the exact generated policy after safe release authentication is restored, and
+  redeploy if they differ.
+  The custom `noum.app` domain is still parked at GoDaddy; it must not be
   described as connected to Firebase Hosting until DNS, TLS, and policy content
   are verified.
 - The repository's hardened social rules and functions must **not** be deployed
@@ -67,6 +72,9 @@ and the selected repo root passes static operational preflight:
 
 - `firebase.json` points Firestore deploys at `firestore.rules`
 - Firebase Hosting serves `public/` and rewrites `/privacy`
+- `privacy/processors.json` exactly regenerates the in-app, hosted, and Swift
+  processor disclosures; a material manifest version change invalidates earlier
+  cloud consent
 - `public/privacy.html`, bundled `PrivacyPolicy.md`, Settings privacy entry,
   and `NoumWebURLs.privacy` are present and aligned
 - `docs/TESTFLIGHT_QA.md` covers deploy, privacy, and high-risk hardware surfaces
@@ -105,7 +113,9 @@ review, or release-blocking bug triage.
 
 At present, a successful privacy probe applies to the Firebase Hosting
 `web.app` URL. It does not prove that `noum.app` is serving Noum content while
-the registrar DNS remains parked.
+the registrar DNS remains parked, or that the hosted body exactly matches the
+latest generated manifest-v3 disclosure unless that content comparison is part
+of the captured operational evidence.
 
 ## Apple signing and TestFlight preflight
 
@@ -261,6 +271,11 @@ reading its secret. They do not contain the separate historical incident; that
 requires the closure evidence listed in
 `docs/SECURITY_deepgram_key_endpoint.md`.
 
+This is an operator instruction, not evidence that the current workspace has a
+safe authenticated Firebase session. Both Firebase CLI sessions exposed during
+the 2026-07-13 inspection remain untrusted until an authorized operator revokes
+them, reauthenticates, and obtains independent verification.
+
 ## Legacy Credential Containment Probe
 
 After an authorized operator has protected or disabled the legacy AWS routes,
@@ -307,10 +322,16 @@ Before deploying the reviewed social rules and functions together:
 4. Deploy a trusted server-side session-evidence producer that derives eligible
    competitive results from authenticated, immutable recording evidence. The
    `_verifiedSessionEvidence` consumer contract alone is not a producer.
-5. Rerun Functions lint/build/unit tests and Firestore emulator tests for forged
+5. Run an authorized read-only inventory of `users/{uid}/profile/main` before
+   promoting the stricter private-profile schema. Every enum-backed value must
+   match the current `CoachingProfile` Codable raw values and optional fields
+   must meet the documented bounds. Migrate any unknown legacy value explicitly;
+   do not silently relax the reviewed write contract.
+6. Rerun Functions lint/build/unit tests and Firestore emulator tests for forged
    ratings, cross-user reads/writes, malformed challenges, replayed results,
-   deletion retries, and pre-cutover failure cleanup.
-6. Perform a dry-run inventory immediately before the coordinated deployment,
+   deletion retries, invalid private-profile values, and pre-cutover failure
+   cleanup.
+7. Perform a dry-run inventory immediately before the coordinated deployment,
    deploy rules/functions, verify the cutover marker and callable-only reads,
    then complete a rollback-aware production smoke test.
 

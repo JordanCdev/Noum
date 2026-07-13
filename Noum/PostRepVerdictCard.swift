@@ -929,9 +929,9 @@ struct SummaryPrescriptionActionCard: View {
     var legacyDrill: DrillRecommendation? = nil
     var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
     var onStartDrill: ((DrillRecommendation) -> Void)? = nil
-    var imAvailable: Bool = true
+    var resolveIMAvailability: () -> Bool = { true }
     var onShowFullRep: ((PracticeMode) -> Void)? = nil
-    var onStartFullRep: ((PracticeMode, AppDestination) -> Void)? = nil
+    var onStartFullRep: ((PracticeModeLaunchProjection) -> Void)? = nil
 
     @ViewBuilder
     var body: some View {
@@ -954,7 +954,9 @@ struct SummaryPrescriptionActionCard: View {
                 evidence: prescription.evidence,
                 confidenceLabel: prescription.confidenceLabel,
                 mode: mode,
-                destination: prescription.destination(imAvailable: imAvailable),
+                resolveLaunch: {
+                    prescription.launch(imAvailable: resolveIMAvailability())
+                },
                 onShown: onShowFullRep,
                 onStart: onStartFullRep
             )
@@ -972,9 +974,9 @@ private struct SummaryFullRepActionCard: View {
     let evidence: String?
     let confidenceLabel: String?
     let mode: PracticeMode
-    let destination: AppDestination?
+    let resolveLaunch: () -> PracticeModeLaunchProjection?
     let onShown: ((PracticeMode) -> Void)?
-    let onStart: ((PracticeMode, AppDestination) -> Void)?
+    let onStart: ((PracticeModeLaunchProjection) -> Void)?
 
     private var tint: Color { AppColor.tint(for: mode) }
     private var ctaLabel: String { "Start \(mode.displayLabel)" }
@@ -1015,9 +1017,10 @@ private struct SummaryFullRepActionCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let destination, let onStart {
+            if let onStart {
                 Button {
-                    onStart(mode, destination)
+                    guard let launch = resolveLaunch() else { return }
+                    onStart(launch)
                 } label: {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: mode.iconName)
@@ -1047,8 +1050,12 @@ private struct SummaryFullRepActionCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.drill)
         .onAppear {
-            guard destination != nil, onStart != nil else { return }
+            guard resolveLaunch() != nil, onStart != nil else { return }
             onShown?(mode)
+        }
+        .onChange(of: mode) { _, newMode in
+            guard resolveLaunch() != nil, onStart != nil else { return }
+            onShown?(newMode)
         }
     }
 }

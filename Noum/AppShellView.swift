@@ -8,6 +8,8 @@ enum AppTab: String, CaseIterable, Identifiable {
     case profile
     case settings
 
+    static let timedPromptTokenQueryName = "prompt-handoff"
+
     var id: String { rawValue }
 
     var title: String {
@@ -65,6 +67,9 @@ enum AppTab: String, CaseIterable, Identifiable {
 
         switch (url.host?.lowercased(), component) {
         case ("practice", "timed"), ("train", "timed"):
+            if let token = timedPromptToken(from: url) {
+                return .timedPracticePrompt(token: token)
+            }
             return .timedPractice
         case ("practice", "impromptu"), ("train", "impromptu"):
             return .timedPractice
@@ -114,6 +119,16 @@ enum AppTab: String, CaseIterable, Identifiable {
         case "asktype", "askchat": return .askNoumTyped
         default: return nil
         }
+    }
+
+    private static func timedPromptToken(from url: URL) -> UUID? {
+        guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == timedPromptTokenQueryName })?
+            .value else {
+            return nil
+        }
+        return UUID(uuidString: value)
     }
 }
 
@@ -464,6 +479,12 @@ struct AppDestinationView: View {
         case .timedPractice:
             TimedPracticeView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)
+        case .timedPracticePrompt(let token):
+            TimedPracticeView(
+                navigationPath: $navigationPath,
+                promptHandoffToken: token
+            )
+            .toolbar(.hidden, for: .tabBar)
         case .suddenDeathPractice:
             SuddenDeathPracticeView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)

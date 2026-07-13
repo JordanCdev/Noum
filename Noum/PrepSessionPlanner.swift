@@ -19,19 +19,70 @@ import Foundation
 
 // MARK: - Plan model
 
-/// One rep in the prep session sequence. The mode + a coaching label
-/// the intro card uses to describe what this rep targets.
+/// One rep in the prep session sequence. `mode` is the stable rehearsal-shape
+/// identity used by readiness; it never changes when capability forces the
+/// visible action to Timed Practice. `renderedLaunch` owns the mode/copy/route
+/// the user actually sees and can start.
 struct PrepRepStep: Equatable {
+    /// Stable planned shape. Do not availability-resolve this value: one
+    /// fallback Timed rep must not satisfy Pressure or audience readiness.
     let mode: PracticeMode
+    let renderedLaunch: PracticeModeLaunchProjection
     /// Display label, e.g. "Warm up · 2 min Timed".
     let displayLabel: String
     /// One-line rationale shown in the intro card and the inter-rep
     /// card. Coach voice.
     let rationale: String
+
+    init(
+        mode: PracticeMode,
+        displayLabel: String,
+        rationale: String,
+        renderedLaunch: PracticeModeLaunchProjection
+    ) {
+        self.mode = mode
+        self.displayLabel = displayLabel
+        self.rationale = rationale
+        self.renderedLaunch = renderedLaunch
+    }
+
+    var renderedMode: PracticeMode {
+        renderedLaunch.displayedMode
+    }
+
+    var isAvailabilityFallback: Bool {
+        mode != renderedMode
+    }
+
+    var startLabel: String {
+        PracticeModePrescriptionCopy.beginLabel(for: renderedMode.displayLabel)
+    }
+
+    var readinessLabel: String {
+        let shape = PrepSessionReadiness.shapeName(for: mode).capitalized
+        guard isAvailabilityFallback else { return shape }
+        return "\(shape) unavailable · Timed fallback offered"
+    }
+
+    /// Recheck only the action that was rendered. A capability loss may fail
+    /// closed to Timed; a rendered Timed fallback never silently upgrades when
+    /// the original planned mode becomes available later.
+    func resolvingLaunchForTap(
+        modeAvailability: NextActionModeAvailability,
+        imAvailable: Bool
+    ) -> PracticeModeLaunchProjection {
+        PracticeModeLaunchProjection.resolve(
+            displayedMode: renderedMode,
+            imAvailable: imAvailable,
+            modeAvailability: modeAvailability
+        )
+    }
 }
 
-/// Adversarial IM seed for the audience-simulation round. The IM mode
-/// reads these to plant the persona + opening prompts.
+/// Reserved adversarial seed for a future category-prefilled conversation
+/// round. The current launcher opens the standard Conversation Practice setup;
+/// keeping this nil on fallback prevents stale setup from being presented as
+/// active behavior.
 struct IMScenarioConfig: Equatable {
     /// Short persona description: "skeptical board member", "tough
     /// hiring panel", etc.
@@ -51,8 +102,9 @@ struct PrepSessionPlan: Equatable {
     let introductionCopy: String
     /// The three reps, in order: warmup → pressure → audience sim.
     let steps: [PrepRepStep]
-    /// IM scenario seed for the third step.
-    let imScenario: IMScenarioConfig
+    /// IM scenario seed for the third step. Nil when the rendered audience
+    /// step has fallen back to Timed so stale conversation setup cannot leak.
+    let imScenario: IMScenarioConfig?
 }
 
 /// F2 — an honest read of how rehearsed the user is for the upcoming moment,
@@ -106,6 +158,40 @@ struct PrepSessionReadiness: Equatable {
         }
     }
 
+    /// Availability-aware line for the rendered Prep surface. Readiness still
+    /// credits only the stable planned shapes; this explains why a runnable
+    /// Timed fallback does not pretend the unavailable shape was rehearsed.
+    func displayLine(for steps: [PrepRepStep]) -> String {
+        guard level != .rehearsed else { return line }
+        let uncoveredUnavailable = steps.filter {
+            $0.isAvailabilityFallback && !coveredModes.contains($0.mode)
+        }
+        guard !uncoveredUnavailable.isEmpty else { return line }
+
+        let unavailableNames = uncoveredUnavailable
+            .map { Self.shapeName(for: $0.mode) }
+            .joined(separator: " and ")
+        let availabilityNote = "\(unavailableNames.capitalized) \(uncoveredUnavailable.count == 1 ? "remains" : "remain") untested until available; Timed fallback \(uncoveredUnavailable.count == 1 ? "is" : "reps are") available."
+
+        switch level {
+        case .notStarted:
+            return "No rehearsal reps logged yet. Start with the warm-up. \(availabilityNote)"
+        case .underway:
+            let availableRemaining = steps.filter {
+                !coveredModes.contains($0.mode) && !$0.isAvailabilityFallback
+            }
+            guard !availableRemaining.isEmpty else {
+                return "You've completed \(coveredCount) of \(plannedModes.count) planned rehearsal shapes. \(availabilityNote)"
+            }
+            let nextNames = availableRemaining
+                .map { Self.shapeName(for: $0.mode) }
+                .joined(separator: " and ")
+            return "You've completed \(coveredCount) of \(plannedModes.count) planned rehearsal shapes. Next: \(nextNames). \(availabilityNote)"
+        case .rehearsed:
+            return line
+        }
+    }
+
     static func shapeName(for mode: PracticeMode) -> String {
         switch mode {
         case .timed:          return "warm-up"
@@ -120,6 +206,27 @@ struct PrepSessionReadiness: Equatable {
 
 enum PrepSessionPlanner {
 
+    /// Category-bounded prompt for a planned Prep shape that must launch in
+    /// Timed Practice. The prompt carries no user-entered title or transcript;
+    /// it only preserves the rehearsal promise already visible on the card.
+    /// The caller route-binds it through `TimedPracticePromptHandoff`.
+    static func timedFallbackPrompt(
+        for plannedMode: PracticeMode,
+        category: BigMomentCategory
+    ) -> String? {
+        switch plannedMode {
+        case .suddenDeath:
+            return "Give a clear 60-second opening for your upcoming \(category.displayName)."
+        case .imConversation:
+            guard let likelyQuestion = scenario(for: category).starterPrompts.first else {
+                return nil
+            }
+            return "Rehearse this likely question for your \(category.displayName): \(likelyQuestion)"
+        case .timed, .ahCounter:
+            return nil
+        }
+    }
+
     /// Build the plan for an upcoming BigMoment.
     /// - Parameters:
     ///   - bigMoment: the active moment (carries category + title)
@@ -127,41 +234,107 @@ enum PrepSessionPlanner {
     ///   - voice: coaching voice (currently unused but reserved for
     ///     register tuning — authoritative vs warm coaches frame the
     ///     intro differently in a future iteration)
+    ///   - modeAvailability: capability snapshot owning rendered step copy and
+    ///     routes. It is intentionally required so no new caller can silently
+    ///     render a gated exercise as available.
     static func plan(
         bigMoment: BigMoment,
         daysRemaining: Int,
-        voice: SpeakingStyleGoal? = nil
+        voice: SpeakingStyleGoal? = nil,
+        modeAvailability: NextActionModeAvailability
     ) -> PrepSessionPlan {
         let category = bigMoment.category
         let steps: [PrepRepStep] = [
-            PrepRepStep(
-                mode: .timed,
-                displayLabel: "Warm-up: two-minute timed rep",
-                rationale: "Loosen up. No pressure — just get your voice on tape."
-            ),
-            PrepRepStep(
-                mode: .suddenDeath,
-                displayLabel: "Pressure rep: Pressure Drill",
-                rationale: "Composure under fire. One filler ends the round — exactly the stakes you'll feel."
-            ),
-            PrepRepStep(
-                mode: .imConversation,
-                displayLabel: "Audience simulation: Conversation Practice",
-                rationale: "Hard questions from the kind of audience you're walking into. Stay grounded."
-            ),
+            renderedStep(for: .timed, modeAvailability: modeAvailability),
+            renderedStep(for: .suddenDeath, modeAvailability: modeAvailability),
+            renderedStep(for: .imConversation, modeAvailability: modeAvailability),
         ]
-        let scenario = scenario(for: category)
         let intro = introCopy(
             category: category,
             title: bigMoment.title,
             days: daysRemaining,
-            voice: voice
+            voice: voice,
+            steps: steps
         )
         return PrepSessionPlan(
             introductionCopy: intro,
             steps: steps,
-            imScenario: scenario
+            imScenario: steps.last?.renderedMode == .imConversation
+                ? scenario(for: category)
+                : nil
         )
+    }
+
+    /// Resolve presentation and route together while retaining `plannedMode`
+    /// as the readiness identity. The fallback copy describes Timed Practice,
+    /// never the unavailable exercise's mechanics.
+    private static func renderedStep(
+        for plannedMode: PracticeMode,
+        modeAvailability: NextActionModeAvailability
+    ) -> PrepRepStep {
+        let renderedMode = modeAvailability.isAvailable(plannedMode)
+            ? plannedMode
+            : .timed
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: renderedMode,
+            imAvailable: modeAvailability.imConversationAvailable,
+            modeAvailability: modeAvailability
+        )
+
+        switch (plannedMode, renderedMode) {
+        case (.timed, _):
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Warm-up: two-minute timed rep",
+                rationale: "Loosen up. No pressure — just get your voice on tape.",
+                renderedLaunch: launch
+            )
+        case (.suddenDeath, .suddenDeath):
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Pressure rep: Pressure Drill",
+                rationale: "Composure under fire. One filler ends the round — exactly the stakes you'll feel.",
+                renderedLaunch: launch
+            )
+        case (.suddenDeath, .timed):
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Build-up rep: Timed Practice",
+                rationale: NextActionModeAvailability.suddenDeathFallbackReason,
+                renderedLaunch: launch
+            )
+        case (.imConversation, .imConversation):
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Audience simulation: Conversation Practice",
+                rationale: "Hard questions from the kind of audience you're walking into. Stay grounded.",
+                renderedLaunch: launch
+            )
+        case (.imConversation, .timed):
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Question rehearsal: Timed Practice",
+                rationale: NextActionModeAvailability.imConversationFallbackReason,
+                renderedLaunch: launch
+            )
+        case (.ahCounter, .ahCounter):
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Filler drill: Filler Control",
+                rationale: "Notice the crutches that surface before the moment.",
+                renderedLaunch: launch
+            )
+        default:
+            // Timed is the shared fail-closed destination for every currently
+            // gated mode. Keep this branch honest if a future planned shape is
+            // added before it receives bespoke fallback copy.
+            return PrepRepStep(
+                mode: plannedMode,
+                displayLabel: "Rehearsal rep: Timed Practice",
+                rationale: "This exercise is unavailable here. Start with Timed Practice.",
+                renderedLaunch: launch
+            )
+        }
     }
 
     // MARK: - Readiness
@@ -200,10 +373,9 @@ enum PrepSessionPlanner {
 
     // MARK: - Category-specific IM scenarios
 
-    /// Adversarial prompts tailored to the BigMomentCategory. These
-    /// seed the IM round's opening questions so the audience-simulation
-    /// rep is actually a simulation of what the user is preparing for,
-    /// not a generic chat.
+    /// Adversarial prompts tailored to the BigMomentCategory. Reserved for a
+    /// future category-prefilled Conversation Practice setup; the current
+    /// standard picker does not consume this metadata.
     static func scenario(for category: BigMomentCategory) -> IMScenarioConfig {
         switch category {
         case .presentation:
@@ -278,7 +450,8 @@ enum PrepSessionPlanner {
         category: BigMomentCategory,
         title: String,
         days: Int,
-        voice: SpeakingStyleGoal?
+        voice: SpeakingStyleGoal?,
+        steps: [PrepRepStep]? = nil
     ) -> String {
         let categoryName = category.displayName
         let titleClause: String
@@ -299,6 +472,31 @@ enum PrepSessionPlanner {
             proximity = "\(titleClause) is \(days) days away. Build the muscle now so the moment feels lighter."
         }
 
-        return "\(proximity) Three reps: warm up, run a pressure round, then take questions from the kind of audience you're walking into."
+        let pressureAvailable: Bool
+        let conversationAvailable: Bool
+        if let steps {
+            pressureAvailable = steps
+                .first(where: { $0.mode == .suddenDeath })?
+                .renderedMode == .suddenDeath
+            conversationAvailable = steps
+                .first(where: { $0.mode == .imConversation })?
+                .renderedMode == .imConversation
+        } else {
+            pressureAvailable = true
+            conversationAvailable = true
+        }
+        let sequence: String
+        switch (pressureAvailable, conversationAvailable) {
+        case (true, true):
+            sequence = "Three reps: warm up, run a pressure round, then take questions from the kind of audience you're walking into."
+        case (false, true):
+            sequence = "Three reps: warm up, use Timed Practice for one controlled build-up, then take questions from the kind of audience you're walking into."
+        case (true, false):
+            sequence = "Three reps: warm up, run a pressure round, then rehearse one likely question in Timed Practice."
+        case (false, false):
+            sequence = "Three reps: warm up, then use two focused Timed Practice passes — one controlled answer and one likely question."
+        }
+
+        return "\(proximity) \(sequence)"
     }
 }

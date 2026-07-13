@@ -79,7 +79,7 @@ struct PressureRoundConfig: Equatable {
 
     /// Builds config for a given round (1-indexed) at a given difficulty.
     /// Filler tolerance is always 0 in Sudden Death — difficulty only controls
-    /// start window width and minimum word count.
+    /// start-window width here.
     static func config(for round: Int, difficulty: SuddenDeathDifficulty = .medium) -> PressureRoundConfig {
         let base = baseConfig(for: round)
         let scaledWindow = max(2, base.startWindow * difficulty.startWindowFactor)

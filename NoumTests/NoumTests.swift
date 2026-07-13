@@ -1220,10 +1220,16 @@ struct NextActionEngineTests {
             baseline: makeBaseline(sessionCount: 12, score: 7.5),
             pressureProfile: makePressure(resilience: 0.4),
             trends: [], drillHistory: [],
-            sessionCount: 12, streakDays: 7, styleGoal: nil
+            sessionCount: 12, streakDays: 7, styleGoal: nil,
+            modeAvailability: .allAvailable
         )
         let result = NextActionEngine.recommend(input: input)
         // Strong casually + low resilience → pressure exposure
+        guard case .pressureExposure(let mode, _) = result.primary else {
+            Issue.record("Expected pressure exposure, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(mode == .suddenDeath)
         #expect(result.reasoning.lowercased().contains("pressure"), "Should suggest pressure exposure. Got: \(result.reasoning)")
     }
 
@@ -2718,16 +2724,16 @@ struct SessionEdgeCaseTests {
             pressureProfile: .empty,
             trends: [SkillTrend(skillArea: .fillerReduction, direction: .stable, confidence: .high, windowSize: 8, currentLevel: .strong)],
             drillHistory: [],
-            sessionCount: 15, streakDays: 7, styleGoal: nil
+            sessionCount: 15, streakDays: 7, styleGoal: nil,
+            modeAvailability: .allAvailable
         )
         let result = NextActionEngine.recommend(input: input)
         // Strong structured session → stretch challenge
-        let isStretch = result.reasoning.lowercased().contains("push") ||
-                        result.reasoning.lowercased().contains("edge") ||
-                        result.reasoning.lowercased().contains("solid") ||
-                        result.reasoning.lowercased().contains("pressure") ||
-                        result.reasoning.lowercased().contains("challenge")
-        #expect(isStretch, "Strong session should get stretch recommendation. Got: \(result.reasoning)")
+        guard case .pressureExposure(let mode, _) = result.primary else {
+            Issue.record("Expected a pressure stretch, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(mode == .suddenDeath)
     }
 }
 
@@ -12312,7 +12318,8 @@ struct CoachContextBuilderTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: voice
         )
     }
 }
@@ -14192,7 +14199,8 @@ struct RecommendationBiasContextBuilderTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .executive
         )
     }
 
@@ -18887,8 +18895,7 @@ struct CoachContextBuilderDormantFieldsTests {
             pathGatingPhrase: nil
         )
         #expect(ctx.contains("Desired outcome"))
-        // desiredOutcome.title.lowercased() for .persuasive starts with "sound more"
-        #expect(ctx.lowercased().contains("persuasive"))
+        #expect(ctx.lowercased().contains(SpeakingOutcome.persuasive.title.lowercased()))
     }
 }
 
@@ -30084,7 +30091,8 @@ struct M25NPCSystemPromptTests {
             motivationWhyNow: "",
             successVision: successVision,
             paraphrasedGoal: nil,
-            bigMomentID: nil
+            bigMomentID: nil,
+            chosenStyleGoal: voice
         )
     }
 
@@ -37602,7 +37610,8 @@ struct SummaryLookingAheadRouterTests {
         )
         let destination = SummaryLookingAheadRouter.destination(
             for: plan,
-            imAvailable: true
+            imAvailable: true,
+            modeAvailability: .allAvailable
         )
         #expect(destination == .imPractice(
             scenario: .difficultConversation,
@@ -37617,7 +37626,8 @@ struct SummaryLookingAheadRouterTests {
         let plan = blueprint(mode: .imConversation)
         let destination = SummaryLookingAheadRouter.destination(
             for: plan,
-            imAvailable: true
+            imAvailable: true,
+            modeAvailability: .allAvailable
         )
         #expect(destination == .imPractice(scenario: nil, tone: nil))
     }
@@ -37634,7 +37644,8 @@ struct SummaryLookingAheadRouterTests {
         )
         let destination = SummaryLookingAheadRouter.destination(
             for: plan,
-            imAvailable: false
+            imAvailable: false,
+            modeAvailability: .allAvailable
         )
         #expect(destination == .timedPractice)
     }
@@ -37663,11 +37674,13 @@ struct SummaryLookingAheadRouterTests {
         )
         #expect(SummaryLookingAheadRouter.destination(
             for: plan,
-            imAvailable: true
+            imAvailable: true,
+            modeAvailability: .allAvailable
         ) == .suddenDeathPractice)
         #expect(SummaryLookingAheadRouter.destination(
             for: plan,
-            imAvailable: false
+            imAvailable: false,
+            modeAvailability: .allAvailable
         ) == .suddenDeathPractice)
     }
 
@@ -37687,13 +37700,74 @@ struct SummaryLookingAheadRouterTests {
         ) == .ahCounterPractice)
     }
 
-    // MARK: - Lower-level overload (round 17)
+    @Test func omittedCapabilitySnapshotFailsClosedForGatedModes() {
+        #expect(SummaryLookingAheadRouter.destination(
+            for: blueprint(mode: .suddenDeath),
+            imAvailable: true
+        ) == .timedPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: blueprint(mode: .imConversation),
+            imAvailable: true
+        ) == .timedPractice)
+    }
+
+    @Test func fourModeCapabilityMatrixRoutesAndAcceptsOnlyAvailableModes() {
+        let modes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
+        for suddenDeathAvailable in [false, true] {
+            for imConversationAvailable in [false, true] {
+                let availability = NextActionModeAvailability(
+                    suddenDeathAvailable: suddenDeathAvailable,
+                    imConversationAvailable: imConversationAvailable
+                )
+                for imLive in [false, true] {
+                    for mode in modes {
+                        let launch = PracticeModeLaunchProjection.resolve(
+                            displayedMode: mode,
+                            scenario: .difficultConversation,
+                            tone: .calm,
+                            imAvailable: imLive,
+                            modeAvailability: availability
+                        )
+                        let shouldLaunchDisplayedMode: Bool
+                        switch mode {
+                        case .timed, .ahCounter:
+                            shouldLaunchDisplayedMode = true
+                        case .suddenDeath:
+                            shouldLaunchDisplayedMode = suddenDeathAvailable
+                        case .imConversation:
+                            shouldLaunchDisplayedMode = imConversationAvailable && imLive
+                        }
+
+                        #expect(launch.acceptsDisplayedPrescription == shouldLaunchDisplayedMode)
+                        #expect(launch.launchedMode == (shouldLaunchDisplayedMode ? mode : .timed))
+                        if !shouldLaunchDisplayedMode {
+                            #expect(launch.destination == .timedPractice)
+                        } else {
+                            switch mode {
+                            case .timed:
+                                #expect(launch.destination == .timedPractice)
+                            case .suddenDeath:
+                                #expect(launch.destination == .suddenDeathPractice)
+                            case .ahCounter:
+                                #expect(launch.destination == .ahCounterPractice)
+                            case .imConversation:
+                                #expect(launch.destination == .imPractice(
+                                    scenario: .difficultConversation,
+                                    tone: .calm
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Lower-level overload
 
     // The `destination(for:scenario:tone:imAvailable:)` overload is the
-    // form `ContentView.practiceAppDestination(for:)` calls into — it
-    // holds the recommended mode + scenario + tone on a
-    // `PracticeSuggestion` value type rather than a full
-    // `RecommendationBiasBlueprint`. Behavior must be identical to the
+    // form the Summary prescription uses after projecting a finalized
+    // recommendation. Behavior must be identical to the
     // blueprint form (the blueprint form delegates straight through to
     // this one), so these tests pin the same set of branches *and*
     // confirm parity for the cases that matter.
@@ -37703,7 +37777,8 @@ struct SummaryLookingAheadRouterTests {
             for: .imConversation,
             scenario: .difficultConversation,
             tone: .calm,
-            imAvailable: true
+            imAvailable: true,
+            modeAvailability: .allAvailable
         )
         #expect(destination == .imPractice(
             scenario: .difficultConversation,
@@ -37719,7 +37794,8 @@ struct SummaryLookingAheadRouterTests {
             for: .imConversation,
             scenario: nil,
             tone: nil,
-            imAvailable: true
+            imAvailable: true,
+            modeAvailability: .allAvailable
         )
         #expect(destination == .imPractice(scenario: nil, tone: nil))
     }
@@ -37727,13 +37803,14 @@ struct SummaryLookingAheadRouterTests {
     @Test func lowerLevelImFallsBackToTimedWhenImUnavailable() {
         // IM was the recommendation but the device has IM Mode
         // unconfigured — same fallback as the blueprint form, so the
-        // home coach card and the ContentView suggestion tile produce
-        // the same destination for the same data shape.
+        // Home and Summary produce the same safe destination for the same
+        // recommendation shape.
         let destination = SummaryLookingAheadRouter.destination(
             for: .imConversation,
             scenario: .networking,
             tone: .warm,
-            imAvailable: false
+            imAvailable: false,
+            modeAvailability: .allAvailable
         )
         #expect(destination == .timedPractice)
     }
@@ -37758,13 +37835,15 @@ struct SummaryLookingAheadRouterTests {
             for: .suddenDeath,
             scenario: .networking,
             tone: .warm,
-            imAvailable: true
+            imAvailable: true,
+            modeAvailability: .allAvailable
         ) == .suddenDeathPractice)
         #expect(SummaryLookingAheadRouter.destination(
             for: .suddenDeath,
             scenario: .networking,
             tone: .warm,
-            imAvailable: false
+            imAvailable: false,
+            modeAvailability: .allAvailable
         ) == .suddenDeathPractice)
     }
 
@@ -37786,10 +37865,9 @@ struct SummaryLookingAheadRouterTests {
     @Test func blueprintAndLowerLevelOverloadsAgree() {
         // Parity check: for every combination of mode × availability ×
         // scenario/tone presence, the two overloads must return the
-        // same destination. If they ever diverge, the home coach card
-        // and the ContentView suggestion tile would start producing
-        // different launches for the same recommendation — exactly the
-        // bug round 17 collapses against.
+        // same destination. If they ever diverge, Home's blueprint route and
+        // Summary's projected route would launch different reps for the same
+        // recommendation.
         let modes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
         let pairs: [(IMConversationScenario?, IMTargetTone?)] = [
             (nil, nil),
@@ -37803,13 +37881,15 @@ struct SummaryLookingAheadRouterTests {
                     let plan = blueprint(mode: mode, scenario: scenario, tone: tone)
                     let viaBlueprint = SummaryLookingAheadRouter.destination(
                         for: plan,
-                        imAvailable: imAvailable
+                        imAvailable: imAvailable,
+                        modeAvailability: .allAvailable
                     )
                     let viaLowerLevel = SummaryLookingAheadRouter.destination(
                         for: mode,
                         scenario: scenario,
                         tone: tone,
-                        imAvailable: imAvailable
+                        imAvailable: imAvailable,
+                        modeAvailability: .allAvailable
                     )
                     #expect(viaBlueprint == viaLowerLevel)
                 }
@@ -37820,9 +37900,8 @@ struct SummaryLookingAheadRouterTests {
 
 // MARK: - LookingAheadCard launch CTA (round 19)
 //
-// Round 19 wires the post-rep "Looking ahead" card into the same router
-// that the home coach card + ContentView suggestion tile already call
-// through (`SummaryLookingAheadRouter`). The card grows an additive
+// The post-rep "Looking ahead" card uses the same router as Home's rendered
+// coach prescription (`SummaryLookingAheadRouter`). The card grows an additive
 // `onStart` closure: when wired by the owning view, a subordinate
 // text-link CTA renders so the user can launch the recommended next mode
 // in one tap from the bottom of the Session Details disclosure.
@@ -39805,7 +39884,8 @@ struct PrepSessionReadinessTests {
     private func plan() -> PrepSessionPlan {
         PrepSessionPlanner.plan(
             bigMoment: BigMoment(title: "Board pitch", category: .presentation),
-            daysRemaining: 5
+            daysRemaining: 5,
+            modeAvailability: .allAvailable
         )
     }
 
@@ -40039,6 +40119,94 @@ struct AskNoumModeSuggestionTests {
         #expect(AskNoumModeSuggestion.quickStartMode(for: .ahCounterPractice) == .ahCounter)
         #expect(AskNoumModeSuggestion.quickStartMode(for: .imPractice(scenario: nil, tone: nil)) == .imConversation)
         #expect(AskNoumModeSuggestion.quickStartMode(for: .settings) == nil)
+    }
+
+    @Test func unratedPressureSuggestionFailsClosedAsOneTimedLaunch() throws {
+        let launch = try #require(AskNoumModeSuggestion.launchProjection(
+            in: "Try a Pressure Drill round to test composure.",
+            modeAvailability: .failClosed,
+            imAvailable: true
+        ))
+
+        #expect(launch.mode == .timed)
+        #expect(launch.label == "Start Timed Practice")
+        #expect(launch.quickStartMode == .timed)
+        #expect(launch.destination == .timedPractice)
+    }
+
+    @Test func unavailableConversationSuggestionFailsClosedAsOneTimedLaunch() throws {
+        let launch = try #require(AskNoumModeSuggestion.launchProjection(
+            in: "Run a difficult conversation rep next.",
+            modeAvailability: NextActionModeAvailability(
+                suddenDeathAvailable: true,
+                imConversationAvailable: false
+            ),
+            imAvailable: false
+        ))
+
+        #expect(launch.mode == .timed)
+        #expect(launch.label == "Start Timed Practice")
+        #expect(launch.quickStartMode == .timed)
+        #expect(launch.destination == .timedPractice)
+    }
+
+    @Test func availableGatedSuggestionsKeepLabelsArmingAndRoutesAligned() throws {
+        let pressure = try #require(AskNoumModeSuggestion.launchProjection(
+            in: "Try a Pressure Drill round to test composure.",
+            modeAvailability: .allAvailable,
+            imAvailable: true
+        ))
+        #expect(pressure.mode == .suddenDeath)
+        #expect(pressure.label == "Start Pressure Drill")
+        #expect(pressure.quickStartMode == .suddenDeath)
+        #expect(pressure.destination == .suddenDeathPractice)
+
+        let conversation = try #require(AskNoumModeSuggestion.launchProjection(
+            in: "Run a difficult conversation rep next.",
+            modeAvailability: .allAvailable,
+            imAvailable: true
+        ))
+        #expect(conversation.mode == .imConversation)
+        #expect(conversation.label == "Start Conversation Practice")
+        #expect(conversation.quickStartMode == .imConversation)
+        #expect(conversation.destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func tapTimeImLossCannotArmOrRouteTheRenderedConversationMode() throws {
+        let rendered = try #require(AskNoumModeSuggestion.launchProjection(
+            in: "Run a difficult conversation rep next.",
+            modeAvailability: .allAvailable,
+            imAvailable: true
+        ))
+        #expect(rendered.quickStartMode == .imConversation)
+
+        // Keep the decision-time snapshot deliberately stale to prove the
+        // live IM guard, not only the snapshot, closes the render-to-tap race.
+        let tapped = rendered.resolvingForTap(
+            modeAvailability: .allAvailable,
+            imAvailable: false
+        )
+        #expect(tapped.mode == .timed)
+        #expect(tapped.label == "Start Timed Practice")
+        #expect(tapped.quickStartMode == .timed)
+        #expect(tapped.destination == .timedPractice)
+    }
+
+    @Test func capabilityGainDoesNotUpgradeAnAlreadyRenderedTimedFallback() throws {
+        let rendered = try #require(AskNoumModeSuggestion.launchProjection(
+            in: "Run a difficult conversation rep next.",
+            modeAvailability: .failClosed,
+            imAvailable: false
+        ))
+
+        let tapped = rendered.resolvingForTap(
+            modeAvailability: .allAvailable,
+            imAvailable: true
+        )
+        #expect(tapped.mode == .timed)
+        #expect(tapped.label == "Start Timed Practice")
+        #expect(tapped.quickStartMode == .timed)
+        #expect(tapped.destination == .timedPractice)
     }
 }
 

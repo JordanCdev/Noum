@@ -9,6 +9,24 @@ struct NextAction {
     let secondary: ActionRecommendation?   // Optional alternative
     let reasoning: String                  // Why this was chosen
     let confidenceLevel: BaselineConfidence // How much data backs this recommendation
+    /// Explicit provenance for an operational capability fallback. The
+    /// original gated mode is retained so downstream trust UI never has to
+    /// infer fallback state from mutable display copy.
+    let availabilityFallbackFrom: PracticeMode?
+
+    init(
+        primary: ActionRecommendation,
+        secondary: ActionRecommendation?,
+        reasoning: String,
+        confidenceLevel: BaselineConfidence,
+        availabilityFallbackFrom: PracticeMode? = nil
+    ) {
+        self.primary = primary
+        self.secondary = secondary
+        self.reasoning = reasoning
+        self.confidenceLevel = confidenceLevel
+        self.availabilityFallbackFrom = availabilityFallbackFrom
+    }
 }
 
 /// A specific recommended action.
@@ -49,34 +67,130 @@ enum ActionRecommendation: Equatable {
     }
 }
 
-/// Pure snapshot of the existing practice-mode gate at recommendation time.
-/// Callers derive it from `PracticeModeAvailability` and the current
-/// `SpeakingRating`; the engine never reaches into `RatingStore` itself.
+/// Pure snapshot of practice-mode capabilities at recommendation time.
+/// Callers combine the current rated-evidence gate with the live IM
+/// capability; the engine never reaches into either state owner itself.
 struct NextActionModeAvailability: Equatable {
     let suddenDeathAvailable: Bool
+    let imConversationAvailable: Bool
 
     /// Safe default for any caller that has not yet supplied rated evidence.
     /// Explicitly unlocked tests and trusted contexts can use `allAvailable`.
-    static let failClosed = NextActionModeAvailability(suddenDeathAvailable: false)
-    static let allAvailable = NextActionModeAvailability(suddenDeathAvailable: true)
+    static let failClosed = NextActionModeAvailability(
+        suddenDeathAvailable: false,
+        imConversationAvailable: false
+    )
+    static let allAvailable = NextActionModeAvailability(
+        suddenDeathAvailable: true,
+        imConversationAvailable: true
+    )
 
     static var suddenDeathFallbackReason: String {
         "\(PracticeModePrescriptionCopy.pressureLockedHint) Start with Timed Practice."
     }
 
-    init(suddenDeathAvailable: Bool) {
+    static let imConversationFallbackReason =
+        "Conversation Practice isn't available here yet. Start with Timed Practice."
+
+    init(
+        suddenDeathAvailable: Bool,
+        imConversationAvailable: Bool
+    ) {
         self.suddenDeathAvailable = suddenDeathAvailable
+        self.imConversationAvailable = imConversationAvailable
     }
 
-    init(rating: SpeakingRating) {
+    init(
+        rating: SpeakingRating,
+        imConversationAvailable: Bool = false
+    ) {
         suddenDeathAvailable = PracticeModeAvailability.isUnlocked(
             .suddenDeath,
             rating: rating
         )
+        self.imConversationAvailable = imConversationAvailable
     }
 
     func isAvailable(_ mode: PracticeMode) -> Bool {
-        mode != .suddenDeath || suddenDeathAvailable
+        switch mode {
+        case .timed, .ahCounter:
+            return true
+        case .suddenDeath:
+            return suddenDeathAvailable
+        case .imConversation:
+            return imConversationAvailable
+        }
+    }
+
+    static func fallbackReason(for mode: PracticeMode) -> String? {
+        switch mode {
+        case .suddenDeath:
+            return suddenDeathFallbackReason
+        case .imConversation:
+            return imConversationFallbackReason
+        case .timed, .ahCounter:
+            return nil
+        }
+    }
+
+    private static func fallbackDisplayReason(for mode: PracticeMode) -> String? {
+        switch mode {
+        case .suddenDeath:
+            return PracticeModePrescriptionCopy.pressureLockedDisplayHint
+        case .imConversation:
+            return imConversationFallbackReason
+        case .timed, .ahCounter:
+            return nil
+        }
+    }
+
+    /// Applies the same availability snapshot to recommendation blueprints
+    /// used outside the post-rep engine. This keeps Home, Ask Noum, and Train
+    /// copy aligned with the destination instead of merely rerouting a locked
+    /// Pressure Drill card to Timed Practice.
+    func resolving(_ blueprint: RecommendationBiasBlueprint) -> RecommendationBiasBlueprint {
+        let unavailableMode = blueprint.recommendedMode
+        guard isAvailable(unavailableMode) else {
+            let timedBenefit = RecommendationBiasEngine.playbook.first {
+                $0.mode == .timed
+            }
+            let fallbackFocus: String
+            let fallbackTarget: String
+            switch unavailableMode {
+            case .imConversation:
+                // A missing IM provider is an operational constraint, not a
+                // loss of coaching evidence. Keep the established focus and
+                // target while moving the rep to Timed Practice; only the
+                // mode-specific setup and benefit copy are replaced.
+                fallbackFocus = Self.normalized(blueprint.focus)
+                    ?? "Rehearse the same conversational focus"
+                fallbackTarget = Self.normalized(blueprint.target)
+                    ?? "Complete one focused Timed rep"
+            case .suddenDeath, .timed, .ahCounter:
+                fallbackFocus = "First clear read"
+                fallbackTarget = "Complete one rated rep"
+            }
+            return RecommendationBiasBlueprint(
+                recommendedMode: .timed,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                focus: fallbackFocus,
+                target: fallbackTarget,
+                modeBenefit: timedBenefit?.benefit ?? "Builds a clean, rated speaking baseline.",
+                whyMode: timedBenefit?.bestFor ?? "Timed Practice creates a clear rated starting point.",
+                whyNow: Self.fallbackDisplayReason(for: unavailableMode)
+                    ?? "Timed Practice is ready now.",
+                suggestedTimedDifficulty: nil,
+                suggestedTheme: blueprint.suggestedTheme,
+                source: blueprint.source
+            )
+        }
+        return blueprint
+    }
+
+    private static func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -102,7 +216,8 @@ private extension ActionRecommendation {
         return (
             .practiceMode(
                 .timed,
-                reason: NextActionModeAvailability.suddenDeathFallbackReason
+                reason: NextActionModeAvailability.fallbackReason(for: recommendedMode)
+                    ?? "Timed Practice is ready now."
             ),
             true
         )
@@ -146,6 +261,10 @@ struct SummaryPrescriptionProjection {
     /// Human-readable evidence depth from the finalized baseline. A fallback
     /// drill has no finalized evidence claim, so this stays nil.
     let confidenceLabel: String?
+    /// The exact capability snapshot used to shape this projection. Keeping
+    /// it beside the rendered action lets the tap route enforce the same
+    /// decision instead of reinterpreting availability later.
+    let modeAvailability: NextActionModeAvailability
 
     static func resolve(
         nextAction: NextAction?,
@@ -161,7 +280,8 @@ struct SummaryPrescriptionProjection {
                 title: fallbackDrill.title,
                 reason: fallbackDrill.reason,
                 evidence: normalized(fallbackDrill.trendContext),
-                confidenceLabel: nil
+                confidenceLabel: nil,
+                modeAvailability: modeAvailability
             )
         }
 
@@ -182,10 +302,12 @@ struct SummaryPrescriptionProjection {
         }
 
         let reason = normalized(action.displayReason) ?? action.displayTitle
+        let isAvailabilityFallback = resolution.didFallback
+            || nextAction.availabilityFallbackFrom != nil
         // A stale finalized Pressure Drill action must not leave pressure copy
         // attached to the Timed fallback. The fallback reason is already the
         // complete explanation, so suppress the now-inapplicable evidence line.
-        let widerEvidence = resolution.didFallback
+        let widerEvidence = isAvailabilityFallback
             ? nil
             : normalized(nextAction.reasoning)
         return SummaryPrescriptionProjection(
@@ -194,23 +316,31 @@ struct SummaryPrescriptionProjection {
             title: action.displayTitle,
             reason: reason,
             evidence: isSameCopy(reason, widerEvidence) ? nil : widerEvidence,
-            confidenceLabel: nextAction.confidenceLevel.label
+            confidenceLabel: isAvailabilityFallback
+                ? nil
+                : nextAction.confidenceLevel.label,
+            modeAvailability: modeAvailability
         )
     }
 
     /// Full-rep actions route through the existing shared mapping. Drill
     /// actions return nil because their mini/full behavior stays with
     /// `SummaryDrillActionCard` and the existing drill callbacks.
-    func destination(imAvailable: Bool) -> AppDestination? {
+    func launch(imAvailable: Bool) -> PracticeModeLaunchProjection? {
         guard case .fullRep(let mode, let scenario, let tone) = kind else {
             return nil
         }
-        return SummaryLookingAheadRouter.destination(
-            for: mode,
+        return PracticeModeLaunchProjection.resolve(
+            displayedMode: mode,
             scenario: scenario,
             tone: tone,
-            imAvailable: imAvailable
+            imAvailable: imAvailable,
+            modeAvailability: modeAvailability
         )
+    }
+
+    func destination(imAvailable: Bool) -> AppDestination? {
+        launch(imAvailable: imAvailable)?.destination
     }
 
     var fullRepMode: PracticeMode? {
@@ -400,7 +530,10 @@ enum NextActionEngine {
             reasoning: primaryResolution.didFallback
                 ? primaryResolution.action.displayReason
                 : recommendation.reasoning,
-            confidenceLevel: recommendation.confidenceLevel
+            confidenceLevel: recommendation.confidenceLevel,
+            availabilityFallbackFrom: primaryResolution.didFallback
+                ? recommendation.primary.recommendedMode
+                : recommendation.availabilityFallbackFrom
         )
     }
 

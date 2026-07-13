@@ -82,4 +82,69 @@ struct PhraseBankStoreTests {
         #expect(strong.contains("may reorder the targeted slice"))
         #expect(Set([light, medium, strong]).count == 3)
     }
+
+    @Test func capEvictionPublishesTheExactRemainingEntryIDs() throws {
+        let suite = "PhraseBankStoreTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var validSnapshots: [Set<UUID>] = []
+        let store = PhraseBankStore(
+            defaults: defaults,
+            accountIDProvider: { "account-a" },
+            entriesDidChange: { validSnapshots.append($0) }
+        )
+        var firstID: UUID?
+
+        for index in 0...PhraseBankStore.maximumEntries {
+            let entry = try #require(store.save(
+                text: "Carry the decision line number \(index) into the room.",
+                voice: .executive,
+                weakness: .structure,
+                intensity: .medium,
+                now: Date(timeIntervalSince1970: TimeInterval(index))
+            ))
+            if index == 0 { firstID = entry.id }
+        }
+
+        let validIDs = try #require(validSnapshots.last)
+        #expect(validIDs == Set(store.entries.map(\.id)))
+        #expect(validIDs.count == PhraseBankStore.maximumEntries)
+        #expect(firstID.map { !validIDs.contains($0) } == true)
+    }
+
+    @Test func loadFilteringPublishesOnlySafePersistedEntryIDs() throws {
+        let suite = "PhraseBankStoreTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let safe = PhraseBankEntry(
+            text: "Lead with the recommendation, then give one reason.",
+            voice: .executive,
+            weakness: .opening,
+            intensity: .medium
+        )
+        let unsafe = PhraseBankEntry(
+            text: "Email jordan@example.com after the meeting.",
+            voice: .warm,
+            weakness: .closing,
+            intensity: .light
+        )
+        defaults.set(
+            try JSONEncoder().encode([safe, unsafe]),
+            forKey: "\(PhraseBankStore.storageKeyPrefix).account-a"
+        )
+        var validSnapshots: [Set<UUID>] = []
+
+        let store = PhraseBankStore(
+            defaults: defaults,
+            accountIDProvider: { "account-a" },
+            entriesDidChange: { validSnapshots.append($0) }
+        )
+
+        #expect(store.entries.map(\.id) == [safe.id])
+        #expect(validSnapshots.last == Set([safe.id]))
+        let persisted = try #require(defaults.data(
+            forKey: "\(PhraseBankStore.storageKeyPrefix).account-a"
+        ))
+        #expect(try JSONDecoder().decode([PhraseBankEntry].self, from: persisted).map(\.id) == [safe.id])
+    }
 }

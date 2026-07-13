@@ -174,6 +174,74 @@ struct PrivacyProductionContractTests {
             #expect(!policy.contains("No data is shared with analytics providers"))
         }
     }
+
+    @Test func legacyPrivacyDocumentsCannotMasqueradeAsCurrentOperations() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let auditURL = repositoryRoot.appendingPathComponent("Noum/PRIVACY_AUDIT.md")
+        let audit = try String(contentsOf: auditURL, encoding: .utf8)
+
+        #expect(audit.contains("Historical Noum Privacy & Data Audit — Superseded"))
+        #expect(audit.contains("Historical snapshot only. Do not use this file as the current operational"))
+        #expect(audit.contains("[PrivacyPolicy.md](PrivacyPolicy.md)"))
+        #expect(audit.contains("[processor manifest](../privacy/processors.json)"))
+        #expect(audit.contains("[production-readiness runbook](../docs/PRODUCTION_READINESS_RUNBOOK.md)"))
+        #expect(audit.contains("explicit cloud consent"))
+        #expect(audit.contains("short-lived authenticated"))
+        #expect(audit.contains("Apple's on-device Speech fallback"))
+        #expect(!audit.contains("Status:** Operational reference"))
+
+        let historicalCompanions = [
+            (
+                "Noum/PRIVACY_REMEDIATION.md",
+                "Historical Noum Privacy Remediation Plan — Superseded",
+                "Do not execute this plan against the current"
+            ),
+            (
+                "Noum/PRIVACY_EXECUTION.md",
+                "Historical Noum Privacy Execution Package — Superseded",
+                "Do not execute these tickets against the current"
+            ),
+        ]
+        for (relativePath, title, warning) in historicalCompanions {
+            let document = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            #expect(document.contains(title))
+            #expect(document.contains(warning))
+            #expect(document.contains("[PrivacyPolicy.md](PrivacyPolicy.md)"))
+            #expect(document.contains("[processor manifest](../privacy/processors.json)"))
+            #expect(document.contains("[production-readiness runbook](../docs/PRODUCTION_READINESS_RUNBOOK.md)"))
+        }
+    }
+
+    @Test func unscopedTimedSeedKeysHaveOnePurgeOnlyOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceRoot = repositoryRoot.appendingPathComponent("Noum")
+        let keys = [
+            TimedPracticePromptHandoff.legacyDefaultsKey,
+            TimedPracticePromptHandoff.legacySuggestedWordDefaultsKey,
+        ]
+        let enumerator = try #require(
+            FileManager.default.enumerator(
+                at: sourceRoot,
+                includingPropertiesForKeys: nil
+            )
+        )
+        var owners: Set<String> = []
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
+            let source = try String(contentsOf: fileURL, encoding: .utf8)
+            if keys.contains(where: source.contains) {
+                owners.insert(fileURL.lastPathComponent)
+            }
+        }
+
+        #expect(owners == Set(["TimedPracticePromptHandoff.swift"]))
+    }
 }
 
 @Suite("Firestore production contracts")
