@@ -120,6 +120,79 @@ conversation coverage, provider evidence, immediate-read telemetry, confidence
 variety, proof-test variety, trajectory-cache coverage, and clean
 production-floor rows. A placeholder or stale JSON file stays blocked even if
 the filename is present.
+
+### Canonical live-provider evidence sweep
+
+Use one command for the production-path live sweep:
+
+```bash
+export GEMINI_API_KEY='…' # or another explicitly configured production provider
+NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
+  ./tools/coach-arena/run.sh live-evidence --allow-live-network
+```
+
+`--allow-live-network` is an intentional quota boundary. Without an explicitly
+exported provider key, or without that flag when a key is present, the command
+exits before starting Xcode. It does not read developer keys from the gitignored
+`AIConfig.plist` for this evidence run. The Swift
+`CoachLiveEvaluationTests.liveGeminiRepliesClearFixtureRubric` harness remains
+the reply producer and runs the production provider chain with the `readiness`
+preset: all 20 required latest-turn fixtures plus all 11 required five-turn
+long-form conversations. Provider attempts, retries, refusals, diagnostics,
+first-visible latency, completion latency, immediate-read state, trajectory
+cache state, quality/semantic gates, and final visible replies are retained.
+
+The command first requires the canonical app-path dump and both source sidecars
+to pass preflight. Unlike the general diagnostic preflight, publication requires
+`source-git-commit.txt` to equal the exact current `HEAD`, as well as an exact
+coach-source fingerprint. The live XCTest writes only inside an isolated staging
+directory. The wrapper then applies the unchanged `coach-live-eval-v1`
+readiness contract and additional provenance checks. It rejects incomplete
+coverage, failed rows, operational warnings, missing telemetry, source mismatch,
+and provider/model identities containing replay, fixture, template, scripted,
+synthetic, mock, stub, fake, or test markers. Only a fully valid artifact is
+eligible, and every operational row must retain a timed successful 2xx transport
+diagnostic. The result is atomically renamed to
+`$NOUM_COACH_EVAL_DUMP_DIR/coach-live-eval-v1.json`.
+A failed or partial run is discarded and cannot overwrite the last valid file.
+
+An explicitly supplied capture from the same live Swift producer can be
+published without repeating provider calls:
+
+```bash
+./tools/coach-arena/run.sh live-evidence \
+  --capture /secure/path/coach-live-eval-v1.json \
+  --attestation /secure/path/coach-live-capture-attestation-v1.json
+```
+
+The attestation is mandatory and bound to the exact capture bytes. Its contract
+is:
+
+```json
+{
+  "schemaVersion": "coach-live-capture-attestation-v1",
+  "executionMode": "liveProviderProductionPath",
+  "producer": "NoumTests/CoachLiveEvaluationTests.liveGeminiRepliesClearFixtureRubric",
+  "candidateSource": "providerNetworkResponse",
+  "fixturePreset": "readiness",
+  "longFormPreset": "required",
+  "usesReplayResponses": false,
+  "usesFixtureResponses": false,
+  "usesTemplateResponses": false,
+  "captureSHA256": "sha256:<digest-of-exact-capture-bytes>",
+  "sourceGitCommit": "<exact source-git-commit.txt value>",
+  "sourceCoachFingerprint": "<exact source-coach-fingerprint.txt value>",
+  "runID": "<non-empty operator run ID>",
+  "capturedAt": "<ISO-8601 timestamp with timezone>"
+}
+```
+
+An attestation is a provenance assertion, not a way to bless generated output.
+Capture mode still runs every content, coverage, telemetry, source, provider,
+and production-floor check. It never rewrites source fields to make stale output
+look current, and it refuses replay/fixture/template candidates even when an
+attestation claims otherwise.
+
 The `evidence-refresh` command also emits the source packet used for
 professional calibration and the canonical Swift readiness manifest. Python
 then deeply validates the transfer-outcome, physical-device, and operational
