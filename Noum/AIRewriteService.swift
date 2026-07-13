@@ -31,9 +31,22 @@ import Foundation
 // service reusable for future surfaces.
 
 actor AIRewriteService {
+    typealias ProviderResolver = @MainActor @Sendable () -> AIProvider?
+
     static let shared = AIRewriteService()
 
-    private init() {}
+    private let providerResolver: ProviderResolver
+
+    /// Provider resolution is injectable so locale-boundary tests can prove
+    /// unsupported locales stop before provider configuration or transport is
+    /// touched. Production continues to read the existing settings owner.
+    init(
+        providerResolver: @escaping ProviderResolver = {
+            AISettingsManager.shared.activeProvider
+        }
+    ) {
+        self.providerResolver = providerResolver
+    }
 
     /// Rewrite register is optional coaching context, never an inferred
     /// identity. The profile's effective style has a legacy fallback so older
@@ -104,6 +117,7 @@ actor AIRewriteService {
 
     enum Eligibility: Equatable, Sendable {
         case eligible
+        case unsupportedLocale
         case tooShort
         case lowConfidence
         case semanticallyAmbiguous
@@ -115,8 +129,10 @@ actor AIRewriteService {
     /// uploading a fragment, garbled recognition, or likely personal identifier.
     nonisolated static func eligibility(
         transcript: String,
-        confidence: Double?
+        confidence: Double?,
+        locale: PracticeLocale = .enUS
     ) -> Eligibility {
+        guard locale.aiSupported else { return .unsupportedLocale }
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 40 else { return .tooShort }
         guard confidence.map({ $0 >= 0.55 }) ?? true else { return .lowConfidence }
@@ -160,7 +176,8 @@ actor AIRewriteService {
         voice: SpeakingStyleGoal? = nil,
         targetDimension: String? = nil,
         transcriptConfidence: Double? = nil,
-        intensity: Intensity = .medium
+        intensity: Intensity = .medium,
+        locale: PracticeLocale? = nil
     ) async -> Rewrite? {
         func record(
             _ outcome: AICallDiagnosticOutcome,
@@ -179,8 +196,22 @@ actor AIRewriteService {
             )
         }
 
+        let effectiveLocale = if let locale {
+            locale
+        } else {
+            await currentLocale()
+        }
+        guard effectiveLocale.aiSupported else {
+            record(.skipped, "Locale not AI-supported")
+            return nil
+        }
+
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard Self.eligibility(transcript: trimmed, confidence: transcriptConfidence) == .eligible else {
+        guard Self.eligibility(
+            transcript: trimmed,
+            confidence: transcriptConfidence,
+            locale: effectiveLocale
+        ) == .eligible else {
             record(.skipped, "Transcript failed deterministic rewrite eligibility")
             return nil
         }
@@ -189,7 +220,8 @@ actor AIRewriteService {
             weakness: weakness,
             voice: voice,
             intensity: intensity,
-            confidence: transcriptConfidence
+            confidence: transcriptConfidence,
+            locale: effectiveLocale
         )
         let configuredProvider = await currentProvider()
         guard let provider = configuredProvider,
@@ -291,9 +323,14 @@ actor AIRewriteService {
         weakness: Weakness,
         voice: SpeakingStyleGoal?,
         intensity: Intensity,
-        confidence: Double? = nil
+        confidence: Double? = nil,
+        locale: PracticeLocale = .enUS
     ) -> Rewrite? {
-        guard eligibility(transcript: transcript, confidence: confidence) == .eligible,
+        guard eligibility(
+            transcript: transcript,
+            confidence: confidence,
+            locale: locale
+        ) == .eligible,
               let candidate = OnDeviceRewriteHeuristics.rewrite(
                   transcript: transcript,
                   weakness: weakness,
@@ -399,7 +436,12 @@ actor AIRewriteService {
 
     @MainActor
     private func currentProvider() -> AIProvider? {
-        AISettingsManager.shared.activeProvider
+        providerResolver()
+    }
+
+    @MainActor
+    private func currentLocale() -> PracticeLocale {
+        LocaleSettingsManager.shared.current
     }
 
     private func apiKey(for provider: AIProvider) -> String? {

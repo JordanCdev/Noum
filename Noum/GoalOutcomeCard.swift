@@ -17,8 +17,11 @@ enum GoalOutcomeEngine {
         rating: SpeakingRating,
         sessions: [PracticeSession],
         coachMemory: CoachMemory?,
-        outcomes: [RecommendationOutcome]
+        outcomes: [RecommendationOutcome],
+        locale: PracticeLocale? = nil
     ) -> GoalOutcomeRead? {
+        let effectiveLocale = locale ?? currentLocale()
+        guard effectiveLocale.aiSupported else { return nil }
         guard let style = selectedGoal(from: profile), !sessions.isEmpty else { return nil }
         let trajectory = UserTrajectoryCache.shared.snapshot(
             profile: profile,
@@ -38,6 +41,23 @@ enum GoalOutcomeEngine {
             surface: .text
         )
         return GoalOutcomeRead.make(style: style, assessment: assessment, outcomes: outcomes)
+    }
+
+    /// `GoalOutcomeEngine.read` is synchronous because it is consumed by
+    /// synchronous SwiftUI projections and deterministic tests. The existing
+    /// locale manager remains the sole production owner; explicit locale
+    /// injection bypasses this hop in tests.
+    private static func currentLocale() -> PracticeLocale {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                LocaleSettingsManager.shared.current
+            }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated {
+                LocaleSettingsManager.shared.current
+            }
+        }
     }
 }
 
