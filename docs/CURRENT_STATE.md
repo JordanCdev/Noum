@@ -70,8 +70,16 @@ rather than inheriting it from a missing fixture. Evidence telemetry rejects a
 fabricated/default voice for neutral scenarios and fails closed when a styled or
 unknown fixture lacks its required assessment. The historical `40d5e903`
 app-path artifact and 3,872-test run documented below remain valid only for that
-named source. The canonical coach evidence still needs regeneration after the
-integrated implementation is committed to a clean source boundary.
+named source. The canonical coach evidence was regenerated from clean source
+commit `80fbf6d2` with fingerprint
+`sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`.
+All 53 conversations / 109 turns pass the app-path floor; all 50 required arena
+fixtures pass at a 79.76 average with zero local failures, and both real-pipeline
+and trace-quality gates pass. The trace audit contains 23 styled and 27 neutral
+selected fixtures with zero invalid provenance rows. Readiness remains an honest
+NO-GO at 18/100 (local target shape 85/100) because the live-provider sweep,
+professional calibration, longitudinal outcomes, physical TestFlight QA, and
+operational launch checklist are externally earned evidence, not local fixtures.
 
 ## 2026-07-13 — Research closure audit, evidence integrity, and release authority
 

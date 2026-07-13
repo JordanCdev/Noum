@@ -7,15 +7,16 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
-Implementation has moved beyond the last complete `40d5e903` evidence baseline.
-The newer explicit-style, rendered-Home ownership, unified four-mode
+The explicit-style, rendered-Home ownership, unified four-mode
 availability, Train/Prep projection, active-week phrase handoff, and historical
 privacy-document quarantine work, including the account- and route-bound Timed
 prompt handoff, passed the final integrated current-working-tree regression:
 3,924 tests across 406 suites with zero failures. Its unsigned Release simulator
-build also succeeded. A clean commit and source-bound coach-evidence refresh are
-the remaining local steps before this plan treats the canonical evidence as
-current.
+build also succeeded. Canonical coach evidence is now current for clean source
+commit `80fbf6d2` / fingerprint `sha256:8087e26d…ca71`: 53 conversations and
+109 turns pass the app-path floor, while all 50 required arena fixtures pass the
+real-pipeline and trace-quality gates at a 79.76 average. The remaining launch
+closure is external evidence and release authority, not another local fixture.
 
 ## Current execution status — 2026-07-13
 

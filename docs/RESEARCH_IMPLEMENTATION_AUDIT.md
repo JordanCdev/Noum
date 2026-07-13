@@ -5,28 +5,27 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-13
 
 Committed implementation inspected through:
-`0c2ec54cb58f6a70c00cf50d2ff50ad1918619eb`
+`80fbf6d25cfda2b46932a0b0a1a963d156fe7b52`
 
-Additional integrated working-tree implementation: unified four-mode
+The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
 availability fallback with category-bounded Timed prompts, the Phrase
 Bank→active-week handoff, the account- and route-bound Timed prompt owner, and
-explicit quarantine of superseded privacy-audit documents. Their focused
-source/test results are recorded below; they do not yet have a commit-bound
+explicit quarantine of superseded privacy-audit documents. Their focused and
+full source/test results are recorded below and now have a clean commit-bound
 source fingerprint.
 
 Last complete source-bound evidence checkout:
-`40d5e90306eb7d8939606d885cf84c9024331fa9`
+`80fbf6d25cfda2b46932a0b0a1a963d156fe7b52`
 
 The explicit-style, rendered-Home, availability, Prep/Train, weekly-phrase,
 Timed-prompt, and privacy-document changes after that evidence checkout now have
 a complete current-working-tree regression: all 3,924 `NoumTests` tests across
 406 suites passed with zero failures, and an unsigned Release simulator build
-succeeded. The canonical coach-evidence refresh remains pending until those
-changes are committed to a clean source boundary. The current four-mode
+succeeded. The canonical coach-evidence refresh from that clean source boundary
+also passes app-path, real-pipeline, and trace-quality gates. The current four-mode
 availability contract is **Proved** at its pure/source boundary; that does not
-prove rendered SwiftUI behavior, the report's wider destination catalog, or
-make the older source-bound coach artifact current.
+prove rendered SwiftUI behavior or the report's wider destination catalog.
 
 Integrated branch: `ux-overhaul`
 
@@ -297,24 +296,23 @@ substrate, but it is not a cohort analytics service.
 
 ## Local implementation evidence
 
-Source binding matters here. The `40d5e903` rows remain valid evidence for that
-named baseline, but they are not current-checkout proof after `0c2ec54c` changed
-coach and product source. Focused post-baseline checks prove the narrowed
-contracts they exercised, and the completed full regression proves the final
-integrated working tree. Only the clean-commit coach-evidence refresh remains
-before the canonical artifact can make a source-bound current claim.
+Source binding matters here. The `40d5e903` rows remain valid historical evidence
+for that named baseline. The current canonical artifact is bound to clean source
+commit `80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; focused checks
+prove their narrowed contracts and the completed full regression proves the
+integrated test target.
 
 | Evidence item | Classification | Result on 2026-07-13 |
 |---|---|---|
 | Full integrated Swift regression for the newer source | **Proved** | The final integrated current working tree passed 3,924/3,924 `NoumTests` tests across 406 suites with zero failures. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. Its unsigned Release simulator build also succeeded. |
 | Selected pre-baseline Swift product/test contracts | **Proved** | At `40d5e903`, focused simulator tests passed for goal calibration/outcomes, rewrite, Phrase Bank, prescription, fast lane, local speech, privacy, KPI, and experiment contracts. They remain valid for that named source boundary, not as a substitute for the final full run. |
-| Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. App-path rows carry an explicit styled, neutral, or unknown semantic expectation. Styled turns require a passed gate and typed assessment; known neutral turns require `notEvaluated` without typed assessment; unknown IDs fail closed. The 25 supplemental arena scenarios are explicitly neutral at construction, so missing fixtures cannot silently inherit neutrality. Fabricated/default voice telemetry remains rejected. These focused results complement the complete current-working-tree regression but do not replace the pending commit-bound coach-evidence refresh. |
+| Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. App-path rows carry an explicit styled, neutral, or unknown semantic expectation. Styled turns require a passed gate and typed assessment; known neutral turns require `notEvaluated` without typed assessment; unknown IDs fail closed. The 25 supplemental arena scenarios are explicitly neutral at construction, so missing fixtures cannot silently inherit neutrality. Fabricated/default voice telemetry remains rejected. The refreshed commit-bound report preserves this contract with 23 styled, 27 neutral, and zero invalid selected traces. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
-| Coach-arena contracts at the evidence baseline | **Weak evidence** | 119 Node tests and 108 Python tests passed, but the canonical source fingerprint predates `0c2ec54c`; rerun the arena and refresh source-bound evidence on the final checkout. |
+| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and the current 118-test Python runner suite pass. The canonical artifact is refreshed from `80fbf6d2` and its current coach-source fingerprint. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
 | Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. |
 | Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 28 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
-| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `40d5e903` and coach fingerprint `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`; 53 conversations/109 turns pass the app-path floor. |
-| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T05:47:00+00:00` embeds `40d5e903` / `sha256:6164…d18d`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
+| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `80fbf6d2` and coach fingerprint `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`; 53 conversations/109 turns pass the app-path floor with no source warnings. |
+| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T10:20:06+00:00` embeds `80fbf6d2` / `sha256:8087e26d…ca71`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero local fixture failures. It is still local real-pipeline/target-shape evidence, not external provider, reviewer, longitudinal, or device proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
 | Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. |
 
@@ -353,14 +351,13 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-Keep the committed `40d5e903` canonical app-path baseline intact as historical
-evidence. The full Noum regression against the final integrated working tree is
-complete; commit that source cleanly and regenerate the canonical report because
-`0c2ec54c` and later work changed coach source. The refresh must preserve the
-new provenance contract: explicitly styled rows pass only with typed assessment,
+The safe local source/evidence refresh is complete. Keep `40d5e903` as a named
+historical baseline and `80fbf6d2` as the current canonical source boundary.
+Future coach-source changes must rerun the same atomic refresh and preserve the
+provenance contract: explicitly styled rows pass only with typed assessment,
 declared-neutral rows remain truthfully `notEvaluated`, and unknown fixture IDs
-fail closed. This restores local evidence freshness but cannot raise production
-readiness past the external cap by itself.
+fail closed. Local reruns cannot raise production readiness past the external
+cap by themselves.
 
 ### External or approval-gated
 
