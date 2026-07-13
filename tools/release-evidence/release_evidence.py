@@ -248,6 +248,26 @@ def current_source_binding(repo_root: Path):
     }
 
 
+def full_source_commit(repo_root: Path, source_commit=None):
+    source_commit = source_commit or GATE.current_git_commit(repo_root)
+    if not isinstance(source_commit, str) or not re.fullmatch(r"[0-9a-f]{7,40}", source_commit):
+        raise WorkflowError("source commit is malformed")
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--verify", f"{source_commit}^{{commit}}"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise WorkflowError("could not determine the full source commit") from exc
+    commit = result.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise WorkflowError("full source commit is malformed")
+    return commit
+
+
 def reachable_commit_set_binding(repo_root: Path):
     try:
         result = subprocess.run(
@@ -367,7 +387,9 @@ def initialize_run(args):
         elif key == "operationalLaunch":
             reachable = reachable_commit_set_binding(repo_root)
             template["historySecretAdjudication"].update({
-                "scannedRepositoryCommit": current["sourceGitCommit"],
+                "scannedRepositoryCommit": full_source_commit(
+                    repo_root, current["sourceGitCommit"],
+                ),
                 "reachableCommitCount": reachable["reachableCommitCount"],
                 "reachableCommitSetSha256": reachable["reachableCommitSetSha256"],
             })
@@ -906,7 +928,14 @@ def validate_history_secret_adjudication(
 
     source_binding = manifest.get("sourceBinding")
     source_binding = source_binding if isinstance(source_binding, dict) else {}
-    if adjudication.get("scannedRepositoryCommit") != source_binding.get("sourceGitCommit"):
+    try:
+        expected_source_commit = full_source_commit(
+            repo_root, source_binding.get("sourceGitCommit"),
+        )
+    except WorkflowError as exc:
+        add_failure(failures, "historySecretScanSourceCommitUnavailable", str(exc))
+        expected_source_commit = None
+    if expected_source_commit and adjudication.get("scannedRepositoryCommit") != expected_source_commit:
         add_failure(failures, "historySecretScanSourceCommitMismatch")
     try:
         reachable = reachable_commit_set_binding(repo_root)
@@ -1292,7 +1321,9 @@ def import_history_scan_command(args):
         "scanner": HISTORY_SECRET_SCANNER,
         "scannerVersion": HISTORY_SECRET_SCANNER_VERSION,
         "scanScope": HISTORY_SECRET_SCAN_SCOPE,
-        "scannedRepositoryCommit": source_binding.get("sourceGitCommit", ""),
+        "scannedRepositoryCommit": full_source_commit(
+            repo_root, source_binding.get("sourceGitCommit"),
+        ),
         "redactionPercent": 100,
         "reachableCommitCount": reachable["reachableCommitCount"],
         "reachableCommitSetSha256": reachable["reachableCommitSetSha256"],

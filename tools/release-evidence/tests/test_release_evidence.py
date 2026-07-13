@@ -416,7 +416,7 @@ def fill_complete_fixture(run_dir):
         "scanner": release.HISTORY_SECRET_SCANNER,
         "scannerVersion": release.HISTORY_SECRET_SCANNER_VERSION,
         "scanScope": release.HISTORY_SECRET_SCAN_SCOPE,
-        "scannedRepositoryCommit": source_commit,
+        "scannedRepositoryCommit": current_commit,
         "redactionPercent": 100,
         "reachableCommitCount": reachable["reachableCommitCount"],
         "reachableCommitSetSha256": reachable["reachableCommitSetSha256"],
@@ -483,6 +483,15 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_full_source_commit_expands_only_valid_git_commit_references(self):
+        abbreviated = release.current_source_binding(REPO_ROOT)["sourceGitCommit"]
+        expanded = release.full_source_commit(REPO_ROOT, abbreviated)
+
+        self.assertRegex(expanded, r"^[0-9a-f]{40}$")
+        self.assertTrue(expanded.startswith(abbreviated))
+        with self.assertRaises(release.WorkflowError):
+            release.full_source_commit(REPO_ROOT, "not-a-commit")
+
     def test_initialized_templates_are_visibly_nonpassing_and_fail_closed(self):
         result = release.validate_run(self.run_dir, REPO_ROOT)
 
@@ -499,7 +508,7 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
         history = operational["historySecretAdjudication"]
         self.assertEqual(
             history["scannedRepositoryCommit"],
-            release.current_source_binding(REPO_ROOT)["sourceGitCommit"],
+            release.full_source_commit(REPO_ROOT),
         )
         self.assertEqual(history["reachableCommitCount"], reachable["reachableCommitCount"])
         self.assertEqual(

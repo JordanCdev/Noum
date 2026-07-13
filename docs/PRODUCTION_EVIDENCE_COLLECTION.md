@@ -47,7 +47,9 @@ Before collecting Apple evidence, run the local signing/TestFlight preflight
 against an unsigned generic-iOS archive:
 
 ```bash
-./scripts/release-test-testflight-preflight.sh
+python3 -m unittest discover \
+  -s scripts/tests \
+  -p 'test_release_testflight_preflight.py'
 
 export SOURCE_PACKAGES_PATH="${SOURCE_PACKAGES_PATH:-$PWD/.build/fast-lane-release/SourcePackages}"
 ./scripts/release-testflight-preflight.sh \

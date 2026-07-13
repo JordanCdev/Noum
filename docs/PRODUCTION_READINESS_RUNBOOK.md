@@ -110,7 +110,9 @@ generic-iOS archive. Reuse an existing package cache so this local check cannot
 resolve packages over the network:
 
 ```bash
-./scripts/release-test-testflight-preflight.sh
+python3 -m unittest discover \
+  -s scripts/tests \
+  -p 'test_release_testflight_preflight.py'
 
 export SOURCE_PACKAGES_PATH="${SOURCE_PACKAGES_PATH:-$PWD/.build/fast-lane-release/SourcePackages}"
 ./scripts/release-testflight-preflight.sh \
@@ -211,8 +213,9 @@ BACKEND_BASE_URL='https://<legacy-api-origin>' \
 
 The script sends no API key, bearer token, provider credential, or user data.
 It never downloads or prints a response body and never calls Deepgram. It checks
-both legacy credential-vending routes plus the documented IM/TTS siblings. Each
-route must return `401`/`403` (protected) or `404`/`410` (disabled). A `2xx`,
+both legacy credential-vending routes with `GET` plus the three documented
+IM/TTS siblings with minimal `{}` `POST` bodies. Each route must return
+`401`/`403` (protected) or `404`/`410` (disabled). A `2xx`,
 redirect, request-validation response, rate limit, `5xx`, malformed status, TLS
 failure, timeout, or other transport error fails the whole probe.
 

@@ -72,11 +72,13 @@ credential remain outside our control.
   credential-vending AWS endpoint documented below.
 
 Containment requires access to the old Deepgram account and legacy AWS account,
-or an incident request to their support teams. Closure evidence must include:
-the legacy credential returning 401, every legacy credential/IM/TTS route
-returning 401 or 404 without a verified identity, and the usage/billing audit.
-The new Firebase path reduces future app exposure; it does not revoke or disable
-the already-exposed legacy infrastructure.
+or an incident request to their support teams. Incident closure requires
+separate evidence for each control: every documented legacy route must return
+`401`/`403` (protected) or `404`/`410` (disabled) to the unauthenticated
+containment probe; every exposed provider credential must be independently
+proven revoked or invalid; and provider usage/billing plus the AWS route
+inventory must be audited. The new Firebase path reduces future app exposure;
+it does not satisfy those legacy-incident controls.
 
 The CI full-history secret gate is intentionally red until the active Deepgram
 credential is revoked and the reviewed historical findings can be recorded as a
@@ -122,9 +124,10 @@ serves this one static key, so **deleting it instantly breaks transcription** fo
 the backend serves a different key. Pick the right order:
 
 - **Track A — zero downtime (do this if there are live users):** deploy the hardened backend first
-  (section 3) so it mints fresh `usage:write` keys from a new **server-only** admin key, verify with
-  `scripts/verify_deepgram_endpoint.sh`, **then** delete the old leaked `account:write` key. The
-  endpoint never serves a static key again.
+  (section 3) so it mints fresh `usage:write` keys from a new **server-only** admin key. Verify the
+  authenticated flow separately, then run `scripts/verify_deepgram_endpoint.sh` to prove that every
+  documented legacy route protects or disables access for an unverified caller. **Then** delete the
+  old leaked `account:write` key. The endpoint never serves a static key again.
 - **Track B — stop-the-bleed now (fine if pre-launch / no real users):** delete the leaked key in the
   dashboard immediately to kill active abuse; transcription is down until you ship Track A (or, as a
   stopgap, point the backend at a new non-account-scoped key via its secret store). If the backend
@@ -331,9 +334,14 @@ backend deployed. Apply alongside the backend deploy and test the full path.
 4. The returned key **cannot** hit account-management endpoints (e.g. listing/creating keys → 403).
 5. Real app records a transcription session end-to-end with a freshly minted key.
 
-Steps 1–4 are automated by [`scripts/verify_deepgram_endpoint.sh`](../scripts/verify_deepgram_endpoint.sh)
-(read-only, never prints secret material). Run it before the fix to confirm the leak, and after to
-confirm closure.
+Only the unauthenticated containment portion of step 2 is automated by
+[`scripts/verify_deepgram_endpoint.sh`](../scripts/verify_deepgram_endpoint.sh), and it covers all
+five documented legacy credential/IM/TTS routes. The script is status-only: it sends no credential,
+retains no response body, and never calls Deepgram. It passes only on `401`/`403` (protected) or
+`404`/`410` (disabled); redirects, request-validation responses, rate limits, `5xx`, and transport
+errors all fail closed. Credential revocation, provider usage/billing review, authenticated scoped-key
+behavior, TTL, and end-to-end transcription require separate redacted operator evidence. Never pass
+an old credential to this script.
 
 ---
 
@@ -374,7 +382,7 @@ of `/v1/transcribe/credentials`, `/v1/im/*`, and `/v1/tts/im`.
 - ✅ Confirmed: least-privilege streaming scope is `usage:write`; revoke is `DELETE`.
 - ⚠️ **TTL nuance:** `time_to_live_in_seconds` is for *key creation* (what we use). Deepgram's separate *grant-token* endpoint uses `ttl_seconds` with a **3600s max** — don't confuse them.
 - ⚠️ **`account:write`** implies "every other account permission," so the leaked key should be assumed capable of broad account actions. Key *management* specifically needs `keys:write` — that's the only scope your new server-side admin key needs.
-- ⚠️ **Scope-validation caveat:** `GET /v1/auth/token` is **not** a documented scope-inspection endpoint (it worked empirically in the original probe). `scripts/verify_deepgram_endpoint.sh` step 2 treats it as best-effort; the robust signal is step 1 (unauthenticated probe must be non-200).
+- ⚠️ **Scope-validation caveat:** `GET /v1/auth/token` is **not** a documented scope-inspection endpoint (it worked empirically in the original probe). The repository probe deliberately does not use it; provider scope/revocation evidence must come from the provider account or support record.
 
 ## Red-team of the reference fix (14 issues; high-value ones applied)
 
@@ -383,7 +391,7 @@ Applied to this doc / script already:
 - ✅ Validate Deepgram's create-key response — never return `undefined` as the key.
 - ✅ Rate limiting promoted from "optional" to **mandatory**.
 - ✅ Firebase-token block rewritten with a loud "NOT production-safe as written" warning + real verification shape + guest-policy note.
-- ✅ Verification script hardened: `trap … EXIT` temp-file cleanup, `expiresAt`-in-future check, reject responses containing unexpected secret fields.
+- ✅ Verification script replaced with an unauthenticated, status-only five-route containment probe that never retains a response body or calls the provider API.
 
 Still on you when you build the real backend:
 - **Timing-safe compare:** `safeEq()`'s `x.length === y.length` pre-check leaks key length via timing. Minor (backend-key length isn't very sensitive), but pad to constant time if you care.
