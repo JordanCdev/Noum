@@ -119,6 +119,11 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         )
         assertMinimumTapTarget(resumeSetup)
 
+        let homeScreenshot = XCTAttachment(screenshot: app.screenshot())
+        homeScreenshot.name = "Fast Lane - Deferred Setup Resume on Home"
+        homeScreenshot.lifetime = .keepAlways
+        add(homeScreenshot)
+
         XCTAssertFalse(app.descendants(matching: .any)["timedPractice.screen"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["summary.postRepVerdict"].exists)
     }
