@@ -12,8 +12,18 @@ import Testing
 import XCTest
 @testable import Noum
 
+enum CoachChatAppPathAssessmentProvenance: Hashable {
+    /// The source ID must resolve to a declared evaluation fixture. Its explicit
+    /// `chosenStyleGoal` decides whether typed assessment is required.
+    case fixtureBacked
+    /// A deliberately profile-free supplemental scenario. This is an explicit
+    /// trust-boundary declaration, not a fallback for an unknown source ID.
+    case explicitNeutral
+}
+
 struct CoachChatAppPathConversationScript {
     let conversation: CoachChatConversationFixture
+    let assessmentProvenance: CoachChatAppPathAssessmentProvenance
     let seedCoachReplies: [String]
     /// Verified proof quotes to seed into `ProofMomentStore.shared` before this
     /// fixture runs. When the user asks for a session example and a verified
@@ -26,10 +36,12 @@ struct CoachChatAppPathConversationScript {
 
     init(
         conversation: CoachChatConversationFixture,
+        assessmentProvenance: CoachChatAppPathAssessmentProvenance,
         seedCoachReplies: [String] = [],
         seedProofQuotes: [String] = []
     ) {
         self.conversation = conversation
+        self.assessmentProvenance = assessmentProvenance
         self.seedCoachReplies = seedCoachReplies
         self.seedProofQuotes = seedProofQuotes
     }
@@ -561,7 +573,12 @@ enum CoachChatConversationCorpus {
     ]
 
     static var appPathConversationScripts: [CoachChatAppPathConversationScript] {
-        conversations.map { CoachChatAppPathConversationScript(conversation: $0) } +
+        conversations.map {
+            CoachChatAppPathConversationScript(
+                conversation: $0,
+                assessmentProvenance: .fixtureBacked
+            )
+        } +
             arenaSupplementalAppPathScripts
     }
 
@@ -569,8 +586,37 @@ enum CoachChatConversationCorpus {
         appPathConversationScripts.map(\.conversation)
     }
 
+    /// Resolves only declarations made at the script construction boundary.
+    /// Missing sources, a fixture-backed source that no longer resolves, and a
+    /// supplemental-neutral source that later collides with a real fixture all
+    /// fail closed instead of silently becoming neutral.
+    static func assessmentProvenance(
+        for fixtureID: String
+    ) -> CoachChatAppPathAssessmentProvenance? {
+        let declarations = conversations
+            .filter { $0.sourceFixtureID == fixtureID }
+            .map { _ in CoachChatAppPathAssessmentProvenance.fixtureBacked } +
+            arenaSupplementalAppPathScripts
+            .filter { $0.conversation.sourceFixtureID == fixtureID }
+            .map(\.assessmentProvenance)
+        let uniqueDeclarations = Set(declarations)
+        guard uniqueDeclarations.count == 1,
+              let declaration = uniqueDeclarations.first else {
+            return nil
+        }
+        let fixtureExists = CoachChatEvaluationCorpus.fixtures.contains {
+            $0.id == fixtureID
+        }
+        switch declaration {
+        case .fixtureBacked:
+            return fixtureExists ? declaration : nil
+        case .explicitNeutral:
+            return fixtureExists ? nil : declaration
+        }
+    }
+
     private static let arenaSupplementalAppPathScripts: [CoachChatAppPathConversationScript] = [
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "examples-from-sessions-010",
             userTurn: "Can you give me an example of me doing this in sessions?",
             coachReply: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
@@ -582,128 +628,128 @@ enum CoachChatConversationCorpus {
             // verifies robustly in both directions (Gate 2 + the example gate).
             seedProofQuotes: ["we focused on three priorities."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "outcome-not-causation-027",
             userTurn: "The room seemed engaged. Did the drill cause that?",
             coachReply: "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
             seedCoachReplies: ["Use the final sentence as the ask."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "upcoming-conflict-028",
             userTurn: "I have a difficult conversation tonight. What should I practice?",
             coachReply: "Tonight's risk is over-proving, so practice the boundary sentence only: say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "networking-intro-029",
             userTurn: "I ramble when introducing myself at networking events.",
             coachReply: "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "presentation-nerves-030",
             userTurn: "My presentation sounds polished but flat. What is missing?",
             coachReply: "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "sales-pitch-031",
             userTurn: "My sales pitch loses people after the first minute.",
             coachReply: "The likely gap is salience: reasons are there, but nothing for the listener to picture. So add one concrete customer example after the first claim, then return to the ask."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "board-update-032",
             userTurn: "Would a board hear this as executive?",
             coachReply: "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "overexplaining-033",
             userTurn: "Do I overexplain?",
             coachReply: "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "fear-disagreement-034",
             userTurn: "Am I afraid to disagree?",
             coachReply: "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "lack-conviction-035",
             userTurn: "Do I lack conviction?",
             coachReply: "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "emotional-disconnection-036",
             userTurn: "It sounds correct but not like me. What do I change?",
             coachReply: "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "evasive-polished-037",
             userTurn: "Could this sound polished but evasive?",
             coachReply: "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "timidity-038",
             userTurn: "Do I sound timid?",
             coachReply: "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "authority-under-pressure-039",
             userTurn: "What breaks when pressure goes up?",
             coachReply: "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "semantic-filler-use-040",
             userTurn: "You counted 'like' but I meant it as a comparison.",
             coachReply: "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
             seedCoachReplies: ["You used like as filler several times."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "prompt-echo-041",
             userTurn: "The prompt made me repeat the phrase. Is that my filler?",
             coachReply: "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "no-transcript-fabrication-042",
             userTurn: "Quote what I said that shows this.",
             coachReply: "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
             seedCoachReplies: ["Your close softened."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "quote-guard-043",
             userTurn: "Did I actually say that?",
             coachReply: "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
             seedCoachReplies: ["You said 'we should pause the launch'."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "live-latency-short-044",
             userTurn: "Quickly, what do I do next?",
             coachReply: "The close is the lever, so make the final sentence the ask, then stop."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "barge-in-045",
             userTurn: "Stop, that's not what I asked.",
             coachReply: "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
             seedCoachReplies: ["Long spoken answer about filler counts."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "weekly-checkin-046",
             userTurn: "This week felt harder even though my score improved.",
             coachReply: "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "real-world-outcome-047",
             userTurn: "My interview answer landed better than practice. What do we learn?",
             coachReply: "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example, so keep that for interviews and capture what question made it land.",
             seedCoachReplies: ["Practice verdict first, one example, clean stop."]
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "grammar-leak-048",
             userTurn: "What is the one move?",
             coachReply: "The close is the move, so make the final sentence the ask, then stop."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "placeholder-leak-049",
             userTurn: "Can you coach this?",
             coachReply: "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
         ),
-        arenaAppPathScript(
+        explicitNeutralArenaAppPathScript(
             fixtureID: "assistant-wrapper-050",
             userTurn: "This feels like a generic AI wrapper.",
             coachReply: "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
@@ -711,7 +757,7 @@ enum CoachChatConversationCorpus {
         )
     ]
 
-    private static func arenaAppPathScript(
+    private static func explicitNeutralArenaAppPathScript(
         fixtureID: String,
         userTurn: String,
         coachReply: String,
@@ -729,6 +775,7 @@ enum CoachChatConversationCorpus {
                     )
                 ]
             ),
+            assessmentProvenance: .explicitNeutral,
             seedCoachReplies: seedCoachReplies,
             seedProofQuotes: seedProofQuotes
         )
@@ -2698,7 +2745,7 @@ struct CoachChatConversationCorpusTests {
             .filter { !$0.metadataPresent }
             .count
         let semanticGateFailureTurnCount = appPathTurns
-            .filter { !$0.semanticGatePassed }
+            .filter { !$0.semanticGateExpectationSatisfied }
             .count
         let qualityGateEventTotal = report.summary.qualityGateEventCounts.values.reduce(0, +)
         let qualityGateEvents = appPathTurns.flatMap(\.qualityGateEvents)
@@ -2707,6 +2754,9 @@ struct CoachChatConversationCorpusTests {
         let deterministicAssessmentFallbackTurnCount = appPathTurns.filter(\.deterministicAssessmentFallbackApplied).count
         let reliabilityIssueTurnCount = appPathTurns.filter { !$0.reliabilityIssues.isEmpty }.count
         let blockingReliabilityIssueTurnCount = appPathTurns.filter(\.hasBlockingReliabilityIssue).count
+        #expect(appPathFloorFailureCount == 0)
+        #expect(semanticGateFailureTurnCount == 0)
+        #expect(report.passesAppPathFloor)
         #expect(report.passesAppPathFloor == (appPathFloorFailureCount == 0))
         #expect(report.summary.appPathFloorFailureCount == appPathFloorFailureCount)
         #expect(report.summary.visionFloorFailureTurnCount == visionFloorFailureTurnCount)
@@ -2765,21 +2815,36 @@ struct CoachChatConversationCorpusTests {
         }
         #expect(report.summary.qualityGateBlockingFailureTurnCount ==
             appPathTurns.filter(\.qualityGateBlockingFailure).count)
-        let explicitlyStyledRows = report.rows.filter { row in
-            CoachChatEvaluationCorpus.fixtures.first {
-                $0.id == row.sourceFixtureID
-            }?.profile?.chosenStyleGoal != nil
+        let explicitlyStyledRows = report.rows.filter {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.sourceFixtureID) == .passedWithTypedAssessment
         }
-        let neutralRows = report.rows.filter { row in
-            CoachChatEvaluationCorpus.fixtures.first {
-                $0.id == row.sourceFixtureID
-            }?.profile?.chosenStyleGoal == nil
+        let neutralRows = report.rows.filter {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.sourceFixtureID) == .notEvaluatedWithoutTypedAssessment
         }
+        let unknownRows = report.rows.filter {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.sourceFixtureID) == .unknownFixtureFailClosed
+        }
+        #expect(unknownRows.isEmpty)
         #expect(explicitlyStyledRows.flatMap(\.turns).allSatisfy {
-            $0.assessmentConfidence != nil
+            $0.assessmentConfidence != nil &&
+                $0.semanticGateExpectation == .passedWithTypedAssessment &&
+                $0.semanticGatePassed &&
+                $0.typedAssessmentPresent &&
+                $0.semanticGateExpectationSatisfied
         })
         #expect(neutralRows.flatMap(\.turns).allSatisfy {
-            $0.assessmentConfidence == nil
+            $0.assessmentConfidence == nil &&
+                $0.semanticGateExpectation == .notEvaluatedWithoutTypedAssessment &&
+                $0.semanticGateOutcome == "notEvaluated" &&
+                !$0.semanticGatePassed &&
+                !$0.typedAssessmentPresent &&
+                $0.proofTestHash == nil &&
+                !$0.immediateCoachReadExpected &&
+                !$0.immediateCoachReadShown &&
+                $0.semanticGateExpectationSatisfied
         })
         #expect(appPathTurns.allSatisfy { $0.retrievalTrace != nil })
         #expect(appPathTurns.allSatisfy { $0.arenaTrace != nil })
@@ -2868,6 +2933,9 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"uniqueProofTestHashCount\""))
         #expect(json.contains("\"repeatedProofTestHashCount\""))
         #expect(json.contains("\"assessmentConfidence\""))
+        #expect(json.contains("\"semanticGateExpectation\":\"passedWithTypedAssessment\""))
+        #expect(json.contains("\"semanticGateExpectation\":\"notEvaluatedWithoutTypedAssessment\""))
+        #expect(json.contains("\"typedAssessmentPresent\":false"))
         #expect(json.contains("\"qualityGateEvents\""))
         #expect(json.contains("\"visionProductionReadiness\""))
         #expect(json.contains("\"conversationID\":\"polite-pushback-attunement-conversation\""))
@@ -2900,16 +2968,19 @@ struct CoachChatConversationCorpusTests {
         #expect(report.turnCount == expectedTurnCount)
 
         let turns = report.rows.flatMap(\.turns)
-        let explicitlyStyledRows = report.rows.filter { row in
-            CoachChatEvaluationCorpus.fixtures.first {
-                $0.id == row.sourceFixtureID
-            }?.profile?.chosenStyleGoal != nil
+        let explicitlyStyledRows = report.rows.filter {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.sourceFixtureID) == .passedWithTypedAssessment
         }
-        let neutralRows = report.rows.filter { row in
-            CoachChatEvaluationCorpus.fixtures.first {
-                $0.id == row.sourceFixtureID
-            }?.profile?.chosenStyleGoal == nil
+        let neutralRows = report.rows.filter {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.sourceFixtureID) == .notEvaluatedWithoutTypedAssessment
         }
+        let unknownRows = report.rows.filter {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.sourceFixtureID) == .unknownFixtureFailClosed
+        }
+        #expect(unknownRows.isEmpty)
         let explicitlyStyledTurns = explicitlyStyledRows.flatMap(\.turns)
         let neutralTurns = neutralRows.flatMap(\.turns)
         let expectedImmediateReadCount = explicitlyStyledTurns.count
@@ -2923,18 +2994,36 @@ struct CoachChatConversationCorpusTests {
         #expect(explicitlyStyledTurns.allSatisfy {
             $0.timeToFirstVisibleTokenSource == CoachFirstVisibleTokenSource.localImmediateRead.rawValue
         })
-        #expect(explicitlyStyledTurns.allSatisfy { $0.assessmentConfidence != nil })
+        #expect(explicitlyStyledTurns.allSatisfy {
+            $0.assessmentConfidence != nil &&
+                $0.semanticGateExpectation == .passedWithTypedAssessment &&
+                $0.semanticGatePassed &&
+                $0.typedAssessmentPresent &&
+                $0.semanticGateExpectationSatisfied
+        })
         #expect(neutralTurns.allSatisfy { !$0.immediateCoachReadExpected })
         #expect(neutralTurns.allSatisfy { !$0.immediateCoachReadShown })
-        #expect(neutralTurns.allSatisfy { $0.assessmentConfidence == nil })
+        #expect(neutralTurns.allSatisfy {
+            $0.assessmentConfidence == nil &&
+                $0.semanticGateExpectation == .notEvaluatedWithoutTypedAssessment &&
+                $0.semanticGateOutcome == "notEvaluated" &&
+                !$0.semanticGatePassed &&
+                !$0.typedAssessmentPresent &&
+                $0.proofTestHash == nil &&
+                $0.semanticGateExpectationSatisfied
+        })
         #expect(neutralTurns.allSatisfy {
             $0.timeToFirstVisibleTokenSource == CoachFirstVisibleTokenSource.finalReplyCommit.rawValue
         })
         let targetReplyMismatchCount = turns.filter { !$0.targetReplyMatched }.count
         let missingMetadataTurnCount = turns.filter { !$0.metadataPresent }.count
-        let semanticGateFailureTurnCount = turns.filter { !$0.semanticGatePassed }.count
+        let semanticGateFailureTurnCount = turns
+            .filter { !$0.semanticGateExpectationSatisfied }
+            .count
         let qualityGateEventTotal = report.summary.qualityGateEventCounts.values.reduce(0, +)
         let qualityGateEvents = turns.flatMap(\.qualityGateEvents)
+        #expect(semanticGateFailureTurnCount == 0)
+        #expect(report.passesAppPathFloor)
         #expect(report.summary.targetReplyMismatchCount == targetReplyMismatchCount)
         #expect(report.summary.missingMetadataTurnCount == missingMetadataTurnCount)
         #expect(report.summary.semanticGateFailureTurnCount == semanticGateFailureTurnCount)
@@ -3022,7 +3111,150 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"uniqueProofTestHashCount\""))
         #expect(json.contains("\"repeatedProofTestHashCount\""))
         #expect(json.contains("\"assessmentConfidence\""))
+        #expect(json.contains("\"semanticGateExpectation\":\"passedWithTypedAssessment\""))
+        #expect(json.contains("\"semanticGateExpectation\":\"notEvaluatedWithoutTypedAssessment\""))
+        #expect(json.contains("\"typedAssessmentPresent\":false"))
         #expect(json.contains("\"visionProductionReadiness\""))
+    }
+
+    @Test func appPathSemanticExpectationAcceptsOnlyDeclaredNeutralTelemetry() {
+        let coldStart = CoachChatConversationAppPathSemanticExpectation
+            .forFixtureID("cold-start-interview-baseline")
+        let supplemental = CoachChatConversationAppPathSemanticExpectation
+            .forFixtureID("outcome-not-causation-027")
+
+        #expect(coldStart == .notEvaluatedWithoutTypedAssessment)
+        #expect(supplemental == .notEvaluatedWithoutTypedAssessment)
+        #expect(CoachChatConversationCorpus.assessmentProvenance(
+            for: "outcome-not-causation-027"
+        ) == .explicitNeutral)
+        let supplementalNeutralScripts = CoachChatConversationCorpus
+            .appPathConversationScripts
+            .filter { $0.assessmentProvenance == .explicitNeutral }
+        #expect(supplementalNeutralScripts.count == 25)
+        #expect(Set(supplementalNeutralScripts.map {
+            $0.conversation.sourceFixtureID
+        }).count == supplementalNeutralScripts.count)
+        #expect(supplementalNeutralScripts.allSatisfy {
+            CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID($0.conversation.sourceFixtureID) ==
+                .notEvaluatedWithoutTypedAssessment
+        })
+        #expect(supplemental.isSatisfied(
+            semanticGateOutcome: "notEvaluated",
+            typedAssessmentPresent: false,
+            assessmentConfidence: nil,
+            proofTestHash: nil,
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: false
+        ))
+        #expect(!supplemental.isSatisfied(
+            semanticGateOutcome: "passed",
+            typedAssessmentPresent: false,
+            assessmentConfidence: nil,
+            proofTestHash: nil,
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: false
+        ))
+        #expect(!supplemental.isSatisfied(
+            semanticGateOutcome: "notEvaluated",
+            typedAssessmentPresent: false,
+            assessmentConfidence: nil,
+            proofTestHash: "fabricated-neutral-proof",
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: false
+        ))
+        #expect(!supplemental.isSatisfied(
+            semanticGateOutcome: "notEvaluated",
+            typedAssessmentPresent: false,
+            assessmentConfidence: nil,
+            proofTestHash: nil,
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: true
+        ))
+    }
+
+    @Test func appPathSemanticExpectationRejectsStyledMissingAssessment() {
+        let styled = CoachChatConversationAppPathSemanticExpectation
+            .forFixtureID("filler-pressure-prescription")
+
+        #expect(styled == .passedWithTypedAssessment)
+        #expect(!styled.isSatisfied(
+            semanticGateOutcome: "passed",
+            typedAssessmentPresent: false,
+            assessmentConfidence: nil,
+            proofTestHash: nil,
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: false
+        ))
+        #expect(!styled.isSatisfied(
+            semanticGateOutcome: "passed",
+            typedAssessmentPresent: true,
+            assessmentConfidence: 0.72,
+            proofTestHash: nil,
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: false
+        ))
+        #expect(styled.isSatisfied(
+            semanticGateOutcome: "passed",
+            typedAssessmentPresent: true,
+            assessmentConfidence: 0.72,
+            proofTestHash: "proof-test",
+            immediateCoachReadExpected: true,
+            immediateCoachReadShown: true
+        ))
+    }
+
+    @Test func appPathSemanticExpectationFailsClosedForUnknownFixture() {
+        let unknownID = "future-app-path-fixture-without-provenance"
+        let unknown = CoachChatConversationAppPathSemanticExpectation
+            .forFixtureID(unknownID)
+
+        #expect(CoachChatConversationCorpus.assessmentProvenance(
+            for: unknownID
+        ) == nil)
+        #expect(unknown == .unknownFixtureFailClosed)
+        #expect(!unknown.isSatisfied(
+            semanticGateOutcome: "notEvaluated",
+            typedAssessmentPresent: false,
+            assessmentConfidence: nil,
+            proofTestHash: nil,
+            immediateCoachReadExpected: false,
+            immediateCoachReadShown: false
+        ))
+        #expect(!unknown.isSatisfied(
+            semanticGateOutcome: "passed",
+            typedAssessmentPresent: true,
+            assessmentConfidence: 0.72,
+            proofTestHash: "proof-test",
+            immediateCoachReadExpected: true,
+            immediateCoachReadShown: true
+        ))
+    }
+
+    @Test func appPathReportSummaryWarnsForUnknownSemanticProvenance() throws {
+        let clean = Self.cleanAppPathReport(
+            surface: .text,
+            schemaVersion: CoachChatConversationCorpus.appPathReportSchemaVersion,
+            localTargetShapeScore: 85
+        )
+        let sourceRow = try #require(clean.rows.first)
+        let unknownRow = CoachChatConversationAppPathReportRow.make(
+            conversationID: "unknown-provenance-conversation",
+            sourceFixtureID: "future-app-path-fixture-without-provenance",
+            turns: sourceRow.turns
+        )
+        let report = CoachChatConversationAppPathReport.make(
+            rows: [unknownRow],
+            localTargetShapeScore: 85
+        )
+
+        #expect(!unknownRow.passesAppPathFloor)
+        #expect(!report.passesAppPathFloor)
+        #expect(report.summary.semanticGateFailureTurnCount == sourceRow.turns.count)
+        #expect(report.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.semanticGateFailures.rawValue
+        ))
     }
 
     @Test func appPathReportRequiresTrajectoryCacheTelemetryAndCoverage() throws {
@@ -5472,6 +5704,39 @@ struct CoachChatConversationCorpusTests {
                     userText: turn.userTurn,
                     recentTurns: recentTurns
                 )
+                let semanticGateExpectation =
+                    CoachChatConversationAppPathSemanticExpectation
+                        .forFixtureID(conversation.sourceFixtureID)
+                let typedAssessmentPresent = semanticGateExpectation ==
+                    .passedWithTypedAssessment
+                let assessmentConfidence = typedAssessmentPresent
+                    ? 0.68 + (Double((index + conversation.id.count) % 5) * 0.03)
+                    : nil
+                let proofTestHash = typedAssessmentPresent
+                    ? "manifest-\(conversation.id)-\(index)"
+                    : nil
+                let semanticGateOutcome: String? = {
+                    switch semanticGateExpectation {
+                    case .passedWithTypedAssessment:
+                        return "passed"
+                    case .notEvaluatedWithoutTypedAssessment:
+                        return "notEvaluated"
+                    case .unknownFixtureFailClosed:
+                        return nil
+                    }
+                }()
+                let immediateCoachReadExpected = surface == .live &&
+                    typedAssessmentPresent
+                let immediateCoachReadShown = immediateCoachReadExpected
+                let semanticGateContractSatisfied = semanticGateExpectation
+                    .isSatisfied(
+                        semanticGateOutcome: semanticGateOutcome,
+                        typedAssessmentPresent: typedAssessmentPresent,
+                        assessmentConfidence: assessmentConfidence,
+                        proofTestHash: proofTestHash,
+                        immediateCoachReadExpected: immediateCoachReadExpected,
+                        immediateCoachReadShown: immediateCoachReadShown
+                    )
                 defer {
                     recentTurns.append(CoachMessage(role: .user, text: turn.userTurn))
                     recentTurns.append(CoachMessage(role: .coach, text: sanitizedReply))
@@ -5489,9 +5754,11 @@ struct CoachChatConversationCorpusTests {
                     providerTierChosen: nil,
                     providerName: "fixture",
                     providerModel: "clean-app-path-manifest",
-                    semanticGateOutcome: "passed",
+                    semanticGateExpectation: semanticGateExpectation,
+                    semanticGateOutcome: semanticGateOutcome,
                     semanticGateIssue: nil,
-                    semanticGatePassed: true,
+                    semanticGatePassed: semanticGateOutcome == "passed",
+                    typedAssessmentPresent: typedAssessmentPresent,
                     qualityGateOutcome: "passed",
                     qualityGateEvents: ["passed"],
                     qualityGateClean: true,
@@ -5502,10 +5769,10 @@ struct CoachChatConversationCorpusTests {
                     reliabilityIssues: [],
                     visionScore: 90,
                     visionPassesProductionFloor: true,
-                    immediateCoachReadExpected: surface == .live,
-                    immediateCoachReadShown: surface == .live,
-                    assessmentConfidence: 0.68 + (Double((index + conversation.id.count) % 5) * 0.03),
-                    proofTestHash: "manifest-\(conversation.id)-\(index)",
+                    immediateCoachReadExpected: immediateCoachReadExpected,
+                    immediateCoachReadShown: immediateCoachReadShown,
+                    assessmentConfidence: assessmentConfidence,
+                    proofTestHash: proofTestHash,
                     proofTestRecentlyRepeated: false,
                     retrievalTrace: CoachRetrievalTrace(
                         strategy: "clean-app-path-manifest",
@@ -5522,12 +5789,14 @@ struct CoachChatConversationCorpusTests {
                     arenaTrace: nil,
                     timeToFirstVisibleTokenMs: surface == .live ? 1 : nil,
                     timeToFirstVisibleTokenSource: surface == .live
-                        ? CoachFirstVisibleTokenSource.localImmediateRead.rawValue
+                        ? (immediateCoachReadExpected
+                            ? CoachFirstVisibleTokenSource.localImmediateRead.rawValue
+                            : CoachFirstVisibleTokenSource.finalReplyCommit.rawValue)
                         : nil,
                     timeToCompleteReplyMs: 1,
                     trajectoryCacheHit: trajectoryCacheHitForTurn(conversation.id, index),
                     assessmentCacheHit: nil,
-                    passesAppPathFloor: true
+                    passesAppPathFloor: semanticGateContractSatisfied
                 )
             }
             return CoachChatConversationAppPathReportRow.make(
@@ -6361,6 +6630,12 @@ struct CoachChatConversationCorpusTests {
                     }
                     return false
                 }()
+                let semanticGateExpectation =
+                    CoachChatConversationAppPathSemanticExpectation
+                        .forFixtureID(conversation.sourceFixtureID)
+                let typedAssessmentPresent = metadata?.assessment != nil
+                let assessmentConfidence = metadata?.assessmentConfidence ??
+                    metadata?.assessment?.confidence
                 let qualityGateOutcome = metadata?.qualityGateOutcome?.logValue
                 let qualityGateAcceptedFallback = outcomeSucceeded &&
                     (qualityGateOutcome?.hasPrefix("fallback:") == true)
@@ -6402,10 +6677,19 @@ struct CoachChatConversationCorpusTests {
                 }()
                 let immediateCoachReadShown = metadata?.immediateCoachReadShown == true
                 let immediateCoachReadSatisfied = !immediateCoachReadExpected || immediateCoachReadShown
+                let semanticGateContractSatisfied = semanticGateExpectation
+                    .isSatisfied(
+                        semanticGateOutcome: metadata?.semanticGateOutcome?.logValue,
+                        typedAssessmentPresent: typedAssessmentPresent,
+                        assessmentConfidence: assessmentConfidence,
+                        proofTestHash: metadata?.proofTestHash,
+                        immediateCoachReadExpected: immediateCoachReadExpected,
+                        immediateCoachReadShown: immediateCoachReadShown
+                    )
                 let passesAppPathFloor = outcomeSucceeded &&
                     targetReplyMatched &&
                     metadata != nil &&
-                    semanticGatePassed &&
+                    semanticGateContractSatisfied &&
                     qualityGateClean &&
                     blockingReliabilityIssues.isEmpty &&
                     metadata?.visionPassesProductionFloor == true &&
@@ -6441,9 +6725,11 @@ struct CoachChatConversationCorpusTests {
                     providerTierChosen: metadata?.providerTierChosen?.rawValue,
                     providerName: metadata?.providerName,
                     providerModel: metadata?.providerModel,
+                    semanticGateExpectation: semanticGateExpectation,
                     semanticGateOutcome: metadata?.semanticGateOutcome?.logValue,
                     semanticGateIssue: metadata?.semanticGateIssue,
                     semanticGatePassed: semanticGatePassed,
+                    typedAssessmentPresent: typedAssessmentPresent,
                     qualityGateOutcome: qualityGateOutcome,
                     qualityGateEvents: qualityGateEventLogValues,
                     qualityGateClean: qualityGateClean,
@@ -6456,7 +6742,7 @@ struct CoachChatConversationCorpusTests {
                     visionPassesProductionFloor: metadata?.visionPassesProductionFloor,
                     immediateCoachReadExpected: immediateCoachReadExpected,
                     immediateCoachReadShown: immediateCoachReadShown,
-                    assessmentConfidence: metadata?.assessmentConfidence ?? metadata?.assessment?.confidence,
+                    assessmentConfidence: assessmentConfidence,
                     proofTestHash: metadata?.proofTestHash,
                     proofTestRecentlyRepeated: metadata?.proofTestRecentlyRepeated,
                     retrievalTrace: metadata?.retrievalTrace,

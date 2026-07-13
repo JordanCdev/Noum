@@ -58,11 +58,16 @@ Focused post-change verification passed the explicit-style trust-boundary suites
 failures), and unified availability run (69 tests across six suites, zero
 failures or skips), including the exhaustive four-mode ×
 four-availability-snapshot × live-IM matrix. The final integrated current
-working tree then passed all 3,920 `NoumTests` tests across 406 suites with zero
+working tree then passed all 3,924 `NoumTests` tests across 406 suites with zero
 failures, and its unsigned Release simulator build succeeded. The intentional
 neutral cold-start coach fixture remains required live-provider coverage but
-correctly carries no typed style assessment; evidence telemetry now rejects a
-fabricated/default voice for that fixture and fails closed when a styled or
+correctly carries no typed style assessment. App-path evidence now records an
+explicit styled, neutral, or unknown semantic expectation: styled turns require
+a passed gate plus typed assessment provenance; known neutral turns require an
+honest `notEvaluated` result with no typed assessment; unknown IDs fail closed.
+All 25 supplemental arena scenarios declare neutral provenance at construction
+rather than inheriting it from a missing fixture. Evidence telemetry rejects a
+fabricated/default voice for neutral scenarios and fails closed when a styled or
 unknown fixture lacks its required assessment. The historical `40d5e903`
 app-path artifact and 3,872-test run documented below remain valid only for that
 named source. The canonical coach evidence still needs regeneration after the

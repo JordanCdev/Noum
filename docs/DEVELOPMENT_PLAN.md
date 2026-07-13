@@ -12,7 +12,7 @@ The newer explicit-style, rendered-Home ownership, unified four-mode
 availability, Train/Prep projection, active-week phrase handoff, and historical
 privacy-document quarantine work, including the account- and route-bound Timed
 prompt handoff, passed the final integrated current-working-tree regression:
-3,920 tests across 406 suites with zero failures. Its unsigned Release simulator
+3,924 tests across 406 suites with zero failures. Its unsigned Release simulator
 build also succeeded. A clean commit and source-bound coach-evidence refresh are
 the remaining local steps before this plan treats the canonical evidence as
 current.

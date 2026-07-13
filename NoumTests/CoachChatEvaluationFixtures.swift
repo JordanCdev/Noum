@@ -2016,6 +2016,67 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
     }
 }
 
+enum CoachChatConversationAppPathSemanticExpectation: String, Codable, Equatable {
+    /// A chosen voice authorizes typed judgement, so both the assessment and
+    /// its semantic gate must be present and successful.
+    case passedWithTypedAssessment
+    /// A known fixture without an explicit voice must stay neutral. Reporting
+    /// `passed` here would imply that a style-specific assessment existed.
+    case notEvaluatedWithoutTypedAssessment
+    /// New or misspelled fixture IDs never inherit the neutral exception.
+    case unknownFixtureFailClosed
+
+    static func forFixtureID(_ fixtureID: String) -> Self {
+        guard let provenance = CoachChatConversationCorpus
+            .assessmentProvenance(for: fixtureID) else {
+            return .unknownFixtureFailClosed
+        }
+        switch provenance {
+        case .explicitNeutral:
+            return .notEvaluatedWithoutTypedAssessment
+        case .fixtureBacked:
+            guard let fixture = CoachChatEvaluationCorpus.fixtures.first(where: {
+                $0.id == fixtureID
+            }) else {
+                return .unknownFixtureFailClosed
+            }
+            return fixture.profile?.chosenStyleGoal == nil
+                ? .notEvaluatedWithoutTypedAssessment
+                : .passedWithTypedAssessment
+        }
+    }
+
+    func isSatisfied(
+        semanticGateOutcome: String?,
+        typedAssessmentPresent: Bool,
+        assessmentConfidence: Double?,
+        proofTestHash: String?,
+        immediateCoachReadExpected: Bool,
+        immediateCoachReadShown: Bool
+    ) -> Bool {
+        let hasProofTestHash = proofTestHash?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        switch self {
+        case .passedWithTypedAssessment:
+            return semanticGateOutcome == "passed" &&
+                typedAssessmentPresent &&
+                assessmentConfidence != nil &&
+                hasProofTestHash &&
+                (!immediateCoachReadExpected || immediateCoachReadShown)
+        case .notEvaluatedWithoutTypedAssessment:
+            return semanticGateOutcome == "notEvaluated" &&
+                !typedAssessmentPresent &&
+                assessmentConfidence == nil &&
+                !hasProofTestHash &&
+                !immediateCoachReadExpected &&
+                !immediateCoachReadShown
+        case .unknownFixtureFailClosed:
+            return false
+        }
+    }
+}
+
 struct CoachChatConversationAppPathReport: Codable, Equatable {
     let schemaVersion: String
     let surface: String
@@ -2101,7 +2162,14 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         let floorFailures = rows.filter { !$0.passesAppPathFloor }
         let targetReplyMismatchCount = turns.filter { !$0.targetReplyMatched }.count
         let missingMetadataTurnCount = turns.filter { !$0.metadataPresent }.count
-        let semanticGateFailureTurnCount = turns.filter { !$0.semanticGatePassed }.count
+        let semanticGateFailureTurnCount = rows.reduce(0) { count, row in
+            let expected = CoachChatConversationAppPathSemanticExpectation
+                .forFixtureID(row.sourceFixtureID)
+            return count + row.turns.filter { turn in
+                turn.semanticGateExpectation != expected ||
+                    !turn.semanticGateExpectationSatisfied
+            }.count
+        }
         let qualityGateEventCounts = eventCounts(
             turns.flatMap(\.qualityGateEvents)
         )
@@ -2320,7 +2388,13 @@ struct CoachChatConversationAppPathReportRow: Codable, Equatable {
         sourceFixtureID: String,
         turns: [CoachChatConversationAppPathTurnRow]
     ) -> CoachChatConversationAppPathReportRow {
-        CoachChatConversationAppPathReportRow(
+        let expectedSemanticGate = CoachChatConversationAppPathSemanticExpectation
+            .forFixtureID(sourceFixtureID)
+        let semanticGateContractSatisfied = turns.allSatisfy { turn in
+            turn.semanticGateExpectation == expectedSemanticGate &&
+                turn.semanticGateExpectationSatisfied
+        }
+        return CoachChatConversationAppPathReportRow(
             conversationID: conversationID,
             sourceFixtureID: sourceFixtureID,
             turnCount: turns.count,
@@ -2328,7 +2402,9 @@ struct CoachChatConversationAppPathReportRow: Codable, Equatable {
             targetRepliesMatched: turns.allSatisfy(\.targetReplyMatched),
             turnDepths: turns.compactMap(\.turnDepth),
             proofTestHashes: turns.compactMap(\.proofTestHash),
-            passesAppPathFloor: !turns.isEmpty && turns.allSatisfy(\.passesAppPathFloor),
+            passesAppPathFloor: !turns.isEmpty &&
+                semanticGateContractSatisfied &&
+                turns.allSatisfy(\.passesAppPathFloor),
             turns: turns
         )
     }
@@ -2347,9 +2423,12 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let providerTierChosen: String?
     let providerName: String?
     let providerModel: String?
+    let semanticGateExpectation: CoachChatConversationAppPathSemanticExpectation
     let semanticGateOutcome: String?
     let semanticGateIssue: String?
+    /// Truthful raw telemetry: false for an intentional neutral `notEvaluated`.
     let semanticGatePassed: Bool
+    let typedAssessmentPresent: Bool
     let qualityGateOutcome: String?
     let qualityGateEvents: [String]
     let qualityGateClean: Bool
@@ -2376,6 +2455,17 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let trajectoryCacheHit: Bool?
     let assessmentCacheHit: Bool?
     let passesAppPathFloor: Bool
+
+    var semanticGateExpectationSatisfied: Bool {
+        semanticGateExpectation.isSatisfied(
+            semanticGateOutcome: semanticGateOutcome,
+            typedAssessmentPresent: typedAssessmentPresent,
+            assessmentConfidence: assessmentConfidence,
+            proofTestHash: proofTestHash,
+            immediateCoachReadExpected: immediateCoachReadExpected,
+            immediateCoachReadShown: immediateCoachReadShown
+        )
+    }
 
     var blockingReliabilityIssues: [String] {
         reliabilityIssues.filter { label in

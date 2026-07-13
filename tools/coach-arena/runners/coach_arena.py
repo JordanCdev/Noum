@@ -896,6 +896,20 @@ def clipped_text(value, limit=SOURCE_APP_PATH_SNIPPET_LIMIT):
     return compact[:limit].rstrip() + "..."
 
 
+def source_app_path_semantic_gate_satisfied(turn):
+    expectation = turn.get("semanticGateExpectation")
+    outcome = turn.get("semanticGateOutcome")
+    typed_assessment_present = turn.get("typedAssessmentPresent")
+
+    if expectation == "passedWithTypedAssessment":
+        return outcome == "passed" and typed_assessment_present is True
+    if expectation == "notEvaluatedWithoutTypedAssessment":
+        return outcome == "notEvaluated" and typed_assessment_present is False
+    # Unknown expectations and legacy artifacts without provenance metadata
+    # cannot inherit either the styled or explicitly neutral exception.
+    return False
+
+
 def source_app_path_failure_samples(report):
     samples = []
     total = 0
@@ -904,12 +918,12 @@ def source_app_path_failure_samples(report):
         source_fixture_id = row.get("sourceFixtureID")
         for turn in row.get("turns", []):
             kinds = []
-            if turn.get("passesAppPathFloor") is False:
+            if turn.get("passesAppPathFloor") is not True:
                 kinds.append("appPathFloor")
             if turn.get("targetReplyMatched") is False:
                 kinds.append("targetReplyMismatch")
             semantic_outcome = turn.get("semanticGateOutcome")
-            if semantic_outcome and semantic_outcome != "passed":
+            if not source_app_path_semantic_gate_satisfied(turn):
                 kinds.append("semanticGate")
             if turn.get("visionPassesProductionFloor") is False:
                 kinds.append("visionFloor")
@@ -934,7 +948,9 @@ def source_app_path_failure_samples(report):
                 "userTurn": clipped_text(turn.get("userTurn")),
                 "finalCoachReply": clipped_text(turn.get("finalCoachReply")),
                 "targetCoachReply": clipped_text(turn.get("targetCoachReply")),
+                "semanticGateExpectation": turn.get("semanticGateExpectation"),
                 "semanticGateOutcome": semantic_outcome,
+                "typedAssessmentPresent": turn.get("typedAssessmentPresent"),
                 "qualityGateOutcome": turn.get("qualityGateOutcome"),
                 "qualityGateEvents": quality_events,
                 "reliabilityIssues": turn.get("reliabilityIssues") or [],

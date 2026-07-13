@@ -477,6 +477,137 @@ class AppPathBoundaryTests(unittest.TestCase):
             ],
         )
 
+    def test_app_path_failure_sampler_accepts_clean_declared_neutral_turn(self):
+        report = {
+            "rows": [{
+                "conversationID": "neutral-conversation",
+                "sourceFixtureID": "cold-start-interview-baseline",
+                "turns": [{
+                    "turnIndex": 0,
+                    "passesAppPathFloor": True,
+                    "targetReplyMatched": True,
+                    "semanticGateExpectation": "notEvaluatedWithoutTypedAssessment",
+                    "semanticGateOutcome": "notEvaluated",
+                    "typedAssessmentPresent": False,
+                    "visionPassesProductionFloor": True,
+                    "qualityGateEvents": ["passed"],
+                }],
+            }],
+        }
+
+        samples, total = arena.source_app_path_failure_samples(report)
+
+        self.assertEqual(samples, [])
+        self.assertEqual(total, 0)
+
+    def test_app_path_failure_sampler_rejects_fabricated_neutral_assessment(self):
+        report = {
+            "rows": [{
+                "conversationID": "fabricated-neutral-conversation",
+                "sourceFixtureID": "cold-start-interview-baseline",
+                "turns": [{
+                    "turnIndex": 0,
+                    "passesAppPathFloor": True,
+                    "targetReplyMatched": True,
+                    "semanticGateExpectation": "notEvaluatedWithoutTypedAssessment",
+                    "semanticGateOutcome": "passed",
+                    "typedAssessmentPresent": True,
+                    "visionPassesProductionFloor": True,
+                    "qualityGateEvents": ["passed"],
+                }],
+            }],
+        }
+
+        samples, total = arena.source_app_path_failure_samples(report)
+
+        self.assertEqual(total, 1)
+        self.assertEqual(samples[0]["failureKinds"], ["semanticGate"])
+        self.assertEqual(
+            samples[0]["semanticGateExpectation"],
+            "notEvaluatedWithoutTypedAssessment",
+        )
+        self.assertIs(samples[0]["typedAssessmentPresent"], True)
+
+    def test_app_path_failure_sampler_requires_passed_typed_styled_assessment(self):
+        styled_base = {
+            "passesAppPathFloor": True,
+            "targetReplyMatched": True,
+            "semanticGateExpectation": "passedWithTypedAssessment",
+            "visionPassesProductionFloor": True,
+            "qualityGateEvents": ["passed"],
+        }
+        report = {
+            "rows": [{
+                "conversationID": "styled-conversation",
+                "sourceFixtureID": "filler-pressure-prescription",
+                "turns": [
+                    {
+                        **styled_base,
+                        "turnIndex": 0,
+                        "semanticGateOutcome": "passed",
+                        "typedAssessmentPresent": True,
+                    },
+                    {
+                        **styled_base,
+                        "turnIndex": 1,
+                        "semanticGateOutcome": "passed",
+                        "typedAssessmentPresent": False,
+                    },
+                    {
+                        **styled_base,
+                        "turnIndex": 2,
+                        "semanticGateOutcome": "notEvaluated",
+                        "typedAssessmentPresent": True,
+                    },
+                ],
+            }],
+        }
+
+        samples, total = arena.source_app_path_failure_samples(report)
+
+        self.assertEqual(total, 2)
+        self.assertEqual([sample["turnIndex"] for sample in samples], [1, 2])
+        self.assertTrue(all(
+            sample["failureKinds"] == ["semanticGate"]
+            for sample in samples
+        ))
+
+    def test_app_path_failure_sampler_fails_closed_for_legacy_and_unknown_provenance(self):
+        clean_base = {
+            "passesAppPathFloor": True,
+            "targetReplyMatched": True,
+            "semanticGateOutcome": "passed",
+            "visionPassesProductionFloor": True,
+            "qualityGateEvents": ["passed"],
+        }
+        report = {
+            "rows": [{
+                "conversationID": "unknown-provenance-conversation",
+                "sourceFixtureID": "future-app-path-fixture",
+                "turns": [
+                    {
+                        **clean_base,
+                        "turnIndex": 0,
+                    },
+                    {
+                        **clean_base,
+                        "turnIndex": 1,
+                        "semanticGateExpectation": "unknownFixtureFailClosed",
+                        "typedAssessmentPresent": True,
+                    },
+                ],
+            }],
+        }
+
+        samples, total = arena.source_app_path_failure_samples(report)
+
+        self.assertEqual(total, 2)
+        self.assertEqual([sample["turnIndex"] for sample in samples], [0, 1])
+        self.assertTrue(all(
+            sample["failureKinds"] == ["semanticGate"]
+            for sample in samples
+        ))
+
     def test_source_app_path_warnings_fail_real_pipeline_gate_without_hiding_scores(self):
         coverage = {
             "source": "appPathReport",
