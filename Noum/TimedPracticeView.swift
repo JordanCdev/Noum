@@ -1666,6 +1666,7 @@ struct TimedPracticeView: View {
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
+                        .accessibilityIdentifier("timedPractice.prompt")
 
                     if let wordOfTheDayTarget {
                         wordOfTheDayDarkCue(wordOfTheDayTarget)
@@ -1742,6 +1743,7 @@ struct TimedPracticeView: View {
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("timedPractice.prompt")
                 if let wordOfTheDayTarget {
                     wordOfTheDayLightCue(wordOfTheDayTarget)
                 }
@@ -1970,6 +1972,7 @@ struct TimedPracticeView: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 12)
+                        .accessibilityIdentifier("timedPractice.prompt")
                 }
 
                 // Filler count — subtle
@@ -2110,6 +2113,7 @@ struct TimedPracticeView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .accessibilityIdentifier("timedPractice.prompt")
                     Spacer()
                 }
                 .padding(.horizontal, 16)
@@ -2266,6 +2270,7 @@ struct TimedPracticeView: View {
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
+                .accessibilityIdentifier("timedPractice.prompt")
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 20)
@@ -2505,6 +2510,7 @@ struct TimedPracticeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+                .accessibilityIdentifier("timedPractice.prompt")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)

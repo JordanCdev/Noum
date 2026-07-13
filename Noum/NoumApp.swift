@@ -228,6 +228,16 @@ struct NoumApp: App {
         .task {
             await authManager.bootstrapInitialAccountIfNeeded()
             await MainActor.run {
+                #if DEBUG
+                // Account-scoped UI fixtures must be installed only after the
+                // account registry has hydrated. Seeding them in `init` would
+                // write to the pre-bootstrap guest key and Home would correctly
+                // resolve no current plan for the hydrated account.
+                if authManager.initialAccountHydrationState == .ready,
+                   ProcessInfo.processInfo.arguments.contains("UI_TESTING_FORWARD_PLAN_PHRASE") {
+                    DevSeedData.injectForwardPlanPhraseForUITesting()
+                }
+                #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()
@@ -241,6 +251,11 @@ struct NoumApp: App {
             // account-scoped store. Observing an ID earlier would risk treating
             // a returning account as fresh while its profile was still loading.
             Task { @MainActor in
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("UI_TESTING_FORWARD_PLAN_PHRASE") {
+                    DevSeedData.injectForwardPlanPhraseForUITesting()
+                }
+                #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()

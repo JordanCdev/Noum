@@ -105,6 +105,46 @@ final class GoalOutcomeLoopUITests: XCTestCase {
     }
 
     @MainActor
+    func testActiveWeekPhraseLaunchesExactPromptFromHome() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_FORWARD_PLAN_PHRASE",
+            "UI_TESTING_MICROPHONE_GRANTED",
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["home.screen"].waitForExistence(timeout: 15))
+        let plannedPhrase = app.buttons["home.coachCard.planPhrase"]
+        scrollUntilHittable(plannedPhrase, in: app, attempts: 6)
+        XCTAssertTrue(
+            plannedPhrase.waitForExistence(timeout: 8),
+            "The active plan week should render its assigned Phrase Bank line on Home."
+        )
+        XCTAssertGreaterThanOrEqual(plannedPhrase.frame.height, 44)
+        plannedPhrase.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
+        revealTimedPrompt(in: app)
+
+        let expectedPrompt =
+            "Say this line in your own voice: Lead with the decision, then give one reason."
+        let routedPrompt = app.staticTexts["timedPractice.prompt"]
+        XCTAssertTrue(routedPrompt.waitForExistence(timeout: 8))
+        XCTAssertEqual(
+            routedPrompt.label,
+            expectedPrompt,
+            "Home must deliver the exact saved line through the bounded Timed handoff."
+        )
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "active-week-phrase-timed-prompt"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     private func openDetails(in app: XCUIApplication) {
         let toggle = app.descendants(matching: .any)["summary.details.toggle"]
         scrollUntilHittable(toggle, in: app, attempts: 8)
@@ -133,6 +173,21 @@ final class GoalOutcomeLoopUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.4)
         }
         XCTFail("Injected prescribed Timed rep did not return to Summary")
+    }
+
+    @MainActor
+    private func revealTimedPrompt(in app: XCUIApplication) {
+        for identifier in ["timedPractice.begin", "timedPractice.startNow"] {
+            let button = app.buttons[identifier]
+            if button.waitForExistence(timeout: 3) {
+                scrollUntilHittable(button, in: app, attempts: 3)
+                if button.isHittable {
+                    button.tap()
+                    return
+                }
+            }
+        }
+        XCTFail("Timed Practice did not expose a start action")
     }
 
     @MainActor

@@ -35,6 +35,12 @@ enum SeedProfile: String, CaseIterable {
 
 enum DevSeedData {
 
+    /// Stable, non-sensitive copy used only by the rendered active-week phrase
+    /// handoff test. Keeping the fixture here lets the test populate the real
+    /// account-scoped owners without adding a parallel UI-test store.
+    static let forwardPlanPhraseUITestText =
+        "Lead with the decision, then give one reason."
+
     // MARK: - Public API
 
     /// Generate a set of practice sessions for a given seed profile.
@@ -113,6 +119,37 @@ enum DevSeedData {
             now: Date()
         )
         populateCoachIntelligenceFixture(fixture)
+    }
+
+    /// Populate the real Phrase Bank and Forward Plan owners with one current-
+    /// week assignment. This is deliberately separate from the general seed so
+    /// screenshot tours and unrelated UI tests do not gain an artificial plan.
+    @MainActor
+    static func injectForwardPlanPhraseForUITesting() {
+        let planStore = ForwardPlanStore.shared
+        let phraseBank = PhraseBankStore.shared
+        let plan = ForwardPlanService.deterministicPlan(
+            input: ForwardPlanCoordinator.buildInput()
+        )
+        planStore.replace(plan)
+
+        guard let entry = phraseBank.save(
+            text: forwardPlanPhraseUITestText,
+            voice: CoachingProfileStore.shared.profile?.chosenStyleGoal,
+            weakness: .concise,
+            intensity: .medium
+        ),
+        let target = ForwardPlanPhraseProjection.target(plan: planStore.activePlan) else {
+            return
+        }
+
+        _ = ForwardPlanPhraseCoordinator.assign(
+            entryID: entry.id,
+            renderedTarget: target,
+            currentPlan: planStore.activePlan,
+            phraseBank: phraseBank,
+            planStore: planStore
+        )
     }
 
     // MARK: - Coach-intelligence fixture

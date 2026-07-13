@@ -267,7 +267,11 @@ struct HomeCoachCard: View {
                 .accessibilityIdentifier("home.coachCard.begin")
             }
 
-            if showsPlanArc {
+            // The cohesive Home intentionally suppresses the generic plan arc,
+            // but an explicitly saved line is a concrete current-week action,
+            // not extra dashboard furniture. Let that one bounded handoff
+            // surface without reopening the broader plan row.
+            if showsPlanArc || currentPlannedPhrase != nil {
                 planArcRow
             }
         }
@@ -597,15 +601,7 @@ struct HomeCoachCard: View {
             sessions: sessionStore.sessions,
             activeBigMomentID: bigMomentStore.activeMoment?.id
         )
-        let currentPlan = forwardPlanStore.currentPlan(
-            activeBigMomentID: bigMomentStore.activeMoment?.id,
-            chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
-        )
-        let plannedPhrase = ForwardPlanPhraseProjection.resolve(
-            plan: currentPlan,
-            entries: phraseBankStore.entries
-        )
-        if let plannedPhrase {
+        if let plannedPhrase = currentPlannedPhrase {
             Button {
                 startPlannedPhrase(plannedPhrase)
             } label: {
@@ -667,6 +663,17 @@ struct HomeCoachCard: View {
             .accessibilityLabel(Text("Your four-week plan. \(line). Opens the coach thread."))
             .accessibilityIdentifier("home.coachCard.planArc")
         }
+    }
+
+    private var currentPlannedPhrase: ForwardPlanPhraseProjection? {
+        let currentPlan = forwardPlanStore.currentPlan(
+            activeBigMomentID: bigMomentStore.activeMoment?.id,
+            chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
+        )
+        return ForwardPlanPhraseProjection.resolve(
+            plan: currentPlan,
+            entries: phraseBankStore.entries
+        )
     }
 
     private func startPlannedPhrase(_ projection: ForwardPlanPhraseProjection) {
