@@ -101,6 +101,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var connectionError: String?
     @Published var activeProviderName: String = ""
     private var activeProviderIdentifier: String
+    @Published private(set) var transcriptionRouteNotice: TranscriptionRouteNotice?
     @Published var microphonePermissionState: PracticeMicrophonePermissionState = .current()
     @Published private(set) var recordingLifecycle: RecordingLifecycleState = .idle
 
@@ -300,6 +301,37 @@ class SpeechRecognizerViewModel: ObservableObject {
         )
     }
 
+    /// Maps the provider's resolved startup route to content-free UI state.
+    /// Deliberate local use stays quiet; only an attempted cloud route that
+    /// resolved locally is relevant to the user.
+    nonisolated static func routeNotice(
+        requestedCloud: Bool,
+        resolvedProviderIdentifier: String
+    ) -> TranscriptionRouteNotice? {
+        guard requestedCloud,
+              resolvedProviderIdentifier == TranscriptionProviderID.local.rawValue else {
+            return nil
+        }
+        return .cloudStartupFallback
+    }
+
+    /// Clears the previous rep's route before any new provider decision.
+    func beginTranscriptionRouteDecision() {
+        transcriptionRouteNotice = nil
+    }
+
+    /// Publishes only the resolved startup route. Midstream failures never
+    /// pass through this method, preserving the no-replay provider boundary.
+    func recordTranscriptionRouteResolution(
+        requestedCloud: Bool,
+        resolvedProviderIdentifier: String
+    ) {
+        transcriptionRouteNotice = Self.routeNotice(
+            requestedCloud: requestedCloud,
+            resolvedProviderIdentifier: resolvedProviderIdentifier
+        )
+    }
+
     /// Shared provider factory. The live coach call (`AskNoumVoiceInput`)
     /// reuses this so its cloud STT chain is constructed from the EXACT
     /// providers practice reps stream through — one registry, no parallel
@@ -394,6 +426,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @discardableResult
     func startRecordingAwaitingReadiness() async -> Bool {
         guard !recordingLifecycle.isBusy else { return isRecording }
+        beginTranscriptionRouteDecision()
         prepareForInteractiveUse()
         refreshRecordPermission()
         if microphonePermissionState.blocksRecording {
@@ -481,6 +514,10 @@ class SpeechRecognizerViewModel: ObservableObject {
                 activeProviderIdentifier = resolvedProviderIdentifier
                 activeProviderName = TranscriptionProviderID(rawValue: resolvedProviderIdentifier)?.displayName ?? resolvedProviderIdentifier
             }
+            recordTranscriptionRouteResolution(
+                requestedCloud: requestedCloud,
+                resolvedProviderIdentifier: resolvedProviderIdentifier
+            )
             FlowEventLog.shared.recordTranscriptionRoute(
                 correlationId: currentRepCorrelationID,
                 requestedCloud: requestedCloud,

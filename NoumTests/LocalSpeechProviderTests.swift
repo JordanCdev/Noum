@@ -48,6 +48,50 @@ struct LocalSpeechProviderTests {
         #expect(await fallback.starts == 0)
     }
 
+    @Test func cloudStartupFallbackProducesContentFreeNotice() {
+        let notice = SpeechRecognizerViewModel.routeNotice(
+            requestedCloud: true,
+            resolvedProviderIdentifier: TranscriptionProviderID.local.rawValue
+        )
+
+        #expect(notice == .cloudStartupFallback)
+        #expect(notice?.title == "Continuing on this device")
+        #expect(notice?.message == "Cloud transcription wasn’t available at startup, so this rep is staying on this device. No rep audio was sent to a cloud speech provider.")
+        #expect(notice?.accessibilityLabel == "Continuing on this device. Cloud transcription wasn’t available at startup, so this rep is staying on this device. No rep audio was sent to a cloud speech provider.")
+    }
+
+    @Test func deliberateLocalRouteStaysQuiet() {
+        let notice = SpeechRecognizerViewModel.routeNotice(
+            requestedCloud: false,
+            resolvedProviderIdentifier: TranscriptionProviderID.local.rawValue
+        )
+
+        #expect(notice == nil)
+    }
+
+    @Test func successfulCloudRouteStaysQuiet() {
+        let notice = SpeechRecognizerViewModel.routeNotice(
+            requestedCloud: true,
+            resolvedProviderIdentifier: TranscriptionProviderID.deepgram.rawValue
+        )
+
+        #expect(notice == nil)
+    }
+
+    @MainActor
+    @Test func nextRouteDecisionClearsPreviousFallbackNotice() {
+        let recognizer = SpeechRecognizerViewModel(preloadOnInit: false)
+        recognizer.recordTranscriptionRouteResolution(
+            requestedCloud: true,
+            resolvedProviderIdentifier: TranscriptionProviderID.local.rawValue
+        )
+        #expect(recognizer.transcriptionRouteNotice == .cloudStartupFallback)
+
+        recognizer.beginTranscriptionRouteDecision()
+
+        #expect(recognizer.transcriptionRouteNotice == nil)
+    }
+
     private var config: TranscriptionConfig {
         TranscriptionConfig(
             languageCode: "en-US",

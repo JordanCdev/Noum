@@ -159,6 +159,7 @@ struct IMPracticeView: View {
                 .padding(.top, 4)
             }
         }
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .accessibilityIdentifier("imPractice.screen")
         .safeAreaInset(edge: .bottom) {
             if !isSessionActive && !isEndingConversation {

@@ -382,6 +382,7 @@ struct AhCounterView: View {
             )
             .padding(.top, 4)
         }
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(speechVM.isRecording)

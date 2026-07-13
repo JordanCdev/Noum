@@ -150,6 +150,7 @@ struct SuddenDeathPracticeView: View {
         // it. Rhetorical findings still surface in the post-session
         // `EloquenceFindingsCard` driven by the same engine output, so
         // the user gets credit without the intra-round interruption.
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .accessibilityIdentifier(phaseGroup == .result ? "suddenDeath.result.screen" : "suddenDeath.screen")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)

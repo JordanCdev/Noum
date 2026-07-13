@@ -820,6 +820,7 @@ struct TimedPracticeView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(phase == .speaking || phase == .thinking)
