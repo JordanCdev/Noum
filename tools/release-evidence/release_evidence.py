@@ -16,10 +16,11 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 TOOL_ROOT = Path(__file__).resolve().parent
@@ -61,42 +62,86 @@ PLACEHOLDER_VALUES = {
 EVIDENCE_REFERENCE_PREFIX = "evidence://"
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 OPERATIONAL_PREREQUISITES = {
-    "cloudOperationsProbePassed": (
-        "cloudOperationsProbeReference", "cloudOperationsProbeOutput",
-    ),
-    "historicalCredentialIncidentClosed": (
-        "historicalCredentialIncidentClosureReference", "credentialIncidentClosure",
-    ),
-    "legacyTranscriptionEndpointProtectedOrDisabled": (
-        "legacyTranscriptionEndpointVerificationReference", "legacyEndpointVerification",
-    ),
-    "exposedProviderCredentialsRevoked": (
-        "providerCredentialRevocationReference", "providerCredentialRevocation",
-    ),
-    "providerUsageAndBillingAuditComplete": (
-        "providerUsageAndBillingAuditReference", "providerUsageBillingAudit",
-    ),
-    "fullHistorySecretFindingsAdjudicated": (
-        "fullHistorySecretReviewReference", "fullHistorySecretReview",
-    ),
-    "releaseBundleSecretScanPassed": (
-        "releaseBundleSecretScanReference", "releaseBundleSecretScan",
-    ),
-    "protectedSocialCutoverCompleted": (
-        "protectedSocialCutoverReference", "protectedSocialCutover",
-    ),
-    "socialMigrationDryRunPassed": (
-        "socialMigrationDryRunReference", "socialMigrationDryRun",
-    ),
-    "trustedSocialEvidenceProducerDeployed": (
-        "trustedSocialEvidenceProducerReference", "trustedSocialEvidenceProducer",
-    ),
-    "customPrivacyDomainVerified": (
-        "customPrivacyDomainVerificationReference", "customPrivacyDomainVerification",
-    ),
-    "appleReleaseServicesConfigured": (
-        "appleReleaseServicesReference", "appleReleaseServicesConfiguration",
-    ),
+    "cloudOperationsProbePassed": {
+        "evidenceKind": "cloudOperationsProbeOutput",
+        "environment": "production",
+    },
+    "historicalCredentialIncidentClosed": {
+        "evidenceKind": "credentialIncidentClosure",
+        "environment": "production",
+    },
+    "legacyTranscriptionEndpointProtectedOrDisabled": {
+        "evidenceKind": "legacyEndpointVerification",
+        "environment": "production",
+    },
+    "exposedProviderCredentialsRevoked": {
+        "evidenceKind": "providerCredentialRevocation",
+        "environment": "productionProvider",
+    },
+    "providerUsageAndBillingAuditComplete": {
+        "evidenceKind": "providerUsageBillingAudit",
+        "environment": "productionProvider",
+    },
+    "fullHistorySecretFindingsAdjudicated": {
+        "evidenceKind": "fullHistorySecretReview",
+        "environment": "repositoryHistory",
+    },
+    "releaseBundleSecretScanPassed": {
+        "evidenceKind": "releaseBundleSecretScan",
+        "environment": "releaseCandidate",
+    },
+    "protectedSocialCutoverCompleted": {
+        "evidenceKind": "protectedSocialCutover",
+        "environment": "production",
+    },
+    "socialMigrationDryRunPassed": {
+        "evidenceKind": "socialMigrationDryRun",
+        "environment": "production",
+    },
+    "trustedSocialEvidenceProducerDeployed": {
+        "evidenceKind": "trustedSocialEvidenceProducer",
+        "environment": "production",
+    },
+    "customPrivacyDomainVerified": {
+        "evidenceKind": "customPrivacyDomainVerification",
+        "environment": "production",
+    },
+    "appleReleaseServicesConfigured": {
+        "evidenceKind": "appleReleaseServicesConfiguration",
+        "environment": "appStoreConnect",
+    },
+}
+OPERATIONAL_PREREQUISITE_REQUIRED_FIELDS = {
+    "key", "completed", "evidenceReference", "evidenceKind",
+    "verificationReference", "commandOrReviewOutputReference",
+    "releaseCandidateBuild", "environment", "completedAtISO8601",
+    "performedByID", "verifiedAtISO8601", "verifiedByID",
+    "verifiedByRole", "notes",
+}
+HISTORY_SECRET_SCANNER = "gitleaks"
+HISTORY_SECRET_SCANNER_VERSION = "8.30.1"
+HISTORY_SECRET_SCAN_SCOPE = "all-reachable-commits"
+HISTORY_SECRET_MIN_KNOWN_FINDINGS = 3
+HISTORY_SECRET_REPORT_MAX_BYTES = 25 * 1024 * 1024
+KNOWN_HISTORY_CREDENTIAL_COMMITS = {
+    "277e2b388bb17d603011277a819b0bcaae517404",
+}
+HISTORY_SECRET_DISPOSITION_EVIDENCE_KINDS = {
+    "revoked": "secretFindingRevocation",
+    "invalidated": "secretFindingInvalidation",
+    "falsePositive": "secretFindingFalsePositiveReview",
+    "publicIdentifier": "secretFindingPublicIdentifierReview",
+}
+HISTORY_SECRET_ADJUDICATION_REQUIRED_FIELDS = {
+    "scanner", "scannerVersion", "scanScope", "scannedRepositoryCommit",
+    "redactionPercent", "reachableCommitCount", "reachableCommitSetSha256",
+    "redactedScanReportReference", "detectedFindingCount",
+    "adjudicatedFindingCount", "unresolvedFindingCount",
+    "suppressedFindingCount", "findings",
+}
+HISTORY_SECRET_FINDING_REQUIRED_FIELDS = {
+    "findingID", "detectorRuleID", "commit", "path", "disposition",
+    "statusEvidenceReference",
 }
 
 
@@ -147,14 +192,37 @@ def usable_text(value) -> bool:
     )
 
 
-def valid_iso8601(value) -> bool:
+def parse_iso8601(value):
     if not usable_text(value):
-        return False
+        return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        return False
-    return parsed.tzinfo is not None
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def valid_iso8601(value) -> bool:
+    return parse_iso8601(value) is not None
+
+
+def strict_nonnegative_int(value):
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return None
+    return value
+
+
+def history_secret_finding_id(report_row):
+    canonical = {
+        "commit": report_row["Commit"],
+        "path": report_row["File"],
+        "ruleID": report_row["RuleID"],
+        "startLine": report_row["StartLine"],
+    }
+    serialized = json.dumps(
+        canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    ).encode("ascii")
+    return "sha256:" + hashlib.sha256(serialized).hexdigest()
 
 
 def add_failure(failures, code, detail=None):
@@ -177,6 +245,28 @@ def current_source_binding(repo_root: Path):
     return {
         "sourceGitCommit": commit,
         "sourceCoachFingerprint": fingerprint,
+    }
+
+
+def reachable_commit_set_binding(repo_root: Path):
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-list", "--all"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise WorkflowError("could not enumerate all reachable git commits") from exc
+    commits = sorted(set(line.strip() for line in result.stdout.splitlines() if line.strip()))
+    if not commits or any(not re.fullmatch(r"[0-9a-f]{40}", commit) for commit in commits):
+        raise WorkflowError("reachable git commit inventory is empty or malformed")
+    serialized = ("\n".join(commits) + "\n").encode("ascii")
+    return {
+        "reachableCommitCount": len(commits),
+        "reachableCommitSetSha256": "sha256:" + hashlib.sha256(serialized).hexdigest(),
+        "commits": set(commits),
     }
 
 
@@ -274,6 +364,13 @@ def initialize_run(args):
         template = read_json(TEMPLATE_ROOT / TEMPLATE_FILES[key])
         if key == "professionalCalibration":
             template = calibration_review_slots(packet, template)
+        elif key == "operationalLaunch":
+            reachable = reachable_commit_set_binding(repo_root)
+            template["historySecretAdjudication"].update({
+                "scannedRepositoryCommit": current["sourceGitCommit"],
+                "reachableCommitCount": reachable["reachableCommitCount"],
+                "reachableCommitSetSha256": reachable["reachableCommitSetSha256"],
+            })
         write_json(run_dir / artifact_name, template)
 
     manifest = {
@@ -629,21 +726,310 @@ def validate_testflight(run_dir, payload, manifest, index, failures):
             add_failure(failures, "testFlightCaptureTimestampMismatch", surface or position)
 
 
-def validate_operational(run_dir, payload, manifest, index, failures):
+def validate_operational_prerequisites(run_dir, payload, index, failures):
+    build = payload.get("releaseCandidateBuild")
+    prerequisites = payload.get("releasePrerequisites")
+    if not isinstance(prerequisites, list):
+        add_failure(failures, "operationalPrerequisitesInvalid")
+        prerequisites = []
+
+    rows_by_key = {}
+    all_references = set()
+    for position, row in enumerate(prerequisites):
+        if not isinstance(row, dict):
+            add_failure(failures, "operationalPrerequisiteInvalid", position)
+            continue
+        missing_fields = OPERATIONAL_PREREQUISITE_REQUIRED_FIELDS - set(row)
+        unexpected_fields = set(row) - OPERATIONAL_PREREQUISITE_REQUIRED_FIELDS
+        for field in sorted(missing_fields):
+            add_failure(failures, "operationalPrerequisiteFieldMissing", f"{position}.{field}")
+        for field in sorted(unexpected_fields):
+            add_failure(failures, "operationalPrerequisiteFieldUnexpected", f"{position}.{field}")
+
+        key = row.get("key")
+        spec = OPERATIONAL_PREREQUISITES.get(key)
+        if spec is None:
+            add_failure(failures, "operationalPrerequisiteUnexpected", key or position)
+            continue
+        if key in rows_by_key:
+            add_failure(failures, "operationalPrerequisiteDuplicate", key)
+        else:
+            rows_by_key[key] = row
+
+        if row.get("completed") is not True:
+            add_failure(failures, "operationalPrerequisiteOpen", key)
+        if row.get("evidenceKind") != spec["evidenceKind"]:
+            add_failure(failures, "operationalPrerequisiteEvidenceKindMismatch", key)
+        if row.get("environment") != spec["environment"]:
+            add_failure(failures, "operationalPrerequisiteEnvironmentMismatch", key)
+        if row.get("releaseCandidateBuild") != build:
+            add_failure(failures, "operationalPrerequisiteBuildMismatch", key)
+        if not isinstance(row.get("notes"), list):
+            add_failure(failures, "operationalPrerequisiteNotesInvalid", key)
+
+        performed_by = row.get("performedByID")
+        verified_by = row.get("verifiedByID")
+        if not usable_text(performed_by) or not usable_text(verified_by):
+            add_failure(failures, "operationalPrerequisitePerformerOrVerifierMissing", key)
+        elif performed_by == verified_by:
+            add_failure(failures, "operationalPrerequisitePerformerAndVerifierMustDiffer", key)
+        if not usable_text(row.get("verifiedByRole")):
+            add_failure(failures, "operationalPrerequisiteVerifierRoleMissing", key)
+
+        completed_at = parse_iso8601(row.get("completedAtISO8601"))
+        verified_at = parse_iso8601(row.get("verifiedAtISO8601"))
+        if completed_at is None:
+            add_failure(failures, "operationalPrerequisiteCompletedAtInvalid", key)
+        if verified_at is None:
+            add_failure(failures, "operationalPrerequisiteVerifiedAtInvalid", key)
+        if completed_at is not None and verified_at is not None and verified_at < completed_at:
+            add_failure(failures, "operationalPrerequisiteVerifiedBeforeCompletion", key)
+
+        references = (
+            row.get("evidenceReference"),
+            row.get("verificationReference"),
+            row.get("commandOrReviewOutputReference"),
+        )
+        if len(set(references)) != len(references):
+            add_failure(failures, "operationalPrerequisiteReferencesMustBeDistinct", key)
+        for reference in references:
+            if reference in all_references:
+                add_failure(failures, "operationalPrerequisiteReferenceReused", key)
+            elif isinstance(reference, str):
+                all_references.add(reference)
+
+        reference_entries = [validate_reference(
+            row.get("evidenceReference"), spec["evidenceKind"],
+            run_dir, index, failures, f"operational.prerequisite.{key}.evidenceReference",
+        ), validate_reference(
+            row.get("verificationReference"), f"verification:{key}",
+            run_dir, index, failures, f"operational.prerequisite.{key}.verificationReference",
+        ), validate_reference(
+            row.get("commandOrReviewOutputReference"), f"output:{key}",
+            run_dir, index, failures,
+            f"operational.prerequisite.{key}.commandOrReviewOutputReference",
+        )]
+        for entry in reference_entries:
+            if entry and usable_text(verified_by) and entry.get("verifiedByID") != verified_by:
+                add_failure(failures, "operationalPrerequisiteAttachmentVerifierMismatch", key)
+            captured_at = parse_iso8601(entry.get("capturedAtISO8601")) if entry else None
+            if captured_at is not None and verified_at is not None and captured_at > verified_at:
+                add_failure(failures, "operationalPrerequisiteEvidenceCapturedAfterVerification", key)
+
+    for missing_key in sorted(set(OPERATIONAL_PREREQUISITES) - set(rows_by_key)):
+        add_failure(failures, "operationalPrerequisiteMissing", missing_key)
+    if len(prerequisites) != len(OPERATIONAL_PREREQUISITES):
+        add_failure(failures, "operationalPrerequisiteCountMismatch")
+    return rows_by_key
+
+
+def indexed_redacted_gitleaks_rows(run_dir, reference, index, failures):
+    if not isinstance(reference, str) or not reference.startswith(EVIDENCE_REFERENCE_PREFIX):
+        return {}
+    evidence_id = reference[len(EVIDENCE_REFERENCE_PREFIX):]
+    entry = index.get(evidence_id)
+    path = safe_attachment_path(run_dir, entry.get("path")) if isinstance(entry, dict) else None
+    if path is None:
+        return {}
+    if path.stat().st_size > HISTORY_SECRET_REPORT_MAX_BYTES:
+        add_failure(failures, "historySecretRedactedReportTooLarge")
+        return {}
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        add_failure(failures, "historySecretRedactedReportInvalidJSON")
+        return {}
+    if not isinstance(report, list):
+        add_failure(failures, "historySecretRedactedReportInvalidShape")
+        return {}
+
+    rows_by_id = {}
+    for position, row in enumerate(report):
+        if not isinstance(row, dict):
+            add_failure(failures, "historySecretRedactedReportRowInvalid", position)
+            continue
+        if row.get("Secret") != "REDACTED":
+            add_failure(failures, "historySecretRedactedReportContainsUnredactedSecret", position)
+            continue
+        match = row.get("Match")
+        if not isinstance(match, str) or "REDACTED" not in match:
+            add_failure(failures, "historySecretRedactedReportContainsUnredactedMatch", position)
+            continue
+        if not usable_text(row.get("RuleID")):
+            add_failure(failures, "historySecretRedactedReportRuleMissing", position)
+            continue
+        commit = row.get("Commit")
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            add_failure(failures, "historySecretRedactedReportCommitInvalid", position)
+            continue
+        path_value = row.get("File")
+        parsed_path = PurePosixPath(path_value) if isinstance(path_value, str) and path_value else None
+        if (
+            parsed_path is None or parsed_path.is_absolute() or ".." in parsed_path.parts
+            or "\\" in path_value or path_value != path_value.strip()
+            or any(ord(character) < 32 for character in path_value)
+        ):
+            add_failure(failures, "historySecretRedactedReportPathInvalid", position)
+            continue
+        start_line = row.get("StartLine")
+        if not isinstance(start_line, int) or isinstance(start_line, bool) or start_line <= 0:
+            add_failure(failures, "historySecretRedactedReportLineInvalid", position)
+            continue
+        finding_id = history_secret_finding_id(row)
+        if finding_id in rows_by_id:
+            add_failure(failures, "historySecretRedactedReportFindingDuplicate", finding_id)
+        else:
+            rows_by_id[finding_id] = row
+    return rows_by_id
+
+
+def validate_history_secret_adjudication(
+    run_dir, payload, manifest, index, failures, repo_root, prerequisite_rows,
+):
+    adjudication = payload.get("historySecretAdjudication")
+    if not isinstance(adjudication, dict):
+        add_failure(failures, "historySecretAdjudicationInvalid")
+        adjudication = {}
+    for field in sorted(HISTORY_SECRET_ADJUDICATION_REQUIRED_FIELDS - set(adjudication)):
+        add_failure(failures, "historySecretAdjudicationFieldMissing", field)
+    for field in sorted(set(adjudication) - HISTORY_SECRET_ADJUDICATION_REQUIRED_FIELDS):
+        add_failure(failures, "historySecretAdjudicationFieldUnexpected", field)
+
+    if adjudication.get("scanner") != HISTORY_SECRET_SCANNER:
+        add_failure(failures, "historySecretScannerMismatch")
+    if adjudication.get("scannerVersion") != HISTORY_SECRET_SCANNER_VERSION:
+        add_failure(failures, "historySecretScannerVersionMismatch")
+    if adjudication.get("scanScope") != HISTORY_SECRET_SCAN_SCOPE:
+        add_failure(failures, "historySecretScanScopeMismatch")
+    if adjudication.get("redactionPercent") != 100:
+        add_failure(failures, "historySecretScanNotFullyRedacted")
+
+    source_binding = manifest.get("sourceBinding")
+    source_binding = source_binding if isinstance(source_binding, dict) else {}
+    if adjudication.get("scannedRepositoryCommit") != source_binding.get("sourceGitCommit"):
+        add_failure(failures, "historySecretScanSourceCommitMismatch")
+    try:
+        reachable = reachable_commit_set_binding(repo_root)
+    except WorkflowError as exc:
+        add_failure(failures, "historySecretReachableCommitInventoryUnavailable", str(exc))
+        reachable = {"reachableCommitCount": None, "reachableCommitSetSha256": None, "commits": set()}
+    if adjudication.get("reachableCommitCount") != reachable["reachableCommitCount"]:
+        add_failure(failures, "historySecretReachableCommitCountMismatch")
+    if adjudication.get("reachableCommitSetSha256") != reachable["reachableCommitSetSha256"]:
+        add_failure(failures, "historySecretReachableCommitFingerprintMismatch")
+
+    history_row = prerequisite_rows.get("fullHistorySecretFindingsAdjudicated") or {}
+    if adjudication.get("redactedScanReportReference") != history_row.get("evidenceReference"):
+        add_failure(failures, "historySecretScanReportReferenceMismatch")
+    report_rows = indexed_redacted_gitleaks_rows(
+        run_dir, adjudication.get("redactedScanReportReference"), index, failures,
+    )
+
+    findings = adjudication.get("findings")
+    if not isinstance(findings, list):
+        add_failure(failures, "historySecretFindingsInvalid")
+        findings = []
+    detected = strict_nonnegative_int(adjudication.get("detectedFindingCount"))
+    adjudicated = strict_nonnegative_int(adjudication.get("adjudicatedFindingCount"))
+    unresolved = strict_nonnegative_int(adjudication.get("unresolvedFindingCount"))
+    suppressed = strict_nonnegative_int(adjudication.get("suppressedFindingCount"))
+    if detected is None or detected != len(findings):
+        add_failure(failures, "historySecretDetectedFindingCountMismatch")
+    if detected is None or detected != len(report_rows):
+        add_failure(failures, "historySecretRedactedReportFindingCountMismatch")
+    if adjudicated is None or adjudicated != len(findings):
+        add_failure(failures, "historySecretAdjudicatedFindingCountMismatch")
+    if len(findings) < HISTORY_SECRET_MIN_KNOWN_FINDINGS:
+        add_failure(failures, "historySecretKnownFindingFloorNotMet")
+    if unresolved != 0:
+        add_failure(failures, "historySecretUnresolvedFindingsRemain")
+    if suppressed != 0:
+        add_failure(failures, "historySecretSuppressedFindingsRemain")
+
+    finding_ids = set()
+    status_references = set()
+    finding_commits = set()
+    verifier_id = history_row.get("verifiedByID")
+    for position, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            add_failure(failures, "historySecretFindingInvalid", position)
+            continue
+        for field in sorted(HISTORY_SECRET_FINDING_REQUIRED_FIELDS - set(finding)):
+            add_failure(failures, "historySecretFindingFieldMissing", f"{position}.{field}")
+        for field in sorted(set(finding) - HISTORY_SECRET_FINDING_REQUIRED_FIELDS):
+            add_failure(failures, "historySecretFindingFieldUnexpected", f"{position}.{field}")
+        finding_id = finding.get("findingID")
+        if not SHA256_PATTERN.fullmatch(finding_id or ""):
+            add_failure(failures, "historySecretFindingIDInvalid", position)
+        elif finding_id in finding_ids:
+            add_failure(failures, "historySecretFindingIDDuplicate", finding_id)
+        else:
+            finding_ids.add(finding_id)
+        if not usable_text(finding.get("detectorRuleID")):
+            add_failure(failures, "historySecretDetectorRuleMissing", position)
+
+        commit = finding.get("commit")
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            add_failure(failures, "historySecretFindingCommitInvalid", position)
+        elif commit not in reachable["commits"]:
+            add_failure(failures, "historySecretFindingCommitNotReachable", commit)
+        else:
+            finding_commits.add(commit)
+
+        path = finding.get("path")
+        parsed_path = PurePosixPath(path) if isinstance(path, str) and path else None
+        if (
+            parsed_path is None or parsed_path.is_absolute() or ".." in parsed_path.parts
+            or "\\" in path or path != path.strip()
+            or any(ord(character) < 32 for character in path)
+        ):
+            add_failure(failures, "historySecretFindingPathInvalid", position)
+
+        report_row = report_rows.get(finding_id)
+        if report_row is None:
+            add_failure(failures, "historySecretFindingNotInRedactedReport", position)
+        else:
+            if finding.get("detectorRuleID") != report_row.get("RuleID"):
+                add_failure(failures, "historySecretFindingRuleMismatch", position)
+            if finding.get("commit") != report_row.get("Commit"):
+                add_failure(failures, "historySecretFindingReportCommitMismatch", position)
+            if finding.get("path") != report_row.get("File"):
+                add_failure(failures, "historySecretFindingReportPathMismatch", position)
+
+        disposition = finding.get("disposition")
+        expected_kind = HISTORY_SECRET_DISPOSITION_EVIDENCE_KINDS.get(disposition)
+        if expected_kind is None:
+            add_failure(failures, "historySecretFindingDispositionOpenOrInvalid", position)
+        status_reference = finding.get("statusEvidenceReference")
+        if status_reference in status_references:
+            add_failure(failures, "historySecretFindingStatusReferenceReused", position)
+        elif isinstance(status_reference, str):
+            status_references.add(status_reference)
+        entry = validate_reference(
+            status_reference, expected_kind,
+            run_dir, index, failures, f"operational.historySecretAdjudication.findings.{position}",
+        )
+        if entry and usable_text(verifier_id) and entry.get("verifiedByID") != verifier_id:
+            add_failure(failures, "historySecretFindingVerifierMismatch", position)
+
+    for commit in sorted(KNOWN_HISTORY_CREDENTIAL_COMMITS - finding_commits):
+        add_failure(failures, "historySecretKnownCredentialFindingMissing", commit)
+    if finding_ids != set(report_rows):
+        add_failure(failures, "historySecretFindingInventoryDoesNotMatchRedactedReport")
+
+
+def validate_operational(run_dir, payload, manifest, index, failures, repo_root):
     if payload.get("templateStatus") != "COLLECTED_EXTERNAL_EVIDENCE":
         add_failure(failures, "operationalLaunchNotMarkedCollected")
     completed_by_id = payload.get("completedByID")
     if not usable_text(completed_by_id):
         add_failure(failures, "operationalCompletedByIDMissing")
-    prerequisites = payload.get("releasePrerequisites")
-    prerequisites = prerequisites if isinstance(prerequisites, dict) else {}
-    for gate_key, (reference_key, kind) in OPERATIONAL_PREREQUISITES.items():
-        if prerequisites.get(gate_key) is not True:
-            add_failure(failures, "operationalPrerequisiteOpen", gate_key)
-        validate_reference(
-            prerequisites.get(reference_key), kind,
-            run_dir, index, failures, f"operational.releasePrerequisites.{reference_key}",
-        )
+    prerequisite_rows = validate_operational_prerequisites(
+        run_dir, payload, index, failures,
+    )
+    validate_history_secret_adjudication(
+        run_dir, payload, manifest, index, failures, repo_root, prerequisite_rows,
+    )
     build = payload.get("releaseCandidateBuild")
     items = payload.get("items") if isinstance(payload.get("items"), list) else []
     for position, item in enumerate(items):
@@ -751,7 +1137,9 @@ def validate_run(run_dir: Path, repo_root: Path):
     validate_professional(run_dir, payloads["professionalCalibration"], manifest, index, failures)
     validate_transfer(run_dir, payloads["realUserTransfer"], manifest, index, failures)
     validate_testflight(run_dir, payloads["realDeviceTestFlight"], manifest, index, failures)
-    validate_operational(run_dir, payloads["operationalLaunch"], manifest, index, failures)
+    validate_operational(
+        run_dir, payloads["operationalLaunch"], manifest, index, failures, repo_root,
+    )
     validate_promotion_approval(run_dir, manifest, index, payloads, failures)
     gate_failures, gate_statuses = existing_validator_failures(run_dir, payloads)
     failures.extend(item for item in gate_failures if item not in failures)
@@ -833,6 +1221,93 @@ def register_attachment(args):
     entries.append(entry)
     write_json(run_dir / RUN_MANIFEST_FILE, manifest)
     print(f"Registered {EVIDENCE_REFERENCE_PREFIX}{args.id}")
+
+
+def import_history_scan_command(args):
+    run_dir = Path(args.run_dir).expanduser().resolve()
+    repo_root = Path(args.repo_root).expanduser().resolve()
+    manifest = load_manifest(run_dir)
+    failures = []
+    index = evidence_index_by_id(manifest, failures)
+    validate_source_binding(run_dir, manifest, repo_root, failures)
+    validate_reference(
+        args.reference, "fullHistorySecretReview", run_dir, index, failures,
+        "historyImport.redactedScanReportReference",
+    )
+    report_rows = indexed_redacted_gitleaks_rows(
+        run_dir, args.reference, index, failures,
+    )
+    try:
+        reachable = reachable_commit_set_binding(repo_root)
+    except WorkflowError as exc:
+        add_failure(failures, "historySecretReachableCommitInventoryUnavailable", str(exc))
+        reachable = {"reachableCommitCount": 0, "reachableCommitSetSha256": "", "commits": set()}
+    report_commits = {
+        row.get("Commit") for row in report_rows.values() if isinstance(row, dict)
+    }
+    for commit in sorted(report_commits - reachable["commits"]):
+        add_failure(failures, "historySecretFindingCommitNotReachable", commit)
+    if len(report_rows) < HISTORY_SECRET_MIN_KNOWN_FINDINGS:
+        add_failure(failures, "historySecretKnownFindingFloorNotMet")
+    for commit in sorted(KNOWN_HISTORY_CREDENTIAL_COMMITS - report_commits):
+        add_failure(failures, "historySecretKnownCredentialFindingMissing", commit)
+    if failures:
+        raise WorkflowError(
+            "history scan import refused: " + ", ".join(failures)
+        )
+
+    operational_path = run_dir / MANAGED_ARTIFACTS["operationalLaunch"][0]
+    operational = read_json(operational_path)
+    prerequisites = operational.get("releasePrerequisites")
+    prerequisites = prerequisites if isinstance(prerequisites, list) else []
+    history_rows = [
+        row for row in prerequisites
+        if isinstance(row, dict) and row.get("key") == "fullHistorySecretFindingsAdjudicated"
+    ]
+    if len(history_rows) != 1:
+        raise WorkflowError(
+            "history scan import refused: exact full-history prerequisite row is missing"
+        )
+    history_row = history_rows[0]
+    existing_reference = history_row.get("evidenceReference")
+    if usable_text(existing_reference) and existing_reference != args.reference:
+        raise WorkflowError(
+            "history scan import refused: prerequisite already names another report"
+        )
+    history_row["evidenceReference"] = args.reference
+
+    source_binding = manifest.get("sourceBinding")
+    source_binding = source_binding if isinstance(source_binding, dict) else {}
+    findings = []
+    for finding_id, report_row in sorted(report_rows.items()):
+        findings.append({
+            "findingID": finding_id,
+            "detectorRuleID": report_row["RuleID"],
+            "commit": report_row["Commit"],
+            "path": report_row["File"],
+            "disposition": "",
+            "statusEvidenceReference": "",
+        })
+    operational["historySecretAdjudication"] = {
+        "scanner": HISTORY_SECRET_SCANNER,
+        "scannerVersion": HISTORY_SECRET_SCANNER_VERSION,
+        "scanScope": HISTORY_SECRET_SCAN_SCOPE,
+        "scannedRepositoryCommit": source_binding.get("sourceGitCommit", ""),
+        "redactionPercent": 100,
+        "reachableCommitCount": reachable["reachableCommitCount"],
+        "reachableCommitSetSha256": reachable["reachableCommitSetSha256"],
+        "redactedScanReportReference": args.reference,
+        "detectedFindingCount": len(findings),
+        "adjudicatedFindingCount": 0,
+        "unresolvedFindingCount": len(findings),
+        "suppressedFindingCount": 0,
+        "findings": findings,
+    }
+    write_json(operational_path, operational)
+    print(
+        f"Imported {len(findings)} fully redacted history findings as unresolved."
+    )
+    print("No disposition was inferred; the release gate remains closed.")
 
 
 def summarize_professional(payload):
@@ -953,6 +1428,10 @@ def summarize_operational(payload):
     items = [item for item in payload.get("items", []) if isinstance(item, dict)]
     required = set(GATE.OPERATIONAL_LAUNCH_REQUIRED_ITEMS)
     required_items = [item for item in items if item.get("key") in required]
+    prerequisites = [
+        item for item in payload.get("releasePrerequisites", [])
+        if isinstance(item, dict) and item.get("key") in OPERATIONAL_PREREQUISITES
+    ]
     build = payload.get("releaseCandidateBuild")
     payload["summary"].update({
         "itemCount": len(items),
@@ -974,6 +1453,38 @@ def summarize_operational(payload):
             GATE.usable_evidence_reference(item.get("verifiedAtISO8601"))
             and GATE.usable_evidence_reference(item.get("verifiedByRole"))
             for item in required_items
+        ),
+        "requiredPrerequisiteCount": len(OPERATIONAL_PREREQUISITES),
+        "completedPrerequisiteCount": sum(
+            item.get("completed") is True for item in prerequisites
+        ),
+        "artifactBackedPrerequisiteCount": sum(all(
+            GATE.usable_evidence_reference(item.get(field))
+            for field in (
+                "evidenceReference", "verificationReference",
+                "commandOrReviewOutputReference", "completedAtISO8601",
+                "verifiedAtISO8601",
+            )
+        ) for item in prerequisites),
+        "expectedEvidenceKindPrerequisiteCount": sum(
+            item.get("evidenceKind")
+            == OPERATIONAL_PREREQUISITES[item.get("key")]["evidenceKind"]
+            for item in prerequisites
+        ),
+        "expectedEnvironmentPrerequisiteCount": sum(
+            item.get("environment")
+            == OPERATIONAL_PREREQUISITES[item.get("key")]["environment"]
+            for item in prerequisites
+        ),
+        "sameBuildPrerequisiteCount": sum(
+            item.get("releaseCandidateBuild") == build for item in prerequisites
+        ),
+        "independentlyVerifiedPrerequisiteCount": sum(
+            usable_text(item.get("performedByID"))
+            and usable_text(item.get("verifiedByID"))
+            and item.get("performedByID") != item.get("verifiedByID")
+            and usable_text(item.get("verifiedByRole"))
+            for item in prerequisites
         ),
     })
 
@@ -1096,6 +1607,15 @@ def build_parser():
     register.add_argument("--contains-personal-data", action="store_true")
     register.add_argument("--access-control-reference")
     register.set_defaults(function=register_attachment)
+
+    history_import = subparsers.add_parser(
+        "import-history-scan",
+        help="Import a registered fully redacted Gitleaks JSON report as unresolved findings.",
+    )
+    history_import.add_argument("--run-dir", required=True)
+    history_import.add_argument("--reference", required=True)
+    history_import.add_argument("--repo-root", default=str(REPO_ROOT))
+    history_import.set_defaults(function=import_history_scan_command)
 
     summarize = subparsers.add_parser("summarize", help="Recompute summary counts from operator-entered rows.")
     summarize.add_argument("--run-dir", required=True)

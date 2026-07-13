@@ -129,6 +129,32 @@ reading its secret. They do not contain the separate historical incident; that
 requires the closure evidence listed in
 `docs/SECURITY_deepgram_key_endpoint.md`.
 
+## Legacy Credential Containment Probe
+
+After an authorized operator has protected or disabled the legacy AWS routes,
+run the repository's unauthenticated status-only probe:
+
+```bash
+BACKEND_BASE_URL='https://<legacy-api-origin>' \
+  ./scripts/verify_deepgram_endpoint.sh
+```
+
+The script sends no API key, bearer token, provider credential, or user data.
+It never downloads or prints a response body and never calls Deepgram. It checks
+both legacy credential-vending routes plus the documented IM/TTS siblings. Each
+route must return `401`/`403` (protected) or `404`/`410` (disabled). A `2xx`,
+redirect, request-validation response, rate limit, `5xx`, malformed status, TLS
+failure, timeout, or other transport error fails the whole probe.
+
+This output can support the
+`legacyTranscriptionEndpointProtectedOrDisabled` prerequisite, but it cannot
+support `exposedProviderCredentialsRevoked`,
+`providerUsageAndBillingAuditComplete`, or the composite
+`historicalCredentialIncidentClosed` prerequisite. Those require separately
+registered provider/account evidence and independent verification. Do not pass
+an old credential to this script and do not use an authenticated provider-token
+endpoint as release automation.
+
 ## Protected Social Deployment Gate
 
 Do not run a blanket Firestore-rules or Functions deployment from the current
@@ -195,11 +221,27 @@ release decision, rerun without `--no-fail` and include `--probe-live`.
 | `noProfessionalCoachCalibration` | `coach-chat-conversation-expert-calibration-results-v2.json` | Blinded professional-coach reviews for the required calibration packet, meeting the rubric and review-count floor. |
 | `noRealUserLongitudinalTransferOutcomes` | `coach-real-user-transfer-outcomes-v3.json` | Pre-registered closed-beta cohort with complete enrollment/attrition accounting, delayed real-world follow-ups, linked interventions, retained negative outcomes, and evidence references. |
 | `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v2.json` | Physical-device TestFlight verification for App Check, real-microphone transcription, consent/offline/reconnect behavior, authentication, deletion, notifications, widgets, Live Activities, accessibility, and StoreKit purchase/restore. |
-| `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist: historical credential-incident closure, guarded social cutover, hosted privacy and custom-domain verification, Apple provider/signing, App Store privacy disclosures and StoreKit configuration, TestFlight upload, and release-blocking bug triage. |
+| `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist plus the exact structured release prerequisites: historical credential-incident closure, every legacy route protected/disabled, exposed credentials revoked, provider usage/billing audited, full-history findings adjudicated, release bundle scanned, guarded social cutover, hosted privacy/custom domain, Apple release services, TestFlight upload, and release-blocking bug triage. |
 
 Do not create placeholder sidecars. Empty or summary-only transfer, device, and
 launch artifacts fail the same row-level floors as the Swift manifest; missing
 proof should stay missing.
+
+The operational artifact's `releasePrerequisites` is an exact 12-row contract,
+not a notes field. Every row must be complete for the same release-candidate
+build, carry the expected environment and evidence kind, name different
+performer and verifier identities, use valid completion/verification times, and
+resolve three distinct hashed attachments: primary evidence, independent
+verification, and command/review output. Missing, duplicate, unknown, stale, or
+self-verified rows fail closed.
+
+The full-history row also requires `historySecretAdjudication`: Gitleaks 8.30.1
+over all reachable commits with 100% redaction, bound to the current source
+commit and a SHA-256 fingerprint of the reachable commit set. Every detected
+finding must appear once with only a hashed finding ID, detector rule, historical
+commit/path, a closed disposition, and independently verified status evidence.
+Active, unknown, accepted-risk, omitted, or suppressed credentials cannot be
+adjudicated into a pass.
 
 ## UI Flow Boundary
 
@@ -226,6 +268,11 @@ ready only when:
 - the VISION readiness gate exits 0
 - Maestro smoke flows pass on the installed simulator build
 - the historical Deepgram/AWS credential incident has documented closure
+- every documented legacy credential/IM/TTS route returns only a protective or
+  disabled status to an unverified caller, without relying on a transport error
+- every exposed provider credential is independently proven revoked or invalid,
+  provider usage/billing has been audited, and the redacted full-history finding
+  inventory is complete with no unresolved or suppressed finding
 - the legacy social backup/quarantine, cutover, trusted evidence producer, and
   coordinated rules/functions deployment have all passed
 - Firebase Hosting privacy content is live and the `noum.app` custom domain is
