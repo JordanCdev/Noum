@@ -65,7 +65,11 @@ already accepted by the readiness validator. It does not sign, export, upload,
 or contact Apple for provisioning updates, and its output is deliberately
 redacted. Passing the local source or signing sections is not production
 evidence. The overall command remains nonzero until real physical-TestFlight and
-operational-launch artifacts are independently collected and accepted.
+operational-launch artifacts are independently collected and accepted. The
+archive section also rejects a simulator-shaped or version-drifted archive,
+stale dSYMs, missing compiled StoreKit/Apple-authentication paths, and missing
+app-owned privacy/export metadata. Installed App Store profiles only count when
+their embedded distribution certificate matches an installed valid identity.
 
 ## 2. Initialize a non-passing run
 
@@ -195,6 +199,13 @@ install is useful preflight but cannot earn this artifact.
 Set `templateStatus` to `COLLECTED_EXTERNAL_EVIDENCE` only after every row and
 the signed physical-TestFlight attestation are complete.
 
+This v2 artifact has four structured rows. It does not replace the remainder of
+`docs/TESTFLIGHT_QA.md`. Use the same TestFlight build to complete and
+independently sign off the real-microphone/App Check/consent path, Sign in with
+Apple, deletion, notifications, widgets, accessibility, multilingual checks,
+and mode smoke tests. Keep that checklist with the release packet; do not claim
+those surfaces from the four-row JSON alone.
+
 ## 7. Operational launch evidence
 
 File: `coach-operational-launch-checklist-v2.json`.
@@ -234,6 +245,24 @@ around the existing v2 artifact. It has exactly twelve rows and records:
   server-side evidence producer;
 - custom privacy-domain verification;
 - Apple release-service configuration.
+
+For `appleReleaseServicesConfigured`, the primary and review evidence must cover
+all of the following for the same release candidate, with certificate, profile,
+and team identifiers redacted from the packet:
+
+- paid-team identifiers/capabilities exist for the app, Widget, and Messages
+  extension, and the signed archive validates against them;
+- Sign in with Apple is enabled for the app identifier and configured as a
+  Firebase Authentication provider;
+- the monthly and annual product identifiers compiled from
+  `Noum/PremiumManager.swift` exist in App Store Connect with complete
+  subscription-group, localization, price, review, and availability metadata;
+- agreements, tax, and banking state does not block sale; and
+- the independently verified command/review output is bound to the same build.
+
+Configuration evidence does not prove runtime behavior. The StoreKit sandbox
+purchase/restore row and physical Sign in with Apple check must still pass from
+the actual TestFlight installation.
 
 A successful cloud operations probe can be registered as
 `cloudOperationsProbeOutput`, but it cannot override an unauthenticated legacy

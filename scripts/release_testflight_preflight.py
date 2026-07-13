@@ -16,6 +16,7 @@ printed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import plistlib
@@ -62,12 +63,21 @@ ARCHIVED_PRODUCTS = {
     "NoumWidget": Path("Products/Applications/Noum.app/PlugIns/NoumWidget.appex"),
     "NoumMessages": Path("Products/Applications/Noum.app/PlugIns/NoumMessages.appex"),
 }
+ARCHIVED_EXTENSION_POINTS = {
+    "NoumWidget": "com.apple.widgetkit-extension",
+    "NoumMessages": "com.apple.message-payload-provider",
+}
 FORBIDDEN_ARCHIVE_CONFIGS = {
     "AIConfig.plist",
     "BackendConfig.plist",
     "Transcribe.plist",
     "TranscriptionProviders.plist",
 }
+STOREKIT_PRODUCT_CONSTANTS = ("monthlyID", "annualID")
+APPLE_SERVICE_BINARY_MARKERS = (
+    b"/AuthenticationServices.framework/AuthenticationServices",
+    b"/StoreKit.framework/StoreKit",
+)
 
 
 @dataclass(frozen=True)
@@ -236,10 +246,54 @@ def _google_bundle_matches(repo_root: Path) -> bool:
     return google.get("BUNDLE_ID") == EXPECTED_TARGETS["Noum"]["bundle"]
 
 
+def _storekit_product_ids(repo_root: Path) -> tuple[str, ...]:
+    try:
+        source = (repo_root / "Noum/PremiumManager.swift").read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    product_ids: list[str] = []
+    for constant in STOREKIT_PRODUCT_CONSTANTS:
+        match = re.search(
+            rf'\bstatic\s+let\s+{re.escape(constant)}\s*=\s*"([A-Za-z0-9.-]+)"',
+            source,
+        )
+        if match is None:
+            return ()
+        product_ids.append(match.group(1))
+    if len(set(product_ids)) != len(STOREKIT_PRODUCT_CONSTANTS):
+        return ()
+    required_runtime_paths = (
+        "Product.products(for: productIDs)",
+        "Transaction.currentEntitlements",
+        "AppStore.sync()",
+    )
+    return tuple(product_ids) if all(path in source for path in required_runtime_paths) else ()
+
+
+def run_dwarf_uuids(path: Path) -> frozenset[tuple[str, str]]:
+    completed = subprocess.run(
+        ["dwarfdump", "--uuid", str(path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return frozenset()
+    matches = re.findall(
+        r"^UUID:\s+([0-9A-Fa-f-]{36})\s+\(([^)]+)\)",
+        completed.stdout,
+        flags=re.MULTILINE,
+    )
+    return frozenset((uuid.upper(), architecture) for uuid, architecture in matches)
+
+
 def archive_checks(
     repo_root: Path,
     archive_path: Path | None,
     scanner: Callable[[Path], bool] | None = None,
+    expected_version: tuple[str | None, str | None] | None = None,
+    uuid_reader: Callable[[Path], frozenset[tuple[str, str]]] | None = None,
 ) -> list[Check]:
     if archive_path is None:
         return [
@@ -264,18 +318,26 @@ def archive_checks(
     if not present:
         return checks
 
+    try:
+        archive_info = _read_plist(archive_path / "Info.plist")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        archive_info = {}
+
+    product_infos: dict[str, dict[str, Any]] = {}
     bundle_shape = True
-    version_shape = True
     for target, relative in ARCHIVED_PRODUCTS.items():
         product = archive_path / relative
         try:
             info = _read_plist(product / "Info.plist")
         except (OSError, ValueError, plistlib.InvalidFileException):
             bundle_shape = False
-            version_shape = False
             continue
-        bundle_shape = bundle_shape and info.get("CFBundleIdentifier") == EXPECTED_TARGETS[target]["bundle"]
-        version_shape = version_shape and bool(info.get("CFBundleShortVersionString")) and bool(info.get("CFBundleVersion"))
+        product_infos[target] = info
+        expected_package_type = "APPL" if target == "Noum" else "XPC!"
+        bundle_shape = bundle_shape and (
+            info.get("CFBundleIdentifier") == EXPECTED_TARGETS[target]["bundle"]
+            and info.get("CFBundlePackageType") == expected_package_type
+        )
     checks.append(
         check(
             "archiveProductShape",
@@ -284,26 +346,130 @@ def archive_checks(
             "Repair the source-controlled target/embed configuration; do not compensate with export-time overrides.",
         )
     )
+    version_pairs = {
+        (info.get("CFBundleShortVersionString"), info.get("CFBundleVersion"))
+        for info in product_infos.values()
+    }
+    version_shape = (
+        len(product_infos) == len(ARCHIVED_PRODUCTS)
+        and len(version_pairs) == 1
+        and None not in next(iter(version_pairs), (None, None))
+    )
+    if expected_version is not None:
+        version_shape = version_shape and next(iter(version_pairs), (None, None)) == expected_version
     checks.append(
         check(
             "archiveVersionMetadata",
             version_shape,
-            "version and build metadata present" if version_shape else "missing version/build metadata",
+            "app and extensions align with Release version/build" if version_shape else "missing or mismatched version/build metadata",
             "Set aligned MARKETING_VERSION and CURRENT_PROJECT_VERSION values before archiving.",
         )
     )
 
-    missing_dsyms = [
-        name
-        for name in ("Noum.app.dSYM", "NoumWidget.appex.dSYM", "NoumMessages.appex.dSYM")
-        if not (archive_path / "dSYMs" / name).is_dir()
-    ]
+    app_properties = archive_info.get("ApplicationProperties")
+    app_properties = app_properties if isinstance(app_properties, dict) else {}
+    architectures = app_properties.get("Architectures")
+    architectures = architectures if isinstance(architectures, list) else []
+    device_platform_shape = (
+        archive_info.get("ArchiveVersion") == 2
+        and app_properties.get("ApplicationPath") == "Applications/Noum.app"
+        and app_properties.get("CFBundleIdentifier") == EXPECTED_TARGETS["Noum"]["bundle"]
+        and "arm64" in architectures
+        and set(architectures).issubset({"arm64", "arm64e"})
+        and len(product_infos) == len(ARCHIVED_PRODUCTS)
+    )
+    product_binaries: dict[str, Path] = {}
+    for target, info in product_infos.items():
+        executable = info.get("CFBundleExecutable")
+        product = archive_path / ARCHIVED_PRODUCTS[target]
+        binary = product / executable if isinstance(executable, str) and executable else None
+        if binary is None or not binary.is_file() or binary.stat().st_size == 0:
+            device_platform_shape = False
+        else:
+            product_binaries[target] = binary
+        device_platform_shape = device_platform_shape and (
+            info.get("DTPlatformName") == "iphoneos"
+            and info.get("CFBundleSupportedPlatforms") == ["iPhoneOS"]
+            and isinstance(info.get("MinimumOSVersion"), str)
+            and bool(info.get("MinimumOSVersion"))
+        )
+    checks.append(
+        check(
+            "archiveDevicePlatformShape",
+            device_platform_shape,
+            "generic iPhoneOS arm64 archive with executable products" if device_platform_shape else "archive platform, architecture, or executable mismatch",
+            "Rebuild with destination generic/platform=iOS; simulator or incomplete products cannot pass.",
+        )
+    )
+
+    extension_shape = all(
+        product_infos.get(target, {}).get("NSExtension", {}).get("NSExtensionPointIdentifier")
+        == extension_point
+        for target, extension_point in ARCHIVED_EXTENSION_POINTS.items()
+    )
+    checks.append(
+        check(
+            "archiveExtensionPoints",
+            extension_shape,
+            "Widget and Messages extension points match" if extension_shape else "embedded extension point mismatch",
+            "Repair the extension Info.plist/build configuration and rebuild the archive.",
+        )
+    )
+
+    uuid_reader = uuid_reader or run_dwarf_uuids
+    symbols_match = len(product_binaries) == len(ARCHIVED_PRODUCTS)
+    for target, binary in product_binaries.items():
+        wrapper = ARCHIVED_PRODUCTS[target].name
+        executable = product_infos[target].get("CFBundleExecutable")
+        dsym_binary = archive_path / "dSYMs" / f"{wrapper}.dSYM/Contents/Resources/DWARF" / str(executable)
+        binary_uuids = uuid_reader(binary)
+        dsym_uuids = uuid_reader(dsym_binary) if dsym_binary.is_file() and dsym_binary.stat().st_size > 0 else frozenset()
+        symbols_match = symbols_match and bool(binary_uuids) and binary_uuids == dsym_uuids
     checks.append(
         check(
             "archiveSymbolsPresent",
-            not missing_dsyms,
-            "all app-owned dSYMs present" if not missing_dsyms else f"missing app-owned dSYM count={len(missing_dsyms)}",
-            "Keep Release debug information in dSYM form and archive all embedded products.",
+            symbols_match,
+            "all app-owned dSYMs UUID-match their binaries" if symbols_match else "missing, unreadable, or stale app-owned dSYM",
+            "Keep Release debug information in dSYM form and rebuild every embedded product in one archive.",
+        )
+    )
+
+    storekit_product_ids = _storekit_product_ids(repo_root)
+    try:
+        main_binary = product_binaries["Noum"].read_bytes()
+    except (KeyError, OSError):
+        main_binary = b""
+    apple_code_paths = (
+        len(storekit_product_ids) == len(STOREKIT_PRODUCT_CONSTANTS)
+        and all(product_id.encode("utf-8") in main_binary for product_id in storekit_product_ids)
+        and all(marker in main_binary for marker in APPLE_SERVICE_BINARY_MARKERS)
+    )
+    checks.append(
+        check(
+            "archiveAppleServiceCodePaths",
+            apple_code_paths,
+            "StoreKit products and AuthenticationServices compiled into app" if apple_code_paths else "StoreKit or Apple authentication release path missing",
+            "Restore the existing StoreKit 2 and Sign in with Apple source integration before archiving.",
+        )
+    )
+
+    main_info = product_infos.get("Noum", {})
+    try:
+        privacy_manifest = _read_plist(app / "PrivacyInfo.xcprivacy")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        privacy_manifest = {}
+    app_store_metadata = (
+        isinstance(main_info.get("ITSAppUsesNonExemptEncryption"), bool)
+        and privacy_manifest.get("NSPrivacyTracking") is False
+        and isinstance(privacy_manifest.get("NSPrivacyCollectedDataTypes"), list)
+        and isinstance(privacy_manifest.get("NSPrivacyAccessedAPITypes"), list)
+    )
+    checks.append(
+        check(
+            "archiveAppStoreMetadata",
+            app_store_metadata,
+            "root privacy manifest and export-compliance declaration present" if app_store_metadata else "privacy manifest or export-compliance declaration missing",
+            "Restore the app-owned privacy manifest and explicit encryption declaration before upload.",
         )
     )
 
@@ -335,6 +501,7 @@ def repository_checks(
     settings_collected: bool,
     archive_path: Path | None,
     scanner: Callable[[Path], bool] | None = None,
+    uuid_reader: Callable[[Path], frozenset[tuple[str, str]]] | None = None,
 ) -> list[Check]:
     expected_names = set(EXPECTED_TARGETS)
     checks = [
@@ -420,8 +587,26 @@ def repository_checks(
             "App Store Connect export; automatic signing; no team/profile pins" if _export_options_are_valid(repo_root) else "unsafe or malformed export options",
             "Restore scripts/TestFlightExportOptions.plist; never commit team IDs or profile UUIDs.",
         ),
+        check(
+            "sourceStoreKitContract",
+            len(_storekit_product_ids(repo_root)) == len(STOREKIT_PRODUCT_CONSTANTS),
+            "two distinct StoreKit 2 product identifiers with purchase/restore paths" if len(_storekit_product_ids(repo_root)) == len(STOREKIT_PRODUCT_CONSTANTS) else "StoreKit product or runtime contract missing",
+            "Restore the existing StoreKit 2 product, entitlement, and restore contract before archive verification.",
+        ),
     ]
-    checks.extend(archive_checks(repo_root, archive_path, scanner=scanner))
+    expected_version = (
+        settings.get("Noum", {}).get("MARKETING_VERSION"),
+        settings.get("Noum", {}).get("CURRENT_PROJECT_VERSION"),
+    )
+    checks.extend(
+        archive_checks(
+            repo_root,
+            archive_path,
+            scanner=scanner,
+            expected_version=expected_version,
+            uuid_reader=uuid_reader,
+        )
+    )
     return checks
 
 
@@ -456,6 +641,15 @@ def identity_counts(output: str) -> dict[str, int]:
         "development": development,
         "distribution": distribution,
     }
+
+
+def distribution_identity_fingerprints(output: str) -> frozenset[str]:
+    matches = re.findall(
+        r'^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"(?:Apple|iPhone) Distribution:',
+        output,
+        flags=re.MULTILINE,
+    )
+    return frozenset(match.upper() for match in matches)
 
 
 def _decode_profile(path: Path) -> dict[str, Any] | None:
@@ -545,11 +739,23 @@ def _profile_has_expected_capabilities(profile: dict[str, Any], target: str) -> 
     )
 
 
+def _profile_certificate_fingerprints(profile: dict[str, Any]) -> frozenset[str]:
+    certificates = profile.get("DeveloperCertificates")
+    if not isinstance(certificates, list):
+        return frozenset()
+    return frozenset(
+        hashlib.sha1(certificate).hexdigest().upper()
+        for certificate in certificates
+        if isinstance(certificate, bytes) and certificate
+    )
+
+
 def _matching_app_store_profiles(
     profiles: Iterable[dict[str, Any]],
     target: str,
     team: str,
     now: datetime,
+    distribution_fingerprints: frozenset[str],
 ) -> int:
     expected_bundle = EXPECTED_TARGETS[target]["bundle"]
     return sum(
@@ -558,6 +764,7 @@ def _matching_app_store_profiles(
         and _profile_team(profile) == team
         and _profile_is_unexpired(profile, now)
         and _profile_has_expected_capabilities(profile, target)
+        and bool(_profile_certificate_fingerprints(profile).intersection(distribution_fingerprints))
         for profile in profiles
     )
 
@@ -568,6 +775,7 @@ def authority_checks(
     profiles: list[dict[str, Any]],
     unreadable_profiles: int = 0,
     now: datetime | None = None,
+    distribution_fingerprints: frozenset[str] = frozenset(),
 ) -> list[Check]:
     now = now or datetime.now(timezone.utc)
     team = settings.get("Noum", {}).get("DEVELOPMENT_TEAM", "")
@@ -587,13 +795,23 @@ def authority_checks(
         ),
     ]
     for target in ("Noum", "NoumWidget", "NoumMessages"):
-        count = _matching_app_store_profiles(profiles, target, team, now) if team else 0
+        count = (
+            _matching_app_store_profiles(
+                profiles,
+                target,
+                team,
+                now,
+                distribution_fingerprints,
+            )
+            if team
+            else 0
+        )
         checks.append(
             check(
                 f"appStoreProfile{target}",
                 count > 0,
-                f"matching App Store profiles={count}; installed App Store profiles={app_store_count}",
-                "Use the authorized paid team to enable the required capabilities and generate a fresh App Store profile.",
+                f"identity-bound matching App Store profiles={count}; installed App Store profiles={app_store_count}",
+                "Use the authorized paid team to install an identity-bound profile with the required capabilities.",
             )
         )
     return checks
@@ -631,6 +849,18 @@ def evidence_checks(readiness: dict[str, Any] | None) -> list[Check]:
                 "no validated evidence directory supplied",
                 "Complete the externally verified operational launch artifact, including Apple services and upload proof.",
             ),
+            check(
+                "appleReleaseServicesEvidence",
+                False,
+                "no accepted Apple release-services prerequisite",
+                "Verify paid-team signing, Sign in with Apple/Firebase configuration, and both StoreKit products in App Store Connect.",
+            ),
+            check(
+                "storeKitTestFlightEvidence",
+                False,
+                "no accepted physical StoreKit purchase/restore evidence",
+                "Collect the redacted StoreKit receipt row from the same physical TestFlight build.",
+            ),
         ]
 
     def accepted(blocker: str) -> bool:
@@ -655,6 +885,18 @@ def evidence_checks(readiness: dict[str, Any] | None) -> list[Check]:
             operational,
             "existing validator accepted operational launch artifact" if operational else "missing or rejected by existing validator",
             "Attach independently verified Apple-service, TestFlight-upload, and launch-operation proof.",
+        ),
+        check(
+            "appleReleaseServicesEvidence",
+            operational,
+            "existing validator accepted exact Apple release-services prerequisite" if operational else "Apple release-services prerequisite missing or rejected",
+            "The redacted evidence must cover paid-team signing, Apple/Firebase Sign in with Apple, and exact StoreKit metadata.",
+        ),
+        check(
+            "storeKitTestFlightEvidence",
+            testflight,
+            "existing validator accepted physical TestFlight StoreKit row" if testflight else "physical TestFlight StoreKit row missing or rejected",
+            "A local StoreKit configuration or direct install cannot prove sandbox purchase and restore.",
         ),
     ]
 
@@ -681,7 +923,7 @@ def result_payload(sections: Iterable[Section]) -> dict[str, Any]:
     }
 
 
-def collect_identities() -> dict[str, int]:
+def collect_identity_authority() -> tuple[dict[str, int], frozenset[str]]:
     completed = subprocess.run(
         ["security", "find-identity", "-v", "-p", "codesigning"],
         stdout=subprocess.PIPE,
@@ -689,7 +931,8 @@ def collect_identities() -> dict[str, int]:
         text=True,
         check=False,
     )
-    return identity_counts(completed.stdout if completed.returncode in (0, 1) else "")
+    output = completed.stdout if completed.returncode in (0, 1) else ""
+    return identity_counts(output), distribution_identity_fingerprints(output)
 
 
 def collect_build_settings(repo_root: Path, source_packages: Path | None) -> tuple[dict[str, dict[str, str]], bool]:
@@ -910,9 +1153,15 @@ def main(argv: list[str] | None = None) -> int:
     if build_check is not None:
         repo_checks.insert(0, build_check)
 
-    identities = collect_identities()
+    identities, distribution_fingerprints = collect_identity_authority()
     profiles, unreadable = load_profiles(default_profile_dirs())
-    authority = authority_checks(settings, identities, profiles, unreadable)
+    authority = authority_checks(
+        settings,
+        identities,
+        profiles,
+        unreadable,
+        distribution_fingerprints=distribution_fingerprints,
+    )
 
     evidence_dir_value = args.evidence_dir or os.environ.get("NOUM_COACH_EVAL_DUMP_DIR")
     evidence_dir = Path(evidence_dir_value).expanduser().resolve() if evidence_dir_value else None
