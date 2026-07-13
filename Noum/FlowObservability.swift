@@ -35,6 +35,10 @@ enum FlowKind: String, Codable, CaseIterable {
 /// Stable, bounded event vocabulary for the transformation KPIs. Keeping these
 /// names beside the report prevents call sites and denominators drifting apart.
 enum TransformationKPIEventStage {
+    static let structuredStarted = "activation.structuredStarted"
+    static let structuredValueDelivered = "activation.structuredValueDelivered"
+    static let liveUpgradeTapped = "activation.liveUpgradeTapped"
+    static let profileSetupTapped = "activation.profileSetupTapped"
     static let prescriptionShown = "prescription.shown"
     static let prescriptionAccepted = "prescription.accepted"
     static let cloudTranscriptionResolvedCloud = "transcription.cloudResolvedCloud"
@@ -286,10 +290,17 @@ final class FlowEventLog: ObservableObject {
 
     private func trimmed(_ source: [FlowEvent]) -> [FlowEvent] {
         let ordered = source.sorted { $0.createdAt > $1.createdAt }
-        let pinnedPrefixes = ["activation.firstEligible", "transformation.helpfulness"]
-        let pinned = Array(pinnedPrefixes.compactMap { prefix in
-            ordered.first(where: { $0.stage.hasPrefix(prefix) })
-        }.prefix(maxRecords))
+        // These records anchor cohort denominators and must survive the bounded
+        // diagnostics ring. Pin the earliest structured-value delivery rather
+        // than the newest one so a duplicate emission can never move a user's
+        // measured time-to-first-value forward.
+        let pinned = Array([
+            ordered.filter { $0.stage == "activation.firstEligible" }
+                .min(by: { $0.createdAt < $1.createdAt }),
+            ordered.filter { $0.stage == TransformationKPIEventStage.structuredValueDelivered }
+                .min(by: { $0.createdAt < $1.createdAt }),
+            ordered.first(where: { $0.stage.hasPrefix("transformation.helpfulness") }),
+        ].compactMap { $0 }.prefix(maxRecords))
         let pinnedIDs = Set(pinned.map(\.id))
         let recentCapacity = max(0, maxRecords - pinned.count)
         let recent = ordered.filter { !pinnedIDs.contains($0.id) }.prefix(recentCapacity)
@@ -298,8 +309,17 @@ final class FlowEventLog: ObservableObject {
 }
 
 struct TransformationKPIReport: Equatable {
+    /// A durable spoken practice session exists. Structured first value never
+    /// satisfies this field, preserving its historical speech-evidence meaning.
     let firstRepCompleted: Bool
     let timeToFirstRepSeconds: TimeInterval?
+    /// Either a durable spoken rep or the permissionless structured exercise
+    /// delivered visible value, whichever happened first.
+    let firstValueCompleted: Bool
+    let timeToFirstValueSeconds: TimeInterval?
+    /// Kept separate so diagnostics never conflate structured activation with
+    /// durable speech evidence.
+    let firstStructuredValueCompleted: Bool
     let sessionsPerActiveWeek: Double
     let reviewOpenRate: Double?
     let prescriptionAcceptanceRate: Double?
@@ -322,8 +342,16 @@ struct TransformationKPIReport: Equatable {
         let orderedSessions = sessions.filter { !$0.isEvaluationFixture }.sorted { $0.date < $1.date }
         let firstEligible = events.filter { $0.stage == "activation.firstEligible" }.map(\.createdAt).min()
         let firstRep = orderedSessions.first?.date
+        let firstStructuredValue = events
+            .filter { $0.stage == TransformationKPIEventStage.structuredValueDelivered }
+            .map(\.createdAt)
+            .min()
+        let firstValue = [firstRep, firstStructuredValue].compactMap { $0 }.min()
         let timeToFirstRep = firstEligible.flatMap { start in
             firstRep.map { max(0, $0.timeIntervalSince(start)) }
+        }
+        let timeToFirstValue = firstEligible.flatMap { start in
+            firstValue.map { max(0, $0.timeIntervalSince(start)) }
         }
 
         let activeDays = Set(events.filter { $0.stage == "retention.appActive" }.map {
@@ -386,6 +414,9 @@ struct TransformationKPIReport: Equatable {
         return TransformationKPIReport(
             firstRepCompleted: firstRep != nil,
             timeToFirstRepSeconds: timeToFirstRep,
+            firstValueCompleted: firstValue != nil,
+            timeToFirstValueSeconds: timeToFirstValue,
+            firstStructuredValueCompleted: firstStructuredValue != nil,
             sessionsPerActiveWeek: sessionsPerWeek,
             reviewOpenRate: reviewRate,
             prescriptionAcceptanceRate: acceptance,

@@ -48,6 +48,9 @@ struct TransformationKPIReportTests {
         )
         #expect(report.firstRepCompleted)
         #expect(report.timeToFirstRepSeconds == 45)
+        #expect(report.firstValueCompleted)
+        #expect(report.timeToFirstValueSeconds == 45)
+        #expect(!report.firstStructuredValueCompleted)
         #expect(report.reviewOpenRate == 1)
         #expect(report.prescriptionAcceptanceRate == 1)
         #expect(report.cloudToLocalFallbackRate == 1)
@@ -57,6 +60,134 @@ struct TransformationKPIReportTests {
         #expect(report.notificationOptInAfterValue == true)
         #expect(report.retainedDay1 == true)
         #expect(events.allSatisfy { !$0.reason.contains("private transcript") })
+    }
+
+    @Test func structuredOnlyCompletionIsFirstValueButNotSpokenRep() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let events = [
+            FlowEvent.make(
+                createdAt: start,
+                correlationId: UUID(),
+                flow: .other,
+                stage: "activation.firstEligible"
+            ),
+            FlowEvent.make(
+                createdAt: start.addingTimeInterval(32),
+                correlationId: UUID(),
+                flow: .other,
+                stage: TransformationKPIEventStage.structuredValueDelivered,
+                reason: "structured value delivered",
+                numerics: ["wordCount": 18]
+            ),
+        ]
+
+        let report = TransformationKPIReport.derive(
+            events: events,
+            sessions: [],
+            outcomes: []
+        )
+
+        #expect(!report.firstRepCompleted)
+        #expect(report.timeToFirstRepSeconds == nil)
+        #expect(report.firstValueCompleted)
+        #expect(report.timeToFirstValueSeconds == 32)
+        #expect(report.firstStructuredValueCompleted)
+    }
+
+    @Test func spokenOnlyCompletionPreservesRepAndFirstValueSemantics() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let session = PracticeSession(
+            transcript: "Private speech evidence remains in the session store only.",
+            fillerWordCount: 0,
+            duration: 20,
+            date: start.addingTimeInterval(41),
+            mode: .timed
+        )
+        let report = TransformationKPIReport.derive(
+            events: [
+                FlowEvent.make(
+                    createdAt: start,
+                    correlationId: UUID(),
+                    flow: .other,
+                    stage: "activation.firstEligible"
+                )
+            ],
+            sessions: [session],
+            outcomes: []
+        )
+
+        #expect(report.firstRepCompleted)
+        #expect(report.timeToFirstRepSeconds == 41)
+        #expect(report.firstValueCompleted)
+        #expect(report.timeToFirstValueSeconds == 41)
+        #expect(!report.firstStructuredValueCompleted)
+    }
+
+    @Test func firstValueUsesEarlierOfStructuredAndSpokenRegardlessOfOrdering() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let eligible = FlowEvent.make(
+            createdAt: start,
+            correlationId: UUID(),
+            flow: .other,
+            stage: "activation.firstEligible"
+        )
+        func structured(at offset: TimeInterval) -> FlowEvent {
+            FlowEvent.make(
+                createdAt: start.addingTimeInterval(offset),
+                correlationId: UUID(),
+                flow: .other,
+                stage: TransformationKPIEventStage.structuredValueDelivered,
+                reason: "structured value delivered"
+            )
+        }
+        func session(at offset: TimeInterval) -> PracticeSession {
+            PracticeSession(
+                transcript: "Private spoken response.",
+                fillerWordCount: 0,
+                duration: 20,
+                date: start.addingTimeInterval(offset),
+                mode: .timed
+            )
+        }
+
+        let structuredFirst = TransformationKPIReport.derive(
+            events: [eligible, structured(at: 20)],
+            sessions: [session(at: 50)],
+            outcomes: []
+        )
+        let spokenFirst = TransformationKPIReport.derive(
+            events: [eligible, structured(at: 50)],
+            sessions: [session(at: 20)],
+            outcomes: []
+        )
+
+        #expect(structuredFirst.timeToFirstValueSeconds == 20)
+        #expect(structuredFirst.timeToFirstRepSeconds == 50)
+        #expect(structuredFirst.firstStructuredValueCompleted)
+        #expect(spokenFirst.timeToFirstValueSeconds == 20)
+        #expect(spokenFirst.timeToFirstRepSeconds == 20)
+        #expect(spokenFirst.firstStructuredValueCompleted)
+    }
+
+    @Test func noStructuredEventOrSessionLeavesFirstValuePending() {
+        let report = TransformationKPIReport.derive(
+            events: [
+                FlowEvent.make(
+                    correlationId: UUID(),
+                    flow: .other,
+                    stage: TransformationKPIEventStage.structuredStarted,
+                    reason: "structured exercise opened"
+                )
+            ],
+            sessions: [],
+            outcomes: []
+        )
+
+        #expect(!report.firstRepCompleted)
+        #expect(report.timeToFirstRepSeconds == nil)
+        #expect(!report.firstValueCompleted)
+        #expect(report.timeToFirstValueSeconds == nil)
+        #expect(!report.firstStructuredValueCompleted)
     }
 
     @Test func prescriptionAcceptanceUsesDistinctShownToTapPairs() {
@@ -217,6 +348,77 @@ struct TransformationKPIReportTests {
         #expect(log.events.contains { $0.stage == "activation.firstEligible" })
         #expect(log.events.contains { $0.stage == "transformation.helpfulness.yes" })
         #expect(!TransformationQuestionEligibility.shouldShow(sessionCount: 3, events: log.events))
+    }
+
+    @MainActor
+    @Test func structuredValueAnchorSurvivesRingTrimmingWithoutUserContent() {
+        let defaults = UserDefaults(suiteName: "kpi.\(UUID().uuidString)")!
+        let log = FlowEventLog(defaults: defaults, storageKey: "events", maxRecords: 4)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let correlationID = UUID()
+        log.log(FlowEvent.make(
+            createdAt: start,
+            correlationId: UUID(),
+            flow: .other,
+            stage: "activation.firstEligible",
+            reason: "first account-local value opportunity"
+        ))
+        log.log(FlowEvent.make(
+            createdAt: start.addingTimeInterval(17),
+            correlationId: correlationID,
+            flow: .other,
+            stage: TransformationKPIEventStage.structuredValueDelivered,
+            reason: "structured value delivered",
+            numerics: ["wordCount": 14]
+        ))
+        // A duplicate completion must not replace the true first-value anchor.
+        log.log(FlowEvent.make(
+            createdAt: start.addingTimeInterval(25),
+            correlationId: UUID(),
+            flow: .other,
+            stage: TransformationKPIEventStage.structuredValueDelivered,
+            reason: "duplicate structured value delivery ignored by KPI minimum"
+        ))
+        for index in 30...40 {
+            log.log(FlowEvent.make(
+                createdAt: start.addingTimeInterval(Double(index)),
+                correlationId: UUID(),
+                flow: .other,
+                stage: "noise.\(index)"
+            ))
+        }
+
+        let anchor = log.events.first { $0.correlationId == correlationID }
+        #expect(log.events.count == 4)
+        #expect(anchor?.stage == TransformationKPIEventStage.structuredValueDelivered)
+        #expect(anchor?.reason == "structured value delivered")
+        #expect(anchor?.numerics == ["wordCount": 14])
+        #expect(log.events.allSatisfy { $0.reason.count <= 256 && $0.numerics.count <= 12 })
+
+        let report = TransformationKPIReport.derive(
+            events: log.events,
+            sessions: [],
+            outcomes: []
+        )
+        #expect(report.timeToFirstValueSeconds == 17)
+        #expect(report.firstStructuredValueCompleted)
+    }
+
+    @Test func structuredActivationStagesAreStableAndBounded() {
+        let stages = [
+            TransformationKPIEventStage.structuredStarted,
+            TransformationKPIEventStage.structuredValueDelivered,
+            TransformationKPIEventStage.liveUpgradeTapped,
+            TransformationKPIEventStage.profileSetupTapped,
+        ]
+
+        #expect(stages == [
+            "activation.structuredStarted",
+            "activation.structuredValueDelivered",
+            "activation.liveUpgradeTapped",
+            "activation.profileSetupTapped",
+        ])
+        #expect(stages.allSatisfy { !$0.isEmpty && $0.count <= 48 })
     }
 
     @Test func qualitativeQuestionAppearsOnlyAfterThreeRepsAndOnlyOnce() {
