@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "coach-real-device-testflight-qa-v2",
+  "templateStatus": "NOT_PRODUCTION_EVIDENCE",
+  "testRunID": "",
+  "appVersion": "",
+  "buildNumber": "",
+  "deviceModel": "",
+  "osVersion": "",
+  "testerRole": "",
+  "testRunAttestation": {
+    "testerID": "",
+    "verifierID": "",
+    "distributionChannel": "UNVERIFIED",
+    "testFlightInstallationReference": "",
+    "attestationReference": "",
+    "attestedAtISO8601": "",
+    "attestsPhysicalDeviceWasUsed": false,
+    "attestsInstalledBuildCameFromTestFlight": false
+  },
+  "summary": {
+    "rowCount": 4,
+    "requiredSurfaceCount": 4,
+    "passedRequiredSurfaceCount": 0,
+    "realDeviceSurfaceCount": 0,
+    "testFlightBuildSurfaceCount": 0,
+    "artifactBackedSurfaceCount": 0,
+    "expectedEvidenceKindSurfaceCount": 4,
+    "sameBuildSurfaceCount": 0,
+    "deviceIdentitySurfaceCount": 0,
+    "latencyWithinBudgetSurfaceCount": 0,
+    "blockingIssueCount": 0,
+    "crashFree": false,
+    "readinessWarnings": [
+      "templateNotCompleted"
+    ]
+  },
+  "rows": [
+    {
+      "surfaceKey": "liveActivity",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "screenRecording",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "notes": []
+    },
+    {
+      "surfaceKey": "aiPromptLatency",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "latencyTrace",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "notes": []
+    },
+    {
+      "surfaceKey": "soundscapeAudioSession",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "audioSessionLog",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "notes": []
+    },
+    {
+      "surfaceKey": "paywallPurchase",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "storeKitReceipt",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "notes": []
+    }
+  ]
+}

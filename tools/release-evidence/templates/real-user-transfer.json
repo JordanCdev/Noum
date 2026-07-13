@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "coach-real-user-transfer-outcomes-v3",
+  "templateStatus": "NOT_PRODUCTION_EVIDENCE",
+  "studyProtocolVersion": "coach-transfer-outcome-ledger-v3",
+  "protocolRegistrationReference": "",
+  "analysisPlanReference": "",
+  "comparisonMethod": "prePostWithinUser",
+  "benchmarkReference": "",
+  "cohortDescription": "",
+  "studyAttestation": {
+    "principalInvestigatorID": "",
+    "analystID": "",
+    "attestationReference": "",
+    "participantConsentLogReference": "",
+    "withdrawalLogReference": "",
+    "exclusionLogReference": "",
+    "adverseOutcomeLogReference": "",
+    "attestedAtISO8601": "",
+    "attestsCompleteEnrollmentAccounting": false,
+    "attestsWithdrawalsAndExclusionsWereRetained": false,
+    "attestsNegativeAndAdverseOutcomesWereRetained": false
+  },
+  "enrollment": {
+    "enrolledUserCount": 0,
+    "completedUserCount": 0,
+    "withdrawnUserCount": 0,
+    "excludedUserCount": 0,
+    "exclusionLogReference": ""
+  },
+  "outcomeCount": 0,
+  "summary": {
+    "rowCount": 0,
+    "uniqueUserCount": 0,
+    "completedFollowUpCount": 0,
+    "realWorldMomentCount": 0,
+    "linkedInterventionOutcomeCount": 0,
+    "positiveTransferCount": 0,
+    "audienceResponseEvidenceCount": 0,
+    "noRegressionOutcomeCount": 0,
+    "adverseOutcomeCount": 0,
+    "resolvedAdverseOutcomeCount": 0,
+    "passingOutcomeCount": 0,
+    "minimumDaysSinceFirstSession": 0,
+    "studyDurationDays": 0,
+    "uniqueMomentCategoryCount": 0,
+    "verifiedEvidenceReferenceCount": 0,
+    "minimumFollowUpDelayHours": 0,
+    "maximumOutcomesPerUser": 0,
+    "readinessWarnings": [
+      "templateNotCompleted"
+    ]
+  },
+  "rows": []
+}

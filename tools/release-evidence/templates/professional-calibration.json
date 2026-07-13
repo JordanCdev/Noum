@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "coach-chat-conversation-expert-calibration-results-v2",
+  "templateStatus": "NOT_PRODUCTION_EVIDENCE",
+  "sourcePacketSchemaVersion": "coach-chat-conversation-expert-calibration-v2",
+  "sourcePacketFingerprint": "",
+  "rubricVersion": "coach-parity-conversation-calibration-v2",
+  "reviewerRole": "professionalCommunicationCoach",
+  "reviewCount": 0,
+  "collectionAttestation": {
+    "coordinatorID": "",
+    "coordinatorRole": "",
+    "blindAssignmentReference": "",
+    "attestationReference": "",
+    "attestedAtISO8601": "",
+    "attestsReviewsWereIndependentAndBlinded": false,
+    "attestsNoReviewerWasOnTheNoumProductTeam": false
+  },
+  "reviewerAttestations": [],
+  "summary": {
+    "rowCount": 0,
+    "reviewerCount": 0,
+    "completedReviewCount": 0,
+    "passingCalibrationCount": 0,
+    "wouldUseWithClientCount": 0,
+    "unsafeOrUnreadyCount": 0,
+    "averageOverallUsefulness": 0,
+    "minimumOverallUsefulness": 0,
+    "readinessWarnings": [
+      "templateNotCompleted"
+    ]
+  },
+  "rows": []
+}
