@@ -12,23 +12,41 @@ cd "$repo_root"
 
 dump_dir="${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}"
 derived_data="${NOUM_COACH_DERIVED_DATA:-/private/tmp/noum-derived-data-evidence}"
+source_packages="${NOUM_COACH_SPM_DIR:-$repo_root/.build/fast-lane-release/SourcePackages}"
 destination="${NOUM_COACH_XCODE_DESTINATION:-platform=iOS Simulator,name=iPhone 17 Pro}"
 
 mkdir -p "$dump_dir" "$derived_data"
+if [[ ! -d "$source_packages/checkouts" ]]; then
+  echo "Missing populated offline Swift package cache: $source_packages/checkouts" >&2
+  echo "Set NOUM_COACH_SPM_DIR to an existing SourcePackages directory." >&2
+  exit 2
+fi
 
 ./tools/coach-arena/run.sh app-path-source "$dump_dir"
 
-NOUM_COACH_EVAL_DUMP_DIR="$dump_dir" xcodebuild test \
+env \
+  -u COACH_ARENA_LLM_JUDGE_CMD \
+  -u ANTHROPIC_API_KEY \
+  -u GEMINI_API_KEY \
+  -u OPENAI_API_KEY \
+  -u DEEPSEEK_API_KEY \
+  NOUM_COACH_EVAL_DUMP_DIR="$dump_dir" \
+  xcodebuild test \
   -quiet \
   -project Noum.xcodeproj \
   -scheme Noum \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
+  -clonedSourcePackagesDirPath "$source_packages" \
+  -disableAutomaticPackageResolution \
   -parallel-testing-enabled NO \
   -maximum-parallel-testing-workers 1 \
-  -only-testing:NoumTests/CoachChatConversationArtifactDumpXCTest
+  -only-testing:NoumTests/CoachChatConversationArtifactDumpXCTest \
+  CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES
 
-./tools/coach-arena/run.sh app-path "$dump_dir/coach-chat-conversation-app-path-eval-v1.json"
+env -u COACH_ARENA_LLM_JUDGE_CMD \
+  ./tools/coach-arena/run.sh app-path "$dump_dir/coach-chat-conversation-app-path-eval-v1.json"
 ./tools/coach-arena/run.sh app-path-preflight "$dump_dir"
 ./tools/coach-arena/run.sh readiness \
   --dump-dir "$dump_dir" \

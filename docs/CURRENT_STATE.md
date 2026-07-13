@@ -1,5 +1,36 @@
 # Noum — Current state
 
+## 2026-07-13 — Research closure audit, evidence integrity, and release authority
+
+The original research report is now mapped requirement by requirement across
+its recommendations, deliverables, 24 named acceptance tests, KPIs, experiments,
+and production proof gates. The audit distinguishes proved local substrate from
+intentional product contradictions and unearned real-world claims. Public
+numeric identity scoring, humorous/calm goals, population experiment results,
+and human-coach-equivalence claims remain withheld rather than simulated.
+
+The production evidence boundary now fails closed on the exact twelve launch
+prerequisites and a fully redacted, full-history secret adjudication bound to a
+40-character reachable Git commit. The legacy AWS probe sends no credential,
+retains no response body, never calls Deepgram, and accepts only `401`/`403`
+(protected) or `404`/`410` (disabled) across all five documented routes. The
+local Apple preflight separately verifies repository/archive shape, installed
+distribution authority, and independently collected TestFlight evidence. Its
+unsigned archive checks pass, while this Mac has zero valid Apple Distribution
+identities and zero matching App Store profiles; no sign, export, upload, or
+Apple-account mutation was attempted.
+
+The canonical Swift app-path evidence was regenerated offline from the real
+XCTest bridge at source commit `6db20dbc` and coach fingerprint
+`sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`.
+All 109 traces are source-matched; all 50 scored fixtures pass at a 79.76 average
+with zero local score, coverage, real-pipeline, or trace-quality failures. The
+readiness gate also passes 18/18 static checks and 3/3 hosted-privacy probes.
+Production remains **NO-GO at 18/100** because none of the five independent
+external artifacts passes: live-provider sweep, blinded professional review,
+longitudinal real-user transfer, physical TestFlight QA, and operational launch
+sign-off. These are external proof obligations, not remaining local fixtures.
+
 ## 2026-07-13 — Research execution workflows and fail-closed production gates
 
 The remaining locally implementable research work is now organized around the

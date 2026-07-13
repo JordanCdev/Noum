@@ -4,7 +4,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 
 Audit date: 2026-07-13
 
-Audited checkout: `b05258ab55b05b3b895a8ddc538e82ce46e054c3`
+Audited checkout: `6db20dbc6abf74e8c750c4cf2a0efdaed503d431`
 
 Integrated branch: `ux-overhaul`
 
@@ -63,10 +63,11 @@ audio stream, and extension of existing owners rather than parallel stores.
 
 ## Plan
 
-This document is the only file changed. It records literal report coverage,
-the safer shipped alternatives, acceptance-test evidence, KPI/experiment
-boundaries, and the current release prerequisites. It does not add a model,
-screen, store, route, deployment, or production mutation.
+This document records literal report coverage, the safer shipped alternatives,
+acceptance-test evidence, KPI/experiment boundaries, and the current release
+prerequisites. The integration pass also hardened the existing evidence and
+preflight workflows; it did not add a parallel product model, screen, store, or
+route, and it made no production mutation.
 
 ## Classification key
 
@@ -275,10 +276,11 @@ substrate, but it is not a cohort analytics service.
 | Evidence item | Classification | Result on 2026-07-13 |
 |---|---|---|
 | Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests`, `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
-| Coach-arena Python contracts | **Proved** | 104 tests passed. |
-| Release-evidence workflow contracts | **Proved** | 10 tests passed. They prove fail-closed tooling, not that external evidence exists. |
-| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `b05258ab` and coach fingerprint `sha256:8c0f79c863810f609e61ef2dfa0d9e1126f9ee97a610dc18d2e8323b9e6a7dd5`; 53 conversations/109 turns pass the app-path floor. |
-| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T04:10:54+00:00` embeds `b05258ab` / `sha256:8c0f…a7dd5`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
+| Coach-arena contracts | **Proved** | 119 Node tests and 105 Python tests passed. |
+| Release-evidence workflow contracts | **Proved** | 26 tests passed. They prove fail-closed tooling, full-commit history-scan binding, and validator agreement—not that external evidence exists. |
+| Legacy endpoint and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests and 15 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |
+| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `6db20dbc` and coach fingerprint `sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`; 53 conversations/109 turns pass the app-path floor. |
+| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T04:47:58+00:00` embeds `6db20dbc` / `sha256:71ba…d0bb`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, and trace-quality gates with zero local fixture failures. It is still synthetic/local target-shape evidence, not external proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 18/18 static checks. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
 | Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. |
 
@@ -304,11 +306,11 @@ credential revocation, or production traffic.
 | Replacement transcription boundary in source | **Proved** | Release construction uses the authenticated Firebase/Deepgram route with local fallback. This is product substrate, not a signed-device or live-service proof. |
 | Historical Deepgram/AWS incident closed | **Missing** | The runbook still requires legacy credential revocation, disabling/authenticating every legacy endpoint, and provider usage/billing audit. |
 | Protected social cutover | **Missing** | Production backup/quarantine, explicit disposition, trusted server-authored evidence, migration dry run, and coordinated rules/functions deployment remain approval-gated. |
-| Hosted Firebase privacy page | **Weak evidence** | The runbook records the Firebase Hosting URL as deployed, but this audit did not perform a live probe. |
+| Hosted Firebase privacy page | **Proved** | The readiness live probe passes 3/3 checks for `https://noum-d0b6f.web.app/privacy`. This proves public reachability only, not App Store disclosure review or the custom domain. |
 | `noum.app` custom privacy domain | **Missing** | The runbook records it as parked at GoDaddy pending DNS, TLS, and policy verification. |
 | Sign in with Apple entitlement in the app | **Proved** | `Noum.entitlements` contains the capability. |
 | Sign in with Apple Firebase/provider configuration | **Missing** | External Apple/Firebase configuration remains unchecked in `docs/TESTFLIGHT_QA.md`. |
-| Paid-team archive signing on this host | **Missing** | The project uses automatic signing for team `UF8H25D98V`; the locally listed development identities are for `VKVKU448PC`, including one explicitly revoked identity. No matching paid-team archive identity/provisioning proof was produced. |
+| Paid-team archive signing on this host | **Missing** | The fail-closed local preflight finds zero valid Apple Distribution identities and zero matching App Store profiles for the app, Widget, and Messages extension. It does not claim what exists in the Apple Developer account. |
 | App Store Connect StoreKit products and metadata | **Missing** | No verified App Store Connect evidence or signed purchase/restore run exists. |
 | Build/version notes and TestFlight upload | **Missing** | The pre-flight checklist remains unchecked and the operational artifact is absent. |
 | Signed physical-TestFlight run | **Missing** | Required App Check, real microphone, consent/offline/reconnect, auth, deletion, notification, widget/Live Activity, accessibility, and purchase/restore evidence is absent. |
@@ -317,7 +319,7 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-Keep the committed `b05258ab` canonical app-path baseline intact, run the full
+Keep the committed `6db20dbc` canonical app-path baseline intact, run the full
 Noum unit/UI regression set against the final integrated checkout, and
 regenerate the canonical report only if integration changes the coach source
 fingerprint. This protects local evidence freshness and catches integration

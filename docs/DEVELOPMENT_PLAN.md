@@ -20,7 +20,7 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
 | Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration and unsupported locales fail closed | Bind a deidentified source-evidence package, complete professional/longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals |
 | Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof |
-| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export, deletion, atomic live-evidence capture, and fail-closed external evidence collection are implemented | Revoke the leaked legacy Deepgram credential, protect/disable its AWS endpoint, and complete physical-device and release-policy verification |
+| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, atomic live evidence, exact launch-prerequisite/history-scan validation, a status-only five-route containment probe, and a redacted Apple signing/TestFlight preflight are implemented | Revoke the leaked legacy Deepgram credential, protect/disable every legacy route, audit provider usage/billing, install paid-team distribution authority, and complete physical-device and release-policy verification |
 | Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented; both research experiment contracts default to unassigned | Product approval and real cohort analysis, protected social cutover, and calibrated language expansion |
 
 The supported local evidence refresh is:
@@ -28,6 +28,11 @@ The supported local evidence refresh is:
 ```bash
 ./tools/coach-arena/run.sh evidence-refresh --no-fail
 ```
+
+The workflow now fails when its local Swift package cache is absent, disables
+automatic package resolution, unsets provider/judge keys for the XCTest bridge,
+and disables code signing. It regenerates local evidence only; it cannot spend
+provider quota or manufacture any external artifact.
 
 A real live-provider sweep requires explicit quota authorization and publishes
 only after the current-source capture passes atomically:
