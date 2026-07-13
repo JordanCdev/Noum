@@ -1092,20 +1092,151 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
 }
 
 struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-real-device-testflight-qa-v2"
+    static let expectedSchemaVersion = "coach-real-device-testflight-qa-v3"
     static let maximumAIPromptLatencyMs = 3_000
     static let requiredSurfaceKeys = [
         "liveActivity",
         "aiPromptLatency",
         "soundscapeAudioSession",
-        "paywallPurchase"
+        "storeKitPurchaseRestoreEntitlements",
+        "productionTranscriptionConsent",
+        "transcriptionFailureIntegrity",
+        "pitchMetrics",
+        "multilingualPractice",
+        "modeSmoke",
+        "accountAuthentication",
+        "accountDeletion",
+        "accessibilityMotionType",
+        "notificationLifecycle",
+        "widgetRefresh"
     ]
     static let expectedEvidenceKindBySurface = [
         "liveActivity": "screenRecording",
         "aiPromptLatency": "latencyTrace",
         "soundscapeAudioSession": "audioSessionLog",
-        "paywallPurchase": "storeKitReceipt"
+        "storeKitPurchaseRestoreEntitlements": "storeKitReceipt",
+        "productionTranscriptionConsent": "transcriptionConsentTrace",
+        "transcriptionFailureIntegrity": "recordingIntegrityTrace",
+        "pitchMetrics": "pitchMetricsCapture",
+        "multilingualPractice": "multilingualSessionCapture",
+        "modeSmoke": "modeSmokeRunLog",
+        "accountAuthentication": "authenticationLifecycleTrace",
+        "accountDeletion": "accountDeletionTrace",
+        "accessibilityMotionType": "accessibilityScreenRecording",
+        "notificationLifecycle": "notificationDeliveryLog",
+        "widgetRefresh": "widgetScreenRecording"
     ]
+    static let requiredCheckKeysBySurface: [String: [String]] = [
+        "liveActivity": [
+            "dynamicIslandCompactExpanded",
+            "lockScreenPresentation",
+            "finishDismisses",
+            "forceQuitEnds"
+        ],
+        "aiPromptLatency": [
+            "productionPromptWithinBudget",
+            "repeatedBeginWithinBudget",
+            "airplaneModeCuratedFallback"
+        ],
+        "soundscapeAudioSession": [
+            "focusCalmSteadyPlayback",
+            "stopsWhenRecordingStarts",
+            "phoneInterruptionRecovers",
+            "spotifyMixesPolitely"
+        ],
+        "storeKitPurchaseRestoreEntitlements": [
+            "paywallOpensFromSettings",
+            "monthlySandboxPurchase",
+            "annualSandboxPurchase",
+            "restorePreviousPurchase",
+            "coachModeEntitlement",
+            "liveTranscriptEntitlement",
+            "fillerTrackingEntitlement"
+        ],
+        "productionTranscriptionConsent": [
+            "guestBootstrapCloudConsent",
+            "firebaseDeepgramRealMicrophoneRep",
+            "noPreConsentDataEgress",
+            "declineKeepsSupportedPracticeLocal",
+            "revokeKeepsSupportedPracticeLocal",
+            "unsupportedLocalExplainsCloudRequirement",
+            "settingsRecoveryRoute",
+            "productionAppCheckAccepted"
+        ],
+        "transcriptionFailureIntegrity": [
+            "providerStartFailure",
+            "midSessionDisconnect",
+            "audioInterruption",
+            "bluetoothRouteChange",
+            "silence",
+            "finalWordDelay",
+            "failedAttemptNotPersisted",
+            "failedAttemptNotScored",
+            "failedAttemptNoXP",
+            "timerWaitsForCaptureReadiness"
+        ],
+        "pitchMetrics": [
+            "variedPitchClassification",
+            "monotoneClassification",
+            "shortWhisperSuppressed"
+        ],
+        "multilingualPractice": [
+            "spanishTranscriptionAndFillers",
+            "frenchTranscriptionAndFillers",
+            "nonEnglishDebriefUsesDeterministicFallback",
+            "englishRestoresGeneratedPromptPath",
+            "settingsLabelsLocalize"
+        ],
+        "modeSmoke": [
+            "timedDifficulties",
+            "suddenDeathDifficulties",
+            "ahCounter",
+            "imConversation",
+            "miniDrill",
+            "cutTheCrutch",
+            "lesson",
+            "pathNodeUnlock"
+        ],
+        "accountAuthentication": [
+            "appleSignInReloadsData",
+            "googleSignInReloadsData",
+            "guestSignIn",
+            "guestUpgradePreservesData"
+        ],
+        "accountDeletion": [
+            "serverFailurePreservesSignedInState",
+            "serverFailureShowsRetry",
+            "successRemovesRegisteredLocalData",
+            "successRemovesRemoteData",
+            "successDeletesFirebaseAuthUser",
+            "successRevokesAppleAuthorizationWhenApplicable",
+            "successReturnsToOnboarding",
+            "subscriptionCancellationNotClaimed"
+        ],
+        "accessibilityMotionType": [
+            "reduceMotionSubduesSplash",
+            "reduceMotionSubduesConfetti",
+            "largestDynamicTypeHomeCTAs",
+            "largestDynamicTypeSummaryCTAs",
+            "voiceOverLabelsAndHints"
+        ],
+        "notificationLifecycle": [
+            "firstRepPrePrompt",
+            "nativePromptOnce",
+            "allFourSurfacesArm",
+            "declineCooldownThirtyDays",
+            "streakWarningDelivery"
+        ],
+        "widgetRefresh": [
+            "homeWidgetRefreshesRepCount",
+            "homeWidgetRefreshesStreak",
+            "lockScreenCircularNoClipping"
+        ]
+    ]
+
+    static var requiredCheckCount: Int {
+        requiredCheckKeysBySurface.values.reduce(0) { $0 + $1.count }
+    }
 
     let schemaVersion: String
     let testRunID: String
@@ -1131,6 +1262,9 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         let trimmedTesterRole = testerRole.trimmingCharacters(in: .whitespacesAndNewlines)
         let uniqueSurfaceKeys = Set(rows.map(\.surfaceKey))
         let requiredSurfaceKeys = Set(Self.requiredSurfaceKeys)
+        let passedRequiredCheckCount = rows
+            .filter { requiredSurfaceKeys.contains($0.surfaceKey) }
+            .reduce(0) { $0 + $1.passedRequiredCheckCount }
         let passedRequiredRows = rows.filter {
             requiredSurfaceKeys.contains($0.surfaceKey) && $0.passesSurfaceFloor
         }
@@ -1176,8 +1310,19 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         if !missingRequired.isEmpty {
             reasons.append("missingRequiredSurfaces=\(missingRequired.sorted().joined(separator: ","))")
         }
+        let unexpectedSurfaces = uniqueSurfaceKeys.subtracting(requiredSurfaceKeys)
+        if !unexpectedSurfaces.isEmpty {
+            reasons.append("unexpectedSurfaces=\(unexpectedSurfaces.sorted().joined(separator: ","))")
+        }
         if summary.requiredSurfaceCount != Self.requiredSurfaceKeys.count {
             reasons.append("requiredSurfaceCountMismatch")
+        }
+        if summary.requiredCheckCount != Self.requiredCheckCount {
+            reasons.append("requiredCheckCountMismatch")
+        }
+        if summary.passedRequiredCheckCount != passedRequiredCheckCount ||
+            passedRequiredCheckCount < Self.requiredCheckCount {
+            reasons.append("checkFloorFailures")
         }
         if summary.passedRequiredSurfaceCount != passedRequiredRows.count ||
             passedRequiredRows.count < Self.requiredSurfaceKeys.count {
@@ -1222,6 +1367,7 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         if !summary.crashFree {
             reasons.append("crashesObserved")
         }
+        reasons.append(contentsOf: rows.flatMap(\.checkContractFailures))
         if rows.contains(where: { !$0.passesSurfaceFloor }) {
             reasons.append("rowSurfaceFloorFailures")
         }
@@ -1253,6 +1399,8 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
     struct Summary: Codable, Equatable {
         let rowCount: Int
         let requiredSurfaceCount: Int
+        let requiredCheckCount: Int
+        let passedRequiredCheckCount: Int
         let passedRequiredSurfaceCount: Int
         let realDeviceSurfaceCount: Int
         let testFlightBuildSurfaceCount: Int
@@ -1278,7 +1426,60 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         let deviceIdentifierHash: String
         let latencyMs: Int?
         let blockingIssueCount: Int
+        let checks: [Check]
         let notes: [String]
+
+        var checkContractFailures: [String] {
+            let surfaceLabel = surfaceKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let renderedSurface = surfaceLabel.isEmpty ? "<invalid>" : surfaceLabel
+            let requiredChecks = CoachRealDeviceTestFlightEvidence
+                .requiredCheckKeysBySurface[surfaceLabel] ?? []
+            let requiredSet = Set(requiredChecks)
+            let normalizedChecks = checks.map {
+                ($0.checkKey.trimmingCharacters(in: .whitespacesAndNewlines), $0.passed)
+            }
+            let validChecks = normalizedChecks.filter { !$0.0.isEmpty }
+            let keyCounts = Dictionary(grouping: validChecks, by: \.0)
+                .mapValues(\.count)
+            let duplicates = keyCounts
+                .filter { $0.value > 1 }
+                .map(\.key)
+                .sorted()
+            let missing = requiredSet.subtracting(Set(keyCounts.keys)).sorted()
+            let unexpected = Set(keyCounts.keys).subtracting(requiredSet).sorted()
+            let failed = requiredChecks.filter { key in
+                guard keyCounts[key] == 1 else { return false }
+                return validChecks.first(where: { $0.0 == key })?.1 != true
+            }.sorted()
+            var failures: [String] = []
+            if validChecks.count != checks.count {
+                failures.append("invalidChecks=\(renderedSurface)")
+            }
+            if !duplicates.isEmpty {
+                failures.append("duplicateCheckKeys=\(renderedSurface):\(duplicates.joined(separator: ","))")
+            }
+            if !missing.isEmpty {
+                failures.append("missingRequiredChecks=\(renderedSurface):\(missing.joined(separator: ","))")
+            }
+            if !unexpected.isEmpty {
+                failures.append("unexpectedCheckKeys=\(renderedSurface):\(unexpected.joined(separator: ","))")
+            }
+            if !failed.isEmpty {
+                failures.append("failedRequiredChecks=\(renderedSurface):\(failed.joined(separator: ","))")
+            }
+            return failures
+        }
+
+        var passedRequiredCheckCount: Int {
+            let requiredChecks = CoachRealDeviceTestFlightEvidence
+                .requiredCheckKeysBySurface[surfaceKey] ?? []
+            return requiredChecks.reduce(0) { result, key in
+                let matches = checks.filter {
+                    $0.checkKey.trimmingCharacters(in: .whitespacesAndNewlines) == key
+                }
+                return result + (matches.count == 1 && matches[0].passed ? 1 : 0)
+            }
+        }
 
         var hasRequiredArtifactTrail: Bool {
             CoachRealDeviceTestFlightEvidence.usableEvidenceReference(evidenceReference) &&
@@ -1309,8 +1510,14 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
                 blockingIssueCount == 0 &&
                 hasRequiredArtifactTrail &&
                 evidenceKindMatchesSurface &&
-                latencyWithinBudget
+                latencyWithinBudget &&
+                checkContractFailures.isEmpty
         }
+    }
+
+    struct Check: Codable, Equatable {
+        let checkKey: String
+        let passed: Bool
     }
 }
 

@@ -41,7 +41,7 @@ MANAGED_ARTIFACTS = {
         "noRealUserLongitudinalTransferOutcomes",
     ),
     "realDeviceTestFlight": (
-        "coach-real-device-testflight-qa-v2.json",
+        "coach-real-device-testflight-qa-v3.json",
         "noRealDeviceTestFlightVerification",
     ),
     "operationalLaunch": (
@@ -1432,6 +1432,11 @@ def summarize_testflight(payload):
     payload["summary"].update({
         "rowCount": len(rows),
         "requiredSurfaceCount": len(required),
+        "requiredCheckCount": GATE.REAL_DEVICE_REQUIRED_CHECK_COUNT,
+        "passedRequiredCheckCount": sum(
+            GATE.real_device_check_contract_status(row)["passedRequiredCheckCount"]
+            for row in required_rows
+        ),
         "passedRequiredSurfaceCount": sum(GATE.real_device_row_passes(row) for row in required_rows),
         "realDeviceSurfaceCount": sum(row.get("realDevice") is True for row in required_rows),
         "testFlightBuildSurfaceCount": sum(row.get("testFlightBuildInstalled") is True for row in required_rows),

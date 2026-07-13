@@ -189,15 +189,16 @@ operator work and must be captured through the evidence workflow below. An
 unsigned archive, simulator run, or direct Xcode development install cannot
 close `noRealDeviceTestFlightVerification`.
 
-The current `coach-real-device-testflight-qa-v2` schema structurally validates
-the four high-risk rows in VISION: Live Activity, AI prompt latency, soundscape
-audio session, and StoreKit purchase/restore. It does not turn the other manual
-rows in `docs/TESTFLIGHT_QA.md` into structured evidence. You must still complete
-and independently sign off the same-build physical TestFlight checks for App
-Check/real-microphone transcription, consent and reconnect behavior, Sign in
-with Apple, account deletion, notifications, widgets, accessibility, and the
-remaining mode smoke tests. Do not describe the four-row artifact alone as the
-complete M14 device sweep.
+The current `coach-real-device-testflight-qa-v3` schema structurally validates
+the complete runtime portion of the M14 hardware sweep: exactly 14 surfaces and
+77 required checks covering Live Activity, prompt latency, audio sessions,
+StoreKit purchase/restore/entitlements, production transcription and consent,
+capture-failure integrity, pitch, multilingual practice, mode smoke, account
+authentication/deletion, accessibility, notifications, and widgets. Every
+check must appear once and pass on the same physical TestFlight build. Security
+incident closure, deploys, Apple configuration, archive scanning, upload, and
+release triage remain in the operational launch artifact rather than being
+duplicated here.
 
 ## Live Cloud Operations Probe
 
@@ -328,7 +329,7 @@ release decision, rerun without `--no-fail` and include `--probe-live`.
 | `noLiveProviderTranscriptSweep` | `coach-live-eval-v1.json` | Real provider transcript sweep over the required app-path fixtures, with `sourceGitCommit` and `sourceCoachFingerprint` matching the source sidecars. |
 | `noProfessionalCoachCalibration` | `coach-chat-conversation-expert-calibration-results-v2.json` | Blinded professional-coach reviews for the required calibration packet, meeting the rubric and review-count floor. |
 | `noRealUserLongitudinalTransferOutcomes` | `coach-real-user-transfer-outcomes-v3.json` | Pre-registered closed-beta cohort with complete enrollment/attrition accounting, delayed real-world follow-ups, linked interventions, retained negative outcomes, and evidence references. |
-| `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v2.json` | Physical-device TestFlight verification for App Check, real-microphone transcription, consent/offline/reconnect behavior, authentication, deletion, notifications, widgets, Live Activities, accessibility, and StoreKit purchase/restore. |
+| `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v3.json` | Same-build physical-device TestFlight verification for the exact 14-surface, 77-check runtime sweep. |
 | `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist plus the exact structured release prerequisites: historical credential-incident closure, every legacy route protected/disabled, exposed credentials revoked, provider usage/billing audited, full-history findings adjudicated, release bundle scanned, guarded social cutover, hosted privacy/custom domain, Apple release services, TestFlight upload, and release-blocking bug triage. |
 
 Do not create placeholder sidecars. Empty or summary-only transfer, device, and
@@ -364,7 +365,7 @@ They cover:
 - `maestro/chat_smoke.yaml`: Ask Noum type-chat happy path with deterministic markdown reply.
 - `maestro/chat_reject_smoke.yaml`: deterministic rejection notice path.
 
-They do not replace `coach-real-device-testflight-qa-v2.json`, which must cover
+They do not replace `coach-real-device-testflight-qa-v3.json`, which must cover
 real-device TestFlight behavior for the launch surfaces listed above.
 
 ## Definition Of Ready

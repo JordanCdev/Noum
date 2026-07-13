@@ -884,7 +884,7 @@ def evidence_checks(readiness: dict[str, Any] | None) -> list[Check]:
                 "physicalTestFlightEvidence",
                 False,
                 "no validated evidence directory supplied",
-                "Collect and validate coach-real-device-testflight-qa-v2.json from an actual TestFlight install.",
+                "Collect and validate coach-real-device-testflight-qa-v3.json from an actual TestFlight install.",
             ),
             check(
                 "operationalLaunchEvidence",

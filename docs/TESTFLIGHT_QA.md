@@ -5,6 +5,12 @@ Most surfaces are covered by simulator + unit tests; this list is the
 specific set of things that **only work right on hardware** or that have
 never been touched on a real device this milestone series.
 
+Runtime sign-off is recorded in `coach-real-device-testflight-qa-v3.json` as
+an exact 14-surface, 77-check contract. The check-key mapping and required
+attachment kinds are documented in `docs/PRODUCTION_EVIDENCE_COLLECTION.md`.
+Pre-flight security, deployment, Apple configuration, upload, and triage work
+stays in `coach-operational-launch-checklist-v2.json`.
+
 **Current verdict (2026-07-11): NO-GO for external TestFlight or App Store
 release.** Checked infrastructure items below are configuration evidence only;
 they do not override an unchecked release blocker or signed-device test.

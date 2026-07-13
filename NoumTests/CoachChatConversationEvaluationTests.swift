@@ -49,7 +49,7 @@ enum CoachChatConversationCorpus {
     static let realUserTransferOutcomesArtifactFileName =
         "coach-real-user-transfer-outcomes-v3.json"
     static let realDeviceTestFlightArtifactFileName =
-        "coach-real-device-testflight-qa-v2.json"
+        "coach-real-device-testflight-qa-v3.json"
     static let operationalLaunchChecklistArtifactFileName =
         "coach-operational-launch-checklist-v2.json"
 
@@ -4262,7 +4262,7 @@ struct CoachChatConversationCorpusTests {
         #expect(warningDecoded.rejectionReasons.contains("readinessWarnings=manualTesterNotesMissing"))
 
         let rejectedEvidence = Self.realDeviceTestFlightEvidence(
-            failingSurfaceKeys: ["liveActivity", "paywallPurchase"]
+            failingSurfaceKeys: ["liveActivity", "storeKitPurchaseRestoreEntitlements"]
         )
         let rejectedDecoded = try CoachRealDeviceTestFlightEvidence.decode(
             from: rejectedEvidence.encodedSortedJSON()
@@ -4272,6 +4272,53 @@ struct CoachChatConversationCorpusTests {
         #expect(rejectedDecoded.rejectionReasons.contains("surfaceFloorFailures"))
         #expect(rejectedDecoded.rejectionReasons.contains("blockingIssuesPresent"))
         #expect(rejectedDecoded.rejectionReasons.contains("rowSurfaceFloorFailures"))
+    }
+
+    @Test func realDeviceTestFlightV3PinsExactSurfacesAndChecks() throws {
+        #expect(CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.count == 14)
+        #expect(CoachRealDeviceTestFlightEvidence.requiredCheckCount == 77)
+        #expect(
+            Set(CoachRealDeviceTestFlightEvidence.requiredCheckKeysBySurface.keys) ==
+                Set(CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys)
+        )
+
+        let clean = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence().encodedSortedJSON()
+        )
+        #expect(clean.qualifiesForReadiness)
+        #expect(clean.summary.requiredCheckCount == 77)
+        #expect(clean.summary.passedRequiredCheckCount == 77)
+    }
+
+    @Test func realDeviceTestFlightV3RejectsMissingUnexpectedDuplicateAndFailedChecks() throws {
+        let evidence = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                missingCheckKeysBySurface: ["liveActivity": ["forceQuitEnds"]],
+                unexpectedCheckKeysBySurface: [
+                    "productionTranscriptionConsent": ["syntheticPass"]
+                ],
+                duplicateCheckKeysBySurface: ["modeSmoke": ["timedDifficulties"]],
+                failedCheckKeysBySurface: [
+                    "accountDeletion": ["serverFailurePreservesSignedInState"]
+                ]
+            ).encodedSortedJSON()
+        )
+
+        #expect(!evidence.qualifiesForReadiness)
+        #expect(evidence.rejectionReasons.contains(
+            "missingRequiredChecks=liveActivity:forceQuitEnds"
+        ))
+        #expect(evidence.rejectionReasons.contains(
+            "unexpectedCheckKeys=productionTranscriptionConsent:syntheticPass"
+        ))
+        #expect(evidence.rejectionReasons.contains(
+            "duplicateCheckKeys=modeSmoke:timedDifficulties"
+        ))
+        #expect(evidence.rejectionReasons.contains(
+            "failedRequiredChecks=accountDeletion:serverFailurePreservesSignedInState"
+        ))
+        #expect(evidence.rejectionReasons.contains("checkFloorFailures"))
+        #expect(evidence.rejectionReasons.contains("rowSurfaceFloorFailures"))
     }
 
     @Test func realDeviceTestFlightEvidenceRejectsSmoothedOrIncompleteEvidence() throws {
@@ -4303,9 +4350,9 @@ struct CoachChatConversationCorpusTests {
         )
         let thinEvidence = try CoachRealDeviceTestFlightEvidence.decode(
             from: Self.realDeviceTestFlightEvidence(
-                missingEvidenceReferenceSurfaceKeys: ["paywallPurchase"],
-                missingEvidenceTimestampSurfaceKeys: ["paywallPurchase"],
-                missingDeviceIdentitySurfaceKeys: ["paywallPurchase"]
+                missingEvidenceReferenceSurfaceKeys: ["storeKitPurchaseRestoreEntitlements"],
+                missingEvidenceTimestampSurfaceKeys: ["storeKitPurchaseRestoreEntitlements"],
+                missingDeviceIdentitySurfaceKeys: ["storeKitPurchaseRestoreEntitlements"]
             ).encodedSortedJSON()
         )
 
@@ -4323,8 +4370,12 @@ struct CoachChatConversationCorpusTests {
         #expect(!mixedBuild.qualifiesForReadiness)
         #expect(mixedBuild.rejectionReasons.contains("buildNumberMismatch=soundscapeAudioSession"))
         #expect(!thinEvidence.qualifiesForReadiness)
-        #expect(thinEvidence.rejectionReasons.contains("missingDeviceEvidence=paywallPurchase"))
-        #expect(thinEvidence.rejectionReasons.contains("missingDeviceIdentity=paywallPurchase"))
+        #expect(thinEvidence.rejectionReasons.contains(
+            "missingDeviceEvidence=storeKitPurchaseRestoreEntitlements"
+        ))
+        #expect(thinEvidence.rejectionReasons.contains(
+            "missingDeviceIdentity=storeKitPurchaseRestoreEntitlements"
+        ))
     }
 
     @Test func realDeviceTestFlightLoaderReturnsNilWhenSidecarIsMissing() throws {
@@ -5720,7 +5771,11 @@ struct CoachChatConversationCorpusTests {
         buildMismatchSurfaceKeys: Set<String> = [],
         missingDeviceIdentitySurfaceKeys: Set<String> = [],
         overBudgetLatencySurfaceKeys: Set<String> = [],
-        latencyOverrides: [String: Int] = [:]
+        latencyOverrides: [String: Int] = [:],
+        missingCheckKeysBySurface: [String: Set<String>] = [:],
+        unexpectedCheckKeysBySurface: [String: Set<String>] = [:],
+        duplicateCheckKeysBySurface: [String: Set<String>] = [:],
+        failedCheckKeysBySurface: [String: Set<String>] = [:]
     ) -> CoachRealDeviceTestFlightEvidence {
         let buildNumber = "2026.06.30.1"
         let rows = CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.map { key in
@@ -5733,6 +5788,20 @@ struct CoachChatConversationCorpusTests {
             let latency = key == "aiPromptLatency" ?
                 (latencyOverrides[key] ??
                     (overBudgetLatencySurfaceKeys.contains(key) || failed ? 4_200 : 1_850)) : nil
+            var checks = (CoachRealDeviceTestFlightEvidence.requiredCheckKeysBySurface[key] ?? [])
+                .filter { missingCheckKeysBySurface[key]?.contains($0) != true }
+                .map {
+                    CoachRealDeviceTestFlightEvidence.Check(
+                        checkKey: $0,
+                        passed: failedCheckKeysBySurface[key]?.contains($0) != true
+                    )
+                }
+            checks.append(contentsOf: (unexpectedCheckKeysBySurface[key] ?? []).sorted().map {
+                CoachRealDeviceTestFlightEvidence.Check(checkKey: $0, passed: true)
+            })
+            checks.append(contentsOf: (duplicateCheckKeysBySurface[key] ?? []).sorted().map {
+                CoachRealDeviceTestFlightEvidence.Check(checkKey: $0, passed: true)
+            })
             return CoachRealDeviceTestFlightEvidence.Row(
                 surfaceKey: key,
                 passed: !failed,
@@ -5749,6 +5818,7 @@ struct CoachChatConversationCorpusTests {
                     "" : "sha256:iphone15pro-real-device-qa",
                 latencyMs: latency,
                 blockingIssueCount: failed ? 1 : 0,
+                checks: checks,
                 notes: failed ? ["Blocking issue observed on \(key)."] : [
                     "Verified on physical device through TestFlight."
                 ]
@@ -5783,6 +5853,9 @@ struct CoachChatConversationCorpusTests {
                 $0.latencyWithinBudget
         }
         let blockingIssueCount = rows.reduce(0) { $0 + $1.blockingIssueCount }
+        let passedRequiredCheckCount = rows
+            .filter { requiredKeys.contains($0.surfaceKey) }
+            .reduce(0) { $0 + $1.passedRequiredCheckCount }
         return CoachRealDeviceTestFlightEvidence(
             schemaVersion: CoachRealDeviceTestFlightEvidence.expectedSchemaVersion,
             testRunID: "real-device-qa-2026-06-30",
@@ -5794,6 +5867,8 @@ struct CoachChatConversationCorpusTests {
             summary: CoachRealDeviceTestFlightEvidence.Summary(
                 rowCount: rows.count,
                 requiredSurfaceCount: CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.count,
+                requiredCheckCount: CoachRealDeviceTestFlightEvidence.requiredCheckCount,
+                passedRequiredCheckCount: passedRequiredCheckCount,
                 passedRequiredSurfaceCount: passedRequiredRows.count,
                 realDeviceSurfaceCount: realDeviceRequiredRows.count,
                 testFlightBuildSurfaceCount: testFlightRequiredRows.count,
