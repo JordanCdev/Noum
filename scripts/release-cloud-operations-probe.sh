@@ -1,9 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-project="${NOUM_FIREBASE_PROJECT:-noum-d0b6f}"
-region="${NOUM_FUNCTIONS_REGION:-europe-west2}"
-operations_email="${NOUM_OPERATIONS_EMAIL:-noumsupport@gmail.com}"
+readonly production_project="noum-d0b6f"
+readonly production_region="europe-west2"
+readonly production_operations_email="noumsupport@gmail.com"
+
+project="${NOUM_FIREBASE_PROJECT:-$production_project}"
+region="${NOUM_FUNCTIONS_REGION:-$production_region}"
+operations_email="${NOUM_OPERATIONS_EMAIL:-$production_operations_email}"
+
+# This command produces release evidence, so an environment override must not
+# let a correctly configured lookalike project stand in for production.
+if [[ "$project" != "$production_project" ]]; then
+  echo "Cloud operations probe is pinned to Firebase project $production_project." >&2
+  exit 2
+fi
+if [[ "$region" != "$production_region" ]]; then
+  echo "Cloud operations probe is pinned to Functions region $production_region." >&2
+  exit 2
+fi
+if [[ "$operations_email" != "$production_operations_email" ]]; then
+  echo "Cloud operations probe is pinned to the production operations channel." >&2
+  exit 2
+fi
 
 for command in gcloud python3 curl; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -12,6 +31,7 @@ for command in gcloud python3 curl; do
   fi
 done
 
+echo "Production Firebase contract: project=$project region=$region operations=$operations_email"
 if [[ -z "$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null)" ]]; then
   echo "An active gcloud identity is required." >&2
   exit 2
@@ -232,4 +252,4 @@ for function_name in transcriptionToken deleteAccount; do
   echo "PASS: $function_name rejects unauthenticated requests"
 done
 
-echo "Live cloud operations probe passed."
+echo "Live cloud operations probe passed for Firebase project $project."
