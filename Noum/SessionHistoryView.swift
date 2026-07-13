@@ -469,22 +469,41 @@ struct SessionHistoryView: View {
 /// anywhere. The view is otherwise unchanged — same heroCard, focusCard,
 /// transcript card, AI coach read, IM conversation card.
 struct SessionHistoryDetailReplayPresentation: Equatable {
+    enum Semantics: Equatable {
+        /// Starts a fresh attempt from a historical record. It is user-led
+        /// replay, not a new adaptive prescription or causal acceptance event.
+        case replay
+
+        var recordsAdaptivePrescriptionAcceptance: Bool { false }
+    }
+
+    /// Legacy source-compatible fields retained for existing consumers and
+    /// tests. The historical detail UI renders `displayTitle` /
+    /// `displaySupportingCopy` below so the visible language is replay-first.
     let title: String
     let supportingCopy: String
+    let displayTitle: String
+    let displaySupportingCopy: String
     let accessibilityLabel: String
     let destination: AppDestination
+    let semantics: Semantics
 
     static func make(for session: PracticeSession) -> SessionHistoryDetailReplayPresentation {
-        let title = "Practice this mode"
-        let supportingCopy = "Start a fresh \(session.mode.displayLabel) rep."
+        let legacyTitle = "Practice this mode"
+        let legacySupportingCopy = "Start a fresh \(session.mode.displayLabel) rep."
+        let displayTitle = "Repeat this rep"
+        let displaySupportingCopy = "Replay the recorded \(session.mode.displayLabel) setup in a fresh rep."
         return SessionHistoryDetailReplayPresentation(
-            title: title,
-            supportingCopy: supportingCopy,
-            accessibilityLabel: "\(title). \(supportingCopy)",
+            title: legacyTitle,
+            supportingCopy: legacySupportingCopy,
+            displayTitle: displayTitle,
+            displaySupportingCopy: displaySupportingCopy,
+            accessibilityLabel: "\(displayTitle). \(displaySupportingCopy)",
             destination: SummaryPracticeAgainRouter.destination(
                 for: session.mode,
                 imSetup: session.imConversationDetails?.setup
-            )
+            ),
+            semantics: .replay
         )
     }
 }
@@ -512,28 +531,11 @@ struct SessionHistoryDetailView: View {
 
                     promptCard
                     if let goalOutcomeRead {
-                        GoalOutcomeCard(
-                            read: goalOutcomeRead,
-                            actionTitle: "Practice this mode",
-                            onPractice: {
-                                let presentation = SessionHistoryDetailReplayPresentation.make(for: session)
-                                recommendationLearningStore.recordShown(
-                                    fingerprint: "goal-outcome-review|\(session.mode.rawValue)|\(goalOutcomeRead.nextDimension?.dimensionID ?? "general")",
-                                    title: presentation.title,
-                                    focus: goalOutcomeRead.nextDimension?.label ?? presentation.supportingCopy,
-                                    target: goalOutcomeRead.prescribedNextAction,
-                                    mode: session.mode,
-                                    isAIBacked: false,
-                                    goal: goalOutcomeRead.style,
-                                    targetDimensionID: goalOutcomeRead.nextDimension?.dimensionID,
-                                    sourceSessionID: session.id
-                                )
-                                recommendationLearningStore.markTapped(mode: session.mode)
-                                navigationPath.append(
-                                    presentation.destination
-                                )
-                            }
-                        )
+                        // Historical goal movement is a read, not a fresh
+                        // adaptive prescription. The replay action below owns
+                        // the only launch and deliberately writes no causal
+                        // recommendation acceptance.
+                        GoalOutcomeCard(read: goalOutcomeRead)
                     }
                     focusCard
                     fullReviewToggle
@@ -725,10 +727,10 @@ struct SessionHistoryDetailView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text(presentation.title)
+                    Text(presentation.displayTitle)
                         .font(Typography.subheadline.weight(.bold))
                         .foregroundStyle(.primary)
-                    Text(presentation.supportingCopy)
+                    Text(presentation.displaySupportingCopy)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

@@ -167,6 +167,11 @@ struct SummaryView: View {
     @State private var showSecondaryDetails = false
     @State private var coachNoteRevealed = false
     @State private var enhancedCoachNote: CoachNote?
+    /// The strategic recommendation returned by the same finalization pass
+    /// that committed this rep. Retained for immediate-finalization paths;
+    /// precommitted modes can read the same value directly from
+    /// `committedFinalization` before `setup()` runs.
+    @State private var finalizedNextAction: NextAction? = nil
     @State private var eloquenceFindings: [EloquenceFinding] = []
     @State private var showAIDisclosure = false
     @State private var pendingCloudProcessingAction: SummaryCloudProcessingAction = .coachRead
@@ -263,6 +268,42 @@ struct SummaryView: View {
             feedbackCategories: categoryTuples,
             styleGoal: coachingProfileStore.profile?.speakingStyleGoal
         )
+    }
+
+    /// The finalized decision wins whenever it exists. `DrillEngineV2` is
+    /// consulted only as the explicit first-rep / below-floor / legacy
+    /// fallback encoded by `SummaryPrescriptionProjection`.
+    private var summaryPrescription: SummaryPrescriptionProjection {
+        let action = committedFinalization?.nextAction ?? finalizedNextAction
+        let existingSetup = existingIMPrescriptionSetup(for: action)
+        return SummaryPrescriptionProjection.resolve(
+            nextAction: action,
+            fallbackDrill: drillRecommendationV2,
+            existingScenario: existingSetup?.scenario,
+            existingTone: existingSetup?.tone
+        )
+    }
+
+    /// Preserve an already-computed IM scenario/tone only when the finalized
+    /// action and the existing recommendation blueprint agree on IM. Every
+    /// other mode action routes with nil setup through the shared router.
+    private func existingIMPrescriptionSetup(
+        for action: NextAction?
+    ) -> (scenario: IMConversationScenario?, tone: IMTargetTone?)? {
+        guard let action else { return nil }
+        let mode: PracticeMode
+        switch action.primary {
+        case .practiceMode(let prescribedMode, _),
+             .pressureExposure(let prescribedMode, _),
+             .stabilizingRep(let prescribedMode, _):
+            mode = prescribedMode
+        case .drill, .confidenceRebuilding:
+            return nil
+        }
+        guard mode == .imConversation else { return nil }
+        let blueprint = summaryRecommendation
+        guard blueprint.recommendedMode == .imConversation else { return nil }
+        return (blueprint.recommendedScenario, blueprint.recommendedTone)
     }
 
     /// Skill trends across recent sessions.
@@ -699,10 +740,16 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
-                            SummaryRepeatActionCard(
-                                exerciseName: currentMode.displayLabel,
-                                onStart: onPracticeAgain,
-                                onAdjust: onSelectPracticeMode
+                            SummaryPrescriptionActionCard(
+                                prescription: summaryPrescription,
+                                legacyDrill: drillRecommendation,
+                                onStartMiniDrill: { drill in
+                                    activeMiniDrill = drill
+                                },
+                                onStartDrill: onStartDrill,
+                                imAvailable: IMModeAvailability.isAvailable,
+                                onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
+                                onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
                             )
                             .cardEntrance(2)
                             TalkToNoumCTACard(
@@ -767,13 +814,16 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
-                            SummaryDrillActionCard(
-                                drill: drillRecommendationV2,
+                            SummaryPrescriptionActionCard(
+                                prescription: summaryPrescription,
                                 legacyDrill: drillRecommendation,
                                 onStartMiniDrill: { drill in
                                     activeMiniDrill = drill
                                 },
-                                onStartDrill: onStartDrill
+                                onStartDrill: onStartDrill,
+                                imAvailable: IMModeAvailability.isAvailable,
+                                onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
+                                onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
                             )
                             .cardEntrance(2)
                             TalkToNoumCTACard(
@@ -1217,31 +1267,10 @@ struct SummaryView: View {
                     }
 
                     if let goalOutcomeRead {
-                        GoalOutcomeCard(
-                            read: goalOutcomeRead,
-                            actionTitle: onStartLookingAhead == nil ? nil : "Practice the next target",
-                            onPractice: onStartLookingAhead.map { callback in
-                                {
-                                    let blueprint = summaryRecommendation
-                                    recommendationLearningStore.recordShown(
-                                        fingerprint: "goal-outcome|\(blueprint.recommendedMode.rawValue)|\(goalOutcomeRead.nextDimension?.dimensionID ?? "general")",
-                                        title: blueprint.focus,
-                                        focus: goalOutcomeRead.nextDimension?.label ?? blueprint.focus,
-                                        target: goalOutcomeRead.prescribedNextAction,
-                                        mode: blueprint.recommendedMode,
-                                        isAIBacked: false,
-                                        goal: goalOutcomeRead.style,
-                                        targetDimensionID: goalOutcomeRead.nextDimension?.dimensionID,
-                                        sourceSessionID: sessionStore.sessions.first?.id
-                                    )
-                                    recommendationLearningStore.markTapped(mode: blueprint.recommendedMode)
-                                    callback(SummaryLookingAheadRouter.destination(
-                                        for: blueprint,
-                                        imAvailable: IMModeAvailability.isAvailable
-                                    ))
-                                }
-                            }
-                        )
+                        // This card is evidence and goal movement, not a second
+                        // prescription. The finalized NextAction above owns the
+                        // Summary's only launch.
+                        GoalOutcomeCard(read: goalOutcomeRead)
                     }
 
                     // Session comparison
@@ -1252,33 +1281,6 @@ struct SummaryView: View {
                     // card + request feedback) hangs off the scroll view.
                     shareRow
 
-                    // Quiet "what to do next session" hint — demoted
-                    // INSIDE the chevron so it never competes with FIX
-                    // FIRST or the exit panel's drill CTA for "what next."
-                    //
-                    // Round 19: when an `onStartLookingAhead` callback is
-                    // wired, the card renders a subordinate "Start <Mode>"
-                    // CTA. The destination is computed *inside the per-tap
-                    // closure* (not at init time) because
-                    // `summaryRecommendation` depends on view-side
-                    // `@StateObject`s the path init doesn't have in scope.
-                    // The router stays the single source of truth for the
-                    // mode → destination mapping (same router the home
-                    // coach card + ContentView suggestion tile call into).
-                    if let lookingAhead = lookingAheadHint {
-                        LookingAheadCard(
-                            hint: lookingAhead,
-                            onStart: onStartLookingAhead.map { callback in
-                                {
-                                    let destination = SummaryLookingAheadRouter.destination(
-                                        for: summaryRecommendation,
-                                        imAvailable: IMModeAvailability.isAvailable
-                                    )
-                                    callback(destination)
-                                }
-                            }
-                        )
-                    }
                 }
                 .padding(.top, 8)
             }
@@ -1359,24 +1361,6 @@ struct SummaryView: View {
                 videoAnalysisResultView(result)
             }
         }
-    }
-
-    /// Computed "next session" suggestion derived from the existing
-    /// `RecommendationBiasBlueprint`. Returns nil when there's no useful
-    /// hint — staying quiet beats forcing advice the data can't back.
-    private var lookingAheadHint: LookingAheadCard.Hint? {
-        // Need at least 3 sessions of signal before nudging direction —
-        // checked first so we skip the blueprint computation on early reps.
-        guard sessionStore.sessions.count >= 3 else { return nil }
-        let blueprint = summaryRecommendation
-        // No need to suggest the mode the user just finished.
-        guard blueprint.recommendedMode != currentMode || blueprint.source == .caseIntervention else { return nil }
-        return LookingAheadCard.Hint(
-            mode: blueprint.recommendedMode,
-            whyMode: blueprint.modeBenefit,
-            whyNow: blueprint.whyNow,
-            styleGoal: coachingProfileStore.profile?.speakingStyleGoal
-        )
     }
 
     /// Video playback button for the expandable section
@@ -2077,6 +2061,41 @@ struct SummaryView: View {
         activeMiniDrill = nil
     }
 
+    /// Active Summary is the causal prescription surface. Only finalized
+    /// full-rep recommendations enter the existing learning ledger; the
+    /// fallback is always a drill, and historical Review replays never call
+    /// this path.
+    private func recordFullRepPrescriptionShown(mode: PracticeMode) {
+        let prescription = summaryPrescription
+        guard prescription.source == .finalizedNextAction,
+              prescription.fullRepMode == mode,
+              onStartLookingAhead != nil else { return }
+        recommendationLearningStore.recordShown(
+            fingerprint: [
+                "summary-next-action",
+                latestSessionID?.uuidString ?? "legacy",
+                mode.rawValue,
+                prescription.title,
+            ].joined(separator: "|"),
+            title: prescription.title,
+            focus: prescription.reason,
+            target: prescription.evidence ?? prescription.reason,
+            mode: mode,
+            isAIBacked: false,
+            goal: coachingProfileStore.profile?.chosenStyleGoal,
+            sourceSessionID: latestSessionID
+        )
+    }
+
+    private func startFullRepPrescription(mode: PracticeMode, destination: AppDestination) {
+        guard let onStartLookingAhead else { return }
+        // `recordShown` is idempotent on the fingerprint, so this also covers
+        // a very fast tap before SwiftUI's onAppear callback settles.
+        recordFullRepPrescriptionShown(mode: mode)
+        recommendationLearningStore.markTapped(mode: mode)
+        onStartLookingAhead(destination)
+    }
+
     // MARK: - Setup & Logic
 
     private func setup() {
@@ -2121,6 +2140,7 @@ struct SummaryView: View {
         progressionDeltas = result.achievementDeltas
         progressionNewUnlocks = result.newUnlocks
         enhancedCoachNote = result.coachNote
+        finalizedNextAction = result.nextAction
         eloquenceFindings = result.eloquenceFindings
         // Source of truth for pre-rep XP is the finalizer result — for
         // Sudden Death the commit happened at run completion, so the

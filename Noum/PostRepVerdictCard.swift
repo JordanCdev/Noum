@@ -804,6 +804,11 @@ struct SummaryDrillActionCard: View {
     var legacyDrill: DrillRecommendation? = nil
     var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
     var onStartDrill: ((DrillRecommendation) -> Void)? = nil
+    /// Optional finalized-action context. Legacy call sites leave these nil
+    /// and keep the original title + constraint presentation.
+    var reason: String? = nil
+    var evidence: String? = nil
+    var confidenceLabel: String? = nil
 
     static func primaryCTALabel(drillTitle: String) -> String {
         let title = drillTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -816,14 +821,33 @@ struct SummaryDrillActionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if reason != nil || evidence != nil || confidenceLabel != nil {
+                prescriptionEyebrow(confidenceLabel: confidenceLabel)
+            }
+
             Text(drill.title)
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(drill.constraint)
+
+            Text(reason ?? drill.constraint)
                 .font(Typography.caption)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if reason != nil {
+                Text("Target: \(drill.constraint)")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let evidence, !evidence.isEmpty {
+                Text(evidence)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary.opacity(0.86))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if drill.format == .miniDrill, let onStartMiniDrill {
                 Button {
@@ -873,6 +897,159 @@ struct SummaryDrillActionCard: View {
         .padding(.vertical, 13)
         .foregroundStyle(.white)
         .background(AppColor.brandBlue, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private func prescriptionEyebrow(confidenceLabel: String?) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Text("Next rep")
+                .font(Typography.micro.weight(.bold))
+                .foregroundStyle(AppColor.brandBlue)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            if let confidenceLabel {
+                Text(confidenceLabel)
+                    .font(Typography.micro.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxs)
+                    .background(AppColor.innerSurface, in: Capsule())
+            }
+        }
+    }
+}
+
+/// The one Summary action renderer. Finalized drill actions delegate to the
+/// existing mini/full drill card so specialized drill behavior stays intact;
+/// mode-level actions use one restrained full-rep card and the shared Summary
+/// destination router exposed by `SummaryPrescriptionProjection`.
+@available(iOS 17.0, *)
+struct SummaryPrescriptionActionCard: View {
+    let prescription: SummaryPrescriptionProjection
+    var legacyDrill: DrillRecommendation? = nil
+    var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
+    var onStartDrill: ((DrillRecommendation) -> Void)? = nil
+    var imAvailable: Bool = true
+    var onShowFullRep: ((PracticeMode) -> Void)? = nil
+    var onStartFullRep: ((PracticeMode, AppDestination) -> Void)? = nil
+
+    @ViewBuilder
+    var body: some View {
+        switch prescription.kind {
+        case .drill(let drill):
+            SummaryDrillActionCard(
+                drill: drill,
+                legacyDrill: legacyDrill,
+                onStartMiniDrill: onStartMiniDrill,
+                onStartDrill: onStartDrill,
+                reason: prescription.reason,
+                evidence: prescription.evidence,
+                confidenceLabel: prescription.confidenceLabel
+            )
+
+        case .fullRep(let mode, _, _):
+            SummaryFullRepActionCard(
+                title: prescription.title,
+                reason: prescription.reason,
+                evidence: prescription.evidence,
+                confidenceLabel: prescription.confidenceLabel,
+                mode: mode,
+                destination: prescription.destination(imAvailable: imAvailable),
+                onShown: onShowFullRep,
+                onStart: onStartFullRep
+            )
+        }
+    }
+}
+
+/// Restrained renderer for a finalized full-rep prescription. It does not own
+/// recommendation state or navigation; the active Summary records exposure and
+/// forwards the routed destination through its existing callback.
+@available(iOS 17.0, *)
+private struct SummaryFullRepActionCard: View {
+    let title: String
+    let reason: String
+    let evidence: String?
+    let confidenceLabel: String?
+    let mode: PracticeMode
+    let destination: AppDestination?
+    let onShown: ((PracticeMode) -> Void)?
+    let onStart: ((PracticeMode, AppDestination) -> Void)?
+
+    private var tint: Color { AppColor.tint(for: mode) }
+    private var ctaLabel: String { "Start \(mode.displayLabel)" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Text("Next rep")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(tint)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+
+                if let confidenceLabel {
+                    Text(confidenceLabel)
+                        .font(Typography.micro.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(AppColor.innerSurface, in: Capsule())
+                }
+            }
+
+            Text(title)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(reason)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let evidence, !evidence.isEmpty {
+                Text(evidence)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary.opacity(0.86))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let destination, let onStart {
+                Button {
+                    onStart(mode, destination)
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: mode.iconName)
+                            .font(Typography.subheadline.weight(.semibold))
+                        Text(ctaLabel)
+                            .font(Typography.body.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.sm)
+                    .foregroundStyle(.white)
+                    .background(tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.fullRetry)
+                .accessibilityLabel(ctaLabel)
+                .accessibilityHint("Starts the full rep Noum prescribed from this result.")
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(tint.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: tint.opacity(0.08), radius: 10, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.drill)
+        .onAppear {
+            guard destination != nil, onStart != nil else { return }
+            onShown?(mode)
+        }
     }
 }
 #endif

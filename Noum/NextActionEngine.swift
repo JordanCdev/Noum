@@ -49,6 +49,120 @@ enum ActionRecommendation: Equatable {
     }
 }
 
+// MARK: - Summary Prescription Projection
+
+/// Presentation projection for the one adaptive action shown on an active
+/// Summary. `SessionFinalizer` / `NextActionEngine` keep strategic ownership;
+/// this type only translates that decision into one of the two renderers the
+/// Summary already supports: a focused drill or a full practice rep.
+///
+/// A nil `NextAction` deliberately falls back to the caller's existing
+/// `DrillEngineV2` recommendation. That preserves first-rep, below-evidence-
+/// floor and legacy Summary paths without allowing a second engine result to
+/// replace a finalized recommendation.
+struct SummaryPrescriptionProjection {
+    enum Source: Equatable {
+        case finalizedNextAction
+        case drillFallback
+    }
+
+    enum Kind {
+        case drill(DrillRecommendationV2)
+        case fullRep(
+            mode: PracticeMode,
+            scenario: IMConversationScenario?,
+            tone: IMTargetTone?
+        )
+    }
+
+    let source: Source
+    let kind: Kind
+    let title: String
+    /// The action-specific reason (for example the observed pressure gap).
+    let reason: String
+    /// The decision engine's wider evidence read. Nil for a legacy fallback or
+    /// when it would merely repeat `reason`.
+    let evidence: String?
+    /// Human-readable evidence depth from the finalized baseline. A fallback
+    /// drill has no finalized evidence claim, so this stays nil.
+    let confidenceLabel: String?
+
+    static func resolve(
+        nextAction: NextAction?,
+        fallbackDrill: DrillRecommendationV2,
+        existingScenario: IMConversationScenario? = nil,
+        existingTone: IMTargetTone? = nil
+    ) -> SummaryPrescriptionProjection {
+        guard let nextAction else {
+            return SummaryPrescriptionProjection(
+                source: .drillFallback,
+                kind: .drill(fallbackDrill),
+                title: fallbackDrill.title,
+                reason: fallbackDrill.reason,
+                evidence: normalized(fallbackDrill.trendContext),
+                confidenceLabel: nil
+            )
+        }
+
+        let action = nextAction.primary
+        let kind: Kind
+        switch action {
+        case .drill(let drill), .confidenceRebuilding(let drill):
+            kind = .drill(drill)
+        case .practiceMode(let mode, _),
+             .pressureExposure(let mode, _),
+             .stabilizingRep(let mode, _):
+            kind = .fullRep(
+                mode: mode,
+                scenario: mode == .imConversation ? existingScenario : nil,
+                tone: mode == .imConversation ? existingTone : nil
+            )
+        }
+
+        let reason = normalized(action.displayReason) ?? action.displayTitle
+        let widerEvidence = normalized(nextAction.reasoning)
+        return SummaryPrescriptionProjection(
+            source: .finalizedNextAction,
+            kind: kind,
+            title: action.displayTitle,
+            reason: reason,
+            evidence: isSameCopy(reason, widerEvidence) ? nil : widerEvidence,
+            confidenceLabel: nextAction.confidenceLevel.label
+        )
+    }
+
+    /// Full-rep actions route through the existing shared mapping. Drill
+    /// actions return nil because their mini/full behavior stays with
+    /// `SummaryDrillActionCard` and the existing drill callbacks.
+    func destination(imAvailable: Bool) -> AppDestination? {
+        guard case .fullRep(let mode, let scenario, let tone) = kind else {
+            return nil
+        }
+        return SummaryLookingAheadRouter.destination(
+            for: mode,
+            scenario: scenario,
+            tone: tone,
+            imAvailable: imAvailable
+        )
+    }
+
+    var fullRepMode: PracticeMode? {
+        guard case .fullRep(let mode, _, _) = kind else { return nil }
+        return mode
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private static func isSameCopy(_ lhs: String, _ rhs: String?) -> Bool {
+        guard let rhs else { return false }
+        return lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+}
+
 // MARK: - Persisted Last Action
 
 /// Lightweight snapshot of the last NextAction for display on the home screen.
