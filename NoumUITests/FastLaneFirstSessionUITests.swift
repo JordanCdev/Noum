@@ -134,6 +134,22 @@ final class FastLaneFirstSessionUITests: XCTestCase {
 
         XCTAssertFalse(app.descendants(matching: .any)["timedPractice.screen"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["summary.postRepVerdict"].exists)
+
+        let settingsTab = app.buttons["nav.settings"]
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 5))
+        settingsTab.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["settings.screen"].waitForExistence(timeout: 5)
+        )
+        let deleteAccount = app.buttons["settings.account.delete"]
+        for _ in 0..<12 where !deleteAccount.isHittable {
+            app.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(
+            deleteAccount.waitForExistence(timeout: 5),
+            "The durable local guest must have a visible account-deletion entry point."
+        )
+        XCTAssertTrue(deleteAccount.isHittable)
     }
 
     @MainActor

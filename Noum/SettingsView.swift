@@ -1327,6 +1327,7 @@ struct SettingsView: View {
                 .buttonStyle(.pressable)
                 .accessibilityLabel("Delete account")
                 .accessibilityHint("Requests permanent deletion after a typed confirmation. Local data stays until the remote account service succeeds.")
+                .accessibilityIdentifier("settings.account.delete")
             } else {
                 SettingsStatusRow(
                     title: "Status",

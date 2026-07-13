@@ -234,7 +234,7 @@ different.
 | TR-4 | Unsupported locale shows a helpful message | **Weak evidence** | A focused test proves the exact device/locale-specific error reaches the production recording-UI mapper before and after recording begins, while arbitrary provider detail remains hidden. Hardware locale availability and rendered UI presentation remain unverified. |
 | PC-1 | Cloud toggle changes provider selection | **Proved** | Production consent-on/off construction is directly tested. |
 | PC-2 | Export creates and cleans up ZIP | **Proved** | `AccountDataExportServiceTests` verify the real temporary ZIP and its deletion. |
-| PC-3 | Deletion entry point visibility follows account state | **Weak evidence** | The source condition is explicitly `authManager.isSignedIn`; a focused rendered visibility test was not found. |
+| PC-3 | Deletion entry point visibility follows account state | **Proved** | Focused UI tests render both branches of the existing `authManager.isSignedIn` owner: the durable local guest/account path exposes `settings.account.delete`, while explicitly signed-out Settings exposes login and no deletion control. |
 | PC-4 | Privacy summary copy matches actual behavior | **Weak evidence** | Local routing/manifest contracts match the copy, but production processor, policy, and signed-device behavior were not independently verified. |
 
 ## KPI audit
@@ -277,6 +277,7 @@ substrate, but it is not a cohort analytics service.
 |---|---|---|
 | Full integrated Swift regression | **Proved** | The complete `NoumTests` target passed 3,868/3,868 tests with zero failures or skips on the iPhone 17 Pro simulator, using the local Swift package cache, disabled automatic package resolution, disabled code signing, and no provider keys. This is still simulator evidence, not physical-device or TestFlight proof. |
 | Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests` (including the production transcript path and recording-error mapper), `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
+| Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
 | Coach-arena contracts | **Proved** | 119 Node tests and 105 Python tests passed. |
 | Release-evidence workflow contracts | **Proved** | 26 tests passed. They prove fail-closed tooling, full-commit history-scan binding, and validator agreement—not that external evidence exists. |
 | Legacy endpoint and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests and 15 signing/TestFlight preflight tests passed. They prove local tooling behavior only. |

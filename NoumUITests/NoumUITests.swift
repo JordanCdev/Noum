@@ -76,6 +76,10 @@ final class NoumUITests: XCTestCase {
         }
         XCTAssertTrue(openLogin.waitForExistence(timeout: 3))
         XCTAssertTrue(openLogin.isHittable)
+        XCTAssertFalse(
+            app.buttons["settings.account.delete"].exists,
+            "Signed-out Settings must not expose account deletion."
+        )
         openLogin.tap()
 
         let loginScreen = app.descendants(matching: .any)["login.screen"]
