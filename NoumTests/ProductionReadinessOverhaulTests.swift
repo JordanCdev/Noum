@@ -144,7 +144,7 @@ struct PrivacyProductionContractTests {
             repositoryRoot.appendingPathComponent("public/privacy.html"),
         ]
         let requiredDisclosures = [
-            "July 11, 2026",
+            "July 12, 2026",
             "Noum itself does not store your email address, phone number, or password in Noum profile or session records.",
             "Guest access normally uses anonymous Firebase Authentication when it is available and completes during the bounded launch window.",
             "When Firebase Authentication is unconfigured, unavailable, or cannot complete during that window, Noum creates a local-only guest account identifier and stores it in the iOS Keychain instead of creating a Firebase Authentication user.",

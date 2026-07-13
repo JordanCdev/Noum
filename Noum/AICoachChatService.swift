@@ -1647,6 +1647,33 @@ actor AICoachChatService {
                     ))
                 }
                 return .reply(finalText)
+            case .localFallback(let text, let origin):
+                // The provider transport succeeded, but the visible reply was
+                // produced locally after its draft failed a quality gate. Keep
+                // that origin intact so turn metadata never credits a provider
+                // with deterministic copy it did not write.
+                providerCooldowns[provider] = nil
+                let finalText = Self.finalizedCoachReply(
+                    from: text,
+                    latestUserTurn: latestUserTurn,
+                    turnDepth: turnDepth
+                )
+                let choice: CoachTurnProviderChoice
+                switch origin {
+                case .safeReference:
+                    choice = CoachTurnProviderChoice(
+                        providerName: "Deterministic quality fallback",
+                        model: "SafeReferenceCoachGuard",
+                        resolvedTier: routingTier
+                    )
+                case .typedAssessment:
+                    choice = Self.typedFallbackProviderChoice
+                }
+                Self.log.info("chat turn used local quality fallback after \(provider.displayName, privacy: .public)")
+                if let onProviderChosen {
+                    await onProviderChosen(choice)
+                }
+                return .reply(finalText)
             case .refused(let refusal):
                 if refusal == .contentRejected { sawContentRejection = true }
                 if refusal.cooldown > 0 {
@@ -1955,8 +1982,14 @@ actor AICoachChatService {
         providers.map(\.displayName).joined(separator: " > ")
     }
 
+    private enum LocalFallbackOrigin {
+        case safeReference
+        case typedAssessment
+    }
+
     private enum AttemptOutcome {
         case reply(String)
+        case localFallback(String, LocalFallbackOrigin)
         case refused(CoachChatProviderRefusal)
     }
 
@@ -2249,7 +2282,7 @@ actor AICoachChatService {
                                     provider: provider
                                 )
                                 await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
-                                return .reply(safeRepair)
+                                return .localFallback(safeRepair, .safeReference)
                             }
                             if let typedRepair = Self.deterministicAssessmentFallbackReply(
                                 assessment: assessment,
@@ -2266,7 +2299,7 @@ actor AICoachChatService {
                                     provider: provider
                                 )
                                 await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(issue.auditLabel)"))
-                                return .reply(typedRepair)
+                                return .localFallback(typedRepair, .typedAssessment)
                             }
                         }
                         // The deterministic assessment is already the source
@@ -2292,7 +2325,7 @@ actor AICoachChatService {
                                 provider: provider
                             )
                             await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(issue.auditLabel)"))
-                            return .reply(typedRepair)
+                            return .localFallback(typedRepair, .typedAssessment)
                         }
                         // A local safe/typed repair is a quality fallback, not a
                         // provider retry. Emit retry telemetry only when another
@@ -2334,7 +2367,7 @@ actor AICoachChatService {
                                 provider: provider
                             )
                             await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
-                            return .reply(safeRepair)
+                            return .localFallback(safeRepair, .safeReference)
                         }
                         // A content miss by this model on this turn — let the
                         // next provider in the chain take the question.
@@ -2393,7 +2426,7 @@ actor AICoachChatService {
                                         provider: provider
                                     )
                                     await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
-                                    return .reply(safeRepair)
+                                    return .localFallback(safeRepair, .safeReference)
                                 }
                                 if let typedRepair = Self.deterministicAssessmentFallbackReply(
                                     assessment: assessment,
@@ -2410,7 +2443,7 @@ actor AICoachChatService {
                                         provider: provider
                                     )
                                     await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(issue.auditLabel)"))
-                                    return .reply(typedRepair)
+                                    return .localFallback(typedRepair, .typedAssessment)
                                 }
                             }
                             await onProviderAttemptEvent?(.retry(providerChoice))
@@ -2481,7 +2514,7 @@ actor AICoachChatService {
                                     provider: provider
                                 )
                                 await onQualityGateEvent?(.fallback("safeReference:\(visionIssue.auditLabel)"))
-                                return .reply(safeRepair)
+                                return .localFallback(safeRepair, .safeReference)
                             }
                             if let typedRepair = Self.deterministicAssessmentFallbackReply(
                                 assessment: assessment,
@@ -2498,7 +2531,7 @@ actor AICoachChatService {
                                     provider: provider
                                 )
                                 await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(visionIssue.auditLabel)"))
-                                return .reply(typedRepair)
+                                return .localFallback(typedRepair, .typedAssessment)
                             }
                         }
                         await onProviderAttemptEvent?(.retry(providerChoice))

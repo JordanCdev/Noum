@@ -28684,7 +28684,7 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "I keep rambling when I get nervous."
         )
         let issue = AICoachChatService.replyQualityIssue(
-            in: "You said the rambling starts when nerves spike, so the useful test is a hard cap. Next rep, cap every answer at two sentences.",
+            in: "You said the rambling starts when nerves spike, so the useful test is a hard cap. Run one answer in two sentences, then stop.",
             latestUserTurn: "I keep rambling when I get nervous.",
             quoteGuard: guardContext
         )

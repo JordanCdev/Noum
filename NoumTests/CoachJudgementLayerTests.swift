@@ -3553,6 +3553,42 @@ struct CoachProviderRoutingByDepthTests {
     }
 
     @MainActor
+    @Test func safeReferenceFallbackReportsDeterministicOrigin() async throws {
+        let turn = "Why did that answer land badly?"
+        let payload = try Self.anthropicPayload(
+            "Let's focus on the opening. State the decision first, give one reason, then stop."
+        )
+        let service = AICoachChatService(
+            keyedProviders: { [.anthropic] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { _, _, _, _ in .success(payload) }
+        )
+        var providerChoice: CoachTurnProviderChoice?
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: turn)],
+            systemPrompt: "You are Noum.",
+            userContext: "COACH FORMULATION\n- Observable behavior: the recommendation arrived late.",
+            turnDepth: .quickMove,
+            surface: .text,
+            preferredTier: .claudeReasoning,
+            onProviderChosen: { choice in
+                providerChoice = choice
+            }
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("safe-reference fallback should be accepted, got \(outcome)")
+            return
+        }
+        #expect(text.contains("recommendation arrived late"))
+        #expect(providerChoice?.providerName == "Deterministic quality fallback")
+        #expect(providerChoice?.model == "SafeReferenceCoachGuard")
+        #expect(providerChoice?.resolvedTier == .claudeReasoning)
+    }
+
+    @MainActor
     @Test func typedFallbackReportsProviderChoiceAfterQualityFailure() async throws {
         let payload = try Self.anthropicPayload(
             "You scored 7/10, so you are close. Try sounding more confident."
@@ -4066,7 +4102,8 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(firstCoach?.role == .coach)
         #expect(firstCoach?.metadata?.turnDepth == .quickMove)
         #expect(firstCoach?.metadata?.assessmentCacheHit == false)
-        #expect(firstCoach?.metadata?.timeToFirstVisibleTokenSource == .finalReplyCommit)
+        #expect(firstCoach?.metadata?.immediateCoachReadShown == true)
+        #expect(firstCoach?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(firstCoach?.metadata?.qualityGateEvents?.isEmpty == false)
         #expect(firstProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
 
@@ -4089,7 +4126,8 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(secondCoach?.role == .coach)
         #expect(secondCoach?.metadata?.turnDepth == .quickMove)
         #expect(secondCoach?.metadata?.assessmentCacheHit == false)
-        #expect(secondCoach?.metadata?.timeToFirstVisibleTokenSource == .finalReplyCommit)
+        #expect(secondCoach?.metadata?.immediateCoachReadShown == true)
+        #expect(secondCoach?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(secondCoach?.metadata?.proofTestRecentlyRepeated == false)
         #expect(secondCoach?.metadata?.qualityGateEvents?.isEmpty == false)
         #expect(secondProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
