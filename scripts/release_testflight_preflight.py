@@ -271,6 +271,26 @@ def source_tree_is_clean(repo_root: Path) -> bool:
     return completed.returncode == 0 and not completed.stdout.strip()
 
 
+def write_source_bound_info_plist(
+    repo_root: Path,
+    destination: Path,
+    source_commit: str | None,
+) -> bool:
+    if source_commit is None or not SOURCE_COMMIT_PATTERN.fullmatch(source_commit):
+        return False
+    if destination.exists():
+        return False
+    try:
+        payload = _read_plist(repo_root / "Noum/Info.plist")
+        payload[SOURCE_COMMIT_INFO_KEY] = source_commit
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("xb") as output:
+            plistlib.dump(payload, output, sort_keys=True)
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return False
+    return True
+
+
 def _storekit_product_ids(repo_root: Path) -> tuple[str, ...]:
     try:
         source = (repo_root / "Noum/PremiumManager.swift").read_text(encoding="utf-8")
@@ -1035,6 +1055,14 @@ def build_unsigned_archive(
         )
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     derived_data.mkdir(parents=True, exist_ok=True)
+    source_bound_info = derived_data / "NoumSourceBoundInfo.plist"
+    if not write_source_bound_info_plist(repo_root, source_bound_info, source_commit):
+        return check(
+            "unsignedArchiveBuild",
+            False,
+            "source-bound Info.plist generation failed",
+            "Use a new derived-data path and verify the protected source Info.plist is readable.",
+        )
     command = [
         "xcodebuild",
         "archive",
@@ -1055,7 +1083,7 @@ def build_unsigned_archive(
         "-disableAutomaticPackageResolution",
         "CODE_SIGNING_ALLOWED=NO",
         "CODE_SIGNING_REQUIRED=NO",
-        f"INFOPLIST_KEY_{SOURCE_COMMIT_INFO_KEY}={source_commit}",
+        f"INFOPLIST_FILE={source_bound_info}",
     ]
     completed = subprocess.run(
         command,
@@ -1167,6 +1195,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--evidence-dir",
         help="Existing coach-evidence dump validated by the current readiness gate.",
     )
+    parser.add_argument(
+        "--prepare-source-bound-info-plist",
+        metavar="PATH",
+        help="From a clean checkout, copy the protected app Info.plist to PATH and bind it to the exact source commit for an authorized signed archive.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit the redacted JSON report.")
     return parser.parse_args(argv)
 
@@ -1174,9 +1207,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     repo_root = REPO_ROOT
+    source_commit = current_source_commit(repo_root)
+    if args.prepare_source_bound_info_plist:
+        destination = Path(args.prepare_source_bound_info_plist).expanduser().resolve()
+        prepared = bool(
+            source_commit
+            and source_tree_is_clean(repo_root)
+            and write_source_bound_info_plist(repo_root, destination, source_commit)
+        )
+        print("Prepared source-bound release Info.plist." if prepared else "Source-bound release Info.plist was not prepared.")
+        return 0 if prepared else 1
     source_packages = resolve_source_packages(repo_root, args.source_packages)
     settings, settings_collected = collect_build_settings(repo_root, source_packages)
-    source_commit = current_source_commit(repo_root)
 
     archive_path: Path | None = None
     build_check: Check | None = None

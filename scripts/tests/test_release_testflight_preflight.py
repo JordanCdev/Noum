@@ -289,6 +289,29 @@ _ = AppStore.sync()
         checks = self._repository_checks()
         self.assertFalse(next(item for item in checks if item.key == "archiveSourceCommitBound").passed)
 
+    def test_source_bound_info_generation_is_exact_and_non_destructive(self) -> None:
+        source = self.root / "Noum/Info.plist"
+        source_before = source.read_bytes()
+        destination = self.root / "generated/SourceBoundInfo.plist"
+
+        self.assertTrue(
+            release.write_source_bound_info_plist(
+                self.root,
+                destination,
+                TEST_SOURCE_COMMIT,
+            )
+        )
+        generated = plistlib.loads(destination.read_bytes())
+        self.assertEqual(generated[release.SOURCE_COMMIT_INFO_KEY], TEST_SOURCE_COMMIT)
+        self.assertEqual(source.read_bytes(), source_before)
+        self.assertFalse(
+            release.write_source_bound_info_plist(
+                self.root,
+                destination,
+                TEST_SOURCE_COMMIT,
+            )
+        )
+
     def test_archive_rejects_simulator_platform_shape(self) -> None:
         path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"
         value = plistlib.loads(path.read_bytes())

@@ -170,13 +170,16 @@ intentionally outside automated/local preflight:
 ```bash
 test -z "$(git status --porcelain --untracked-files=all)"
 SOURCE_COMMIT="$(git rev-parse HEAD)"
+SOURCE_BOUND_INFO="/secure/path/Noum-$SOURCE_COMMIT-Info.plist"
+python3 scripts/release_testflight_preflight.py \
+  --prepare-source-bound-info-plist "$SOURCE_BOUND_INFO"
 xcodebuild archive \
   -project Noum.xcodeproj \
   -scheme Noum \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath '/secure/path/Noum-<build>.xcarchive' \
-  "INFOPLIST_KEY_NoumSourceGitCommit=$SOURCE_COMMIT" \
+  "INFOPLIST_FILE=$SOURCE_BOUND_INFO" \
   -allowProvisioningUpdates
 
 xcodebuild -exportArchive \
@@ -192,6 +195,10 @@ installation from TestFlight, and the physical-device sweep remain external
 operator work and must be captured through the evidence workflow below. An
 unsigned archive, simulator run, or direct Xcode development install cannot
 close `noRealDeviceTestFlightVerification`.
+
+The generated source-bound Info.plist is a release intermediate copied from the
+protected local app configuration. Keep it in the same access-controlled build
+location as the archive, never commit it, and use a new path for each candidate.
 
 The current `coach-real-device-testflight-qa-v3` schema structurally validates
 the complete runtime portion of the M14 hardware sweep: exactly 14 surfaces and
