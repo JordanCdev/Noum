@@ -47,7 +47,7 @@ enum CoachChatConversationCorpus {
     static let professionalCoachCalibrationResultsArtifactFileName =
         "coach-chat-conversation-expert-calibration-results-v2.json"
     static let realUserTransferOutcomesArtifactFileName =
-        "coach-real-user-transfer-outcomes-v2.json"
+        "coach-real-user-transfer-outcomes-v3.json"
     static let realDeviceTestFlightArtifactFileName =
         "coach-real-device-testflight-qa-v2.json"
     static let operationalLaunchChecklistArtifactFileName =
@@ -4114,7 +4114,7 @@ struct CoachChatConversationCorpusTests {
         #expect(warningDecoded.rejectionReasons.contains("readinessWarnings=insufficientFollowUpWindow"))
 
         let rejectedEvidence = Self.realUserTransferOutcomeEvidence(
-            rejectedRowIndices: [0, 1, 2]
+            rejectedRowIndices: [0, 1, 2, 3, 4]
         )
         let rejectedDecoded = try CoachRealUserTransferOutcomeEvidence.decode(
             from: rejectedEvidence.encodedSortedJSON()
@@ -4124,8 +4124,33 @@ struct CoachChatConversationCorpusTests {
         #expect(rejectedDecoded.rowsPassingOutcomeFloor == 0)
         #expect(rejectedDecoded.rejectionReasons.contains("insufficientPositiveTransferOutcomes"))
         #expect(rejectedDecoded.rejectionReasons.contains("insufficientAudienceResponseEvidence"))
-        #expect(rejectedDecoded.rejectionReasons.contains("adverseOutcomesReported"))
         #expect(rejectedDecoded.rejectionReasons.contains("outcomeFloorFailures"))
+    }
+
+    @Test func realUserTransferOutcomeEvidenceRetainsMixedAndResolvedAdverseRows() throws {
+        let mixed = try CoachRealUserTransferOutcomeEvidence.decode(
+            from: Self.realUserTransferOutcomeEvidence(
+                regressedRowIndices: [0, 1, 2],
+                adverseRowIndices: [3]
+            ).encodedSortedJSON()
+        )
+
+        #expect(mixed.qualifiesForReadiness)
+        #expect(mixed.rowsPassingOutcomeFloor == 12)
+        #expect(mixed.summary.positiveTransferCount == 9)
+        #expect(mixed.summary.noRegressionOutcomeCount == 9)
+        #expect(mixed.summary.adverseOutcomeCount == 1)
+        #expect(mixed.summary.resolvedAdverseOutcomeCount == 1)
+
+        let unresolved = try CoachRealUserTransferOutcomeEvidence.decode(
+            from: Self.realUserTransferOutcomeEvidence(
+                adverseRowIndices: [3],
+                unresolvedAdverseRowIndices: [3]
+            ).encodedSortedJSON()
+        )
+        #expect(!unresolved.qualifiesForReadiness)
+        #expect(unresolved.rejectionReasons.contains("unresolvedAdverseOutcomes"))
+        #expect(unresolved.rejectionReasons.contains("outcomeFloorFailures"))
     }
 
     @Test func realUserTransferOutcomeEvidenceRejectsThinOrSmoothedSidecars() throws {
@@ -5524,6 +5549,9 @@ struct CoachChatConversationCorpusTests {
         rowCount: Int = 12,
         readinessWarnings: [String] = [],
         rejectedRowIndices: Set<Int> = [],
+        regressedRowIndices: Set<Int> = [],
+        adverseRowIndices: Set<Int> = [],
+        unresolvedAdverseRowIndices: Set<Int> = [],
         collapsedUserIDs: Bool = false,
         collapsedMomentCategories: Bool = false,
         missingEvidenceReferenceIndices: Set<Int> = [],
@@ -5531,6 +5559,9 @@ struct CoachChatConversationCorpusTests {
     ) -> CoachRealUserTransferOutcomeEvidence {
         let rows = (0..<rowCount).map { index in
             let rejected = rejectedRowIndices.contains(index)
+            let regressed = regressedRowIndices.contains(index)
+            let adverse = adverseRowIndices.contains(index)
+            let adverseResolved = adverse && !unresolvedAdverseRowIndices.contains(index)
             let missingEvidence = missingEvidenceReferenceIndices.contains(index)
             let momentCategory = collapsedMomentCategories ? "presentation" : [
                 "presentation",
@@ -5551,10 +5582,14 @@ struct CoachChatConversationCorpusTests {
                 daysSinceFirstNoumSession: rejected ? 3 : 14 + index,
                 followUpDelayHours: lowFollowUpDelayIndices.contains(index) ? 4 : 36 + index,
                 preMomentConfidence: 2 + (index % 2),
-                postMomentConfidence: rejected ? 1 : 3 + (index % 2),
-                positiveTransferReported: !rejected,
+                postMomentConfidence: rejected || regressed ? 1 : 3 + (index % 2),
+                positiveTransferReported: !rejected && !regressed,
                 audienceResponseEvidenceCollected: !rejected,
-                adverseOutcomeReported: rejected,
+                adverseOutcomeReported: adverse,
+                adverseOutcomeResolved: adverseResolved,
+                adverseOutcomeFollowUpReference: adverse
+                    ? "beta://adverse-follow-up/transfer-outcome-\(index)"
+                    : "",
                 interventionEvidenceReference: missingEvidence
                     ? ""
                     : "noum://intervention/intervention-\(index)",
@@ -5586,7 +5621,18 @@ struct CoachChatConversationCorpusTests {
         return CoachRealUserTransferOutcomeEvidence(
             schemaVersion: CoachRealUserTransferOutcomeEvidence.expectedSchemaVersion,
             studyProtocolVersion: CoachRealUserTransferOutcomeEvidence.expectedProtocolVersion,
+            protocolRegistrationReference: "registry://noum-transfer-v3",
+            analysisPlanReference: "registry://noum-transfer-v3/analysis",
+            comparisonMethod: "prePostWithinUser",
+            benchmarkReference: "registry://noum-transfer-v3/benchmark",
             cohortDescription: "closed-beta-transfer-cohort",
+            enrollment: CoachRealUserTransferOutcomeEvidence.Enrollment(
+                enrolledUserCount: uniqueUsers + 2,
+                completedUserCount: uniqueUsers,
+                withdrawnUserCount: 1,
+                excludedUserCount: 1,
+                exclusionLogReference: "registry://noum-transfer-v3/exclusions"
+            ),
             outcomeCount: rowCount,
             summary: CoachRealUserTransferOutcomeEvidence.Summary(
                 rowCount: rowCount,
@@ -5602,6 +5648,9 @@ struct CoachChatConversationCorpusTests {
                     $0.postMomentConfidence >= $0.preMomentConfidence
                 }.count,
                 adverseOutcomeCount: rows.filter(\.adverseOutcomeReported).count,
+                resolvedAdverseOutcomeCount: rows.filter {
+                    $0.adverseOutcomeReported && $0.adverseOutcomeResolved
+                }.count,
                 passingOutcomeCount: passingRows.count,
                 minimumDaysSinceFirstSession: minimumDays,
                 studyDurationDays: rowCount > 0 ? 42 : 0,

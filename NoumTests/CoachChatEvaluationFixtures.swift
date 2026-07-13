@@ -788,17 +788,25 @@ struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
 }
 
 struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v2"
-    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v2"
+    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v3"
+    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v3"
     static let requiredOutcomeCount = 10
     static let requiredUniqueUserCount = 8
     static let requiredMomentCategoryCount = 4
     static let maximumOutcomesPerUser = 2
     static let minimumFollowUpDelayHours = 24
+    static let minimumPositiveTransferRate = 0.60
+    static let minimumNoRegressionRate = 0.70
+    static let minimumCohortCompletionRate = 0.70
 
     let schemaVersion: String
     let studyProtocolVersion: String
+    let protocolRegistrationReference: String
+    let analysisPlanReference: String
+    let comparisonMethod: String
+    let benchmarkReference: String
     let cohortDescription: String
+    let enrollment: Enrollment
     let outcomeCount: Int
     let summary: Summary
     let rows: [Row]
@@ -828,6 +836,17 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let audienceEvidence = rows.filter(\.audienceResponseEvidenceCollected).count
         let noRegression = rows.filter { $0.postMomentConfidence >= $0.preMomentConfidence }.count
         let adverseOutcomes = rows.filter(\.adverseOutcomeReported).count
+        let resolvedAdverseOutcomes = rows.filter {
+            $0.adverseOutcomeReported &&
+                $0.adverseOutcomeResolved &&
+                Self.usableEvidenceReference($0.adverseOutcomeFollowUpReference)
+        }.count
+        let requiredPositiveTransferCount = Int(ceil(
+            Double(rows.count) * Self.minimumPositiveTransferRate
+        ))
+        let requiredNoRegressionCount = Int(ceil(
+            Double(rows.count) * Self.minimumNoRegressionRate
+        ))
         let rowsMissingIdentity = rows.enumerated().compactMap { index, row -> String? in
             row.hasRequiredIdentity ? nil : row.outcomeIDForDiagnostics(index: index)
         }
@@ -836,6 +855,21 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         }
         if studyProtocolVersion != Self.expectedProtocolVersion {
             reasons.append("studyProtocolVersion=\(studyProtocolVersion)")
+        }
+        if !Self.usableEvidenceReference(protocolRegistrationReference) ||
+            !Self.usableEvidenceReference(analysisPlanReference) ||
+            !Self.usableEvidenceReference(benchmarkReference) {
+            reasons.append("missingPreregisteredStudyReferences")
+        }
+        if comparisonMethod != "prePostWithinUser" {
+            reasons.append("unsupportedComparisonMethod=\(comparisonMethod)")
+        }
+        if !enrollment.isCoherent ||
+            enrollment.completionRate < Self.minimumCohortCompletionRate {
+            reasons.append("invalidOrInsufficientCohortCompletion")
+        }
+        if enrollment.completedUserCount != uniqueUserIDs.count {
+            reasons.append("completedUserCountMismatch")
         }
         if outcomeCount < Self.requiredOutcomeCount || rows.count < Self.requiredOutcomeCount {
             reasons.append("fewerThanTenOutcomes")
@@ -878,17 +912,21 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         if summary.linkedInterventionOutcomeCount != linkedInterventions || linkedInterventions < 10 {
             reasons.append("insufficientLinkedInterventions")
         }
-        if summary.positiveTransferCount != positiveTransfer || positiveTransfer < 10 {
+        if summary.positiveTransferCount != positiveTransfer ||
+            positiveTransfer < requiredPositiveTransferCount {
             reasons.append("insufficientPositiveTransferOutcomes")
         }
         if summary.audienceResponseEvidenceCount != audienceEvidence || audienceEvidence < 10 {
             reasons.append("insufficientAudienceResponseEvidence")
         }
-        if summary.noRegressionOutcomeCount != noRegression || noRegression < 10 {
+        if summary.noRegressionOutcomeCount != noRegression ||
+            noRegression < requiredNoRegressionCount {
             reasons.append("insufficientNoRegressionOutcomes")
         }
-        if summary.adverseOutcomeCount != adverseOutcomes || adverseOutcomes > 0 {
-            reasons.append("adverseOutcomesReported")
+        if summary.adverseOutcomeCount != adverseOutcomes ||
+            summary.resolvedAdverseOutcomeCount != resolvedAdverseOutcomes ||
+            resolvedAdverseOutcomes != adverseOutcomes {
+            reasons.append("unresolvedAdverseOutcomes")
         }
         if summary.minimumDaysSinceFirstSession < 7 || summary.studyDurationDays < 14 {
             reasons.append("insufficientLongitudinalWindow")
@@ -950,6 +988,7 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let audienceResponseEvidenceCount: Int
         let noRegressionOutcomeCount: Int
         let adverseOutcomeCount: Int
+        let resolvedAdverseOutcomeCount: Int
         let passingOutcomeCount: Int
         let minimumDaysSinceFirstSession: Int
         let studyDurationDays: Int
@@ -958,6 +997,28 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let minimumFollowUpDelayHours: Int
         let maximumOutcomesPerUser: Int
         let readinessWarnings: [String]
+    }
+
+    struct Enrollment: Codable, Equatable {
+        let enrolledUserCount: Int
+        let completedUserCount: Int
+        let withdrawnUserCount: Int
+        let excludedUserCount: Int
+        let exclusionLogReference: String
+
+        var completionRate: Double {
+            guard enrolledUserCount > 0 else { return 0 }
+            return Double(completedUserCount) / Double(enrolledUserCount)
+        }
+
+        var isCoherent: Bool {
+            enrolledUserCount > 0 &&
+                completedUserCount >= 0 &&
+                withdrawnUserCount >= 0 &&
+                excludedUserCount >= 0 &&
+                completedUserCount + withdrawnUserCount + excludedUserCount == enrolledUserCount &&
+                CoachRealUserTransferOutcomeEvidence.usableEvidenceReference(exclusionLogReference)
+        }
     }
 
     struct Row: Codable, Equatable {
@@ -975,6 +1036,8 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let positiveTransferReported: Bool
         let audienceResponseEvidenceCollected: Bool
         let adverseOutcomeReported: Bool
+        let adverseOutcomeResolved: Bool
+        let adverseOutcomeFollowUpReference: String
         let interventionEvidenceReference: String
         let momentEvidenceReference: String
         let followUpEvidenceReference: String
@@ -1001,17 +1064,23 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         }
 
         var passesOutcomeFloor: Bool {
-            realWorldMomentOccurred &&
+            let adverseOutcomeHandled = !adverseOutcomeReported || (
+                adverseOutcomeResolved &&
+                    CoachRealUserTransferOutcomeEvidence.usableEvidenceReference(
+                        adverseOutcomeFollowUpReference
+                    )
+            )
+            return realWorldMomentOccurred &&
                 followUpCompleted &&
                 hasRequiredIdentity &&
                 hasRequiredEvidenceReferences &&
                 linkedCoachInterventionCount > 0 &&
                 daysSinceFirstNoumSession >= 7 &&
                 followUpDelayHours >= CoachRealUserTransferOutcomeEvidence.minimumFollowUpDelayHours &&
-                postMomentConfidence >= preMomentConfidence &&
-                positiveTransferReported &&
+                (1...5).contains(preMomentConfidence) &&
+                (1...5).contains(postMomentConfidence) &&
                 audienceResponseEvidenceCollected &&
-                !adverseOutcomeReported &&
+                adverseOutcomeHandled &&
                 causalityClaims.isEmpty
         }
 

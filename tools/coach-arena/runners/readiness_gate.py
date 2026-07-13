@@ -160,12 +160,17 @@ EVIDENCE_REQUIREMENTS = {
     },
     "noRealUserLongitudinalTransferOutcomes": {
         "rowKey": "realUserLongitudinalTransferOutcomes",
-        "artifact": "coach-real-user-transfer-outcomes-v2.json",
-        "expectedSchemaVersion": "coach-real-user-transfer-outcomes-v2",
+        "artifact": "coach-real-user-transfer-outcomes-v3.json",
+        "expectedSchemaVersion": "coach-real-user-transfer-outcomes-v3",
         "requiredTopLevelKeys": [
             "schemaVersion",
             "studyProtocolVersion",
+            "protocolRegistrationReference",
+            "analysisPlanReference",
+            "comparisonMethod",
+            "benchmarkReference",
             "cohortDescription",
+            "enrollment",
             "outcomeCount",
             "summary",
             "rows",
@@ -300,13 +305,16 @@ PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT = (
 )
 MIN_TRAJECTORY_CACHE_HIT_RATIO = 0.10
 
-REAL_USER_TRANSFER_SCHEMA = "coach-real-user-transfer-outcomes-v2"
-REAL_USER_TRANSFER_PROTOCOL = "coach-transfer-outcome-ledger-v2"
+REAL_USER_TRANSFER_SCHEMA = "coach-real-user-transfer-outcomes-v3"
+REAL_USER_TRANSFER_PROTOCOL = "coach-transfer-outcome-ledger-v3"
 REAL_USER_TRANSFER_REQUIRED_OUTCOMES = 10
 REAL_USER_TRANSFER_REQUIRED_USERS = 8
 REAL_USER_TRANSFER_REQUIRED_MOMENT_CATEGORIES = 4
 REAL_USER_TRANSFER_MAX_OUTCOMES_PER_USER = 2
 REAL_USER_TRANSFER_MIN_FOLLOW_UP_HOURS = 24
+REAL_USER_TRANSFER_MIN_POSITIVE_RATE = 0.60
+REAL_USER_TRANSFER_MIN_NO_REGRESSION_RATE = 0.70
+REAL_USER_TRANSFER_MIN_COHORT_COMPLETION_RATE = 0.70
 
 REAL_DEVICE_TESTFLIGHT_SCHEMA = "coach-real-device-testflight-qa-v2"
 REAL_DEVICE_MAX_AI_PROMPT_LATENCY_MS = 3000
@@ -1641,6 +1649,11 @@ def real_user_transfer_row_passes(row):
     linked_interventions = strict_int(row.get("linkedCoachInterventionCount"))
     pre_confidence = strict_int(row.get("preMomentConfidence"))
     post_confidence = strict_int(row.get("postMomentConfidence"))
+    adverse_reported = row.get("adverseOutcomeReported") is True
+    adverse_resolved = row.get("adverseOutcomeResolved") is True
+    adverse_follow_up = usable_evidence_reference(
+        row.get("adverseOutcomeFollowUpReference")
+    )
     return bool(
         all(trimmed_non_empty(row.get(key)) for key in identity_keys)
         and all(usable_evidence_reference(row.get(key)) for key in evidence_keys)
@@ -1650,12 +1663,10 @@ def real_user_transfer_row_passes(row):
         and days_since_first is not None and days_since_first >= 7
         and follow_up_delay is not None
         and follow_up_delay >= REAL_USER_TRANSFER_MIN_FOLLOW_UP_HOURS
-        and pre_confidence is not None
-        and post_confidence is not None
-        and post_confidence >= pre_confidence
-        and row.get("positiveTransferReported") is True
+        and pre_confidence is not None and 1 <= pre_confidence <= 5
+        and post_confidence is not None and 1 <= post_confidence <= 5
         and row.get("audienceResponseEvidenceCollected") is True
-        and row.get("adverseOutcomeReported") is False
+        and (not adverse_reported or (adverse_resolved and adverse_follow_up))
         and row.get("causalityClaims") == []
     )
 
@@ -1670,6 +1681,12 @@ def real_user_transfer_contract_failures(payload):
 
     if payload.get("studyProtocolVersion") != REAL_USER_TRANSFER_PROTOCOL:
         failures.append(f"studyProtocolVersion={payload.get('studyProtocolVersion')}")
+    if not all(usable_evidence_reference(payload.get(key)) for key in [
+        "protocolRegistrationReference", "analysisPlanReference", "benchmarkReference",
+    ]):
+        failures.append("missingPreregisteredStudyReferences")
+    if payload.get("comparisonMethod") != "prePostWithinUser":
+        failures.append(f"unsupportedComparisonMethod={payload.get('comparisonMethod')}")
     outcome_count = strict_int(payload.get("outcomeCount"))
     if (
         outcome_count is None
@@ -1699,6 +1716,29 @@ def real_user_transfer_contract_failures(payload):
         or unique_users < REAL_USER_TRANSFER_REQUIRED_USERS
     ):
         failures.append("insufficientUniqueUsers")
+
+    enrollment = payload.get("enrollment") if isinstance(payload.get("enrollment"), dict) else {}
+    enrolled_users = strict_int(enrollment.get("enrolledUserCount"))
+    completed_users = strict_int(enrollment.get("completedUserCount"))
+    withdrawn_users = strict_int(enrollment.get("withdrawnUserCount"))
+    excluded_users = strict_int(enrollment.get("excludedUserCount"))
+    enrollment_counts = [enrolled_users, completed_users, withdrawn_users, excluded_users]
+    enrollment_coherent = bool(
+        all(value is not None and value >= 0 for value in enrollment_counts)
+        and enrolled_users is not None and enrolled_users > 0
+        and completed_users + withdrawn_users + excluded_users == enrolled_users
+        and completed_users == unique_users
+        and usable_evidence_reference(enrollment.get("exclusionLogReference"))
+    )
+    completion_rate = (
+        completed_users / enrolled_users
+        if enrollment_coherent and enrolled_users else 0
+    )
+    if (
+        not enrollment_coherent
+        or completion_rate < REAL_USER_TRANSFER_MIN_COHORT_COMPLETION_RATE
+    ):
+        failures.append("invalidOrInsufficientCohortCompletion")
     unique_moments = len(set(moment_keys))
     if (
         strict_int(summary.get("uniqueMomentCategoryCount")) != unique_moments
@@ -1746,13 +1786,22 @@ def real_user_transfer_contract_failures(payload):
     count_contracts = [
         ("completedFollowUpCount", "followUpCompleted", "insufficientCompletedFollowUps"),
         ("realWorldMomentCount", "realWorldMomentOccurred", "insufficientRealWorldMoments"),
-        ("positiveTransferCount", "positiveTransferReported", "insufficientPositiveTransferOutcomes"),
         ("audienceResponseEvidenceCount", "audienceResponseEvidenceCollected", "insufficientAudienceResponseEvidence"),
     ]
     for summary_key, row_key, failure in count_contracts:
         observed = sum(row.get(row_key) is True for row in typed_rows)
         if strict_int(summary.get(summary_key)) != observed or observed < REAL_USER_TRANSFER_REQUIRED_OUTCOMES:
             failures.append(failure)
+
+    positive_count = sum(row.get("positiveTransferReported") is True for row in typed_rows)
+    minimum_positive_count = math.ceil(
+        len(typed_rows) * REAL_USER_TRANSFER_MIN_POSITIVE_RATE
+    )
+    if (
+        strict_int(summary.get("positiveTransferCount")) != positive_count
+        or positive_count < minimum_positive_count
+    ):
+        failures.append("insufficientPositiveTransferOutcomes")
 
     linked_count = sum((strict_int(row.get("linkedCoachInterventionCount")) or 0) > 0 for row in typed_rows)
     if (
@@ -1768,12 +1817,24 @@ def real_user_transfer_contract_failures(payload):
     )
     if (
         strict_int(summary.get("noRegressionOutcomeCount")) != no_regression_count
-        or no_regression_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+        or no_regression_count < math.ceil(
+            len(typed_rows) * REAL_USER_TRANSFER_MIN_NO_REGRESSION_RATE
+        )
     ):
         failures.append("insufficientNoRegressionOutcomes")
     adverse_count = sum(row.get("adverseOutcomeReported") is True for row in typed_rows)
-    if strict_int(summary.get("adverseOutcomeCount")) != adverse_count or adverse_count > 0:
-        failures.append("adverseOutcomesReported")
+    resolved_adverse_count = sum(
+        row.get("adverseOutcomeReported") is True
+        and row.get("adverseOutcomeResolved") is True
+        and usable_evidence_reference(row.get("adverseOutcomeFollowUpReference"))
+        for row in typed_rows
+    )
+    if (
+        strict_int(summary.get("adverseOutcomeCount")) != adverse_count
+        or strict_int(summary.get("resolvedAdverseOutcomeCount")) != resolved_adverse_count
+        or resolved_adverse_count != adverse_count
+    ):
+        failures.append("unresolvedAdverseOutcomes")
     if (
         (strict_int(summary.get("minimumDaysSinceFirstSession")) or 0) < 7
         or (strict_int(summary.get("studyDurationDays")) or 0) < 14

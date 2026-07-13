@@ -34,6 +34,14 @@ plus a fresh current-source zero-refusal live-provider sweep. The current provid
 environment has returned Gemini HTTP 429 and DeepSeek HTTP 402; those operational
 failures must be resolved rather than hidden by a generated artifact.
 
+The longitudinal gate uses `coach-real-user-transfer-outcomes-v3.json`. Its
+cohort and analysis plan must be registered before results are collected; every
+completed outcome stays in the ledger, including regressions and adverse reports.
+Readiness evaluates the cohort distribution rather than demanding a cherry-picked
+perfect sample: at least 60% positive transfer and 70% non-regression across the
+full qualifying set, with coherent enrollment/withdrawal/exclusion accounting and
+evidence-backed resolution for every adverse outcome.
+
 ## 1. Product outcome
 
 Make Noum clearly answer one question: **“Is this helping me become the kind of speaker I want to be?”**

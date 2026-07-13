@@ -55,6 +55,14 @@ must meet the zero-refusal readiness floor after those provider capacity/account
 conditions are resolved; local fallback quality does not erase an operational
 refusal from release evidence.
 
+The real-user transfer contract is now v3 and no longer requires an implausible
+10/10 positive, non-regressing, adverse-free sample. It requires a registered
+protocol, analysis plan, benchmark reference, coherent cohort completion and
+exclusion log, the full set of positive and negative rows, a 60% positive-transfer
+floor, a 70% non-regression floor, and documented resolution of every adverse
+outcome. This closes the former incentive to omit users whose result was mixed or
+negative while keeping the evidence bar independently auditable.
+
 ## Release invariants
 
 - No 0–100 speaking-identity score until calibrated against longitudinal human

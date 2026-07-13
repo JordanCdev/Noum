@@ -178,7 +178,7 @@ release decision, rerun without `--no-fail` and include `--probe-live`.
 |---|---|---|
 | `noLiveProviderTranscriptSweep` | `coach-live-eval-v1.json` | Real provider transcript sweep over the required app-path fixtures, with `sourceGitCommit` and `sourceCoachFingerprint` matching the source sidecars. |
 | `noProfessionalCoachCalibration` | `coach-chat-conversation-expert-calibration-results-v2.json` | Blinded professional-coach reviews for the required calibration packet, meeting the rubric and review-count floor. |
-| `noRealUserLongitudinalTransferOutcomes` | `coach-real-user-transfer-outcomes-v2.json` | Closed-beta real-user transfer outcomes with follow-up delay, real-world moments, linked interventions, and evidence references. |
+| `noRealUserLongitudinalTransferOutcomes` | `coach-real-user-transfer-outcomes-v3.json` | Pre-registered closed-beta cohort with complete enrollment/attrition accounting, delayed real-world follow-ups, linked interventions, retained negative outcomes, and evidence references. |
 | `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v2.json` | Physical-device TestFlight verification for App Check, real-microphone transcription, consent/offline/reconnect behavior, authentication, deletion, notifications, widgets, Live Activities, accessibility, and StoreKit purchase/restore. |
 | `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist: historical credential-incident closure, guarded social cutover, hosted privacy and custom-domain verification, Apple provider/signing, App Store privacy disclosures and StoreKit configuration, TestFlight upload, and release-blocking bug triage. |
 

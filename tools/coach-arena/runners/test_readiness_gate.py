@@ -370,6 +370,8 @@ def complete_real_user_transfer_evidence():
             "positiveTransferReported": True,
             "audienceResponseEvidenceCollected": True,
             "adverseOutcomeReported": False,
+            "adverseOutcomeResolved": False,
+            "adverseOutcomeFollowUpReference": "",
             "interventionEvidenceReference": f"noum://intervention/intervention-{index}",
             "momentEvidenceReference": f"beta://moment/{category}/{index}",
             "followUpEvidenceReference": f"beta://follow-up/{outcome_id}",
@@ -381,7 +383,18 @@ def complete_real_user_transfer_evidence():
     return {
         "schemaVersion": gate.REAL_USER_TRANSFER_SCHEMA,
         "studyProtocolVersion": gate.REAL_USER_TRANSFER_PROTOCOL,
+        "protocolRegistrationReference": "registry://noum-transfer-v3",
+        "analysisPlanReference": "registry://noum-transfer-v3/analysis",
+        "comparisonMethod": "prePostWithinUser",
+        "benchmarkReference": "registry://noum-transfer-v3/benchmark",
         "cohortDescription": "closed-beta-transfer-cohort",
+        "enrollment": {
+            "enrolledUserCount": 12,
+            "completedUserCount": 10,
+            "withdrawnUserCount": 1,
+            "excludedUserCount": 1,
+            "exclusionLogReference": "registry://noum-transfer-v3/exclusions",
+        },
         "outcomeCount": len(rows),
         "summary": {
             "rowCount": len(rows),
@@ -393,6 +406,7 @@ def complete_real_user_transfer_evidence():
             "audienceResponseEvidenceCount": len(rows),
             "noRegressionOutcomeCount": len(rows),
             "adverseOutcomeCount": 0,
+            "resolvedAdverseOutcomeCount": 0,
             "passingOutcomeCount": len(rows),
             "minimumDaysSinceFirstSession": 14,
             "studyDurationDays": 42,
@@ -503,7 +517,7 @@ def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_c
         "coach-chat-conversation-expert-calibration-results-v2.json": (
             complete_professional_calibration_evidence()
         ),
-        "coach-real-user-transfer-outcomes-v2.json": complete_real_user_transfer_evidence(),
+        "coach-real-user-transfer-outcomes-v3.json": complete_real_user_transfer_evidence(),
         "coach-real-device-testflight-qa-v2.json": complete_real_device_testflight_evidence(),
         "coach-operational-launch-checklist-v2.json": complete_operational_launch_evidence(),
     }
@@ -719,7 +733,7 @@ class ReadinessGateTests(unittest.TestCase):
             "blockers": [],
         }
         cases = [
-            ("coach-real-user-transfer-outcomes-v2.json", "rows"),
+            ("coach-real-user-transfer-outcomes-v3.json", "rows"),
             ("coach-real-device-testflight-qa-v2.json", "rows"),
             ("coach-operational-launch-checklist-v2.json", "items"),
         ]
@@ -768,6 +782,57 @@ class ReadinessGateTests(unittest.TestCase):
             failure.startswith("evidenceKindMismatch=")
             for failure in gate.operational_launch_contract_failures(operational)
         ))
+
+    def test_transfer_contract_accepts_a_credible_mixed_outcome_distribution(self):
+        transfer = complete_real_user_transfer_evidence()
+        for index in [0, 1, 2]:
+            row = transfer["rows"][index]
+            row["positiveTransferReported"] = False
+            row["postMomentConfidence"] = row["preMomentConfidence"] - 1
+        transfer["summary"]["positiveTransferCount"] = 9
+        transfer["summary"]["noRegressionOutcomeCount"] = 9
+
+        self.assertEqual(gate.real_user_transfer_contract_failures(transfer), [])
+
+    def test_transfer_contract_rejects_distribution_below_registered_floors(self):
+        transfer = complete_real_user_transfer_evidence()
+        for index in [0, 1, 2, 3, 4]:
+            row = transfer["rows"][index]
+            row["positiveTransferReported"] = False
+            row["postMomentConfidence"] = row["preMomentConfidence"] - 1
+        transfer["summary"]["positiveTransferCount"] = 7
+        transfer["summary"]["noRegressionOutcomeCount"] = 7
+
+        failures = gate.real_user_transfer_contract_failures(transfer)
+        self.assertIn("insufficientPositiveTransferOutcomes", failures)
+        self.assertIn("insufficientNoRegressionOutcomes", failures)
+
+    def test_transfer_contract_retains_resolved_adverse_rows(self):
+        transfer = complete_real_user_transfer_evidence()
+        row = transfer["rows"][0]
+        row["adverseOutcomeReported"] = True
+        row["adverseOutcomeResolved"] = True
+        row["adverseOutcomeFollowUpReference"] = "beta://adverse-follow-up/0"
+        transfer["summary"]["adverseOutcomeCount"] = 1
+        transfer["summary"]["resolvedAdverseOutcomeCount"] = 1
+
+        self.assertEqual(gate.real_user_transfer_contract_failures(transfer), [])
+
+        row["adverseOutcomeResolved"] = False
+        transfer["summary"]["resolvedAdverseOutcomeCount"] = 0
+        self.assertIn(
+            "unresolvedAdverseOutcomes",
+            gate.real_user_transfer_contract_failures(transfer),
+        )
+
+    def test_transfer_contract_requires_preregistration_and_cohort_accounting(self):
+        transfer = complete_real_user_transfer_evidence()
+        transfer["protocolRegistrationReference"] = ""
+        transfer["enrollment"]["withdrawnUserCount"] = 0
+
+        failures = gate.real_user_transfer_contract_failures(transfer)
+        self.assertIn("missingPreregisteredStudyReferences", failures)
+        self.assertIn("invalidOrInsufficientCohortCompletion", failures)
 
     def test_launch_ready_rejects_prompt_layer_report_family(self):
         readiness = {
