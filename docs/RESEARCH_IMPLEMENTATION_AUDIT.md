@@ -6,7 +6,7 @@ Audit date: 2026-07-13
 
 Audited checkout: `b05258ab55b05b3b895a8ddc538e82ce46e054c3`
 
-Audit branch: `codex/agent-research-completion-audit`
+Integrated branch: `ux-overhaul`
 
 ## Scope
 

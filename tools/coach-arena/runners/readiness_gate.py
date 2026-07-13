@@ -10,6 +10,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 
@@ -216,9 +217,13 @@ EVIDENCE_REQUIREMENTS = {
         "expectedSchemaVersion": "coach-operational-launch-checklist-v2",
         "requiredTopLevelKeys": [
             "schemaVersion",
+            "templateStatus",
             "checklistVersion",
             "releaseCandidateBuild",
             "completedByRole",
+            "completedByID",
+            "releasePrerequisites",
+            "historySecretAdjudication",
             "summary",
             "items",
         ],
@@ -333,6 +338,7 @@ REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE = {
 
 OPERATIONAL_LAUNCH_SCHEMA = "coach-operational-launch-checklist-v2"
 OPERATIONAL_LAUNCH_CHECKLIST_VERSION = "m14-launch-gate-v2"
+OPERATIONAL_LAUNCH_TEMPLATE_STATUS = "COLLECTED_EXTERNAL_EVIDENCE"
 OPERATIONAL_LAUNCH_REQUIRED_ITEMS = [
     "firestoreRulesDeployed",
     "privacyPolicyURLHosted",
@@ -356,6 +362,55 @@ OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM = {
     "appStorePrivacyDisclosuresReviewed": "appStoreConnect",
     "testFlightBuildUploaded": "appStoreConnect",
     "releaseBlockingBugsTriaged": "releaseBoard",
+}
+OPERATIONAL_LAUNCH_REQUIRED_PREREQUISITES = [
+    "cloudOperationsProbePassed",
+    "historicalCredentialIncidentClosed",
+    "legacyTranscriptionEndpointProtectedOrDisabled",
+    "exposedProviderCredentialsRevoked",
+    "providerUsageAndBillingAuditComplete",
+    "fullHistorySecretFindingsAdjudicated",
+    "releaseBundleSecretScanPassed",
+    "protectedSocialCutoverCompleted",
+    "socialMigrationDryRunPassed",
+    "trustedSocialEvidenceProducerDeployed",
+    "customPrivacyDomainVerified",
+    "appleReleaseServicesConfigured",
+]
+OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_PREREQUISITE = {
+    "cloudOperationsProbePassed": "cloudOperationsProbeOutput",
+    "historicalCredentialIncidentClosed": "credentialIncidentClosure",
+    "legacyTranscriptionEndpointProtectedOrDisabled": "legacyEndpointVerification",
+    "exposedProviderCredentialsRevoked": "providerCredentialRevocation",
+    "providerUsageAndBillingAuditComplete": "providerUsageBillingAudit",
+    "fullHistorySecretFindingsAdjudicated": "fullHistorySecretReview",
+    "releaseBundleSecretScanPassed": "releaseBundleSecretScan",
+    "protectedSocialCutoverCompleted": "protectedSocialCutover",
+    "socialMigrationDryRunPassed": "socialMigrationDryRun",
+    "trustedSocialEvidenceProducerDeployed": "trustedSocialEvidenceProducer",
+    "customPrivacyDomainVerified": "customPrivacyDomainVerification",
+    "appleReleaseServicesConfigured": "appleReleaseServicesConfiguration",
+}
+OPERATIONAL_LAUNCH_ENVIRONMENT_BY_PREREQUISITE = {
+    "cloudOperationsProbePassed": "production",
+    "historicalCredentialIncidentClosed": "production",
+    "legacyTranscriptionEndpointProtectedOrDisabled": "production",
+    "exposedProviderCredentialsRevoked": "productionProvider",
+    "providerUsageAndBillingAuditComplete": "productionProvider",
+    "fullHistorySecretFindingsAdjudicated": "repositoryHistory",
+    "releaseBundleSecretScanPassed": "releaseCandidate",
+    "protectedSocialCutoverCompleted": "production",
+    "socialMigrationDryRunPassed": "production",
+    "trustedSocialEvidenceProducerDeployed": "production",
+    "customPrivacyDomainVerified": "production",
+    "appleReleaseServicesConfigured": "appStoreConnect",
+}
+OPERATIONAL_LAUNCH_HISTORY_SCANNER = "gitleaks"
+OPERATIONAL_LAUNCH_HISTORY_SCANNER_VERSION = "8.30.1"
+OPERATIONAL_LAUNCH_HISTORY_SCOPE = "all-reachable-commits"
+OPERATIONAL_LAUNCH_KNOWN_DEEPGRAM_COMMIT = "277e2b388bb17d603011277a819b0bcaae517404"
+OPERATIONAL_LAUNCH_HISTORY_DISPOSITIONS = {
+    "revoked", "invalidated", "falsePositive", "publicIdentifier",
 }
 
 
@@ -1633,6 +1688,17 @@ def usable_evidence_reference(value):
     }
 
 
+def usable_iso8601_timestamp(value):
+    normalized = trimmed_non_empty(value)
+    if normalized is None:
+        return False
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
 def real_user_transfer_row_passes(row):
     if not isinstance(row, dict):
         return False
@@ -1976,6 +2042,20 @@ def real_device_testflight_contract_failures(payload):
     return list(dict.fromkeys(failures))
 
 
+def operational_launch_row_has_verification_identity(item):
+    if not isinstance(item, dict):
+        return False
+    performed_by_id = trimmed_non_empty(item.get("performedByID"))
+    verified_by_id = trimmed_non_empty(item.get("verifiedByID"))
+    return bool(
+        performed_by_id
+        and verified_by_id
+        and performed_by_id != verified_by_id
+        and usable_iso8601_timestamp(item.get("verifiedAtISO8601"))
+        and usable_evidence_reference(item.get("verifiedByRole"))
+    )
+
+
 def operational_launch_item_passes(item):
     if not isinstance(item, dict):
         return False
@@ -1984,18 +2064,124 @@ def operational_launch_item_passes(item):
         item.get("completed") is True
         and all(usable_evidence_reference(item.get(field)) for field in [
             "evidenceReference", "verificationReference",
-            "commandOrReviewOutputReference", "completedAtISO8601",
+            "commandOrReviewOutputReference",
         ])
+        and usable_iso8601_timestamp(item.get("completedAtISO8601"))
         and trimmed_non_empty(item.get("evidenceKind")) ==
             OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_ITEM.get(key)
         and trimmed_non_empty(item.get("environment")) ==
             OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM.get(key)
-        and usable_evidence_reference(item.get("verifiedAtISO8601"))
-        and usable_evidence_reference(item.get("verifiedByRole"))
+        and operational_launch_row_has_verification_identity(item)
     )
 
 
-def operational_launch_contract_failures(payload):
+def operational_launch_prerequisite_passes(item, build):
+    if not isinstance(item, dict):
+        return False
+    key = item.get("key")
+    return bool(
+        item.get("completed") is True
+        and all(usable_evidence_reference(item.get(field)) for field in [
+            "evidenceReference", "verificationReference",
+            "commandOrReviewOutputReference",
+        ])
+        and usable_iso8601_timestamp(item.get("completedAtISO8601"))
+        and trimmed_non_empty(item.get("evidenceKind")) ==
+            OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_PREREQUISITE.get(key)
+        and trimmed_non_empty(item.get("environment")) ==
+            OPERATIONAL_LAUNCH_ENVIRONMENT_BY_PREREQUISITE.get(key)
+        and trimmed_non_empty(item.get("releaseCandidateBuild")) == build
+        and operational_launch_row_has_verification_identity(item)
+    )
+
+
+def safe_repository_relative_path(value):
+    normalized = trimmed_non_empty(value)
+    if normalized is None or normalized.startswith(("/", "\\")):
+        return False
+    return "\\" not in normalized and ".." not in normalized.split("/")
+
+
+def operational_launch_history_failures(history, prerequisites, source_expectations=None):
+    failures = []
+    if not isinstance(history, dict):
+        return ["invalidHistorySecretAdjudication"]
+    findings = history.get("findings") if isinstance(history.get("findings"), list) else []
+    if any(not isinstance(finding, dict) for finding in findings):
+        failures.append("invalidHistorySecretFindingRows")
+    typed_findings = [finding for finding in findings if isinstance(finding, dict)]
+    if (
+        history.get("scanner") != OPERATIONAL_LAUNCH_HISTORY_SCANNER
+        or history.get("scannerVersion") != OPERATIONAL_LAUNCH_HISTORY_SCANNER_VERSION
+        or history.get("scanScope") != OPERATIONAL_LAUNCH_HISTORY_SCOPE
+        or strict_int(history.get("redactionPercent")) != 100
+    ):
+        failures.append("invalidHistorySecretScanMetadata")
+    scanned_commit = trimmed_non_empty(history.get("scannedRepositoryCommit"))
+    commit_pattern = r"[0-9a-f]{40}"
+    sha256_pattern = r"sha256:[0-9a-f]{64}"
+    expected_source_commit = trimmed_non_empty(
+        (source_expectations or {}).get("source-git-commit.txt")
+    )
+    if (
+        scanned_commit is None
+        or re.fullmatch(commit_pattern, scanned_commit) is None
+        or strict_int(history.get("reachableCommitCount")) is None
+        or history.get("reachableCommitCount", 0) <= 0
+        or re.fullmatch(
+            sha256_pattern,
+            trimmed_non_empty(history.get("reachableCommitSetSha256")) or "",
+        ) is None
+        or not usable_evidence_reference(history.get("redactedScanReportReference"))
+    ):
+        failures.append("invalidHistorySecretScanBinding")
+    if (
+        expected_source_commit
+        and re.fullmatch(commit_pattern, expected_source_commit)
+        and scanned_commit != expected_source_commit
+    ):
+        failures.append("historySecretSourceCommitMismatch")
+    full_history_rows = [
+        row for row in prerequisites
+        if row.get("key") == "fullHistorySecretFindingsAdjudicated"
+    ]
+    if (
+        len(full_history_rows) != 1
+        or history.get("redactedScanReportReference") !=
+            full_history_rows[0].get("evidenceReference")
+    ):
+        failures.append("historySecretReportReferenceMismatch")
+    finding_count = len(findings)
+    if (
+        finding_count < 3
+        or strict_int(history.get("detectedFindingCount")) != finding_count
+        or strict_int(history.get("adjudicatedFindingCount")) != finding_count
+        or strict_int(history.get("unresolvedFindingCount")) != 0
+        or strict_int(history.get("suppressedFindingCount")) != 0
+    ):
+        failures.append("incompleteHistorySecretAdjudication")
+    finding_ids = [trimmed_non_empty(finding.get("findingID")) for finding in typed_findings]
+    if None in finding_ids or len(set(finding_ids)) != len(findings):
+        failures.append("duplicateHistorySecretFindingIDs")
+    if not any(
+        finding.get("commit") == OPERATIONAL_LAUNCH_KNOWN_DEEPGRAM_COMMIT
+        for finding in typed_findings
+    ):
+        failures.append("missingKnownDeepgramHistoryFinding")
+    if any(
+        re.fullmatch(sha256_pattern, trimmed_non_empty(finding.get("findingID")) or "") is None
+        or trimmed_non_empty(finding.get("detectorRuleID")) is None
+        or re.fullmatch(commit_pattern, trimmed_non_empty(finding.get("commit")) or "") is None
+        or not safe_repository_relative_path(finding.get("path"))
+        or finding.get("disposition") not in OPERATIONAL_LAUNCH_HISTORY_DISPOSITIONS
+        or not usable_evidence_reference(finding.get("statusEvidenceReference"))
+        for finding in typed_findings
+    ):
+        failures.append("invalidHistorySecretFindingRows")
+    return failures
+
+
+def operational_launch_contract_failures(payload, source_expectations=None):
     failures = []
     items = payload.get("items") if isinstance(payload.get("items"), list) else []
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
@@ -2005,24 +2191,31 @@ def operational_launch_contract_failures(payload):
     build = trimmed_non_empty(payload.get("releaseCandidateBuild"))
     if payload.get("checklistVersion") != OPERATIONAL_LAUNCH_CHECKLIST_VERSION:
         failures.append(f"checklistVersion={payload.get('checklistVersion')}")
-    if build is None or trimmed_non_empty(payload.get("completedByRole")) is None:
+    if payload.get("templateStatus") != OPERATIONAL_LAUNCH_TEMPLATE_STATUS:
+        failures.append(f"templateStatus={payload.get('templateStatus')}")
+    if (
+        build is None
+        or trimmed_non_empty(payload.get("completedByRole")) is None
+        or trimmed_non_empty(payload.get("completedByID")) is None
+    ):
         failures.append("missingReleaseMetadata")
     if strict_int(summary.get("itemCount")) != len(items):
         failures.append("itemCountMismatch")
-    keys = [item.get("key") for item in typed_items]
+    keys = [item.get("key") if isinstance(item.get("key"), str) else "" for item in typed_items]
     if len(set(keys)) != len(items):
         failures.append("duplicateChecklistItems")
     required = set(OPERATIONAL_LAUNCH_REQUIRED_ITEMS)
     append_ids_failure(failures, "missingRequiredItems", sorted(required.difference(keys)))
+    append_ids_failure(failures, "unexpectedChecklistItems", sorted(set(keys).difference(required)))
     required_items = [item for item in typed_items if item.get("key") in required]
     completed_items = [item for item in required_items if item.get("completed") is True]
     failed_items = [item for item in required_items if item.get("completed") is not True]
     artifact_items = [item for item in required_items if all(
         usable_evidence_reference(item.get(field)) for field in [
             "evidenceReference", "verificationReference",
-            "commandOrReviewOutputReference", "completedAtISO8601",
+            "commandOrReviewOutputReference",
         ]
-    )]
+    ) and usable_iso8601_timestamp(item.get("completedAtISO8601"))]
     kind_items = [item for item in required_items if (
         trimmed_non_empty(item.get("evidenceKind")) ==
         OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_ITEM.get(item.get("key"))
@@ -2034,10 +2227,10 @@ def operational_launch_contract_failures(payload):
     same_build_items = [item for item in required_items if (
         trimmed_non_empty(item.get("releaseCandidateBuild")) == build
     )]
-    verified_items = [item for item in required_items if (
-        usable_evidence_reference(item.get("verifiedAtISO8601"))
-        and usable_evidence_reference(item.get("verifiedByRole"))
-    )]
+    verified_items = [
+        item for item in required_items
+        if operational_launch_row_has_verification_identity(item)
+    ]
     if strict_int(summary.get("completedRequiredItemCount")) != len(completed_items) or len(completed_items) < len(required):
         failures.append("incompleteRequiredItems")
     if strict_int(summary.get("failedRequiredItemCount")) != len(failed_items) or failed_items:
@@ -2059,6 +2252,47 @@ def operational_launch_contract_failures(payload):
         failures.append(f"missingOperationalVerification={','.join(verification_missing)}")
     if any(not operational_launch_item_passes(item) for item in required_items):
         failures.append("itemFloorFailures")
+    prerequisites_value = payload.get("releasePrerequisites")
+    prerequisites = prerequisites_value if isinstance(prerequisites_value, list) else []
+    if any(not isinstance(item, dict) for item in prerequisites):
+        failures.append("invalidReleasePrerequisites")
+    typed_prerequisites = [item for item in prerequisites if isinstance(item, dict)]
+    prerequisite_keys = [
+        item.get("key") if isinstance(item.get("key"), str) else ""
+        for item in typed_prerequisites
+    ]
+    required_prerequisites = set(OPERATIONAL_LAUNCH_REQUIRED_PREREQUISITES)
+    if len(set(prerequisite_keys)) != len(prerequisites):
+        failures.append("duplicateReleasePrerequisites")
+    append_ids_failure(
+        failures,
+        "missingReleasePrerequisites",
+        sorted(required_prerequisites.difference(prerequisite_keys)),
+    )
+    append_ids_failure(
+        failures,
+        "unexpectedReleasePrerequisites",
+        sorted(set(prerequisite_keys).difference(required_prerequisites)),
+    )
+    required_prerequisite_rows = [
+        item for item in typed_prerequisites
+        if item.get("key") in required_prerequisites
+    ]
+    open_prerequisites = sorted(
+        item.get("key") for item in required_prerequisite_rows
+        if item.get("completed") is not True
+    )
+    append_ids_failure(failures, "openReleasePrerequisites", open_prerequisites)
+    failing_prerequisites = sorted(
+        item.get("key") for item in required_prerequisite_rows
+        if not operational_launch_prerequisite_passes(item, build)
+    )
+    append_ids_failure(failures, "releasePrerequisiteFloorFailures", failing_prerequisites)
+    failures.extend(operational_launch_history_failures(
+        payload.get("historySecretAdjudication"),
+        typed_prerequisites,
+        source_expectations,
+    ))
     warnings = summary.get("readinessWarnings")
     if not isinstance(warnings, list):
         failures.append("invalidReadinessWarnings")
@@ -2134,7 +2368,7 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
     if expected_schema == REAL_DEVICE_TESTFLIGHT_SCHEMA:
         failures.extend(real_device_testflight_contract_failures(payload))
     if expected_schema == OPERATIONAL_LAUNCH_SCHEMA:
-        failures.extend(operational_launch_contract_failures(payload))
+        failures.extend(operational_launch_contract_failures(payload, source_expectations))
 
     return {
         "parseStatus": "ok",

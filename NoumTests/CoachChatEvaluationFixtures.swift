@@ -1317,6 +1317,7 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
 struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
     static let expectedSchemaVersion = "coach-operational-launch-checklist-v2"
     static let expectedChecklistVersion = "m14-launch-gate-v2"
+    static let expectedTemplateStatus = "COLLECTED_EXTERNAL_EVIDENCE"
     static let requiredItemKeys = [
         "firestoreRulesDeployed",
         "privacyPolicyURLHosted",
@@ -1341,11 +1342,57 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         "testFlightBuildUploaded": "appStoreConnect",
         "releaseBlockingBugsTriaged": "releaseBoard"
     ]
+    static let requiredPrerequisiteKeys = [
+        "cloudOperationsProbePassed",
+        "historicalCredentialIncidentClosed",
+        "legacyTranscriptionEndpointProtectedOrDisabled",
+        "exposedProviderCredentialsRevoked",
+        "providerUsageAndBillingAuditComplete",
+        "fullHistorySecretFindingsAdjudicated",
+        "releaseBundleSecretScanPassed",
+        "protectedSocialCutoverCompleted",
+        "socialMigrationDryRunPassed",
+        "trustedSocialEvidenceProducerDeployed",
+        "customPrivacyDomainVerified",
+        "appleReleaseServicesConfigured"
+    ]
+    static let expectedEvidenceKindByPrerequisite = [
+        "cloudOperationsProbePassed": "cloudOperationsProbeOutput",
+        "historicalCredentialIncidentClosed": "credentialIncidentClosure",
+        "legacyTranscriptionEndpointProtectedOrDisabled": "legacyEndpointVerification",
+        "exposedProviderCredentialsRevoked": "providerCredentialRevocation",
+        "providerUsageAndBillingAuditComplete": "providerUsageBillingAudit",
+        "fullHistorySecretFindingsAdjudicated": "fullHistorySecretReview",
+        "releaseBundleSecretScanPassed": "releaseBundleSecretScan",
+        "protectedSocialCutoverCompleted": "protectedSocialCutover",
+        "socialMigrationDryRunPassed": "socialMigrationDryRun",
+        "trustedSocialEvidenceProducerDeployed": "trustedSocialEvidenceProducer",
+        "customPrivacyDomainVerified": "customPrivacyDomainVerification",
+        "appleReleaseServicesConfigured": "appleReleaseServicesConfiguration"
+    ]
+    static let expectedEnvironmentByPrerequisite = [
+        "cloudOperationsProbePassed": "production",
+        "historicalCredentialIncidentClosed": "production",
+        "legacyTranscriptionEndpointProtectedOrDisabled": "production",
+        "exposedProviderCredentialsRevoked": "productionProvider",
+        "providerUsageAndBillingAuditComplete": "productionProvider",
+        "fullHistorySecretFindingsAdjudicated": "repositoryHistory",
+        "releaseBundleSecretScanPassed": "releaseCandidate",
+        "protectedSocialCutoverCompleted": "production",
+        "socialMigrationDryRunPassed": "production",
+        "trustedSocialEvidenceProducerDeployed": "production",
+        "customPrivacyDomainVerified": "production",
+        "appleReleaseServicesConfigured": "appStoreConnect"
+    ]
 
     let schemaVersion: String
+    let templateStatus: String
     let checklistVersion: String
     let releaseCandidateBuild: String
     let completedByRole: String
+    let completedByID: String
+    let releasePrerequisites: [ReleasePrerequisite]
+    let historySecretAdjudication: HistorySecretAdjudication
     let summary: Summary
     let items: [Item]
 
@@ -1357,6 +1404,7 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         var reasons: [String] = []
         let trimmedBuild = releaseCandidateBuild.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedRole = completedByRole.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCompletedByID = completedByID.trimmingCharacters(in: .whitespacesAndNewlines)
         let uniqueKeys = Set(items.map(\.key))
         let requiredKeys = Set(Self.requiredItemKeys)
         let completedRequiredItems = items.filter {
@@ -1384,12 +1432,93 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
         }
+        if templateStatus != Self.expectedTemplateStatus {
+            reasons.append("templateStatus=\(templateStatus)")
+        }
         if checklistVersion != Self.expectedChecklistVersion {
             reasons.append("checklistVersion=\(checklistVersion)")
         }
-        if trimmedBuild.isEmpty || trimmedRole.isEmpty {
+        if trimmedBuild.isEmpty || trimmedRole.isEmpty || trimmedCompletedByID.isEmpty {
             reasons.append("missingReleaseMetadata")
         }
+        let prerequisiteKeys = releasePrerequisites.map(\.key)
+        let uniquePrerequisiteKeys = Set(prerequisiteKeys)
+        let requiredPrerequisiteKeys = Set(Self.requiredPrerequisiteKeys)
+        let missingPrerequisiteKeys = requiredPrerequisiteKeys.subtracting(uniquePrerequisiteKeys)
+        let unexpectedPrerequisiteKeys = uniquePrerequisiteKeys.subtracting(requiredPrerequisiteKeys)
+        if uniquePrerequisiteKeys.count != prerequisiteKeys.count {
+            reasons.append("duplicateReleasePrerequisites")
+        }
+        if !missingPrerequisiteKeys.isEmpty {
+            reasons.append(
+                "missingReleasePrerequisites=\(missingPrerequisiteKeys.sorted().joined(separator: ","))"
+            )
+        }
+        if !unexpectedPrerequisiteKeys.isEmpty {
+            reasons.append(
+                "unexpectedReleasePrerequisites=\(unexpectedPrerequisiteKeys.sorted().joined(separator: ","))"
+            )
+        }
+        let requiredPrerequisites = releasePrerequisites.filter {
+            requiredPrerequisiteKeys.contains($0.key)
+        }
+        let openPrerequisites = requiredPrerequisites.filter { !$0.completed }.map(\.key).sorted()
+        if !openPrerequisites.isEmpty {
+            reasons.append(
+                "openReleasePrerequisites=\(openPrerequisites.joined(separator: ","))"
+            )
+        }
+        let missingPrerequisiteEvidence = requiredPrerequisites.filter {
+            !$0.hasRequiredArtifactTrail
+        }.map(\.key).sorted()
+        if !missingPrerequisiteEvidence.isEmpty {
+            reasons.append(
+                "missingReleasePrerequisiteEvidence=\(missingPrerequisiteEvidence.joined(separator: ","))"
+            )
+        }
+        let prerequisiteKindMismatches = requiredPrerequisites.filter {
+            !$0.evidenceKindMatchesPrerequisite
+        }.map(\.key).sorted()
+        if !prerequisiteKindMismatches.isEmpty {
+            reasons.append(
+                "releasePrerequisiteEvidenceKindMismatch=\(prerequisiteKindMismatches.joined(separator: ","))"
+            )
+        }
+        let prerequisiteEnvironmentMismatches = requiredPrerequisites.filter {
+            !$0.environmentMatchesPrerequisite
+        }.map(\.key).sorted()
+        if !prerequisiteEnvironmentMismatches.isEmpty {
+            reasons.append(
+                "releasePrerequisiteEnvironmentMismatch=\(prerequisiteEnvironmentMismatches.joined(separator: ","))"
+            )
+        }
+        let prerequisiteBuildMismatches = requiredPrerequisites.filter {
+            $0.releaseCandidateBuild.trimmingCharacters(in: .whitespacesAndNewlines) != trimmedBuild
+        }.map(\.key).sorted()
+        if !prerequisiteBuildMismatches.isEmpty {
+            reasons.append(
+                "releasePrerequisiteBuildMismatch=\(prerequisiteBuildMismatches.joined(separator: ","))"
+            )
+        }
+        let missingPrerequisiteVerification = requiredPrerequisites.filter {
+            !$0.hasVerificationIdentity
+        }.map(\.key).sorted()
+        if !missingPrerequisiteVerification.isEmpty {
+            reasons.append(
+                "missingReleasePrerequisiteVerification=\(missingPrerequisiteVerification.joined(separator: ","))"
+            )
+        }
+        if requiredPrerequisites.count != Self.requiredPrerequisiteKeys.count ||
+            requiredPrerequisites.contains(where: { !$0.passesPrerequisiteFloor }) {
+            reasons.append("releasePrerequisiteFloorFailures")
+        }
+        if let fullHistoryPrerequisite = requiredPrerequisites.first(where: {
+            $0.key == "fullHistorySecretFindingsAdjudicated"
+        }), fullHistoryPrerequisite.evidenceReference !=
+            historySecretAdjudication.redactedScanReportReference {
+            reasons.append("historySecretReportReferenceMismatch")
+        }
+        reasons.append(contentsOf: historySecretAdjudication.rejectionReasons)
         if summary.itemCount != items.count {
             reasons.append("itemCountMismatch")
         }
@@ -1399,6 +1528,10 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         let missingRequired = requiredKeys.subtracting(uniqueKeys)
         if !missingRequired.isEmpty {
             reasons.append("missingRequiredItems=\(missingRequired.sorted().joined(separator: ","))")
+        }
+        let unexpectedItems = uniqueKeys.subtracting(requiredKeys)
+        if !unexpectedItems.isEmpty {
+            reasons.append("unexpectedChecklistItems=\(unexpectedItems.sorted().joined(separator: ","))")
         }
         if summary.completedRequiredItemCount != completedRequiredItems.count ||
             completedRequiredItems.count < Self.requiredItemKeys.count {
@@ -1454,6 +1587,11 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         return usableEvidenceReference(value)
     }
 
+    static func usableISO8601Timestamp(_ value: String?) -> Bool {
+        guard let value, usableEvidenceReference(value) else { return false }
+        return ISO8601DateFormatter().date(from: value) != nil
+    }
+
     static func decode(from json: String) throws -> CoachOperationalLaunchChecklistEvidence {
         let data = Data(json.utf8)
         return try JSONDecoder().decode(CoachOperationalLaunchChecklistEvidence.self, from: data)
@@ -1464,6 +1602,142 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(self)
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    struct ReleasePrerequisite: Codable, Equatable {
+        let key: String
+        let completed: Bool
+        let evidenceReference: String
+        let evidenceKind: String
+        let verificationReference: String
+        let commandOrReviewOutputReference: String
+        let releaseCandidateBuild: String
+        let environment: String
+        let completedAtISO8601: String?
+        let performedByID: String
+        let verifiedAtISO8601: String?
+        let verifiedByID: String
+        let verifiedByRole: String
+        let notes: [String]
+
+        var hasRequiredArtifactTrail: Bool {
+            CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(evidenceReference) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verificationReference) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(commandOrReviewOutputReference) &&
+                CoachOperationalLaunchChecklistEvidence.usableISO8601Timestamp(completedAtISO8601)
+        }
+
+        var evidenceKindMatchesPrerequisite: Bool {
+            guard let expected = CoachOperationalLaunchChecklistEvidence
+                .expectedEvidenceKindByPrerequisite[key] else {
+                return false
+            }
+            return evidenceKind.trimmingCharacters(in: .whitespacesAndNewlines) == expected
+        }
+
+        var environmentMatchesPrerequisite: Bool {
+            guard let expected = CoachOperationalLaunchChecklistEvidence
+                .expectedEnvironmentByPrerequisite[key] else {
+                return false
+            }
+            return environment.trimmingCharacters(in: .whitespacesAndNewlines) == expected
+        }
+
+        var hasVerificationIdentity: Bool {
+            let performer = performedByID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let verifier = verifiedByID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(performer) &&
+                CoachOperationalLaunchChecklistEvidence.usableISO8601Timestamp(verifiedAtISO8601) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifier) &&
+                performer != verifier &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifiedByRole)
+        }
+
+        var passesPrerequisiteFloor: Bool {
+            completed &&
+                hasRequiredArtifactTrail &&
+                evidenceKindMatchesPrerequisite &&
+                environmentMatchesPrerequisite &&
+                hasVerificationIdentity
+        }
+    }
+
+    struct HistorySecretAdjudication: Codable, Equatable {
+        static let knownDeepgramIncidentCommit = "277e2b388bb17d603011277a819b0bcaae517404"
+        static let allowedDispositions = Set([
+            "revoked", "invalidated", "falsePositive", "publicIdentifier"
+        ])
+
+        let scanner: String
+        let scannerVersion: String
+        let scanScope: String
+        let scannedRepositoryCommit: String
+        let redactionPercent: Int
+        let reachableCommitCount: Int
+        let reachableCommitSetSha256: String
+        let redactedScanReportReference: String
+        let detectedFindingCount: Int
+        let adjudicatedFindingCount: Int
+        let unresolvedFindingCount: Int
+        let suppressedFindingCount: Int
+        let findings: [Finding]
+
+        var rejectionReasons: [String] {
+            var reasons: [String] = []
+            let sha256Pattern = /^sha256:[0-9a-f]{64}$/
+            let commitPattern = /^[0-9a-f]{40}$/
+            if scanner != "gitleaks" || scannerVersion != "8.30.1" ||
+                scanScope != "all-reachable-commits" || redactionPercent != 100 {
+                reasons.append("invalidHistorySecretScanMetadata")
+            }
+            if scannedRepositoryCommit.wholeMatch(of: commitPattern) == nil ||
+                reachableCommitCount <= 0 ||
+                reachableCommitSetSha256.wholeMatch(of: sha256Pattern) == nil ||
+                !CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(
+                    redactedScanReportReference
+                ) {
+                reasons.append("invalidHistorySecretScanBinding")
+            }
+            if findings.count < 3 || detectedFindingCount != findings.count ||
+                adjudicatedFindingCount != findings.count || unresolvedFindingCount != 0 ||
+                suppressedFindingCount != 0 {
+                reasons.append("incompleteHistorySecretAdjudication")
+            }
+            if Set(findings.map(\.findingID)).count != findings.count {
+                reasons.append("duplicateHistorySecretFindingIDs")
+            }
+            if !findings.contains(where: { $0.commit == Self.knownDeepgramIncidentCommit }) {
+                reasons.append("missingKnownDeepgramHistoryFinding")
+            }
+            if findings.contains(where: { finding in
+                finding.findingID.wholeMatch(of: sha256Pattern) == nil ||
+                    finding.detectorRuleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    finding.commit.wholeMatch(of: commitPattern) == nil ||
+                    !finding.hasSafeRelativePath ||
+                    !Self.allowedDispositions.contains(finding.disposition) ||
+                    !CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(
+                        finding.statusEvidenceReference
+                    )
+            }) {
+                reasons.append("invalidHistorySecretFindingRows")
+            }
+            return reasons
+        }
+
+        struct Finding: Codable, Equatable {
+            let findingID: String
+            let detectorRuleID: String
+            let commit: String
+            let path: String
+            let disposition: String
+            let statusEvidenceReference: String
+
+            var hasSafeRelativePath: Bool {
+                guard !path.isEmpty, !path.hasPrefix("/") else { return false }
+                return !path.split(separator: "/", omittingEmptySubsequences: false)
+                    .contains("..")
+            }
+        }
     }
 
     struct Summary: Codable, Equatable {
@@ -1488,7 +1762,9 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         let releaseCandidateBuild: String
         let environment: String
         let completedAtISO8601: String?
+        let performedByID: String
         let verifiedAtISO8601: String?
+        let verifiedByID: String
         let verifiedByRole: String
         let notes: [String]
 
@@ -1496,7 +1772,7 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
             CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(evidenceReference) &&
                 CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verificationReference) &&
                 CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(commandOrReviewOutputReference) &&
-                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(completedAtISO8601)
+                CoachOperationalLaunchChecklistEvidence.usableISO8601Timestamp(completedAtISO8601)
         }
 
         var evidenceKindMatchesItem: Bool {
@@ -1514,7 +1790,12 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         }
 
         var hasVerificationIdentity: Bool {
-            CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifiedAtISO8601) &&
+            let performer = performedByID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let verifier = verifiedByID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(performer) &&
+                CoachOperationalLaunchChecklistEvidence.usableISO8601Timestamp(verifiedAtISO8601) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifier) &&
+                performer != verifier &&
                 CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifiedByRole)
         }
 

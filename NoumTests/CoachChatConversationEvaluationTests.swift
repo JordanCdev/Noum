@@ -4403,6 +4403,41 @@ struct CoachChatConversationCorpusTests {
         #expect(!rejectedDecoded.qualifiesForReadiness)
         #expect(rejectedDecoded.rejectionReasons.contains("incompleteRequiredItems"))
         #expect(rejectedDecoded.rejectionReasons.contains("failedRequiredItems"))
+
+        let openPrerequisite = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                openPrerequisiteKeys: ["legacyTranscriptionEndpointProtectedOrDisabled"]
+            ).encodedSortedJSON()
+        )
+        #expect(!openPrerequisite.qualifiesForReadiness)
+        #expect(openPrerequisite.rejectionReasons.contains(
+            "openReleasePrerequisites=legacyTranscriptionEndpointProtectedOrDisabled"
+        ))
+        #expect(openPrerequisite.rejectionReasons.contains("releasePrerequisiteFloorFailures"))
+
+        let incompleteHistoryReview = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                historyUnresolvedFindingCount: 1,
+                includesKnownDeepgramHistoryFinding: false
+            ).encodedSortedJSON()
+        )
+        #expect(!incompleteHistoryReview.qualifiesForReadiness)
+        #expect(incompleteHistoryReview.rejectionReasons.contains(
+            "incompleteHistorySecretAdjudication"
+        ))
+        #expect(incompleteHistoryReview.rejectionReasons.contains(
+            "missingKnownDeepgramHistoryFinding"
+        ))
+
+        let unboundHistoryReview = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                historyReportReferenceOverride: "evidence://different-history-report"
+            ).encodedSortedJSON()
+        )
+        #expect(!unboundHistoryReview.qualifiesForReadiness)
+        #expect(unboundHistoryReview.rejectionReasons.contains(
+            "historySecretReportReferenceMismatch"
+        ))
     }
 
     @Test func operationalLaunchChecklistEvidenceRejectsThinOrSmoothedItems() throws {
@@ -4434,6 +4469,11 @@ struct CoachChatConversationCorpusTests {
                 missingVerifiedByRoleItemKeys: ["releaseBlockingBugsTriaged"]
             ).encodedSortedJSON()
         )
+        let selfVerifiedPrerequisite = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                samePrerequisitePerformerAndVerifierKeys: ["customPrivacyDomainVerified"]
+            ).encodedSortedJSON()
+        )
 
         #expect(!wrongEvidenceKind.qualifiesForReadiness)
         #expect(wrongEvidenceKind.rejectionReasons.contains("evidenceKindMismatch=firestoreRulesDeployed"))
@@ -4449,6 +4489,11 @@ struct CoachChatConversationCorpusTests {
         #expect(!missingVerificationIdentity.qualifiesForReadiness)
         #expect(missingVerificationIdentity.rejectionReasons.contains("missingOperationalVerification=releaseBlockingBugsTriaged"))
         #expect(missingVerificationIdentity.rejectionReasons.contains("itemFloorFailures"))
+        #expect(!selfVerifiedPrerequisite.qualifiesForReadiness)
+        #expect(selfVerifiedPrerequisite.rejectionReasons.contains(
+            "missingReleasePrerequisiteVerification=customPrivacyDomainVerified"
+        ))
+        #expect(selfVerifiedPrerequisite.rejectionReasons.contains("releasePrerequisiteFloorFailures"))
     }
 
     @Test func operationalLaunchChecklistLoaderReturnsNilWhenSidecarIsMissing() throws {
@@ -5767,6 +5812,8 @@ struct CoachChatConversationCorpusTests {
 
     private static func operationalLaunchChecklistEvidence(
         readinessWarnings: [String] = [],
+        openPrerequisiteKeys: Set<String> = [],
+        missingPrerequisiteReferenceKeys: Set<String> = [],
         failingItemKeys: Set<String> = [],
         evidenceKindOverrides: [String: String] = [:],
         environmentOverrides: [String: String] = [:],
@@ -5776,9 +5823,23 @@ struct CoachChatConversationCorpusTests {
         missingCompletedAtItemKeys: Set<String> = [],
         missingVerifiedAtItemKeys: Set<String> = [],
         missingVerifiedByRoleItemKeys: Set<String> = [],
+        samePerformerAndVerifierItemKeys: Set<String> = [],
+        prerequisiteEvidenceKindOverrides: [String: String] = [:],
+        prerequisiteEnvironmentOverrides: [String: String] = [:],
+        prerequisiteBuildMismatchKeys: Set<String> = [],
+        samePrerequisitePerformerAndVerifierKeys: Set<String> = [],
+        historyUnresolvedFindingCount: Int = 0,
+        includesKnownDeepgramHistoryFinding: Bool = true,
+        historyReportReferenceOverride: String? = nil,
         buildMismatchItemKeys: Set<String> = []
     ) -> CoachOperationalLaunchChecklistEvidence {
         let releaseCandidateBuild = "2026.06.30.1"
+        func prerequisitePassed(_ key: String) -> Bool {
+            !openPrerequisiteKeys.contains(key)
+        }
+        func prerequisiteReference(_ key: String) -> String {
+            missingPrerequisiteReferenceKeys.contains(key) ? "" : "evidence://\(key)"
+        }
         let items = CoachOperationalLaunchChecklistEvidence.requiredItemKeys.map { key in
             let failed = failingItemKeys.contains(key)
             let missingEvidenceReference = missingEvidenceReferenceItemKeys.contains(key)
@@ -5787,6 +5848,8 @@ struct CoachChatConversationCorpusTests {
             let missingCompletedAt = missingCompletedAtItemKeys.contains(key)
             let missingVerifiedAt = missingVerifiedAtItemKeys.contains(key)
             let missingVerifiedByRole = missingVerifiedByRoleItemKeys.contains(key)
+            let samePerformerAndVerifier = samePerformerAndVerifierItemKeys.contains(key)
+            let performedByID = "operator-\(key)"
             let itemBuild = buildMismatchItemKeys.contains(key) ?
                 "2026.06.29.9" : releaseCandidateBuild
             return CoachOperationalLaunchChecklistEvidence.Item(
@@ -5805,8 +5868,10 @@ struct CoachChatConversationCorpusTests {
                     CoachOperationalLaunchChecklistEvidence.expectedEnvironmentByItem[key] ?? "",
                 completedAtISO8601: failed || missingCompletedAt ?
                     nil : "2026-06-30T00:00:00Z",
+                performedByID: performedByID,
                 verifiedAtISO8601: failed || missingVerifiedAt ?
                     nil : "2026-06-30T00:15:00Z",
+                verifiedByID: samePerformerAndVerifier ? performedByID : "verifier-\(key)",
                 verifiedByRole: failed || missingVerifiedByRole ?
                     "" : "releaseManager",
                 notes: failed ? ["Required launch item incomplete."] : [
@@ -5836,11 +5901,88 @@ struct CoachChatConversationCorpusTests {
         let verifiedRequiredItems = items.filter {
             requiredKeys.contains($0.key) && $0.hasVerificationIdentity
         }
+        let releasePrerequisites = CoachOperationalLaunchChecklistEvidence
+            .requiredPrerequisiteKeys.map { key in
+                let performedByID = "operator-\(key)"
+                return CoachOperationalLaunchChecklistEvidence.ReleasePrerequisite(
+                    key: key,
+                    completed: prerequisitePassed(key),
+                    evidenceReference: prerequisiteReference(key),
+                    evidenceKind: prerequisiteEvidenceKindOverrides[key] ??
+                        CoachOperationalLaunchChecklistEvidence
+                            .expectedEvidenceKindByPrerequisite[key] ?? "",
+                    verificationReference: "evidence://verification-\(key)",
+                    commandOrReviewOutputReference: "evidence://output-\(key)",
+                    releaseCandidateBuild: prerequisiteBuildMismatchKeys.contains(key)
+                        ? "2026.06.29.9"
+                        : releaseCandidateBuild,
+                    environment: prerequisiteEnvironmentOverrides[key] ??
+                        CoachOperationalLaunchChecklistEvidence
+                            .expectedEnvironmentByPrerequisite[key] ?? "",
+                    completedAtISO8601: "2026-06-30T00:00:00Z",
+                    performedByID: performedByID,
+                    verifiedAtISO8601: "2026-06-30T00:15:00Z",
+                    verifiedByID: samePrerequisitePerformerAndVerifierKeys.contains(key)
+                        ? performedByID
+                        : "verifier-\(key)",
+                    verifiedByRole: "releaseManager",
+                    notes: ["Release prerequisite completed and independently verified."]
+                )
+            }
+        let historyFindings = [
+            CoachOperationalLaunchChecklistEvidence.HistorySecretAdjudication.Finding(
+                findingID: "sha256:\(String(repeating: "1", count: 64))",
+                detectorRuleID: "generic-api-key",
+                commit: includesKnownDeepgramHistoryFinding
+                    ? CoachOperationalLaunchChecklistEvidence.HistorySecretAdjudication
+                        .knownDeepgramIncidentCommit
+                    : String(repeating: "c", count: 40),
+                path: "Noum/LegacyProviderConfig.swift",
+                disposition: "revoked",
+                statusEvidenceReference: "evidence://history-finding-1"
+            ),
+            CoachOperationalLaunchChecklistEvidence.HistorySecretAdjudication.Finding(
+                findingID: "sha256:\(String(repeating: "2", count: 64))",
+                detectorRuleID: "firebase-api-key",
+                commit: String(repeating: "a", count: 40),
+                path: "docs/legacy-config.md",
+                disposition: "publicIdentifier",
+                statusEvidenceReference: "evidence://history-finding-2"
+            ),
+            CoachOperationalLaunchChecklistEvidence.HistorySecretAdjudication.Finding(
+                findingID: "sha256:\(String(repeating: "3", count: 64))",
+                detectorRuleID: "generic-secret",
+                commit: String(repeating: "b", count: 40),
+                path: "scripts/legacy-smoke.sh",
+                disposition: "invalidated",
+                statusEvidenceReference: "evidence://history-finding-3"
+            )
+        ]
         return CoachOperationalLaunchChecklistEvidence(
             schemaVersion: CoachOperationalLaunchChecklistEvidence.expectedSchemaVersion,
+            templateStatus: CoachOperationalLaunchChecklistEvidence.expectedTemplateStatus,
             checklistVersion: CoachOperationalLaunchChecklistEvidence.expectedChecklistVersion,
             releaseCandidateBuild: releaseCandidateBuild,
             completedByRole: "releaseManager",
+            completedByID: "release-operator",
+            releasePrerequisites: releasePrerequisites,
+            historySecretAdjudication: CoachOperationalLaunchChecklistEvidence
+                .HistorySecretAdjudication(
+                    scanner: "gitleaks",
+                    scannerVersion: "8.30.1",
+                    scanScope: "all-reachable-commits",
+                    scannedRepositoryCommit: "b05258ab55b05b3b895a8ddc538e82ce46e054c3",
+                    redactionPercent: 100,
+                    reachableCommitCount: 500,
+                    reachableCommitSetSha256: "sha256:\(String(repeating: "a", count: 64))",
+                    redactedScanReportReference: historyReportReferenceOverride ??
+                        prerequisiteReference("fullHistorySecretFindingsAdjudicated"),
+                    detectedFindingCount: historyFindings.count,
+                    adjudicatedFindingCount: historyFindings.count,
+                    unresolvedFindingCount: historyUnresolvedFindingCount,
+                    suppressedFindingCount: 0,
+                    findings: historyFindings
+                ),
             summary: CoachOperationalLaunchChecklistEvidence.Summary(
                 itemCount: items.count,
                 completedRequiredItemCount: completedRequiredItems.count,

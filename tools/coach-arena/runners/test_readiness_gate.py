@@ -1,5 +1,6 @@
 import json
 import plistlib
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -465,7 +466,9 @@ def complete_real_device_testflight_evidence():
     }
 
 
-def complete_operational_launch_evidence():
+def complete_operational_launch_evidence(
+    source_git_commit="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+):
     build = "2026.06.30.1"
     items = []
     for key in gate.OPERATIONAL_LAUNCH_REQUIRED_ITEMS:
@@ -479,15 +482,79 @@ def complete_operational_launch_evidence():
             "releaseCandidateBuild": build,
             "environment": gate.OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM[key],
             "completedAtISO8601": "2026-06-30T00:00:00Z",
+            "performedByID": f"operator-{key}",
             "verifiedAtISO8601": "2026-06-30T00:15:00Z",
+            "verifiedByID": f"verifier-{key}",
             "verifiedByRole": "releaseManager",
             "notes": ["Launch item completed and evidence captured."],
         })
+    prerequisites = []
+    for key in gate.OPERATIONAL_LAUNCH_REQUIRED_PREREQUISITES:
+        prerequisites.append({
+            "key": key,
+            "completed": True,
+            "evidenceReference": f"evidence://{key}",
+            "evidenceKind": gate.OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_PREREQUISITE[key],
+            "verificationReference": f"evidence://verification-{key}",
+            "commandOrReviewOutputReference": f"evidence://output-{key}",
+            "releaseCandidateBuild": build,
+            "environment": gate.OPERATIONAL_LAUNCH_ENVIRONMENT_BY_PREREQUISITE[key],
+            "completedAtISO8601": "2026-06-30T00:00:00Z",
+            "performedByID": f"operator-{key}",
+            "verifiedAtISO8601": "2026-06-30T00:15:00Z",
+            "verifiedByID": f"verifier-{key}",
+            "verifiedByRole": "releaseManager",
+            "notes": ["Release prerequisite completed and independently verified."],
+        })
+    findings = [
+        {
+            "findingID": f"sha256:{'1' * 64}",
+            "detectorRuleID": "generic-api-key",
+            "commit": gate.OPERATIONAL_LAUNCH_KNOWN_DEEPGRAM_COMMIT,
+            "path": "Noum/LegacyProviderConfig.swift",
+            "disposition": "revoked",
+            "statusEvidenceReference": "evidence://history-finding-1",
+        },
+        {
+            "findingID": f"sha256:{'2' * 64}",
+            "detectorRuleID": "firebase-api-key",
+            "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "path": "docs/legacy-config.md",
+            "disposition": "publicIdentifier",
+            "statusEvidenceReference": "evidence://history-finding-2",
+        },
+        {
+            "findingID": f"sha256:{'3' * 64}",
+            "detectorRuleID": "generic-secret",
+            "commit": "cccccccccccccccccccccccccccccccccccccccc",
+            "path": "scripts/legacy-smoke.sh",
+            "disposition": "invalidated",
+            "statusEvidenceReference": "evidence://history-finding-3",
+        },
+    ]
     return {
         "schemaVersion": gate.OPERATIONAL_LAUNCH_SCHEMA,
+        "templateStatus": gate.OPERATIONAL_LAUNCH_TEMPLATE_STATUS,
         "checklistVersion": gate.OPERATIONAL_LAUNCH_CHECKLIST_VERSION,
         "releaseCandidateBuild": build,
         "completedByRole": "releaseManager",
+        "completedByID": "release-operator",
+        "releasePrerequisites": prerequisites,
+        "historySecretAdjudication": {
+            "scanner": gate.OPERATIONAL_LAUNCH_HISTORY_SCANNER,
+            "scannerVersion": gate.OPERATIONAL_LAUNCH_HISTORY_SCANNER_VERSION,
+            "scanScope": gate.OPERATIONAL_LAUNCH_HISTORY_SCOPE,
+            "scannedRepositoryCommit": source_git_commit,
+            "redactionPercent": 100,
+            "reachableCommitCount": 500,
+            "reachableCommitSetSha256": f"sha256:{'a' * 64}",
+            "redactedScanReportReference": "evidence://fullHistorySecretFindingsAdjudicated",
+            "detectedFindingCount": len(findings),
+            "adjudicatedFindingCount": len(findings),
+            "unresolvedFindingCount": 0,
+            "suppressedFindingCount": 0,
+            "findings": findings,
+        },
         "summary": {
             "itemCount": len(items),
             "completedRequiredItemCount": len(items),
@@ -519,7 +586,10 @@ def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_c
         ),
         "coach-real-user-transfer-outcomes-v3.json": complete_real_user_transfer_evidence(),
         "coach-real-device-testflight-qa-v2.json": complete_real_device_testflight_evidence(),
-        "coach-operational-launch-checklist-v2.json": complete_operational_launch_evidence(),
+        "coach-operational-launch-checklist-v2.json": complete_operational_launch_evidence(
+            git_commit if re.fullmatch(r"[0-9a-f]{40}", git_commit) else
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ),
     }
     for file_name, payload in payloads.items():
         (root / file_name).write_text(json.dumps(payload), encoding="utf-8")
@@ -782,6 +852,40 @@ class ReadinessGateTests(unittest.TestCase):
             failure.startswith("evidenceKindMismatch=")
             for failure in gate.operational_launch_contract_failures(operational)
         ))
+
+    def test_operational_contract_fail_closes_release_prerequisites_and_history(self):
+        operational = complete_operational_launch_evidence()
+        legacy = next(
+            row for row in operational["releasePrerequisites"]
+            if row["key"] == "legacyTranscriptionEndpointProtectedOrDisabled"
+        )
+        legacy["completed"] = False
+        custom_domain = next(
+            row for row in operational["releasePrerequisites"]
+            if row["key"] == "customPrivacyDomainVerified"
+        )
+        custom_domain["verifiedByID"] = custom_domain["performedByID"]
+        history = operational["historySecretAdjudication"]
+        history["unresolvedFindingCount"] = 1
+        history["redactedScanReportReference"] = "evidence://unbound-report"
+
+        failures = gate.operational_launch_contract_failures(
+            operational,
+            {"source-git-commit.txt": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+        )
+
+        self.assertIn(
+            "openReleasePrerequisites=legacyTranscriptionEndpointProtectedOrDisabled",
+            failures,
+        )
+        self.assertTrue(any(
+            failure.startswith("releasePrerequisiteFloorFailures=")
+            and "customPrivacyDomainVerified" in failure
+            for failure in failures
+        ))
+        self.assertIn("historySecretSourceCommitMismatch", failures)
+        self.assertIn("historySecretReportReferenceMismatch", failures)
+        self.assertIn("incompleteHistorySecretAdjudication", failures)
 
     def test_transfer_contract_accepts_a_credible_mixed_outcome_distribution(self):
         transfer = complete_real_user_transfer_evidence()
