@@ -1,5 +1,42 @@
 # Noum — Current state
 
+## 2026-07-13 — Research-loop production closure: one prescription, practiceable phrases, and cohort-truthful evidence
+
+The active Summary now renders one prescription owned by the durable
+`SessionFinalizer` / `NextActionEngine` result. A finalized drill keeps the
+existing mini/full drill behavior; a finalized mode recommendation routes through
+the existing Summary destination mapper. `DrillEngineV2` is used only when a
+finalized action is genuinely absent. Goal movement remains evidence, not a
+second call to action, and the former lower “looking ahead” competitor is gone.
+Historical Review has one explicitly replay-oriented “Repeat this rep” action;
+it preserves recorded IM setup but does not write a new adaptive-prescription
+exposure or acceptance event.
+
+Saved rewrites are now reusable behavior rather than an archive. A valid Phrase
+Bank row can create a bounded, transient `PhrasePracticeIntent`, seed the existing
+one-shot Timed prompt handoff, and launch through the existing Summary navigation
+callback. The phrase store remains the only persistence owner and continues to
+apply its account scope, identifier rejection, deduplication, export, and deletion
+rules. Unsupported Spanish and French sessions are stopped before rewrite
+eligibility, on-device English heuristics, provider resolution/transport, or
+English goal-outcome inference. `PracticeLocale` and `LocaleSettingsManager`
+remain the locale owners.
+
+The longitudinal readiness contract is now
+`coach-real-user-transfer-outcomes-v3`. It requires a registered protocol and
+analysis plan, coherent enrollment/withdrawal/exclusion accounting, full-row
+retention, at least 60% positive transfer and 70% non-regression, and documented
+resolution of every adverse outcome. Mixed and negative results remain visible;
+the gate no longer rewards a perfect, cherry-picked sample.
+
+Verification: the integrated simulator run passed 155 tests across the locale
+boundary, goal outcomes, Phrase Bank/practice intent, Summary prescription,
+historical replay, recommendation routing, and the complete coach-conversation
+corpus. The Python readiness runner passed 95/95 tests. The first-verdict UI loop
+also passed in the isolated prescription lane before integration. These are local
+implementation checks; live-provider, professional calibration, closed-beta,
+physical-device TestFlight, and operational launch evidence remain release gates.
+
 ## 2026-07-12 — Production-evidence truth pass
 
 Two research-loop trust gaps are now closed in the shipping implementation.

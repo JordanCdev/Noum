@@ -1,7 +1,7 @@
 # Research implementation audit
 
 Source: `/Users/jordan/Downloads/deep-research-report (6).md`  
-Audited: 2026-07-12 on branch `ux-overhaul`
+Audited: 2026-07-13 on branch `ux-overhaul`
 
 The report is a useful product-direction document, but some of its repository
 observations predate the current branch. This matrix treats runtime code and
@@ -9,13 +9,13 @@ tests as authoritative and prevents duplicate stores or replacement systems.
 
 | Research requirement | Current implementation evidence | Status | Remaining production evidence |
 |---|---|---|---|
-| Goal-style outcome system | `GoalRubricStore`, `CoachReasoningPass`, `GoalOutcomeRead`, shared Summary/Review/Profile card; targeted Summary/Review/Profile and prescribed-rep UI coverage | Implemented in M26 | Longitudinal calibration with real users |
-| Goal-aware feedback and rewrite | `AIRewriteService`, `RewriteSuggestionCard`; M26 passes weakest rubric dimension and confidence gate. The user can choose light/medium/strong rewrite movement and explicitly save a sanitized rewrite to the account-scoped Phrase Bank, which participates in export/deletion. Provider output is rejected if it changes negation, numeric/currency/percentage facts, or high-signal entities/acronyms/product labels; rejection uses the existing conservative on-device edit instead of presenting altered meaning. | Implemented | Live-provider acceptance corpus, phrase-to-practice reuse, and device visual check |
-| Adaptive drill prescription | `NextActionEngine`, `RecommendationBiasEngine`, `SummaryLookingAheadRouter`, recommendation outcome/adaptation ledger | Implemented and UI-proven in M26 | Longitudinal real-user calibration |
+| Goal-style outcome system | `GoalRubricStore`, `CoachReasoningPass`, and `GoalOutcomeRead` share one qualitative Summary/Review/Profile projection. Spanish/French stop before English goal inference. | Implemented in M26; locale trust boundary hardened | Longitudinal human calibration before stronger identity claims |
+| Goal-aware feedback and rewrite | `AIRewriteService` and `RewriteSuggestionCard` support light/medium/strong movement, semantic/entity guards, and conservative fallback. A sanitized account-scoped Phrase Bank participates in export/deletion; a saved row can now seed the existing Timed one-shot prompt through a transient `PhrasePracticeIntent`. Spanish/French stop before English heuristics or provider resolution. | Implemented | Live-provider acceptance corpus and physical-device visual/interaction check |
+| Adaptive drill prescription | `SessionFinalizer` / `NextActionEngine` own the active decision; `SummaryPrescriptionProjection` renders exactly one drill or full-rep action through existing routers. Goal movement is evidence only. Historical Review says “Repeat this rep,” preserves IM setup, and writes no new adaptive acceptance. | Implemented and simulator/UI-proven | Longitudinal real-user calibration |
 | Fast first session | Transactional guest bootstrap, three-choice onboarding, `AutoGuidedFirstRep`, seeded prompt and fast-start handshake; erased-simulator decline, failure-recovery, interruption/relaunch, and deferred-capture matrix passes. The current auto-guided path still requires usable microphone permission and therefore is not the report's typed/structured permissionless first rep. | Partial behind default-off release flag | Decide/build the permissionless activation contract, then run signed-device elapsed-time, microphone-permission, consent, interruption, and relaunch validation before enablement |
 | Offline/on-device transcription | `LocalSpeechProvider`; release selection uses local-only when cloud consent is off and bounded Deepgram→local setup failover when allowed | Implemented in M26 | Physical-device speech accuracy/locale matrix and airplane-mode rep |
 | Privacy and consent centre | Settings privacy card, `CloudProcessingConsentDisclosure`, `YourDataView`, processor manifest, export and account deletion | Implemented before M26 | Signed-device export/share/delete smoke and policy review at release |
-| Multi-language expansion | UI locale and provider locale plumbing for English, Spanish, and French; AI coaching intentionally English-only | Partial | Calibrated filler/semantic/rubric corpora per locale before expanding claims |
+| Multi-language expansion | UI/provider locale plumbing supports English, Spanish, and French. AI rewrite and goal-outcome paths explicitly suppress unsupported Spanish/French before English logic or transport. | Partial, with honest boundary enforced | Calibrated filler/semantic/rubric corpora per locale before expanding claims |
 | Weekly goal-linked habit loop | Daily goal, proactive reminders, streak protection, weekly digest/check-in, goal-aware coach context | Implemented before M26 | Retention validation with real cohorts |
 | Progress sharing | Session/proof share surfaces exist. Established goal outcomes now offer an opt-in milestone note that contains no transcript excerpt, raw score, or causal claim. | Implemented locally | Validate desirability and sharing behavior with real users after outcome calibration |
 | Humour-specific training | No humour identity exists in the supported `SpeakingStyleGoal` set | Deferred intentionally | Research and calibration; do not add an unvalidated identity score |

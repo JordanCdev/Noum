@@ -6,7 +6,7 @@
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
-## Current execution status — 2026-07-12
+## Current execution status — 2026-07-13
 
 The research plan is no longer a greenfield specification. Noum already reuses
 the established goal, session, coach, recommendation, privacy, transcription,
@@ -17,8 +17,8 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 |---|---|---|
 | Baseline and contracts | Implemented locally | Keep event names and cohort claims honest; population analytics still requires a privacy decision |
 | Fast-lane activation | Partial: a spoken auto-guided first rep exists behind a default-off flag | The report's permissionless typed/structured route is not implemented; decide whether to build it, then complete signed-device permission, consent, interruption, relaunch, and elapsed-time validation |
-| Goal-style scoring | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections | Human calibration; suppress unsupported locale and identity precision |
-| Actionable coaching | Rewrite, deterministic semantic-preservation guard, phrase bank, and adaptive recommendation loop implemented | Live-provider acceptance corpus; phrase-to-practice reuse; unify remaining prescription projections |
+| Goal-style scoring | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; unsupported locales are suppressed before English inference | Human calibration; retain qualitative/low-confidence language until calibrated |
+| Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; historical Review is replay-only | Live-provider acceptance corpus and physical-device visual/interaction proof |
 | Trust and reliability | Local speech, consent routing, privacy, export, and deletion implemented | Physical-device and release-policy verification |
 | Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented | Real cohort validation, experiment assignment decision, and calibrated language expansion |
 
@@ -140,15 +140,19 @@ Implement transcript-derived, deterministic scoring for the initial goals: `auth
 
 ### 3A. Goal-aware rewrite review
 
-- Add `GoalRewriteEngine.swift`, `GoalRewriteCard.swift`, and `PhraseBankStore.swift`.
+- Extend the existing `AIRewriteService`, `RewriteSuggestionCard`, and
+  `PhraseBankStore`; do not create parallel goal-rewrite owners.
 - For each selected transcript snippet, provide light, medium, and strong rewrites.
-- Preserve meaning; show original versus suggestion; allow saving a phrase to a reusable, account-scoped phrase bank that is covered by export and deletion.
+- Preserve meaning; show original versus suggestion; allow saving a phrase to a reusable, account-scoped phrase bank that is covered by export and deletion, then practice that phrase through the existing Timed one-shot prompt handoff.
 - Provide deterministic heuristic templates when an AI service is unavailable.
 
 ### 3B. Adaptive next-rep prescription
 
-- Add `GoalPrescriptionEngine.swift` and `GoalPrescriptionCard.swift`.
-- Output exactly one best next rep and up to two alternatives, with a short rationale.
+- Keep `SessionFinalizer` / `NextActionEngine` as strategic owners and project
+  their result through one Summary action card. Do not add a parallel
+  `GoalPrescriptionEngine`.
+- Output exactly one best next rep with a short rationale. Historical Review
+  may replay a recorded setup but does not record adaptive acceptance.
 - Reuse existing destinations: timed, sudden death, ah counter, Cut the Crutch, pace training, roleplay, lessons, speech projects, and path.
 - Respect availability/permission gates and fall back to a viable mode.
 
