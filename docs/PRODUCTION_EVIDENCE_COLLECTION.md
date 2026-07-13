@@ -43,6 +43,28 @@ Confirm the dump contains:
 The initialization command refuses stale sidecars, dirty coach source, an
 invalid packet, or a packet below the existing 39-conversation/78-review floor.
 
+Before collecting Apple evidence, run the local signing/TestFlight preflight
+against an unsigned generic-iOS archive:
+
+```bash
+./scripts/release-test-testflight-preflight.sh
+
+export SOURCE_PACKAGES_PATH="${SOURCE_PACKAGES_PATH:-$PWD/.build/fast-lane-release/SourcePackages}"
+./scripts/release-testflight-preflight.sh \
+  --source-packages "$SOURCE_PACKAGES_PATH" \
+  --build-unsigned-archive "/private/tmp/Noum-unsigned-<build>.xcarchive" \
+  --derived-data "/private/tmp/Noum-unsigned-derived-<build>" \
+  --evidence-dir "$NOUM_COACH_EVAL_DUMP_DIR"
+```
+
+This is preliminary, fail-closed diagnostics. It separates source/archive
+correctness, the current Mac's installed distribution authority, and evidence
+already accepted by the readiness validator. It does not sign, export, upload,
+or contact Apple for provisioning updates, and its output is deliberately
+redacted. Passing the local source or signing sections is not production
+evidence. The overall command remains nonzero until real physical-TestFlight and
+operational-launch artifacts are independently collected and accepted.
+
 ## 2. Initialize a non-passing run
 
 Use an encrypted, access-controlled location outside the repository:

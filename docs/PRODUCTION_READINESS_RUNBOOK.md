@@ -103,6 +103,76 @@ At present, a successful privacy probe applies to the Firebase Hosting
 `web.app` URL. It does not prove that `noum.app` is serving Noum content while
 the registrar DNS remains parked.
 
+## Apple signing and TestFlight preflight
+
+Run the deterministic fixture tests, then inspect or build an unsigned
+generic-iOS archive. Reuse an existing package cache so this local check cannot
+resolve packages over the network:
+
+```bash
+./scripts/release-test-testflight-preflight.sh
+
+export SOURCE_PACKAGES_PATH="${SOURCE_PACKAGES_PATH:-$PWD/.build/fast-lane-release/SourcePackages}"
+./scripts/release-testflight-preflight.sh \
+  --source-packages "$SOURCE_PACKAGES_PATH" \
+  --build-unsigned-archive "/private/tmp/Noum-unsigned-<build>.xcarchive" \
+  --derived-data "/private/tmp/Noum-unsigned-derived-<build>" \
+  --evidence-dir "$NOUM_COACH_EVAL_DUMP_DIR"
+```
+
+The command fails closed and reports three separate sections:
+
+- repository/build correctness: Release identifiers, automatic-signing shape,
+  source entitlements, App Attest production selection, extension embedding,
+  export options, unsigned archive products and dSYMs, and the redacted bundle
+  scan;
+- local paid-team/provisioning authority: counts of valid Apple Distribution
+  identities and matching, unexpired App Store profiles for the main app,
+  Widget, and Messages extension; and
+- external TestFlight/launch evidence: acceptance of the physical-TestFlight
+  and operational-launch artifacts by the existing readiness validator.
+
+The report never prints certificate names, team identifiers, profile names, or
+profile UUIDs. It never requests provisioning updates, signs an archive, exports
+an IPA, or uploads a build. A green repository section proves release shape only.
+The complete command must remain nonzero while either the local signing authority
+or independently collected external evidence is missing.
+
+On the reviewed local Mac, the repository/archive section passes, but only Apple
+Development identities and development profiles are installed. There is no
+valid Apple Distribution identity and there are no matching App Store profiles
+for the three archived products. This is a host-authority blocker, not a source
+configuration failure and not proof about what exists in the Apple Developer
+account.
+
+Only an authorized paid-team operator may perform the signed archive and local
+App Store Connect export. After the local preflight is green, that operator can
+use Xcode's Archive workflow or the equivalent commands below. These commands
+may contact Apple and are intentionally outside automated/local preflight:
+
+```bash
+xcodebuild archive \
+  -project Noum.xcodeproj \
+  -scheme Noum \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  -archivePath '/secure/path/Noum-<build>.xcarchive' \
+  -allowProvisioningUpdates
+
+xcodebuild -exportArchive \
+  -archivePath '/secure/path/Noum-<build>.xcarchive' \
+  -exportOptionsPlist scripts/TestFlightExportOptions.plist \
+  -exportPath '/secure/path/Noum-<build>-export' \
+  -allowProvisioningUpdates
+```
+
+The export plist uses automatic signing and contains no team ID, certificate
+name, or profile mapping. Export is not upload: TestFlight upload, processing,
+installation from TestFlight, and the physical-device sweep remain external
+operator work and must be captured through the evidence workflow below. An
+unsigned archive, simulator run, or direct Xcode development install cannot
+close `noRealDeviceTestFlightVerification`.
+
 ## Live Cloud Operations Probe
 
 With an authenticated `gcloud` identity that can read the production project,
