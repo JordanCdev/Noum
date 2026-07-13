@@ -264,7 +264,10 @@ final class NotificationManager: ObservableObject {
     private func scheduleWeeklyDigest() async {
 #if canImport(UserNotifications)
         let content = UNMutableNotificationContent()
-        let copy = NotificationCopy.weeklyDigest(weeklyReps: SharedNoumState.read().weeklyReps)
+        let copy = NotificationCopy.weeklyDigest(
+            weeklyReps: SharedNoumState.read().weeklyReps,
+            chosenStyleGoal: CoachingProfileStore.shared.profile?.chosenStyleGoal
+        )
         content.title = copy.title
         content.body = copy.body
         content.sound = .default

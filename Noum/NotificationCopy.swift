@@ -186,38 +186,74 @@ enum NotificationCopy {
 
     // MARK: - Weekly digest
 
-    static func weeklyDigest(weeklyReps: Int) -> NotificationLine {
+    /// Weekly practice read with optional context from the voice goal the user
+    /// explicitly chose. `nil` stays fully generic: callers must never pass the
+    /// profile's always-populated effective/default style as if it were a
+    /// deliberate choice.
+    static func weeklyDigest(
+        weeklyReps: Int,
+        chosenStyleGoal: SpeakingStyleGoal? = nil
+    ) -> NotificationLine {
+        let line: NotificationLine
+
         switch weeklyReps {
         case 0:
-            return NotificationLine(
+            line = NotificationLine(
                 title: "Your week, summed up",
-                body: "Quiet week. The path is still here when you are."
+                body: "No reps recorded this week. The path is still here when you are."
             )
         case 1...2:
-            return NotificationLine(
+            line = NotificationLine(
                 title: "Light week — \(weeklyReps) rep\(weeklyReps == 1 ? "" : "s")",
-                body: "One more rep next week and you're at four. Open Noum to see what's trending."
+                body: "\(weeklyReps) rep\(weeklyReps == 1 ? " is" : "s are") on the record. Open Noum to review the week when it suits you."
             )
         case 3...4:
-            return NotificationLine(
+            line = NotificationLine(
                 title: "Steady week — \(weeklyReps) reps in",
-                body: "Open Noum to see how this week shaped up — score, pace, and what's trending."
+                body: "Open Noum to review this week's reps, pace, and score when it suits you."
             )
         case 5...6:
-            return NotificationLine(
+            line = NotificationLine(
                 title: "Strong week — \(weeklyReps) reps in",
-                body: "Open Noum to see your week. Score and pace are working together when reps stack like this."
+                body: "Open Noum to review this week's evidence across reps, pace, and score."
             )
         case 7...:
-            return NotificationLine(
+            line = NotificationLine(
                 title: "Top week — \(weeklyReps) reps cleared",
-                body: "Speakers who hit a rep a day are the ones whose voices change. Open Noum for the read."
+                body: "A week of regular practice is on the record. Open Noum to review the evidence."
             )
         default:
-            return NotificationLine(
+            line = NotificationLine(
                 title: "Your week, summed up",
-                body: "Open Noum to see how this week shaped up — reps, score, and what's trending."
+                body: "Open Noum to review your latest practice record when it suits you."
             )
+        }
+
+        guard let chosenStyleGoal else { return line }
+
+        return NotificationLine(
+            title: line.title,
+            body: "\(line.body) \(weeklyGoalFocus(for: chosenStyleGoal))"
+        )
+    }
+
+    /// Names the selected direction without claiming that a thin week proved
+    /// improvement. Canonical goal labels are lock-screen safe; authored goal
+    /// text never enters this path.
+    private static func weeklyGoalFocus(for goal: SpeakingStyleGoal) -> String {
+        switch goal {
+        case .authoritative:
+            return "Your authoritative goal stays focused on steadiness and decisive endings."
+        case .warm:
+            return "Your warm-voice goal stays focused on natural pace and connection."
+        case .concise:
+            return "Your concise goal stays focused on clean structure and fewer extra words."
+        case .persuasive:
+            return "Your persuasive goal stays focused on clear structure and support."
+        case .executive:
+            return "Your executive-presence goal stays focused on composure and concise decisions."
+        case .storytelling:
+            return "Your storytelling goal stays focused on a clear narrative turn and vocal emphasis."
         }
     }
 }
