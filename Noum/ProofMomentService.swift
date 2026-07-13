@@ -15,10 +15,9 @@ import Foundation
 // *earned* instead of arbitrary.
 //
 // Design rules:
-//   • Per-session cache — one ProofMoment per session, keyed by
-//     session.id. Invalidation happens only when the source session's
-//     transcript changes (never, in practice — sessions are immutable
-//     once finalized). This keeps AI quota bounded.
+//   • Voice-aware per-session cache — one ProofMoment per session and
+//     explicit goal identity. Sessions are immutable, but the user's chosen
+//     voice is not; a change must never replay an old goal-shaped claim.
 //   • Fallback to deterministic extraction — if no AI provider is
 //     configured (M13 non-English locale, or the user has not set up
 //     keys), the service falls back to a template that picks the
@@ -90,10 +89,9 @@ actor ProofMomentService {
 
     static let shared = ProofMomentService()
 
-    /// In-memory cache keyed by session ID. Sessions are immutable
-    /// once finalized, so we never need to invalidate by content — a
-    /// cache hit is always still valid.
-    private var cache: [UUID: ProofMoment] = [:]
+    /// In-memory cache keyed by session plus explicit goal identity. The quote
+    /// remains immutable, but technique/claim copy is voice-shaped.
+    private var cache: [String: ProofMoment] = [:]
 
     private init() {}
 
@@ -101,7 +99,8 @@ actor ProofMomentService {
     /// the session has no transcript or its duration is too short to
     /// produce a meaningful proof (≤8 seconds — likely a misfire rep).
     func proof(for input: ProofMomentInput) async -> ProofMoment? {
-        if let cached = cache[input.session.id] {
+        let cacheKey = Self.cacheIdentity(for: input)
+        if let cached = cache[cacheKey] {
             return cached
         }
         func record(
@@ -136,8 +135,8 @@ actor ProofMomentService {
         guard await activeLocaleSupportsAI() else {
             record(.skipped, fallback == nil ? "Locale not AI-supported; no deterministic proof" : "Locale not AI-supported")
             if let fallback = fallback {
-                cache[input.session.id] = fallback
-                await persistToArchive(fallback, sessionID: input.session.id)
+                cache[cacheKey] = fallback
+                await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
             }
             return fallback
         }
@@ -149,8 +148,8 @@ actor ProofMomentService {
         else {
             record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             if let fallback = fallback {
-                cache[input.session.id] = fallback
-                await persistToArchive(fallback, sessionID: input.session.id)
+                cache[cacheKey] = fallback
+                await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
             }
             return fallback
         }
@@ -173,8 +172,8 @@ actor ProofMomentService {
             case .none:
                 record(.skipped, "Provider set to off", provider: provider)
                 if let fallback = fallback {
-                    cache[input.session.id] = fallback
-                    await persistToArchive(fallback, sessionID: input.session.id)
+                    cache[cacheKey] = fallback
+                    await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
                 }
                 return fallback
             }
@@ -192,28 +191,28 @@ actor ProofMomentService {
                     startedAt: startedAt
                 )
                 if let fallback = fallback {
-                    cache[input.session.id] = fallback
-                    await persistToArchive(fallback, sessionID: input.session.id)
+                    cache[cacheKey] = fallback
+                    await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
                 }
                 return fallback
             }
             guard let parsed = Self.parse(data: data, provider: provider, input: input) else {
                 record(.fallback, fallback == nil ? "Proof response failed grounding; no fallback proof" : "Proof response failed grounding", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 if let fallback = fallback {
-                    cache[input.session.id] = fallback
-                    await persistToArchive(fallback, sessionID: input.session.id)
+                    cache[cacheKey] = fallback
+                    await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
                 }
                 return fallback
             }
             record(.success, "Proof moment accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
-            cache[input.session.id] = parsed
-            await persistToArchive(parsed, sessionID: input.session.id)
+            cache[cacheKey] = parsed
+            await persistToArchive(parsed, sessionID: input.session.id, voice: input.voice)
             return parsed
         } catch {
             record(.failure, "Transport or decode error", provider: provider)
             if let fallback = fallback {
-                cache[input.session.id] = fallback
-                await persistToArchive(fallback, sessionID: input.session.id)
+                cache[cacheKey] = fallback
+                await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
             }
             return fallback
         }
@@ -225,15 +224,40 @@ actor ProofMomentService {
     /// safe for the upcoming Profile library card. Best-effort: a save
     /// failure never blocks the proof from reaching the calling UI.
     @MainActor
-    private func persistToArchive(_ proof: ProofMoment, sessionID: UUID) {
-        ProofMomentStore.shared.record(proof, for: sessionID)
+    private func persistToArchive(
+        _ proof: ProofMoment,
+        sessionID: UUID,
+        voice: SpeakingStyleGoal?
+    ) {
+        ProofMomentStore.shared.record(proof, for: sessionID, voiceAtGeneration: voice)
     }
 
     /// Invalidate the cached proof for a session — call when a user
     /// pulls to refresh, or when the transcript is ever mutated post
     /// finalize (not currently a thing).
     func invalidate(sessionID: UUID) {
-        cache.removeValue(forKey: sessionID)
+        cache.keys
+            .filter { Self.cacheKey($0, belongsTo: sessionID) }
+            .forEach { cache.removeValue(forKey: $0) }
+    }
+
+    /// Testable cache identity. Goal wording is included because it is fed into
+    /// the claim prompt even when the enum voice itself is unchanged.
+    nonisolated static func cacheIdentity(for input: ProofMomentInput) -> String {
+        let goal = input.goalParaphrase?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return [
+            input.session.id.uuidString,
+            input.voice?.rawValue ?? "no-style",
+            goal,
+        ].joined(separator: "|")
+    }
+
+    /// Shared by invalidation and focused tests. One session can have several
+    /// cache variants after a voice or goal-wording change; invalidation must
+    /// clear the whole session namespace, not only the currently chosen key.
+    nonisolated static func cacheKey(_ key: String, belongsTo sessionID: UUID) -> Bool {
+        key.hasPrefix("\(sessionID.uuidString)|")
     }
 
     // MARK: - Provider plumbing (mirrors AIInsightsService)

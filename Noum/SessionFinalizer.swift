@@ -285,12 +285,16 @@ enum SessionFinalizer {
         // Persistent coach memory — the durable working read that Ask Noum
         // carries between conversations. Updated after trend recording so
         // the stored formulation can notice focus shifts from the latest rep.
+        let currentForwardPlan = ForwardPlanStore.shared.currentPlan(
+            activeBigMomentID: BigMomentStore.shared.activeMoment?.id,
+            chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
+        )
         CoachMemoryStore.shared.refresh(
             profile: coachingProfileStore.profile,
             baseline: BaselineStore.shared.baseline,
             sessions: sessionStore.sessions,
             trends: skillTrends,
-            forwardPlan: ForwardPlanStore.shared.activePlan,
+            forwardPlan: currentForwardPlan,
             lastSessionID: latestSessionID,
             pendingIntervention: RecommendationLearningStore.shared.pendingExposure,
             recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
@@ -322,6 +326,9 @@ enum SessionFinalizer {
         let baselineStore = BaselineStore.shared
         let baseline = baselineStore.baseline
         let wpm = effectiveDuration > 0 ? Double(transcriptWordCount) / effectiveDuration * 60 : 0
+        let explicitStyleGoal = ChosenStyleGoalEngineInputs.make(
+            profile: coachingProfileStore.profile
+        )
 
         // Baseline comparisons
         let comparisons: [String: String]
@@ -349,7 +356,7 @@ enum SessionFinalizer {
                 drillHistory: DrillHistoryStore.shared.entries,
                 sessionCount: sessionStore.sessions.count,
                 streakDays: rawHistoryStreak,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+                styleGoal: explicitStyleGoal.title,
                 recommendationOutcomes: RecommendationLearningStore.shared.outcomes
             )
             return NextActionEngine.recommend(input: input)
@@ -373,7 +380,7 @@ enum SessionFinalizer {
                     categoryRatings: categoryMap
                 ),
                 recentDrills: DrillHistoryStore.shared.entries,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                styleGoal: explicitStyleGoal.goal
             )
             // Prompt-grounded relevance (initiative #8 follow-on): the SAME
             // read the 7-dimension Relevance rating consumes, threaded into
@@ -399,7 +406,7 @@ enum SessionFinalizer {
                 baseline: baselineStore.baseline,
                 pressureProfile: baselineStore.pressureProfile,
                 pressureLevel: pressureLevel,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+                styleGoal: explicitStyleGoal.title,
                 promptRelevance: promptRelevanceRead
             )
         }()

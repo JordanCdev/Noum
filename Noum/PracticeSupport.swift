@@ -564,9 +564,9 @@ struct CoachingProfile: Codable, Equatable {
     /// The voice the user EXPLICITLY chose (onboarding, or the in-chat goal
     /// card), or `nil` when they haven't chosen yet. The source of truth for
     /// "is the experience tailored to a real choice." Optional + decoded via
-    /// `decodeIfPresent`, so profiles persisted before this field decode as nil
-    /// and then back-fill from the (possibly-defaulted) `speakingStyleGoal` only
-    /// when that legacy value was genuinely user-set. `nil` => coach stays
+    /// `decodeIfPresent`, so profiles persisted before this field fail closed to
+    /// nil. Legacy onboarding also wrote default voices, so an old
+    /// `speakingStyleGoal` cannot prove the user chose it. `nil` => coach stays
     /// generic and offers to set the voice rather than inventing one.
     var chosenStyleGoal: SpeakingStyleGoal?
     /// True once the user has actively chosen a voice. Every "tailor to the
@@ -682,18 +682,17 @@ struct CoachingProfile: Codable, Equatable {
         let decodedStyle = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .speakingStyleGoal)
         speakingStyleGoal = decodedStyle ?? .concise
         // `chosenStyleGoal` is the source of truth for "the user picked."
-        // Distinguish three cases by KEY PRESENCE (not just decodeIfPresent,
+        // Distinguish two cases by KEY PRESENCE (not just decodeIfPresent,
         // which conflates absent with null):
-        //  • key absent  → persisted before this field existed. A present
-        //    `speakingStyleGoal` means the user completed the old onboarding
-        //    (which always wrote a voice), so back-fill the choice from it;
-        //    a fully-unset legacy profile stays nil (generic coach).
+        //  • key absent  → persisted before explicit-choice provenance
+        //    existed. Old onboarding wrote a default voice, so the effective
+        //    `speakingStyleGoal` cannot prove consent; fail closed to nil.
         //  • key present (value or null) → written by the current encoder, so
         //    take it verbatim — preserves a deliberate nil across a round-trip.
         if container.contains(.chosenStyleGoal) {
             chosenStyleGoal = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .chosenStyleGoal)
         } else {
-            chosenStyleGoal = decodedStyle
+            chosenStyleGoal = nil
         }
         styleReference = try container.decodeIfPresent(String.self, forKey: .styleReference) ?? ""
         coachingBrief = try container.decodeIfPresent(String.self, forKey: .coachingBrief) ?? ""
@@ -723,13 +722,38 @@ struct CoachingProfile: Codable, Equatable {
         // ALWAYS write `chosenStyleGoal` (even when nil → JSON null) so the
         // decoder can tell "this profile was written by the current encoder and
         // deliberately has no chosen voice" (key present) from "persisted before
-        // the field existed" (key absent → legacy back-fill). This is what makes
-        // a nil choice survive a round-trip instead of being back-filled.
+        // the field existed" (key absent → unproven, therefore nil). This makes
+        // a nil choice survive a round-trip without inventing legacy consent.
         try container.encode(chosenStyleGoal, forKey: .chosenStyleGoal)
     }
 }
 
+/// Pure trust-boundary projection for scoring and recommendation engines.
+/// `speakingStyleGoal` remains a compatibility value, but only the explicit
+/// choice may enter goal-aware logic or copy.
+struct ChosenStyleGoalEngineInputs: Equatable {
+    let goal: SpeakingStyleGoal?
+    let title: String?
+
+    static func make(profile: CoachingProfile?) -> ChosenStyleGoalEngineInputs {
+        let goal = profile?.chosenStyleGoal
+        return ChosenStyleGoalEngineInputs(goal: goal, title: goal?.title)
+    }
+}
+
 extension CoachingProfile {
+    /// Persisted paraphrase is goal-shaped copy. Legacy profiles may carry one
+    /// without explicit voice provenance, so replay surfaces use this trusted
+    /// projection instead of reading `paraphrasedGoal` directly.
+    var trustedStyleGoalParaphrase: String? {
+        guard chosenStyleGoal != nil,
+              let paraphrasedGoal,
+              !paraphrasedGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return paraphrasedGoal
+    }
+
     var challengeDisplayTitle: String {
         if let trimmed = customChallengeText?.trimmingCharacters(in: .whitespacesAndNewlines),
            !trimmed.isEmpty {
@@ -753,12 +777,17 @@ extension CoachingProfile {
     /// no paraphrase has been written yet (no provider, network failure, or
     /// legacy profile).
     var displayableGoal: String {
-        if let trimmed = paraphrasedGoal?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !trimmed.isEmpty {
+        let action = primaryGoal.title.lowercased()
+        guard let chosenStyleGoal else {
+            // A stored paraphrase may have been generated before explicit-voice
+            // gating existed, so do not surface it as trusted copy when the user
+            // has never chosen a voice.
+            return "You want to \(action)."
+        }
+        if let trimmed = trustedStyleGoalParaphrase?.trimmingCharacters(in: .whitespacesAndNewlines) {
             return trimmed
         }
-        let action = primaryGoal.title.lowercased()
-        let style = speakingStyleGoal.coachingDescription
+        let style = chosenStyleGoal.coachingDescription
         return "You want to \(action) and \(style)."
     }
 
@@ -774,10 +803,11 @@ extension CoachingProfile {
     /// the single-voice `SpeakingStyleGoal.alignedSkillAreas` is unchanged for
     /// the many call sites that operate on a bare voice with no profile.
     var blendedAlignedSkillAreas: Set<SkillArea> {
-        guard let secondary = secondaryStyleGoal, secondary != speakingStyleGoal else {
-            return speakingStyleGoal.alignedSkillAreas
+        guard let chosenStyleGoal else { return [] }
+        guard let secondary = secondaryStyleGoal, secondary != chosenStyleGoal else {
+            return chosenStyleGoal.alignedSkillAreas
         }
-        return speakingStyleGoal.alignedSkillAreas.union(secondary.alignedSkillAreas)
+        return chosenStyleGoal.alignedSkillAreas.union(secondary.alignedSkillAreas)
     }
 
     // MARK: - Chosen-voice coaching copy (S2)
@@ -873,7 +903,12 @@ extension CoachingProfile {
             challengeNote = "If the user gets sharp or rushed, let tension rise unless they slow themselves down."
         }
 
-        let outcomeNote = "The long-term aim is for them to sound \(desiredOutcome.title.lowercased()) with a \(speakingStyleGoal.title.lowercased()) edge."
+        let outcomeNote: String
+        if let chosenStyleGoal {
+            outcomeNote = "The long-term aim is for them to sound \(desiredOutcome.title.lowercased()) with a \(chosenStyleGoal.title.lowercased()) edge."
+        } else {
+            outcomeNote = "The long-term aim is for them to sound \(desiredOutcome.title.lowercased())."
+        }
         return "\(priorityNote) \(challengeNote) \(outcomeNote)"
     }
 }
@@ -4488,12 +4523,13 @@ final class CoachingProfileStore: ObservableObject {
         }
         // Snapshot the prior voice BEFORE mutating self.profile so we
         // can detect a voice change and trigger a retroactive regen of
-        // the most-recent PostRepCoachNote in the new voice. Initial
-        // capture (previousVoice == nil) does not trigger a regen
-        // because there's no rep history to regenerate against on a
-        // fresh account; the next finalize will produce the first note
-        // in the chosen voice naturally.
-        let previousVoice = self.profile?.speakingStyleGoal
+        // the most-recent PostRepCoachNote in the new voice. A fresh
+        // account has no prior profile or rep history, so its initial
+        // capture does not regenerate. A compatibility profile whose
+        // explicit choice was still nil does regenerate when the user
+        // makes their first real voice choice.
+        let hadPreviousProfile = self.profile != nil
+        let previousVoice = self.profile?.chosenStyleGoal
         let key = profileKey(for: accountID)
         defaults.set(data, forKey: key)
         guard defaults.data(forKey: key) == data else {
@@ -4506,9 +4542,11 @@ final class CoachingProfileStore: ObservableObject {
         paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
         refreshTrajectoryCache()
 
-        if let previousVoice, previousVoice != profile.speakingStyleGoal {
+        if hadPreviousProfile,
+           previousVoice != profile.chosenStyleGoal,
+           let newVoice = profile.chosenStyleGoal {
             PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(
-                newVoice: profile.speakingStyleGoal
+                newVoice: newVoice
             )
         }
     }
@@ -6917,14 +6955,18 @@ enum PracticeEvaluator {
             feedback = "A worthwhile pass. Keep the answer moving and make each transition a little cleaner."
         }
 
-        let segments = [
+        var segments = [
             PracticeScoreSegment(title: "Timing", value: durationAssessment.rawValue, tintName: durationAssessment == .onTarget ? "green" : "orange"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 3)))", tintName: "orange"),
-            PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green"),
-            PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"),
+            PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green")
+        ]
+        if profile?.chosenStyleGoal != nil {
+            segments.append(PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"))
+        }
+        segments.append(contentsOf: [
             PracticeScoreSegment(title: "Filler penalty", value: "-\(Int(round(fillerPenalty)))", tintName: "red"),
             PracticeScoreSegment(title: "Difficulty", value: difficulty.title, tintName: "purple")
-        ]
+        ])
 
         var insights = timedModeInsights(
             fillerCount: fillerCount,
@@ -7111,15 +7153,19 @@ enum PracticeEvaluator {
             feedback = "You kept the round alive, but the answer still needs more shape to feel complete."
         }
 
-        let segments = [
+        var segments = [
             PracticeScoreSegment(title: "Control", value: fillerCount == 0 ? "+2" : "-\(min(6, fillerCount * 2))", tintName: fillerCount == 0 ? "green" : "red"),
             PracticeScoreSegment(title: "Survival", value: "\(Int(duration))s", tintName: "blue"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 3)))", tintName: "orange"),
-            PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green"),
-            PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"),
+            PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green")
+        ]
+        if profile?.chosenStyleGoal != nil {
+            segments.append(PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"))
+        }
+        segments.append(contentsOf: [
             PracticeScoreSegment(title: "Pressure level", value: "Level \(level)", tintName: "purple"),
             PracticeScoreSegment(title: "Pressure events", value: "\(pressureEventsHandled)", tintName: "pink")
-        ]
+        ])
 
         var insights = sharedTrendInsights(trends: trends)
         if fillerCount == 0 {
@@ -7211,14 +7257,18 @@ enum PracticeEvaluator {
             feedback = "This drill surfaced a real filler habit. Repeat it and focus on replacing the first filler with silence."
         }
 
-        let segments = [
+        var segments = [
             PracticeScoreSegment(title: "Awareness", value: fillerCount <= 1 ? "+3" : "+\(max(1, 4 - fillerCount))", tintName: "green"),
             PracticeScoreSegment(title: "Depth", value: "+\(Int(round(durationProgress * 2)))", tintName: "blue"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 2)))", tintName: "orange"),
-            PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "purple"),
-            PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"),
-            PracticeScoreSegment(title: "Filler penalty", value: "-\(Int(round(fillerPenalty)))", tintName: "red")
+            PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "purple")
         ]
+        if profile?.chosenStyleGoal != nil {
+            segments.append(PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"))
+        }
+        segments.append(
+            PracticeScoreSegment(title: "Filler penalty", value: "-\(Int(round(fillerPenalty)))", tintName: "red")
+        )
 
         var insights = sharedTrendInsights(trends: trends)
         if fillerCount <= 2 {
@@ -8058,8 +8108,8 @@ enum PracticeEvaluator {
         }
 
         var targetNote: String
-        if let profile {
-            switch profile.speakingStyleGoal {
+        if let profile, let chosenStyleGoal = profile.chosenStyleGoal {
+            switch chosenStyleGoal {
             case .authoritative:
                 targetNote = identity == "Direct and authoritative" || identity == "Executive and composed"
                     ? "You are already showing authority. Keep removing hedges so the confidence sounds earned."
@@ -8100,9 +8150,9 @@ enum PracticeEvaluator {
     }
 
     private static func styleAlignmentScore(snapshot: SpeakingIdentitySnapshot, profile: CoachingProfile?) -> Double {
-        guard let profile else { return 0.5 }
+        guard let chosenStyleGoal = profile?.chosenStyleGoal else { return 0.5 }
 
-        switch profile.speakingStyleGoal {
+        switch chosenStyleGoal {
         case .authoritative:
             return snapshot.identity == "Direct and authoritative" || snapshot.identity == "Executive and composed" ? 1.0 : (snapshot.identity == "Tentative" ? 0.2 : 0.55)
         case .warm:
@@ -8169,8 +8219,10 @@ enum PracticeEvaluator {
         fillerCount: Int,
         wordsPerMinute: Double
     ) -> Double {
-        guard let profile, wordCount >= 8, duration >= 8 else { return 0 }
-        switch profile.speakingStyleGoal {
+        guard let chosenStyleGoal = profile?.chosenStyleGoal,
+              wordCount >= 8,
+              duration >= 8 else { return 0 }
+        switch chosenStyleGoal {
         case .concise:
             var bonus = 0.0
             if fillerCount <= 1 { bonus += 0.2 }
@@ -8210,17 +8262,17 @@ enum PracticeEvaluator {
         profile: CoachingProfile?,
         alignment: Double
     ) -> String {
-        guard let profile else {
+        guard let chosenStyleGoal = profile?.chosenStyleGoal else {
             return "Your current voice reads as \(styleSnapshot.identity.lowercased())."
         }
 
         switch alignment {
         case 0.9...:
-            return "Your current voice is landing close to the \(profile.speakingStyleGoal.title.lowercased()) style you asked Noum to build."
+            return "Your current voice is landing close to the \(chosenStyleGoal.title.lowercased()) style you asked Noum to build."
         case 0.55..<0.9:
-            return "Your current voice is moving toward \(profile.speakingStyleGoal.title.lowercased()), but the phrasing is not there consistently yet."
+            return "Your current voice is moving toward \(chosenStyleGoal.title.lowercased()), but the phrasing is not there consistently yet."
         default:
-            return "Your current voice is still some distance from the \(profile.speakingStyleGoal.title.lowercased()) style target, so keep shaping the word choice more intentionally."
+            return "Your current voice is still some distance from the \(chosenStyleGoal.title.lowercased()) style target, so keep shaping the word choice more intentionally."
         }
     }
 
@@ -8258,22 +8310,22 @@ enum PracticeEvaluator {
     }
 
     static func styleTrendInsight(_ trend: StyleTrendSnapshot, profile: CoachingProfile?) -> String? {
-        guard let profile else { return nil }
+        guard let chosenStyleGoal = profile?.chosenStyleGoal else { return nil }
         guard trend.hasHistory else {
             return "This is the first saved read on your speaking identity, so Noum will start comparing future sessions against it."
         }
 
         let previousAlignment = trend.previousAlignment ?? trend.currentAlignment
         if trend.currentAlignment > previousAlignment + 0.18 {
-            return "You are sounding closer to your \(profile.speakingStyleGoal.title.lowercased()) target than in recent sessions."
+            return "You are sounding closer to your \(chosenStyleGoal.title.lowercased()) target than in recent sessions."
         }
         if trend.currentAlignment < previousAlignment - 0.18 {
-            return "This rep drifted away from your \(profile.speakingStyleGoal.title.lowercased()) target, so tighten the phrasing on the next round."
+            return "This rep drifted away from your \(chosenStyleGoal.title.lowercased()) target, so tighten the phrasing on the next round."
         }
         if let previousIdentity = trend.previousIdentity, previousIdentity != trend.recentIdentity {
             return "Your speaking identity is shifting from \(previousIdentity.lowercased()) toward \(trend.recentIdentity.lowercased())."
         }
-        return "Your recent sessions are reinforcing a \(trend.recentIdentity.lowercased()) voice. Keep nudging it toward \(profile.speakingStyleGoal.title.lowercased())."
+        return "Your recent sessions are reinforcing a \(trend.recentIdentity.lowercased()) voice. Keep nudging it toward \(chosenStyleGoal.title.lowercased())."
     }
 
     private static func mostCommonIdentity(in identities: [String]) -> String? {
@@ -8344,7 +8396,7 @@ enum PracticeEvaluator {
                 insights.append("This answer ended earlier than your recent average. Push one idea further before stopping.")
             }
         } else {
-            insights.append("This is your first saved rep in this style, so future summaries will compare against it.")
+            insights.append("This is your first saved rep, so future summaries will compare against it.")
         }
         return insights
     }
@@ -9881,7 +9933,7 @@ enum PracticeSessionFinalizer {
                 return parts.joined(separator: ", ")
             }
         let recentProofs: [String] = ProofMomentStore.shared
-            .recent(limit: 2)
+            .recent(limit: 2, compatibleWith: profile?.chosenStyleGoal)
             .map { $0.proof.quote }
             .filter { !$0.isEmpty }
 
@@ -9921,7 +9973,7 @@ enum PracticeSessionFinalizer {
             fillerCount: session.fillerWordCount,
             duration: session.duration,
             wordCount: session.wordCount,
-            voice: profile?.speakingStyleGoal,
+            voice: profile?.chosenStyleGoal,
             intentLabel: session.intentLabel,
             baselineFillerRate: baselineFillerRate,
             baselinePaceWPM: baselinePace,
@@ -10144,21 +10196,24 @@ enum CoachingPlanner {
 
         let suggestedDrill: String
         if let profile {
-            switch (profile.primaryGoal, profile.speakingStyleGoal) {
-            case (_, .authoritative):
+            switch profile.chosenStyleGoal {
+            case .authoritative:
                 suggestedDrill = "Run one Pressure Drill: open firmly, pause once, and stop on the ask."
-            case (_, .executive):
+            case .executive:
                 suggestedDrill = "Run one Medium Timed rep: lead with the decision and keep the setup short."
-            case (_, .storytelling):
+            case .storytelling:
                 suggestedDrill = "Run one Easy Timed rep with one vivid example."
-            case (.reduceFillers, _):
-                suggestedDrill = "Run one Easy Timed rep and pause before each new point."
-            case (.moreConcise, _):
-                suggestedDrill = "Run one Medium Timed rep with the answer in sentence one."
-            case (.thinkFaster, _):
-                suggestedDrill = "Run one Pressure Drill and answer before you explain."
-            case (.calmerDelivery, _):
-                suggestedDrill = "Start Filler Control and replace the first filler with a pause."
+            case .warm, .concise, .persuasive, .none:
+                switch profile.primaryGoal {
+                case .reduceFillers:
+                    suggestedDrill = "Run one Easy Timed rep and pause before each new point."
+                case .moreConcise:
+                    suggestedDrill = "Run one Medium Timed rep with the answer in sentence one."
+                case .thinkFaster:
+                    suggestedDrill = "Run one Pressure Drill and answer before you explain."
+                case .calmerDelivery:
+                    suggestedDrill = "Start Filler Control and replace the first filler with a pause."
+                }
             }
         } else if averageFillers > 4 {
             suggestedDrill = "Run one Easy Timed rep and pause before each new point."
@@ -10342,70 +10397,6 @@ protocol AICoachServicing {
     ) async throws -> AICoachFeedback
 }
 
-struct AIHomeRecommendation: Codable, Equatable {
-    let title: String
-    let detail: String
-    let focus: String
-    let target: String
-    let recommendedMode: String
-    let recommendedTone: String?
-    let recommendedScenario: String?
-    let modeBenefit: String
-    let whyMode: String
-    let whyNow: String
-
-    enum CodingKeys: String, CodingKey {
-        case title
-        case detail
-        case focus
-        case target
-        case recommendedMode
-        case recommendedTone
-        case recommendedScenario
-        case modeBenefit
-        case whyMode
-        case whyNow
-    }
-
-    init(
-        title: String,
-        detail: String,
-        focus: String,
-        target: String,
-        recommendedMode: String,
-        recommendedTone: String?,
-        recommendedScenario: String?,
-        modeBenefit: String,
-        whyMode: String,
-        whyNow: String
-    ) {
-        self.title = title
-        self.detail = detail
-        self.focus = focus
-        self.target = target
-        self.recommendedMode = recommendedMode
-        self.recommendedTone = recommendedTone
-        self.recommendedScenario = recommendedScenario
-        self.modeBenefit = modeBenefit
-        self.whyMode = whyMode
-        self.whyNow = whyNow
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        title = try container.decode(String.self, forKey: .title)
-        detail = try container.decode(String.self, forKey: .detail)
-        focus = try container.decode(String.self, forKey: .focus)
-        target = try container.decode(String.self, forKey: .target)
-        recommendedMode = try container.decode(String.self, forKey: .recommendedMode)
-        recommendedTone = try container.decodeIfPresent(String.self, forKey: .recommendedTone)
-        recommendedScenario = try container.decodeIfPresent(String.self, forKey: .recommendedScenario)
-        modeBenefit = try container.decodeIfPresent(String.self, forKey: .modeBenefit) ?? ""
-        whyMode = try container.decode(String.self, forKey: .whyMode)
-        whyNow = try container.decode(String.self, forKey: .whyNow)
-    }
-}
-
 struct AIHomeRecommendationInput {
     let recentSessionSummary: String
     let averageFillers: Double
@@ -10418,146 +10409,12 @@ struct AIHomeRecommendationInput {
     let strongestMode: PracticeMode?
     let currentIdentity: String
     let currentIdentityEvidence: String
-    let styleAlignmentScore: Double
     let sessionStreak: Int
     let daysSinceLastSession: Int
     let preferredModeBias: String
     let preferredToneBias: String
     let preferredScenarioBias: String
     let modeBenefitBias: String
-}
-
-enum AIHomeRecommendationContract {
-    static func normalized(
-        _ recommendation: AIHomeRecommendation,
-        input: AIHomeRecommendationInput
-    ) -> AIHomeRecommendation? {
-        let modeID = normalizedID(recommendation.recommendedMode)
-        guard let mode = PracticeMode(rawValue: modeID) else { return nil }
-
-        if let preferredMode = preferredMode(from: input),
-           preferredMode != mode {
-            return nil
-        }
-
-        let toneID = normalizedOptionalID(recommendation.recommendedTone)
-        let scenarioID = normalizedOptionalID(recommendation.recommendedScenario)
-        let normalizedTone: String?
-        let normalizedScenario: String?
-
-        if mode == .imConversation {
-            guard let setup = normalizedIMSetup(
-                toneID: toneID,
-                scenarioID: scenarioID,
-                input: input
-            ) else {
-                return nil
-            }
-            normalizedTone = setup.tone
-            normalizedScenario = setup.scenario
-        } else {
-            normalizedTone = nil
-            normalizedScenario = nil
-        }
-
-        guard let title = boundedCopy(recommendation.title, wordLimit: 8),
-              let detail = boundedCopy(recommendation.detail, wordLimit: 28),
-              let focus = boundedCopy(recommendation.focus, wordLimit: 6),
-              let target = boundedCopy(recommendation.target, wordLimit: 8),
-              let whyMode = boundedCopy(recommendation.whyMode, wordLimit: 28),
-              let whyNow = boundedCopy(recommendation.whyNow, wordLimit: 28) else {
-            return nil
-        }
-
-        let modeBenefitCandidate = recommendation.modeBenefit
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let modeBenefitSource = modeBenefitCandidate.isEmpty
-            ? input.modeBenefitBias
-            : modeBenefitCandidate
-        guard let modeBenefit = boundedCopy(modeBenefitSource, wordLimit: 28) else {
-            return nil
-        }
-
-        return AIHomeRecommendation(
-            title: title,
-            detail: detail,
-            focus: focus,
-            target: target,
-            recommendedMode: mode.rawValue,
-            recommendedTone: normalizedTone,
-            recommendedScenario: normalizedScenario,
-            modeBenefit: modeBenefit,
-            whyMode: whyMode,
-            whyNow: whyNow
-        )
-    }
-
-    private static func normalizedIMSetup(
-        toneID: String?,
-        scenarioID: String?,
-        input: AIHomeRecommendationInput
-    ) -> (tone: String?, scenario: String?)? {
-        let preferredTone = normalizedOptionalID(input.preferredToneBias)
-        let preferredScenario = normalizedOptionalID(input.preferredScenarioBias)
-
-        if let preferredTone {
-            guard toneID == preferredTone,
-                  IMTargetTone(rawValue: preferredTone) != nil else {
-                return nil
-            }
-        } else if let toneID, IMTargetTone(rawValue: toneID) == nil {
-            return nil
-        }
-
-        if let preferredScenario {
-            guard scenarioID == preferredScenario,
-                  IMConversationScenario(rawValue: preferredScenario) != nil else {
-                return nil
-            }
-        } else if let scenarioID, IMConversationScenario(rawValue: scenarioID) == nil {
-            return nil
-        }
-
-        return (
-            tone: preferredTone ?? toneID,
-            scenario: preferredScenario ?? scenarioID
-        )
-    }
-
-    private static func preferredMode(from input: AIHomeRecommendationInput) -> PracticeMode? {
-        PracticeMode(rawValue: normalizedID(input.preferredModeBias))
-    }
-
-    private static func normalizedID(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func normalizedOptionalID(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = normalizedID(value)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func boundedCopy(_ value: String, wordLimit: Int) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, passesCoachVoiceContract(trimmed) else {
-            return nil
-        }
-        return trimmed.truncatedToWordLimit(wordLimit)
-    }
-
-    private static func passesCoachVoiceContract(_ value: String) -> Bool {
-        let lowercased = value.lowercased()
-        guard !value.contains("!"),
-              !lowercased.contains("let's"),
-              !lowercased.contains("great job"),
-              !lowercased.contains("the user"),
-              !lowercased.contains("they need"),
-              !lowercased.contains("their ") else {
-            return false
-        }
-        return true
-    }
 }
 
 struct PracticeModePlaybookEntry {
@@ -10705,12 +10562,6 @@ enum RecommendationBiasContextBuilder {
             for: recent.first?.transcript ?? "",
             profile: profile
         )
-        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
-            transcript: recent.first?.transcript ?? "",
-            recentSessions: recent,
-            profile: profile
-        )
-
         return AIHomeRecommendationInput(
             recentSessionSummary: recentSessionSummary(
                 from: recent,
@@ -10736,7 +10587,6 @@ enum RecommendationBiasContextBuilder {
             strongestMode: plan?.strongestMode,
             currentIdentity: identity.identity,
             currentIdentityEvidence: identity.evidence,
-            styleAlignmentScore: styleTrend.currentAlignment,
             sessionStreak: sessionStreak,
             daysSinceLastSession: daysSinceLastSession,
             preferredModeBias: preferredModeBias,
@@ -11010,7 +10860,7 @@ enum RecommendationBiasEngine {
         let target = caseTarget(for: intervention)
         let theme = profile.map { suggestedTheme(for: $0) } ?? .all
         let timedDifficulty = mode == .timed ? profile.map { suggestedTimedDifficulty(for: $0) } : nil
-        let tone = mode == .imConversation ? profile.map { recommendedTone(for: $0) } : nil
+        let tone = mode == .imConversation ? profile.flatMap { recommendedTone(for: $0) } : nil
         let scenario = mode == .imConversation ? profile.map { recommendedScenario(for: $0) } : nil
 
         return RecommendationBiasBlueprint(
@@ -11238,8 +11088,9 @@ enum RecommendationBiasEngine {
         return "Across enough followed \(replacedMode.displayLabel) reps, your metric has trended down alongside that mode, so this switches to \(selectedMode.displayLabel) while keeping the same coaching goal."
     }
 
-    private static func recommendedTone(for profile: CoachingProfile) -> IMTargetTone {
-        switch profile.speakingStyleGoal {
+    private static func recommendedTone(for profile: CoachingProfile) -> IMTargetTone? {
+        guard let chosenStyleGoal = profile.chosenStyleGoal else { return nil }
+        switch chosenStyleGoal {
         case .warm: return .warm
         case .concise: return .concise
         case .persuasive: return .assertive
@@ -11282,7 +11133,9 @@ enum RecommendationBiasEngine {
         case .ahCounter:
             return input.averageFillers >= 5 ? "Cut fillers by 2" : "Zero filler start"
         case .imConversation:
-            return "\(recommendedTone(for: profile).title) \(recommendedScenario(for: profile).title)"
+            let scenario = recommendedScenario(for: profile)
+            guard let tone = recommendedTone(for: profile) else { return scenario.title }
+            return "\(tone.title) \(scenario.title)"
         }
     }
 
@@ -11369,15 +11222,6 @@ enum RecommendationBiasEngine {
     private static func playbookEntry(for mode: PracticeMode) -> PracticeModePlaybookEntry {
         playbook.first(where: { $0.mode == mode }) ?? playbook[0]
     }
-}
-
-protocol AIHomeRecommendationServicing {
-    @MainActor
-    func generateHomeRecommendation(
-        input: AIHomeRecommendationInput,
-        profile: CoachingProfile?,
-        plan: CoachingPlan?
-    ) async throws -> AIHomeRecommendation
 }
 
 @MainActor
@@ -11672,7 +11516,7 @@ struct IMConversationService: IMConversationServicing {
         Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
         Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
         Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
-        Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
+        Desired style: \(profile?.chosenStyleGoal?.title ?? "not set")
         Personal goal reference: \(profile?.personalGoalReference ?? "none")
         Communication north star: \(profile?.communicationNorthStar ?? "Help the user become a stronger communicator over time.")
         In-conversation training focus: \(profile?.inConversationTrainingFocus ?? "Reward clear, human, well-calibrated communication that would strengthen a real relationship.")
@@ -12212,14 +12056,14 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         \(context.summaryLines.joined(separator: "\n"))
 
         --- LAYER 3: IDENTITY LENS ---
-        Style direction: \(profile?.speakingStyleGoal.title ?? "not set")
+        Style direction: \(profile?.chosenStyleGoal?.title ?? "not set")
         Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
         North star: \(profile?.communicationNorthStar ?? "Become a stronger communicator over time.")
         Training focus: \(profile?.inConversationTrainingFocus ?? "Clear, human, well-calibrated communication.")
         Current speaking identity: \(identity.identity)
         Identity evidence: \(identity.evidence)
 
-        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile, currentPressureLevel: BaselineEngine.classifyPressure(mode: .imConversation, isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled, streakDays: PracticeSession.calculateStreak(from: recentSessions)), styleGoal: profile?.speakingStyleGoal.title))
+        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile, currentPressureLevel: BaselineEngine.classifyPressure(mode: .imConversation, isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled, streakDays: PracticeSession.calculateStreak(from: recentSessions)), styleGoal: profile?.chosenStyleGoal?.title))
 
         --- FULL CONVERSATION ---
         \(transcriptLog)
@@ -12885,7 +12729,7 @@ struct AICoachService: AICoachServicing {
             baseline: baselineStore.baseline,
             pressure: baselineStore.pressureProfile,
             currentPressureLevel: pressureLevel,
-            styleGoal: profile?.speakingStyleGoal.title
+            styleGoal: profile?.chosenStyleGoal?.title
         )
         return Self.userPrompt(
             input: input,
@@ -12923,7 +12767,7 @@ struct AICoachService: AICoachServicing {
         lines.append("Speaker priority: \(profile?.primaryGoal.title ?? "unknown")")
         lines.append("Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")")
         lines.append("Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")")
-        lines.append("Target speaking style: \(profile?.speakingStyleGoal.title ?? "unknown")")
+        lines.append("Target speaking style: \(profile?.chosenStyleGoal?.title ?? "not set")")
         lines.append("Personal goal reference: \(profile?.personalGoalReference ?? "none")")
         lines.append("Coaching brief: \(profile?.coachingBrief ?? "none")")
         lines.append("Current focus suggestion: \(plan?.currentFocus ?? "none")")
@@ -13305,242 +13149,6 @@ struct AICoachService: AICoachServicing {
                 let scoreText = rep.score.map { "\($0)/10" } ?? "n/a"
                 return "\(rep.mode.displayLabel) | score \(scoreText) | \(rep.fillerWordCount) filler\(rep.fillerWordCount == 1 ? "" : "s")"
             }
-    }
-}
-
-@MainActor
-struct AIHomeRecommendationService: AIHomeRecommendationServicing {
-    static let minimumSessionCount = 2
-
-    private let settings = AISettingsManager.shared
-
-    func generateHomeRecommendation(
-        input: AIHomeRecommendationInput,
-        profile: CoachingProfile?,
-        plan: CoachingPlan?
-    ) async throws -> AIHomeRecommendation {
-        func record(
-            _ outcome: AICallDiagnosticOutcome,
-            _ reason: String,
-            provider: AIProvider? = nil,
-            statusCode: Int? = nil,
-            startedAt: Date? = nil
-        ) {
-            AICallDiagnostics.record(
-                surface: "Home recommendation",
-                provider: provider,
-                outcome: outcome,
-                reason: reason,
-                statusCode: statusCode,
-                startedAt: startedAt
-            )
-        }
-
-        settings.resetIfNeeded()
-        guard settings.isCloudProcessingAllowed else {
-            record(.skipped, "Cloud processing not allowed")
-            throw AICoachError.providerDisabled
-        }
-        let configuredProvider = settings.activeProvider
-        guard let provider = configuredProvider else {
-            record(.skipped, "No active provider")
-            throw AICoachError.missingAPIKey
-        }
-        guard settings.canRequestAnalysis else {
-            record(.skipped, "Analysis allowance unavailable", provider: provider)
-            throw AICoachError.providerDisabled
-        }
-        guard let apiKey = apiKey(for: provider) else {
-            record(.skipped, "Missing API key", provider: provider)
-            throw AICoachError.missingAPIKey
-        }
-        guard let endpoint = provider.endpoint else {
-            record(.skipped, "Missing provider endpoint", provider: provider)
-            throw AICoachError.providerDisabled
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let prompt = prompt(for: input, profile: profile, plan: plan)
-        switch provider {
-        case .none:
-            throw AICoachError.providerDisabled
-        case .openAI, .deepSeek:
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            let body = OpenAICompatibleChatRequest(
-                model: provider.model,
-                messages: [
-                    .init(role: "system", content: systemPrompt),
-                    .init(role: "user", content: prompt)
-                ],
-                temperature: 0.2,
-                responseFormat: .jsonObject
-            )
-            request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setGoogleAPIKey(apiKey)
-            let body = GeminiGenerateContentRequest(
-                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
-                contents: [.init(role: "user", parts: [.init(text: prompt)])],
-                generationConfig: .init(
-                    temperature: 0.2,
-                    responseMimeType: "application/json"
-                )
-            )
-            request.httpBody = try JSONEncoder().encode(body)
-        }
-
-        let startedAt = Date()
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            record(.failure, "Transport error", provider: provider, startedAt: startedAt)
-            throw error
-        }
-        guard let httpResponse = response as? HTTPURLResponse else {
-            record(.failure, "Non-HTTP response", provider: provider, startedAt: startedAt)
-            throw AICoachError.invalidResponse
-        }
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            record(.failure, "Provider returned HTTP \(httpResponse.statusCode)", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-            throw apiError(from: data, provider: provider)
-        }
-
-        let jsonData: Data
-        var extractionFailureRecorded = false
-        do {
-            switch provider {
-            case .none:
-                extractionFailureRecorded = true
-                record(.skipped, "Provider set to off", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-                throw AICoachError.providerDisabled
-            case .openAI, .deepSeek:
-                let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
-                guard let content = completion.choices.first?.message.content,
-                      let contentData = content.data(using: .utf8) else {
-                    extractionFailureRecorded = true
-                    record(.failure, "Missing response content", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-                    throw AICoachError.invalidResponse
-                }
-                jsonData = contentData
-            case .gemini:
-                let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
-                let content = completion.candidates
-                    .first?
-                    .content
-                    .parts
-                    .compactMap(\.text)
-                    .joined()
-                guard let content, let contentData = content.data(using: .utf8) else {
-                    extractionFailureRecorded = true
-                    record(.failure, "Missing response content", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-                    throw AICoachError.invalidResponse
-                }
-                jsonData = contentData
-            }
-        } catch {
-            if !extractionFailureRecorded {
-                record(.failure, "Provider response decode failed", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-            }
-            throw error
-        }
-
-        let recommendation: AIHomeRecommendation
-        do {
-            recommendation = try JSONDecoder().decode(AIHomeRecommendation.self, from: jsonData)
-        } catch {
-            record(.failure, "Response JSON did not match recommendation schema", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-            throw error
-        }
-        guard let normalizedRecommendation = AIHomeRecommendationContract.normalized(
-            recommendation,
-            input: input
-        ) else {
-            record(.fallback, "Recommendation failed normalization", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-            throw AICoachError.invalidResponse
-        }
-        settings.recordAnalysis()
-        record(.success, "Home recommendation accepted", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
-        return normalizedRecommendation
-    }
-
-    private var systemPrompt: String {
-        """
-        You are the intelligence behind a premium communication coaching app.
-        Recommend the single best next speaking drill for the user based on recent performance.
-        Be specific, coach-like, and adaptive. Do not sound generic.
-        The rule-based preferred mode, tone, and scenario fields in the user prompt are binding. Do not choose a different mode.
-        If the preferred mode is imConversation and a preferred tone/scenario are supplied, return those exact enum identifiers.
-        Return JSON only with keys: title, detail, focus, target, recommendedMode, recommendedTone, recommendedScenario, modeBenefit, whyMode, whyNow.
-        recommendedMode must be one of: timed, suddenDeath, ahCounter, imConversation.
-        recommendedTone must be one of: confident, warm, concise, assertive, calm, professional, or an empty string if not relevant.
-        recommendedScenario must be one of: socialCatchUp, workUpdate, difficultConversation, networking, or an empty string if not relevant.
-        title should be short and action-oriented.
-        detail should explain the reasoning in one sentence.
-        focus should be a short coaching label.
-        target should be a concise measurable target like '30s+' or 'Zero fillers' or '<150 WPM'.
-        modeBenefit should explain the defined benefit of the chosen mode for this user in one sentence.
-        whyMode should explain why this mode is the best fit right now in one sentence.
-        whyNow should explain the timing or trend behind the recommendation in one sentence.
-        """
-    }
-
-    private func prompt(
-        for input: AIHomeRecommendationInput,
-        profile: CoachingProfile?,
-        plan: CoachingPlan?
-    ) -> String {
-        """
-        Average fillers: \(String(format: "%.2f", input.averageFillers))
-        Filler trend delta vs previous block: \(String(format: "%.2f", input.fillerTrendDelta))
-        Average duration: \(Int(input.averageDuration)) seconds
-        Duration trend delta vs previous block: \(Int(input.durationTrendDelta)) seconds
-        Average words per minute: \(Int(input.averageWordsPerMinute.rounded()))
-        Pace trend delta vs previous block: \(Int(input.paceTrendDelta.rounded())) WPM
-        Average word count: \(Int(input.averageWordCount.rounded()))
-        Strongest mode: \(input.strongestMode?.rawValue ?? "none")
-        Current speaking identity: \(input.currentIdentity)
-        Identity evidence: \(input.currentIdentityEvidence)
-        Style alignment score: \(String(format: "%.2f", input.styleAlignmentScore))
-        Session streak in days: \(input.sessionStreak)
-        Days since last session: \(input.daysSinceLastSession)
-        Binding preferred mode: \(input.preferredModeBias)
-        Binding preferred tone: \(input.preferredToneBias)
-        Binding preferred scenario: \(input.preferredScenarioBias)
-        Defined mode benefit to preserve: \(input.modeBenefitBias)
-        Speaker context: \(profile?.speakingContext.title ?? "unknown")
-        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
-        Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")
-        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
-        Target speaking style: \(profile?.speakingStyleGoal.title ?? "unknown")
-        Personal goal reference: \(profile?.personalGoalReference ?? "none")
-        Current coaching focus: \(plan?.currentFocus ?? "none")
-        Suggested drill from rules engine: \(plan?.suggestedDrill ?? "none")
-
-        Recent sessions:
-        \(input.recentSessionSummary)
-        """
-    }
-
-    private func apiKey(for provider: AIProvider) -> String? {
-        AIProviderCredential.apiKey(for: provider)
-    }
-
-    private func apiError(from data: Data, provider: AIProvider) -> AICoachError {
-        if provider == .gemini,
-           let response = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data) {
-            return .apiFailure(response.error.message)
-        }
-
-        if let response = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data) {
-            return .apiFailure(response.error.message)
-        }
-
-        return .invalidResponse
     }
 }
 

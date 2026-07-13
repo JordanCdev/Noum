@@ -35,6 +35,49 @@ struct HomeAskNoumShortcut: Equatable {
     }
 }
 
+/// Exact recommendation projection rendered and actioned by Home's coach
+/// hero. Keeping exposure identity beside the visible surface prevents the
+/// learning ledger from recording copy that was never shown, and gives the
+/// tap path the same mode value that `recordShown` received.
+struct HomeCoachRecommendationExposure: Equatable {
+    let fingerprint: String
+    let title: String
+    let focus: String
+    let target: String
+    let mode: PracticeMode
+
+    static func make(
+        blueprint: RecommendationBiasBlueprint,
+        title: String,
+        profile: CoachingProfile?,
+        recentSessions: [PracticeSession]
+    ) -> HomeCoachRecommendationExposure {
+        let recent = recentSessions.prefix(5).map { session in
+            "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
+        }.joined(separator: "|")
+        let profileKey = profile.map {
+            "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.chosenStyleGoal?.rawValue ?? "no-style")"
+        } ?? "no-profile"
+        let fingerprint = [
+            "home-coach",
+            profileKey,
+            blueprint.source.trackingLabel,
+            blueprint.recommendedMode.rawValue,
+            title,
+            blueprint.focus,
+            blueprint.target,
+            recent
+        ].joined(separator: "|")
+        return HomeCoachRecommendationExposure(
+            fingerprint: fingerprint,
+            title: title,
+            focus: blueprint.focus,
+            target: blueprint.target,
+            mode: blueprint.recommendedMode
+        )
+    }
+}
+
 // MARK: - Plan-arc line (coach-parity eval move 4)
 //
 // The 4-week forward plan already exists (`ForwardPlanService` /
@@ -176,7 +219,7 @@ struct HomeCoachCard: View {
             }
 
             VoiceAlignmentChip(
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
                 mode: recommendedMode,
                 tint: .white
             )
@@ -227,8 +270,14 @@ struct HomeCoachCard: View {
             x: 0,
             y: 10
         )
-        .onAppear { syncMoodForFreshRecommendation() }
-        .onChange(of: recommendationKey) { _, _ in syncMoodForFreshRecommendation() }
+        .onAppear {
+            syncMoodForFreshRecommendation()
+            recordRecommendationShown()
+        }
+        .onChange(of: recommendationKey) { _, _ in
+            syncMoodForFreshRecommendation()
+            recordRecommendationShown()
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.coachCard")
     }
@@ -521,7 +570,7 @@ struct HomeCoachCard: View {
         )
         if let line = HomePlanArcLine.line(
             state: state,
-            voice: coachingProfileStore.profile?.speakingStyleGoal
+            voice: coachingProfileStore.profile?.chosenStyleGoal
         ) {
             Button {
                 if case .stale = state {
@@ -629,9 +678,12 @@ struct HomeCoachCard: View {
         // Commitment haptic (A2 register map): the user just committed
         // to a rep — the single most consequential tap in the product.
         CoachHaptic.drillStart()
-        let mode = recommendedMode
-        recommendationLearningStore.markTapped(mode: mode)
-        if mode == .timed {
+        let exposure = recommendationExposure
+        // Cover a very fast tap before SwiftUI's onAppear callback settles.
+        // `recordShown` is idempotent for this exact visible fingerprint.
+        recordRecommendationShown(exposure)
+        recommendationLearningStore.markTapped(mode: exposure.mode)
+        if exposure.mode == .timed {
             let theme = recommendationBlueprint.suggestedTheme
             if theme != .all {
                 UserDefaults.standard.set(
@@ -669,8 +721,7 @@ struct HomeCoachCard: View {
     // Reduce-motion users skip the burst entirely.
 
     private var recommendationKey: String {
-        let blueprint = recommendationBlueprint
-        return "\(blueprint.recommendedMode.rawValue)|\(blueprint.focus)|\(blueprint.target)"
+        recommendationExposure.fingerprint
     }
 
     /// Base mood the card rests in when no fresh-recommendation burst is
@@ -736,7 +787,7 @@ struct HomeCoachCard: View {
     }
 
     private var recommendedMode: PracticeMode {
-        recommendationBlueprint.recommendedMode
+        recommendationExposure.mode
     }
 
     private var accentTint: Color {
@@ -768,6 +819,30 @@ struct HomeCoachCard: View {
             return base
         }
         return currentFocus.applying(to: base)
+    }
+
+    private var recommendationExposure: HomeCoachRecommendationExposure {
+        HomeCoachRecommendationExposure.make(
+            blueprint: recommendationBlueprint,
+            title: coachTitle,
+            profile: coachingProfileStore.profile,
+            recentSessions: sessionStore.sessions
+        )
+    }
+
+    private func recordRecommendationShown(
+        _ exposure: HomeCoachRecommendationExposure? = nil
+    ) {
+        let exposure = exposure ?? recommendationExposure
+        recommendationLearningStore.recordShown(
+            fingerprint: exposure.fingerprint,
+            title: exposure.title,
+            focus: exposure.focus,
+            target: exposure.target,
+            mode: exposure.mode,
+            isAIBacked: false,
+            goal: coachingProfileStore.profile?.chosenStyleGoal
+        )
     }
 
     // MARK: - Momentum helpers (inline, pure)

@@ -130,7 +130,7 @@ public final class AINPCChatService: ObservableObject {
         // bit the IM Mode advertises but did not actually do before M25.
         lines.append("")
         lines.append("HOW THE USER WANTS TO SOUND (calibrate your turns accordingly)")
-        let voice = profile?.speakingStyleGoal
+        let voice = profile?.chosenStyleGoal
         lines.append(contentsOf: tonalCalibrationLines(for: voice))
 
         // Per-voice testing clause — gives the NPC something to subtly
@@ -146,11 +146,10 @@ public final class AINPCChatService: ObservableObject {
         if let profile {
             lines.append("")
             lines.append("USER GOAL HEADLINES")
-            lines.append("- Voice target: \(profile.speakingStyleGoal.title) — \(profile.speakingStyleGoal.coachingDescription).")
-            if let paraphrase = profile.paraphrasedGoal?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !paraphrase.isEmpty {
-                lines.append("- In their words: \(paraphrase)")
+            if let voice = profile.chosenStyleGoal {
+                lines.append("- Voice target: \(voice.title) — \(voice.coachingDescription).")
             }
+            lines.append("- Coaching goal: \(profile.displayableGoal)")
             let challenge = challengeDisplayLabel(profile.biggestChallenge)
             lines.append("- Their stated biggest challenge: \(challenge)")
             let vision = profile.successVisionReference

@@ -257,7 +257,7 @@ struct CoachReadCard: View {
         let goalParaphrase = profile?.displayableGoal
         let goalDistance = profile.map { baselineStore.baseline.distanceFromGoal($0.primaryGoal) }
         let proofQuotes = ProofMomentStore.shared
-            .recent(limit: 2)
+            .recent(limit: 2, compatibleWith: profile?.chosenStyleGoal)
             .map { $0.proof.quote }
             .filter { !$0.isEmpty }
         var input = AIInsightInput(
@@ -274,7 +274,7 @@ struct CoachReadCard: View {
             currentStreak: streakFreezeManager.currentStreak,
             goalDistance: goalDistance
         )
-        input.voice = profile?.speakingStyleGoal
+        input.voice = profile?.chosenStyleGoal
         input.recentProofQuotes = proofQuotes
         let next = await AIInsightsService.shared.insight(for: input)
         await MainActor.run {

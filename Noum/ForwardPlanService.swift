@@ -149,7 +149,7 @@ actor ForwardPlanService {
             return ForwardPlan(
                 weeks: weeks,
                 bigMomentID: input.bigMoment?.id,
-                voiceAtGeneration: input.profile?.speakingStyleGoal,
+                voiceAtGeneration: input.profile?.chosenStyleGoal,
                 isAIBacked: true
             )
         } catch {
@@ -173,7 +173,7 @@ actor ForwardPlanService {
         return ForwardPlan(
             weeks: weeks,
             bigMomentID: input.bigMoment?.id,
-            voiceAtGeneration: input.profile?.speakingStyleGoal,
+            voiceAtGeneration: input.profile?.chosenStyleGoal,
             isAIBacked: false
         )
     }
@@ -203,7 +203,7 @@ actor ForwardPlanService {
     /// goal. Builds on Week 1's foundation by adding intentional shape
     /// (the voice the user is training toward).
     private nonisolated static func week2(input: ForwardPlanInput) -> PlanWeek {
-        let voice = input.profile?.speakingStyleGoal
+        let voice = input.profile?.chosenStyleGoal
         let skill = voice?.primaryAlignedSkillArea ?? .structure
         let focus = priority(for: skill)
         let mode = bestModeForVoice(voice) ?? modeFor(skillArea: skill)
@@ -442,7 +442,7 @@ actor ForwardPlanService {
     // MARK: - AI request / parse
 
     private func requestBody(for provider: AIProvider, input: ForwardPlanInput) -> [String: Any] {
-        let system = Self.systemPrompt(for: input.profile?.speakingStyleGoal)
+        let system = Self.systemPrompt(for: input.profile?.chosenStyleGoal)
         let user = userPrompt(input: input)
         // Token budget — four week-objects with ≤200-char rationale each
         // plus JSON scaffolding fits in ~600 tokens. The earlier unbounded
@@ -543,10 +543,10 @@ actor ForwardPlanService {
     private func userPrompt(input: ForwardPlanInput) -> String {
         var lines: [String] = []
         if let profile = input.profile {
-            lines.append("Voice goal: \(profile.speakingStyleGoal.title) — wants to \(profile.speakingStyleGoal.coachingDescription).")
-            if let p = profile.paraphrasedGoal, !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                lines.append("In their words: \(p)")
+            if let voice = profile.chosenStyleGoal {
+                lines.append("Voice goal: \(voice.title) — wants to \(voice.coachingDescription).")
             }
+            lines.append("Coaching goal: \(profile.displayableGoal)")
         } else {
             lines.append("No voice goal set yet — choose moves that fit a cold-start user.")
         }

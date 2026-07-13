@@ -3255,7 +3255,7 @@ struct CoachTypedFallbackTests {
             sessions: fixture.sessions,
             coachMemory: nil
         )
-        let rubric = GoalRubricStore.activeRubric(for: fixture.profile)
+        let rubric = try #require(GoalRubricStore.activeRubric(for: fixture.profile))
         let assessment = CoachReasoningPass.assess(
             turnDepth: turnDepth,
             userQuestion: fixture.latestUserTurn,

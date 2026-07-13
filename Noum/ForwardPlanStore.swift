@@ -115,6 +115,17 @@ struct ForwardPlan: Codable, Equatable {
     func isInvalidated(by activeBigMomentID: UUID?) -> Bool {
         bigMomentID != activeBigMomentID
     }
+
+    /// Voice provenance is part of plan currentness too. A plan written for an
+    /// effective compatibility fallback (or a previous explicit choice) must
+    /// not remain an active prescription after the trust boundary changes.
+    func isInvalidated(
+        by activeBigMomentID: UUID?,
+        chosenStyleGoal: SpeakingStyleGoal?
+    ) -> Bool {
+        isInvalidated(by: activeBigMomentID)
+            || voiceAtGeneration != chosenStyleGoal
+    }
 }
 
 // MARK: - Plan progress (pure)
@@ -196,9 +207,29 @@ final class ForwardPlanStore: ObservableObject {
     /// True when there's an active plan AND its `bigMomentID` still matches
     /// the currently-active BigMoment. UI gating reads this instead of
     /// `activePlan != nil` so a stale plan doesn't claim to be live.
-    func isPlanCurrent(activeBigMomentID: UUID?) -> Bool {
+    func isPlanCurrent(
+        activeBigMomentID: UUID?,
+        chosenStyleGoal: SpeakingStyleGoal?
+    ) -> Bool {
         guard let plan = activePlan else { return false }
-        return !plan.isInvalidated(by: activeBigMomentID)
+        return !plan.isInvalidated(
+            by: activeBigMomentID,
+            chosenStyleGoal: chosenStyleGoal
+        )
+    }
+
+    /// The only plan safe to feed active coaching/prescription consumers.
+    /// UI may still inspect `activePlan` to offer regeneration, but model and
+    /// memory paths use this reconciled projection.
+    func currentPlan(
+        activeBigMomentID: UUID?,
+        chosenStyleGoal: SpeakingStyleGoal?
+    ) -> ForwardPlan? {
+        guard isPlanCurrent(
+            activeBigMomentID: activeBigMomentID,
+            chosenStyleGoal: chosenStyleGoal
+        ) else { return nil }
+        return activePlan
     }
 
     // MARK: - Auth wipe

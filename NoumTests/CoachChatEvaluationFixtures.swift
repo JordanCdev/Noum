@@ -4754,7 +4754,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             turnDepth: TurnDepthClassifier.classify(userText: fixture.latestUserTurn),
             userQuestion: fixture.latestUserTurn,
             trajectory: trajectory,
-            rubric: GoalRubricStore.activeRubric(for: fixture.profile),
+            rubric: try #require(GoalRubricStore.activeRubric(for: fixture.profile)),
             surface: .live
         )
         let read = assessment.immediateCoachRead
@@ -4787,7 +4787,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             turnDepth: TurnDepthClassifier.classify(userText: userTurn),
             userQuestion: userTurn,
             trajectory: trajectory,
-            rubric: GoalRubricStore.activeRubric(for: fixture.profile),
+            rubric: try #require(GoalRubricStore.activeRubric(for: fixture.profile)),
             surface: .live
         )
 
@@ -4810,7 +4810,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             turnDepth: TurnDepthClassifier.classify(userText: userTurn),
             userQuestion: userTurn,
             trajectory: trajectory,
-            rubric: GoalRubricStore.activeRubric(for: fixture.profile),
+            rubric: try #require(GoalRubricStore.activeRubric(for: fixture.profile)),
             surface: .live
         )
         let read = assessment.immediateCoachRead

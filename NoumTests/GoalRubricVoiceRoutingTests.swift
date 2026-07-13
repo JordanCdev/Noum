@@ -62,7 +62,7 @@ struct GoalRubricVoiceRoutingTests {
         for voice in SpeakingStyleGoal.allCases {
             #expect(GoalRubricStore.rubric(for: voice).goalID == voice.rawValue)
         }
-        #expect(GoalRubricStore.rubric(for: nil).goalID == "authoritative")
+        #expect(GoalRubricStore.activeRubric(for: nil) == nil)
     }
 
     @Test func everyVoiceResolvesToARubric() {

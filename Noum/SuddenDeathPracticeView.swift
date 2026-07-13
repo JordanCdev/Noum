@@ -557,7 +557,7 @@ struct SuddenDeathPracticeView: View {
             // round) so the user sees what voice they're working toward
             // without being re-prompted each pressure turn. Silent when
             // no CoachingProfile is set.
-            if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+            if let voice = coachingProfileStore.profile?.chosenStyleGoal {
                 VoiceAnchorBanner(
                     styleGoal: voice,
                     isRecording: speechVM.isRecording,

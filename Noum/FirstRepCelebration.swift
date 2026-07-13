@@ -236,7 +236,7 @@ struct FirstRepCelebration: View {
     /// follows underneath. Italicised quote, then a one-line claim —
     /// nothing else.
     private func quoteObservation(proof: ProofMoment) -> some View {
-        let voice = CoachingProfileStore.shared.profile?.speakingStyleGoal
+        let voice = CoachingProfileStore.shared.profile?.chosenStyleGoal
         return VStack(spacing: Spacing.xs) {
             (Text(Image(systemName: "quote.opening"))
                 .font(Typography.caption.weight(.bold))
@@ -418,7 +418,7 @@ struct FirstRepCelebration: View {
             let baseline = BaselineStore.shared.baseline
             let input = ProofMomentInput(
                 session: session,
-                voice: profile?.speakingStyleGoal,
+                voice: profile?.chosenStyleGoal,
                 goalParaphrase: profile?.displayableGoal,
                 baselineFillerRate: baseline.fillerRate.confidence != .insufficient
                     ? baseline.fillerRate.value : nil,

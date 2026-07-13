@@ -2649,7 +2649,9 @@ struct CoachLiveEvaluationTests {
             sessions: fixture.sessions,
             coachMemory: nil
         )
-        let rubric = GoalRubricStore.activeRubric(for: fixture.profile)
+        guard let rubric = GoalRubricStore.activeRubric(for: fixture.profile) else {
+            preconditionFailure("Coach evaluation fixtures must declare an explicit voice")
+        }
         let assessmentResult = CoachAssessmentCache.shared.assessment(
             turnDepth: turnDepth,
             userQuestion: fixture.latestUserTurn,

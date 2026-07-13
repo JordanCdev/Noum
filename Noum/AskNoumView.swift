@@ -469,7 +469,6 @@ struct AskNoumView: View {
     @StateObject private var pathProgress = PathProgressManager.shared
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
-    @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
@@ -2055,7 +2054,17 @@ struct AskNoumView: View {
             recordGoalSet(newVoice)
             return
         }
-        let fromVoice = profile.speakingStyleGoal
+        guard let fromVoice = profile.chosenStyleGoal else {
+            // A compatibility fallback is not a prior user choice. Treat this
+            // confirmation as the first explicit set and preserve the rest of
+            // the profile without recording a fictitious course change.
+            profile.speakingStyleGoal = newVoice
+            profile.chosenStyleGoal = newVoice
+            profile.secondaryStyleGoal = nil
+            profile.paraphrasedGoal = nil
+            coachingProfileStore.save(profile)
+            return
+        }
         // No-op guard: a full "switch" to the voice the user already has would
         // record a meaningless course change. Bail before any write.
         if !blend && fromVoice == newVoice { return }
@@ -2077,7 +2086,8 @@ struct AskNoumView: View {
             profile.secondaryStyleGoal = newVoice
             // The primary stays the user's chosen voice; ensure the choice flag
             // is set (covers a legacy profile whose chosenStyleGoal was nil).
-            profile.chosenStyleGoal = profile.speakingStyleGoal
+            profile.speakingStyleGoal = fromVoice
+            profile.chosenStyleGoal = fromVoice
         } else {
             // Full switch — new primary, drop any prior blend secondary.
             profile.speakingStyleGoal = newVoice

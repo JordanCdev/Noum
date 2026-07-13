@@ -1600,7 +1600,7 @@ struct PracticeModeSelectionView: View {
             "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
         }.joined(separator: "|")
         let profileKey = coachingProfileStore.profile.map {
-            "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.speakingStyleGoal.rawValue)"
+            "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.chosenStyleGoal?.rawValue ?? "no-style")"
         } ?? "no-profile"
         return [
             "modePickerRecommendation",

@@ -87,11 +87,29 @@ final class PostRepCoachNoteStore: ObservableObject {
         notes.first { $0.sessionID == sessionID }
     }
 
+    /// Voice-compatible read for active UI/model surfaces. Notes generated for
+    /// an effective fallback or a former explicit choice remain in history but
+    /// cannot be presented as the current coach read.
+    func note(
+        for sessionID: UUID,
+        chosenStyleGoal: SpeakingStyleGoal?
+    ) -> PostRepCoachNote? {
+        note(for: sessionID).flatMap {
+            $0.voice == chosenStyleGoal ? $0 : nil
+        }
+    }
+
     /// Most recent note across all sessions (by `generatedAt`). Nil
     /// when the store is empty. Used by `CoachContextBuilder.userContext`
     /// to surface the LAST REP NOTE section.
     func latestNote() -> PostRepCoachNote? {
         notes.max { $0.generatedAt < $1.generatedAt }
+    }
+
+    func latestNote(chosenStyleGoal: SpeakingStyleGoal?) -> PostRepCoachNote? {
+        notes
+            .filter { $0.voice == chosenStyleGoal }
+            .max { $0.generatedAt < $1.generatedAt }
     }
 
     /// Drop every note for the current account. Used by Settings →

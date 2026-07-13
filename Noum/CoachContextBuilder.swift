@@ -52,6 +52,22 @@ enum CoachContextBuilder {
         return defaults.bool(forKey: judgmentLayerRuleDefaultsKey)
     }
 
+    /// Reconciles durable memory with the user's current explicit voice choice.
+    /// Evidence and lever facts remain useful across a goal change, but a stored
+    /// goal paraphrase / goal-fit judgment must not replay as if it described the
+    /// current choice. A matching memory is returned byte-for-byte unchanged.
+    static func reconciledCoachMemory(
+        _ memory: CoachMemory?,
+        chosenStyleGoal: SpeakingStyleGoal?
+    ) -> CoachMemory? {
+        guard var memory else { return nil }
+        guard memory.voice != chosenStyleGoal else { return memory }
+        memory.voice = nil
+        memory.statedGoalSummary = nil
+        memory.goalFit = .noVoice
+        return memory
+    }
+
     /// Top-level system prompt for the AI coach. Combines a fixed
     /// brand-voice frame with the user's chosen speaking style goal,
     /// producing a coach personality that matches *their* voice — not
@@ -61,7 +77,7 @@ enum CoachContextBuilder {
         structuredReplyShapeEnabled: Bool = CoachContextBuilder.structuredAskNoumReplyShapeEnabled(),
         judgmentLayerRuleEnabled: Bool = CoachContextBuilder.judgmentLayerRuleEnabled()
     ) -> String {
-        let voice = profile?.speakingStyleGoal
+        let voice = profile?.chosenStyleGoal
         let personality = voice.map { coachPersonality(for: $0) } ?? defaultCoachPersonality
         let structuredReplyRule = structuredReplyShapeEnabled ? """
         - Structured Ask Noum reply shape is enabled for substantive coaching \
@@ -846,6 +862,20 @@ enum CoachContextBuilder {
         // and an off-case / cold turn emits nothing.
         coachingExpertise: [CoachKnowledgeCard] = []
     ) -> String {
+        let chosenStyleGoal = profile?.chosenStyleGoal
+        let coachMemory = reconciledCoachMemory(
+            coachMemory,
+            chosenStyleGoal: chosenStyleGoal
+        )
+        // Big-Moment staleness still renders its explicit warning below, but a
+        // plan or note generated for a different voice is not current coaching
+        // evidence and is withheld entirely.
+        let forwardPlan = forwardPlan.flatMap {
+            $0.voiceAtGeneration == chosenStyleGoal ? $0 : nil
+        }
+        let latestRepNote = latestRepNote.flatMap {
+            $0.voice == chosenStyleGoal ? $0 : nil
+        }
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
 
@@ -854,20 +884,21 @@ enum CoachContextBuilder {
         if let profile = profile {
             lines.append("")
             lines.append("GOAL")
-            let voiceTitle = profile.speakingStyleGoal.title
-            let voiceDesc = profile.speakingStyleGoal.coachingDescription
-            lines.append("- Voice: \(voiceTitle) — wants to \(voiceDesc).")
-            // Blended voice — the user chose to keep their primary and add a
-            // secondary from the in-chat goal-change card. The read weighs both
-            // (see `CoachingProfile.blendedAlignedSkillAreas`); the coach should
-            // hold the mix, not treat the secondary as a replacement.
-            if let secondary = profile.secondaryStyleGoal,
-               secondary != profile.speakingStyleGoal {
-                lines.append("- Blended voice: primary \(profile.speakingStyleGoal.title), secondary \(secondary.title). Read both — the secondary widens the leverage, it does not replace the primary.")
+            if let voice = profile.chosenStyleGoal {
+                lines.append("- Voice: \(voice.title) — wants to \(voice.coachingDescription).")
+                // Blended voice — the user chose to keep their primary and add a
+                // secondary from the in-chat goal-change card. The read weighs both
+                // (see `CoachingProfile.blendedAlignedSkillAreas`); the coach should
+                // hold the mix, not treat the secondary as a replacement.
+                if let secondary = profile.secondaryStyleGoal,
+                   secondary != voice {
+                    lines.append("- Blended voice: primary \(voice.title), secondary \(secondary.title). Read both — the secondary widens the leverage, it does not replace the primary.")
+                }
             }
-            if let paraphrase = profile.paraphrasedGoal,
-               !paraphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let paraphrase = profile.trustedStyleGoalParaphrase {
                 lines.append("- In their words: \(paraphrase)")
+            } else {
+                lines.append("- Coaching aim: \(profile.displayableGoal)")
             }
             let whyNow = profile.whyNowReference
             if !whyNow.isEmpty {
@@ -923,7 +954,7 @@ enum CoachContextBuilder {
             lines.append(
                 contentsOf: goalIntentContextLines(
                     intent: intent,
-                    currentVoice: profile?.speakingStyleGoal,
+                    currentVoice: profile?.chosenStyleGoal,
                     adaptationLog: coachMemory?.adaptationLog
                 )
             )
@@ -1582,6 +1613,7 @@ enum CoachContextBuilder {
         // been refining") rather than relying on numbers alone. Hard cap
         // at 3 so the system prompt stays bounded.
         let proofs = recentProofs
+            .filter { $0.isCompatible(with: chosenStyleGoal) }
             .sorted { $0.proof.sessionDate > $1.proof.sessionDate }
             .prefix(3)
         if !proofs.isEmpty {
@@ -1666,7 +1698,7 @@ enum CoachContextBuilder {
 
         // === EMOTIONAL SIGNAL DETECTION (additive to intent, confidence-graded) ===
         let graded = gradedSignals(lower)
-        let voice = profile?.speakingStyleGoal
+        let voice = profile?.chosenStyleGoal
 
         // === CONVERSATION ARC (sustained emotional pattern, confidence-weighted) ===
         // Computed before the per-turn block so a strong-this-turn read that is
@@ -6095,7 +6127,7 @@ enum CoachContextBuilder {
             let evidence = memoryEvidencePhrase(for: lever)
             lines.append("- Current coaching hypothesis: \(area) is the next lever (\(lever.confidence.rawValue) evidence: \(evidence)).")
 
-            if let voice = profile?.speakingStyleGoal {
+            if let voice = profile?.chosenStyleGoal {
                 let voiceLabel = voice.title.lowercased()
                 if voice.aligns(with: lever.skillArea) {
                     lines.append("- Goal fit: \(area) directly supports the user's \(voiceLabel) voice.")
@@ -6529,7 +6561,7 @@ enum CoachContextBuilder {
         case .low: break
         }
 
-        if profile?.speakingStyleGoal.aligns(with: trend.skillArea) == true {
+        if profile?.chosenStyleGoal?.aligns(with: trend.skillArea) == true {
             score += 8
         }
 

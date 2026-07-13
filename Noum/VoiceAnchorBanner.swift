@@ -19,8 +19,8 @@ import SwiftUI
 //    no exclamation.
 //  - Hidden when an active drill is providing the in-the-moment intent
 //    (drill banner already owns that surface).
-//  - Hidden when no `SpeakingStyleGoal` is set (pre-onboarding users see
-//    nothing — no fake personalization).
+//  - Hidden until `chosenStyleGoal` records an explicit user choice
+//    (compatibility defaults never create fake personalization).
 //  - Self-contained lifecycle: subscribes to `speechVM.$isRecording`,
 //    shows for 4s on the first false→true transition per mount, then
 //    fades out and stays hidden until the next rep boots fresh.
@@ -29,7 +29,7 @@ import SwiftUI
 struct VoiceAnchorBanner: View {
 
     /// The user's chosen voice goal. Required — caller gates the banner
-    /// on `coachingProfile?.speakingStyleGoal` so we never render an
+    /// on `coachingProfile?.chosenStyleGoal` so we never render an
     /// empty/optional surface.
     let styleGoal: SpeakingStyleGoal
 

@@ -69,7 +69,7 @@ enum ForwardPlanCoordinator {
         let input = buildInput()
         let plan = await ForwardPlanService.shared.generate(input: input)
         ForwardPlanStore.shared.replace(plan)
-        let voice = input.profile?.speakingStyleGoal
+        let voice = input.profile?.chosenStyleGoal
         let message = ForwardPlanRenderer.coachMessage(
             for: plan,
             voice: voice,

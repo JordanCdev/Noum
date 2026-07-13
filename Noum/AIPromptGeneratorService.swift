@@ -208,16 +208,21 @@ actor AIPromptGeneratorService {
         // Lead with the voice + weakness frame — the system prompt
         // references this directly ("training [voice], currently
         // weakest at [dimension]").
-        let voice = profile.speakingStyleGoal.title.lowercased()
         let weakLabel = (weakestDimension?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
-        if let weak = weakLabel {
+        if let voice = profile.chosenStyleGoal?.title.lowercased(), let weak = weakLabel {
             lines.append("You are writing a practice prompt for someone training \(voice), currently weakest at \(weak.lowercased()).")
-        } else {
+        } else if let voice = profile.chosenStyleGoal?.title.lowercased() {
             lines.append("You are writing a practice prompt for someone training \(voice).")
+        } else if let weak = weakLabel {
+            lines.append("You are writing a practice prompt for someone currently weakest at \(weak.lowercased()).")
+        } else {
+            lines.append("You are writing a practice prompt for this speaker.")
         }
         lines.append("")
         lines.append("Goal: \(profile.primaryGoal.title)")
-        lines.append("Style aim: \(profile.speakingStyleGoal.title)")
+        if let voice = profile.chosenStyleGoal {
+            lines.append("Style aim: \(voice.title)")
+        }
         lines.append("Speaking context: \(profile.speakingContext.title)")
         lines.append("Biggest challenge: \(profile.biggestChallenge.title)")
         if let w = weakestDimension, !w.isEmpty {

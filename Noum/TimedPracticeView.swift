@@ -1804,7 +1804,7 @@ struct TimedPracticeView: View {
                 // Goal-aware intent reminder — shows for ~4s at session start
                 // so the user sees what voice they're working toward every rep.
                 // Suppressed when an active drill already owns the intent surface.
-                if activeDrill == nil, let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                if activeDrill == nil, let voice = coachingProfileStore.profile?.chosenStyleGoal {
                     VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
                 }
 
@@ -1825,7 +1825,7 @@ struct TimedPracticeView: View {
             // aligns with the user's chosen voice (e.g. "toward your warm voice").
             LiveEloquenceHUD(
                 speechVM: speechVM,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                styleGoal: coachingProfileStore.profile?.chosenStyleGoal
             )
                 .padding(.top, 4)
         }

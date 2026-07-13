@@ -154,7 +154,7 @@ struct IMPracticeView: View {
             if isSessionActive && !isEndingConversation {
                 LiveEloquenceHUD(
                     speechVM: speechVM,
-                    styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                    styleGoal: coachingProfileStore.profile?.chosenStyleGoal
                 )
                 .padding(.top, 4)
             }
@@ -321,7 +321,7 @@ struct IMPracticeView: View {
                 // per dictated reply) so the IM user sees what voice
                 // they're working toward without being re-anchored every
                 // turn. Silent when no CoachingProfile is set.
-                if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                if let voice = coachingProfileStore.profile?.chosenStyleGoal {
                     VoiceAnchorBanner(
                         styleGoal: voice,
                         isRecording: speechVM.isRecording,

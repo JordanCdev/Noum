@@ -56,6 +56,12 @@ enum CoachingPlanCardVisibility {
             // No plan; show the pre-prompt only after enough data.
             return qualifyingCount >= 3 ? .prompt : .hidden
         }
+        // A voice-mismatched plan can contain rationale written for a fallback
+        // or former choice. Treat it as absent rather than rendering that stale
+        // copy; the prompt regenerates from the current explicit boundary.
+        if plan.voiceAtGeneration != profile?.chosenStyleGoal {
+            return qualifyingCount >= 3 ? .prompt : .hidden
+        }
         let progress = ForwardPlanProgress.currentWeekProgress(
             plan: plan,
             sessions: sessions,

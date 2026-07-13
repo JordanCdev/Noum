@@ -8,14 +8,15 @@ import Foundation
 /// new mutable state owner.
 enum GoalRubricStore {
 
-    static func activeRubric(for profile: CoachingProfile?) -> ActiveGoalRubric {
-        ActiveGoalRubric(
-            rubric: rubric(for: profile?.speakingStyleGoal),
-            voice: profile?.speakingStyleGoal
+    static func activeRubric(for profile: CoachingProfile?) -> ActiveGoalRubric? {
+        guard let voice = profile?.chosenStyleGoal else { return nil }
+        return ActiveGoalRubric(
+            rubric: rubric(for: voice),
+            voice: voice
         )
     }
 
-    static func rubric(for voice: SpeakingStyleGoal?) -> GoalRubric {
+    static func rubric(for voice: SpeakingStyleGoal) -> GoalRubric {
         switch voice {
         case .warm:
             // Warmth is built on relational softeners and a natural cadence, so
@@ -30,7 +31,7 @@ enum GoalRubricStore {
             // verdict-first / hedge-control-heavy mis-reads the voice. Salience
             // and a landed close carry it instead.
             return storytellingRubric
-        case .authoritative, nil: return authoritativeRubric
+        case .authoritative: return authoritativeRubric
         case .executive: return executiveRubric
         case .persuasive: return persuasiveRubric
         case .concise: return conciseRubric

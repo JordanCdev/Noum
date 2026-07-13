@@ -18,6 +18,15 @@ enum CoachReplyPipeline {
 
     private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachReplyPipeline")
 
+    nonisolated static func judgementPassSkipReason(
+        judgementPassEnabled: Bool,
+        hasActiveRubric: Bool
+    ) -> String? {
+        if !judgementPassEnabled { return "feature-disabled" }
+        if !hasActiveRubric { return "no-explicit-style-goal" }
+        return nil
+    }
+
     nonisolated static func brainDiagnosticReason(
         cards: [CoachKnowledgeCard],
         latestUserTurn: String?,
@@ -180,7 +189,10 @@ enum CoachReplyPipeline {
         let sessions = sessionsOverride ?? PracticeSessionStore.shared.sessions
         let coachMemoryStore = CoachMemoryStore.shared
         let weeklyCheckInDue = !sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
-        let recentProofs = ProofMomentStore.shared.recent(limit: 3)
+        let recentProofs = ProofMomentStore.shared.recent(
+            limit: 3,
+            compatibleWith: profileStore.profile?.chosenStyleGoal
+        )
         let history = store.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
         let latestUserTurn = latestUserIndex.map { history[$0].text }
@@ -243,14 +255,14 @@ enum CoachReplyPipeline {
             coachingExpertise = await KnowledgeRetriever.retrieveReranked(
                 query: retrievalQuery,
                 lever: activeLever,
-                voice: profileStore.profile?.speakingStyleGoal,
+                voice: profileStore.profile?.chosenStyleGoal,
                 hasDiagnosis: hasDiagnosis
             )
         } else {
             coachingExpertise = KnowledgeRetriever.retrieve(
                 query: retrievalQuery,
                 lever: activeLever,
-                voice: profileStore.profile?.speakingStyleGoal,
+                voice: profileStore.profile?.chosenStyleGoal,
                 hasDiagnosis: hasDiagnosis
             )
         }
@@ -269,7 +281,7 @@ enum CoachReplyPipeline {
             cards: coachingExpertise,
             retrievalQuery: retrievalQuery,
             activeLever: activeLever,
-            voice: profileStore.profile?.speakingStyleGoal,
+            voice: profileStore.profile?.chosenStyleGoal,
             hasDiagnosis: hasDiagnosis,
             semanticRerankAllowed: semanticRerankAllowed
         )
@@ -283,8 +295,9 @@ enum CoachReplyPipeline {
         )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
         let reasoningStartedAt = Date()
-        let assessmentResult: CoachAssessmentCacheResult? = judgementPassEnabled
-            ? CoachAssessmentCache.shared.assessment(
+        let assessmentResult: CoachAssessmentCacheResult? = {
+            guard judgementPassEnabled, let activeRubric else { return nil }
+            return CoachAssessmentCache.shared.assessment(
                 turnDepth: turnDepth,
                 userQuestion: latestUserTurn ?? "",
                 trajectory: trajectoryResult.snapshot,
@@ -304,7 +317,7 @@ enum CoachReplyPipeline {
                     )
                 }
             )
-            : nil
+        }()
         let assessment = assessmentResult?.assessment
         let assessmentProofTestHash = assessment.map {
             Self.proofTestHash(for: $0.nextProofTest)
@@ -379,16 +392,25 @@ enum CoachReplyPipeline {
                 )
             }
         } else {
+            let skipReason = Self.judgementPassSkipReason(
+                judgementPassEnabled: judgementPassEnabled,
+                hasActiveRubric: activeRubric != nil
+            ) ?? "assessment-unavailable"
             AICallDiagnostics.record(
                 surface: "Coach judgement pass",
                 providerName: "On-device coach brain",
                 model: "CoachReasoningPass",
                 outcome: .skipped,
-                reason: "judgementPassEnabled=false turnDepth=\(turnDepth.rawValue)"
+                reason: "reason=\(skipReason) turnDepth=\(turnDepth.rawValue)"
             )
         }
         var providerChoice: CoachTurnProviderChoice?
 
+        let activeBigMoment = BigMomentStore.shared.activeMoment
+        let currentForwardPlan = ForwardPlanStore.shared.currentPlan(
+            activeBigMomentID: activeBigMoment?.id,
+            chosenStyleGoal: profileStore.profile?.chosenStyleGoal
+        )
         var context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
             baseline: BaselineStore.shared.baseline,
@@ -398,10 +420,12 @@ enum CoachReplyPipeline {
             pathStatus: PathProgressManager.shared.currentNode,
             pathGatingPhrase: PathProgressManager.shared.currentNodeGatingPhrase,
             recentProofs: recentProofs,
-            bigMoment: BigMomentStore.shared.activeMoment,
+            bigMoment: activeBigMoment,
             recentMomentOutcomes: BigMomentStore.shared.recentOutcomeReports(limit: BigMomentStore.outcomeReportCap),
-            forwardPlan: ForwardPlanStore.shared.activePlan,
-            latestRepNote: PostRepCoachNoteStore.shared.latestNote(),
+            forwardPlan: currentForwardPlan,
+            latestRepNote: PostRepCoachNoteStore.shared.latestNote(
+                chosenStyleGoal: profileStore.profile?.chosenStyleGoal
+            ),
             coachMemory: coachMemoryStore.currentMemory,
             pendingRecommendation: RecommendationLearningStore.shared.pendingExposure,
             recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
@@ -416,7 +440,7 @@ enum CoachReplyPipeline {
             recentUserTurns: recentUserTurns,
             coachingExpertise: coachingExpertise
         )
-        if let assessment {
+        if let assessment, let activeRubric {
             context += "\n" + CoachPromptBundle.contextBlock(
                 assessment: assessment,
                 rubric: activeRubric,

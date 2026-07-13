@@ -185,7 +185,7 @@ struct AhCounterView: View {
                     // a free-form Ah-Counter rep so the user sees what voice
                     // they're working toward. One mount = one rep; default
                     // reset behaviour is correct here.
-                    if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                    if let voice = coachingProfileStore.profile?.chosenStyleGoal {
                         VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
                     }
 
@@ -378,7 +378,7 @@ struct AhCounterView: View {
             // speech VM's recording flag.
             LiveEloquenceHUD(
                 speechVM: speechVM,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                styleGoal: coachingProfileStore.profile?.chosenStyleGoal
             )
             .padding(.top, 4)
         }
@@ -685,7 +685,7 @@ struct AhCounterView: View {
 
             // Goal-aware intent reminder — same self-fading banner as the
             // dashboard; it owns its own lifecycle.
-            if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+            if let voice = coachingProfileStore.profile?.chosenStyleGoal {
                 VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
             }
 

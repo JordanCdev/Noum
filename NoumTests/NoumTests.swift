@@ -1280,6 +1280,19 @@ struct NextActionEngineTests {
     @Test func decliningTrendReasoningMentionsAlignedStyleGoal() {
         // .concise aligns with .fillerReduction → reasoning should reference
         // the user's voice goal when the chosen drill matches.
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: "",
+            chosenStyleGoal: .concise
+        )
         let input = NextActionInput(
             fillerCount: 4, duration: 35, wordCount: 100, wpm: 140, score: 5,
             categoryRatings: ["Opening": "OK"],
@@ -1288,7 +1301,7 @@ struct NextActionEngineTests {
             pressureProfile: .empty,
             trends: [SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing)],
             drillHistory: [],
-            sessionCount: 10, streakDays: 4, styleGoal: "concise"
+            sessionCount: 10, streakDays: 4, styleGoal: profile.chosenStyleGoal?.title
         )
         let result = NextActionEngine.recommend(input: input)
         #expect(result.reasoning.lowercased().contains("concise voice"),
@@ -1331,6 +1344,19 @@ struct NextActionEngineTests {
     }
 
     @Test func nilStyleGoalLeavesReasoningUnchanged() {
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        #expect(profile.chosenStyleGoal == nil)
         let input = NextActionInput(
             fillerCount: 4, duration: 35, wordCount: 100, wpm: 140, score: 5,
             categoryRatings: ["Opening": "OK"],
@@ -1339,7 +1365,7 @@ struct NextActionEngineTests {
             pressureProfile: .empty,
             trends: [SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing)],
             drillHistory: [],
-            sessionCount: 10, streakDays: 4, styleGoal: nil
+            sessionCount: 10, streakDays: 4, styleGoal: profile.chosenStyleGoal?.title
         )
         let result = NextActionEngine.recommend(input: input)
         #expect(!result.reasoning.lowercased().contains("voice."),
@@ -1983,7 +2009,8 @@ struct VoiceDeliveryBonusTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: goal
         )
     }
 
@@ -1992,6 +2019,19 @@ struct VoiceDeliveryBonusTests {
             profile: nil, wordCount: 60, duration: 30, fillerCount: 0, wordsPerMinute: 130
         )
         #expect(bonus == 0, "No profile must not earn a voice bonus. Got: \(bonus)")
+    }
+
+    @Test func bonusIsZeroWhenEffectiveFallbackWasNeverChosen() {
+        var profile = makeProfile(.concise)
+        profile.chosenStyleGoal = nil
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: profile,
+            wordCount: 40,
+            duration: 25,
+            fillerCount: 0,
+            wordsPerMinute: 125
+        )
+        #expect(bonus == 0, "An unchosen compatibility fallback must not earn a voice bonus. Got: \(bonus)")
     }
 
     @Test func bonusIsZeroOnTrivialDelivery() {
@@ -2083,6 +2123,285 @@ struct VoiceDeliveryBonusTests {
             wordCount: 30, duration: 20, fillerCount: 0, wordsPerMinute: 125
         )
         #expect(bonus <= 0.6, "Voice bonus must cap at 0.6 raw. Got: \(bonus)")
+    }
+}
+
+@Suite("Explicit Style Goal Trust Boundary")
+struct ExplicitStyleGoalTrustBoundaryTests {
+
+    private func profile(
+        effective: SpeakingStyleGoal = .concise,
+        chosen: SpeakingStyleGoal? = nil,
+        primaryGoal: CoachingPriority = .reduceFillers
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: primaryGoal,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: effective,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: "",
+            chosenStyleGoal: chosen
+        )
+    }
+
+    private var conciseTranscript: String {
+        "First, the plan has three clear steps for the team today. Second, we assign one owner to each step and confirm the deadline. Finally, we review the result on Friday and adjust only what needs attention. In short, the point is simple, practical, measured, focused, useful, realistic, calm, and ready for everyone to act on."
+    }
+
+    @Test func unchosenFallbackHasNoGoalSpecificScoreOrCopy() {
+        let unchosen = PracticeEvaluator.evaluateTimedPractice(
+            transcript: conciseTranscript,
+            fillerCount: 4,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: profile()
+        )
+        let noProfile = PracticeEvaluator.evaluateTimedPractice(
+            transcript: conciseTranscript,
+            fillerCount: 4,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil
+        )
+
+        #expect(unchosen.score == noProfile.score,
+                "An effective fallback must not change the score when no style was chosen.")
+        #expect(!unchosen.segments.contains(where: { $0.title == "Voice" }),
+                "An unchosen profile must not render a goal-alignment score segment.")
+        #expect(!unchosen.insights.joined(separator: " ").localizedCaseInsensitiveContains("concise"),
+                "Unchosen fallback copy must stay generic.")
+    }
+
+    @Test func explicitlyChosenStyleRetainsScoreSignals() {
+        let explicit = PracticeEvaluator.evaluateTimedPractice(
+            transcript: conciseTranscript,
+            fillerCount: 4,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: profile(chosen: .concise)
+        )
+        let unchosen = PracticeEvaluator.evaluateTimedPractice(
+            transcript: conciseTranscript,
+            fillerCount: 4,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: profile()
+        )
+
+        #expect(explicit.segments.contains(where: { $0.title == "Voice" }))
+        #expect(explicit.score > unchosen.score,
+                "A matching explicit style should retain its bounded score lift.")
+    }
+
+    @Test func goalSpecificCopyRequiresExplicitChoice() {
+        let transcript = "The recommendation is to pause the launch today. The evidence shows two unresolved reliability issues, which means the team should fix them before customers are affected."
+        let unchosen = PracticeEvaluator.evaluateAhCounterPractice(
+            transcript: transcript,
+            fillerCount: 1,
+            duration: 30,
+            recentSessions: [],
+            profile: profile(effective: .authoritative)
+        )
+        let explicit = PracticeEvaluator.evaluateAhCounterPractice(
+            transcript: transcript,
+            fillerCount: 1,
+            duration: 30,
+            recentSessions: [],
+            profile: profile(effective: .authoritative, chosen: .authoritative)
+        )
+        let unchosenCopy = unchosen.insights.joined(separator: " ")
+        let explicitCopy = explicit.insights.joined(separator: " ")
+
+        #expect(!unchosenCopy.localizedCaseInsensitiveContains("you asked Noum"))
+        #expect(!unchosenCopy.localizedCaseInsensitiveContains("style target"))
+        #expect(explicitCopy.localizedCaseInsensitiveContains("authoritative"))
+        #expect(
+            explicitCopy.localizedCaseInsensitiveContains("you asked Noum")
+                || explicitCopy.localizedCaseInsensitiveContains("style target")
+                || explicitCopy.localizedCaseInsensitiveContains("moving toward")
+        )
+    }
+
+    @Test func unchosenFallbackDoesNotDriveDrillPrescription() throws {
+        let session = PracticeSession(
+            transcript: "A complete practice answer with enough words to support a useful coaching plan.",
+            fillerWordCount: 1,
+            duration: 35,
+            date: Date(),
+            mode: .timed,
+            score: 6
+        )
+        let unchosenPlan = try #require(CoachingPlanner.plan(
+            for: [session],
+            profile: profile(effective: .authoritative)
+        ))
+        let explicitPlan = try #require(CoachingPlanner.plan(
+            for: [session],
+            profile: profile(effective: .authoritative, chosen: .authoritative)
+        ))
+
+        #expect(!unchosenPlan.suggestedDrill.localizedCaseInsensitiveContains("Pressure Drill"))
+        #expect(explicitPlan.suggestedDrill.localizedCaseInsensitiveContains("Pressure Drill"))
+    }
+
+    @Test func storedFallbackParaphraseAndPromptStayGenericUntilChoice() {
+        var unchosen = profile()
+        unchosen.paraphrasedGoal = "You want to build a concise voice."
+        let genericPrompt = AIPromptGeneratorService.buildUserPrompt(
+            profile: unchosen,
+            weakestDimension: "filler control",
+            recentPromptTexts: []
+        )
+
+        #expect(!unchosen.displayableGoal.localizedCaseInsensitiveContains("concise"))
+        #expect(unchosen.trustedStyleGoalParaphrase == nil,
+                "Path/memory replay must withhold legacy goal-shaped copy.")
+        #expect(!genericPrompt.localizedCaseInsensitiveContains("Style aim:"))
+        #expect(!genericPrompt.localizedCaseInsensitiveContains("training concise"))
+
+        var explicit = profile(effective: .concise, chosen: .warm)
+        explicit.paraphrasedGoal = "You want a warm voice without losing the point."
+        let tailoredPrompt = AIPromptGeneratorService.buildUserPrompt(
+            profile: explicit,
+            weakestDimension: "filler control",
+            recentPromptTexts: []
+        )
+        #expect(explicit.trustedStyleGoalParaphrase == explicit.paraphrasedGoal)
+        #expect(tailoredPrompt.localizedCaseInsensitiveContains("training warm"))
+        #expect(!tailoredPrompt.localizedCaseInsensitiveContains("training concise"))
+    }
+
+    @Test func finalizerAndSummaryProjectionUsesOnlyExplicitChoice() {
+        let unchosen = ChosenStyleGoalEngineInputs.make(
+            profile: profile(effective: .concise)
+        )
+        let explicit = ChosenStyleGoalEngineInputs.make(
+            profile: profile(effective: .concise, chosen: .warm)
+        )
+
+        #expect(unchosen.goal == nil)
+        #expect(unchosen.title == nil)
+        #expect(explicit.goal == .warm)
+        #expect(explicit.title == SpeakingStyleGoal.warm.title)
+
+        let genericRationale = VerdictEngine.drillRationale(
+            for: .paceControl,
+            fillerCount: 1,
+            wpm: 145,
+            duration: 30,
+            wordCount: 72,
+            categoryRatings: [:],
+            styleGoal: unchosen.goal
+        )
+        let warmRationale = VerdictEngine.drillRationale(
+            for: .paceControl,
+            fillerCount: 1,
+            wpm: 145,
+            duration: 30,
+            wordCount: 72,
+            categoryRatings: [:],
+            styleGoal: explicit.goal
+        )
+        #expect(!genericRationale.localizedCaseInsensitiveContains("concise voice"))
+        #expect(!genericRationale.localizedCaseInsensitiveContains("warm voice"))
+        #expect(warmRationale.localizedCaseInsensitiveContains("warm voice"))
+        #expect(!warmRationale.localizedCaseInsensitiveContains("concise voice"))
+    }
+
+    @Test func styleTrendStaysSilentUntilExplicitChoice() throws {
+        let transcript = "The update has three parts. First, we finished the review. Second, the owner confirmed the deadline. Finally, the team will publish the decision tomorrow."
+        let sessions = (0..<3).map { index in
+            PracticeSession(
+                transcript: transcript,
+                fillerWordCount: 1,
+                duration: 32,
+                date: Date().addingTimeInterval(TimeInterval(-index * 86_400)),
+                mode: .timed,
+                score: 7
+            )
+        }
+        let unchosenProfile = profile(effective: .concise)
+        let explicitProfile = profile(effective: .concise, chosen: .warm)
+
+        let unchosenTrend = PracticeEvaluator.styleTrendSnapshot(
+            transcript: transcript,
+            recentSessions: sessions,
+            profile: unchosenProfile
+        )
+        let explicitTrend = PracticeEvaluator.styleTrendSnapshot(
+            transcript: transcript,
+            recentSessions: sessions,
+            profile: explicitProfile
+        )
+        #expect(PracticeEvaluator.styleTrendInsight(
+            unchosenTrend,
+            profile: unchosenProfile
+        ) == nil)
+        let explicitCopy = try #require(PracticeEvaluator.styleTrendInsight(
+            explicitTrend,
+            profile: explicitProfile
+        ))
+        #expect(explicitCopy.localizedCaseInsensitiveContains("warm"))
+        #expect(!explicitCopy.localizedCaseInsensitiveContains("concise target"),
+                "A measured concise identity may be named, but it must not become the user's target.")
+
+    }
+
+    @Test func unchosenProfileHasNoActiveGoalRubric() throws {
+        #expect(GoalRubricStore.activeRubric(for: profile()) == nil)
+        #expect(CoachReplyPipeline.judgementPassSkipReason(
+            judgementPassEnabled: true,
+            hasActiveRubric: false
+        ) == "no-explicit-style-goal")
+
+        let active = try #require(GoalRubricStore.activeRubric(
+            for: profile(effective: .concise, chosen: .warm)
+        ))
+        #expect(active.voice == .warm)
+        #expect(active.rubric.goalID == SpeakingStyleGoal.warm.rawValue)
+        #expect(!active.rubric.displayName.localizedCaseInsensitiveContains("authoritative"))
+        #expect(!active.rubric.displayName.localizedCaseInsensitiveContains("concise"))
+    }
+
+    @Test func staleCoachMemoryDropsVoiceClaimsButKeepsEvidenceAndLever() throws {
+        let stored = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 7,
+            evidenceConfidence: .moderate,
+            voice: .concise,
+            statedGoalSummary: "Build a concise voice",
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "fillers repeated across recent reps",
+            goalFit: .aligned,
+            strengths: ["clear opening"],
+            blockers: ["filled pauses"]
+        )
+
+        let reconciled = try #require(CoachContextBuilder.reconciledCoachMemory(
+            stored,
+            chosenStyleGoal: nil
+        ))
+        #expect(reconciled.voice == nil)
+        #expect(reconciled.statedGoalSummary == nil)
+        #expect(reconciled.goalFit == .noVoice)
+        #expect(reconciled.evidenceCount == stored.evidenceCount)
+        #expect(reconciled.currentLever == stored.currentLever)
+        #expect(reconciled.currentLeverBasis == stored.currentLeverBasis)
+
+        #expect(CoachContextBuilder.reconciledCoachMemory(
+            stored,
+            chosenStyleGoal: .concise
+        ) == stored)
     }
 }
 
@@ -3082,189 +3401,12 @@ struct RecommendationBiasCopyContractTests {
             strongestMode: nil,
             currentIdentity: "",
             currentIdentityEvidence: "",
-            styleAlignmentScore: 0.5,
             sessionStreak: 2,
             daysSinceLastSession: daysSinceLastSession,
             preferredModeBias: "",
             preferredToneBias: "",
             preferredScenarioBias: "",
             modeBenefitBias: ""
-        )
-    }
-}
-
-struct AIHomeRecommendationContractTests {
-
-    @Test func matchingPreferredModeIsAcceptedAndTrimmed() {
-        let normalized = AIHomeRecommendationContract.normalized(
-            recommendation(
-                title: " Build one clean rep ",
-                recommendedMode: " timed ",
-                recommendedTone: "calm",
-                recommendedScenario: "networking",
-                modeBenefit: ""
-            ),
-            input: input(mode: .timed)
-        )
-
-        #expect(normalized?.title == "Build one clean rep")
-        #expect(normalized?.recommendedMode == PracticeMode.timed.rawValue)
-        #expect(normalized?.recommendedTone == nil)
-        #expect(normalized?.recommendedScenario == nil)
-        #expect(normalized?.modeBenefit == "Best for clean structure.")
-    }
-
-    @Test func modeDriftFromDeterministicBlueprintIsRejected() {
-        let normalized = AIHomeRecommendationContract.normalized(
-            recommendation(recommendedMode: PracticeMode.suddenDeath.rawValue),
-            input: input(mode: .timed)
-        )
-
-        #expect(normalized == nil)
-    }
-
-    @Test func preferredIMSetupMustMatchExactly() {
-        let matching = AIHomeRecommendationContract.normalized(
-            recommendation(
-                recommendedMode: PracticeMode.imConversation.rawValue,
-                recommendedTone: IMTargetTone.calm.rawValue,
-                recommendedScenario: IMConversationScenario.difficultConversation.rawValue
-            ),
-            input: input(
-                mode: .imConversation,
-                tone: .calm,
-                scenario: .difficultConversation
-            )
-        )
-
-        let wrongTone = AIHomeRecommendationContract.normalized(
-            recommendation(
-                recommendedMode: PracticeMode.imConversation.rawValue,
-                recommendedTone: IMTargetTone.warm.rawValue,
-                recommendedScenario: IMConversationScenario.difficultConversation.rawValue
-            ),
-            input: input(
-                mode: .imConversation,
-                tone: .calm,
-                scenario: .difficultConversation
-            )
-        )
-
-        #expect(matching?.recommendedTone == IMTargetTone.calm.rawValue)
-        #expect(matching?.recommendedScenario == IMConversationScenario.difficultConversation.rawValue)
-        #expect(wrongTone == nil)
-    }
-
-    @Test func validIMSetupCanPassWhenNoSpecificSetupWasPreferred() {
-        let normalized = AIHomeRecommendationContract.normalized(
-            recommendation(
-                recommendedMode: PracticeMode.imConversation.rawValue,
-                recommendedTone: IMTargetTone.warm.rawValue,
-                recommendedScenario: IMConversationScenario.socialCatchUp.rawValue
-            ),
-            input: input(mode: .imConversation)
-        )
-
-        #expect(normalized?.recommendedTone == IMTargetTone.warm.rawValue)
-        #expect(normalized?.recommendedScenario == IMConversationScenario.socialCatchUp.rawValue)
-    }
-
-    @Test func invalidIMSetupIsRejected() {
-        let normalized = AIHomeRecommendationContract.normalized(
-            recommendation(
-                recommendedMode: PracticeMode.imConversation.rawValue,
-                recommendedTone: "cheery",
-                recommendedScenario: IMConversationScenario.socialCatchUp.rawValue
-            ),
-            input: input(mode: .imConversation)
-        )
-
-        #expect(normalized == nil)
-    }
-
-    @Test func emptyVisibleCopyIsRejected() {
-        let normalized = AIHomeRecommendationContract.normalized(
-            recommendation(focus: " "),
-            input: input(mode: .timed)
-        )
-
-        #expect(normalized == nil)
-    }
-
-    @Test func copyIsBoundedToShortHomeCardFields() {
-        let longDetail = Array(repeating: "word", count: 40).joined(separator: " ")
-        let normalized = AIHomeRecommendationContract.normalized(
-            recommendation(detail: longDetail),
-            input: input(mode: .timed)
-        )
-
-        #expect(normalized?.detail.split(whereSeparator: \.isWhitespace).count == 28)
-    }
-
-    @Test func chirpyOrThirdPersonCopyIsRejected() {
-        let chirpy = AIHomeRecommendationContract.normalized(
-            recommendation(title: "Let's practice now!"),
-            input: input(mode: .timed)
-        )
-        let thirdPerson = AIHomeRecommendationContract.normalized(
-            recommendation(detail: "The user needs a cleaner opening."),
-            input: input(mode: .timed)
-        )
-
-        #expect(chirpy == nil)
-        #expect(thirdPerson == nil)
-    }
-
-    private func input(
-        mode: PracticeMode,
-        tone: IMTargetTone? = nil,
-        scenario: IMConversationScenario? = nil
-    ) -> AIHomeRecommendationInput {
-        AIHomeRecommendationInput(
-            recentSessionSummary: "Timed | score 7/10 | 1 filler",
-            averageFillers: 1,
-            averageDuration: 42,
-            averageWordsPerMinute: 142,
-            fillerTrendDelta: 0,
-            durationTrendDelta: 0,
-            paceTrendDelta: 0,
-            averageWordCount: 96,
-            strongestMode: nil,
-            currentIdentity: "structured speaker",
-            currentIdentityEvidence: "clear opening",
-            styleAlignmentScore: 0.7,
-            sessionStreak: 2,
-            daysSinceLastSession: 0,
-            preferredModeBias: mode.rawValue,
-            preferredToneBias: tone?.rawValue ?? "",
-            preferredScenarioBias: scenario?.rawValue ?? "",
-            modeBenefitBias: "Best for clean structure."
-        )
-    }
-
-    private func recommendation(
-        title: String = "Build the next clean rep",
-        detail: String = "Your recent reps need one cleaner opening before more pressure.",
-        focus: String = "Structured delivery",
-        target: String = "One complete answer",
-        recommendedMode: String = PracticeMode.timed.rawValue,
-        recommendedTone: String? = nil,
-        recommendedScenario: String? = nil,
-        modeBenefit: String = "Best for building structure.",
-        whyMode: String = "Timed practice gives you room to finish the thought.",
-        whyNow: String = "Your latest reps still need a steadier baseline."
-    ) -> AIHomeRecommendation {
-        AIHomeRecommendation(
-            title: title,
-            detail: detail,
-            focus: focus,
-            target: target,
-            recommendedMode: recommendedMode,
-            recommendedTone: recommendedTone,
-            recommendedScenario: recommendedScenario,
-            modeBenefit: modeBenefit,
-            whyMode: whyMode,
-            whyNow: whyNow
         )
     }
 }
@@ -4675,7 +4817,8 @@ struct AIPromptGeneratorSeedTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .concise
         )
     }
 
@@ -4781,7 +4924,8 @@ struct PracticeTopicsM7Tests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .concise
         )
     }
 }
@@ -9297,7 +9441,8 @@ struct RevampPathLivePresentationTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .executive
         )
     }
 }
@@ -9856,6 +10001,56 @@ struct HomeAskNoumShortcutTests {
 // the same downstream API the view consumes.
 @MainActor
 struct HomeCoachCardVariantTests {
+
+    private func blueprint(
+        mode: PracticeMode = .timed,
+        focus: String = "Pause before the point",
+        target: String = "One clean pause"
+    ) -> RecommendationBiasBlueprint {
+        RecommendationBiasBlueprint(
+            recommendedMode: mode,
+            recommendedTone: nil,
+            recommendedScenario: nil,
+            focus: focus,
+            target: target,
+            modeBenefit: "Build control.",
+            whyMode: "The next useful rep.",
+            whyNow: "Use the signal while it is fresh.",
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: .all
+        )
+    }
+
+    @Test func visibleHomeExposureCarriesOneModeAndExactRenderedCopy() {
+        let source = blueprint(mode: .ahCounter)
+        let exposure = HomeCoachRecommendationExposure.make(
+            blueprint: source,
+            title: "Steady the next rep.",
+            profile: nil,
+            recentSessions: []
+        )
+
+        #expect(exposure.title == "Steady the next rep.")
+        #expect(exposure.focus == source.focus)
+        #expect(exposure.target == source.target)
+        #expect(exposure.mode == source.recommendedMode,
+                "The shown ledger entry and tap path must share the blueprint mode.")
+
+        let changedCopy = HomeCoachRecommendationExposure.make(
+            blueprint: source,
+            title: "Control the first pause.",
+            profile: nil,
+            recentSessions: []
+        )
+        let changedMode = HomeCoachRecommendationExposure.make(
+            blueprint: blueprint(mode: .suddenDeath),
+            title: exposure.title,
+            profile: nil,
+            recentSessions: []
+        )
+        #expect(changedCopy.fingerprint != exposure.fingerprint)
+        #expect(changedMode.fingerprint != exposure.fingerprint)
+    }
 
     @Test func tierTitleFormatMatchesHoldingPattern() {
         // The view's "Hold Gold." / "Hold Platinum." title pattern
@@ -13053,6 +13248,98 @@ struct ProofMomentServiceTests {
                 "Clean concise rep should map to BLUF technique label")
     }
 
+    @Test func cacheIdentitySeparatesVoiceAndGoalWordingVariants() {
+        let session = sampleSession(
+            transcript: "We will focus on three priorities this quarter.",
+            score: 8,
+            duration: 40
+        )
+        let neutral = ProofMomentInput(
+            session: session,
+            voice: nil,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+        let warm = ProofMomentInput(
+            session: session,
+            voice: .warm,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+        let warmWithGoal = ProofMomentInput(
+            session: session,
+            voice: .warm,
+            goalParaphrase: "Sound clear without losing warmth.",
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        let identities = Set([
+            ProofMomentService.cacheIdentity(for: neutral),
+            ProofMomentService.cacheIdentity(for: warm),
+            ProofMomentService.cacheIdentity(for: warmWithGoal),
+        ])
+        #expect(identities.count == 3,
+                "Voice and goal wording both shape proof claims, so each variant needs its own cache entry")
+    }
+
+    @Test func cacheInvalidationNamespaceCoversEverySessionVariantOnly() {
+        let session = sampleSession(
+            transcript: "We will focus on three priorities this quarter.",
+            score: 8,
+            duration: 40
+        )
+        let otherSession = sampleSession(
+            transcript: "Retention held steady through the quarter.",
+            score: 8,
+            duration: 40
+        )
+        let variants = [
+            ProofMomentInput(
+                session: session,
+                voice: nil,
+                goalParaphrase: nil,
+                baselineFillerRate: nil,
+                baselinePace: nil
+            ),
+            ProofMomentInput(
+                session: session,
+                voice: .concise,
+                goalParaphrase: nil,
+                baselineFillerRate: nil,
+                baselinePace: nil
+            ),
+            ProofMomentInput(
+                session: session,
+                voice: .concise,
+                goalParaphrase: "Lead with the decision.",
+                baselineFillerRate: nil,
+                baselinePace: nil
+            ),
+        ]
+        let other = ProofMomentInput(
+            session: otherSession,
+            voice: .concise,
+            goalParaphrase: "Lead with the decision.",
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        let keys = variants.map { ProofMomentService.cacheIdentity(for: $0) }
+            + [ProofMomentService.cacheIdentity(for: other)]
+        let retained = keys.filter {
+            !ProofMomentService.cacheKey($0, belongsTo: session.id)
+        }
+
+        #expect(keys.prefix(variants.count).allSatisfy {
+            ProofMomentService.cacheKey($0, belongsTo: session.id)
+        })
+        #expect(retained == [ProofMomentService.cacheIdentity(for: other)],
+                "Invalidating one session must remove every voice/goal variant while retaining other sessions")
+    }
+
     // MARK: - Helpers
 
     private func sampleSession(
@@ -13093,6 +13380,12 @@ struct ProofMomentServiceTests {
 @MainActor
 struct ProofMomentArchiveTests {
 
+    private struct LegacyProofMomentRecord: Encodable {
+        let sessionID: UUID
+        let proof: ProofMoment
+        let addedAt: Date
+    }
+
     private func freshStore(account: String = "tester") -> ProofMomentStore {
         // Each test gets its own UserDefaults suite + a deterministic
         // account ID so persistence is isolated and reproducible.
@@ -13125,6 +13418,82 @@ struct ProofMomentArchiveTests {
         #expect(store.records.count == 1)
         #expect(store.records.first?.sessionID == sessionID)
         #expect(store.records.first?.proof.quote == "Three priorities this quarter.")
+        #expect(store.records.first?.voiceAtGeneration == nil)
+        #expect(store.records.first?.styleTrustVersion == ProofMomentRecord.currentStyleTrustVersion)
+    }
+
+    @Test func newRecordPersistsInspectableVoiceProvenance() throws {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store = ProofMomentStore(defaults: suite, accountIDProvider: { "tester" })
+        let sessionID = UUID()
+        store.record(
+            sampleProof(quote: "The decision is to proceed."),
+            for: sessionID,
+            voiceAtGeneration: .authoritative
+        )
+
+        let reloaded = ProofMomentStore(defaults: suite, accountIDProvider: { "tester" })
+        let record = try #require(reloaded.records.first)
+        #expect(record.voiceAtGeneration == .authoritative)
+        #expect(record.styleTrustVersion == ProofMomentRecord.currentStyleTrustVersion)
+        #expect(record.isCompatible(with: .authoritative))
+        #expect(!record.isCompatible(with: nil))
+
+        let data = try #require(suite.data(forKey: "proofMoment.archive.tester"))
+        let payload = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let encoded = try #require(payload.first)
+        #expect(encoded.keys.contains("voiceAtGeneration"))
+        #expect(encoded.keys.contains("styleTrustVersion"))
+    }
+
+    @Test func currentNeutralRecordRequiresAnUnchosenProfile() {
+        let record = ProofMomentRecord(
+            sessionID: UUID(),
+            proof: sampleProof(quote: "One clear point carried the answer."),
+            voiceAtGeneration: nil
+        )
+
+        #expect(record.isCompatible(with: nil),
+                "A newly generated neutral proof is valid while the profile remains unchosen")
+        #expect(!record.isCompatible(with: .concise),
+                "Choosing a voice must withhold an older neutral claim until it is regenerated")
+    }
+
+    @Test func legacyRecordDecodesButFailsClosedWithoutProvenance() throws {
+        let legacy = LegacyProofMomentRecord(
+            sessionID: UUID(),
+            proof: sampleProof(quote: "Legacy proof without a voice stamp."),
+            addedAt: Date()
+        )
+        let data = try JSONEncoder().encode(legacy)
+        let decoded = try JSONDecoder().decode(ProofMomentRecord.self, from: data)
+
+        #expect(decoded.voiceAtGeneration == nil)
+        #expect(decoded.styleTrustVersion == nil)
+        #expect(!decoded.isCompatible(with: nil),
+                "Missing legacy provenance must not masquerade as a current neutral proof")
+        #expect(!decoded.isCompatible(with: .authoritative))
+    }
+
+    @Test func compatibleProjectionRequiresExactVoiceAndCurrentVersion() {
+        let store = freshStore()
+        let neutralID = UUID()
+        let conciseID = UUID()
+        store.record(
+            sampleProof(quote: "Neutral proof."),
+            for: neutralID,
+            voiceAtGeneration: nil
+        )
+        store.record(
+            sampleProof(quote: "Concise proof."),
+            for: conciseID,
+            voiceAtGeneration: .concise
+        )
+
+        #expect(store.compatibleRecords(with: nil).map(\.sessionID) == [neutralID])
+        #expect(store.compatibleRecords(with: .concise).map(\.sessionID) == [conciseID])
+        #expect(store.compatibleRecords(with: .warm).isEmpty)
+        #expect(store.recent(limit: 5, compatibleWith: .concise).map(\.sessionID) == [conciseID])
     }
 
     @Test func recordIsIdempotentOnSessionID() {
@@ -13145,11 +13514,13 @@ struct ProofMomentArchiveTests {
             technique: "BLUF",
             isAIBacked: true
         )
-        store.record(templateProof, for: sessionID)
-        store.record(aiProof, for: sessionID)
+        store.record(templateProof, for: sessionID, voiceAtGeneration: nil)
+        store.record(aiProof, for: sessionID, voiceAtGeneration: .warm)
         #expect(store.records.count == 1, "Re-saving the same session ID must not produce a duplicate row")
         #expect(store.records.first?.proof.quote == "Upgraded version of the quote.")
         #expect(store.records.first?.proof.isAIBacked == true)
+        #expect(store.records.first?.voiceAtGeneration == .warm,
+                "Replacing a proof must also replace its style provenance")
     }
 
     @Test func recentReturnsMostRecentFirstBySessionDate() {
@@ -15593,9 +15964,10 @@ struct CoachingProfileVoiceChoiceTests {
             "Absent voice must not silently decode as authoritative")
     }
 
-    // A legacy profile that DID carry a voice (old onboarding always wrote one)
-    // back-fills the choice from it — those users genuinely chose.
-    @Test func legacyDecodeWithVoiceBackfillsChoice() throws {
+    // Legacy onboarding wrote an effective voice even when explicit-choice
+    // provenance did not exist. Preserve that compatibility value, but fail
+    // the trust decision closed rather than inventing consent.
+    @Test func legacyDecodeWithStoredVoicePreservesEffectiveValueButStaysUnchosen() throws {
         let json = """
         {
             "speakingContext": "work",
@@ -15607,9 +15979,95 @@ struct CoachingProfileVoiceChoiceTests {
         }
         """.data(using: .utf8)!
         let p = try JSONDecoder().decode(CoachingProfile.self, from: json)
-        #expect(p.hasChosenVoice)
-        #expect(p.chosenStyleGoal == .persuasive)
+        #expect(!p.hasChosenVoice)
+        #expect(p.chosenStyleGoal == nil)
         #expect(p.speakingStyleGoal == .persuasive)
+    }
+
+    @Test func legacyAuthoritativeDefaultDoesNotBecomeAnExplicitChoice() throws {
+        let json = """
+        {
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "rebuilding",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "persuasive",
+            "speakingStyleGoal": "authoritative"
+        }
+        """.data(using: .utf8)!
+        let p = try JSONDecoder().decode(CoachingProfile.self, from: json)
+        #expect(p.speakingStyleGoal == .authoritative)
+        #expect(p.chosenStyleGoal == nil)
+        #expect(!p.hasChosenVoice)
+    }
+
+    @Test func presentChosenStyleKeyPreservesValueOrExplicitNull() throws {
+        let base: [String: Any] = [
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "rebuilding",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "persuasive",
+            "speakingStyleGoal": "concise"
+        ]
+        var chosenValue = base
+        chosenValue["chosenStyleGoal"] = "warm"
+        var chosenNull = base
+        chosenNull["chosenStyleGoal"] = NSNull()
+
+        let explicit = try JSONDecoder().decode(
+            CoachingProfile.self,
+            from: JSONSerialization.data(withJSONObject: chosenValue)
+        )
+        let unchosen = try JSONDecoder().decode(
+            CoachingProfile.self,
+            from: JSONSerialization.data(withJSONObject: chosenNull)
+        )
+        #expect(explicit.chosenStyleGoal == .warm)
+        #expect(explicit.speakingStyleGoal == .concise)
+        #expect(unchosen.chosenStyleGoal == nil)
+        #expect(unchosen.speakingStyleGoal == .concise)
+    }
+
+    @MainActor
+    @Test func profileStoreRoundTripDoesNotInventPriorConciseChoice() throws {
+        let suite = "coaching-profile-explicit-style-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "explicit-style-test"
+
+        let source = CoachingProfileStore(
+            defaults: defaults,
+            accountIDProvider: { accountID },
+            providerRawValueProvider: { nil }
+        )
+        let unchosen = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        source.replaceFromRemote(unchosen, for: accountID)
+
+        let reloaded = CoachingProfileStore(
+            defaults: defaults,
+            accountIDProvider: { accountID },
+            providerRawValueProvider: { nil }
+        )
+        reloaded.reloadForCurrentAccount()
+
+        let stored = try #require(reloaded.profile)
+        #expect(stored.speakingStyleGoal == .concise,
+                "The compatibility value should still round-trip for legacy display mechanics.")
+        #expect(stored.chosenStyleGoal == nil,
+                "An explicit nil choice must not be backfilled as a prior Concise selection.")
+        #expect(!stored.hasChosenVoice)
     }
 }
 
@@ -20340,7 +20798,8 @@ struct CoachMemoryEngineTests {
             coachingBrief: "I want to brief senior stakeholders clearly.",
             motivationWhyNow: "",
             successVision: "",
-            paraphrasedGoal: "Brief senior stakeholders clearly."
+            paraphrasedGoal: "Brief senior stakeholders clearly.",
+            chosenStyleGoal: voice
         )
     }
 
@@ -21954,6 +22413,22 @@ struct ForwardPlanCalendarTests {
         let plan = makeForwardPlan(bigMomentID: nil)
         #expect(plan.isInvalidated(by: UUID()) == true)
     }
+
+    @Test func voiceProvenanceParticipatesInPlanCurrentness() {
+        let concisePlan = makeForwardPlan(bigMomentID: nil, voice: .concise)
+        #expect(!concisePlan.isInvalidated(
+            by: nil,
+            chosenStyleGoal: .concise
+        ))
+        #expect(concisePlan.isInvalidated(
+            by: nil,
+            chosenStyleGoal: nil
+        ))
+        #expect(concisePlan.isInvalidated(
+            by: nil,
+            chosenStyleGoal: .warm
+        ))
+    }
 }
 
 struct ForwardPlanProgressTests {
@@ -22085,7 +22560,8 @@ struct ForwardPlanServiceDeterministicTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .concise
         )
         let plan = ForwardPlanService.deterministicPlan(input: emptyInput(profile: profile))
         #expect(plan.voiceAtGeneration == .concise)
@@ -22128,7 +22604,8 @@ struct ForwardPlanServiceDeterministicTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .storytelling
         )
         let plan = ForwardPlanService.deterministicPlan(input: emptyInput(profile: profile))
         // Storytelling primaryAlignedSkillArea is .answerDevelopment.
@@ -22596,6 +23073,20 @@ struct CoachingPlanCardVisibilityTests {
         if case .live = state {} else {
             #expect(Bool(false))
         }
+    }
+
+    @Test func voiceMismatchedPlanIsNotRenderedAsLive() {
+        var profile = minimalProfile()
+        profile.chosenStyleGoal = .warm
+        let plan = makeForwardPlan(bigMomentID: nil, voice: .concise)
+        let sessions = (0..<3).map { _ in makePracticeSession(date: Date()) }
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: plan,
+            profile: profile,
+            sessions: sessions,
+            activeBigMomentID: nil
+        )
+        #expect(state == .prompt)
     }
 
     @Test func staleWhenBigMomentChangedSinceGeneration() {
@@ -25337,6 +25828,31 @@ struct PostRepCoachNoteStoreTests {
         #expect(store.latestNote()?.noteText == "Newer note. The line moved.")
     }
 
+    @Test func activeReadsRequireExactChosenVoiceCompatibility() {
+        let store = freshStore()
+        let conciseID = UUID()
+        let genericID = UUID()
+        store.record(PostRepCoachNote(
+            sessionID: conciseID,
+            voice: .concise,
+            noteText: "Tighten the concise line.",
+            isAIBacked: false,
+            generatedAt: Date(timeIntervalSince1970: 200)
+        ))
+        store.record(PostRepCoachNote(
+            sessionID: genericID,
+            voice: nil,
+            noteText: "Keep the next rep measured.",
+            isAIBacked: false,
+            generatedAt: Date(timeIntervalSince1970: 100)
+        ))
+
+        #expect(store.note(for: conciseID, chosenStyleGoal: nil) == nil)
+        #expect(store.note(for: conciseID, chosenStyleGoal: .concise)?.sessionID == conciseID)
+        #expect(store.latestNote(chosenStyleGoal: nil)?.sessionID == genericID)
+        #expect(store.latestNote(chosenStyleGoal: .warm) == nil)
+    }
+
     @Test func clearAllEmptiesStore() {
         let store = freshStore()
         store.record(PostRepCoachNote(
@@ -25436,13 +25952,25 @@ struct CoachContextLastRepNoteTests {
     @Test func lastRepNoteSectionPresentWhenSet() {
         let note = PostRepCoachNote(
             sessionID: UUID(),
-            voice: .warm,
+            voice: nil,
             noteText: "Steady rep. The foundation held.",
             isAIBacked: false
         )
         let context = minimalContext(latestRepNote: note)
         #expect(context.contains("LAST REP NOTE"))
         #expect(context.contains("Steady rep. The foundation held."))
+    }
+
+    @Test func staleVoiceRepNoteIsWithheldFromCoachContext() {
+        let note = PostRepCoachNote(
+            sessionID: UUID(),
+            voice: .concise,
+            noteText: "Keep building the concise voice.",
+            isAIBacked: false
+        )
+        let context = minimalContext(latestRepNote: note)
+        #expect(!context.contains("LAST REP NOTE"))
+        #expect(!context.localizedCaseInsensitiveContains("concise voice"))
     }
 
     @Test func lastRepNoteSurfacesProvenance() {
@@ -30020,7 +30548,8 @@ struct M25PersonalizationVoicePromptTests {
                 styleReference: "",
                 coachingBrief: "",
                 motivationWhyNow: "",
-                successVision: ""
+                successVision: "",
+                chosenStyleGoal: voice
             )
             let body = AIPromptGeneratorService.buildUserPrompt(
                 profile: profile,
@@ -30117,6 +30646,8 @@ struct AIInsightsPromptAnchorTests {
     private func makeInput(
         kind: AIInsightKind = .sessionDebrief,
         sessions: [PracticeSession],
+        goalParaphrase: String? = nil,
+        voice: SpeakingStyleGoal? = nil,
         promptOverride: String? = nil
     ) -> AIInsightInput {
         AIInsightInput(
@@ -30127,11 +30658,31 @@ struct AIInsightsPromptAnchorTests {
             weeklyDelta: 0,
             weeklyReps: 1,
             topFillerWord: nil,
-            goalParaphrase: nil,
+            goalParaphrase: goalParaphrase,
             currentStreak: 0,
             goalDistance: nil,
+            voice: voice,
             promptOverride: promptOverride
         )
+    }
+
+    @Test func cacheIdentitySeparatesUnchosenAndGoalShapedInputs() {
+        let s = session(transcript: "A stable rep for cache identity.", prompt: "What changed?")
+        let generic = makeInput(sessions: [s])
+        let warm = makeInput(sessions: [s], voice: .warm)
+        let concise = makeInput(sessions: [s], voice: .concise)
+        let warmWithGoal = makeInput(
+            sessions: [s],
+            goalParaphrase: "Sound warm without burying the point.",
+            voice: .warm
+        )
+
+        #expect(AIInsightsService.cacheIdentity(for: generic)
+                != AIInsightsService.cacheIdentity(for: warm))
+        #expect(AIInsightsService.cacheIdentity(for: warm)
+                != AIInsightsService.cacheIdentity(for: concise))
+        #expect(AIInsightsService.cacheIdentity(for: warm)
+                != AIInsightsService.cacheIdentity(for: warmWithGoal))
     }
 
     @Test func promptOverrideNilReadsSessionPrompt() {
@@ -31157,7 +31708,6 @@ struct IMToneDrillSignalTests {
             strongestMode: nil,
             currentIdentity: "",
             currentIdentityEvidence: "",
-            styleAlignmentScore: 0,
             sessionStreak: 0,
             daysSinceLastSession: 0,
             preferredModeBias: "",
@@ -31447,7 +31997,8 @@ struct IMToneDrillSignalTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .warm
         )
         let blueprint = RecommendationBiasEngine.blueprint(
             profile: profile,
@@ -36753,7 +37304,8 @@ struct ReflectionToCoachContextEndToEndTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .concise
         )
     }
 }
@@ -36911,7 +37463,8 @@ struct SuddenDeathIdempotentFinalizationTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .concise
         )
     }
 }
@@ -42204,7 +42757,8 @@ struct FreshRevisedReadContextTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: .authoritative
         )
     }
 
@@ -47182,7 +47736,8 @@ struct BlendedAlignedSkillAreasTests {
             styleReference: "",
             coachingBrief: "",
             motivationWhyNow: "",
-            successVision: ""
+            successVision: "",
+            chosenStyleGoal: primary
         )
         p.secondaryStyleGoal = secondary
         return p

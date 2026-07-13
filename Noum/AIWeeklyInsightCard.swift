@@ -309,7 +309,7 @@ struct AIWeeklyInsightCard: View {
             goalParaphrase: goalParaphrase,
             currentStreak: streakFreezeManager.currentStreak,
             goalDistance: goalDistance,
-            voice: profile?.speakingStyleGoal
+            voice: profile?.chosenStyleGoal
         )
 
         isRefreshing = true
@@ -332,7 +332,7 @@ struct AIWeeklyInsightCard: View {
         if let session = bestSession {
             let proofInput = ProofMomentInput(
                 session: session,
-                voice: profile?.speakingStyleGoal,
+                voice: profile?.chosenStyleGoal,
                 goalParaphrase: goalParaphrase,
                 baselineFillerRate: baselineStore.baseline.fillerRate.confidence != .insufficient
                     ? baselineStore.baseline.fillerRate.value : nil,
@@ -357,7 +357,7 @@ struct AIWeeklyInsightCard: View {
                 trends: trends,
                 currentSessionSnapshot: snapshots.first,
                 recentDrills: recentDrills,
-                styleGoal: profile?.speakingStyleGoal
+                styleGoal: profile?.chosenStyleGoal
             )
             nextFocusShift = PrimaryFocusMemory.detectShift(current: currentFocus, accountID: accountID)
         }

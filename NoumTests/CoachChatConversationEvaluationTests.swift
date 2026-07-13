@@ -1432,8 +1432,11 @@ enum CoachChatConversationCorpus {
             coachMemory: nil
         ).snapshot
         let rubric = sourceFixture
-            .map { GoalRubricStore.activeRubric(for: $0.profile) }
-            ?? ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: nil), voice: nil)
+            .flatMap { GoalRubricStore.activeRubric(for: $0.profile) }
+            ?? ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .authoritative
+            )
         var history: [CoachMessage] = sourceFixture?.previousCoachReply.map {
             [CoachMessage(role: .coach, text: $0)]
         } ?? []

@@ -181,7 +181,8 @@ struct AISessionDebriefCard: View {
             topFillerWord: topFiller,
             goalParaphrase: goalParaphrase,
             currentStreak: streakFreezeManager.currentStreak,
-            goalDistance: goalDistance
+            goalDistance: goalDistance,
+            voice: profile?.chosenStyleGoal
         )
         let next: AIInsight
         if aiSettings.isCloudProcessingAllowed {

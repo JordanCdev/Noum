@@ -25,7 +25,7 @@ enum CoachLetterCoordinator {
     /// Build the letter input from live stores. Pure-ish — the only
     /// side effect is reading published properties.
     static func buildInput(monthKey: String) -> CoachLetterInput {
-        let voice = CoachingProfileStore.shared.profile?.speakingStyleGoal
+        let voice = CoachingProfileStore.shared.profile?.chosenStyleGoal
         let baseline = BaselineStore.shared.baseline
         let allSessions = PracticeSessionStore.shared.sessions
         let bigMoment = BigMomentStore.shared.activeMoment

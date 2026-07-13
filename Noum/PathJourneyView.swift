@@ -110,7 +110,7 @@ struct PathJourneyView: View {
         JourneyWhyComposer.whyContent(
             successVision: coachingProfileStore.profile?.successVision ?? "",
             motivationWhyNow: coachingProfileStore.profile?.motivationWhyNow ?? "",
-            paraphrasedGoal: coachingProfileStore.profile?.paraphrasedGoal,
+            paraphrasedGoal: coachingProfileStore.profile?.trustedStyleGoalParaphrase,
             coachingBrief: coachingProfileStore.profile?.coachingBrief ?? ""
         )
     }

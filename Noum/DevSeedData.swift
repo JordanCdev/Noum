@@ -734,6 +734,7 @@ enum DevSeedData {
         now: Date
     ) -> [ProofMomentRecord] {
         let newest = sessions.sorted { $0.date > $1.date }
+        let voiceAtGeneration = seedCoachingProfile(for: profile).chosenStyleGoal
         let technique: String
         let claim: String
         switch profile {
@@ -766,7 +767,8 @@ enum DevSeedData {
             return ProofMomentRecord(
                 sessionID: session.id,
                 proof: proof,
-                addedAt: now.addingTimeInterval(Double(-index) * 300)
+                addedAt: now.addingTimeInterval(Double(-index) * 300),
+                voiceAtGeneration: voiceAtGeneration
             )
         }
     }

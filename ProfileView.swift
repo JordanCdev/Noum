@@ -1651,7 +1651,10 @@ struct ProfileView: View {
             plan: CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile),
             memory: coachMemoryStore.currentMemory,
             trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots),
-            proof: proofStore.recent(limit: 1).first
+            proof: proofStore.recent(
+                limit: 1,
+                compatibleWith: coachingProfileStore.profile?.chosenStyleGoal
+            ).first
         )
 
         return VStack(alignment: .leading, spacing: Spacing.md) {
@@ -2196,7 +2199,7 @@ struct ProfileView: View {
     }
 
     private var growthLibrarySubtitle: String {
-        let count = proofStore.records.count
+        let count = compatibleProofRecords.count
         if count == 0 { return "Proof moments appear after reps" }
         // Proof role (progression spine): verified quotes are the evidence
         // BEHIND the rating — an inventory, never a progress currency.
@@ -2204,6 +2207,12 @@ struct ProfileView: View {
         return LedgerRoleLines.proofRole(
             count: count,
             hasRatedEvidence: ratingStore.rating.hasRatedEvidence
+        )
+    }
+
+    private var compatibleProofRecords: [ProofMomentRecord] {
+        proofStore.compatibleRecords(
+            with: coachingProfileStore.profile?.chosenStyleGoal
         )
     }
 
@@ -2758,7 +2767,7 @@ struct ProfileView: View {
     /// — VISION.md bans the streak-and-badge loop.
     @ViewBuilder
     private var insightsBankedChip: some View {
-        let count = proofStore.records.count
+        let count = compatibleProofRecords.count
         if count > 0 {
             let noun = count == 1 ? "insight" : "insights"
             NavigationLink(value: AppDestination.growthLibrary) {
@@ -2866,7 +2875,10 @@ struct ProfileView: View {
     /// granularity to match `SummaryView` / `HomeCoachCard` recency idiom.
     /// Returns nil when the archive is empty (caller already guards).
     private var mostRecentInsightRecency: String? {
-        guard let mostRecent = proofStore.recent(limit: 1).first?.proof.sessionDate else {
+        guard let mostRecent = proofStore.recent(
+            limit: 1,
+            compatibleWith: coachingProfileStore.profile?.chosenStyleGoal
+        ).first?.proof.sessionDate else {
             return nil
         }
         let cal = Calendar.current
@@ -3274,7 +3286,7 @@ struct ProfileView: View {
         )
         return CoachingPlanCard(
             state: state,
-            voice: coachingProfileStore.profile?.speakingStyleGoal,
+            voice: coachingProfileStore.profile?.chosenStyleGoal,
             transferReceipt: CoachingPlanCardVisibility.transferAdaptationReceipt(
                 plan: forwardPlanStore.activePlan,
                 activeMoment: bigMomentStore.activeMoment,
@@ -3302,7 +3314,7 @@ struct ProfileView: View {
     /// Direction card. Opens `noum://ask` so the existing DeepLinkRouter
     /// pathway owns the navigation (no path-binding into Profile needed).
     private var askNoumProfileLink: some View {
-        let voice = coachingProfileStore.profile?.speakingStyleGoal
+        let voice = coachingProfileStore.profile?.chosenStyleGoal
         let label = askNoumProfileLabel(for: voice)
         return Button {
             if let url = URL(string: "noum://ask") {

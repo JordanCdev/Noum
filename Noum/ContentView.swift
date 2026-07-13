@@ -356,9 +356,6 @@ struct ContentView: View {
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @StateObject private var aiSettings = AISettingsManager.shared
-    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
-    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
@@ -377,7 +374,6 @@ struct ContentView: View {
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
-    @State private var aiRecommendation: AIHomeRecommendation?
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
     @Binding private var navigationPath: NavigationPath
@@ -415,15 +411,6 @@ struct ContentView: View {
     static func shouldAnimatePathCelebrationProof(reduceMotion: Bool) -> Bool {
         !reduceMotion
     }
-    private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
-
-    private struct PracticeSuggestion {
-        let title: String
-        let focus: String
-        let target: String
-        let mode: PracticeMode
-    }
-
     private var homeAccessibilityIsSuppressed: Bool {
         HomeAccessibilityModalGate(
             onboardingPresented: isOnboardingUITesting,
@@ -484,19 +471,6 @@ struct ContentView: View {
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
             refreshHourBucket()
             bigMomentStore.archiveExpiredIfNeeded()
-        }
-        .task(id: recommendationCacheKey) {
-            await refreshHomeRecommendation()
-        }
-        .task(id: shownRecommendationFingerprint) {
-            recommendationLearningStore.recordShown(
-                fingerprint: shownRecommendationFingerprint,
-                title: effectiveSuggestion.title,
-                focus: effectiveSuggestion.focus,
-                target: effectiveSuggestion.target,
-                mode: effectiveSuggestion.mode,
-                isAIBacked: aiRecommendation != nil
-            )
         }
     }
 
@@ -1535,79 +1509,6 @@ struct ContentView: View {
         }
     }
 
-    private var effectiveSuggestion: PracticeSuggestion {
-        let bias = recommendationBiasBlueprint
-        if bias.source == .caseIntervention || bias.source == .adaptationBias {
-            return normalizedSuggestion(
-                suggestion(
-                    from: bias,
-                    title: bias.source == .caseIntervention
-                        ? "Continue the current focus"
-                        : defaultSuggestionTitle(for: bias)
-                )
-            )
-        }
-
-        guard let aiRecommendation,
-              let mode = PracticeMode(rawValue: aiRecommendation.recommendedMode) else {
-            return normalizedSuggestion(
-                suggestion(
-                    from: bias,
-                    title: defaultSuggestionTitle(for: bias)
-                )
-            )
-        }
-
-        return normalizedSuggestion(PracticeSuggestion(
-            title: aiRecommendation.title,
-            focus: aiRecommendation.focus,
-            target: aiRecommendation.target,
-            mode: mode
-        ))
-    }
-
-    private var recommendationBiasContext: RecommendationBiasContext {
-        RecommendationBiasContextBuilder.context(
-            profile: coachingProfileStore.profile,
-            sessions: sessionStore.sessions,
-            sessionStreak: sessionStreak,
-            daysSinceLastSession: daysSinceLastSession,
-            coachMemory: coachMemoryStore.currentMemory,
-            imAvailable: IMModeAvailability.isAvailable,
-            recommendationOutcomes: recommendationLearningStore.outcomes,
-            summaryStyle: .detailed
-        )
-    }
-
-    private var recommendationBiasBlueprint: RecommendationBiasBlueprint {
-        recommendationBiasContext.blueprint
-    }
-
-    private func suggestion(
-        from bias: RecommendationBiasBlueprint,
-        title: String? = nil
-    ) -> PracticeSuggestion {
-        PracticeSuggestion(
-            title: title ?? (bias.recommendedMode == .imConversation ? "Train the live interaction" : "Keep the streak deliberate"),
-            focus: bias.focus,
-            target: bias.target,
-            mode: bias.recommendedMode
-        )
-    }
-
-    private func defaultSuggestionTitle(for bias: RecommendationBiasBlueprint) -> String {
-        switch bias.recommendedMode {
-        case .timed:
-            return "Build the next clean rep"
-        case .suddenDeath:
-            return "Test the pressure"
-        case .ahCounter:
-            return "Steady the next rep"
-        case .imConversation:
-            return "Train the live interaction"
-        }
-    }
-
     /// Routes a `noum://` URL to the right destination on the navigation
     /// path. Called when `DeepLinkRouter.pending` changes (set by
     /// `NoumApp.onOpenURL`). Clears the pending URL after consumption so
@@ -1730,53 +1631,6 @@ struct ContentView: View {
         return PathNodeRegistry.all.first(where: { $0.0.id == id })?.0
     }
 
-    private var recommendationCacheKey: String {
-        Self.quarantineLegacyHomeRecommendationCachesIfNeeded()
-        let accountID = AuthManager.shared.currentAccountID ?? "guest"
-        let recent = sessionStore.sessions.prefix(5).map { session in
-            "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
-        }.joined(separator: "|")
-        let profileKey = coachingProfileStore.profile.map {
-            "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.speakingStyleGoal.rawValue)"
-        } ?? "no-profile"
-        let caseKey: String
-        if let intervention = coachMemoryStore.currentMemory?.activeIntervention {
-            caseKey = [
-                "case",
-                intervention.mode.rawValue,
-                intervention.reviewStatus.rawValue,
-                "\(intervention.followedRepCount)",
-                intervention.focus ?? "",
-                intervention.target ?? ""
-            ].joined(separator: "-")
-        } else {
-            caseKey = "no-case"
-        }
-        let bias = recommendationBiasBlueprint
-        let biasKey = [
-            bias.recommendedMode.rawValue,
-            bias.recommendedTone?.rawValue ?? "",
-            bias.recommendedScenario?.rawValue ?? "",
-            bias.focus,
-            bias.target
-        ].joined(separator: "-")
-        return "homeRecommendation.\(accountID).\(profileKey).\(caseKey).\(biasKey).\(recent)"
-    }
-
-    /// Home recommendations were previously cached without an account owner.
-    /// Quarantine that day-zero history once rather than risk restoring a
-    /// recommendation derived from another signed-in account.
-    nonisolated static func quarantineLegacyHomeRecommendationCachesIfNeeded(
-        defaults: UserDefaults = .standard
-    ) {
-        let migrationKey = "homeRecommendation.accountScopeMigration.v1"
-        guard !defaults.bool(forKey: migrationKey) else { return }
-        defaults.dictionaryRepresentation().keys
-            .filter { $0.hasPrefix("homeRecommendation.") }
-            .forEach(defaults.removeObject(forKey:))
-        defaults.set(true, forKey: migrationKey)
-    }
-
     /// Load the proof moment for the active path celebration. Picks
     /// the most recent session (the one that triggered the unlock)
     /// and asks `ProofMomentService` for a transcript-anchored quote
@@ -1796,7 +1650,7 @@ struct ContentView: View {
         let baseline = BaselineStore.shared.baseline
         let input = ProofMomentInput(
             session: session,
-            voice: coachingProfileStore.profile?.speakingStyleGoal,
+            voice: coachingProfileStore.profile?.chosenStyleGoal,
             goalParaphrase: coachingProfileStore.profile?.displayableGoal,
             baselineFillerRate: baseline.fillerRate.confidence != .insufficient
                 ? baseline.fillerRate.value : nil,
@@ -1815,70 +1669,6 @@ struct ContentView: View {
         }
     }
 
-    private func refreshHomeRecommendation() async {
-        let context = recommendationBiasContext
-        let bias = context.blueprint
-
-        if bias.source == .caseIntervention || bias.source == .adaptationBias {
-            aiRecommendation = nil
-            return
-        }
-
-        if let cached = loadCachedRecommendation(for: recommendationCacheKey) {
-            aiRecommendation = cached
-            return
-        }
-
-        guard sessionStore.sessions.count >= AIHomeRecommendationService.minimumSessionCount,
-              aiSettings.canRequestAnalysis else {
-            aiRecommendation = nil
-            return
-        }
-
-        let input = RecommendationBiasContextBuilder.input(
-            profile: coachingProfileStore.profile,
-            sessions: sessionStore.sessions,
-            plan: context.plan,
-            sessionStreak: sessionStreak,
-            daysSinceLastSession: daysSinceLastSession,
-            summaryStyle: .detailed,
-            preferredModeBias: bias.recommendedMode.rawValue,
-            preferredToneBias: bias.recommendedTone?.rawValue ?? "",
-            preferredScenarioBias: bias.recommendedScenario?.rawValue ?? "",
-            modeBenefitBias: bias.modeBenefit
-        )
-
-        do {
-            let recommendation = try await aiHomeRecommendationService.generateHomeRecommendation(
-                input: input,
-                profile: coachingProfileStore.profile,
-                plan: context.plan
-            )
-            aiRecommendation = recommendation
-            cacheRecommendation(recommendation, for: recommendationCacheKey)
-        } catch {
-            aiRecommendation = nil
-        }
-    }
-
-    private func loadCachedRecommendation(for key: String) -> AIHomeRecommendation? {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let recommendation = try? JSONDecoder().decode(AIHomeRecommendation.self, from: data) else {
-            return nil
-        }
-        return recommendation
-    }
-
-    private func cacheRecommendation(_ recommendation: AIHomeRecommendation, for key: String) {
-        guard let data = try? JSONEncoder().encode(recommendation) else { return }
-        UserDefaults.standard.set(data, forKey: key)
-    }
-
-    private var shownRecommendationFingerprint: String {
-        let suggestion = effectiveSuggestion
-        return "\(recommendationCacheKey).\(suggestion.mode.rawValue).\(suggestion.title).\(suggestion.focus).\(suggestion.target)"
-    }
-
     /// Single source of truth for the user-visible streak count: the
     /// `StreakFreezeManager`, which applies freezes. This used to be
     /// computed twice (raw calculation + freeze-applied) and the home
@@ -1887,23 +1677,6 @@ struct ContentView: View {
         streakFreeze.currentStreak
     }
 
-    private var daysSinceLastSession: Int {
-        guard let latest = sessionStore.sessions.first else { return 999 }
-        return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: latest.date), to: Calendar.current.startOfDay(for: Date())).day ?? 0
-    }
-
-    private func normalizedSuggestion(_ suggestion: PracticeSuggestion) -> PracticeSuggestion {
-        guard suggestion.mode == .imConversation, !IMModeAvailability.isAvailable else {
-            return suggestion
-        }
-
-        return PracticeSuggestion(
-            title: "Keep the next rep deliberate",
-            focus: "Consistency",
-            target: "Clean rep",
-            mode: .timed
-        )
-    }
 }
 
 /// Press-feedback style for Home's shortcut dock. Reduced-motion users keep

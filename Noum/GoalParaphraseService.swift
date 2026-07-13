@@ -130,10 +130,9 @@ actor GoalParaphraseService {
     """
 
     private func userPrompt(from profile: CoachingProfile) -> String {
-        let parts: [String] = [
+        var parts: [String] = [
             "Primary goal: \(profile.primaryGoal.title)",
             "Speaking context: \(profile.speakingContext.title)",
-            "Style aim: \(profile.speakingStyleGoal.title)",
             "Desired outcome: \(profile.desiredOutcome.title)",
             "Biggest challenge: \(profile.challengeDisplayTitle)",
             profile.styleReference.isEmpty ? "" : "Style reference: \(profile.styleReference)",
@@ -141,6 +140,9 @@ actor GoalParaphraseService {
             profile.motivationWhyNow.isEmpty ? "" : "Why now: \(profile.motivationWhyNow)",
             profile.successVision.isEmpty ? "" : "Success looks like: \(profile.successVision)"
         ]
+        if let voice = profile.chosenStyleGoal {
+            parts.insert("Style aim: \(voice.title)", at: 2)
+        }
         let body = parts.filter { !$0.isEmpty }.joined(separator: "\n")
         return "Inputs:\n\(body)\n\nReturn one paraphrased sentence."
     }

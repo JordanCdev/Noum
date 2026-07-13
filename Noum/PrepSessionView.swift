@@ -60,7 +60,7 @@ struct PrepSessionView: View {
             let plan = PrepSessionPlanner.plan(
                 bigMoment: moment,
                 daysRemaining: days,
-                voice: coachingProfileStore.profile?.speakingStyleGoal
+                voice: coachingProfileStore.profile?.chosenStyleGoal
             )
             introCard(plan: plan, moment: moment, days: days)
             stepsCard(plan: plan)

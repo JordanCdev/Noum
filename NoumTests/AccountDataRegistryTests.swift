@@ -160,24 +160,6 @@ final class AccountDataRegistryTests: XCTestCase {
         XCTAssertEqual(deletedAccountID, "account-a")
     }
 
-    func testLegacyHomeRecommendationCachesAreQuarantinedOnce() throws {
-        let suite = "HomeRecommendationCacheMigration.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(Data("legacy".utf8), forKey: "homeRecommendation.unattributed-profile")
-        defaults.set("keep", forKey: "unrelated")
-
-        ContentView.quarantineLegacyHomeRecommendationCachesIfNeeded(defaults: defaults)
-
-        XCTAssertNil(defaults.object(forKey: "homeRecommendation.unattributed-profile"))
-        XCTAssertEqual(defaults.string(forKey: "unrelated"), "keep")
-
-        let scopedKey = "homeRecommendation.account-a.fingerprint"
-        defaults.set(Data("scoped".utf8), forKey: scopedKey)
-        ContentView.quarantineLegacyHomeRecommendationCachesIfNeeded(defaults: defaults)
-        XCTAssertNotNil(defaults.data(forKey: scopedKey))
-    }
-
     func testProductionParticipantInventoryIsStable() {
         let suite = "AccountDataRegistryInventory.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

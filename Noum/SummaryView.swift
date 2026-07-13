@@ -268,8 +268,12 @@ struct SummaryView: View {
             wordCount: transcriptWordCount,
             score: scoreValue,
             feedbackCategories: categoryTuples,
-            styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+            styleGoal: chosenStyleGoalEngineInputs.goal
         )
+    }
+
+    private var chosenStyleGoalEngineInputs: ChosenStyleGoalEngineInputs {
+        ChosenStyleGoalEngineInputs.make(profile: coachingProfileStore.profile)
     }
 
     /// The finalized decision wins whenever it exists. `DrillEngineV2` is
@@ -360,14 +364,17 @@ struct SummaryView: View {
             trends: skillTrends,
             primaryFocus: drillRecommendationV2.skillArea,
             drillHistory: DrillHistoryStore.shared.entries,
-            styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+            styleGoal: chosenStyleGoalEngineInputs.title,
             promptRelevance: promptRelevanceRead
         )
     }
 
     private var currentPostRepCoachNote: PostRepCoachNote? {
         guard let sessionID = sessionStore.sessions.first?.id else { return nil }
-        return postRepCoachNoteStore.note(for: sessionID)
+        return postRepCoachNoteStore.note(
+            for: sessionID,
+            chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
+        )
     }
 
     private var postRepWinBullets: [WhatYouDidWellCard.Bullet] {
@@ -496,7 +503,6 @@ struct SummaryView: View {
                 strongestMode: strongestMode,
                 currentIdentity: currentIdentity.identity,
                 currentIdentityEvidence: currentIdentity.evidence,
-                styleAlignmentScore: 0,
                 sessionStreak: sessionStreak,
                 daysSinceLastSession: daysSinceLastSession,
                 preferredModeBias: "",
@@ -811,7 +817,7 @@ struct SummaryView: View {
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
-                                speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                                speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
                                 onAskNoum: {
                                     onAskNoumAboutRep?(talkToNoumOpener)
                                 },
@@ -876,7 +882,7 @@ struct SummaryView: View {
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
-                                speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                                speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
                                 onAskNoum: {
                                     onAskNoumAboutRep?(talkToNoumOpener)
                                 },
@@ -1023,7 +1029,7 @@ struct SummaryView: View {
                 xpEarned: miniDrillAwardedXP,
                 xpBreakdown: miniDrillXPBreakdown,
                 streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
                 onDone: {
                     print("[QuickDrill] Done — dismissing result")
                     miniDrillOutcome = nil
@@ -1667,7 +1673,7 @@ struct SummaryView: View {
             score: isSuddenDeathSummary ? nil : score,
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
-            voice: coachingProfileStore.profile?.speakingStyleGoal
+            voice: coachingProfileStore.profile?.chosenStyleGoal
         )
     }
 
@@ -1703,7 +1709,7 @@ struct SummaryView: View {
                 CoachContextBuilder.revisedReadOpener(
                     for: change,
                     workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
-                    voice: coachingProfileStore.profile?.speakingStyleGoal
+                    voice: coachingProfileStore.profile?.chosenStyleGoal
                 )
             )
         }
@@ -1755,7 +1761,7 @@ struct SummaryView: View {
         CoachDisplayCopy.normalized(
             CoachContextBuilder.interventionReviewOpener(
                 intervention: intervention,
-                voice: coachingProfileStore.profile?.speakingStyleGoal,
+                voice: coachingProfileStore.profile?.chosenStyleGoal,
                 reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
             )
         )
@@ -1998,7 +2004,7 @@ struct SummaryView: View {
         let profile = CoachingProfileStore.shared.profile
         return ProofMomentInput(
             session: session,
-            voice: profile?.speakingStyleGoal,
+            voice: profile?.chosenStyleGoal,
             goalParaphrase: profile?.displayableGoal,
             baselineFillerRate: baseline.fillerRate.confidence != .insufficient
                 ? baseline.fillerRate.value : nil,
@@ -2362,7 +2368,7 @@ struct SummaryView: View {
                     ).wordsPerMinute,
                     speakingIdentity: styleSnapshot.identity,
                     prompt: repPrompt,
-                    voice: coachingProfileStore.profile?.speakingStyleGoal,
+                    voice: coachingProfileStore.profile?.chosenStyleGoal,
                     recentSessionSummaries: priorSummaries,
                     baselineFillerRate: baselineFiller,
                     baselinePaceWPM: baselinePace,

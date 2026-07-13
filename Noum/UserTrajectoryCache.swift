@@ -84,7 +84,7 @@ final class UserTrajectoryCache {
         let latestID = latestSession?.id.uuidString ?? "none"
         let latestDate = latestSession?.date.timeIntervalSince1970 ?? 0
         let latestCount = sessions.count
-        let profileVoice = profile?.speakingStyleGoal.rawValue ?? "none"
+        let profileVoice = profile.map { $0.chosenStyleGoal?.rawValue ?? "unchosen" } ?? "no-profile"
         let memoryUpdated = coachMemory?.updatedAt.timeIntervalSince1970 ?? 0
         let recentEvidence = sessions
             .sorted { $0.date > $1.date }

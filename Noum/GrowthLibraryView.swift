@@ -24,14 +24,15 @@ struct GrowthLibraryView: View {
 
     @StateObject private var proofStore = ProofMomentStore.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Spacing.lg) {
-                if proofStore.records.isEmpty {
+                if compatibleRecords.isEmpty {
                     emptyState
                 } else {
-                    header(count: proofStore.records.count)
+                    header(count: compatibleRecords.count)
                     ForEach(weeklyGroups, id: \.weekStart) { group in
                         weekSection(label: group.label, records: group.records)
                     }
@@ -55,7 +56,15 @@ struct GrowthLibraryView: View {
     }
 
     private var weeklyGroups: [(weekStart: Date, label: String, records: [ProofMomentRecord])] {
-        proofStore.weeklyGroups()
+        proofStore.weeklyGroups(
+            compatibleWith: coachingProfileStore.profile?.chosenStyleGoal
+        )
+    }
+
+    private var compatibleRecords: [ProofMomentRecord] {
+        proofStore.compatibleRecords(
+            with: coachingProfileStore.profile?.chosenStyleGoal
+        )
     }
 
     // MARK: - Header

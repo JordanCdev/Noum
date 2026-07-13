@@ -35,15 +35,74 @@ import Security
 /// session ID + an `addedAt` stamp so the archive can de-dupe and
 /// order without round-tripping through any other store.
 struct ProofMomentRecord: Codable, Identifiable, Equatable {
+    /// Bump only when the trust contract for generated proof copy changes.
+    /// A missing value identifies a legacy record whose voice provenance is
+    /// unknowable, so replay surfaces fail closed instead of guessing.
+    static let currentStyleTrustVersion = 1
+
     var id: UUID { sessionID }
     let sessionID: UUID
     let proof: ProofMoment
     let addedAt: Date
+    let voiceAtGeneration: SpeakingStyleGoal?
+    let styleTrustVersion: Int?
 
-    init(sessionID: UUID, proof: ProofMoment, addedAt: Date = Date()) {
+    init(
+        sessionID: UUID,
+        proof: ProofMoment,
+        addedAt: Date = Date(),
+        voiceAtGeneration: SpeakingStyleGoal? = nil,
+        styleTrustVersion: Int? = Self.currentStyleTrustVersion
+    ) {
         self.sessionID = sessionID
         self.proof = proof
         self.addedAt = addedAt
+        self.voiceAtGeneration = voiceAtGeneration
+        self.styleTrustVersion = styleTrustVersion
+    }
+
+    /// Only proof generated under the current trust contract and the exact
+    /// current explicit voice choice may be replayed. Exact optional equality
+    /// deliberately allows a newly generated neutral proof for an unchosen
+    /// profile, while withholding legacy records whose version is absent.
+    func isCompatible(with chosenStyleGoal: SpeakingStyleGoal?) -> Bool {
+        styleTrustVersion == Self.currentStyleTrustVersion
+            && voiceAtGeneration == chosenStyleGoal
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case proof
+        case addedAt
+        case voiceAtGeneration
+        case styleTrustVersion
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        proof = try container.decode(ProofMoment.self, forKey: .proof)
+        addedAt = try container.decode(Date.self, forKey: .addedAt)
+        voiceAtGeneration = try container.decodeIfPresent(
+            SpeakingStyleGoal.self,
+            forKey: .voiceAtGeneration
+        )
+        styleTrustVersion = try container.decodeIfPresent(
+            Int.self,
+            forKey: .styleTrustVersion
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(proof, forKey: .proof)
+        try container.encode(addedAt, forKey: .addedAt)
+        // Encode nil explicitly. The version is the authoritative legacy
+        // discriminator, but keeping the key makes new neutral provenance
+        // inspectable rather than relying on an omitted optional.
+        try container.encode(voiceAtGeneration, forKey: .voiceAtGeneration)
+        try container.encode(styleTrustVersion, forKey: .styleTrustVersion)
     }
 }
 
@@ -88,8 +147,18 @@ final class ProofMomentStore: ObservableObject {
     /// — re-saving replaces the existing record rather than appending,
     /// so a refresh from a now-configured AI provider correctly
     /// upgrades the cached deterministic proof.
-    func record(_ proof: ProofMoment, for sessionID: UUID, at date: Date = Date()) {
-        let entry = ProofMomentRecord(sessionID: sessionID, proof: proof, addedAt: date)
+    func record(
+        _ proof: ProofMoment,
+        for sessionID: UUID,
+        voiceAtGeneration: SpeakingStyleGoal? = nil,
+        at date: Date = Date()
+    ) {
+        let entry = ProofMomentRecord(
+            sessionID: sessionID,
+            proof: proof,
+            addedAt: date,
+            voiceAtGeneration: voiceAtGeneration
+        )
         if let existing = records.firstIndex(where: { $0.sessionID == sessionID }) {
             records[existing] = entry
         } else {
@@ -107,6 +176,22 @@ final class ProofMomentStore: ObservableObject {
             .prefix(max(0, limit)))
     }
 
+    /// Current replay projection. The raw archive remains available for
+    /// account export/deletion and migration, but coaching surfaces must use
+    /// this projection so stale goal-shaped claims cannot leak forward.
+    func compatibleRecords(with chosenStyleGoal: SpeakingStyleGoal?) -> [ProofMomentRecord] {
+        records.filter { $0.isCompatible(with: chosenStyleGoal) }
+    }
+
+    func recent(
+        limit: Int = 5,
+        compatibleWith chosenStyleGoal: SpeakingStyleGoal?
+    ) -> [ProofMomentRecord] {
+        Array(compatibleRecords(with: chosenStyleGoal)
+            .sorted { $0.proof.sessionDate > $1.proof.sessionDate }
+            .prefix(max(0, limit)))
+    }
+
     /// Group all records into week-buckets for the Growth Library surface.
     /// Bucket key is the start-of-week date in the supplied calendar; the
     /// returned tuples are ordered newest-week-first, and within each week
@@ -117,6 +202,18 @@ final class ProofMomentStore: ObservableObject {
         calendar: Calendar = .current
     ) -> [(weekStart: Date, label: String, records: [ProofMomentRecord])] {
         ProofMomentStore.weeklyGroups(from: records, now: now, calendar: calendar)
+    }
+
+    func weeklyGroups(
+        compatibleWith chosenStyleGoal: SpeakingStyleGoal?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [(weekStart: Date, label: String, records: [ProofMomentRecord])] {
+        ProofMomentStore.weeklyGroups(
+            from: compatibleRecords(with: chosenStyleGoal),
+            now: now,
+            calendar: calendar
+        )
     }
 
     /// Pure-function variant — tests drive it directly without touching

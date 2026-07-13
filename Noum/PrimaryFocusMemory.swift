@@ -1482,7 +1482,7 @@ enum CoachMemoryEngine {
         )
 
         let lever = selectLever(profile: profile, baseline: baseline, trends: trends)
-        let voice = profile?.speakingStyleGoal
+        let voice = profile?.chosenStyleGoal
         let currentLever = lever?.area
         let goalFit: CoachMemoryGoalFit = {
             guard let currentLever else { return .noLever }
@@ -1738,7 +1738,7 @@ enum CoachMemoryEngine {
                 confidence: nil,
                 basis: "it keeps showing up in recent reps"
             )
-        } else if let voice = profile?.speakingStyleGoal {
+        } else if let voice = profile?.chosenStyleGoal {
             selection = LeverSelection(
                 area: voice.primaryAlignedSkillArea,
                 confidence: nil,
@@ -1845,7 +1845,7 @@ enum CoachMemoryEngine {
         case .low: break
         }
 
-        if profile?.speakingStyleGoal.aligns(with: trend.skillArea) == true {
+        if profile?.chosenStyleGoal?.aligns(with: trend.skillArea) == true {
             score += 8
         }
 
@@ -2396,7 +2396,7 @@ enum CoachMemoryEngine {
     private static func statedGoalSummary(from profile: CoachingProfile?) -> String? {
         guard let profile else { return nil }
         let candidates = [
-            profile.paraphrasedGoal,
+            profile.trustedStyleGoalParaphrase,
             profile.personalGoalReference,
             profile.successVisionReference,
             profile.whyNowReference,

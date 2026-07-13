@@ -12,9 +12,9 @@ import Foundation
 // rich template-derived insight when no provider is configured — the card
 // stays useful offline; the AI version is just sharper.
 //
-// Caching: results are keyed by a hash of the input shape (last-session ID
-// + session count + week bucket). The same hash on the same week means the
-// same call won't re-spend AI quota.
+// Caching: results are keyed by the session/evidence shape plus explicit voice
+// and goal identity. The same shape in the same week reuses quota, while a
+// cleared or changed goal cannot replay a tailored insight.
 
 // MARK: - Public types
 
@@ -633,7 +633,10 @@ actor AIInsightsService {
 
     // MARK: - Cache key
 
-    private func cacheKey(for input: AIInsightInput) -> String {
+    /// Full identity for every goal-shaped prompt input. In particular, voice
+    /// and goal wording must split the cache: a tailored insight cannot remain
+    /// active for six hours after the user clears or changes their choice.
+    nonisolated static func cacheIdentity(for input: AIInsightInput) -> String {
         var hasher = Hasher()
         hasher.combine(input.kind.rawValue)
         hasher.combine(input.weeklyReps)
@@ -641,10 +644,19 @@ actor AIInsightsService {
         hasher.combine(input.currentStreak)
         hasher.combine(input.topFillerWord ?? "")
         hasher.combine(input.focusSessions.first?.id)
+        hasher.combine(input.voice?.rawValue ?? "no-style")
+        hasher.combine(input.goalParaphrase ?? "")
+        hasher.combine(input.goalDistance)
+        hasher.combine(input.promptOverride ?? "")
+        hasher.combine(input.recentProofQuotes)
         let calendar = Calendar.current
         let week = calendar.component(.weekOfYear, from: Date())
         hasher.combine(week)
         return "\(hasher.finalize())"
+    }
+
+    private func cacheKey(for input: AIInsightInput) -> String {
+        Self.cacheIdentity(for: input)
     }
 
     private func isStale(_ insight: AIInsight) -> Bool {

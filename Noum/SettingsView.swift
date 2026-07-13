@@ -595,7 +595,7 @@ struct SettingsView: View {
     private var coachingProfileRow: some View {
         SettingsNavRow(
             title: coachingProfileStore.profile == nil ? "Set coaching profile" : "Update coaching profile",
-            value: coachingProfileStore.profile?.speakingStyleGoal.title,
+            value: coachingProfileStore.profile?.chosenStyleGoal?.title,
             icon: "person.crop.circle.badge.checkmark",
             accessibilityHint: "Open the coaching profile flow."
         ) {
@@ -737,7 +737,7 @@ struct SettingsView: View {
             SettingsNavRow(
                 title: coachingProfileStore.profile == nil ? "Set coaching profile" : "Update coaching profile",
                 value: coachingProfileStore.profile.map {
-                    "\($0.primaryGoal.title) · \($0.speakingStyleGoal.title)"
+                    "\($0.primaryGoal.title)\($0.chosenStyleGoal.map { " · \($0.title)" } ?? "")"
                 },
                 icon: "person.crop.circle.badge.checkmark",
                 accessibilityHint: "Open the coaching profile flow."
