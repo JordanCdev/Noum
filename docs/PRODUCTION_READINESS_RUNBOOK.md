@@ -163,16 +163,20 @@ account.
 
 Only an authorized paid-team operator may perform the signed archive and local
 App Store Connect export. After the local preflight is green, that operator can
-use Xcode's Archive workflow or the equivalent commands below. These commands
-may contact Apple and are intentionally outside automated/local preflight:
+use the equivalent commands below. An Xcode Archive workflow must set the same
+`NoumSourceGitCommit` Info.plist value. These commands may contact Apple and are
+intentionally outside automated/local preflight:
 
 ```bash
+test -z "$(git status --porcelain --untracked-files=all)"
+SOURCE_COMMIT="$(git rev-parse HEAD)"
 xcodebuild archive \
   -project Noum.xcodeproj \
   -scheme Noum \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath '/secure/path/Noum-<build>.xcarchive' \
+  "INFOPLIST_KEY_NoumSourceGitCommit=$SOURCE_COMMIT" \
   -allowProvisioningUpdates
 
 xcodebuild -exportArchive \
