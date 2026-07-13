@@ -325,6 +325,9 @@ struct TransformationKPIReport: Equatable {
     let prescriptionAcceptanceRate: Double?
     let cloudToLocalFallbackRate: Double?
     let typedToLiveUpgradeRate: Double?
+    /// Structured first-value receipts that were followed by an explicit tap
+    /// into spoken coaching, paired by the same content-free correlation ID.
+    let structuredToLiveUpgradeRate: Double?
     let goalImprovementRate7Days: Double?
     let goalImprovementRate28Days: Double?
     let notificationOptInAfterValue: Bool?
@@ -389,6 +392,16 @@ struct TransformationKPIReport: Equatable {
         let typedOpens = events.filter { $0.stage == "coach.typedOpened" }.count
         let liveUpgrades = events.filter { $0.stage == "coach.typedToLive" }.count
         let upgradeRate = typedOpens == 0 ? nil : min(1, Double(liveUpgrades) / Double(typedOpens))
+        let structuredValueIDs = Set(events.lazy
+            .filter { $0.stage == TransformationKPIEventStage.structuredValueDelivered }
+            .map(\.correlationId))
+        let structuredLiveIDs = Set(events.lazy
+            .filter { $0.stage == TransformationKPIEventStage.liveUpgradeTapped }
+            .map(\.correlationId))
+            .intersection(structuredValueIDs)
+        let structuredUpgradeRate = structuredValueIDs.isEmpty
+            ? nil
+            : Double(structuredLiveIDs.count) / Double(structuredValueIDs.count)
 
         func improvementRate(days: Int) -> Double? {
             guard let cutoff = calendar.date(byAdding: .day, value: -days, to: now) else { return nil }
@@ -422,6 +435,7 @@ struct TransformationKPIReport: Equatable {
             prescriptionAcceptanceRate: acceptance,
             cloudToLocalFallbackRate: fallbackRate,
             typedToLiveUpgradeRate: upgradeRate,
+            structuredToLiveUpgradeRate: structuredUpgradeRate,
             goalImprovementRate7Days: improvementRate(days: 7),
             goalImprovementRate28Days: improvementRate(days: 28),
             notificationOptInAfterValue: notificationDecision.map { $0.stage == "notification.authorizationGranted" },

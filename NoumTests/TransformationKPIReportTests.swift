@@ -421,6 +421,23 @@ struct TransformationKPIReportTests {
         #expect(stages.allSatisfy { !$0.isEmpty && $0.count <= 48 })
     }
 
+    @Test func structuredToLiveUpgradeRequiresAPairedDeliveredValue() {
+        let deliveredA = UUID()
+        let deliveredB = UUID()
+        let unrelated = UUID()
+        let events = [
+            FlowEvent.make(correlationId: deliveredA, flow: .other, stage: TransformationKPIEventStage.structuredValueDelivered),
+            FlowEvent.make(correlationId: deliveredB, flow: .other, stage: TransformationKPIEventStage.structuredValueDelivered),
+            FlowEvent.make(correlationId: deliveredA, flow: .other, stage: TransformationKPIEventStage.liveUpgradeTapped),
+            FlowEvent.make(correlationId: unrelated, flow: .other, stage: TransformationKPIEventStage.liveUpgradeTapped),
+        ]
+
+        let report = TransformationKPIReport.derive(events: events, sessions: [], outcomes: [])
+
+        #expect(report.structuredToLiveUpgradeRate == 0.5)
+        #expect(TransformationKPIReport.derive(events: [], sessions: [], outcomes: []).structuredToLiveUpgradeRate == nil)
+    }
+
     @Test func qualitativeQuestionAppearsOnlyAfterThreeRepsAndOnlyOnce() {
         #expect(!TransformationQuestionEligibility.shouldShow(sessionCount: 2, events: []))
         #expect(TransformationQuestionEligibility.shouldShow(sessionCount: 3, events: []))

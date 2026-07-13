@@ -1,7 +1,8 @@
 # Noum Development Plan: Goal-Directed Speaking Transformation
 
 **Source:** `deep-research-report (6).md`  
-**Status:** Core loop implemented locally; production-evidence closure in progress
+**Status:** Core loop and permissionless first-value path implemented locally;
+production-evidence closure in progress
 **Planning assumption:** The original 8–10 week estimate is historical. Runtime
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
@@ -16,7 +17,7 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Research phase | Current status | Remaining closure |
 |---|---|---|
 | Baseline and contracts | Implemented locally | Keep event names and cohort claims honest; population analytics still requires a privacy decision |
-| Fast-lane activation | Partial: a spoken auto-guided first rep exists behind a default-off flag | The report's permissionless typed/structured route is not implemented; decide whether to build it, then complete signed-device permission, consent, interruption, relaunch, and elapsed-time validation |
+| Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router | Validate elapsed time and the structured-to-spoken upgrade on signed devices; experiment assignment still requires a privacy/product decision |
 | Goal-style scoring | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; unsupported locales are suppressed before English inference | Human calibration; retain qualitative/low-confidence language until calibrated |
 | Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; historical Review is replay-only | Live-provider acceptance corpus and physical-device visual/interaction proof |
 | Trust and reliability | Local speech, consent routing, privacy, export, and deletion implemented | Physical-device and release-policy verification |
@@ -61,7 +62,7 @@ The existing five-tab shell, practice modes, session history, coach, and account
 | Phase | Outcome | Priority | Exit signal |
 |---|---|---:|---|
 | 0. Baseline and contracts | Confirm current implementation, define shared models, and instrument the funnel | P0 | Baseline dashboard and architecture decisions approved |
-| 1. Fast-lane activation | Get a new user to a first rep in under 60 seconds without requiring voice permissions | P0 | First-rep completion and time-to-first-rep improve in experiment |
+| 1. Fast-lane activation | Get a new user to useful structure feedback in under 60 seconds without requiring voice permissions | P0 | First-value completion/time improve without being conflated with a spoken rep |
 | 2. Goal-style scoring | Quantify progress toward authoritative, concise, humorous, warm, or calm communication | P0 | Deterministic scorecard appears in session review and profile |
 | 3. Actionable coaching | Turn scores into one next drill plus concrete rewrite practice | P0 | Review-to-next-rep conversion improves |
 | 4. Trust and reliability | Make cloud/local processing explicit and preserve practice when offline | P1 | Fallback works; privacy controls match actual behavior |
@@ -91,30 +92,47 @@ The existing five-tab shell, practice modes, session history, coach, and account
 
 ### Scope
 
-Create a shortened path that asks only for one speaking goal and one context, then routes to the easiest viable practice mode. Start with typed or structured practice; request microphone access only when the user chooses live coaching and understands its value. Resume the full coaching profile after the first rep.
+The shipping local path now asks for one context and one speaking challenge,
+then runs an authored, offline written rehearsal. The result names one supported
+structural strength and one next move while explicitly withholding filler, pace,
+pause, tone, composure, and other speech-only claims. It persists only a bounded,
+content-free receipt; it does not create a `PracticeSession`, score, XP, streak,
+baseline, or synthetic speech evidence. A user can continue through the remaining
+profile choice into spoken coaching or explore first and resume setup from Home.
 
-Current gap: `AutoGuidedFirstRep` is a default-off spoken path and still depends
-on usable microphone permission. It does not satisfy this permissionless
-activation contract. Treat the implementation list below as remaining work unless
-the product deliberately replaces the research requirement.
+`AutoGuidedFirstRep` remains the existing default-off spoken path. It is not used
+as the permissionless value mechanism and still requires its signed-device
+permission/consent matrix before release enablement.
 
 ### Implementation
 
-- Add `FastLaneOnboardingView.swift` and `FirstRepRouter.swift`.
-- Update `FirstRunOnboardingManager`, `CoachingOnboardingView`, `ContentView`, and `CoachSessionView`.
-- Preserve the existing typed fallback for denied/unavailable voice access.
-- Add a clear post-rep upgrade path to live coaching and full onboarding.
+- `FastLaneOnboardingView.swift` uses the existing `SpeakingContext` and
+  `SpeakingChallenge` values plus a structure-only `RoleplayEngine` projection.
+- `FirstRunOnboardingGate`, `CoachingProfileStore`, `CoachingOnboardingView`,
+  `NoumApp`, and `ContentView` share routing, account scope, prefill, and resume
+  behavior; no parallel profile or onboarding-completion flag was added.
+- The typed response remains transient. The account-scoped draft and receipt
+  participate in the existing export/deletion registry.
+- `TransformationKPIReport` keeps spoken `firstRepCompleted` semantics and adds
+  separate first-value, structured-value, and paired structured-to-live reads.
 
 ### Acceptance criteria
 
-- Fresh install can complete a first rep without authentication or microphone permission.
-- Median time from launch to first rep is below 60 seconds in a test build.
+- Fresh install can receive useful first value without an authentication screen,
+  microphone permission, cloud processing, or a spoken session.
+- The deterministic UI test reaches the structure-only result in under 60 seconds;
+  signed-device elapsed-time distribution remains release evidence.
 - Denied permissions never create a dead end.
-- Returning users do not see the fast lane again unless they reset onboarding.
+- A coherent first-value receipt prevents the fast lane repeating after relaunch;
+  incomplete profile setup remains quietly resumable from Home.
 
 ### Experiment
 
-Compare current onboarding with fast lane. Primary measures: time-to-first-rep, first-rep completion, and D1/D7 retention. Segment by permission state.
+Compare current onboarding with fast lane only after experiment assignment and
+population analytics receive an explicit privacy/product decision. Keep
+time-to-first-value and first-value completion separate from time-to-first-spoken-
+rep and spoken-rep completion; also measure paired structured-to-live upgrade and
+D1/D7 retention by permission state.
 
 ## 5. Phase 2 — Goal-style scoring engine
 
@@ -216,8 +234,9 @@ Every phase must include:
 
 Track these as the release scorecard:
 
-- Median time-to-first-rep and first-rep completion rate.
-- Typed-to-live upgrade rate.
+- Median time-to-first-value and first-value completion rate, reported separately
+  from time-to-first-spoken-rep and spoken-rep completion.
+- Structured-to-live and typed-coach-to-live upgrade rates as separate funnels.
 - Practice sessions per active user per week.
 - Session-review open rate and content-free shown-to-tap prescription acceptance rate.
 - Goal-score improvement after 7 and 28 days.

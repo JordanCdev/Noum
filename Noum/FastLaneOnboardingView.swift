@@ -311,14 +311,14 @@ struct FastLaneOnboardingView: View {
                 .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 
                 Button(action: completeSetup) {
-                    Text("Set up my coaching plan")
+                    Text("Continue to spoken coaching")
                         .font(Typography.headline)
                         .frame(maxWidth: .infinity, minHeight: 52)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppColor.brandBlue)
                 .accessibilityIdentifier("fastLane.completeSetup")
-                .accessibilityHint("Continues to the full coaching profile. Your two choices are kept.")
+                .accessibilityHint("Finishes your coaching profile before starting a spoken rep. Your two choices are kept.")
 
                 Button(action: enterApp) {
                     Text("Explore Noum first")
@@ -394,6 +394,7 @@ struct FastLaneOnboardingView: View {
 
     private func completeSetup() {
         logChoice(stage: TransformationKPIEventStage.profileSetupTapped, reason: "profile setup selected after structured value")
+        logChoice(stage: TransformationKPIEventStage.liveUpgradeTapped, reason: "spoken coaching selected after structured value")
         onCompleteSetup()
     }
 

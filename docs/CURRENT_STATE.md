@@ -1,5 +1,33 @@
 # Noum — Current state
 
+## 2026-07-13 — Permissionless first value without fake speech evidence
+
+New accounts now start with a permissionless written rehearsal instead of being
+forced through microphone-dependent setup before seeing value. The fast lane asks
+for an existing `SpeakingContext` and `SpeakingChallenge`, persists those two
+choices in an account-scoped `CoachingProfileDraft`, and evaluates one authored
+prompt locally. The response never enters persistence. The visible read contains
+one supported structure strength and one next move and cannot claim fillers,
+pace, pauses, tone, composure, or other delivery evidence.
+
+`CoachingProfileStore.profile` remains the sole full-onboarding truth. A bounded,
+content-free first-value receipt keeps the fast lane from repeating; completing
+the profile clears the draft only after verified persistence. Users may continue
+to spoken coaching through the existing full setup/consent/Timed route or explore
+the existing shell and resume setup from one quiet Home card. Structured value
+does not create a `PracticeSession`, XP, streak, baseline, rating, trend,
+recommendation outcome, coach memory, or Ask Noum evidence unlock. Draft data is
+covered by the existing account export/deletion registry.
+
+Activation reporting now distinguishes first visible value from the first durable
+spoken rep and derives structured-to-live upgrade only from paired, content-free
+correlation IDs. Focused model/KPI verification passes 38 tests. The new end-to-
+end UI proofs pass the written result, evidence boundary, minimum tap targets,
+Home entry/setup resume, and the prefilled upgrade through cloud decline into
+local-capable Timed practice; five legacy onboarding/value-loop UI tests also
+pass. Signed-device timing, permission/consent behavior, experiment
+assignment, and real cohort effects remain production evidence.
+
 ## 2026-07-13 — Research-loop production closure: one prescription, practiceable phrases, and cohort-truthful evidence
 
 The active Summary now renders one prescription owned by the durable

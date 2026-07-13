@@ -87,6 +87,12 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "Spoken Summary evidence cards must stay absent from the structure-only result."
         )
 
+        let liveUpgrade = app.buttons["fastLane.completeSetup"]
+        XCTAssertTrue(liveUpgrade.waitForExistence(timeout: 5))
+        scrollUntilHittable(liveUpgrade, in: app)
+        assertMinimumTapTarget(liveUpgrade)
+        XCTAssertEqual(liveUpgrade.label, "Continue to spoken coaching")
+
         let explore = app.buttons["fastLane.enterApp"]
         XCTAssertTrue(explore.waitForExistence(timeout: 5))
         scrollUntilHittable(explore, in: app)
@@ -115,6 +121,81 @@ final class FastLaneFirstSessionUITests: XCTestCase {
 
         XCTAssertFalse(app.descendants(matching: .any)["timedPractice.screen"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["summary.postRepVerdict"].exists)
+    }
+
+    @MainActor
+    func testStructuredValueCanUpgradeThroughPrefilledSetupToSpokenPractice() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_FAST_LANE",
+            "UI_TESTING_CLOUD_CONSENT"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["fastLane.screen"].waitForExistence(timeout: 15))
+        let work = app.buttons["fastLane.context.work"]
+        let rambling = app.buttons["fastLane.challenge.rambling"]
+        XCTAssertTrue(work.waitForExistence(timeout: 5))
+        work.tap()
+        scrollUntilHittable(rambling, in: app)
+        XCTAssertTrue(rambling.isHittable)
+        rambling.tap()
+
+        let begin = app.buttons["fastLane.begin"]
+        scrollUntilHittable(begin, in: app)
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        begin.tap()
+
+        let response = app.descendants(matching: .any)["fastLane.response"]
+        XCTAssertTrue(response.waitForExistence(timeout: 5))
+        response.tap()
+        response.typeText("The launch needs attention because one dependency is late, so I will reset the date today.")
+        let submit = app.buttons["fastLane.submit"]
+        scrollUntilHittable(submit, in: app)
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        submit.tap()
+
+        let upgrade = app.buttons["fastLane.completeSetup"]
+        scrollUntilHittable(upgrade, in: app)
+        XCTAssertTrue(upgrade.waitForExistence(timeout: 8))
+        upgrade.tap()
+
+        let startSetup = app.buttons["coaching.start"]
+        XCTAssertTrue(startSetup.waitForExistence(timeout: 8))
+        startSetup.tap()
+
+        let prefilledContext = app.buttons["coaching.option.work"]
+        XCTAssertTrue(prefilledContext.waitForExistence(timeout: 5))
+        XCTAssertTrue(prefilledContext.isSelected)
+        app.buttons["coaching.continue"].tap()
+
+        let prefilledChallenge = app.buttons["coaching.option.rambling"]
+        XCTAssertTrue(prefilledChallenge.waitForExistence(timeout: 5))
+        XCTAssertTrue(prefilledChallenge.isSelected)
+        app.buttons["coaching.continue"].tap()
+
+        let concise = app.buttons["coaching.option.concise"]
+        scrollUntilHittable(concise, in: app)
+        XCTAssertTrue(concise.waitForExistence(timeout: 5))
+        concise.tap()
+        let continueButton = app.buttons["coaching.continue"]
+        scrollUntilHittable(continueButton, in: app)
+        continueButton.tap()
+
+        let startPractice = app.buttons["coaching.startPracticing"]
+        XCTAssertTrue(startPractice.waitForExistence(timeout: 25))
+        startPractice.tap()
+        let declineCloud = app.buttons["cloudProcessing.notNow"]
+        if declineCloud.waitForExistence(timeout: 5) {
+            declineCloud.tap()
+        }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
+            "An explicit structured-to-live upgrade should reach the existing local-capable spoken practice route."
+        )
     }
 
     @MainActor

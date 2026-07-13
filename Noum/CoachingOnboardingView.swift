@@ -648,6 +648,7 @@ struct CoachingOnboardingView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("coaching.option.\(option.id)")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
     }
@@ -672,6 +673,7 @@ struct CoachingOnboardingView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("coaching.option.\(challenge.id)")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
 
             customChallengeOption

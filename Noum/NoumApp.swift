@@ -328,11 +328,6 @@ struct NoumApp: App {
 
     private func completeFirstRunOnboarding() {
         guard coachingProfileStore.profile != nil else { return }
-        if firstRunPostValueChoice == .completeCoachingSetup {
-            firstRunPostValueChoice = .enterApp
-            holdsFastLaneResult = false
-            return
-        }
         guard aiSettings.isCloudProcessingAllowed else {
             showFirstRepCloudProcessingConsent = true
             return
