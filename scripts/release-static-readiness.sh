@@ -16,6 +16,7 @@ output="$(mktemp "${TMPDIR:-/tmp}/noum-static-readiness.XXXXXX")"
 trap 'rm -f "$output"' EXIT INT TERM
 
 python3 "$repo_root/scripts/release-generate-processor-disclosures.py" --check
+"$repo_root/scripts/test-release-cloud-operations-probe.sh"
 
 "$repo_root/tools/coach-arena/run.sh" readiness \
   --repo-root "$repo_root" \

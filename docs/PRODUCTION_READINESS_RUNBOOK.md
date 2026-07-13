@@ -28,6 +28,10 @@ readiness.
   until legacy social data is backed up and quarantined, the explicit cutover is
   complete, and a trusted server-side evidence producer exists. Client-authored
   ratings or results are not acceptable production evidence.
+- Two cached Firebase CLI user sessions were exposed during release inspection
+  on 2026-07-13. An authorized operator must revoke both sessions, reauthenticate
+  the required release account, and independently verify the revocation before
+  any Firebase deployment or release evidence is accepted.
 - Sign in with Apple provider configuration, paid-team archive signing,
   App Store Connect StoreKit verification, and the signed-device TestFlight
   sweep remain blocked. Simulator evidence cannot close these items.
@@ -181,8 +185,13 @@ With an authenticated `gcloud` identity that can read the production project,
 run:
 
 ```bash
+./scripts/test-release-cloud-operations-probe.sh
 ./scripts/release-cloud-operations-probe.sh
 ```
+
+The first command is a local, no-network contract test and is also enforced by
+the static-readiness workflow. The second command performs the read-only
+production inspection.
 
 The probe is read-only. It verifies the production Firestore recovery settings
 and daily backup, required log metrics and routed alert policies, dedicated
@@ -190,6 +199,12 @@ function identities, exclusive access to the Deepgram secret, removal of broad
 roles from the default compute identity, the hosted privacy page, and 401
 responses from the sensitive callables when no Firebase Auth or App Check proof
 is supplied. It never reads the Deepgram secret value.
+
+The command is pinned to Firebase project `noum-d0b6f`, Functions region
+`europe-west2`, and the documented production operations channel. Environment
+overrides that name any other contract fail before credential discovery or a
+cloud request. Its output names the accepted project and region so the captured
+evidence cannot silently describe a lookalike environment.
 
 This is current cloud-configuration evidence, not signed-device evidence. It
 does not prove that App Attest succeeds on an archived build, that StoreKit
@@ -346,6 +361,9 @@ ready only when:
 - every exposed provider credential is independently proven revoked or invalid,
   provider usage/billing has been audited, and the redacted full-history finding
   inventory is complete with no unresolved or suppressed finding
+- both Firebase CLI sessions exposed during the 2026-07-13 inspection have been
+  revoked, release access has been reauthenticated, and a different operator has
+  verified that closure
 - the legacy social backup/quarantine, cutover, trusted evidence producer, and
   coordinated rules/functions deployment have all passed
 - Firebase Hosting privacy content is live and the `noum.app` custom domain is

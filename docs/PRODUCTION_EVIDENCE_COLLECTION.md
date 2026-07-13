@@ -211,6 +211,12 @@ the existing v2 contract. The required items are Firestore rules deployment,
 hosted privacy URL, Settings privacy link, App Store privacy review, TestFlight
 build upload, and release-blocking bug triage.
 
+The release-blocking bug-triage evidence must explicitly include the two
+Firebase CLI sessions exposed during the 2026-07-13 release inspection. Attach
+only redacted account-side revocation and reauthentication proof, verified by a
+different operator. Never register an access token, refresh token, ID token, or
+Firebase CLI credential file as evidence.
+
 This artifact does not waive the wider blockers in
 `docs/PRODUCTION_READINESS_RUNBOOK.md`, including historical credential-incident
 closure, protected social cutover, custom-domain verification, Apple release
