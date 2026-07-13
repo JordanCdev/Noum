@@ -48,7 +48,8 @@ struct LocalSpeechProviderTests {
         #expect(await fallback.starts == 0)
     }
 
-    @Test func semanticFillerDetectionDoesNotChangeWithProviderHints() {
+    @MainActor
+    @Test func productionTranscriptPipelineIgnoresProviderFillerHints() {
         let transcript = "Um, I like the direction, so the next step is clear."
         let prompt = "What is the next step?"
         let routes: [(TranscriptionProviderID, TranscriptUpdate)] = [
@@ -58,24 +59,43 @@ struct LocalSpeechProviderTests {
             (.aws, update(transcript, providerFillers: ["um"])),
         ]
 
-        let signatures = routes.map { _, update in
-            FillerWordDetector.detections(in: update.text, prompt: prompt).map {
-                "\($0.word.lowercased())|\($0.range.location)|\($0.range.length)|\($0.confidence)"
-            }
+        let previousAlertSetting = PracticeSettingsManager.shared.fillerAlertSoundEnabled
+        PracticeSettingsManager.shared.fillerAlertSoundEnabled = false
+        defer { PracticeSettingsManager.shared.fillerAlertSoundEnabled = previousAlertSetting }
+
+        let projections = routes.map { _, update in
+            let recognizer = SpeechRecognizerViewModel(preloadOnInit: false)
+            recognizer.sessionPrompt = prompt
+            recognizer.handleTranscriptUpdate(update)
+            return [
+                recognizer.transcribedText,
+                String(recognizer.fillerWordCount),
+                String(recognizer.highlightedText.characters),
+            ].joined(separator: "|")
         }
 
         #expect(Set(routes.map(\.0)) == Set(TranscriptionProviderID.allCases))
-        #expect(signatures.dropFirst().allSatisfy { $0 == signatures[0] })
-        #expect(signatures[0].contains { $0.hasPrefix("um|") })
+        #expect(Set(projections).count == 1)
+        #expect(projections[0].contains(transcript))
+        #expect(projections[0].contains("|1|"))
     }
 
-    @Test func unsupportedOnDeviceLocaleExplainsTheDeviceBoundary() {
-        let message = LocalSpeechError
-            .onDeviceRecognitionUnavailable("es-ES")
-            .errorDescription
+    @MainActor
+    @Test func unsupportedOnDeviceLocaleReachesTheRecordingUIMapper() {
+        let recognizer = SpeechRecognizerViewModel(preloadOnInit: false)
+        let error = LocalSpeechError.onDeviceRecognitionUnavailable("es-ES")
+        let beforeStart = recognizer.userFacingRecordingError(for: error, started: false)
+        let afterStart = recognizer.userFacingRecordingError(for: error, started: true)
 
-        #expect(message == "On-device transcription isn't available for es-ES on this device.")
-        #expect(message?.contains("on this device") == true)
+        #expect(beforeStart == "On-device transcription isn't available for es-ES on this device.")
+        #expect(afterStart == beforeStart)
+        #expect(beforeStart.contains("on this device"))
+        #expect(
+            recognizer.userFacingRecordingError(
+                for: UnsafeProviderFailure(),
+                started: false
+            ) == "Live transcription is temporarily unavailable. Your rep hasn’t started."
+        )
     }
 
     @Test func cloudStartupFallbackProducesContentFreeNotice() {
@@ -147,6 +167,10 @@ struct LocalSpeechProviderTests {
 }
 
 private enum TestFailure: Error { case cloudUnavailable }
+
+private struct UnsafeProviderFailure: LocalizedError {
+    var errorDescription: String? { "raw provider detail must not reach the UI" }
+}
 
 private final class StubTranscriptionProvider: TranscriptionProvider, @unchecked Sendable {
     let name = "Stub"

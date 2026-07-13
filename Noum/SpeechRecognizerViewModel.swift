@@ -644,7 +644,10 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     // MARK: - Transcript Update Handling (provider-agnostic)
 
-    private func handleTranscriptUpdate(_ update: TranscriptUpdate) {
+    /// Applies provider output through the one semantic transcript pipeline.
+    /// Internal visibility keeps the provider-neutral contract executable
+    /// without constructing a microphone/audio session in tests.
+    func handleTranscriptUpdate(_ update: TranscriptUpdate) {
         sessionUpdateCount += 1
         if let latency = update.latencyMs { totalLatencyMs += latency }
         if let confidence = update.confidence { confidenceValues.append(confidence) }
@@ -845,10 +848,18 @@ class SpeechRecognizerViewModel: ObservableObject {
         transition(to: .failed(message))
     }
 
-    private func userFacingRecordingError(for error: Error, started: Bool) -> String {
+    /// Maps only explicitly user-safe provider errors to recording UI copy.
+    /// Arbitrary transport/provider errors remain collapsed to the bounded
+    /// generic start/interruption messages below.
+    func userFacingRecordingError(for error: Error, started: Bool) -> String {
         if let sessionError = error as? TranscriptionSessionError,
            sessionError == .cloudProcessingConsentRequired,
            let description = sessionError.errorDescription {
+            return description
+        }
+        if let localError = error as? LocalSpeechError,
+           let description = localError.errorDescription,
+           !description.isEmpty {
             return description
         }
         if let localized = error as? LocalizedError,
