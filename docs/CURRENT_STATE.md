@@ -1,5 +1,30 @@
 # Noum — Current state
 
+## 2026-07-14 — Active-week Phrase Bank execution reaches the real Home
+
+The research audit's weekly rewrite loop now has rendered execution evidence.
+The existing stores and route were already coherent, but the primary cohesive
+Home passed `showsPlanArc: false`, which also suppressed an explicitly assigned
+current-week phrase. `HomeCoachCard` now distinguishes that concrete user choice
+from the generic plan arc: the broad arc remains hidden on the restrained Home,
+while one valid assigned phrase may render as the quiet 44-point action beneath
+the primary rep. It still re-resolves the live plan, explicit voice provenance,
+Phrase Bank membership, and entry identity at tap time before offering the
+account- and route-bound Timed token.
+
+An opt-in DEBUG fixture installs its plan and Phrase Bank assignment only after
+account hydration, through `ForwardPlanStore`, `PhraseBankStore`, and
+`ForwardPlanPhraseCoordinator`; it creates no test-only production owner. Every
+mounted Timed question now exposes the same accessibility identifier. The
+focused iPhone 17 Pro simulator run passed 19/19 selected tests: the rendered
+Home action launched Timed and displayed the exact saved line, while the pure
+plan, practice-intent, and handoff contracts retained deletion/unsafe failure,
+opaque routing, account binding, and exact-once consumption. A light five-tab
+screenshot sweep plus the retained Timed thinking-phase attachment were visually
+checked. Physical-device/TestFlight QA and all live-provider, professional-
+reviewer, longitudinal-outcome, and launch-operations evidence remain unearned;
+production readiness is still NO-GO.
+
 ## 2026-07-13 — Explicit style provenance, coherent availability, and weekly phrase execution
 
 Goal-aware behavior now fails closed unless the user explicitly chose a style.
