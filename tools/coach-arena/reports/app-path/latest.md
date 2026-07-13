@@ -1,6 +1,6 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-12T23:43:21+00:00`
+- Generated: `2026-07-13T00:19:33+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
 - Average: `79.76/100`
@@ -52,18 +52,18 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - Max proof-test hash reuse allowed: `10`
 - Unique final-reply hashes: `50`
 - Max final-reply hash reuse: `1`
-- Distinct rounded confidence values: `11`
+- Distinct rounded confidence values: `10`
 - Trajectory-cache hits: `3`
 - Trajectory-cache hits required: `1`
 - Missing trajectory-cache telemetry: `0`
 - Empty retrieval-card traces: `0`
-- Allowed empty retrieval-card traces: `40`
+- Allowed empty retrieval-card traces: `3`
 - Slow first-token traces: `0`
 
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-12T21:57:51+00:00`
+- Previous generated: `2026-07-12T23:43:21+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
@@ -85,12 +85,12 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `bb9674e0`
+- Source trace git commits: `62833410`
 - Source traces missing git commit: `0`
-- Current git commit: `bb9674e0`
-- Source trace coach fingerprints: `sha256:81a33a1fd6c37e515537c5ae8bbdfe3a8ebb36ba31accfbe90ada8a9b4151f64`
+- Current git commit: `62833410`
+- Source trace coach fingerprints: `sha256:0f3034d20419db2691df69e1d6a51b59fb40ff871fb734085a9925032fcc79ad`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:81a33a1fd6c37e515537c5ae8bbdfe3a8ebb36ba31accfbe90ada8a9b4151f64`
+- Current coach source fingerprint: `sha256:0f3034d20419db2691df69e1d6a51b59fb40ff871fb734085a9925032fcc79ad`
 - Source fingerprint matches current: `True`
 - Dirty coach source files: `0`
 - Source freshness passes: `True`

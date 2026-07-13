@@ -33,13 +33,14 @@ they are not population analytics and should not be presented as such.
 
 ## Current local evaluation evidence
 
-The source-matched canonical Swift app-path artifact generated on 2026-07-12
+The source-matched canonical Swift app-path artifact refreshed on 2026-07-13
 covers 53 conversations and 109 turns. It has zero app-path floor failures,
 target mismatches, missing metadata rows, semantic-gate failures, blocking
 reliability issues, vision-floor failures, or readiness warnings. The arena
 scores 50 required fixtures at a 79.76 average with local score/coverage,
 real-pipeline evidence, and trace-quality gates passing. Source sidecars and all
-embedded traces match the current checkout fingerprint.
+embedded traces matched the clean checkout used for the refresh; the generated
+report remains the authority for the exact commit and fingerprint values.
 
 This is local implementation evidence only. Production readiness remains
 18/100, capped at 20/100, until the five independently sourced launch artifacts
@@ -47,9 +48,9 @@ exist: live-provider transcripts, professional-coach calibration, longitudinal
 real-user outcomes, physical TestFlight QA, and the completed operational
 launch checklist. No placeholder artifact can satisfy those gates.
 
-The available live-provider artifact was generated at source `967acf22`, before
-the final-visible reliability fixes at current source `bb9674e0`, and is therefore
-correctly rejected by the freshness gate. It also contains real Gemini HTTP 429
+The available live-provider artifact predates the final-visible reliability and
+research-loop closure work and is therefore correctly rejected by the freshness
+gate. It also contains real Gemini HTTP 429
 `RESOURCE_EXHAUSTED` and DeepSeek HTTP 402 refusals. A fresh current-source run
 must meet the zero-refusal readiness floor after those provider capacity/account
 conditions are resolved; local fallback quality does not erase an operational
