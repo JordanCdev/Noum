@@ -25,7 +25,8 @@ XCTest bridge at source commit `6db20dbc` and coach fingerprint
 `sha256:71ba870b3405f9e94e57856578b6ff43d052a905196944115dc695baba76d0bb`.
 All 109 traces are source-matched; all 50 scored fixtures pass at a 79.76 average
 with zero local score, coverage, real-pipeline, or trace-quality failures. The
-readiness gate also passes 18/18 static checks and 3/3 hosted-privacy probes.
+full integrated `NoumTests` target passes 3,868/3,868 tests with no failures or
+skips. The readiness gate also passes 18/18 static checks and 3/3 hosted-privacy probes.
 Production remains **NO-GO at 18/100** because none of the five independent
 external artifacts passes: live-provider sweep, blinded professional review,
 longitudinal real-user transfer, physical TestFlight QA, and operational launch

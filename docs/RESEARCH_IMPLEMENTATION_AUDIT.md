@@ -275,6 +275,7 @@ substrate, but it is not a cohort analytics service.
 
 | Evidence item | Classification | Result on 2026-07-13 |
 |---|---|---|
+| Full integrated Swift regression | **Proved** | The complete `NoumTests` target passed 3,868/3,868 tests with zero failures or skips on the iPhone 17 Pro simulator, using the local Swift package cache, disabled automatic package resolution, disabled code signing, and no provider keys. This is still simulator evidence, not physical-device or TestFlight proof. |
 | Selected Swift product/test contracts | **Proved** | `xcodebuild test` succeeded on the iPhone 17 simulator for `GoalStyleCalibrationTests`, `GoalOutcomeLoopTests`, `AIRewriteSemanticGuardTests`, `PhraseBankStoreTests`, `PhrasePracticeIntentTests`, `PrescriptionProjectionTests`, `FastLaneFirstSessionTests`, `LocalSpeechProviderTests`, `ReleaseIdentityPrivacyTests`, `TransformationKPIReportTests`, `ActivationExperimentContractTests`, and `ReviewExperimentContractTests`. The command used `CODE_SIGNING_ALLOWED=NO`, so it is not signing/device evidence. |
 | Coach-arena contracts | **Proved** | 119 Node tests and 105 Python tests passed. |
 | Release-evidence workflow contracts | **Proved** | 26 tests passed. They prove fail-closed tooling, full-commit history-scan binding, and validator agreement—not that external evidence exists. |
