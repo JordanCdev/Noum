@@ -163,40 +163,6 @@ struct SummaryPrescriptionProjection {
     }
 }
 
-// MARK: - Persisted Last Action
-
-/// Lightweight snapshot of the last NextAction for display on the home screen.
-struct LastNextActionSnapshot: Codable {
-    let title: String
-    let reasoning: String
-    let confidence: String
-    let date: Date
-
-    private static let key = "lastNextActionSnapshot"
-
-    static func save(_ action: NextAction) {
-        let snapshot = LastNextActionSnapshot(
-            title: action.primary.displayTitle,
-            reasoning: action.reasoning,
-            confidence: action.confidenceLevel.label,
-            date: Date()
-        )
-        if let data = try? JSONEncoder().encode(snapshot) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-    }
-
-    static func load() -> LastNextActionSnapshot? {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let snapshot = try? JSONDecoder().decode(LastNextActionSnapshot.self, from: data) else {
-            return nil
-        }
-        // Only show if less than 7 days old
-        guard Date().timeIntervalSince(snapshot.date) < 7 * 86400 else { return nil }
-        return snapshot
-    }
-}
-
 // MARK: - Input Bundle
 
 /// All the data the decision engine considers.

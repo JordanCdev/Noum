@@ -352,9 +352,7 @@ enum SessionFinalizer {
                 styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
                 recommendationOutcomes: RecommendationLearningStore.shared.outcomes
             )
-            let action = NextActionEngine.recommend(input: input)
-            LastNextActionSnapshot.save(action)
-            return action
+            return NextActionEngine.recommend(input: input)
         }()
 
         // Enhanced coach note with baseline + style
