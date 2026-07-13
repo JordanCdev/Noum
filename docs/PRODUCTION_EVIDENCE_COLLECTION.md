@@ -173,17 +173,34 @@ analysis and accounting are complete.
 
 ## 6. Physical-device TestFlight verification
 
-File: `coach-real-device-testflight-qa-v2.json`.
+File: `coach-real-device-testflight-qa-v3.json`.
 
 The tester and verifier must be different people. The same TestFlight build and
-pseudonymous SHA-256 device identifier must be carried through all four rows:
+pseudonymous SHA-256 device identifier must be carried through all 14 rows.
+The contract contains exactly 77 required checks:
 
-| Surface | Required attachment kind |
-|---|---|
-| Live Activity | `screenRecording` |
-| AI prompt latency | `latencyTrace` |
-| Soundscape audio session | `audioSessionLog` |
-| Paywall purchase/restore | `storeKitReceipt` |
+| Surface key | Required attachment kind | Required check keys |
+|---|---|---|
+| `liveActivity` | `screenRecording` | `dynamicIslandCompactExpanded`, `lockScreenPresentation`, `finishDismisses`, `forceQuitEnds` |
+| `aiPromptLatency` | `latencyTrace` | `productionPromptWithinBudget`, `repeatedBeginWithinBudget`, `airplaneModeCuratedFallback` |
+| `soundscapeAudioSession` | `audioSessionLog` | `focusCalmSteadyPlayback`, `stopsWhenRecordingStarts`, `phoneInterruptionRecovers`, `spotifyMixesPolitely` |
+| `storeKitPurchaseRestoreEntitlements` | `storeKitReceipt` | `paywallOpensFromSettings`, `monthlySandboxPurchase`, `annualSandboxPurchase`, `restorePreviousPurchase`, `coachModeEntitlement`, `liveTranscriptEntitlement`, `fillerTrackingEntitlement` |
+| `productionTranscriptionConsent` | `transcriptionConsentTrace` | `guestBootstrapCloudConsent`, `firebaseDeepgramRealMicrophoneRep`, `noPreConsentDataEgress`, `declineKeepsSupportedPracticeLocal`, `revokeKeepsSupportedPracticeLocal`, `unsupportedLocalExplainsCloudRequirement`, `settingsRecoveryRoute`, `productionAppCheckAccepted` |
+| `transcriptionFailureIntegrity` | `recordingIntegrityTrace` | `providerStartFailure`, `midSessionDisconnect`, `audioInterruption`, `bluetoothRouteChange`, `silence`, `finalWordDelay`, `failedAttemptNotPersisted`, `failedAttemptNotScored`, `failedAttemptNoXP`, `timerWaitsForCaptureReadiness` |
+| `pitchMetrics` | `pitchMetricsCapture` | `variedPitchClassification`, `monotoneClassification`, `shortWhisperSuppressed` |
+| `multilingualPractice` | `multilingualSessionCapture` | `spanishTranscriptionAndFillers`, `frenchTranscriptionAndFillers`, `nonEnglishDebriefUsesDeterministicFallback`, `englishRestoresGeneratedPromptPath`, `settingsLabelsLocalize` |
+| `modeSmoke` | `modeSmokeRunLog` | `timedDifficulties`, `suddenDeathDifficulties`, `ahCounter`, `imConversation`, `miniDrill`, `cutTheCrutch`, `lesson`, `pathNodeUnlock` |
+| `accountAuthentication` | `authenticationLifecycleTrace` | `appleSignInReloadsData`, `googleSignInReloadsData`, `guestSignIn`, `guestUpgradePreservesData` |
+| `accountDeletion` | `accountDeletionTrace` | `serverFailurePreservesSignedInState`, `serverFailureShowsRetry`, `successRemovesRegisteredLocalData`, `successRemovesRemoteData`, `successDeletesFirebaseAuthUser`, `successRevokesAppleAuthorizationWhenApplicable`, `successReturnsToOnboarding`, `subscriptionCancellationNotClaimed` |
+| `accessibilityMotionType` | `accessibilityScreenRecording` | `reduceMotionSubduesSplash`, `reduceMotionSubduesConfetti`, `largestDynamicTypeHomeCTAs`, `largestDynamicTypeSummaryCTAs`, `voiceOverLabelsAndHints` |
+| `notificationLifecycle` | `notificationDeliveryLog` | `firstRepPrePrompt`, `nativePromptOnce`, `allFourSurfacesArm`, `declineCooldownThirtyDays`, `streakWarningDelivery` |
+| `widgetRefresh` | `widgetScreenRecording` | `homeWidgetRefreshesRepCount`, `homeWidgetRefreshesStreak`, `lockScreenCircularNoClipping` |
+
+Each row's `checks` array must contain each listed `checkKey` exactly once with
+`passed: true`. Missing, unexpected, duplicate, or failed checks reject the
+artifact. The summary's `requiredCheckCount` must be 77 and
+`passedRequiredCheckCount` must match the checks that actually pass; setting a
+summary count or row-level `passed` flag by hand cannot smooth a failed check.
 
 Use a redacted StoreKit proof that demonstrates the sandbox transaction and
 entitlement without exposing credentials or an unredacted receipt. The AI
@@ -200,12 +217,12 @@ install is useful preflight but cannot earn this artifact.
 Set `templateStatus` to `COLLECTED_EXTERNAL_EVIDENCE` only after every row and
 the signed physical-TestFlight attestation are complete.
 
-This v2 artifact has four structured rows. It does not replace the remainder of
-`docs/TESTFLIGHT_QA.md`. Use the same TestFlight build to complete and
-independently sign off the real-microphone/App Check/consent path, Sign in with
-Apple, deletion, notifications, widgets, accessibility, multilingual checks,
-and mode smoke tests. Keep that checklist with the release packet; do not claim
-those surfaces from the four-row JSON alone.
+This v3 artifact is the structured device-runtime counterpart to
+`docs/TESTFLIGHT_QA.md`. It deliberately does not absorb operational proof such
+as credential-incident closure, legacy endpoint shutdown, production deploys,
+Apple signing/provider configuration, App Store metadata, archive credential
+scans, TestFlight upload, or release triage. Those remain exact rows in
+`coach-operational-launch-checklist-v2.json`.
 
 ## 7. Operational launch evidence
 

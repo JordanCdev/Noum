@@ -188,8 +188,8 @@ EVIDENCE_REQUIREMENTS = {
     },
     "noRealDeviceTestFlightVerification": {
         "rowKey": "realDeviceTestFlightVerification",
-        "artifact": "coach-real-device-testflight-qa-v2.json",
-        "expectedSchemaVersion": "coach-real-device-testflight-qa-v2",
+        "artifact": "coach-real-device-testflight-qa-v3.json",
+        "expectedSchemaVersion": "coach-real-device-testflight-qa-v3",
         "requiredTopLevelKeys": [
             "schemaVersion",
             "testRunID",
@@ -203,12 +203,12 @@ EVIDENCE_REQUIREMENTS = {
         ],
         "owner": "real device QA",
         "gate": (
-            "Physical-device TestFlight verification for liveActivity, "
-            "aiPromptLatency, soundscapeAudioSession, and paywallPurchase."
+            "Physical-device TestFlight verification for the exact 14-surface, "
+            "77-check M14 hardware sweep."
         ),
         "nextStep": (
             "Run the release candidate on a physical TestFlight device and attach "
-            "screen recordings, latency trace, audio-session log, and receipt proof."
+            "the required same-build proof for every structured surface and check."
         ),
     },
     "operationalLaunchChecklistIncomplete": {
@@ -321,20 +321,150 @@ REAL_USER_TRANSFER_MIN_POSITIVE_RATE = 0.60
 REAL_USER_TRANSFER_MIN_NO_REGRESSION_RATE = 0.70
 REAL_USER_TRANSFER_MIN_COHORT_COMPLETION_RATE = 0.70
 
-REAL_DEVICE_TESTFLIGHT_SCHEMA = "coach-real-device-testflight-qa-v2"
+REAL_DEVICE_TESTFLIGHT_SCHEMA = "coach-real-device-testflight-qa-v3"
 REAL_DEVICE_MAX_AI_PROMPT_LATENCY_MS = 3000
 REAL_DEVICE_REQUIRED_SURFACES = [
     "liveActivity",
     "aiPromptLatency",
     "soundscapeAudioSession",
-    "paywallPurchase",
+    "storeKitPurchaseRestoreEntitlements",
+    "productionTranscriptionConsent",
+    "transcriptionFailureIntegrity",
+    "pitchMetrics",
+    "multilingualPractice",
+    "modeSmoke",
+    "accountAuthentication",
+    "accountDeletion",
+    "accessibilityMotionType",
+    "notificationLifecycle",
+    "widgetRefresh",
 ]
 REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE = {
     "liveActivity": "screenRecording",
     "aiPromptLatency": "latencyTrace",
     "soundscapeAudioSession": "audioSessionLog",
-    "paywallPurchase": "storeKitReceipt",
+    "storeKitPurchaseRestoreEntitlements": "storeKitReceipt",
+    "productionTranscriptionConsent": "transcriptionConsentTrace",
+    "transcriptionFailureIntegrity": "recordingIntegrityTrace",
+    "pitchMetrics": "pitchMetricsCapture",
+    "multilingualPractice": "multilingualSessionCapture",
+    "modeSmoke": "modeSmokeRunLog",
+    "accountAuthentication": "authenticationLifecycleTrace",
+    "accountDeletion": "accountDeletionTrace",
+    "accessibilityMotionType": "accessibilityScreenRecording",
+    "notificationLifecycle": "notificationDeliveryLog",
+    "widgetRefresh": "widgetScreenRecording",
 }
+REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE = {
+    "liveActivity": [
+        "dynamicIslandCompactExpanded",
+        "lockScreenPresentation",
+        "finishDismisses",
+        "forceQuitEnds",
+    ],
+    "aiPromptLatency": [
+        "productionPromptWithinBudget",
+        "repeatedBeginWithinBudget",
+        "airplaneModeCuratedFallback",
+    ],
+    "soundscapeAudioSession": [
+        "focusCalmSteadyPlayback",
+        "stopsWhenRecordingStarts",
+        "phoneInterruptionRecovers",
+        "spotifyMixesPolitely",
+    ],
+    "storeKitPurchaseRestoreEntitlements": [
+        "paywallOpensFromSettings",
+        "monthlySandboxPurchase",
+        "annualSandboxPurchase",
+        "restorePreviousPurchase",
+        "coachModeEntitlement",
+        "liveTranscriptEntitlement",
+        "fillerTrackingEntitlement",
+    ],
+    "productionTranscriptionConsent": [
+        "guestBootstrapCloudConsent",
+        "firebaseDeepgramRealMicrophoneRep",
+        "noPreConsentDataEgress",
+        "declineKeepsSupportedPracticeLocal",
+        "revokeKeepsSupportedPracticeLocal",
+        "unsupportedLocalExplainsCloudRequirement",
+        "settingsRecoveryRoute",
+        "productionAppCheckAccepted",
+    ],
+    "transcriptionFailureIntegrity": [
+        "providerStartFailure",
+        "midSessionDisconnect",
+        "audioInterruption",
+        "bluetoothRouteChange",
+        "silence",
+        "finalWordDelay",
+        "failedAttemptNotPersisted",
+        "failedAttemptNotScored",
+        "failedAttemptNoXP",
+        "timerWaitsForCaptureReadiness",
+    ],
+    "pitchMetrics": [
+        "variedPitchClassification",
+        "monotoneClassification",
+        "shortWhisperSuppressed",
+    ],
+    "multilingualPractice": [
+        "spanishTranscriptionAndFillers",
+        "frenchTranscriptionAndFillers",
+        "nonEnglishDebriefUsesDeterministicFallback",
+        "englishRestoresGeneratedPromptPath",
+        "settingsLabelsLocalize",
+    ],
+    "modeSmoke": [
+        "timedDifficulties",
+        "suddenDeathDifficulties",
+        "ahCounter",
+        "imConversation",
+        "miniDrill",
+        "cutTheCrutch",
+        "lesson",
+        "pathNodeUnlock",
+    ],
+    "accountAuthentication": [
+        "appleSignInReloadsData",
+        "googleSignInReloadsData",
+        "guestSignIn",
+        "guestUpgradePreservesData",
+    ],
+    "accountDeletion": [
+        "serverFailurePreservesSignedInState",
+        "serverFailureShowsRetry",
+        "successRemovesRegisteredLocalData",
+        "successRemovesRemoteData",
+        "successDeletesFirebaseAuthUser",
+        "successRevokesAppleAuthorizationWhenApplicable",
+        "successReturnsToOnboarding",
+        "subscriptionCancellationNotClaimed",
+    ],
+    "accessibilityMotionType": [
+        "reduceMotionSubduesSplash",
+        "reduceMotionSubduesConfetti",
+        "largestDynamicTypeHomeCTAs",
+        "largestDynamicTypeSummaryCTAs",
+        "voiceOverLabelsAndHints",
+    ],
+    "notificationLifecycle": [
+        "firstRepPrePrompt",
+        "nativePromptOnce",
+        "allFourSurfacesArm",
+        "declineCooldownThirtyDays",
+        "streakWarningDelivery",
+    ],
+    "widgetRefresh": [
+        "homeWidgetRefreshesRepCount",
+        "homeWidgetRefreshesStreak",
+        "lockScreenCircularNoClipping",
+    ],
+}
+REAL_DEVICE_REQUIRED_CHECK_COUNT = sum(
+    len(checks) for checks in REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE.values()
+)
 
 OPERATIONAL_LAUNCH_SCHEMA = "coach-operational-launch-checklist-v2"
 OPERATIONAL_LAUNCH_CHECKLIST_VERSION = "m14-launch-gate-v2"
@@ -430,7 +560,7 @@ UI_FLOW_BOUNDARY = {
         "Soundscape audio-session behavior.",
         "Paywall purchase and receipt path.",
     ],
-    "realDeviceArtifact": "coach-real-device-testflight-qa-v2.json",
+    "realDeviceArtifact": "coach-real-device-testflight-qa-v3.json",
 }
 
 
@@ -1926,11 +2056,71 @@ def real_user_transfer_contract_failures(payload):
     return list(dict.fromkeys(failures))
 
 
+def real_device_check_contract_status(row):
+    surface = trimmed_non_empty(row.get("surfaceKey")) if isinstance(row, dict) else None
+    surface_label = surface or "<invalid>"
+    required_checks = REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE.get(surface, [])
+    required_set = set(required_checks)
+    checks = row.get("checks") if isinstance(row, dict) else None
+    failures = []
+    if not isinstance(checks, list):
+        return {
+            "failures": [f"invalidChecks={surface_label}"],
+            "passedRequiredCheckCount": 0,
+        }
+
+    typed_checks = [check for check in checks if isinstance(check, dict)]
+    check_keys = [
+        trimmed_non_empty(check.get("checkKey"))
+        for check in typed_checks
+    ]
+    if len(typed_checks) != len(checks) or any(key is None for key in check_keys):
+        failures.append(f"invalidChecks={surface_label}")
+
+    key_counts = {}
+    for key in check_keys:
+        if key is not None:
+            key_counts[key] = key_counts.get(key, 0) + 1
+    duplicates = sorted(key for key, count in key_counts.items() if count > 1)
+    missing = sorted(required_set.difference(key_counts))
+    unexpected = sorted(set(key_counts).difference(required_set))
+    failed = sorted(
+        key for key in required_checks
+        if key_counts.get(key) == 1
+        and next(
+            check for check in typed_checks
+            if trimmed_non_empty(check.get("checkKey")) == key
+        ).get("passed") is not True
+    )
+    if duplicates:
+        failures.append(f"duplicateCheckKeys={surface_label}:{','.join(duplicates)}")
+    if missing:
+        failures.append(f"missingRequiredChecks={surface_label}:{','.join(missing)}")
+    if unexpected:
+        failures.append(f"unexpectedCheckKeys={surface_label}:{','.join(unexpected)}")
+    if failed:
+        failures.append(f"failedRequiredChecks={surface_label}:{','.join(failed)}")
+
+    passed_count = sum(
+        key_counts.get(key) == 1
+        and next(
+            check for check in typed_checks
+            if trimmed_non_empty(check.get("checkKey")) == key
+        ).get("passed") is True
+        for key in required_checks
+    )
+    return {
+        "failures": failures,
+        "passedRequiredCheckCount": passed_count,
+    }
+
+
 def real_device_row_passes(row):
     if not isinstance(row, dict):
         return False
     surface = row.get("surfaceKey")
     expected_kind = REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE.get(surface)
+    check_status = real_device_check_contract_status(row)
     latency = strict_int(row.get("latencyMs"))
     latency_passes = surface != "aiPromptLatency" or (
         latency is not None and 0 <= latency <= REAL_DEVICE_MAX_AI_PROMPT_LATENCY_MS
@@ -1947,6 +2137,7 @@ def real_device_row_passes(row):
         and all(usable_evidence_reference(row.get(key)) for key in trail_keys)
         and trimmed_non_empty(row.get("evidenceKind")) == expected_kind
         and latency_passes
+        and not check_status["failures"]
     )
 
 
@@ -1964,14 +2155,28 @@ def real_device_testflight_contract_failures(payload):
         failures.append("missingRunMetadata")
     if strict_int(summary.get("rowCount")) != len(rows):
         failures.append("rowCountMismatch")
-    surface_keys = [row.get("surfaceKey") for row in typed_rows]
+    surface_keys = [trimmed_non_empty(row.get("surfaceKey")) for row in typed_rows]
+    if any(key is None for key in surface_keys):
+        failures.append("invalidSurfaceKeys")
     if len(set(surface_keys)) != len(rows):
         failures.append("duplicateSurfaceKeys")
     required = set(REAL_DEVICE_REQUIRED_SURFACES)
     missing = sorted(required.difference(surface_keys))
     append_ids_failure(failures, "missingRequiredSurfaces", missing)
+    unexpected = sorted(
+        key for key in set(surface_keys).difference(required)
+        if key is not None
+    )
+    append_ids_failure(failures, "unexpectedSurfaces", unexpected)
 
     required_rows = [row for row in typed_rows if row.get("surfaceKey") in required]
+    check_statuses = [real_device_check_contract_status(row) for row in typed_rows]
+    for status in check_statuses:
+        failures.extend(status["failures"])
+    passed_required_check_count = sum(
+        real_device_check_contract_status(row)["passedRequiredCheckCount"]
+        for row in required_rows
+    )
     passing_rows = [row for row in required_rows if real_device_row_passes(row)]
     real_device_rows = [row for row in required_rows if row.get("realDevice") is True]
     testflight_rows = [row for row in required_rows if row.get("testFlightBuildInstalled") is True]
@@ -2000,6 +2205,13 @@ def real_device_testflight_contract_failures(payload):
 
     if strict_int(summary.get("requiredSurfaceCount")) != len(REAL_DEVICE_REQUIRED_SURFACES):
         failures.append("requiredSurfaceCountMismatch")
+    if strict_int(summary.get("requiredCheckCount")) != REAL_DEVICE_REQUIRED_CHECK_COUNT:
+        failures.append("requiredCheckCountMismatch")
+    if (
+        strict_int(summary.get("passedRequiredCheckCount")) != passed_required_check_count
+        or passed_required_check_count < REAL_DEVICE_REQUIRED_CHECK_COUNT
+    ):
+        failures.append("checkFloorFailures")
     if strict_int(summary.get("passedRequiredSurfaceCount")) != len(passing_rows) or len(passing_rows) < len(required):
         failures.append("surfaceFloorFailures")
     if strict_int(summary.get("realDeviceSurfaceCount")) != len(real_device_rows) or len(real_device_rows) < len(required):

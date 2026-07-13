@@ -312,6 +312,8 @@ def fill_complete_fixture(run_dir):
     device_hash = "sha256:" + hashlib.sha256(b"TEST-ONLY-device").hexdigest()
     for row in testflight["rows"]:
         surface = row["surfaceKey"]
+        for check in row["checks"]:
+            check["passed"] = True
         row.update({
             "passed": True,
             "realDevice": True,
@@ -617,6 +619,59 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
             failure.startswith("attachmentMissingEmptyOrUnsafe:testFlight.liveActivity")
             for failure in failures
         ))
+
+    def test_testflight_v3_template_pins_fourteen_surfaces_and_seventy_seven_checks(self):
+        path = self.run_dir / release.MANAGED_ARTIFACTS["realDeviceTestFlight"][0]
+        payload = release.read_json(path)
+
+        self.assertEqual(payload["schemaVersion"], "coach-real-device-testflight-qa-v3")
+        self.assertEqual(len(payload["rows"]), 14)
+        self.assertEqual(payload["summary"]["requiredCheckCount"], 77)
+        self.assertEqual(
+            sum(len(row["checks"]) for row in payload["rows"]),
+            77,
+        )
+        rows = {row["surfaceKey"]: row for row in payload["rows"]}
+        self.assertEqual(set(rows), set(release.GATE.REAL_DEVICE_REQUIRED_SURFACES))
+        for surface in release.GATE.REAL_DEVICE_REQUIRED_SURFACES:
+            self.assertEqual(
+                rows[surface]["evidenceKind"],
+                release.GATE.REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE[surface],
+            )
+            self.assertEqual(
+                [check["checkKey"] for check in rows[surface]["checks"]],
+                release.GATE.REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE[surface],
+            )
+
+    def test_testflight_checks_fail_closed_when_missing_unexpected_duplicated_or_failed(self):
+        fill_complete_fixture(self.run_dir)
+        path = self.run_dir / release.MANAGED_ARTIFACTS["realDeviceTestFlight"][0]
+        payload = release.read_json(path)
+        rows = {row["surfaceKey"]: row for row in payload["rows"]}
+        rows["liveActivity"]["checks"].pop()
+        rows["productionTranscriptionConsent"]["checks"].append({
+            "checkKey": "syntheticPass",
+            "passed": True,
+        })
+        rows["modeSmoke"]["checks"].append({
+            "checkKey": "timedDifficulties",
+            "passed": True,
+        })
+        rows["accountDeletion"]["checks"][0]["passed"] = False
+        release.summarize_testflight(payload)
+        write_json(path, payload)
+
+        failures = release.validate_run(self.run_dir, REPO_ROOT)["failures"]
+        for expected_failure in [
+            "missingRequiredChecks=liveActivity:forceQuitEnds",
+            "unexpectedCheckKeys=productionTranscriptionConsent:syntheticPass",
+            "duplicateCheckKeys=modeSmoke:timedDifficulties",
+            "failedRequiredChecks=accountDeletion:serverFailurePreservesSignedInState",
+        ]:
+            self.assertIn(
+                f"existingReadinessValidator.realDeviceTestFlight:{expected_failure}",
+                failures,
+            )
 
     def test_operational_item_cannot_be_verified_by_its_performer(self):
         fill_complete_fixture(self.run_dir)

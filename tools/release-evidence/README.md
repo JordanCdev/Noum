@@ -8,6 +8,10 @@ that cannot be earned by simulator tests:
 - physical-device TestFlight QA;
 - operational launch completion.
 
+The TestFlight v3 artifact is an exact 14-surface, 77-check runtime contract;
+operational security, deployment, Apple configuration, upload, and triage proof
+remain in the separate launch artifact.
+
 It does **not** generate results, claim production readiness, run providers,
 deploy services, upload builds, or replace `readiness_gate.py`. Every initialized
 artifact is marked `NOT_PRODUCTION_EVIDENCE` and fails validation.

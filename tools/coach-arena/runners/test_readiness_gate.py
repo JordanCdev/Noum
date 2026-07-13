@@ -437,6 +437,10 @@ def complete_real_device_testflight_evidence():
             "deviceIdentifierHash": "sha256:iphone15pro-real-device-qa",
             "latencyMs": 1850 if surface == "aiPromptLatency" else None,
             "blockingIssueCount": 0,
+            "checks": [
+                {"checkKey": check_key, "passed": True}
+                for check_key in gate.REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE[surface]
+            ],
             "notes": ["Verified on physical device through TestFlight."],
         })
     return {
@@ -450,6 +454,8 @@ def complete_real_device_testflight_evidence():
         "summary": {
             "rowCount": len(rows),
             "requiredSurfaceCount": len(rows),
+            "requiredCheckCount": gate.REAL_DEVICE_REQUIRED_CHECK_COUNT,
+            "passedRequiredCheckCount": gate.REAL_DEVICE_REQUIRED_CHECK_COUNT,
             "passedRequiredSurfaceCount": len(rows),
             "realDeviceSurfaceCount": len(rows),
             "testFlightBuildSurfaceCount": len(rows),
@@ -585,7 +591,7 @@ def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_c
             complete_professional_calibration_evidence()
         ),
         "coach-real-user-transfer-outcomes-v3.json": complete_real_user_transfer_evidence(),
-        "coach-real-device-testflight-qa-v2.json": complete_real_device_testflight_evidence(),
+        "coach-real-device-testflight-qa-v3.json": complete_real_device_testflight_evidence(),
         "coach-operational-launch-checklist-v2.json": complete_operational_launch_evidence(
             git_commit if re.fullmatch(r"[0-9a-f]{40}", git_commit) else
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -650,7 +656,7 @@ class ReadinessGateTests(unittest.TestCase):
         )
         self.assertEqual(
             artifacts["noRealDeviceTestFlightVerification"],
-            "coach-real-device-testflight-qa-v2.json",
+            "coach-real-device-testflight-qa-v3.json",
         )
         self.assertEqual(
             artifacts["operationalLaunchChecklistIncomplete"],
@@ -804,7 +810,7 @@ class ReadinessGateTests(unittest.TestCase):
         }
         cases = [
             ("coach-real-user-transfer-outcomes-v3.json", "rows"),
-            ("coach-real-device-testflight-qa-v2.json", "rows"),
+            ("coach-real-device-testflight-qa-v3.json", "rows"),
             ("coach-operational-launch-checklist-v2.json", "items"),
         ]
         for file_name, collection_key in cases:
@@ -852,6 +858,58 @@ class ReadinessGateTests(unittest.TestCase):
             failure.startswith("evidenceKindMismatch=")
             for failure in gate.operational_launch_contract_failures(operational)
         ))
+
+    def test_real_device_v3_contract_pins_fourteen_surfaces_and_seventy_seven_checks(self):
+        self.assertEqual(len(gate.REAL_DEVICE_REQUIRED_SURFACES), 14)
+        self.assertEqual(gate.REAL_DEVICE_REQUIRED_CHECK_COUNT, 77)
+        self.assertEqual(
+            set(gate.REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE),
+            set(gate.REAL_DEVICE_REQUIRED_SURFACES),
+        )
+        evidence = complete_real_device_testflight_evidence()
+        self.assertEqual(evidence["summary"]["requiredCheckCount"], 77)
+        self.assertEqual(evidence["summary"]["passedRequiredCheckCount"], 77)
+        self.assertEqual(gate.real_device_testflight_contract_failures(evidence), [])
+
+    def test_real_device_v3_checks_fail_closed_when_missing_unexpected_duplicated_or_failed(self):
+        cases = []
+
+        missing = complete_real_device_testflight_evidence()
+        missing_row = next(row for row in missing["rows"] if row["surfaceKey"] == "liveActivity")
+        missing_key = missing_row["checks"].pop()["checkKey"]
+        cases.append((missing, f"missingRequiredChecks=liveActivity:{missing_key}"))
+
+        unexpected = complete_real_device_testflight_evidence()
+        unexpected_row = next(
+            row for row in unexpected["rows"]
+            if row["surfaceKey"] == "productionTranscriptionConsent"
+        )
+        unexpected_row["checks"].append({"checkKey": "syntheticPass", "passed": True})
+        cases.append((
+            unexpected,
+            "unexpectedCheckKeys=productionTranscriptionConsent:syntheticPass",
+        ))
+
+        duplicated = complete_real_device_testflight_evidence()
+        duplicated_row = next(row for row in duplicated["rows"] if row["surfaceKey"] == "modeSmoke")
+        duplicated_check = dict(duplicated_row["checks"][0])
+        duplicated_row["checks"].append(duplicated_check)
+        cases.append((
+            duplicated,
+            f"duplicateCheckKeys=modeSmoke:{duplicated_check['checkKey']}",
+        ))
+
+        failed = complete_real_device_testflight_evidence()
+        failed_row = next(row for row in failed["rows"] if row["surfaceKey"] == "accountDeletion")
+        failed_row["checks"][0]["passed"] = False
+        failed_key = failed_row["checks"][0]["checkKey"]
+        cases.append((failed, f"failedRequiredChecks=accountDeletion:{failed_key}"))
+
+        for payload, expected_failure in cases:
+            with self.subTest(expected_failure=expected_failure):
+                failures = gate.real_device_testflight_contract_failures(payload)
+                self.assertIn(expected_failure, failures)
+                self.assertIn("surfaceFloorFailures", failures)
 
     def test_operational_contract_fail_closes_release_prerequisites_and_history(self):
         operational = complete_operational_launch_evidence()
@@ -2122,7 +2180,7 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertIn("maestro/chat_smoke.yaml", markdown)
         self.assertIn("maestro/chat_reject_smoke.yaml", markdown)
         self.assertIn("Not launch proof", markdown)
-        self.assertIn("coach-real-device-testflight-qa-v2.json", markdown)
+        self.assertIn("coach-real-device-testflight-qa-v3.json", markdown)
         self.assertIn("## Artifact Gate Failures", markdown)
         self.assertIn("## Evidence Directory", markdown)
         self.assertIn("## Operational Static Preflight", markdown)

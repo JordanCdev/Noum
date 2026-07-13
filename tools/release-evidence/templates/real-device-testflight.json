@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "coach-real-device-testflight-qa-v2",
+  "schemaVersion": "coach-real-device-testflight-qa-v3",
   "templateStatus": "NOT_PRODUCTION_EVIDENCE",
   "testRunID": "",
   "appVersion": "",
@@ -18,13 +18,15 @@
     "attestsInstalledBuildCameFromTestFlight": false
   },
   "summary": {
-    "rowCount": 4,
-    "requiredSurfaceCount": 4,
+    "rowCount": 14,
+    "requiredSurfaceCount": 14,
+    "requiredCheckCount": 77,
+    "passedRequiredCheckCount": 0,
     "passedRequiredSurfaceCount": 0,
     "realDeviceSurfaceCount": 0,
     "testFlightBuildSurfaceCount": 0,
     "artifactBackedSurfaceCount": 0,
-    "expectedEvidenceKindSurfaceCount": 4,
+    "expectedEvidenceKindSurfaceCount": 14,
     "sameBuildSurfaceCount": 0,
     "deviceIdentitySurfaceCount": 0,
     "latencyWithinBudgetSurfaceCount": 0,
@@ -48,6 +50,12 @@
       "latencyMs": null,
       "blockingIssueCount": 0,
       "verifiedByID": "",
+      "checks": [
+        {"checkKey": "dynamicIslandCompactExpanded", "passed": false},
+        {"checkKey": "lockScreenPresentation", "passed": false},
+        {"checkKey": "finishDismisses", "passed": false},
+        {"checkKey": "forceQuitEnds", "passed": false}
+      ],
       "notes": []
     },
     {
@@ -63,6 +71,11 @@
       "latencyMs": null,
       "blockingIssueCount": 0,
       "verifiedByID": "",
+      "checks": [
+        {"checkKey": "productionPromptWithinBudget", "passed": false},
+        {"checkKey": "repeatedBeginWithinBudget", "passed": false},
+        {"checkKey": "airplaneModeCuratedFallback", "passed": false}
+      ],
       "notes": []
     },
     {
@@ -78,10 +91,16 @@
       "latencyMs": null,
       "blockingIssueCount": 0,
       "verifiedByID": "",
+      "checks": [
+        {"checkKey": "focusCalmSteadyPlayback", "passed": false},
+        {"checkKey": "stopsWhenRecordingStarts", "passed": false},
+        {"checkKey": "phoneInterruptionRecovers", "passed": false},
+        {"checkKey": "spotifyMixesPolitely", "passed": false}
+      ],
       "notes": []
     },
     {
-      "surfaceKey": "paywallPurchase",
+      "surfaceKey": "storeKitPurchaseRestoreEntitlements",
       "passed": false,
       "realDevice": false,
       "testFlightBuildInstalled": false,
@@ -93,6 +112,244 @@
       "latencyMs": null,
       "blockingIssueCount": 0,
       "verifiedByID": "",
+      "checks": [
+        {"checkKey": "paywallOpensFromSettings", "passed": false},
+        {"checkKey": "monthlySandboxPurchase", "passed": false},
+        {"checkKey": "annualSandboxPurchase", "passed": false},
+        {"checkKey": "restorePreviousPurchase", "passed": false},
+        {"checkKey": "coachModeEntitlement", "passed": false},
+        {"checkKey": "liveTranscriptEntitlement", "passed": false},
+        {"checkKey": "fillerTrackingEntitlement", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "productionTranscriptionConsent",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "transcriptionConsentTrace",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "guestBootstrapCloudConsent", "passed": false},
+        {"checkKey": "firebaseDeepgramRealMicrophoneRep", "passed": false},
+        {"checkKey": "noPreConsentDataEgress", "passed": false},
+        {"checkKey": "declineKeepsSupportedPracticeLocal", "passed": false},
+        {"checkKey": "revokeKeepsSupportedPracticeLocal", "passed": false},
+        {"checkKey": "unsupportedLocalExplainsCloudRequirement", "passed": false},
+        {"checkKey": "settingsRecoveryRoute", "passed": false},
+        {"checkKey": "productionAppCheckAccepted", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "transcriptionFailureIntegrity",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "recordingIntegrityTrace",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "providerStartFailure", "passed": false},
+        {"checkKey": "midSessionDisconnect", "passed": false},
+        {"checkKey": "audioInterruption", "passed": false},
+        {"checkKey": "bluetoothRouteChange", "passed": false},
+        {"checkKey": "silence", "passed": false},
+        {"checkKey": "finalWordDelay", "passed": false},
+        {"checkKey": "failedAttemptNotPersisted", "passed": false},
+        {"checkKey": "failedAttemptNotScored", "passed": false},
+        {"checkKey": "failedAttemptNoXP", "passed": false},
+        {"checkKey": "timerWaitsForCaptureReadiness", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "pitchMetrics",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "pitchMetricsCapture",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "variedPitchClassification", "passed": false},
+        {"checkKey": "monotoneClassification", "passed": false},
+        {"checkKey": "shortWhisperSuppressed", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "multilingualPractice",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "multilingualSessionCapture",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "spanishTranscriptionAndFillers", "passed": false},
+        {"checkKey": "frenchTranscriptionAndFillers", "passed": false},
+        {"checkKey": "nonEnglishDebriefUsesDeterministicFallback", "passed": false},
+        {"checkKey": "englishRestoresGeneratedPromptPath", "passed": false},
+        {"checkKey": "settingsLabelsLocalize", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "modeSmoke",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "modeSmokeRunLog",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "timedDifficulties", "passed": false},
+        {"checkKey": "suddenDeathDifficulties", "passed": false},
+        {"checkKey": "ahCounter", "passed": false},
+        {"checkKey": "imConversation", "passed": false},
+        {"checkKey": "miniDrill", "passed": false},
+        {"checkKey": "cutTheCrutch", "passed": false},
+        {"checkKey": "lesson", "passed": false},
+        {"checkKey": "pathNodeUnlock", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "accountAuthentication",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "authenticationLifecycleTrace",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "appleSignInReloadsData", "passed": false},
+        {"checkKey": "googleSignInReloadsData", "passed": false},
+        {"checkKey": "guestSignIn", "passed": false},
+        {"checkKey": "guestUpgradePreservesData", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "accountDeletion",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "accountDeletionTrace",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "serverFailurePreservesSignedInState", "passed": false},
+        {"checkKey": "serverFailureShowsRetry", "passed": false},
+        {"checkKey": "successRemovesRegisteredLocalData", "passed": false},
+        {"checkKey": "successRemovesRemoteData", "passed": false},
+        {"checkKey": "successDeletesFirebaseAuthUser", "passed": false},
+        {"checkKey": "successRevokesAppleAuthorizationWhenApplicable", "passed": false},
+        {"checkKey": "successReturnsToOnboarding", "passed": false},
+        {"checkKey": "subscriptionCancellationNotClaimed", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "accessibilityMotionType",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "accessibilityScreenRecording",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "reduceMotionSubduesSplash", "passed": false},
+        {"checkKey": "reduceMotionSubduesConfetti", "passed": false},
+        {"checkKey": "largestDynamicTypeHomeCTAs", "passed": false},
+        {"checkKey": "largestDynamicTypeSummaryCTAs", "passed": false},
+        {"checkKey": "voiceOverLabelsAndHints", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "notificationLifecycle",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "notificationDeliveryLog",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "firstRepPrePrompt", "passed": false},
+        {"checkKey": "nativePromptOnce", "passed": false},
+        {"checkKey": "allFourSurfacesArm", "passed": false},
+        {"checkKey": "declineCooldownThirtyDays", "passed": false},
+        {"checkKey": "streakWarningDelivery", "passed": false}
+      ],
+      "notes": []
+    },
+    {
+      "surfaceKey": "widgetRefresh",
+      "passed": false,
+      "realDevice": false,
+      "testFlightBuildInstalled": false,
+      "evidenceReference": "",
+      "evidenceKind": "widgetScreenRecording",
+      "evidenceCapturedAtISO8601": "",
+      "testFlightBuildNumber": "",
+      "deviceIdentifierHash": "",
+      "latencyMs": null,
+      "blockingIssueCount": 0,
+      "verifiedByID": "",
+      "checks": [
+        {"checkKey": "homeWidgetRefreshesRepCount", "passed": false},
+        {"checkKey": "homeWidgetRefreshesStreak", "passed": false},
+        {"checkKey": "lockScreenCircularNoClipping", "passed": false}
+      ],
       "notes": []
     }
   ]
