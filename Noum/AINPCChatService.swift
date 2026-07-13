@@ -42,7 +42,8 @@ public final class AINPCChatService: ObservableObject {
     private var streamURL: URL? {
         #if canImport(FirebaseRemoteConfig) && canImport(FirebaseCore)
         guard FirebaseApp.app() != nil else { return nil }
-        if let s = RemoteConfig.remoteConfig()["ai_stream_url"].stringValue, !s.isEmpty {
+        let s = RemoteConfig.remoteConfig()["ai_stream_url"].stringValue
+        if !s.isEmpty {
             return URL(string: s)
         }
         #endif

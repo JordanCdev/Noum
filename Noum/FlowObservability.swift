@@ -35,6 +35,8 @@ enum FlowKind: String, Codable, CaseIterable {
 /// Stable, bounded event vocabulary for the transformation KPIs. Keeping these
 /// names beside the report prevents call sites and denominators drifting apart.
 enum TransformationKPIEventStage {
+    static let activationExperimentAssigned = "activation.experimentAssigned"
+    static let activationExperimentExposed = "activation.experimentExposed"
     static let structuredStarted = "activation.structuredStarted"
     static let structuredValueDelivered = "activation.structuredValueDelivered"
     static let liveUpgradeTapped = "activation.liveUpgradeTapped"
@@ -155,6 +157,54 @@ final class FlowEventLog: ObservableObject {
             flow: .other,
             stage: "retention.appActive",
             reason: "foreground active day"
+        ))
+    }
+
+    /// Freezes the first valid externally configured assignment for this
+    /// account. Later Remote Config changes cannot replace it because the
+    /// account-local event ledger is the assignment source of truth after the
+    /// first write.
+    @discardableResult
+    func recordActivationExperimentAssignment(
+        _ proposed: ActivationExperimentAssignment
+    ) -> ActivationExperimentAssignment {
+        if let existing = ActivationExperimentContract.persistedAssignment(in: events) {
+            return existing
+        }
+        log(FlowEvent.make(
+            createdAt: proposed.assignedAt,
+            correlationId: proposed.correlationID,
+            flow: .other,
+            stage: TransformationKPIEventStage.activationExperimentAssigned,
+            reason: "externally configured activation assignment",
+            numerics: [
+                "experimentVersion": proposed.version,
+                "variant": proposed.variant.rawValue,
+            ]
+        ))
+        return proposed
+    }
+
+    /// Records actual route exposure separately from assignment. A mismatched
+    /// route is ignored so a later setup screen cannot be misread as exposure
+    /// to the full-onboarding control variant.
+    func recordActivationExperimentExposure(
+        assignment: ActivationExperimentAssignment,
+        route: FirstRunOnboardingGate.RootRoute,
+        context: ActivationExperimentExposureContext,
+        now: Date = Date()
+    ) {
+        guard route == assignment.variant.rootRoute else { return }
+        var numerics = context.numerics
+        numerics["experimentVersion"] = assignment.version
+        numerics["variant"] = assignment.variant.rawValue
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: assignment.correlationID,
+            flow: .other,
+            stage: TransformationKPIEventStage.activationExperimentExposed,
+            reason: "assigned first-run route appeared",
+            numerics: numerics
         ))
     }
 
@@ -294,9 +344,29 @@ final class FlowEventLog: ObservableObject {
         // diagnostics ring. Pin the earliest structured-value delivery rather
         // than the newest one so a duplicate emission can never move a user's
         // measured time-to-first-value forward.
+        let assignment = ActivationExperimentContract.persistedAssignment(in: ordered)
+        let exposure = assignment.flatMap { assignment in
+            ordered
+                .filter {
+                    $0.stage == TransformationKPIEventStage.activationExperimentExposed
+                        && $0.correlationId == assignment.correlationID
+                        && $0.createdAt >= assignment.assignedAt
+                        && $0.numerics["experimentVersion"] == assignment.version
+                        && $0.numerics["variant"] == assignment.variant.rawValue
+                }
+                .min(by: { $0.createdAt < $1.createdAt })
+        }
         let pinned = Array([
             ordered.filter { $0.stage == "activation.firstEligible" }
                 .min(by: { $0.createdAt < $1.createdAt }),
+            assignment.flatMap { frozen in
+                ordered.first(where: {
+                    $0.stage == TransformationKPIEventStage.activationExperimentAssigned
+                        && $0.correlationId == frozen.correlationID
+                        && $0.createdAt == frozen.assignedAt
+                })
+            },
+            exposure,
             ordered.filter { $0.stage == TransformationKPIEventStage.structuredValueDelivered }
                 .min(by: { $0.createdAt < $1.createdAt }),
             ordered.first(where: { $0.stage.hasPrefix("transformation.helpfulness") }),
@@ -309,6 +379,9 @@ final class FlowEventLog: ObservableObject {
 }
 
 struct TransformationKPIReport: Equatable {
+    /// Account-local assignment/exposure attribution. Outcomes remain separate
+    /// report fields so assignment is never mistaken for delivered value.
+    let activationExperimentAttribution: ActivationExperimentAttribution?
     /// A durable spoken practice session exists. Structured first value never
     /// satisfies this field, preserving its historical speech-evidence meaning.
     let firstRepCompleted: Bool
@@ -325,9 +398,15 @@ struct TransformationKPIReport: Equatable {
     let prescriptionAcceptanceRate: Double?
     let cloudToLocalFallbackRate: Double?
     let typedToLiveUpgradeRate: Double?
-    /// Structured first-value receipts that were followed by an explicit tap
-    /// into spoken coaching, paired by the same content-free correlation ID.
-    let structuredToLiveUpgradeRate: Double?
+    /// Structured first-value receipts followed by an explicit tap toward
+    /// spoken coaching, paired by content-free correlation ID. This is intent,
+    /// not proof that a spoken rep completed.
+    let structuredToSpokenUpgradeIntentRate: Double?
+    /// Account-local completion truth: after structured value, did a real,
+    /// non-fixture PracticeSession persist? Population conversion remains an
+    /// external analysis over these per-account reads.
+    let structuredToSpokenRepCompleted: Bool?
+    let timeFromStructuredValueToSpokenRepSeconds: TimeInterval?
     let goalImprovementRate7Days: Double?
     let goalImprovementRate28Days: Double?
     let notificationOptInAfterValue: Bool?
@@ -402,6 +481,17 @@ struct TransformationKPIReport: Equatable {
         let structuredUpgradeRate = structuredValueIDs.isEmpty
             ? nil
             : Double(structuredLiveIDs.count) / Double(structuredValueIDs.count)
+        let firstSpokenAfterStructuredValue = firstStructuredValue.flatMap { valueAt in
+            orderedSessions.first(where: { $0.date >= valueAt })
+        }
+        let structuredToSpokenRepCompleted = firstStructuredValue.map { _ in
+            firstSpokenAfterStructuredValue != nil
+        }
+        let timeFromStructuredValueToSpokenRep = firstStructuredValue.flatMap { valueAt in
+            firstSpokenAfterStructuredValue.map {
+                max(0, $0.date.timeIntervalSince(valueAt))
+            }
+        }
 
         func improvementRate(days: Int) -> Double? {
             guard let cutoff = calendar.date(byAdding: .day, value: -days, to: now) else { return nil }
@@ -413,9 +503,15 @@ struct TransformationKPIReport: Equatable {
             return Double(reads.filter { $0 == .earlyImprovement }.count) / Double(reads.count)
         }
 
-        let notificationDecision = events
-            .filter { $0.stage == "notification.authorizationGranted" || $0.stage == "notification.authorizationDeclined" }
-            .max { $0.createdAt < $1.createdAt }
+        let notificationDecision = firstValue.flatMap { valueAt in
+            events
+                .filter {
+                    ($0.stage == "notification.authorizationGranted"
+                        || $0.stage == "notification.authorizationDeclined")
+                        && $0.createdAt >= valueAt
+                }
+                .max { $0.createdAt < $1.createdAt }
+        }
 
         func retained(day: Int) -> Bool? {
             guard let firstEligible,
@@ -425,6 +521,7 @@ struct TransformationKPIReport: Equatable {
         }
 
         return TransformationKPIReport(
+            activationExperimentAttribution: ActivationExperimentContract.attribution(in: events),
             firstRepCompleted: firstRep != nil,
             timeToFirstRepSeconds: timeToFirstRep,
             firstValueCompleted: firstValue != nil,
@@ -435,7 +532,9 @@ struct TransformationKPIReport: Equatable {
             prescriptionAcceptanceRate: acceptance,
             cloudToLocalFallbackRate: fallbackRate,
             typedToLiveUpgradeRate: upgradeRate,
-            structuredToLiveUpgradeRate: structuredUpgradeRate,
+            structuredToSpokenUpgradeIntentRate: structuredUpgradeRate,
+            structuredToSpokenRepCompleted: structuredToSpokenRepCompleted,
+            timeFromStructuredValueToSpokenRepSeconds: timeFromStructuredValueToSpokenRep,
             goalImprovementRate7Days: improvementRate(days: 7),
             goalImprovementRate28Days: improvementRate(days: 28),
             notificationOptInAfterValue: notificationDecision.map { $0.stage == "notification.authorizationGranted" },

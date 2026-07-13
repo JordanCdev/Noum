@@ -125,6 +125,170 @@ struct FirstValueReceipt: Codable, Equatable {
     }
 }
 
+// MARK: - Activation experiment contract
+
+/// The two already-shipping first-run routes that may participate in the
+/// activation experiment. The app never chooses between these variants
+/// locally: a value exists only when an approved external configuration token
+/// is active. No token (including a value that has not fetched yet) means the
+/// production fast lane remains the unassigned default.
+enum ActivationExperimentVariant: Int, Codable, Equatable {
+    case fullOnboardingControl = 0
+    case permissionlessFastLane = 1
+
+    var rootRoute: FirstRunOnboardingGate.RootRoute {
+        switch self {
+        case .fullOnboardingControl: return .fullOnboarding
+        case .permissionlessFastLane: return .fastLane
+        }
+    }
+}
+
+/// Content-free, account-local assignment recovered from `FlowEventLog`.
+/// Keeping it in the existing bounded flow ledger means export and deletion
+/// continue through the established account-data owner rather than a second
+/// analytics or onboarding store.
+struct ActivationExperimentAssignment: Equatable {
+    let correlationID: UUID
+    let version: Int
+    let variant: ActivationExperimentVariant
+    let assignedAt: Date
+}
+
+/// Permission and locale state at the moment the assigned route actually
+/// appeared. These are small enumerations, never identifiers or user content.
+struct ActivationExperimentExposureContext: Equatable {
+    enum PermissionState: Int, Equatable {
+        case unknown = -1
+        case undetermined = 0
+        case denied = 1
+        case granted = 2
+    }
+
+    enum Locale: Int, Equatable {
+        case unknown = 0
+        case englishUS = 1
+        case spanishES = 2
+        case frenchFR = 3
+    }
+
+    let microphonePermission: PermissionState
+    let speechPermission: PermissionState
+    let locale: Locale
+
+    var numerics: [String: Int] {
+        [
+            "microphonePermission": microphonePermission.rawValue,
+            "speechPermission": speechPermission.rawValue,
+            "locale": locale.rawValue,
+        ]
+    }
+}
+
+/// Per-account attribution only. Noum does not aggregate this into population
+/// analytics; an approved external analysis can group exported account-local
+/// reports after its separate privacy/product decision.
+struct ActivationExperimentAttribution: Equatable {
+    let assignment: ActivationExperimentAssignment
+    let exposedVariant: ActivationExperimentVariant?
+
+    var wasExposed: Bool { exposedVariant != nil }
+}
+
+enum ActivationExperimentContract {
+    /// Remote Config owns delivery. Only these exact, versioned tokens can
+    /// enroll an eligible new account; unknown values fail closed.
+    static let remoteConfigKey = "activation_first_run_contract"
+    static let currentVersion = 1
+    static let fullOnboardingToken = "first-run-v1:full-onboarding"
+    static let fastLaneToken = "first-run-v1:permissionless-fast-lane"
+
+    /// Eligibility is deliberately stricter than route availability. Existing
+    /// accounts, developer accounts, UI automation, and any account whose
+    /// activation window already opened are never newly enrolled.
+    static func isEligibleForNewAssignment(
+        hasHydratedAccountStores: Bool,
+        isDeveloper: Bool,
+        isUITesting: Bool,
+        hasCoachingProfile: Bool,
+        hasOnboardingDraft: Bool,
+        hasEnteredActivation: Bool
+    ) -> Bool {
+        hasHydratedAccountStores
+            && !isDeveloper
+            && !isUITesting
+            && !hasCoachingProfile
+            && !hasOnboardingDraft
+            && !hasEnteredActivation
+    }
+
+    static func resolveAssignment(
+        configuredValue: String?,
+        isEligible: Bool,
+        correlationID: UUID = UUID(),
+        now: Date = Date()
+    ) -> ActivationExperimentAssignment? {
+        guard isEligible,
+              let value = configuredValue?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return nil
+        }
+
+        let variant: ActivationExperimentVariant
+        switch value {
+        case fullOnboardingToken:
+            variant = .fullOnboardingControl
+        case fastLaneToken:
+            variant = .permissionlessFastLane
+        default:
+            return nil
+        }
+
+        return ActivationExperimentAssignment(
+            correlationID: correlationID,
+            version: currentVersion,
+            variant: variant,
+            assignedAt: now
+        )
+    }
+
+    static func persistedAssignment(in events: [FlowEvent]) -> ActivationExperimentAssignment? {
+        events
+            .filter { $0.stage == TransformationKPIEventStage.activationExperimentAssigned }
+            .sorted { $0.createdAt < $1.createdAt }
+            .compactMap(decodeAssignment)
+            .first
+    }
+
+    static func attribution(in events: [FlowEvent]) -> ActivationExperimentAttribution? {
+        guard let assignment = persistedAssignment(in: events) else { return nil }
+        let exposed = events.contains { event in
+            event.stage == TransformationKPIEventStage.activationExperimentExposed
+                && event.correlationId == assignment.correlationID
+                && event.createdAt >= assignment.assignedAt
+                && event.numerics["experimentVersion"] == assignment.version
+                && event.numerics["variant"] == assignment.variant.rawValue
+        }
+        return ActivationExperimentAttribution(
+            assignment: assignment,
+            exposedVariant: exposed ? assignment.variant : nil
+        )
+    }
+
+    private static func decodeAssignment(_ event: FlowEvent) -> ActivationExperimentAssignment? {
+        guard event.numerics["experimentVersion"] == currentVersion,
+              let rawVariant = event.numerics["variant"],
+              let variant = ActivationExperimentVariant(rawValue: rawVariant) else {
+            return nil
+        }
+        return ActivationExperimentAssignment(
+            correlationID: event.correlationId,
+            version: currentVersion,
+            variant: variant,
+            assignedAt: event.createdAt
+        )
+    }
+}
+
 // MARK: - First-run onboarding policy
 
 /// Pure root-routing policy for the first coaching intake.
@@ -169,13 +333,14 @@ enum FirstRunOnboardingGate {
         hasCoachingProfile: Bool,
         draft: CoachingProfileDraft?,
         postValueChoice: PostValueChoice? = nil,
+        activationExperimentVariant: ActivationExperimentVariant? = nil,
         isUITesting: Bool
     ) -> RootRoute {
         if isUITesting || hasCoachingProfile {
             return .appShell
         }
         guard draft?.hasCompletedFirstValue == true else {
-            return .fastLane
+            return activationExperimentVariant?.rootRoute ?? .fastLane
         }
         return postValueChoice == .completeCoachingSetup
             ? .fullOnboarding

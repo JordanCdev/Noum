@@ -421,7 +421,7 @@ struct TransformationKPIReportTests {
         #expect(stages.allSatisfy { !$0.isEmpty && $0.count <= 48 })
     }
 
-    @Test func structuredToLiveUpgradeRequiresAPairedDeliveredValue() {
+    @Test func structuredToSpokenUpgradeIntentRequiresAPairedDeliveredValue() {
         let deliveredA = UUID()
         let deliveredB = UUID()
         let unrelated = UUID()
@@ -434,8 +434,8 @@ struct TransformationKPIReportTests {
 
         let report = TransformationKPIReport.derive(events: events, sessions: [], outcomes: [])
 
-        #expect(report.structuredToLiveUpgradeRate == 0.5)
-        #expect(TransformationKPIReport.derive(events: [], sessions: [], outcomes: []).structuredToLiveUpgradeRate == nil)
+        #expect(report.structuredToSpokenUpgradeIntentRate == 0.5)
+        #expect(TransformationKPIReport.derive(events: [], sessions: [], outcomes: []).structuredToSpokenUpgradeIntentRate == nil)
     }
 
     @Test func qualitativeQuestionAppearsOnlyAfterThreeRepsAndOnlyOnce() {

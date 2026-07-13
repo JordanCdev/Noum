@@ -81,7 +81,8 @@ public enum FirebaseBootstrap {
         #if canImport(FirebaseRemoteConfig)
         let rc = RemoteConfig.remoteConfig()
         let defaults: [String: NSObject] = [
-            "ai_stream_url": "" as NSString
+            "ai_stream_url": "" as NSString,
+            ActivationExperimentContract.remoteConfigKey: "" as NSString,
         ]
         rc.setDefaults(defaults)
         rc.fetchAndActivate { status, error in

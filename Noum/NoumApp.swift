@@ -13,8 +13,14 @@ import UIKit
 #if canImport(FirebaseCore)
 import FirebaseCore
 #endif
+#if canImport(FirebaseRemoteConfig)
+import FirebaseRemoteConfig
+#endif
 #if canImport(GoogleSignIn)
 import GoogleSignIn
+#endif
+#if canImport(Speech)
+import Speech
 #endif
 
 #if canImport(UIKit)
@@ -62,6 +68,8 @@ struct NoumApp: App {
     @State private var showFirstRepCloudProcessingConsent = false
     @State private var firstRunPostValueChoice: FirstRunOnboardingGate.PostValueChoice?
     @State private var holdsFastLaneResult = false
+    @State private var activationExperimentAssignment: ActivationExperimentAssignment?
+    @State private var activationExperimentResolvedAccountID: String?
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
@@ -220,8 +228,22 @@ struct NoumApp: App {
             await authManager.bootstrapInitialAccountIfNeeded()
             await MainActor.run {
                 FlowEventLog.shared.reloadForCurrentAccount()
+                resolveActivationExperimentForHydratedAccountIfNeeded()
                 FlowEventLog.shared.recordActiveDay()
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+            }
+        }
+        .onChange(of: authManager.initialAccountHydrationState) { _, newState in
+            guard newState == .ready else { return }
+            // Resolve only after AccountDataRegistry has reloaded every
+            // account-scoped store. Observing an ID earlier would risk treating
+            // a returning account as fresh while its profile was still loading.
+            Task { @MainActor in
+                FlowEventLog.shared.reloadForCurrentAccount()
+                resolveActivationExperimentForHydratedAccountIfNeeded()
+                if authManager.currentAccountID != nil {
+                    FlowEventLog.shared.recordActiveDay()
+                }
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -279,29 +301,39 @@ struct NoumApp: App {
                 }
             }
         case .ready:
-            switch firstRunRootRoute {
-            case .fastLane:
-                FastLaneOnboardingView(
-                    profileStore: coachingProfileStore,
-                    onValueDelivered: persistStructuredFirstValue,
-                    onCompleteSetup: openFullCoachingSetup,
-                    onEnterApp: enterAppAfterStructuredValue
-                )
-                .interactiveDismissDisabled(true)
-            case .fullOnboarding:
-                // Full setup remains the only route that publishes a complete
-                // CoachingProfile. Fast-lane choices prefill it without
-                // inventing the still-unanswered voice choice.
-                CoachingOnboardingView(
-                    prefill: coachingProfileStore.onboardingDraft,
-                    onComplete: completeFirstRunOnboarding,
-                    onDefer: coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true
-                        ? enterAppAfterStructuredValue
-                        : nil
-                )
-                .interactiveDismissDisabled(true)
-            case .appShell:
-                AppShellView()
+            if coachingProfileStore.profile == nil && !activationExperimentResolvedForCurrentAccount {
+                InitialAccountBootstrapView()
+            } else {
+                switch firstRunRootRoute {
+                case .fastLane:
+                    FastLaneOnboardingView(
+                        profileStore: coachingProfileStore,
+                        onValueDelivered: persistStructuredFirstValue,
+                        onCompleteSetup: openFullCoachingSetup,
+                        onEnterApp: enterAppAfterStructuredValue
+                    )
+                    .interactiveDismissDisabled(true)
+                    .onAppear {
+                        recordActivationExperimentExposure(route: .fastLane)
+                    }
+                case .fullOnboarding:
+                    // Full setup remains the only route that publishes a complete
+                    // CoachingProfile. Fast-lane choices prefill it without
+                    // inventing the still-unanswered voice choice.
+                    CoachingOnboardingView(
+                        prefill: coachingProfileStore.onboardingDraft,
+                        onComplete: completeFirstRunOnboarding,
+                        onDefer: coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true
+                            ? enterAppAfterStructuredValue
+                            : nil
+                    )
+                    .interactiveDismissDisabled(true)
+                    .onAppear {
+                        recordActivationExperimentExposure(route: .fullOnboarding)
+                    }
+                case .appShell:
+                    AppShellView()
+                }
             }
         case .needsIdentity, .establishingGuest, .hydratingStores:
             InitialAccountBootstrapView()
@@ -322,8 +354,126 @@ struct NoumApp: App {
             hasCoachingProfile: coachingProfileStore.profile != nil,
             draft: coachingProfileStore.onboardingDraft,
             postValueChoice: firstRunPostValueChoice,
+            activationExperimentVariant: activationExperimentAssignment?.variant,
             isUITesting: isUITesting && !isRealFirstRunUITesting
         )
+    }
+
+    /// Assignment is resolved exactly once per hydrated account for this app
+    /// session. A late Remote Config activation or unrelated SwiftUI render can
+    /// therefore never replace a route that has already mounted. An absent or
+    /// unknown value freezes as an unassigned production fast lane.
+    @MainActor
+    private func resolveActivationExperimentForHydratedAccountIfNeeded() {
+        guard authManager.initialAccountHydrationState == .ready,
+              let accountID = authManager.currentAccountID,
+              activationExperimentResolvedAccountID != accountID else { return }
+
+        let events = FlowEventLog.shared.events
+        let persisted = ActivationExperimentContract.persistedAssignment(in: events)
+        let hasEnteredActivation = events.contains { $0.stage == "activation.firstEligible" }
+        let eligibleForNewAssignment = activationExperimentBuildAllowsEnrollment
+            && ActivationExperimentContract.isEligibleForNewAssignment(
+                hasHydratedAccountStores: true,
+                isDeveloper: authManager.isDeveloper,
+                isUITesting: isUITesting,
+                hasCoachingProfile: coachingProfileStore.profile != nil,
+                hasOnboardingDraft: coachingProfileStore.onboardingDraft != nil,
+                hasEnteredActivation: hasEnteredActivation
+            )
+
+        let resolved = persisted ?? ActivationExperimentContract.resolveAssignment(
+            configuredValue: activeActivationExperimentConfiguration,
+            isEligible: eligibleForNewAssignment
+        )
+        if persisted == nil, let resolved {
+            activationExperimentAssignment = FlowEventLog.shared
+                .recordActivationExperimentAssignment(resolved)
+        } else {
+            activationExperimentAssignment = resolved
+        }
+        // Set this last so routing cannot observe a partially resolved state.
+        activationExperimentResolvedAccountID = accountID
+    }
+
+    private var activationExperimentResolvedForCurrentAccount: Bool {
+        guard let accountID = authManager.currentAccountID else { return false }
+        return activationExperimentResolvedAccountID == accountID
+    }
+
+    private var activationExperimentBuildAllowsEnrollment: Bool {
+        #if DEBUG
+        // Developer builds and UI overrides are excluded from cohorts. Pure
+        // contract tests exercise both variants without enrolling the host.
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    /// Reads only the currently active snapshot owned by FirebaseBootstrap.
+    /// This call never starts another fetch and never waits on the network. If
+    /// startup activation has not completed, resolution fails closed for this
+    /// account session and the production fast lane remains mounted.
+    private var activeActivationExperimentConfiguration: String? {
+        #if canImport(FirebaseCore) && canImport(FirebaseRemoteConfig)
+        guard FirebaseApp.app() != nil else { return nil }
+        return RemoteConfig.remoteConfig()[ActivationExperimentContract.remoteConfigKey].stringValue
+        #else
+        return nil
+        #endif
+    }
+
+    private func recordActivationExperimentExposure(route: FirstRunOnboardingGate.RootRoute) {
+        guard activationExperimentResolvedForCurrentAccount,
+              let activationExperimentAssignment else { return }
+        FlowEventLog.shared.recordActivationExperimentExposure(
+            assignment: activationExperimentAssignment,
+            route: route,
+            context: activationExperimentExposureContext
+        )
+    }
+
+    private var activationExperimentExposureContext: ActivationExperimentExposureContext {
+        ActivationExperimentExposureContext(
+            microphonePermission: activationMicrophonePermission,
+            speechPermission: activationSpeechPermission,
+            locale: activationLocale
+        )
+    }
+
+    private var activationMicrophonePermission: ActivationExperimentExposureContext.PermissionState {
+        #if canImport(AVFoundation)
+        switch PracticeMicrophonePermissionState.current() {
+        case .unknown: return .unknown
+        case .undetermined: return .undetermined
+        case .denied: return .denied
+        case .granted: return .granted
+        }
+        #else
+        return .unknown
+        #endif
+    }
+
+    private var activationSpeechPermission: ActivationExperimentExposureContext.PermissionState {
+        #if canImport(Speech)
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .notDetermined: return .undetermined
+        case .denied, .restricted: return .denied
+        case .authorized: return .granted
+        @unknown default: return .unknown
+        }
+        #else
+        return .unknown
+        #endif
+    }
+
+    private var activationLocale: ActivationExperimentExposureContext.Locale {
+        switch localeSettings.current {
+        case .enUS: return .englishUS
+        case .esES: return .spanishES
+        case .frFR: return .frenchFR
+        }
     }
 
     private func completeFirstRunOnboarding() {
@@ -358,7 +508,9 @@ struct NoumApp: App {
             stage: TransformationKPIEventStage.structuredValueDelivered,
             reason: "structure-only first value delivered",
             numerics: [
-                "durationMs": min(60_000, max(0, elapsedMilliseconds)),
+                // Keep pathological clocks bounded without turning every miss
+                // of the 60-second goal into a misleading exact 60 seconds.
+                "durationMs": min(86_400_000, max(0, elapsedMilliseconds)),
                 "wordCount": min(600, max(0, result.wordCount)),
             ]
         ))
