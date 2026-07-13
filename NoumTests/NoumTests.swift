@@ -1253,7 +1253,8 @@ struct NextActionEngineTests {
             pressureProfile: .empty,
             trends: [SkillTrend(skillArea: .fillerReduction, direction: .stable, confidence: .high, windowSize: 8, currentLevel: .strong)],
             drillHistory: [],
-            sessionCount: 10, streakDays: 5, styleGoal: nil
+            sessionCount: 10, streakDays: 5, styleGoal: nil,
+            modeAvailability: .allAvailable
         )
         let result = NextActionEngine.recommend(input: input)
         // Strong + stable → stretch challenge
@@ -1444,6 +1445,7 @@ struct NextActionEngineTests {
             pressureProfile: makePressure(resilience: 0.4),
             trends: [], drillHistory: [],
             sessionCount: 12, streakDays: 7, styleGoal: nil,
+            modeAvailability: .allAvailable,
             recommendationOutcomes: outcomes
         )
     }
@@ -1493,6 +1495,7 @@ struct NextActionEngineTests {
             trends: [],
             drillHistory: [],
             sessionCount: 10, streakDays: 5, styleGoal: nil,
+            modeAvailability: .allAvailable,
             recommendationOutcomes: outcomes
         )
     }

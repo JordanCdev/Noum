@@ -68,6 +68,28 @@ struct PrescriptionProjectionTests {
         )
     }
 
+    @Test func lockedPressureExposureProjectsCoherentlyToTimedPractice() {
+        let projection = SummaryPrescriptionProjection.resolve(
+            nextAction: nextAction(
+                .pressureExposure(
+                    .suddenDeath,
+                    reason: "Test the same control under pressure."
+                ),
+                reasoning: "Your casual reps read stronger than your pressure reps.",
+                confidence: .moderate
+            ),
+            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
+            modeAvailability: NextActionModeAvailability(rating: .initial)
+        )
+
+        #expect(projection.source == .finalizedNextAction)
+        #expect(projection.fullRepMode == .timed)
+        #expect(projection.title == PracticeMode.timed.displayLabel)
+        #expect(projection.reason == NextActionModeAvailability.suddenDeathFallbackReason)
+        #expect(projection.evidence == nil)
+        #expect(projection.destination(imAvailable: true) == .timedPractice)
+    }
+
     @Test func stabilizingRepProjectsToOneFullRep() {
         assertFullRep(
             action: .stabilizingRep(.timed, reason: "Run one comparable rep to see whether the gain holds."),
@@ -180,7 +202,8 @@ struct PrescriptionProjectionTests {
                 reasoning: "The available evidence points to one comparable full rep.",
                 confidence: .moderate
             ),
-            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill)
+            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
+            modeAvailability: .allAvailable
         )
 
         #expect(projection.source == .finalizedNextAction)

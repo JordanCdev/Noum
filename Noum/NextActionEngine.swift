@@ -49,6 +49,66 @@ enum ActionRecommendation: Equatable {
     }
 }
 
+/// Pure snapshot of the existing practice-mode gate at recommendation time.
+/// Callers derive it from `PracticeModeAvailability` and the current
+/// `SpeakingRating`; the engine never reaches into `RatingStore` itself.
+struct NextActionModeAvailability: Equatable {
+    let suddenDeathAvailable: Bool
+
+    /// Safe default for any caller that has not yet supplied rated evidence.
+    /// Explicitly unlocked tests and trusted contexts can use `allAvailable`.
+    static let failClosed = NextActionModeAvailability(suddenDeathAvailable: false)
+    static let allAvailable = NextActionModeAvailability(suddenDeathAvailable: true)
+
+    static var suddenDeathFallbackReason: String {
+        "\(PracticeModePrescriptionCopy.pressureLockedHint) Start with Timed Practice."
+    }
+
+    init(suddenDeathAvailable: Bool) {
+        self.suddenDeathAvailable = suddenDeathAvailable
+    }
+
+    init(rating: SpeakingRating) {
+        suddenDeathAvailable = PracticeModeAvailability.isUnlocked(
+            .suddenDeath,
+            rating: rating
+        )
+    }
+
+    func isAvailable(_ mode: PracticeMode) -> Bool {
+        mode != .suddenDeath || suddenDeathAvailable
+    }
+}
+
+private extension ActionRecommendation {
+    var recommendedMode: PracticeMode? {
+        switch self {
+        case .drill, .confidenceRebuilding:
+            return nil
+        case .practiceMode(let mode, _),
+             .pressureExposure(let mode, _),
+             .stabilizingRep(let mode, _):
+            return mode
+        }
+    }
+
+    func resolvingModeAvailability(
+        _ availability: NextActionModeAvailability
+    ) -> (action: ActionRecommendation, didFallback: Bool) {
+        guard let recommendedMode,
+              !availability.isAvailable(recommendedMode) else {
+            return (self, false)
+        }
+        return (
+            .practiceMode(
+                .timed,
+                reason: NextActionModeAvailability.suddenDeathFallbackReason
+            ),
+            true
+        )
+    }
+}
+
 // MARK: - Summary Prescription Projection
 
 /// Presentation projection for the one adaptive action shown on an active
@@ -91,7 +151,8 @@ struct SummaryPrescriptionProjection {
         nextAction: NextAction?,
         fallbackDrill: DrillRecommendationV2,
         existingScenario: IMConversationScenario? = nil,
-        existingTone: IMTargetTone? = nil
+        existingTone: IMTargetTone? = nil,
+        modeAvailability: NextActionModeAvailability = .failClosed
     ) -> SummaryPrescriptionProjection {
         guard let nextAction else {
             return SummaryPrescriptionProjection(
@@ -104,7 +165,8 @@ struct SummaryPrescriptionProjection {
             )
         }
 
-        let action = nextAction.primary
+        let resolution = nextAction.primary.resolvingModeAvailability(modeAvailability)
+        let action = resolution.action
         let kind: Kind
         switch action {
         case .drill(let drill), .confidenceRebuilding(let drill):
@@ -120,7 +182,12 @@ struct SummaryPrescriptionProjection {
         }
 
         let reason = normalized(action.displayReason) ?? action.displayTitle
-        let widerEvidence = normalized(nextAction.reasoning)
+        // A stale finalized Pressure Drill action must not leave pressure copy
+        // attached to the Timed fallback. The fallback reason is already the
+        // complete explanation, so suppress the now-inapplicable evidence line.
+        let widerEvidence = resolution.didFallback
+            ? nil
+            : normalized(nextAction.reasoning)
         return SummaryPrescriptionProjection(
             source: .finalizedNextAction,
             kind: kind,
@@ -185,6 +252,10 @@ struct NextActionInput {
     let streakDays: Int
     let styleGoal: String?
 
+    /// Pure snapshot supplied by the current rating owner. It fails closed so
+    /// an omitted argument cannot prescribe a still-locked Pressure Drill.
+    var modeAvailability: NextActionModeAvailability = .failClosed
+
     /// The recommendation outcome ledger, passed IN so the engine stays a pure
     /// value-transform (it never reaches `RecommendationLearningStore.shared`).
     /// Defaulted empty: every existing call site compiles unchanged, and an empty
@@ -209,6 +280,13 @@ struct NextActionInput {
 enum NextActionEngine {
 
     static func recommend(input: NextActionInput) -> NextAction {
+        applyingModeAvailability(
+            to: recommendWithoutModeAvailability(input: input),
+            availability: input.modeAvailability
+        )
+    }
+
+    private static func recommendWithoutModeAvailability(input: NextActionInput) -> NextAction {
         let confidence = input.baseline.overallConfidence
         let style = SpeakingStyleGoal.resolve(input.styleGoal)
 
@@ -297,6 +375,32 @@ enum NextActionEngine {
             secondary: nil,
             reasoning: "Continued practice builds your baseline and reveals where to focus next.",
             confidenceLevel: confidence
+        )
+    }
+
+    /// Apply availability once, after the strategic cascade, so every current
+    /// and future action shape is covered. The engine changes the action, copy,
+    /// and secondary coherently instead of relying on a downstream route guard.
+    private static func applyingModeAvailability(
+        to recommendation: NextAction,
+        availability: NextActionModeAvailability
+    ) -> NextAction {
+        let primaryResolution = recommendation.primary
+            .resolvingModeAvailability(availability)
+        let resolvedSecondary = recommendation.secondary?
+            .resolvingModeAvailability(availability)
+            .action
+        let secondary = resolvedSecondary == primaryResolution.action
+            ? nil
+            : resolvedSecondary
+
+        return NextAction(
+            primary: primaryResolution.action,
+            secondary: secondary,
+            reasoning: primaryResolution.didFallback
+                ? primaryResolution.action.displayReason
+                : recommendation.reasoning,
+            confidenceLevel: recommendation.confidenceLevel
         )
     }
 
