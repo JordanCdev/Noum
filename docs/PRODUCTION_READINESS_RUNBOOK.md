@@ -158,6 +158,21 @@ Before deploying the reviewed social rules and functions together:
 Until every step passes, keep league and challenge actions unavailable in the
 client. A disabled social surface is safer than accepting untrusted progress.
 
+For the reviewed production inventory on an operator Mac that has an active
+gcloud user identity but no Application Default Credentials, use the explicit
+read-only credential mode:
+
+```bash
+node scripts/migrate-social-reference-cutover.mjs --project=noum-d0b6f \
+  --gcloud-user-credentials
+```
+
+This mode obtains a short-lived token noninteractively, keeps it in memory only,
+and never includes it in console output or the ignored mode-0600 backup. The
+script rejects `--apply` and every purge option in this mode before contacting
+gcloud or Firestore. Application Default Credentials remain the only credential
+path eligible for the separately approved coordinated cutover.
+
 ## Local Evidence Path
 
 ```bash

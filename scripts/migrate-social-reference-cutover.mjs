@@ -4,26 +4,30 @@ import {mkdir, writeFile} from "node:fs/promises";
 import {createRequire} from "node:module";
 import {resolve} from "node:path";
 
+import {
+  createGcloudUserAuthClient,
+  parseSocialCutoverOptions,
+  SocialCutoverCredentialMode,
+} from "./social-cutover-credentials.mjs";
+
 const requireFromFunctions = createRequire(
   new URL("../functions/package.json", import.meta.url)
 );
 const {applicationDefault, initializeApp} = requireFromFunctions(
   "firebase-admin/app"
 );
-const {FieldValue, getFirestore} = requireFromFunctions(
+const {FieldValue, Firestore, getFirestore} = requireFromFunctions(
   "firebase-admin/firestore"
 );
 
-const args = process.argv.slice(2);
-const flag = (name) => args.includes(name);
-const valueFor = (name) => args
-  .find((argument) => argument.startsWith(`${name}=`))
-  ?.slice(name.length + 1);
+const options = parseSocialCutoverOptions(process.argv.slice(2));
 
-if (flag("--help")) {
+if (options.help) {
   process.stdout.write(`
 Usage:
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID
+  node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
+    --gcloud-user-credentials
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
     --apply --confirm-project=PROJECT_ID
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
@@ -34,28 +38,14 @@ Default mode is remote-read-only. Every run writes an ignored local JSON
 backup. --apply backfills exact manifests and writes the global cutover marker
 only after all writes succeed. Existing client-authored profiles or league rows
 make apply fail closed unless both explicit legacy-social purge flags are given.
+--gcloud-user-credentials is an opt-in, noninteractive read-only inventory mode.
+It refuses --apply and every purge option. Application-default credentials are
+the only credentials eligible for remote mutation.
 `);
   process.exit(0);
 }
 
-const projectID = valueFor("--project") ?? process.env.GCLOUD_PROJECT;
-const apply = flag("--apply");
-const purgeLegacySocial = flag("--purge-legacy-social");
-const confirmedProject = valueFor("--confirm-project");
-const purgeApproval = valueFor("--approve-purge");
-
-if (!projectID) throw new Error("Pass --project=PROJECT_ID.");
-if (apply && confirmedProject !== projectID) {
-  throw new Error("--apply requires --confirm-project to match --project.");
-}
-if (purgeLegacySocial && !apply) {
-  throw new Error("Legacy purge requires --apply.");
-}
-if (purgeLegacySocial && purgeApproval !== "DELETE_LEGACY_SOCIAL") {
-  throw new Error(
-    "Legacy purge requires --approve-purge=DELETE_LEGACY_SOCIAL."
-  );
-}
+const {projectID, apply, purgeLegacySocial, credentialMode} = options;
 
 const GLOBAL_LIMITS = {
   profiles: 1_000,
@@ -74,8 +64,14 @@ const UUID_PATTERN =
 const LEAGUE_PATH_PATTERN =
   /^leagues\/(bronze|silver|gold|platinum|diamond)_\d{4}-W\d{2}\/members\/[^/]+$/;
 
-initializeApp({credential: applicationDefault(), projectId: projectID});
-const firestore = getFirestore();
+let firestore;
+if (credentialMode === SocialCutoverCredentialMode.gcloudUser) {
+  const authClient = createGcloudUserAuthClient({projectID});
+  firestore = new Firestore({authClient, preferRest: true, projectId: projectID});
+} else {
+  initializeApp({credential: applicationDefault(), projectId: projectID});
+  firestore = getFirestore();
+}
 
 async function boundedSnapshot(query, label, limit) {
   const snapshot = await query.limit(limit + 1).get();
@@ -287,6 +283,7 @@ await writeFile(backupPath, `${JSON.stringify(backup, null, 2)}\n`, {
 
 const summary = {
   mode: apply ? "apply" : "dry-run",
+  credentialMode,
   projectID,
   backupPath,
   profileDocuments: profiles.size,
