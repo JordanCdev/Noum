@@ -18,10 +18,10 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 |---|---|---|
 | Baseline and contracts | Implemented as account-local, content-free diagnostics | Keep cohort claims honest; population analytics still requires a privacy decision |
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
-| Goal-style outcome | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; unsupported locales are suppressed before English inference | The report's literal 0–100, humorous, and calm score model is intentionally unimplemented pending human calibration |
-| Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; historical Review is replay-only | Live-provider acceptance corpus and physical-device visual/interaction proof |
-| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export, and deletion implemented | Physical-device and release-policy verification |
-| Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented; an externally configured first-run assignment/exposure contract defaults to unassigned | Product approval and real cohort analysis, generic-review experiment decision, and calibrated language expansion |
+| Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration and unsupported locales fail closed | Bind a deidentified source-evidence package, complete professional/longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals |
+| Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof |
+| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export, deletion, atomic live-evidence capture, and fail-closed external evidence collection are implemented | Revoke the leaked legacy Deepgram credential, protect/disable its AWS endpoint, and complete physical-device and release-policy verification |
+| Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented; both research experiment contracts default to unassigned | Product approval and real cohort analysis, protected social cutover, and calibrated language expansion |
 
 The supported local evidence refresh is:
 
@@ -29,9 +29,23 @@ The supported local evidence refresh is:
 ./tools/coach-arena/run.sh evidence-refresh --no-fail
 ```
 
+A real live-provider sweep requires explicit quota authorization and publishes
+only after the current-source capture passes atomically:
+
+```bash
+./tools/coach-arena/run.sh live-evidence --allow-live-network
+```
+
+Externally earned reviewer, longitudinal, TestFlight, and operational evidence
+is collected through `tools/release-evidence/run.sh`; its templates fail by
+default and cannot be promoted without source binding, real hashed attachments,
+independent verification, and acceptance by the existing readiness validator.
+
 Production readiness still requires independently sourced professional-coach,
 longitudinal real-user, physical TestFlight, and operational release evidence,
-plus a fresh current-source zero-refusal live-provider sweep. The current provider
+plus a fresh current-source zero-refusal live-provider sweep. The legacy AWS
+endpoint must also be disabled/protected and its leaked Deepgram credential
+revoked before release. The current provider
 environment has returned Gemini HTTP 429 and DeepSeek HTTP 402; those operational
 failures must be resolved rather than hidden by a generated artifact.
 
@@ -160,6 +174,9 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
   outcome projection.
 - Add a public numeric score, humour rubric, or calm identity only after a
   calibrated protocol supports the claim.
+- Use `GoalStyleCalibrationEngine` and its source-evidence-package-bound reviewer
+  packet only for professional calibration. It must remain disconnected from UI,
+  persistence, analytics, experiment allocation, and product claims.
 
 ### Acceptance criteria
 
@@ -202,11 +219,16 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
 
 ### Experiment
 
-Do not claim this experiment exists yet. A generic-review control would remove
-part of the current one-action coaching loop, and no production assignment,
-next-rep attribution, or population analysis is implemented. Run it only after
-a product/privacy decision defines a non-degrading control and a calibrated
-qualitative 28-day outcome; the current `earlyImprovement` follow-up proportion
+The production assignment/exposure contract now exists but is inactive by
+default. Exact Remote Config tokens select either a neutral generic-review replay
+or the shipping goal-outcome/adaptive-prescription loop for eligible fresh Release
+accounts. Assignment, actual rendered exposure, bounded permission/locale context,
+and the first later persisted nonfixture rep are separate account-local reads.
+Unknown or absent configuration remains unassigned on the shipping outcome loop;
+developer, UI-test, prior-session, and prior-Review accounts cannot be newly
+enrolled. Do not activate allocation or claim an experiment result until a
+product/privacy decision approves the non-degrading control, population analysis,
+and calibrated 28-day outcome. The current `earlyImprovement` follow-up proportion
 is not a numeric goal-score slope.
 
 ## 7. Phase 4 — Trust, privacy, and reliability
@@ -230,6 +252,8 @@ is not a numeric goal-score slope.
   processor/configuration behavior, and a plain-language data summary.
 - Reuse `AccountDataExportService` and existing Firestore/account rules.
 - Remove any production dependency on long-lived client-embedded AWS credentials; use temporary credentials or a server-mediated flow.
+- Treat the still-live legacy unauthenticated AWS credential endpoint as a hard
+  release blocker even though the replacement Firebase callable is healthy.
 
 ### Acceptance criteria
 

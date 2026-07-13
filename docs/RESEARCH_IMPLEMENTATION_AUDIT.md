@@ -9,7 +9,7 @@ tests as authoritative and prevents duplicate stores or replacement systems.
 
 | Research requirement | Current implementation evidence | Status | Remaining production evidence |
 |---|---|---|---|
-| Goal-style outcome system | `GoalRubricStore`, `CoachReasoningPass`, and `GoalOutcomeRead` share one qualitative Summary/Review/Profile projection for authoritative, warm, concise, persuasive, executive, and storytelling goals. Spanish/French stop before English goal inference. | Trust-preserving qualitative alternative implemented; the report's literal 0–100 model and humorous/calm rubrics are not implemented | Longitudinal human calibration and an explicit product decision before numeric identity scores or new style claims |
+| Goal-style outcome system | `GoalRubricStore`, `CoachReasoningPass`, and `GoalOutcomeRead` share one qualitative Summary/Review/Profile projection for authoritative, warm, concise, persuasive, executive, and storytelling goals. A separate deterministic `GoalStyleCalibrationEngine` produces versioned 0–100 candidates, confidence, missing-evidence, and rubric contributions only for a professional-review packet; it is disconnected from UI/persistence/analytics and Spanish/French fail closed. | Trust-preserving qualitative product alternative implemented; numeric candidate implemented for calibration only; humorous/calm product rubrics are not implemented | Bind a separate deidentified evidence package, complete blinded professional and longitudinal calibration, and make an explicit product/privacy decision before numeric identity scores or new style claims |
 | Goal-aware feedback and rewrite | `AIRewriteService` and `RewriteSuggestionCard` support light/medium/strong movement, semantic/entity guards, and conservative fallback. A sanitized account-scoped Phrase Bank participates in export/deletion; a saved row can now seed the existing Timed one-shot prompt through a transient `PhrasePracticeIntent`. Spanish/French stop before English heuristics or provider resolution. | Implemented | Live-provider acceptance corpus and physical-device visual/interaction check |
 | Adaptive drill prescription | `SessionFinalizer` / `NextActionEngine` own the active decision; `SummaryPrescriptionProjection` renders exactly one current-domain drill or full-rep action through existing routers. Goal movement is evidence only. Historical Review says “Repeat this rep,” preserves IM setup, and writes no new adaptive acceptance. | Implemented for the established Timed, Pressure, Ah Counter, IM, and mini-drill domain | A product decision is required before widening prescriptions to the separate Roleplay curriculum, Lessons, Speech Projects, or Path; longitudinal calibration remains external |
 | Fast first session | `FastLaneOnboardingView`, `CoachingProfileDraft`, the existing `CoachingProfileStore`, `FirstRunOnboardingGate`, and a structure-only `RoleplayEngine` projection deliver offline written first value without speech permissions or fake delivery evidence. The raw response is transient; only a bounded content-free receipt persists. Full setup is prefilled/resumable and can continue into the existing consent/Timed path. The UI contract measures launch-to-result against the 60-second target. | Implemented locally; spoken and structured evidence remain distinct | Signed-device elapsed-time distribution, permission/consent, interruption/relaunch, and completed structured-to-spoken validation |
@@ -21,7 +21,7 @@ tests as authoritative and prevents duplicate stores or replacement systems.
 | Humour-specific training | No humour identity or calibrated rubric exists in the supported `SpeakingStyleGoal` set | Deferred intentionally, not implemented | Research and calibration; do not add an unvalidated identity score |
 | Activation/transformation KPIs | Account-scoped `FlowEventLog`, `TransformationKPIReport`, session/provider history, recommendation outcomes, review/coach/notification lifecycle events, and the three-rep qualitative outcome question. Structured first value, tap intent, and the first later persisted spoken rep are separate reads; notification conversion is filtered to decisions at or after value. Prescription acceptance is shown-to-tap; cloud fallback includes only cloud-requested routes resolved locally. | Implemented as per-account diagnostics, not cohort rates or medians | Population aggregation requires an explicit privacy/telemetry decision; no transcript or dedicated analytics SDK is used |
 | Onboarding A/B test | Exact versioned Remote Config tokens can select the existing full-onboarding control or permissionless fast lane for eligible new Release accounts. Assignment and actual exposure are separate account-local, content-free events; absent/unknown configuration stays unassigned on the fast lane, while developer, UI-test, returning, and already-started accounts are excluded. | Assignment/exposure contract implemented locally; default is unassigned | Product approval, configured allocation, population analysis, and signed-device validation are still required before claiming an experiment result |
-| Generic review vs outcome-loop A/B test | The outcome-loop presentation exists, but there is no production assignment owner, control allocation, next-rep attribution, or cohort analysis. | Not implemented as an experiment | Requires a product/privacy decision; do not degrade the one-action review loop or silently enroll users merely to manufacture a control |
+| Generic review vs outcome-loop A/B test | Exact versioned Remote Config tokens can freeze a generic neutral-replay control or the shipping outcome-loop treatment for eligible fresh Release accounts. `FlowEventLog` owns content-free assignment, actual rendered exposure, bounded microphone/speech/locale context, and first-later-nonfixture-rep attribution. The empty/unknown default is unassigned on the shipping outcome loop; prior-session/Review, developer, and UI-test accounts are excluded. | Assignment/exposure/next-rep contract implemented locally; default is unassigned and no population result exists | Product/privacy approval, configured allocation, external aggregation, signed-device validation, and a calibrated 28-day outcome are required before claiming an experiment result |
 
 The local KPI report covers first-value completion and elapsed time separately
 from durable first-spoken-rep completion and elapsed time; it also separates the
@@ -46,6 +46,13 @@ real-pipeline evidence, and trace-quality gates passing. Source sidecars and all
 embedded traces matched the clean checkout used for the refresh; the generated
 report remains the authority for the exact commit and fingerprint values.
 
+The canonical artifact-dump bridge also exports a calibration-only goal-style
+packet. Its repository form is intentionally
+`blockedPendingAccessControlledEvidencePackage`; opaque evidence-reference IDs
+must be resolved through a separately delivered, access-controlled,
+deidentified, SHA-256-bound package before any professional review is valid.
+The packet is not product authorization.
+
 This is local implementation evidence only. Production readiness remains
 18/100, capped at 20/100, until the five independently sourced launch artifacts
 exist: live-provider transcripts, professional-coach calibration, longitudinal
@@ -59,6 +66,15 @@ gate. It also contains real Gemini HTTP 429
 must meet the zero-refusal readiness floor after those provider capacity/account
 conditions are resolved; local fallback quality does not erase an operational
 refusal from release evidence.
+
+The live-evidence producer now stages either a deliberately authorized production
+provider sweep or a SHA-256-attested capture and publishes only after the complete
+current-source corpus and readiness contract pass. The external release-evidence
+workflow separately binds real reviewer, longitudinal, TestFlight, and operational
+attachments and cannot promote placeholder or self-attested rows. Neither workflow
+overrides the still-active unauthenticated legacy AWS credential leak. A read-only
+production social inventory also found six legacy public profiles, fifteen league
+memberships, six manifests, and no cutover marker; mutation remains approval-gated.
 
 The real-user transfer contract is now v3 and no longer requires an implausible
 10/10 positive, non-regressing, adverse-free sample. It requires a registered

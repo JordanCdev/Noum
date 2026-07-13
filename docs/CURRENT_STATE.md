@@ -1,5 +1,56 @@
 # Noum — Current state
 
+## 2026-07-13 — Research execution workflows and fail-closed production gates
+
+The remaining locally implementable research work is now organized around the
+existing product owners instead of parallel feature systems. Test B—the report's
+generic Review versus goal-outcome/adaptive-prescription comparison—has an exact,
+versioned Remote Config contract for eligible fresh Release accounts. Assignment,
+rendered exposure, bounded microphone/speech/locale context, and the first later
+persisted nonfixture rep are distinct account-local events in `FlowEventLog`.
+The control presents a neutral “Repeat this rep” action and records no adaptive
+prescription acceptance; treatment and unassigned accounts preserve the current
+goal-outcome loop. Missing or unknown configuration is unassigned, internal and
+previously exposed accounts are excluded, first-install Remote Config activation
+is retried without disturbing Test A's route freeze, and no population allocation
+or analysis is active.
+
+The report's proposed 0–100 goal-style model now has a calibration-only candidate,
+not a product score. `GoalStyleCalibrationEngine` reuses `GoalRubricStore`,
+`CoachAssessment`, and `GoalOutcomeRead`; it is deterministic, versioned, excludes
+missing dimensions instead of imputing them, reports confidence and insufficiency,
+and rejects unsupported locales. It is not referenced by UI, persistence,
+analytics, session data, Remote Config, or export. The generated reviewer packet
+is blocked until every opaque evidence reference is supplied through a separate,
+access-controlled, deidentified package bound by SHA-256. Professional review,
+longitudinal transfer evidence, and a separate product/privacy decision remain
+mandatory before any public numeric claim. Calm and humorous product goals were
+not added.
+
+Two operator workflows now close evidence-handling gaps without manufacturing
+results. `./tools/coach-arena/run.sh live-evidence` either runs the production
+provider path with explicit network/quota authorization or consumes a SHA-256-
+attested capture, validates the full current-source corpus, and publishes
+atomically only after every live gate passes. `tools/release-evidence` initializes
+deliberately failing source-bound templates, registers and hashes real attachments,
+checks reviewer independence, longitudinal cohort accounting, actual TestFlight
+installation, and launch-operation prerequisites, and refuses promotion unless the
+existing readiness validator accepts the complete package. Promotion explicitly
+does not claim launch readiness.
+
+Production reconnaissance remains fail-closed. The Firebase cloud-operations and
+privacy probes pass, but the legacy AWS endpoint still returns an over-privileged
+Deepgram credential to an unauthenticated request. That credential must be revoked
+and the endpoint protected or disabled by an authorized operator. A new in-memory
+gcloud-user mode completed a zero-write production social inventory: six legacy
+public profiles and fifteen league memberships exist, no challenge/friend rows or
+cutover marker exist, and six account manifests are present. Application Default
+Credentials remain the only mutation-capable path; disposition, apply, purge, and
+deployment require separate approval. These live security and social conditions,
+plus provider capacity, professional calibration, longitudinal real-user outcomes,
+physical TestFlight QA, Apple release services, and operational sign-off, keep the
+release verdict at **NO-GO**.
+
 ## 2026-07-13 — Research-plan truth pass and production-safe activation contract
 
 The original UX research has now been reconciled requirement by requirement
