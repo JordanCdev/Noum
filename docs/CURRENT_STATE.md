@@ -1,5 +1,56 @@
 # Noum — Current state
 
+## 2026-07-13 — Research-plan truth pass and production-safe activation contract
+
+The original UX research has now been reconciled requirement by requirement
+against runtime owners, tests, and release evidence. The implementation keeps
+the report's strongest direction—a single goal-directed coaching loop—while
+explicitly rejecting unsupported precision. Noum continues to show qualitative,
+evidence-bounded goal movement for its six canonical style goals; the report's
+literal 0–100 identity score, humorous/calm rubrics, additional languages, and a
+generic-review experiment are not presented as implemented. Those require
+calibration or a product/privacy decision, not more local heuristics.
+
+The first-run control/treatment contract is now real but inactive by default.
+Firebase Remote Config is linked to the app target and can deliver only two
+exact, versioned tokens: the existing full-onboarding control or the
+permissionless fast lane. Empty, missing, unknown, or not-yet-active
+configuration stays unassigned on the fast lane. Assignment freezes only after
+account-store hydration; developer, UI-test, returning, drafted, and
+already-started accounts cannot be newly enrolled. Assignment and actual route
+exposure are separate content-free, account-scoped flow events with bounded
+permission/locale context. The app includes no dedicated Analytics SDK and does
+not perform population experiment analysis. The public privacy policy now names
+Remote Config and Firebase Installations processing before any rollout is
+approved.
+
+Activation metrics now distinguish structured value, tap intent, and the first
+later persisted spoken rep. The report exposes completed structured-to-spoken
+state and elapsed time without relying on the draft that profile promotion
+clears. Notification opt-in counts only decisions at or after first value, and
+the diagnostic duration no longer clamps every miss to an apparent exact 60
+seconds. The fast-lane UI test measures launch-to-result against the 60-second
+contract; its signed simulator run passed, and the entire test—including result
+truth checks, Home entry, and deferred setup—completed in 24.9 seconds.
+
+Cloud startup fallback is now visible without becoming an error. When cloud was
+requested but the provider resolves locally before audio streaming, Timed,
+Pressure, Ah Counter, and IM show one restrained, token-based notice that the rep
+is staying on-device. Deliberate local use stays quiet. Mid-rep loss still stops
+with actionable retry rather than replaying audio to a second provider. The
+coach transport also preserves final-visible provenance: locally generated typed
+or safe-reference repairs are no longer falsely credited to Claude.
+
+Verification on the integrated source passed 224 focused activation, KPI,
+privacy, local-speech, provider-provenance, and regression tests. The complete
+unit target passed 3,845/3,845 unique tests (3,860 executions including dynamic
+parameters). The signed fast-lane timing UI proof and the Release simulator
+build passed. This remains local implementation evidence: public numeric
+identity claims, activated cohort
+experiments, live-provider capacity, professional-coach calibration,
+longitudinal real-user transfer, physical TestFlight QA, and launch operations
+remain outside what simulator fixtures can prove.
+
 ## 2026-07-13 — Permissionless first value without fake speech evidence
 
 New accounts now start with a permissionless written rehearsal instead of being

@@ -144,7 +144,7 @@ struct PrivacyProductionContractTests {
             repositoryRoot.appendingPathComponent("public/privacy.html"),
         ]
         let requiredDisclosures = [
-            "July 12, 2026",
+            "July 13, 2026",
             "Noum itself does not store your email address, phone number, or password in Noum profile or session records.",
             "Guest access normally uses anonymous Firebase Authentication when it is available and completes during the bounded launch window.",
             "When Firebase Authentication is unconfigured, unavailable, or cannot complete during that window, Noum creates a local-only guest account identifier and stores it in the iOS Keychain instead of creating a Firebase Authentication user.",
@@ -152,14 +152,16 @@ struct PrivacyProductionContractTests {
             "Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types.",
             "Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics.",
             "It declares no tracking",
-            "The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes",
+            "The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication, Firestore, Remote Config, and Firebase Installations SDK manifests declare unlinked other diagnostic data for analytics purposes.",
+            "Firebase Remote Config can deliver an exact, versioned first-run experience token to an eligible new account.",
+            "Missing, empty, unknown, or not-yet-active configuration does not assign an experiment, and developer, automated-test, returning, and already-started accounts are excluded from new assignment.",
             "In production, Ask Noum sends your current message, bounded recent conversation turns, and bounded coaching context and session evidence through a Firebase Functions endpoint.",
             "The function then sends the bounded request to Google Vertex AI (Gemini).",
             "Firebase Authentication and Firebase App Check tokens accompany that request to authenticate the caller, verify the app request, and protect the service from abuse.",
             "production Ask Noum messages, bounded recent turns, and bounded coaching context/session evidence sent through Firebase Functions; Firebase Authentication and App Check tokens or attestation data used to secure that transport.",
             "Delete your Firebase Authentication account, if one exists",
             "Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK.",
-            "Required Google Sign-In, Firebase Authentication, and Firestore SDKs carry vendor-declared analytics-purpose processing as described above.",
+            "Required Google Sign-In, Firebase Authentication, Firestore, Remote Config, and Firebase Installations SDKs carry vendor-declared analytics-purpose processing as described above.",
             "Noum does not use that processing for advertising or cross-app tracking.",
             "Noum does not share data with advertising networks or data brokers.",
         ]

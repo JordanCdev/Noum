@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 final class FastLaneFirstSessionUITests: XCTestCase {
@@ -10,6 +11,7 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "UI_TESTING_FAST_LANE",
             "UI_TESTING_CLEAR_FLOW_EVENTS"
         ]
+        let launchStartedAt = Date()
         app.launch()
 
         let fastLane = app.descendants(matching: .any)["fastLane.screen"]
@@ -59,6 +61,12 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         XCTAssertTrue(
             result.waitForExistence(timeout: 8),
             "The written rehearsal did not produce its bounded structure read."
+        )
+        let timeToFirstValue = Date().timeIntervalSince(launchStartedAt)
+        XCTAssertLessThan(
+            timeToFirstValue,
+            60,
+            "Permissionless first value took \(String(format: "%.1f", timeToFirstValue)) seconds from launch; the fast-lane contract is under 60 seconds."
         )
         XCTAssertTrue(app.staticTexts["What is already working"].exists)
         XCTAssertTrue(app.staticTexts["One next move"].exists)

@@ -1,6 +1,6 @@
 # Noum Privacy Policy
 
-**Last updated:** July 12, 2026
+**Last updated:** July 13, 2026
 
 Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.
 
@@ -17,7 +17,9 @@ Noum itself does not store your email address, phone number, or password in Noum
 
 When Google Sign-In is used, Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types. Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. The data available to that SDK depends on the Google account and sign-in flow.
 
-It declares no tracking. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes.
+It declares no tracking. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication, Firestore, Remote Config, and Firebase Installations SDK manifests declare unlinked other diagnostic data for analytics purposes. Firebase Remote Config also declares UserDefaults access for app functionality.
+
+Firebase Remote Config can deliver an exact, versioned first-run experience token to an eligible new account. Noum stores the resulting content-free assignment and actual route exposure in that account's local flow log; those records contain no audio, transcript, or typed response. Missing, empty, unknown, or not-yet-active configuration does not assign an experiment, and developer, automated-test, returning, and already-started accounts are excluded from new assignment. Noum does not include a dedicated Firebase Analytics SDK or perform population experiment analysis in the app.
 
 ### Coaching Profile
 During onboarding, you may provide:
@@ -114,11 +116,11 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 | **Apple Core Location / MapKit** | Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists | Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Google Vertex AI (Gemini)** | Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback | Production generated coaching and conversation responses | [Google Cloud Terms](https://cloud.google.com/terms) |
 | **Google Sign-In** | The SDK vendor declaration covers linked account and device data when Google Sign-In is used | Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking | [Google Privacy Policy](https://policies.google.com/privacy) |
-| **Firebase (Google)** | Bounded production coaching requests and Authentication and App Check proof; account identity and optional sync data are processed separately for account functionality | Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
+| **Firebase (Google)** | Bounded production coaching requests and Authentication and App Check proof; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality | Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
 | **Open-Meteo** | A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself | Conversation weather context; Noum does not send a Core Location coordinate or account identifier | [Open-Meteo Terms](https://open-meteo.com/en/terms) |
 <!-- PROCESSOR-MANIFEST:END -->
 
-Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK. Required Google Sign-In, Firebase Authentication, and Firestore SDKs carry vendor-declared analytics-purpose processing as described above. Noum does not use that processing for advertising or cross-app tracking. Noum does not share data with advertising networks or data brokers.
+Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK. Required Google Sign-In, Firebase Authentication, Firestore, Remote Config, and Firebase Installations SDKs carry vendor-declared analytics-purpose processing as described above. Noum does not use that processing for advertising or cross-app tracking. Noum does not share data with advertising networks or data brokers.
 
 ---
 

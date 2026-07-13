@@ -16,12 +16,12 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 
 | Research phase | Current status | Remaining closure |
 |---|---|---|
-| Baseline and contracts | Implemented locally | Keep event names and cohort claims honest; population analytics still requires a privacy decision |
-| Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router | Validate elapsed time and the structured-to-spoken upgrade on signed devices; experiment assignment still requires a privacy/product decision |
-| Goal-style scoring | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; unsupported locales are suppressed before English inference | Human calibration; retain qualitative/low-confidence language until calibrated |
+| Baseline and contracts | Implemented as account-local, content-free diagnostics | Keep cohort claims honest; population analytics still requires a privacy decision |
+| Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
+| Goal-style outcome | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; unsupported locales are suppressed before English inference | The report's literal 0–100, humorous, and calm score model is intentionally unimplemented pending human calibration |
 | Actionable coaching | Rewrite, semantic-preservation guard, practiceable phrase bank, and one finalizer-owned Summary prescription are implemented; historical Review is replay-only | Live-provider acceptance corpus and physical-device visual/interaction proof |
-| Trust and reliability | Local speech, consent routing, privacy, export, and deletion implemented | Physical-device and release-policy verification |
-| Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented | Real cohort validation, experiment assignment decision, and calibrated language expansion |
+| Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export, and deletion implemented | Physical-device and release-policy verification |
+| Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented; an externally configured first-run assignment/exposure contract defaults to unassigned | Product approval and real cohort analysis, generic-review experiment decision, and calibrated language expansion |
 
 The supported local evidence refresh is:
 
@@ -50,7 +50,7 @@ Make Noum clearly answer one question: **“Is this helping me become the kind o
 The primary loop should be:
 
 ```text
-Choose a speaking goal → complete a baseline rep → receive a goal score
+Choose a speaking goal → complete a baseline rep → receive an evidence-bounded goal read
 → do the best next drill → review a rewrite → set a micro-goal
 → return for weekly progress
 ```
@@ -63,8 +63,8 @@ The existing five-tab shell, practice modes, session history, coach, and account
 |---|---|---:|---|
 | 0. Baseline and contracts | Confirm current implementation, define shared models, and instrument the funnel | P0 | Baseline dashboard and architecture decisions approved |
 | 1. Fast-lane activation | Get a new user to useful structure feedback in under 60 seconds without requiring voice permissions | P0 | First-value completion/time improve without being conflated with a spoken rep |
-| 2. Goal-style scoring | Quantify progress toward authoritative, concise, humorous, warm, or calm communication | P0 | Deterministic scorecard appears in session review and profile |
-| 3. Actionable coaching | Turn scores into one next drill plus concrete rewrite practice | P0 | Review-to-next-rep conversion improves |
+| 2. Goal-style outcome | Show credible movement toward the canonical selected style without unsupported identity precision | P0 | Deterministic qualitative read appears in Summary, Review, and Profile |
+| 3. Actionable coaching | Turn evidence into one next drill plus concrete rewrite practice | P0 | Review-to-next-rep conversion improves |
 | 4. Trust and reliability | Make cloud/local processing explicit and preserve practice when offline | P1 | Fallback works; privacy controls match actual behavior |
 | 5. Retention and expansion | Tie weekly habits, language support, and social milestones to the chosen goal | P2 | 28-day goal improvement and retention are measurable |
 
@@ -73,9 +73,9 @@ The existing five-tab shell, practice modes, session history, coach, and account
 ### Deliverables
 
 - Audit the current branch against the report. Mark each recommendation as `existing`, `partial`, or `missing`; the repository already contains related work such as `LocalSpeechProvider.swift` and prior goal-aware scoring artifacts.
-- Define a single shared `SpeakingStyleGoal` model and persistence path. Do not create parallel onboarding/profile goal models.
-- Define `GoalStyleScore`, `GoalRewriteSuggestion`, `GoalPrescription`, and confidence semantics.
-- Add analytics events: `onboarding_started`, `first_rep_started`, `first_rep_completed`, `goal_selected`, `score_viewed`, `prescription_shown`, `prescription_accepted`, `review_opened`, `cloud_fallback`, and `privacy_setting_changed`.
+- Keep `CoachingProfile.chosenStyleGoal` as the single shared speaking-goal persistence path. Do not create parallel onboarding/profile goal models.
+- Reuse `GoalOutcomeRead`, `RewriteSuggestion`, the finalized `NextAction`, and their evidence/confidence semantics. Do not create the report's proposed parallel score or prescription owners.
+- Keep content-free activation, value, review, prescription, provider-route, retention, notification, and qualitative-outcome events in the account-scoped `FlowEventLog`.
 - Establish a privacy threat model for audio, transcripts, credentials, exports, and deletion.
 
 ### Likely files
@@ -86,7 +86,7 @@ The existing five-tab shell, practice modes, session history, coach, and account
 
 - One canonical goal value is available from onboarding, session analysis, review, profile, and prescription code.
 - Existing sessions and users without a goal remain readable and receive a low-confidence/default state.
-- Events include permission state, provider, locale, and experiment variant without recording raw audio or transcript content.
+- Assigned first-run exposures include bounded permission state, locale, version, and variant without recording raw audio, transcript content, or typed responses. Provider route remains a separate practice event.
 
 ## 4. Phase 1 — Fast-lane first session
 
@@ -114,7 +114,8 @@ permission/consent matrix before release enablement.
 - The typed response remains transient. The account-scoped draft and receipt
   participate in the existing export/deletion registry.
 - `TransformationKPIReport` keeps spoken `firstRepCompleted` semantics and adds
-  separate first-value, structured-value, and paired structured-to-live reads.
+  separate first-value, structured-value, tap-intent, and later persisted
+  structured-to-spoken completion reads.
 
 ### Acceptance criteria
 
@@ -128,31 +129,46 @@ permission/consent matrix before release enablement.
 
 ### Experiment
 
-Compare current onboarding with fast lane only after experiment assignment and
-population analytics receive an explicit privacy/product decision. Keep
+The code can accept exact, versioned Remote Config assignments for the existing
+full-onboarding control or fast lane, and it records assignment separately from
+actual exposure. The empty default performs no assignment; unknown tokens fail
+closed; developer, UI-test, returning, and already-started accounts are excluded.
+Activate an allocation and population analysis only after an explicit
+privacy/product decision. Keep
 time-to-first-value and first-value completion separate from time-to-first-spoken-
-rep and spoken-rep completion; also measure paired structured-to-live upgrade and
-D1/D7 retention by permission state.
+rep and spoken-rep completion; also keep the structured-to-spoken tap separate
+from the later persisted spoken rep and segment D1/D7 retention by the bounded
+permission state recorded at exposure.
 
-## 5. Phase 2 — Goal-style scoring engine
+## 5. Phase 2 — Goal-style outcome engine
 
 ### Scope
 
-Implement transcript-derived, deterministic scoring for the initial goals: `authoritative`, `concise`, `humorous`, `warm`, and `calm`. Scores should explain their contributing dimensions and confidence rather than present unsupported precision.
+The report proposed transcript-derived 0–100 scoring for `authoritative`,
+`concise`, `humorous`, `warm`, and `calm`. Noum deliberately does not ship that
+identity-precision model without longitudinal human calibration. The implemented
+system provides qualitative, evidence-bounded outcomes for the canonical
+authoritative, warm, concise, persuasive, executive, and storytelling goals.
 
 ### Implementation
 
-- Add `GoalStyle.swift` and `GoalStyleScoringEngine.swift`.
-- Define transcript signals using existing metrics first: filler burden, hedging, sentence length, repetition, pacing, structure, and lexical cues.
-- Return `GoalStyleScore(total, dimensions, confidence, nextAction)`.
-- Add score cards to session detail and profile, reusing the existing “How you come across” evidence-gated language.
+- Reuse `GoalRubricStore`, `CoachReasoningPass`, and `GoalOutcomeRead` across
+  Summary, Review, and Profile.
+- Use established transcript/session signals only when their evidence floor is
+  met; weak or contradictory evidence stays insufficient, forming, or mixed.
+- Keep next action owned by `SessionFinalizer` / `NextActionEngine`, not the
+  outcome projection.
+- Add a public numeric score, humour rubric, or calm identity only after a
+  calibrated protocol supports the claim.
 
 ### Acceptance criteria
 
-- Fixed transcript input produces the same score across runs.
-- Missing/short transcript returns a low-confidence result instead of failing.
-- A concise answer scores higher on concision than a rambling equivalent; tests cover false-positive safeguards for humor and authority.
-- Scores are labelled as coaching estimates, not objective personality labels.
+- Fixed evidence produces the same qualitative read across runs.
+- Missing/short/unsupported evidence withholds the read or returns an
+  insufficient state instead of inventing precision.
+- Goal-specific rubric weights and evidence floors are deterministic and tested.
+- Outcomes are labelled as evidence-bounded coaching reads, not objective
+  personality labels or causal claims.
 
 ## 6. Phase 3 — Actionable review and adaptive prescription
 
@@ -177,27 +193,41 @@ Implement transcript-derived, deterministic scoring for the initial goals: `auth
 ### Acceptance criteria
 
 - Review always ends with one clear next action.
-- High filler burden maps to filler-focused practice; pacing issues map to pace training; interpersonal-pressure goals can map to roleplay.
+- High filler burden maps to filler-focused practice and pacing issues map to
+  pace work inside the established action domain. Widening strategic
+  prescriptions to the separate Roleplay curriculum, Lessons, Speech Projects,
+  or Path requires a product decision and router expansion.
 - Locked or unavailable modes fall back gracefully.
 - Rewrite suggestions preserve semantic intent and phrase-bank data survives relaunch.
 
 ### Experiment
 
-Compare generic review with goal score + prescription. Measure review-open rate, prescription acceptance, next-rep conversion, and 28-day goal-score slope.
+Do not claim this experiment exists yet. A generic-review control would remove
+part of the current one-action coaching loop, and no production assignment,
+next-rep attribution, or population analysis is implemented. Run it only after
+a product/privacy decision defines a non-degrading control and a calibrated
+qualitative 28-day outcome; the current `earlyImprovement` follow-up proportion
+is not a numeric goal-score slope.
 
 ## 7. Phase 4 — Trust, privacy, and reliability
 
 ### Offline/local processing
 
-- Reconcile the existing `LocalSpeechProvider.swift` with the provider abstraction before adding another implementation.
-- Add or complete a `TranscriptionProviderSelector` that prefers cloud only when permitted and available, otherwise falls back locally for practice.
-- Persist the user’s cloud-transcription preference and show a non-blocking provider status message.
-- Handle missing credentials, network loss, unsupported locale, and provider startup timeout without losing the session.
+- Keep `LocalSpeechProvider` behind the existing provider abstraction.
+- Consent-off selects local without constructing cloud. Consent-on uses one
+  bounded Deepgram-to-local startup fallback before microphone audio is sent.
+- Persist the cloud-processing preference and show a restrained, nonblocking
+  notice only when requested cloud startup actually resolves locally.
+- Missing credentials, startup network failure, unsupported locale, and provider
+  timeout fail clearly. Mid-stream loss stops the rep with actionable retry; it
+  must not replay or duplicate that rep's audio to a second provider.
 
 ### Privacy centre
 
-- Add `PrivacyCentreView.swift` and `PrivacyPreferencesStore.swift`.
-- Surface cloud transcription on/off, data export, account deletion entry point, and a plain-language data summary.
+- Reuse the existing Settings privacy card, `AISettingsManager`, consent
+  disclosure, and `YourDataView`; do not create a parallel privacy store.
+- Surface cloud transcription on/off, data export, account deletion entry point,
+  processor/configuration behavior, and a plain-language data summary.
 - Reuse `AccountDataExportService` and existing Firestore/account rules.
 - Remove any production dependency on long-lived client-embedded AWS credentials; use temporary credentials or a server-mediated flow.
 
@@ -210,13 +240,15 @@ Compare generic review with goal score + prescription. Measure review-open rate,
 
 ## 8. Phase 5 — Retention and expansion
 
-Only begin after activation and the core loop are validated.
+The local substrate exists, but expansion claims remain gated on activation and
+core-loop validation.
 
 - Weekly goal dashboard and one micro-goal per week.
 - Streaks/notifications tied to the selected speaking goal, not generic activity.
 - Expand language coverage and locale-specific filler heuristics beyond the verified en-US/es-ES/fr-FR path.
 - Shareable goal milestones using existing social/league infrastructure.
-- Deeper humor-specific training after the general scoring model is reliable.
+- Deeper humour-specific training only after the qualitative outcome system is
+  professionally calibrated for that claim.
 - Accessibility regression sweep for VoiceOver, Dynamic Type, Reduce Motion, keyboard navigation, and custom cards after each new surface.
 
 ## 9. Cross-cutting quality gates
@@ -234,12 +266,15 @@ Every phase must include:
 
 Track these as the release scorecard:
 
-- Median time-to-first-value and first-value completion rate, reported separately
-  from time-to-first-spoken-rep and spoken-rep completion.
-- Structured-to-live and typed-coach-to-live upgrade rates as separate funnels.
+- Median time-to-first-value and first-value completion rate, aggregated outside
+  the app from approved account-local evidence and reported separately from
+  time-to-first-spoken-rep and spoken-rep completion.
+- Structured-to-spoken tap intent, later persisted spoken completion, and
+  typed-coach-to-live entry as separate funnels.
 - Practice sessions per active user per week.
 - Session-review open rate and content-free shown-to-tap prescription acceptance rate.
-- Goal-score improvement after 7 and 28 days.
+- Calibrated goal improvement after 7 and 28 days; until then, label the local
+  follow-up read as an early-improvement proportion rather than a score slope.
 - D1, D7, and D28 retention.
 - Cloud-to-local fallback rate and provider failure rate.
 - Notification opt-in after the first value moment.
