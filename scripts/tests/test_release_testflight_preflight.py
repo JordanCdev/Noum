@@ -50,6 +50,7 @@ def valid_settings() -> dict[str, dict[str, str]]:
             "DEVELOPMENT_TEAM": "TESTTEAM1",
         }
     settings["Noum"]["APP_ATTEST_ENVIRONMENT"] = "production"
+    settings["Noum"][release.SOURCE_INFO_FILE_BUILD_SETTING] = "Noum/Info.plist"
     return settings
 
 
@@ -311,6 +312,14 @@ _ = AppStore.sync()
                 TEST_SOURCE_COMMIT,
             )
         )
+
+    def test_source_bound_info_override_must_be_main_app_scoped(self) -> None:
+        settings = valid_settings()
+        settings["Noum"].pop(release.SOURCE_INFO_FILE_BUILD_SETTING)
+
+        checks = self._repository_checks(settings)
+
+        self.assertFalse(next(item for item in checks if item.key == "sourceBoundInfoPlistRouting").passed)
 
     def test_archive_rejects_simulator_platform_shape(self) -> None:
         path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"

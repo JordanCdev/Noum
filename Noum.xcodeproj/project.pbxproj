@@ -828,7 +828,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Noum/Info.plist;
+				INFOPLIST_FILE = "$(NOUM_APP_INFOPLIST_FILE)";
 				INFOPLIST_KEY_FirebaseAppDelegateProxyEnabled = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -838,6 +838,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.1;
+				NOUM_APP_INFOPLIST_FILE = Noum/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -858,7 +859,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Noum/Info.plist;
+				INFOPLIST_FILE = "$(NOUM_APP_INFOPLIST_FILE)";
 				INFOPLIST_KEY_FirebaseAppDelegateProxyEnabled = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -868,6 +869,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.1;
+				NOUM_APP_INFOPLIST_FILE = Noum/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

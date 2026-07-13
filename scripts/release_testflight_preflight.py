@@ -75,6 +75,7 @@ FORBIDDEN_ARCHIVE_CONFIGS = {
 }
 STOREKIT_PRODUCT_CONSTANTS = ("monthlyID", "annualID")
 SOURCE_COMMIT_INFO_KEY = "NoumSourceGitCommit"
+SOURCE_INFO_FILE_BUILD_SETTING = "NOUM_APP_INFOPLIST_FILE"
 SOURCE_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 APPLE_SERVICE_BINARY_MARKERS = (
     b"/AuthenticationServices.framework/AuthenticationServices",
@@ -654,6 +655,12 @@ def repository_checks(
             "two distinct StoreKit 2 product identifiers with purchase/restore paths" if len(_storekit_product_ids(repo_root)) == len(STOREKIT_PRODUCT_CONSTANTS) else "StoreKit product or runtime contract missing",
             "Restore the existing StoreKit 2 product, entitlement, and restore contract before archive verification.",
         ),
+        check(
+            "sourceBoundInfoPlistRouting",
+            settings.get("Noum", {}).get(SOURCE_INFO_FILE_BUILD_SETTING) == "Noum/Info.plist",
+            "main app alone owns the source-bound Info.plist override" if settings.get("Noum", {}).get(SOURCE_INFO_FILE_BUILD_SETTING) == "Noum/Info.plist" else "main-app Info.plist routing setting missing or altered",
+            "Restore the main target's NOUM_APP_INFOPLIST_FILE default; never override INFOPLIST_FILE globally.",
+        ),
     ]
     expected_version = (
         settings.get("Noum", {}).get("MARKETING_VERSION"),
@@ -1083,7 +1090,7 @@ def build_unsigned_archive(
         "-disableAutomaticPackageResolution",
         "CODE_SIGNING_ALLOWED=NO",
         "CODE_SIGNING_REQUIRED=NO",
-        f"INFOPLIST_FILE={source_bound_info}",
+        f"{SOURCE_INFO_FILE_BUILD_SETTING}={source_bound_info}",
     ]
     completed = subprocess.run(
         command,

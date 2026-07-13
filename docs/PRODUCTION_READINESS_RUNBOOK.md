@@ -179,7 +179,7 @@ xcodebuild archive \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath '/secure/path/Noum-<build>.xcarchive' \
-  "INFOPLIST_FILE=$SOURCE_BOUND_INFO" \
+  "NOUM_APP_INFOPLIST_FILE=$SOURCE_BOUND_INFO" \
   -allowProvisioningUpdates
 
 xcodebuild -exportArchive \
