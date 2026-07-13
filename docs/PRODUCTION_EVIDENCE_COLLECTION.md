@@ -193,8 +193,8 @@ closure, protected social cutover, custom-domain verification, Apple release
 services, archive signing, and StoreKit configuration. Capture and close those
 before the final release decision even when they are not separate v2 item keys.
 
-For that reason, the workflow adds a fail-closed `releasePrerequisites` section
-around the existing v2 artifact. It records and validates indexed evidence for:
+For that reason, the workflow adds a fail-closed `releasePrerequisites` array
+around the existing v2 artifact. It has exactly twelve rows and records:
 
 - the read-only cloud operations probe;
 - historical credential-incident closure, legacy endpoint protection or
@@ -208,8 +208,103 @@ around the existing v2 artifact. It records and validates indexed evidence for:
 A successful cloud operations probe can be registered as
 `cloudOperationsProbeOutput`, but it cannot override an unauthenticated legacy
 endpoint, an unrevoked credential, an unadjudicated history finding, or a failed
-social migration dry-run. Each prerequisite has its own boolean and attachment;
-all remain hard-blocking.
+social migration dry-run. Each prerequisite has its own structured row and
+three-part evidence set; all remain hard-blocking.
+
+Each prerequisite row has the same evidence-bearing shape as an operational
+item: `key`, `completed`, `evidenceReference`, `evidenceKind`,
+`verificationReference`, `commandOrReviewOutputReference`,
+`releaseCandidateBuild`, `environment`, `completedAtISO8601`, `performedByID`,
+`verifiedAtISO8601`, `verifiedByID`, `verifiedByRole`, and `notes`. Do not add or
+remove rows. The performer and verifier must differ. The row must name the same
+release-candidate build as the artifact, use its template-provided evidence kind
+and environment, and resolve three distinct indexed attachments. The attachment
+verifier must match the row verifier. Unknown, duplicate, self-verified, stale,
+or summary-only prerequisites fail validation.
+
+### Legacy endpoint evidence
+
+The repository probe is deliberately unauthenticated and status-only:
+
+```bash
+BACKEND_BASE_URL='https://<legacy-api-origin>' \
+  ./scripts/verify_deepgram_endpoint.sh
+```
+
+It retains no body and accepts only `401`/`403` (protected) or `404`/`410`
+(disabled) for both credential routes and every documented IM/TTS sibling.
+Capture its redacted output as the command evidence for
+`legacyTranscriptionEndpointProtectedOrDisabled`, then have a different person
+verify the route inventory and result. A redirect, request-validation response,
+rate limit, server error, timeout, or TLS failure is not proof of containment.
+
+Never put an old provider credential into this script or a release attachment.
+Credential revocation must be proven separately with a redacted provider/support
+record and independent verification. The provider usage/billing audit is another
+separate row; endpoint containment does not imply that no abuse occurred.
+
+### Full-history finding adjudication
+
+`fullHistorySecretFindingsAdjudicated` also requires the sibling
+`historySecretAdjudication` object. Run the same pinned scanner as CI over a full
+clone and write its machine-readable, 100%-redacted JSON report to the approved
+evidence location:
+
+```bash
+REPORT=/secure/capture/gitleaks-full-history-redacted.json
+gitleaks git . --redact=100 --no-banner \
+  --report-format json --report-path "$REPORT"
+git rev-list --all | LC_ALL=C sort -u | wc -l
+git rev-list --all | LC_ALL=C sort -u | shasum -a 256
+```
+
+Gitleaks exits nonzero when it finds history that needs adjudication; that is the
+expected open-gate state, not permission to discard its report. Register the
+JSON as `fullHistorySecretReview`, then import it without assigning any result:
+
+```bash
+./tools/release-evidence/run.sh register-attachment \
+  --run-dir "$RUN" \
+  --id 'gitleaks-full-history-redacted' \
+  --kind 'fullHistorySecretReview' \
+  --file "$REPORT" \
+  --captured-at '<scan timestamp>' \
+  --verified-by-id '<independent verifier identifier>'
+
+./tools/release-evidence/run.sh import-history-scan \
+  --run-dir "$RUN" \
+  --reference 'evidence://gitleaks-full-history-redacted'
+```
+
+The importer rejects non-JSON, partially redacted, stale, incomplete, shallow,
+or wrong-kind reports. It creates a one-way finding inventory with blank
+dispositions, sets every row unresolved, and explicitly leaves the gate closed.
+It never prints a match or secret.
+
+Record scanner `gitleaks`, version `8.30.1`, scope
+`all-reachable-commits`, the current source commit, the positive reachable-commit
+count, and the `sha256:`-prefixed digest of that exact sorted commit stream. Bind
+`redactedScanReportReference` to the prerequisite row's primary
+`fullHistorySecretReview` attachment.
+
+The finding inventory must exactly match every JSON report row and include at least the three
+historical credential findings already documented by the incident review. Use a
+tool-derived `sha256:` finding ID—never credential material—plus the detector rule,
+40-character historical commit, safe repository-relative path, disposition, and
+`statusEvidenceReference`. Only four dispositions are closed:
+
+- `revoked` with `secretFindingRevocation` evidence;
+- `invalidated` with `secretFindingInvalidation` evidence;
+- `falsePositive` with `secretFindingFalsePositiveReview` evidence;
+- `publicIdentifier` with `secretFindingPublicIdentifierReview` evidence.
+
+`detectedFindingCount` and `adjudicatedFindingCount` must equal the inventory;
+`unresolvedFindingCount` and `suppressedFindingCount` must both be zero. The
+known historical Deepgram finding commit must be present. An active or unknown
+credential, an accepted-risk/suppressed finding, an unreachable commit, a stale
+commit-set fingerprint, or reused status evidence keeps the gate closed. The
+active credential documented today must therefore be revoked before this object
+can validate; do not add an allowlist merely to turn CI green.
 
 Set `templateStatus` to `COLLECTED_EXTERNAL_EVIDENCE` only when the real release
 operations and independent verification are complete.

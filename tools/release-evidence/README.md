@@ -30,6 +30,10 @@ procedure.
   --captured-at '2026-07-13T12:00:00Z' \
   --verified-by-id '<real verifier identifier>'
 
+./tools/release-evidence/run.sh import-history-scan \
+  --run-dir /secure/path/to/run \
+  --reference 'evidence://<registered-redacted-gitleaks-json>'
+
 ./tools/release-evidence/run.sh summarize --run-dir /secure/path/to/run
 ./tools/release-evidence/run.sh validate --run-dir /secure/path/to/run
 ./tools/release-evidence/run.sh promote --run-dir /secure/path/to/run
@@ -40,6 +44,11 @@ and returns an `evidence://...` reference. The artifact JSON must use that
 reference. Files containing personal data additionally require an access-control
 reference. Never register raw transcripts, participant names, credentials,
 unredacted receipts, or App Store secrets.
+
+`import-history-scan` accepts only a registered `fullHistorySecretReview`
+attachment containing fully redacted Gitleaks 8.30.1 JSON. It binds the current
+reachable history and creates unresolved finding rows with blank dispositions;
+it never infers closure or prints finding content.
 
 `summarize` derives counts from entered rows. It never changes pass/fail claims,
 ratings, outcomes, warnings, attestations, or the visible template status.
@@ -53,3 +62,12 @@ readiness gate must be refreshed afterwards.
 The extended preflight also prevents two common false promotions: a successful
 cloud probe cannot mask an open legacy-credential or social-cutover gate, and a
 direct Xcode development-device install cannot be recorded as TestFlight QA.
+
+Operational prerequisites are exact structured rows, not free-form booleans.
+All twelve must match the release build and expected environment, name different
+performer/verifier identities, and resolve distinct primary, verification, and
+command/review attachments. Full-history secret adjudication is additionally
+bound to the pinned Gitleaks version, current source commit, complete reachable
+commit-set fingerprint, and an independently evidenced closed disposition for
+every redacted finding. Active, omitted, unknown, accepted-risk, or suppressed
+credentials keep validation and promotion closed.
