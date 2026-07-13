@@ -162,8 +162,9 @@ configuration failure and not proof about what exists in the Apple Developer
 account.
 
 Only an authorized paid-team operator may perform the signed archive and local
-App Store Connect export. After the local preflight is green, that operator can
-use the equivalent commands below. An Xcode Archive workflow must set the same
+App Store Connect export. After the repository and local paid-team authority
+sections are green, that operator can use the equivalent commands below. An
+Xcode Archive workflow must set the same
 `NoumSourceGitCommit` Info.plist value. These commands may contact Apple and are
 intentionally outside automated/local preflight:
 
@@ -182,6 +183,12 @@ xcodebuild archive \
   "NOUM_APP_INFOPLIST_FILE=$SOURCE_BOUND_INFO" \
   -allowProvisioningUpdates
 
+test "$SOURCE_COMMIT" = "$(git rev-parse HEAD)"
+test -z "$(git status --porcelain --untracked-files=all)"
+./scripts/release-testflight-preflight.sh \
+  --archive-path '/secure/path/Noum-<build>.xcarchive' \
+  --source-packages "$PWD/.build/fast-lane-release/SourcePackages"
+
 xcodebuild -exportArchive \
   -archivePath '/secure/path/Noum-<build>.xcarchive' \
   -exportOptionsPlist scripts/TestFlightExportOptions.plist \
@@ -198,7 +205,11 @@ close `noRealDeviceTestFlightVerification`.
 
 The generated source-bound Info.plist is a release intermediate copied from the
 protected local app configuration. Keep it in the same access-controlled build
-location as the archive, never commit it, and use a new path for each candidate.
+location as the archive, never commit it, and use a new path for each candidate;
+the helper creates it with owner-only `0600` permissions. The post-archive
+preflight is still expected to return an overall blocked verdict until the
+external artifacts exist, but its complete repository/archive section must pass
+before export.
 
 The current `coach-real-device-testflight-qa-v3` schema structurally validates
 the complete runtime portion of the M14 hardware sweep: exactly 14 surfaces and

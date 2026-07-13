@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import plistlib
+import stat
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,7 @@ def valid_settings() -> dict[str, dict[str, str]]:
             "MARKETING_VERSION": "1.1",
             "CURRENT_PROJECT_VERSION": "2",
             "DEVELOPMENT_TEAM": "TESTTEAM1",
+            "INFOPLIST_FILE": release.EXPECTED_INFO_PLIST_BY_TARGET[target],
         }
     settings["Noum"]["APP_ATTEST_ENVIRONMENT"] = "production"
     settings["Noum"][release.SOURCE_INFO_FILE_BUILD_SETTING] = "Noum/Info.plist"
@@ -233,9 +235,11 @@ _ = AppStore.sync()
         commit = release.current_source_commit(repository)
         self.assertRegex(commit or "", release.SOURCE_COMMIT_PATTERN)
         self.assertTrue(release.source_tree_is_clean(repository))
+        self.assertTrue(release.source_commit_is_current_and_clean(repository, commit))
 
         (repository / "untracked.txt").write_text("not part of release\n", encoding="utf-8")
         self.assertFalse(release.source_tree_is_clean(repository))
+        self.assertFalse(release.source_commit_is_current_and_clean(repository, commit))
 
     def test_repository_contract_accepts_complete_unsigned_archive(self) -> None:
         checks = self._repository_checks()
@@ -304,6 +308,7 @@ _ = AppStore.sync()
         )
         generated = plistlib.loads(destination.read_bytes())
         self.assertEqual(generated[release.SOURCE_COMMIT_INFO_KEY], TEST_SOURCE_COMMIT)
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
         self.assertEqual(source.read_bytes(), source_before)
         self.assertFalse(
             release.write_source_bound_info_plist(
@@ -315,11 +320,28 @@ _ = AppStore.sync()
 
     def test_source_bound_info_override_must_be_main_app_scoped(self) -> None:
         settings = valid_settings()
-        settings["Noum"].pop(release.SOURCE_INFO_FILE_BUILD_SETTING)
+        settings["NoumWidget"][release.SOURCE_INFO_FILE_BUILD_SETTING] = "Noum/Info.plist"
+        settings["NoumWidget"]["INFOPLIST_FILE"] = "Noum/Info.plist"
 
         checks = self._repository_checks(settings)
 
         self.assertFalse(next(item for item in checks if item.key == "sourceBoundInfoPlistRouting").passed)
+
+    def test_unsigned_archive_command_scopes_the_generated_info_plist(self) -> None:
+        source_bound_info = self.root / "generated/SourceBoundInfo.plist"
+        command = release.unsigned_archive_command(
+            self.archive,
+            self.root / "DerivedData",
+            self.root / "SourcePackages",
+            source_bound_info,
+        )
+
+        self.assertIn(
+            f"{release.SOURCE_INFO_FILE_BUILD_SETTING}={source_bound_info}",
+            command,
+        )
+        self.assertFalse(any(item.startswith("INFOPLIST_FILE=") for item in command))
+        self.assertFalse(any(item.startswith("INFOPLIST_KEY_") for item in command))
 
     def test_archive_rejects_simulator_platform_shape(self) -> None:
         path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"

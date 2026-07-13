@@ -77,6 +77,12 @@ STOREKIT_PRODUCT_CONSTANTS = ("monthlyID", "annualID")
 SOURCE_COMMIT_INFO_KEY = "NoumSourceGitCommit"
 SOURCE_INFO_FILE_BUILD_SETTING = "NOUM_APP_INFOPLIST_FILE"
 SOURCE_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+EXPECTED_INFO_PLIST_BY_TARGET = {
+    "Noum": "Noum/Info.plist",
+    "NoumWidget": "NoumWidget/Info.plist",
+    "NoumMessages": "NoumMessages/Info.plist",
+    "NoumWatch": "NoumWatch/Info.plist",
+}
 APPLE_SERVICE_BINARY_MARKERS = (
     b"/AuthenticationServices.framework/AuthenticationServices",
     b"/StoreKit.framework/StoreKit",
@@ -272,6 +278,34 @@ def source_tree_is_clean(repo_root: Path) -> bool:
     return completed.returncode == 0 and not completed.stdout.strip()
 
 
+def source_commit_is_current_and_clean(
+    repo_root: Path,
+    expected_source_commit: str | None,
+) -> bool:
+    return bool(
+        expected_source_commit
+        and SOURCE_COMMIT_PATTERN.fullmatch(expected_source_commit)
+        and current_source_commit(repo_root) == expected_source_commit
+        and source_tree_is_clean(repo_root)
+    )
+
+
+def source_info_routing_is_valid(settings: dict[str, dict[str, str]]) -> bool:
+    if any(
+        settings.get(target, {}).get("INFOPLIST_FILE") != expected
+        for target, expected in EXPECTED_INFO_PLIST_BY_TARGET.items()
+    ):
+        return False
+    return all(
+        settings.get(target, {}).get(SOURCE_INFO_FILE_BUILD_SETTING) is None
+        for target in EXPECTED_TARGETS
+        if target != "Noum"
+    ) and (
+        settings.get("Noum", {}).get(SOURCE_INFO_FILE_BUILD_SETTING)
+        == EXPECTED_INFO_PLIST_BY_TARGET["Noum"]
+    )
+
+
 def write_source_bound_info_plist(
     repo_root: Path,
     destination: Path,
@@ -281,13 +315,22 @@ def write_source_bound_info_plist(
         return False
     if destination.exists():
         return False
+    created = False
     try:
         payload = _read_plist(repo_root / "Noum/Info.plist")
         payload[SOURCE_COMMIT_INFO_KEY] = source_commit
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with destination.open("xb") as output:
+        descriptor = os.open(
+            destination,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        created = True
+        with os.fdopen(descriptor, "wb") as output:
             plistlib.dump(payload, output, sort_keys=True)
     except (OSError, ValueError, plistlib.InvalidFileException):
+        if created:
+            destination.unlink(missing_ok=True)
         return False
     return True
 
@@ -657,8 +700,8 @@ def repository_checks(
         ),
         check(
             "sourceBoundInfoPlistRouting",
-            settings.get("Noum", {}).get(SOURCE_INFO_FILE_BUILD_SETTING) == "Noum/Info.plist",
-            "main app alone owns the source-bound Info.plist override" if settings.get("Noum", {}).get(SOURCE_INFO_FILE_BUILD_SETTING) == "Noum/Info.plist" else "main-app Info.plist routing setting missing or altered",
+            source_info_routing_is_valid(settings),
+            "main app alone owns the source-bound Info.plist override" if source_info_routing_is_valid(settings) else "main-app or extension Info.plist routing is unsafe",
             "Restore the main target's NOUM_APP_INFOPLIST_FILE default; never override INFOPLIST_FILE globally.",
         ),
     ]
@@ -1032,45 +1075,13 @@ def collect_build_settings(repo_root: Path, source_packages: Path | None) -> tup
     return settings, completed.returncode == 0 and set(EXPECTED_TARGETS).issubset(settings)
 
 
-def build_unsigned_archive(
-    repo_root: Path,
+def unsigned_archive_command(
     archive_path: Path,
     derived_data: Path,
-    source_packages: Path | None,
-    source_commit: str | None,
-) -> Check:
-    if archive_path.exists():
-        return check(
-            "unsignedArchiveBuild",
-            False,
-            "refused to overwrite existing archive path",
-            "Choose a new archive path; the preflight never removes an existing archive.",
-        )
-    if source_packages is None or not source_packages.is_dir():
-        return check(
-            "unsignedArchiveBuild",
-            False,
-            "local SourcePackages cache missing",
-            "Pass --source-packages; this preflight will not resolve packages over the network.",
-        )
-    if source_commit is None or not source_tree_is_clean(repo_root):
-        return check(
-            "unsignedArchiveBuild",
-            False,
-            "source checkout is dirty or has no exact Git commit",
-            "Commit the intended source and remove unrelated untracked files before building release evidence.",
-        )
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    derived_data.mkdir(parents=True, exist_ok=True)
-    source_bound_info = derived_data / "NoumSourceBoundInfo.plist"
-    if not write_source_bound_info_plist(repo_root, source_bound_info, source_commit):
-        return check(
-            "unsignedArchiveBuild",
-            False,
-            "source-bound Info.plist generation failed",
-            "Use a new derived-data path and verify the protected source Info.plist is readable.",
-        )
-    command = [
+    source_packages: Path,
+    source_bound_info: Path,
+) -> list[str]:
+    return [
         "xcodebuild",
         "archive",
         "-project",
@@ -1092,6 +1103,52 @@ def build_unsigned_archive(
         "CODE_SIGNING_REQUIRED=NO",
         f"{SOURCE_INFO_FILE_BUILD_SETTING}={source_bound_info}",
     ]
+
+
+def build_unsigned_archive(
+    repo_root: Path,
+    archive_path: Path,
+    derived_data: Path,
+    source_packages: Path | None,
+    source_commit: str | None,
+) -> Check:
+    if archive_path.exists():
+        return check(
+            "unsignedArchiveBuild",
+            False,
+            "refused to overwrite existing archive path",
+            "Choose a new archive path; the preflight never removes an existing archive.",
+        )
+    if source_packages is None or not source_packages.is_dir():
+        return check(
+            "unsignedArchiveBuild",
+            False,
+            "local SourcePackages cache missing",
+            "Pass --source-packages; this preflight will not resolve packages over the network.",
+        )
+    if not source_commit_is_current_and_clean(repo_root, source_commit):
+        return check(
+            "unsignedArchiveBuild",
+            False,
+            "source checkout is dirty or has no exact Git commit",
+            "Commit the intended source and remove unrelated untracked files before building release evidence.",
+        )
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    derived_data.mkdir(parents=True, exist_ok=True)
+    source_bound_info = derived_data / "NoumSourceBoundInfo.plist"
+    if not write_source_bound_info_plist(repo_root, source_bound_info, source_commit):
+        return check(
+            "unsignedArchiveBuild",
+            False,
+            "source-bound Info.plist generation failed",
+            "Use a new derived-data path and verify the protected source Info.plist is readable.",
+        )
+    command = unsigned_archive_command(
+        archive_path,
+        derived_data,
+        source_packages,
+        source_bound_info,
+    )
     completed = subprocess.run(
         command,
         cwd=repo_root,
@@ -1099,10 +1156,18 @@ def build_unsigned_archive(
         stderr=subprocess.DEVNULL,
         check=False,
     )
+    source_still_exact = source_commit_is_current_and_clean(repo_root, source_commit)
+    build_passed = completed.returncode == 0 and source_still_exact
+    if completed.returncode != 0:
+        observed = f"xcodebuild archive exit={completed.returncode}"
+    elif not source_still_exact:
+        observed = "source changed while the archive was building"
+    else:
+        observed = "unsigned generic-iOS archive built from unchanged source"
     return check(
         "unsignedArchiveBuild",
-        completed.returncode == 0,
-        "unsigned generic-iOS archive built" if completed.returncode == 0 else f"xcodebuild archive exit={completed.returncode}",
+        build_passed,
+        observed,
         "Fix repository/archive errors locally; do not enable signing or provisioning updates to hide them.",
     )
 
