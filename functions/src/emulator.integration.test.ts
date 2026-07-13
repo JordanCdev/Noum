@@ -218,6 +218,26 @@ function socialSessionFields(
   };
 }
 
+/** Builds one complete private profile document with optional overrides. */
+function privateProfileFields(
+  overrides: Record<string, FirestoreValue> = {}
+): Record<string, FirestoreValue> {
+  return {
+    speakingContext: {stringValue: "work"},
+    primaryGoal: {stringValue: "reduceFillers"},
+    confidenceLevel: {stringValue: "rebuilding"},
+    biggestChallenge: {stringValue: "fillerWords"},
+    desiredOutcome: {stringValue: "concise"},
+    speakingStyleGoal: {stringValue: "concise"},
+    chosenStyleGoal: {stringValue: "concise"},
+    styleReference: {stringValue: ""},
+    coachingBrief: {stringValue: "Speak with a clear structure."},
+    motivationWhyNow: {stringValue: "Upcoming presentation"},
+    successVision: {stringValue: "Land the main point"},
+    ...overrides,
+  };
+}
+
 /** Writes one complete social session through the same owner rules as iOS. */
 async function seedSocialSession(
   identity: EmulatorIdentity,
@@ -538,19 +558,7 @@ test("private account sync is limited to registered bounded paths", async () => 
   )).status, 200);
   assert.equal((await writeFirestoreDocument(
     `users/${identity.localId}/profile/main`,
-    {
-      speakingContext: {stringValue: "work"},
-      primaryGoal: {stringValue: "clarity"},
-      confidenceLevel: {stringValue: "building"},
-      biggestChallenge: {stringValue: "fillers"},
-      desiredOutcome: {stringValue: "confident"},
-      speakingStyleGoal: {stringValue: "concise"},
-      chosenStyleGoal: {stringValue: "concise"},
-      styleReference: {stringValue: ""},
-      coachingBrief: {stringValue: "Speak with a clear structure."},
-      motivationWhyNow: {stringValue: "Upcoming presentation"},
-      successVision: {stringValue: "Land the main point"},
-    },
+    privateProfileFields(),
     identity
   )).status, 200);
   assert.equal((await writeFirestoreDocument(
@@ -576,6 +584,115 @@ test("private account sync is limited to registered bounded paths", async () => 
     {payload: {stringValue: "unregistered private subtree"}},
     identity
   )).status, 403);
+});
+
+test("private profile optional fields enforce app encoding bounds", async () => {
+  const identity = await anonymousIdentity();
+  const profilePath = `users/${identity.localId}/profile/main`;
+  const validBoundaryProfile = privateProfileFields({
+    customChallengeText: {stringValue: "c".repeat(90)},
+    paraphrasedGoal: {stringValue: "p".repeat(220)},
+    bigMomentID: {stringValue: "783AB966-E91B-4CA4-8F7A-7E50113FA2C6"},
+    secondaryStyleGoal: {stringValue: "storytelling"},
+  });
+  assert.equal((await writeFirestoreDocument(
+    profilePath,
+    validBoundaryProfile,
+    identity
+  )).status, 200);
+
+  const invalidOptionals: Array<Record<string, FirestoreValue>> = [
+    {customChallengeText: {stringValue: "c".repeat(91)}},
+    {customChallengeText: {integerValue: "1"}},
+    {paraphrasedGoal: {stringValue: "p".repeat(221)}},
+    {bigMomentID: {stringValue: "not-a-uuid"}},
+    {secondaryStyleGoal: {stringValue: "invented-style"}},
+  ];
+  for (const invalidOptional of invalidOptionals) {
+    assert.equal((await writeFirestoreDocument(
+      profilePath,
+      privateProfileFields(invalidOptional),
+      identity
+    )).status, 403);
+  }
+});
+
+test("private profile enums accept only current Codable raw values", async () => {
+  const identity = await anonymousIdentity();
+  const profilePath = `users/${identity.localId}/profile/main`;
+  const acceptedValues: Array<{field: string; values: string[]}> = [
+    {
+      field: "speakingContext",
+      values: ["work", "interviews", "presentations", "social"],
+    },
+    {
+      field: "primaryGoal",
+      values: [
+        "reduceFillers", "moreConcise", "thinkFaster", "calmerDelivery",
+      ],
+    },
+    {
+      field: "confidenceLevel",
+      values: ["beginner", "rebuilding", "inconsistent", "confident"],
+    },
+    {
+      field: "biggestChallenge",
+      values: ["fillerWords", "rambling", "freezing", "rushing"],
+    },
+    {
+      field: "desiredOutcome",
+      values: ["concise", "composed", "persuasive", "spontaneous"],
+    },
+    {
+      field: "speakingStyleGoal",
+      values: [
+        "authoritative", "warm", "concise", "persuasive",
+        "executive", "storytelling",
+      ],
+    },
+    {
+      field: "chosenStyleGoal",
+      values: [
+        "authoritative", "warm", "concise", "persuasive",
+        "executive", "storytelling",
+      ],
+    },
+  ];
+  for (const {field, values} of acceptedValues) {
+    for (const value of values) {
+      assert.equal((await writeFirestoreDocument(
+        profilePath,
+        privateProfileFields({[field]: {stringValue: value}}),
+        identity
+      )).status, 200, `${field}=${value}`);
+    }
+  }
+
+  for (const nullableField of ["chosenStyleGoal", "secondaryStyleGoal"]) {
+    assert.equal((await writeFirestoreDocument(
+      profilePath,
+      privateProfileFields({[nullableField]: {nullValue: null}}),
+      identity
+    )).status, 200, `${nullableField}=null`);
+  }
+
+  const rejectedValues: Array<Record<string, FirestoreValue>> = [
+    {speakingContext: {stringValue: "remote"}},
+    {speakingContext: {integerValue: "1"}},
+    {primaryGoal: {stringValue: "speakClearly"}},
+    {confidenceLevel: {stringValue: "expert"}},
+    {biggestChallenge: {stringValue: "other"}},
+    {desiredOutcome: {stringValue: "fluent"}},
+    {speakingStyleGoal: {stringValue: "calm"}},
+    {chosenStyleGoal: {stringValue: "calm"}},
+  ];
+  for (const rejectedValue of rejectedValues) {
+    assert.equal((await writeFirestoreDocument(
+      profilePath,
+      privateProfileFields(rejectedValue),
+      identity
+    )).status, 403);
+  }
 });
 
 test("owner sessions cannot become competitive evidence", async () => {

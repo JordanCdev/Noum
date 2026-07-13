@@ -198,6 +198,71 @@ test("client rules deny every rate-limit collection operation", () => {
   );
 });
 
+test("private profile optional fields remain type and size bounded", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  const start = rules.indexOf("function validPrivateProfile(data)");
+  const end = rules.indexOf("function validPrivateProgress(data)");
+  assert.equal(start >= 0 && end > start, true);
+  const validator = rules.slice(start, end);
+
+  const requiredFragments = [
+    "!('customChallengeText' in data)",
+    "data.customChallengeText == null",
+    "validBoundedString(data.customChallengeText, 90)",
+    "!('paraphrasedGoal' in data)",
+    "data.paraphrasedGoal == null",
+    "validBoundedString(data.paraphrasedGoal, 220)",
+    "!('bigMomentID' in data)",
+    "data.bigMomentID == null",
+    "data.bigMomentID is string",
+    "data.bigMomentID.matches(",
+    "!('secondaryStyleGoal' in data)",
+    "data.secondaryStyleGoal == null",
+    "validSpeakingStyleGoal(data.secondaryStyleGoal)",
+  ];
+  for (const fragment of requiredFragments) {
+    assert.equal(validator.includes(fragment), true, fragment);
+  }
+});
+
+test("private profile enum fields match Codable raw values", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  ).replace(/\s+/g, " ")
+    .replace(/\[\s+/g, "[")
+    .replace(/\s+\]/g, "]");
+  const requiredFragments = [
+    "function validSpeakingContext(value) { return value in " +
+      "['work', 'interviews', 'presentations', 'social']; }",
+    "function validCoachingPriority(value) { return value in " +
+      "['reduceFillers', 'moreConcise', 'thinkFaster', " +
+      "'calmerDelivery']; }",
+    "function validConfidenceLevel(value) { return value in " +
+      "['beginner', 'rebuilding', 'inconsistent', 'confident']; }",
+    "function validSpeakingChallenge(value) { return value in " +
+      "['fillerWords', 'rambling', 'freezing', 'rushing']; }",
+    "function validSpeakingOutcome(value) { return value in " +
+      "['concise', 'composed', 'persuasive', 'spontaneous']; }",
+    "function validSpeakingStyleGoal(value) { return value in " +
+      "['authoritative', 'warm', 'concise', 'persuasive', " +
+      "'executive', 'storytelling']; }",
+    "validSpeakingContext(data.speakingContext)",
+    "validCoachingPriority(data.primaryGoal)",
+    "validConfidenceLevel(data.confidenceLevel)",
+    "validSpeakingChallenge(data.biggestChallenge)",
+    "validSpeakingOutcome(data.desiredOutcome)",
+    "validSpeakingStyleGoal(data.speakingStyleGoal)",
+    "validSpeakingStyleGoal(data.chosenStyleGoal)",
+  ];
+  for (const fragment of requiredFragments) {
+    assert.equal(rules.includes(fragment), true, fragment);
+  }
+});
+
 test("account deletion uses exact server-owned social references", () => {
   const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
   assert.equal(source.includes("collectionGroup("), false);

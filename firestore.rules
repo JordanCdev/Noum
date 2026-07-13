@@ -42,6 +42,35 @@ service cloud.firestore {
       return value is string && value.size() <= maximum;
     }
 
+    function validSpeakingContext(value) {
+      return value in ['work', 'interviews', 'presentations', 'social'];
+    }
+
+    function validCoachingPriority(value) {
+      return value in [
+        'reduceFillers', 'moreConcise', 'thinkFaster', 'calmerDelivery'
+      ];
+    }
+
+    function validConfidenceLevel(value) {
+      return value in ['beginner', 'rebuilding', 'inconsistent', 'confident'];
+    }
+
+    function validSpeakingChallenge(value) {
+      return value in ['fillerWords', 'rambling', 'freezing', 'rushing'];
+    }
+
+    function validSpeakingOutcome(value) {
+      return value in ['concise', 'composed', 'persuasive', 'spontaneous'];
+    }
+
+    function validSpeakingStyleGoal(value) {
+      return value in [
+        'authoritative', 'warm', 'concise', 'persuasive',
+        'executive', 'storytelling'
+      ];
+    }
+
     function validPrivateUserRoot(data, accountID) {
       return data.keys().hasOnly(['accountID', 'provider', 'updatedAt'])
              && data.keys().hasAll(['accountID', 'provider', 'updatedAt'])
@@ -65,18 +94,33 @@ service cloud.firestore {
                'chosenStyleGoal', 'styleReference', 'coachingBrief',
                'motivationWhyNow', 'successVision'
              ])
-             && validBoundedString(data.speakingContext, 64)
-             && validBoundedString(data.primaryGoal, 64)
-             && validBoundedString(data.confidenceLevel, 64)
-             && validBoundedString(data.biggestChallenge, 64)
-             && validBoundedString(data.desiredOutcome, 64)
-             && validBoundedString(data.speakingStyleGoal, 64)
+             && validSpeakingContext(data.speakingContext)
+             && validCoachingPriority(data.primaryGoal)
+             && validConfidenceLevel(data.confidenceLevel)
+             && validSpeakingChallenge(data.biggestChallenge)
+             && (!('customChallengeText' in data)
+                 || data.customChallengeText == null
+                 || validBoundedString(data.customChallengeText, 90))
+             && validSpeakingOutcome(data.desiredOutcome)
+             && validSpeakingStyleGoal(data.speakingStyleGoal)
              && (data.chosenStyleGoal == null
-                 || validBoundedString(data.chosenStyleGoal, 64))
+                 || validSpeakingStyleGoal(data.chosenStyleGoal))
              && validBoundedString(data.styleReference, 500)
              && validBoundedString(data.coachingBrief, 2000)
              && validBoundedString(data.motivationWhyNow, 1000)
-             && validBoundedString(data.successVision, 1000);
+             && validBoundedString(data.successVision, 1000)
+             && (!('paraphrasedGoal' in data)
+                 || data.paraphrasedGoal == null
+                 || validBoundedString(data.paraphrasedGoal, 220))
+             && (!('bigMomentID' in data)
+                 || data.bigMomentID == null
+                 || (data.bigMomentID is string
+                     && data.bigMomentID.matches(
+                       '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$'
+                     )))
+             && (!('secondaryStyleGoal' in data)
+                 || data.secondaryStyleGoal == null
+                 || validSpeakingStyleGoal(data.secondaryStyleGoal));
     }
 
     function validPrivateProgress(data) {
