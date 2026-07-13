@@ -113,6 +113,7 @@ struct SummaryView: View {
 
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
+    @StateObject private var localeSettings = LocaleSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var notificationManager = NotificationManager.shared
@@ -1204,13 +1205,23 @@ struct SummaryView: View {
                            premium.isPremium,
                            AIRewriteService.eligibility(
                                transcript: transcriptText,
-                               confidence: sessionStore.sessions.first?.transcriptConfidence
+                               confidence: sessionStore.sessions.first?.transcriptConfidence,
+                               locale: localeSettings.current
                            ) == .eligible {
                             RewriteSuggestionCard(
                                 transcript: transcriptText,
                                 weakness: weakness,
                                 targetDimension: goalOutcomeRead?.nextDimension?.label,
-                                transcriptConfidence: sessionStore.sessions.first?.transcriptConfidence
+                                transcriptConfidence: sessionStore.sessions.first?.transcriptConfidence,
+                                onPracticePhrase: onStartLookingAhead.map { launch in
+                                    { intent in
+                                        UserDefaults.standard.set(
+                                            intent.suggestedPrompt,
+                                            forKey: "timedPractice.suggestedPrompt"
+                                        )
+                                        launch(.timedPractice)
+                                    }
+                                }
                             )
                         }
 
