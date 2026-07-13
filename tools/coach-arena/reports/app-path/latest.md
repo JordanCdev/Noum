@@ -1,6 +1,6 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-13T05:47:00+00:00`
+- Generated: `2026-07-13T10:20:06+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
 - Average: `79.76/100`
@@ -47,23 +47,26 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 
 - Eligible real-pipeline traces: `50`
 - Passes: `True`
-- Unique proof-test hashes: `30`
-- Max proof-test hash reuse: `5`
-- Max proof-test hash reuse allowed: `10`
+- Styled assessment traces: `23`
+- Declared-neutral assessment traces: `27`
+- Invalid assessment-provenance traces: `0`
+- Unique proof-test hashes: `17`
+- Max proof-test hash reuse: `3`
+- Max proof-test hash reuse allowed: `5`
 - Unique final-reply hashes: `50`
 - Max final-reply hash reuse: `1`
 - Distinct rounded confidence values: `11`
-- Trajectory-cache hits: `3`
+- Trajectory-cache hits: `30`
 - Trajectory-cache hits required: `1`
 - Missing trajectory-cache telemetry: `0`
 - Empty retrieval-card traces: `0`
-- Allowed empty retrieval-card traces: `40`
+- Allowed empty retrieval-card traces: `39`
 - Slow first-token traces: `0`
 
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-13T04:47:58+00:00`
+- Previous generated: `2026-07-13T05:47:00+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
@@ -85,12 +88,12 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `40d5e903`
+- Source trace git commits: `80fbf6d2`
 - Source traces missing git commit: `0`
-- Current git commit: `40d5e903`
-- Source trace coach fingerprints: `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`
+- Current git commit: `80fbf6d2`
+- Source trace coach fingerprints: `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:6164e942bfaeabec8afbd2752a5ba078bc744142a9494257a23070e84647d18d`
+- Current coach source fingerprint: `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`
 - Source fingerprint matches current: `True`
 - Dirty coach source files: `0`
 - Source freshness passes: `True`
