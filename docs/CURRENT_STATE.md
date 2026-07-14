@@ -1,5 +1,44 @@
 # Noum — Current state
 
+## 2026-07-14 — Legacy social authority can no longer cross the cutover
+
+Implementation commit `236d9719` corrects a trust defect in the recoverable
+social migration. The prior schema-v2 plan quarantined legacy public profiles
+and league memberships but preserved pre-cutover challenges and reciprocal
+friend-link rows, then copied their identifiers into server-owned reference
+manifests. Historical rules prove that clients could author challenge state,
+and there is still no legitimate friendship producer, so those rows cannot be
+promoted into the server-authoritative generation.
+
+Cutover schema v3 now inventories every challenge descendant recursively,
+including descendants below missing Firestore parent documents. Apply
+quarantines and deletes legacy challenges, their descendants, and friend links
+alongside the existing public-profile and league sources. Challenge roots are
+removed before descendants so a partial apply cannot expose an incomplete
+challenge; rollback restores descendants before the root. Reference manifests
+retain no legacy challenge or friend identifiers. A schema-v2 complete marker
+is rejected by every social callable, preventing an older unsafe plan from
+authorizing social reads or writes.
+
+Stored challenge and friend-link consumers also require exact server schemas;
+extra legacy/client fields, missing versions, and wrong versions fail closed.
+The migration tests cover descendant drift, root-first committed transport
+failure and resume, descendant-first rollback, and exact restoration.
+
+Verification passed 36/36 migration, credential, and backup-file tests; 72/72
+Functions unit tests plus 6/6 deploy-blocker tests; Functions lint/build; and a
+clean detached `demo-noum` emulator run with 24/24 callable/rules tests plus 6/6
+real CLI/Firestore-adapter tests. The emulator host selected Node 26 despite the
+release harness's Node-22 preflight; Java 21.0.11 and Firebase CLI 15.19.1 were
+pinned. No production service was contacted.
+
+This closes a local authority-promotion flaw; it does not create friendship
+authority or competitive evidence. The server-observed competitive capture
+path, calibrated deterministic evaluator, reciprocal friendship lifecycle,
+independently authorized immutable deployment artifact, and production cutover
+remain missing. Production readiness remains **NO-GO at 18/100 with 0/5
+external artifacts**.
+
 ## 2026-07-14 — Real adapter proof is local; the supported deploy path stays closed
 
 Implementation commits `cf403d2a`, `6435393e`, and `d96afc90` extend the

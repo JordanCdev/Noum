@@ -349,8 +349,10 @@ Before deploying the reviewed social rules and functions together:
 1. Back up the production legacy social collections and record inventory
    fingerprints and counts.
 2. Obtain explicit approval for the legacy-data disposition, then quarantine
-   the client-authored public profiles and league rows. Do not promote their
-   ratings, streaks, or results into trusted server state.
+   the client-authored public profiles, league rows, challenges (including all
+   recursively inventoried descendants), and friend links. Do not promote
+   their ratings, streaks, results, challenge IDs, or friend IDs into trusted
+   server state. Only a schema-v3 completed cutover is accepted.
 3. Complete and verify the one-time social reference cutover. Account deletion
    must fail safely before cutover without leaving a deletion tombstone or
    discarding either the legacy or current cleanup worklist.
@@ -374,12 +376,13 @@ Until every step passes, keep league and challenge actions unavailable in the
 client. A disabled social surface is safer than accepting untrusted progress.
 
 The local migration implementation is now recoverable by contract. It requires
-a clean committed source; inventories private profiles; binds the backup to the
+a clean committed source; inventories private profiles and every legacy social
+source, including recursive challenge descendants; binds the backup to the
 project, source commit, migration implementation, and canonical SHA-256; writes
 a non-complete marker before mutation; transactionally pairs quarantine copies
 with source deletion; and supports same-run resume and pre-completion rollback.
 All six social callables reject every state except the exact provenance-bearing
-schema-v2 complete marker. This is locally tested mechanics, not authorization
+schema-v3 complete marker. This is locally tested mechanics, not authorization
 or evidence that a production migration occurred.
 
 The canonical local workflow now runs both the 24-test Auth/Functions/rules
