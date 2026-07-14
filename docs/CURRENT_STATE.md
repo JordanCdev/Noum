@@ -1,5 +1,46 @@
 # Noum — Current state
 
+## 2026-07-14 — Competitive reps have an ineligible server-observation substrate
+
+Implementation commits `32ef79a8`, `e2243e3d`, `76590f2d`, and `81c17f4c`
+add a deliberately disabled observation path without granting competitive
+authority. Two exact Auth/App-Check callables bind a short-lived intent to the
+current account epoch, prompt provenance, mode, and demand; accept only bounded
+canonical PCM16 mono 16 kHz audio; and invoke Deepgram at most once. The server
+stores no raw audio or transcript text. Its bounded receipt contains hashes,
+counts, provenance, provider metadata, status, and expiry and is permanently
+`competitiveEligible: false`; it never writes `_verifiedSessionEvidence`.
+
+The iOS client reuses the existing speech microphone tap, account/session
+fences, and private transcript fallback. It buffers only bounded memory audio,
+creates no recording file or second recorder, and is wired only to Ah Counter's
+exact no-prompt route. The release capability flag remains false, so shipping
+behavior does not change. Timed, challenge, and IM routes remain unwired because
+their current handoffs do not preserve the exact server-verifiable provenance
+required by this contract.
+
+Firestore rules deny direct access to intent and observation state. Account
+deletion now removes both server-owned trees before rate-limit and Auth cleanup.
+Processor manifest v4 and the generated in-app/hosted privacy disclosures cover
+the bounded Firebase-to-Deepgram observation path, transcript-free storage, and
+the distinction between record expiry and externally configured Firestore TTL.
+The release operations contract now inventories all 13 reviewed callables.
+
+Verification passed Functions lint/build, 100/100 Functions unit tests, 6/6
+deploy-blocker tests, and a clean detached `demo-noum` run at `81c17f4c` with
+Node 22.23.1, Java 21.0.11, and Firebase CLI 15.19.1: 25/25 callable/rules
+tests plus 6/6 real Firestore-adapter tests. The integrated iPhone 17 simulator
+selection passed 55/55 competitive observation, speech integrity, account
+isolation, demand, deletion, and privacy tests with no failures or skips. No
+production service or physical device was used.
+
+This is local observation substrate, not a trusted evaluator or evidence
+producer. Non-challenge provenance is still a client assertion; replay binding
+is per account rather than privacy-preserving across accounts; no calibrated
+deterministic evaluator, Firestore TTL proof, authorized deployment, live
+provider/IAM/App Check evidence, or physical-device evidence exists. Production
+readiness therefore remains **NO-GO at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Legacy social authority can no longer cross the cutover
 
 Implementation commit `236d9719` corrects a trust defect in the recoverable
@@ -32,12 +73,13 @@ real CLI/Firestore-adapter tests. The emulator host selected Node 26 despite the
 release harness's Node-22 preflight; Java 21.0.11 and Firebase CLI 15.19.1 were
 pinned. No production service was contacted.
 
-This closes a local authority-promotion flaw; it does not create friendship
-authority or competitive evidence. The server-observed competitive capture
-path, calibrated deterministic evaluator, reciprocal friendship lifecycle,
-independently authorized immutable deployment artifact, and production cutover
-remain missing. Production readiness remains **NO-GO at 18/100 with 0/5
-external artifacts**.
+That migration commit did not create competitive authority. Descendant commits
+through `81c17f4c` now provide a deliberately disabled, transcript-free server-
+observation substrate, but no calibrated evaluator or eligible
+`_verifiedSessionEvidence` producer. Reciprocal friendship authority,
+independently authorized deployment, and production cutover also remain
+missing. Production readiness remains **NO-GO at 18/100 with 0/5 external
+artifacts**.
 
 ## 2026-07-14 — Real adapter proof is local; the supported deploy path stays closed
 
@@ -59,11 +101,14 @@ document or manifest IDs fail closed rather than being normalized into a
 different Firestore path.
 
 The supported Functions deploy command is intentionally non-executing. Running
-`npm --prefix functions run deploy` exits nonzero and lists four stable blockers:
-a trusted server-observed competitive evidence producer with a deterministic
-evaluator, reciprocal friendship authority, independently trusted deployment
-authorization, and an immutable source-bound deployment artifact. It accepts
-only `--help`; there is no execute or self-attested authorization path.
+`npm --prefix functions run deploy` exits nonzero and lists four stable blockers.
+The first now records that eligible competitive evidence production is missing:
+the local observation substrate remains disabled and ineligible, has no
+calibrated deterministic evaluator, and lacks cross-account replay, retention,
+and live-provider evidence. Reciprocal friendship authority, independently
+trusted deployment authorization, and an immutable source-bound deployment
+artifact are also missing. The command accepts only `--help`; there is no
+execute or self-attested authorization path.
 
 Verification passed 39/39 focused migration, credential, backup, and deploy-
 blocker tests; 71/71 Functions unit tests plus 6/6 deploy-blocker tests; 16/16
@@ -72,13 +117,14 @@ detached checkout with Node 22.23.1, Java 21.0.11, and Firebase CLI 15.19.1,
 24/24 callable/rules emulator tests plus 6/6 real Firestore-adapter tests. No
 production service was contacted.
 
-The highest-impact product gap remains deliberately open. The current backend
-issues a short-lived transcription token, while the iOS client streams and
-scores locally; there is no server-observed competitive audio/transcript fact
-set or calibrated deterministic evaluator that can honestly write
-`_verifiedSessionEvidence`. Reciprocal friend-link authority is also absent.
-Client-authored sessions, scores, transcripts, or emulator Admin seed data must
-not be promoted as substitutes.
+The highest-impact product gap remains deliberately open. Descendant commits
+through `81c17f4c` add a bounded server-observed PCM/transcript-fact substrate
+and a release-disabled iOS client path. Observation receipts remain
+`competitiveEligible: false`, never write `_verifiedSessionEvidence`, and
+cannot substitute for a calibrated deterministic evaluator or trusted eligible
+producer. Reciprocal friend-link authority is also absent. Client-authored
+sessions, scores, transcripts, or emulator Admin seed data must not be promoted
+as substitutes.
 
 Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
 
@@ -129,7 +175,7 @@ disabled.
 Implementation commits `4dd2182b378b07140bd451de640cab2c75ed5222`
 and `518b3103` close two local evidence-integrity gaps without changing shipping
 app behavior. The cloud-operations probe now derives one exact reviewed roster
-of all 11 callable exports and requires every deployed callable to match its
+of all 13 callable exports and requires every deployed callable to match its
 project, region, dedicated runtime identity, App Check/trusted-caller source
 contract, and unauthenticated `401` behavior. The local validator also rejects
 missing, unexpected, duplicate, over-privileged, or wrongly assigned runtime
@@ -146,6 +192,11 @@ while the hosted response was 24,274 bytes with digest
 `34eee13abd8e7d9aa6dbe98c6f38f3d1162f9732476346906fc3190aa7908607`.
 The Firebase endpoint is reachable, but current hosted-policy equivalence is
 **Missing** until an authorized deployment and a fresh exact-body probe pass.
+That digest comparison is historical. At `81c17f4c`, `public/privacy.html` is
+27,569 bytes with SHA-256
+`9ee5fb735331420f094af99ab55882fa0afc8b09fbf06ec58afe4639434dc7e5`;
+no current-source live exact-body probe exists, so hosted equivalence remains
+Missing.
 
 Local verification passed 119 Coach Arena Node tests, 149 Coach Arena Python
 tests, 16 cloud-operations production-contract tests, 14 focused privacy-body

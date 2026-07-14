@@ -10,29 +10,37 @@ readiness.
 
 ## Current Recovery Status (2026-07-14)
 
-**Release verdict: NO-GO for external TestFlight or App Store release.**
+**Release verdict: NO-GO for external TestFlight or App Store release. The
+authoritative score remains 18/100; 0/5 required external artifacts pass.**
 
 - The production transcription route now exists: the iOS release path calls
   the authenticated, App Check-enforced Firebase `transcriptionToken` callable,
   which rate-limits by Firebase UID and returns short-lived Deepgram access from
   a server-only Secret Manager credential. This is a configured production
   boundary, not proof that real-device recording succeeds.
+- A separate server-observation substrate exists locally but is release-disabled
+  and permanently ineligible. It is not deployment, live-provider, evaluator-
+  calibration, or trusted-evidence proof.
 - The historical Deepgram/AWS credential incident in
   `docs/SECURITY_deepgram_key_endpoint.md` remains open. The replacement path
   does not revoke the exposed legacy credentials, disable every legacy route,
   or provide the missing usage and billing audit.
-- `https://noum-d0b6f.web.app/privacy` is reachable, but the 2026-07-14 exact-
-  body probe failed: source was 25,462 bytes / `2b5c1f71…fee44d67`, while the
-  hosted response was 24,274 bytes / `34eee13a…7908607`. Treat hosted-policy
-  equivalence as missing. After safe release authentication is restored,
-  redeploy `public/privacy.html` and require the exact-body probe to pass.
+- `https://noum-d0b6f.web.app/privacy` is reachable, but the last live exact-
+  body probe targeted an older source body. Current `public/privacy.html` is
+  27,569 bytes / `9ee5fb73…4dc7e5`, and no `81c17f4c` live comparison exists.
+  Treat hosted-policy equivalence as missing. After safe release authentication
+  is restored, redeploy the current body and require the exact-body probe to pass.
   The custom `noum.app` domain is still parked at GoDaddy; it must not be
   described as connected to Firebase Hosting until DNS, TLS, and policy content
   are verified.
 - The repository's hardened social rules and functions must **not** be deployed
   until legacy social data is backed up and quarantined, the explicit cutover is
-  complete, and a trusted server-side evidence producer exists. Client-authored
-  ratings or results are not acceptable production evidence.
+  complete, and a trusted eligible evidence producer exists. A disabled,
+  transcript-free server-observation substrate now exists locally, but it has
+  no calibrated evaluator, cross-account replay defense, verified retention,
+  or authorization to write `_verifiedSessionEvidence`. Client-authored ratings,
+  local scores, and ineligible observation receipts are not acceptable
+  production evidence.
 - Two cached Firebase CLI user sessions were exposed during release inspection
   on 2026-07-13. An authorized operator must revoke both sessions, reauthenticate
   the required release account, and independently verify the revocation before
@@ -268,10 +276,11 @@ The probe is read-only. It verifies the production Firestore recovery settings
 and daily backup, required log metrics and routed alert policies, dedicated
 function identities, exclusive access to the Deepgram secret, removal of broad
 roles from the default compute identity, the hosted privacy page, and 401
-responses from all 11 reviewed callable exports when no Firebase Auth or App
+responses from all 13 reviewed callable exports when no Firebase Auth or App
 Check proof is supplied. The exact roster spans coach, transcription, account,
-recommendation, and six social callables across five dedicated runtime
-identities; missing, unexpected, duplicate, wrongly located, wrongly assigned,
+recommendation, two disabled competitive-observation, and six social callables
+across five dedicated runtime identities; missing, unexpected, duplicate,
+wrongly located, wrongly assigned,
 or over-privileged identities fail the probe. It never reads the Deepgram
 secret value.
 
@@ -335,10 +344,13 @@ The repository-supported deployment entry point is deliberately closed:
 npm --prefix functions run deploy
 ```
 
-That command performs no deployment. It exits nonzero with the exact missing
-requirements: a trusted server-observed competitive evidence producer and
-deterministic evaluator, reciprocal friendship authority, independently trusted
-authorization evidence, and an immutable source-bound deployment artifact.
+That command performs no deployment. It exits nonzero with four exact missing
+requirements. Eligible competitive evidence production is missing because the
+local server-observation substrate remains disabled and ineligible, has no
+calibrated deterministic evaluator, and lacks cross-account replay, retention,
+and live-provider evidence. Reciprocal friendship authority, independently
+trusted authorization evidence, and an immutable source-bound deployment
+artifact are also missing.
 `npm --prefix functions run deploy -- --help` explains the boundary. There is
 no `--execute` flag or authorization-file escape hatch. Do not bypass it with a
 raw Firebase command. Replace the blocker only after a separately reviewed
@@ -356,9 +368,13 @@ Before deploying the reviewed social rules and functions together:
 3. Complete and verify the one-time social reference cutover. Account deletion
    must fail safely before cutover without leaving a deletion tombstone or
    discarding either the legacy or current cleanup worklist.
-4. Deploy a trusted server-side session-evidence producer that derives eligible
-   competitive results from authenticated, immutable recording evidence. The
-   `_verifiedSessionEvidence` consumer contract alone is not a producer.
+4. Treat the local begin/complete path only as disabled observation substrate.
+   Before it can produce eligible competitive results, close the privacy-
+   preserving cross-account replay threat, configure and independently verify
+   Firestore TTL, prove the live Deepgram request/retention contract, calibrate
+   the deterministic evaluator and evidence floor, and authorize a reviewed
+   producer to write `_verifiedSessionEvidence`. The current receipt is
+   permanently ineligible and the consumer contract alone is not a producer.
 5. Run an authorized read-only inventory of `users/{uid}/profile/main` before
    promoting the stricter private-profile schema. Every enum-backed value must
    match the current `CoachingProfile` Codable raw values and optional fields
@@ -382,8 +398,9 @@ project, source commit, migration implementation, and canonical SHA-256; writes
 a non-complete marker before mutation; transactionally pairs quarantine copies
 with source deletion; and supports same-run resume and pre-completion rollback.
 All six social callables reject every state except the exact provenance-bearing
-schema-v3 complete marker. This is locally tested mechanics, not authorization
-or evidence that a production migration occurred.
+schema-v3 complete marker. Both competitive-observation callables require that
+same marker, while their iOS capability remains disabled. This is locally tested
+mechanics, not authorization or evidence that a production migration occurred.
 
 The canonical local workflow now runs both the 24-test Auth/Functions/rules
 matrix and six tests that invoke the actual migration CLI through the Firestore
@@ -514,8 +531,9 @@ ready only when:
 - both Firebase CLI sessions exposed during the 2026-07-13 inspection have been
   revoked, release access has been reauthenticated, and a different operator has
   verified that closure
-- the legacy social backup/quarantine, cutover, trusted evidence producer, and
-  coordinated rules/functions deployment have all passed
+- the legacy social backup/quarantine, cutover, eligible evidence producer, and
+  coordinated rules/functions deployment have all passed; the disabled local
+  observation substrate alone does not satisfy this condition
 - Firebase Hosting privacy content is live and the `noum.app` custom domain is
   no longer parked
 - Sign in with Apple, paid-team archive signing, and App Store Connect StoreKit
