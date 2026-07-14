@@ -2766,8 +2766,11 @@ actor AICoachChatService {
             "what do i do with that filler count"
         ]),
            fillerEvidenceSitsInsideDecisionLine(system),
-           let count = firstFillerCount(in: system) {
-            return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"); the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears."
+           let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: system) {
+            if let summary = fillerEvidence.summary {
+                return "Your latest qualified rep had \(summary). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute."
+            }
+            return "That sample is too small or uncertain for a fair filler-rate read. One filler appeared after the decision line, so test one silent beat there and gather one 60-second equivalent rep before judging the pattern."
         }
         if containsAny(lower, [
             "what should i listen for in the replay",
@@ -2794,23 +2797,23 @@ actor AICoachChatService {
             "should i pause before every sentence"
         ]),
            containsAny(lowerSystem, ["filler", "pressure", "close"]) {
-            return "No. Pause before the close only, because that is where the pressure leaks; pausing before every sentence would sound managed rather than steady."
+            return "No. Use one beat before the final sentence as the test, because pausing everywhere changes too much at once to show whether that one timing move helped."
         }
         if containsAny(lower, ["what proves it worked", "what would prove it worked"]),
            containsAny(lowerSystem, ["filler", "silent beat", "close"]) {
-            return "Use the same 60-second prompt and timer because you only want to test the pause point. Success is fewer fillers after that point and a final sentence that still lands cleanly."
+            return "Use the same 60-second prompt and timer because you only want to test the pause point. Success is a lower filler rate and a final sentence that still lands cleanly."
         }
         if lower.contains("tried the close pause"),
            lower.contains("fillers dropped"),
            lower.contains("sounded stiff") {
-            return "In your latest rep, the close pause reduced fillers but cost warmth, so keep the beat only before the final sentence and add one natural phrase after it in the next rep."
+            return "You reported fewer fillers but a stiffer close, so keep the beat only before the final sentence, add one natural phrase, then repeat the same 60-second prompt and compare fillers per minute."
         }
         if containsAny(lower, [
             "how do i make that natural tomorrow",
             "how can i make that natural tomorrow"
         ]),
            containsAny(lowerSystem, ["filler", "close", "stiff", "pause"]) {
-            return "The close pause reduced fillers but sounded stiff, so tomorrow test naturalness without changing the target. Run a 30-second close with one spoken rehearsal of the last sentence, then check whether it sounds like a decision rather than a performance."
+            return "Naturalness is the thing to test tomorrow, so run the same 60-second prompt with one spoken rehearsal of the final sentence. Then compare fillers per minute and whether the close sounds like a decision rather than a performance."
         }
         if containsAny(lower, ["more certain", "more confident"]),
            containsAny(lower, ["at the end", "at the close", "ending", "closing"]) {
@@ -3158,11 +3161,13 @@ actor AICoachChatService {
         ) else {
             return nil
         }
-        guard let count = firstFillerCount(in: systemContext) else {
-            return "Under pressure, do not fight the urge directly. Use the final sentence as the test, so replace the urge with one silent beat before the final sentence, then finish the ask."
+        guard let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: systemContext) else {
+            return "I do not have a comparable filler sample yet. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
         }
-        let noun = count == 1 ? "filler" : "fillers"
-        return "Your last pressure rep had \(count) \(noun), mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask."
+        guard let summary = fillerEvidence.summary else {
+            return "That pressure sample is too small or uncertain for a fair filler-rate read. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
+        }
+        return "Your latest qualified rep had \(summary). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
     }
 
     private nonisolated static func pressureFillerQuickMoveIntent(
@@ -5459,7 +5464,7 @@ actor AICoachChatService {
 
     private nonisolated static func replyHasUserPracticeMove(_ lower: String) -> Bool {
         containsAny(lower, [
-            "say ", "run ", "record", "hold ", "state ", "state the",
+            "say ", "run ", "record", "hold ", "test ", "state ", "state the",
             "lead with", "put the", "give one", "give a ", "answer ",
             "practice", "review", "repeat", "pause before", "add one",
             "add a ", "end with", "end the", "end it", "stop there",
@@ -5815,7 +5820,7 @@ actor AICoachChatService {
 
     private nonisolated static func replyPrescribesAction(_ lower: String) -> Bool {
         containsAny(lower, [
-            "next rep", "try ", "practice", "run ", "hold ", "record",
+            "next rep", "try ", "practice", "run ", "hold ", "test ", "record",
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
             "start", "ask ", "replace", "add one", "add a ", "keep the ", "keep this ", "cut ",
             "pause before", "one drill", "one rep", "review", "speak ",
@@ -6788,13 +6793,15 @@ actor AICoachChatService {
           practice, review, end, state, make, lead, put, or give.
         - For filler-word work, say "hold a silent beat" or "hold one second of
           silence"; never tell the user to close their mouth or lips.
-        - Do not explain filler counts as caused by a separate structure read
-          unless the context explicitly says that. Write "you had 6 fillers, so
-          test a silent beat"; do not write "you had 6 fillers because the point
-          did not lead."
+        - Cite a filler count only when the exact latest qualified evidence line
+          supplies its duration and per-minute rate. Compare fillers per minute
+          under equivalent demand, never raw counts. If comparison is withheld,
+          say the sample is too small or uncertain and gather a 60-second rep.
+        - Do not explain qualified filler evidence as caused by a separate
+          structure read unless the context explicitly says that.
         - Do not infer the user's hidden mental cause for fillers. Avoid lines
-          like "because the next word was not ready." Use observable phrasing:
-          "you had 6 fillers, so test a silent beat as the replacement."
+          like "because the next word was not ready." Use observable phrasing
+          and frame the silent beat as a test.
         - Do not make absolute structure claims such as "never led with the
           point" unless the context explicitly says the point never appeared.
           Prefer the safer observable target: "the close softened", "the point
@@ -6802,7 +6809,7 @@ actor AICoachChatService {
         - If the source transcript already opens with a recommendation, point,
           or decision, do not write "the point arrived late", "buried the
           recommendation", or similar. Use a safe anchor instead, such as the
-          filler count, the exact transcript wording, or a missing
+          qualified filler evidence, the exact transcript wording, or a missing
           reason/implication only when the context supports it.
         - If the source transcript says the user waited too long to state the
           recommendation, do not write "led with the point", "point was up
@@ -6843,8 +6850,8 @@ actor AICoachChatService {
           If RECENT is present in context, do not claim there are no usable
           reps. Do not invent structural claims such as "buried the
           recommendation" unless the context explicitly says that happened. The
-          second sentence still needs the action, for example: "Your last rep had
-          4 fillers, so say the decision first, give one proof point, then stop."
+          second sentence still needs the action. Do not use a raw filler count
+          as the trust-repair anchor.
         - Do not narrate your own response mechanics. Avoid assistant-style phrases
           such as "in my response", "system symbols", "generic tip-giving", or
           "stripping out"; own the friction briefly, then say the changed
@@ -7030,18 +7037,24 @@ actor AICoachChatService {
         }
 
         if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]) {
-            if let count = firstFillerCount(in: system),
-               fillerEvidenceSitsInsideDecisionLine(system) {
-                return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat after the decision line and restart if a filler appears."
-            }
             if let pressureShape = deterministicPressureFillerQuickMoveReply(
                 latestUserTurn: lowerTurn,
                 systemContext: system
             ) {
                 return pressureShape
             }
-            if let count = firstFillerCount(in: system) {
-                return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat before sentence two and check whether the next rep lowers the count."
+            if let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: system),
+               fillerEvidenceSitsInsideDecisionLine(system) {
+                if let summary = fillerEvidence.summary {
+                    return "Your latest qualified rep had \(summary). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute."
+                }
+                return "That sample is too small or uncertain for a fair filler-rate read. One filler appeared after the decision line, so test one silent beat there and gather one 60-second equivalent rep before judging the pattern."
+            }
+            if let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: system) {
+                if let summary = fillerEvidence.summary {
+                    return "Your latest qualified rep had \(summary), so test one silent beat before sentence two and compare fillers per minute on an equivalent rep."
+                }
+                return "That sample is too small or uncertain for a fair filler-rate read, so run one 60-second equivalent rep before judging the pattern."
             }
             return "No stable filler pattern yet, so record one short rep and mark every filler before changing the drill."
         }
@@ -7398,8 +7411,11 @@ actor AICoachChatService {
             ) {
                 return pressureShape
             }
-            if let count = firstFillerCount(in: system) {
-                return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(application)."
+            if let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: system) {
+                if let summary = fillerEvidence.summary {
+                    return "Your latest qualified rep had \(summary), so \(application). Compare fillers per minute on an equivalent rep."
+                }
+                return "That sample is too small or uncertain for a fair filler-rate read, so gather one 60-second equivalent rep before judging change."
             }
         }
 
@@ -7477,8 +7493,11 @@ actor AICoachChatService {
                 assessment: nil
             )
         }
-        if let count = firstFillerCount(in: system) {
-            return "\(friction) Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(move)."
+        if let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: system) {
+            if let summary = fillerEvidence.summary {
+                return "\(friction) Your latest qualified rep had \(summary), so \(move); compare fillers per minute on an equivalent rep."
+            }
+            return "\(friction) The latest sample is too small or uncertain for a fair filler-rate read, so gather one 60-second equivalent rep before judging change."
         }
         if replyShouldCiteRecentSession(system) {
             return "\(friction) Your last rep gives one usable signal, so \(move)."
@@ -7589,27 +7608,13 @@ actor AICoachChatService {
             }
             return nil
         }
-        guard let count = firstFillerCount(in: system) else {
+        guard let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: system) else {
             return "I do not have enough rated filler data yet."
         }
-        return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers")."
-    }
-
-    private nonisolated static func firstFillerCount(in text: String) -> Int? {
-        let pattern = #"(?i)\b(\d{1,3})\s+fillers?\b"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return nil
+        if let summary = fillerEvidence.summary {
+            return "Your latest qualified rep had \(summary). Compare fillers per minute under equivalent demand."
         }
-        let matches = regex.matches(
-            in: text,
-            range: NSRange(text.startIndex..., in: text)
-        )
-        guard let match = matches.last,
-              match.numberOfRanges > 1,
-              let range = Range(match.range(at: 1), in: text) else {
-            return nil
-        }
-        return Int(text[range])
+        return "The latest sample is too small or uncertain for a fair filler-rate read. Gather one 60-second equivalent rep before judging the pattern."
     }
 
     private nonisolated static func fillerEvidenceSitsInsideDecisionLine(_ text: String) -> Bool {
@@ -7617,6 +7622,8 @@ actor AICoachChatService {
         if containsAny(lower, [
             "safe filler fact",
             "filler appeared after the decision/recommendation line",
+            "placement-only filler observation",
+            "placement observation",
             "hold one silent beat after the decision line"
         ]) {
             return true

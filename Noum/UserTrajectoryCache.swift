@@ -125,7 +125,11 @@ final class UserTrajectoryCache {
         let recentLines = recent.prefix(3).map { session -> String in
             let score = session.score.map { "\($0)/10" } ?? "no score"
             let duration = "\(Int(session.duration.rounded()))s"
-            return "\(session.mode.displayLabel): \(score), \(session.fillerWordCount) fillers, \(duration)"
+            let fillerEvidence = QuantityQualifiedFillerEvidence.current(session)
+            if let fillerSummary = fillerEvidence.summary {
+                return "\(session.mode.displayLabel): \(score), \(duration), \(fillerSummary)"
+            }
+            return "\(session.mode.displayLabel): \(score), \(duration), filler comparison withheld"
         }
 
         let trendLines = trendLines(from: sorted, baseline: baseline)
@@ -309,16 +313,19 @@ final class UserTrajectoryCache {
         let words = session.transcript
             .split { $0.isWhitespace || $0.isNewline }
             .map(String.init)
-        let quantityQualified = SessionQualifier.meetsQuantityFloor(
+        let fillerEvidence = QuantityQualifiedFillerEvidence.current(
+            fillerCount: session.fillerWordCount,
             duration: session.duration,
-            wordCount: words.count
+            wordCount: words.count,
+            transcriptConfidence: session.transcriptConfidence
         )
-        let wordsPerMinute: Int? = quantityQualified
+        let wordsPerMinute: Int? = fillerEvidence.status == .qualified
             ? Int((Double(words.count) / max(session.duration, 1)) * 60.0)
             : nil
         let excerpt = words.isEmpty ? nil : words.prefix(26).joined(separator: " ")
         var evidence: [String] = [
-            "latest rep: \(session.mode.displayLabel), \(session.score.map { "\($0)/10" } ?? "no score"), \(session.fillerWordCount) fillers, \(Int(session.duration.rounded()))s"
+            "latest rep: \(session.mode.displayLabel), \(session.score.map { "\($0)/10" } ?? "no score"), \(Int(session.duration.rounded()))s",
+            fillerEvidence.contextLine
         ]
         if let wordsPerMinute {
             evidence.append("pace estimate: \(wordsPerMinute) WPM")
@@ -335,6 +342,7 @@ final class UserTrajectoryCache {
             durationSeconds: Int(session.duration.rounded(.down)),
             wordsPerMinute: wordsPerMinute,
             transcriptWordCount: words.count,
+            transcriptConfidence: session.transcriptConfidence,
             transcriptExcerpt: excerpt,
             evidenceLines: evidence
         )
@@ -347,16 +355,9 @@ final class UserTrajectoryCache {
         var lines: [String] = []
         if sorted.count >= 3 {
             let latestThree = Array(sorted.prefix(3))
-            let qualifyingRates = latestThree.compactMap { session -> Double? in
-                guard SessionQualifier.meetsQuantityFloor(
-                    duration: session.duration,
-                    wordCount: session.wordCount
-                ) else { return nil }
-                return FillerBurden(
-                    fillerCount: session.fillerWordCount,
-                    duration: session.duration
-                ).ratePerMinute
-            }
+            let qualifyingRates = FillerBurden.quantityQualifiedRatesPerMinute(
+                in: latestThree
+            )
             if qualifyingRates.count == latestThree.count {
                 let averageRate = qualifyingRates.reduce(0, +) / Double(qualifyingRates.count)
                 lines.append(

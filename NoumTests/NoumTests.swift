@@ -26802,6 +26802,7 @@ struct CoachReadParityTests {
         duration: TimeInterval = 60,
         wordsPerMinute: Int = 130,
         speakingIdentity: String = "Composed speaker",
+        transcriptConfidence: Double? = nil,
         prompt: String = "",
         voice: SpeakingStyleGoal? = nil,
         recentSessionSummaries: [String] = [],
@@ -26820,6 +26821,7 @@ struct CoachReadParityTests {
             duration: duration,
             wordsPerMinute: wordsPerMinute,
             speakingIdentity: speakingIdentity,
+            transcriptConfidence: transcriptConfidence,
             prompt: prompt,
             voice: voice,
             recentSessionSummaries: recentSessionSummaries,
@@ -27266,20 +27268,21 @@ struct CoachReadParityTests {
             id: currentID, transcript: "current", fillerWordCount: 9,
             duration: 60, date: now, mode: .timed, score: 9
         )
+        let qualifyingTranscript = "I recommend we hold the launch until migration is stable because customers need a reliable handoff and the team needs one clear decision today."
         let prior1 = PracticeSession(
-            id: UUID(), transcript: "p1", fillerWordCount: 1,
+            id: UUID(), transcript: qualifyingTranscript, fillerWordCount: 1,
             duration: 60, date: now, mode: .timed, score: 8
         )
         let prior2 = PracticeSession(
-            id: UUID(), transcript: "p2", fillerWordCount: 2,
+            id: UUID(), transcript: qualifyingTranscript, fillerWordCount: 2,
             duration: 60, date: now, mode: .suddenDeath, score: 7
         )
         let prior3 = PracticeSession(
-            id: UUID(), transcript: "p3", fillerWordCount: 3,
+            id: UUID(), transcript: qualifyingTranscript, fillerWordCount: 3,
             duration: 60, date: now, mode: .timed, score: nil
         )
         let prior4 = PracticeSession(
-            id: UUID(), transcript: "p4", fillerWordCount: 4,
+            id: UUID(), transcript: qualifyingTranscript, fillerWordCount: 4,
             duration: 60, date: now, mode: .timed, score: 5
         )
         let summaries = AICoachService.recentSessionSummaries(
@@ -27289,10 +27292,10 @@ struct CoachReadParityTests {
         // Bounded to 3, current rep dropped (no "9 fillers" self-reference).
         #expect(summaries.count == 3)
         #expect(!summaries.contains { $0.contains("9 filler") })
-        // Shape: "Mode | score X/10 | N fillers", singular for 1.
-        #expect(summaries[0] == "Timed Practice | score 8/10 | 1 filler")
-        #expect(summaries[1] == "Pressure Drill | score 7/10 | 2 fillers")
-        #expect(summaries[2] == "Timed Practice | score n/a | 3 fillers")
+        // Shape carries quantity-qualified count, duration, and rate.
+        #expect(summaries[0] == "Timed Practice | score 8/10 | 1 filler in 60 seconds (1.0 per minute)")
+        #expect(summaries[1] == "Pressure Drill | score 7/10 | 2 fillers in 60 seconds (2.0 per minute)")
+        #expect(summaries[2] == "Timed Practice | score n/a | 3 fillers in 60 seconds (3.0 per minute)")
     }
 
     // 15. Baseline extraction returns nil on insufficient confidence, value
@@ -30125,7 +30128,7 @@ struct AICoachChatReplyQualityGateTests {
         let expertise = CoachExpertiseFormatter.contextLines(for: [card]).joined(separator: "\n")
         let system = """
         RECENT (most-recent first)
-        - Your last rep had 6 fillers.
+        - Latest qualified filler evidence: 6 fillers in 64 seconds (5.6 per minute).
         \(expertise)
         === END CONTEXT ===
         """
@@ -30136,8 +30139,9 @@ struct AICoachChatReplyQualityGateTests {
             system: system
         ))
 
-        #expect(shape.contains("Your last pressure rep had 6 fillers"))
+        #expect(shape.contains("6 fillers in 64 seconds (5.6 per minute)"))
         #expect(shape.contains("one silent beat"))
+        #expect(shape.contains("compare fillers per minute"))
         #expect(shape.contains(" so "))
         #expect(AICoachChatService.replyQualityIssue(
             in: shape,

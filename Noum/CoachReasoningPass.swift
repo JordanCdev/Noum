@@ -280,9 +280,9 @@ enum CoachReasoningPass {
 
         if let pack = trajectory.latestRepEvidencePack {
             let mode = shortModeName(pack.mode)
-            if pack.qualifyingFillerBurden?.meets(.elevated) == true {
-                let noun = pack.fillerCount == 1 ? "filler" : "fillers"
-                return "Use the latest \(mode) rep: replace one of the \(pack.fillerCount) \(noun) with a silent beat, then compare the sentence."
+            if pack.qualifyingFillerBurden?.meets(.elevated) == true,
+               let summary = pack.qualifyingFillerEvidence.summary {
+                return "Use the latest \(mode) rep at \(summary): replace one filler urge with a silent beat, then compare fillers per minute under the same demand."
             }
             if let excerpt = pack.transcriptExcerpt?.lowercased(),
                containsAny(excerpt, ["recommend", "recommendation", "decision", "my answer", "i would"]) {
@@ -967,15 +967,13 @@ enum CoachReasoningPass {
     }
 
     private static func pressureFillerProofTest(from trajectory: UserTrajectorySnapshot) -> String {
-        let countPhrase: String
-        if let pack = trajectory.latestRepEvidencePack,
-           pack.qualifyingFillerBurden?.meets(.elevated) == true {
-            let noun = pack.fillerCount == 1 ? "filler" : "fillers"
-            countPhrase = " with \(pack.fillerCount) \(noun) across \(pack.durationSeconds)s"
-        } else {
-            countPhrase = ""
+        guard let pack = trajectory.latestRepEvidencePack else {
+            return "No comparable filler sample is available yet. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
         }
-        return "Repeat the latest pressure rep\(countPhrase): replace the filler urge with one silent beat before the final sentence, then finish the ask."
+        guard let summary = pack.qualifyingFillerEvidence.summary else {
+            return "The latest pressure sample is too small or uncertain for a fair filler-rate read. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
+        }
+        return "Repeat the latest pressure rep after \(summary): use one silent beat before the final sentence, finish the ask, then compare fillers per minute under the same demand."
     }
 
     private static func formattedRate(_ rate: Double) -> String {

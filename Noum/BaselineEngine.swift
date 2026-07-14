@@ -1084,6 +1084,134 @@ struct FillerBurden {
     }
 }
 
+/// One exact, non-persisted projection for coach-facing filler evidence.
+/// Current-rep callers use the primitive quantity gate so controlled evaluation
+/// fixtures exercise the same behavior as a real rep. Historical callers keep
+/// using `FillerBurden.quantityQualified(_:)`, which additionally rejects stale
+/// schemas and evaluation-only rows.
+struct QuantityQualifiedFillerEvidence: Equatable {
+    enum Status: Equatable {
+        case qualified
+        case insufficient
+    }
+
+    private static let qualifiedPrefix = "Latest qualified filler evidence:"
+    private static let insufficientLine = "Latest filler evidence: comparison withheld because the sample did not meet the shared quantity and confidence floor."
+
+    let status: Status
+    let fillerCount: Int?
+    let durationSeconds: Int?
+    let ratePerMinute: Double?
+
+    private static func displayRate(_ rate: Double) -> Double {
+        (rate * 10).rounded() / 10
+    }
+
+    static func current(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        transcriptConfidence: Double? = nil
+    ) -> QuantityQualifiedFillerEvidence {
+        guard let burden = FillerBurden.quantityQualified(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            transcriptConfidence: transcriptConfidence
+        ), let rate = burden.ratePerMinute else {
+            return QuantityQualifiedFillerEvidence(
+                status: .insufficient,
+                fillerCount: nil,
+                durationSeconds: nil,
+                ratePerMinute: nil
+            )
+        }
+        return QuantityQualifiedFillerEvidence(
+            status: .qualified,
+            fillerCount: fillerCount,
+            durationSeconds: Int(duration.rounded()),
+            ratePerMinute: displayRate(rate)
+        )
+    }
+
+    static func current(_ session: PracticeSession) -> QuantityQualifiedFillerEvidence {
+        current(
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            transcriptConfidence: session.transcriptConfidence
+        )
+    }
+
+    static func historical(_ session: PracticeSession) -> QuantityQualifiedFillerEvidence {
+        guard let burden = FillerBurden.quantityQualified(session),
+              let rate = burden.ratePerMinute else {
+            return QuantityQualifiedFillerEvidence(
+                status: .insufficient,
+                fillerCount: nil,
+                durationSeconds: nil,
+                ratePerMinute: nil
+            )
+        }
+        return QuantityQualifiedFillerEvidence(
+            status: .qualified,
+            fillerCount: session.fillerWordCount,
+            durationSeconds: Int(session.duration.rounded()),
+            ratePerMinute: displayRate(rate)
+        )
+    }
+
+    var summary: String? {
+        guard status == .qualified,
+              let fillerCount,
+              let durationSeconds,
+              let ratePerMinute else { return nil }
+        let noun = fillerCount == 1 ? "filler" : "fillers"
+        return "\(fillerCount) \(noun) in \(durationSeconds) seconds (\(String(format: "%.1f", ratePerMinute)) per minute)"
+    }
+
+    var contextLine: String {
+        guard let summary else { return Self.insufficientLine }
+        return "\(Self.qualifiedPrefix) \(summary)."
+    }
+
+    static func parseLatest(in text: String) -> QuantityQualifiedFillerEvidence? {
+        if text.contains(insufficientLine) {
+            return QuantityQualifiedFillerEvidence(
+                status: .insufficient,
+                fillerCount: nil,
+                durationSeconds: nil,
+                ratePerMinute: nil
+            )
+        }
+
+        let escapedPrefix = NSRegularExpression.escapedPattern(for: qualifiedPrefix)
+        let pattern = "(?i)\(escapedPrefix)\\s+(\\d{1,3})\\s+(?:filler|fillers)\\s+in\\s+(\\d{1,6})\\s+seconds\\s+\\(([0-9]+(?:\\.[0-9]+)?)\\s+per\\s+minute\\)\\."
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: text,
+                range: NSRange(text.startIndex..., in: text)
+              ),
+              match.numberOfRanges == 4,
+              let countRange = Range(match.range(at: 1), in: text),
+              let durationRange = Range(match.range(at: 2), in: text),
+              let rateRange = Range(match.range(at: 3), in: text),
+              let count = Int(text[countRange]),
+              let duration = Int(text[durationRange]),
+              let rate = Double(text[rateRange]),
+              count >= 0,
+              duration >= Int(SessionQualifier.minimumDuration),
+              rate.isFinite else { return nil }
+
+        return QuantityQualifiedFillerEvidence(
+            status: .qualified,
+            fillerCount: count,
+            durationSeconds: duration,
+            ratePerMinute: rate
+        )
+    }
+}
+
 /// A non-persisted comparison between one quantity-qualified rep and repeated
 /// qualified history. The 0.5/min movement floor matches Ah Counter's public
 /// history read so tiny rate jitter never becomes progress or regression.

@@ -111,36 +111,13 @@ struct CoachAssessment: Codable, Equatable {
               combined.contains("final sentence") else {
             return nil
         }
-        let countPhrase = fillerCountPhrase(in: [proofTest] + evidence)
-        let evidencePhrase = countPhrase.map { " had \($0)" } ?? " showed fillers"
-        let closeClusterPhrase = containsCloseClusterEvidence(in: combined)
-            ? ", mostly before the close,"
-            : ","
-        return "Your last pressure rep\(evidencePhrase)\(closeClusterPhrase) so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask."
-    }
-
-    private static func fillerCountPhrase(in values: [String]) -> String? {
-        let tokens = values
-            .joined(separator: " ")
-            .lowercased()
-            .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
-        for index in tokens.indices {
-            guard let count = Int(tokens[index]) else { continue }
-            let nextIndex = tokens.index(after: index)
-            guard nextIndex < tokens.endIndex,
-                  tokens[nextIndex].hasPrefix("filler") else { continue }
-            let noun = count == 1 ? "filler" : "fillers"
-            return "\(count) \(noun)"
+        guard let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(
+            in: evidence.joined(separator: " ")
+        ) else { return nil }
+        if let summary = fillerEvidence.summary {
+            return "Your latest qualified rep had \(summary). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
         }
-        return nil
-    }
-
-    private static func containsCloseClusterEvidence(in value: String) -> Bool {
-        value.contains("mostly before the close") ||
-            value.contains("cluster before the close") ||
-            value.contains("clustered before the close") ||
-            value.contains("clusters before the close")
+        return "That latest pressure sample is too small or uncertain for a fair filler-rate read. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
     }
 
     private static func trustRepairRead(

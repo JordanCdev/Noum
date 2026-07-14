@@ -3869,12 +3869,12 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "6 fillers",
+                "6 fillers in 64 seconds (5.6 per minute)",
                 "TRENDS",
                 "COACH FORMULATION",
                 "silence as the replacement behavior"
             ],
-            referenceReply: "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
+            referenceReply: "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand.",
             knownBadReply: "Based on your data, the key insight is reducing fillers.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -3886,7 +3886,7 @@ enum CoachChatEvaluationCorpus {
             sessions: [
                 session(
                     id: "66666666-6666-6666-6666-666666666666",
-                    transcript: "The recommendation is to hold the launch date, um, because the customer migration is not ready.",
+                    transcript: "The recommendation is to hold the launch date, um, because the customer migration is not ready and the support team needs a clear sequence before we commit to the rollout.",
                     fillerCount: 5,
                     duration: 61,
                     daysAgo: 1,
@@ -3900,12 +3900,12 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "5 fillers",
+                "5 fillers in 61 seconds (4.9 per minute)",
                 "Safe filler fact",
                 "COACH FORMULATION",
-                "leverage is the beat after the decision"
+                "beat after the decision worth testing"
             ],
-            referenceReply: "Last rep had 5 fillers; the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears.",
+            referenceReply: "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute.",
             knownBadReply: "Your last rep had 5 fillers. Next rep, hold one beat before sentence two.",
             expectedBadIssue: .missingInsightBridge
         ),
@@ -3992,7 +3992,7 @@ enum CoachChatEvaluationCorpus {
                 "repair trust first",
                 "specific friction",
                 "RECENT (most-recent first)",
-                "1 filler",
+                "filler comparison withheld",
                 "Safe warmth fact",
                 "COACH FORMULATION",
                 "ordering signal"
@@ -4097,7 +4097,7 @@ enum CoachChatEvaluationCorpus {
                 "REPLY-SAFE FACTS",
                 "recommendation arrived late",
                 "do not say the point led",
-                "2 fillers",
+                "filler comparison withheld",
                 "COACH FORMULATION",
                 "do not say the recommendation was up front"
             ],
@@ -4241,7 +4241,7 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "1 filler",
+                "filler comparison withheld",
                 "TRENDS",
                 "Current coaching hypothesis: Closings is the next lever",
                 "final ask has softened in recent reps"
@@ -4281,7 +4281,7 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "0 fillers",
+                "filler comparison withheld",
                 "TRENDS",
                 "openers are warming up before the point",
                 "COACHING EXPERTISE"
@@ -4361,7 +4361,7 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "0 fillers",
+                "filler comparison withheld",
                 "TRENDS",
                 "recent answers are carrying extra context",
                 "COACHING EXPERTISE"
@@ -4401,7 +4401,7 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "0 fillers",
+                "filler comparison withheld",
                 "TRENDS",
                 "reasons are not consistently tied to the ask",
                 "COACHING EXPERTISE"
@@ -4441,7 +4441,7 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "0 fillers",
+                "filler comparison withheld",
                 "TRENDS",
                 "final lines are ending cautiously",
                 "COACHING EXPERTISE"
@@ -4521,7 +4521,7 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "0 fillers",
+                "filler comparison withheld",
                 "TRENDS",
                 "final sentences are turning into summaries",
                 "COACHING EXPERTISE"
@@ -4784,11 +4784,11 @@ struct CoachChatLatestLiveEvalRegressionTests {
             ),
             (
                 "filler-pressure-prescription",
-                "Your last rep had 6 fillers, so hold one silent beat before the final sentence and check whether the next rep lowers the count."
+                "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, then compare fillers per minute under the same demand."
             ),
             (
                 "metric-action-without-read",
-                "Your last rep had 5 fillers, so hold one silent beat after the decision line and restart if a filler appears."
+                "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute."
             ),
             (
                 "assistant-explainer-register",
@@ -4838,7 +4838,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         ))
 
         #expect(shape.contains("after the decision line"))
-        #expect(shape.contains("restart if a filler appears"))
+        #expect(shape.contains("compare fillers per minute"))
         #expect(!shape.contains("before sentence two"))
     }
 
@@ -4850,10 +4850,13 @@ struct CoachChatLatestLiveEvalRegressionTests {
             system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
         ))
 
-        #expect(shape.contains("Your last pressure rep had 6 fillers"))
+        #expect(shape.contains("6 fillers in 64 seconds (5.6 per minute)"))
         #expect(shape.contains("before the final sentence"))
         #expect(shape.contains("finish the ask"))
+        #expect(shape.contains("compare fillers per minute"))
         #expect(!shape.contains("before sentence two"))
+        #expect(!shape.contains("pressure leak"))
+        #expect(!shape.contains("mostly before"))
         #expect(!shape.lowercased().contains("semantic words"))
     }
 
@@ -4877,12 +4880,13 @@ struct CoachChatLatestLiveEvalRegressionTests {
 
         #expect(assessment.directVerdict.contains("Pressure is the next lever"))
         #expect(assessment.directVerdict.contains("where it leaks"))
-        #expect(assessment.nextProofTest.contains("6 fillers"))
+        #expect(assessment.nextProofTest.contains("6 fillers in 64 seconds (5.6 per minute)"))
         #expect(assessment.nextProofTest.contains("one silent beat before the final sentence"))
         #expect(assessment.nextProofTest.contains("finish the ask"))
         #expect(!assessment.nextProofTest.lowercased().contains("semantic words"))
-        #expect(read.contains("Your last pressure rep had 6 fillers"))
-        #expect(read.contains("pressure leak is the final sentence"))
+        #expect(read.contains("6 fillers in 64 seconds (5.6 per minute)"))
+        #expect(read.contains("compare fillers per minute"))
+        #expect(!read.contains("pressure leak"))
         #expect(!read.contains("mostly before the close"))
         #expect(!read.lowercased().contains("protect sentence one"))
         #expect(!read.lowercased().contains("the signal i can use"))
@@ -4955,8 +4959,9 @@ struct CoachChatLatestLiveEvalRegressionTests {
             turnDepth: .quickMove
         ))
 
-        #expect(repair.contains("Your last pressure rep had 6 fillers"))
+        #expect(repair.contains("6 fillers in 64 seconds (5.6 per minute)"))
         #expect(repair.contains("one silent beat before the final sentence"))
+        #expect(repair.contains("compare fillers per minute"))
         #expect(AICoachChatService.replyQualityIssue(
             in: repair,
             latestUserTurn: fixture.latestUserTurn,

@@ -188,12 +188,16 @@ enum CoachContextBuilder {
         - You frame drills as tests, not guarantees. Prefer "that tests \
         whether..." over "this will fix", "this will ensure", or "this \
         naturally reduces". Observed improvement is association, not proof.
-        - Do not turn metrics into fake causes. If a rep has 6 fillers, say \
-        what to test next; do not write "you had 6 fillers because the point \
-        did not lead" unless the context explicitly connects those facts.
+        - Cite a filler count only when the exact latest qualified evidence \
+        supplies its duration and per-minute rate. Compare fillers per minute \
+        under equivalent demand, never raw counts. If comparison is withheld, \
+        say the sample is too small or uncertain and gather a 60-second rep.
+        - Do not turn metrics into fake causes. Do not write that filler \
+        evidence exists because the point did not lead unless the context \
+        explicitly connects those facts.
         - Do not infer hidden mental causes for fillers. Avoid "because the \
-          next word was not ready." Use observable coaching language: "you had 6 \
-          fillers, so test a silent beat as the replacement."
+          next word was not ready." Use observable coaching language and frame \
+          the silent beat as a test.
         - Do not make absolute structure claims such as "the point never led" \
           or "you never led with the point" unless the context explicitly says \
           the point never appeared. Prefer observable reads: "the close \
@@ -779,8 +783,9 @@ enum CoachContextBuilder {
         ])
     }
 
-    static func replySafeFactLines(for transcript: String) -> [String] {
+    static func replySafeFactLines(for session: PracticeSession) -> [String] {
         var lines: [String] = []
+        let transcript = session.transcript
 
         if transcriptMentionsLateRecommendation(transcript) {
             lines.append("- Safe structure fact: recommendation arrived late; do not say the point led or was up front.")
@@ -793,10 +798,40 @@ enum CoachContextBuilder {
         }
 
         if transcriptHasFillerAfterDecisionLine(transcript) {
-            lines.append("- Safe filler fact: a filler appeared after the decision/recommendation line; do not prescribe a slower opening as the main move.")
-            lines.append("- Safe move: hold one silent beat after the decision line, then restart if a filler appears.")
+            let fillerEvidence = QuantityQualifiedFillerEvidence.current(session)
+            if fillerEvidence.status == .qualified {
+                lines.append("- Safe filler fact: a filler appeared after the decision/recommendation line; do not prescribe a slower opening as the main move.")
+                lines.append("- Safe move: test one silent beat after the decision line, then compare fillers per minute under the same demand.")
+            } else {
+                lines.append("- Placement-only filler observation: one filler appeared after the decision/recommendation line, but this sample is too small or uncertain for a burden judgment.")
+                lines.append("- Safe move: treat one silent beat after the decision line as a tentative test, then gather a qualifying rep before judging the pattern.")
+            }
         }
 
+        return lines
+    }
+
+    static func fillerQuestionEvidenceLines(
+        latestUserTurn: String?,
+        sessions: [PracticeSession]
+    ) -> [String] {
+        guard let latestUserTurn else { return [] }
+        let lower = latestUserTurn.lowercased()
+        guard containsAny(lower, ["um", "uh", "filler", "fillers", "hesitat"]),
+              let latest = sessions.max(by: { $0.date < $1.date }) else {
+            return []
+        }
+
+        let fillerEvidence = QuantityQualifiedFillerEvidence.current(latest)
+        var lines = ["- \(fillerEvidence.contextLine)"]
+        if fillerEvidence.status == .qualified {
+            lines.append("- Comparison rule: cite count only with duration and rate; compare fillers per minute under equivalent demand, never raw count alone.")
+        } else {
+            lines.append("- Evidence boundary: do not use the raw count or a zero as proof of burden, control, improvement, or regression. Say the sample is too small or uncertain for a fair comparison.")
+        }
+        if transcriptHasFillerAfterDecisionLine(latest.transcript) {
+            lines.append("- Placement observation: one filler appeared after the decision/recommendation line. This may justify a pause test, but it does not locate the full count or prove a pressure pattern.")
+        }
         return lines
     }
 
@@ -1349,7 +1384,7 @@ enum CoachContextBuilder {
             for s in recent {
                 let mode = s.mode.displayLabel
                 let score = s.score.map { "\($0)/10" } ?? "no score"
-                let fillers = "\(s.fillerWordCount) filler\(s.fillerWordCount == 1 ? "" : "s")"
+                let fillerEvidence = QuantityQualifiedFillerEvidence.current(s)
                 let duration = "\(Int(s.duration.rounded()))s"
                 let day = recentDayLabel(for: s.date)
                 let intentTail: String = {
@@ -1373,7 +1408,8 @@ enum CoachContextBuilder {
                     }
                     return ""
                 }()
-                lines.append("- \(day) · \(mode): \(score), \(fillers), \(duration)\(intentTail)\(vocalTail).")
+                let fillerTail = fillerEvidence.summary ?? "filler comparison withheld"
+                lines.append("- \(day) · \(mode): \(score), \(duration), \(fillerTail)\(intentTail)\(vocalTail).")
             }
         }
 
@@ -1387,11 +1423,21 @@ enum CoachContextBuilder {
         // composure across channels rather than only on isolated
         // metrics.
         if let latest = recent.first {
-            let safeFactLines = replySafeFactLines(for: latest.transcript)
+            let safeFactLines = replySafeFactLines(for: latest)
             if !safeFactLines.isEmpty {
                 lines.append("")
                 lines.append("REPLY-SAFE FACTS (most-recent rep)")
                 lines.append(contentsOf: safeFactLines)
+            }
+
+            let fillerEvidenceLines = fillerQuestionEvidenceLines(
+                latestUserTurn: latestUserTurn,
+                sessions: sessions
+            )
+            if !fillerEvidenceLines.isEmpty {
+                lines.append("")
+                lines.append("FILLER EVIDENCE (most-recent rep)")
+                lines.append(contentsOf: fillerEvidenceLines)
             }
 
             let hedgingPerMinute: Double? = baseline.hedgingRate.value
@@ -1816,7 +1862,7 @@ enum CoachContextBuilder {
         }
 
         if containsAny(lower, ["um", "uh", "filler", "fillers"]) {
-            lines.append("- Filler-pressure rule: if recent session context exists, cite the latest filler count or last rep and use so or because to connect it to one pause/opening move. Frame the move as a test, not a cure; do not write \"to break this\", \"what brings out the um\", or \"stops the filler\".")
+            lines.append("- Filler-pressure rule: use FILLER EVIDENCE when present. Cite a count only with its duration and per-minute rate; compare fillers per minute under equivalent demand. If comparison is withheld, say the sample is too small or uncertain and gather one 60-second rep. A placement observation supports only a tentative pause test, not a pressure-pattern claim. Frame the move as a test, not a cure; do not write \"to break this\", \"what brings out the um\", or \"stops the filler\".")
         }
 
         return lines
@@ -1887,20 +1933,36 @@ enum CoachContextBuilder {
         }
 
         if containsAny(lower, ["um", "uh", "filler", "fillers", "hesitat"]) {
-            let count = latest.fillerWordCount
+            let fillerEvidence = QuantityQualifiedFillerEvidence.current(latest)
             if transcriptHasFillerAfterDecisionLine(latest.transcript) {
+                if let summary = fillerEvidence.summary {
+                    return [
+                        "- Evidence: the latest qualified rep had \(summary), and one filler appeared after the decision/recommendation line.",
+                        "- Read: that placement makes the beat after the decision worth testing; one occurrence does not prove a cluster or pressure pattern.",
+                        "- Move: hold one silent beat after the decision line, then finish the thought.",
+                        "- Target: compare fillers per minute on an equivalent rep without weakening the recommendation."
+                    ]
+                }
                 return [
-                    "- Evidence: last rep had \(count) \(count == 1 ? "filler" : "fillers") and a filler appeared after the decision/recommendation line.",
-                    "- Read: the leverage is the beat after the decision, not a slower opening.",
-                    "- Move: hold one silent beat after the decision line, then restart if a filler appears.",
-                    "- Target: next rep lowers fillers without weakening the recommendation."
+                    "- Evidence: the latest sample is too small or uncertain for a fair filler-rate read; one filler appeared after the decision/recommendation line.",
+                    "- Read: treat the placement as a tentative pause hypothesis, not proof of burden or a pressure pattern.",
+                    "- Move: run one 60-second equivalent rep and test one silent beat after the decision line.",
+                    "- Target: gather a qualifying sample before judging filler control."
+                ]
+            }
+            if let summary = fillerEvidence.summary {
+                return [
+                    "- Evidence: the latest qualified rep had \(summary).",
+                    "- Read: use silence as the replacement behavior, not a guaranteed cure.",
+                    "- Move: hold one silent beat before the next word.",
+                    "- Target: compare fillers per minute on an equivalent rep; do not compare raw counts."
                 ]
             }
             return [
-                "- Evidence: last rep had \(count) \(count == 1 ? "filler" : "fillers").",
-                "- Read: use silence as the replacement behavior, not a guaranteed cure.",
-                "- Move: hold one silent beat before the next word and compare the next rep's count.",
-                "- Boundary: do not write that the pause will stop fillers."
+                "- Evidence: the latest sample is too small or uncertain for a fair filler-rate read.",
+                "- Read: do not turn its raw count or zero into a burden, control, or progress claim.",
+                "- Move: run one 60-second equivalent rep and test one silent beat before the next word.",
+                "- Boundary: gather a qualifying sample before judging change; do not write that the pause will stop fillers."
             ]
         }
 

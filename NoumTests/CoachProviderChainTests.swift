@@ -889,7 +889,7 @@ struct CoachProviderChainTests {
         let cases: [(turn: String, system: String)] = [
             (
                 "What should I do with that filler count?",
-                "GLOBAL EXAMPLE\n- A different example had 6 fillers.\nRECENT (most-recent first)\n- The latest rep had 5 fillers.\n- Safe filler fact: filler appeared after the decision/recommendation line."
+                "GLOBAL EXAMPLE\n- A different example had 6 fillers.\nRECENT (most-recent first)\n- Latest qualified filler evidence: 5 fillers in 61 seconds (4.9 per minute).\n- Safe filler fact: filler appeared after the decision/recommendation line."
             ),
             (
                 "What should I listen for in the replay?",
@@ -905,7 +905,7 @@ struct CoachProviderChainTests {
             ),
             (
                 "Do I pause before every sentence?",
-                "RECENT (most-recent first)\n- The pressure rep had 6 fillers, mostly before the close."
+                "RECENT (most-recent first)\n- Latest qualified filler evidence: 6 fillers in 64 seconds (5.6 per minute)."
             ),
             (
                 "What proves it worked?",

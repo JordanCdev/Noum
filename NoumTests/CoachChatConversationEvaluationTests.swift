@@ -90,15 +90,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I stop saying um under pressure?",
-                    coachReply: "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask."
+                    coachReply: "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Do I pause before every sentence?",
-                    coachReply: "No, because the pause belongs where the pressure leaks: before the close. If you pause everywhere, the answer will sound managed instead of steady."
+                    coachReply: "No. Use one beat before the final sentence as the test, because pausing everywhere changes too much at once to show whether that one timing move helped."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What proves it worked?",
-                    coachReply: "Use the same 60-second prompt and timer because you only want to test the pause point. Success is fewer fillers after that point and a final sentence that still lands cleanly."
+                    coachReply: "Use the same 60-second prompt and timer because you only want to test the pause point. Success is a lower filler rate and a final sentence that still lands cleanly."
                 )
             ]
         ),
@@ -108,7 +108,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "What should I do with that filler count?",
-                    coachReply: "Last rep had 5 fillers; the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears."
+                    coachReply: "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Why after the decision line?",
@@ -342,15 +342,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "You're repeating yourself.",
-                    coachReply: "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence."
+                    coachReply: "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare fillers per minute on the same prompt and mark whether one appears after the decision line."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So not the same drill again?",
-                    coachReply: "Right. Same target, different check, because your last rep already proved the pause exists; now we need to find where the filler enters the close."
+                    coachReply: "Right. Same target, different check: the last rep gives one qualified rate, not a proven pressure pattern. Hold the close pause, then compare fillers per minute under the same demand."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should change next time?",
-                    coachReply: "Your last rep gives the signal: mark the first filler after the decision line because that tells us whether the pressure leak is timing or wording in the close."
+                    coachReply: "Mark whether a filler appears after the decision line, then compare fillers per minute on the same prompt. That tests the pause without turning one placement observation into a pressure pattern."
                 )
             ]
         ),
@@ -804,7 +804,7 @@ enum CoachChatConversationCorpus {
             extraTurns: [
                 CoachChatConversationTurn(
                     userTurn: "I tried the close pause and fillers dropped, but I sounded stiff.",
-                    coachReply: "That is useful: the pause reduced pressure but cost warmth, so the next rep should hold the beat only before the final sentence, then add one natural phrase after it."
+                    coachReply: "That is useful: you reported fewer fillers but a stiffer close, so hold the beat only before the final sentence, add one natural phrase, then repeat the same 60-second prompt and compare fillers per minute."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "How do I make that natural tomorrow?",
@@ -2371,7 +2371,7 @@ struct CoachChatConversationCorpusTests {
             ),
             (
                 "Do I pause before every sentence?",
-                "No, because the pause belongs where the pressure leaks: before the close. If you pause everywhere, the answer will sound managed instead of steady."
+                "No. Use one beat before the final sentence as the test, because pausing everywhere changes too much at once to show whether that one timing move helped."
             ),
             (
                 "Why after the decision line?",

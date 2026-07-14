@@ -2360,6 +2360,9 @@ struct SummaryView: View {
                 sessions: sessionStore.sessions,
                 currentRepID: latestSessionID
             )
+            let currentSession = latestSessionID.flatMap { sessionID in
+                sessionStore.sessions.first { $0.id == sessionID }
+            } ?? recentSessions.first
             // Confidence-gated baseline (nil on insufficient data — never a
             // fake number). Same gate as PostRepCoachNote (:7182-7185).
             let coachBaseline = baselineStore.baseline
@@ -2379,6 +2382,7 @@ struct SummaryView: View {
                         duration: duration
                     ).wordsPerMinute,
                     speakingIdentity: styleSnapshot.identity,
+                    transcriptConfidence: currentSession?.transcriptConfidence,
                     prompt: repPrompt,
                     voice: coachingProfileStore.profile?.chosenStyleGoal,
                     recentSessionSummaries: priorSummaries,

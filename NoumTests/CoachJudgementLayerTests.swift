@@ -3814,7 +3814,7 @@ struct CoachProviderRoutingByDepthTests {
         let outcome = await service.reply(
             history: [CoachMessage(role: .user, text: "How do I stop saying um under pressure?")],
             systemPrompt: "You are Noum.",
-            userContext: "RECENT\n- Latest pressure rep: 6 fillers, mostly before the close.",
+            userContext: "RECENT\n- Latest qualified filler evidence: 6 fillers in 64 seconds (5.6 per minute).",
             turnDepth: .quickMove,
             assessment: Self.pressureFillerAssessment,
             surface: .text,
@@ -3828,7 +3828,8 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("Your last pressure rep had 6 fillers"))
+        #expect(text.contains("6 fillers in 64 seconds (5.6 per minute)"))
+        #expect(text.contains("compare fillers per minute"))
         #expect(text.contains("one silent beat before the final sentence"))
         #expect(text.contains("finish the ask"))
         #expect(!text.lowercased().contains("semantic words"))
@@ -3851,7 +3852,7 @@ struct CoachProviderRoutingByDepthTests {
         let outcome = await service.reply(
             history: [CoachMessage(role: .user, text: "How do I stop fillers under pressure?")],
             systemPrompt: "You are Noum.",
-            userContext: "RECENT\n- Latest pressure rep: 6 fillers, mostly before the close.",
+            userContext: "RECENT\n- Latest qualified filler evidence: 6 fillers in 64 seconds (5.6 per minute).",
             turnDepth: .quickMove,
             assessment: Self.pressureFillerAssessment,
             surface: .text,
@@ -3862,7 +3863,7 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("Your last pressure rep had 6 fillers"))
+        #expect(text.contains("6 fillers in 64 seconds (5.6 per minute)"))
         #expect(text.contains("one silent beat before the final sentence"))
         #expect(!text.lowercased().contains("just stop"))
         #expect(!text.lowercased().contains("semantic words"))
@@ -3894,7 +3895,7 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("Under pressure, do not fight the urge directly"))
+        #expect(text.contains("do not have a comparable filler sample"))
         #expect(text.contains("one silent beat before the final sentence"))
         #expect(text.contains("finish the ask"))
         #expect(!text.lowercased().contains("semantic words"))
@@ -3916,7 +3917,7 @@ struct CoachProviderRoutingByDepthTests {
         let outcome = await service.reply(
             history: [CoachMessage(role: .user, text: "I meant like as a comparison under pressure. Should I cut it?")],
             systemPrompt: "You are Noum.",
-            userContext: "RECENT\n- Latest pressure rep: 6 fillers, mostly before the close.",
+            userContext: "RECENT\n- Latest qualified filler evidence: 6 fillers in 64 seconds (5.6 per minute).",
             turnDepth: .quickMove,
             assessment: Self.pressureFillerAssessment,
             surface: .text,

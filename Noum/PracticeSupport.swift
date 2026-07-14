@@ -11538,6 +11538,7 @@ struct AICoachSessionInput {
     let fillerCount: Int
     let duration: TimeInterval
     let wordsPerMinute: Int
+    let transcriptConfidence: Double?
     let speakingIdentity: String
     // --- new, all defaulted (initiative #9: Coach Read parity) ---
     /// The question this rep answered (`PracticeSession.prompt`). Lets the
@@ -11583,6 +11584,7 @@ struct AICoachSessionInput {
         duration: TimeInterval,
         wordsPerMinute: Int,
         speakingIdentity: String,
+        transcriptConfidence: Double? = nil,
         prompt: String = "",
         voice: SpeakingStyleGoal? = nil,
         recentSessionSummaries: [String] = [],
@@ -11599,6 +11601,7 @@ struct AICoachSessionInput {
         self.fillerCount = fillerCount
         self.duration = duration
         self.wordsPerMinute = wordsPerMinute
+        self.transcriptConfidence = transcriptConfidence
         self.speakingIdentity = speakingIdentity
         self.prompt = prompt
         self.voice = voice
@@ -11609,6 +11612,15 @@ struct AICoachSessionInput {
         self.standingObservableTarget = standingObservableTarget
         self.standingSuccessMeasure = standingSuccessMeasure
         self.standingReviewDueAt = standingReviewDueAt
+    }
+
+    var fillerEvidence: QuantityQualifiedFillerEvidence {
+        QuantityQualifiedFillerEvidence.current(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: transcript.split(whereSeparator: \.isWhitespace).count,
+            transcriptConfidence: transcriptConfidence
+        )
     }
 }
 
@@ -13919,7 +13931,9 @@ struct AICoachService: AICoachServicing {
         not just this rep in isolation — but it is durable context, NOT this-rep evidence: \
         treat it as the hypothesis you are testing, and never assert the \
         standing target was hit this rep unless the transcript shows it.
-        6. Stats (score, filler count, pace) are CONTEXT, not the read.
+        6. Stats (score, quantity-qualified filler evidence, pace) are CONTEXT, not the read. \
+        Never cite a filler count without its duration and per-minute rate; when filler \
+        comparison is withheld, do not turn the raw count or zero into a claim.
 
         Honesty rules (hard):
         - Patterns are HYPOTHESES, not diagnoses. Association, never causation.
@@ -13990,7 +14004,8 @@ struct AICoachService: AICoachServicing {
             lines.append(AIInsightsService.registerClause(for: voice))
         }
         lines.append("Mode: \(input.mode.displayLabel)")
-        lines.append("Score: \(input.score.map(String.init) ?? "n/a")/10            Filler words: \(input.fillerCount)")
+        lines.append("Score: \(input.score.map(String.init) ?? "n/a")/10")
+        lines.append(input.fillerEvidence.contextLine)
         lines.append("Duration: \(Int(input.duration))s   Words per minute: \(input.wordsPerMinute)")
         lines.append("Current speaking identity: \(input.speakingIdentity)")
         lines.append("Speaker context: \(profile?.speakingContext.title ?? "unknown")")
@@ -14127,7 +14142,8 @@ struct AICoachService: AICoachServicing {
         let firstStrength: String
         if let opener {
             firstStrength = openerStrength(opener: opener, persona: persona)
-        } else if input.fillerCount == 0 {
+        } else if input.fillerEvidence.status == .qualified,
+                  input.fillerCount == 0 {
             firstStrength = "You kept the delivery clean — no filler words to cut."
         } else if let score = input.score, score >= 7 {
             firstStrength = "A solid rep — the read held together start to finish."
@@ -14223,9 +14239,9 @@ struct AICoachService: AICoachServicing {
     /// pace in the shared conversational band, then a clean zero-filler rep,
     /// then a steady fallback that asserts nothing it cannot support.
     private nonisolated static func deliveryStrength(input: AICoachSessionInput) -> String {
-        if let baselineFiller = input.baselineFillerRate, baselineFiller > 0 {
-            let minutes = max(input.duration / 60.0, 0.0001)
-            let sessionRate = Double(input.fillerCount) / minutes
+        if let baselineFiller = input.baselineFillerRate,
+           baselineFiller > 0,
+           let sessionRate = input.fillerEvidence.ratePerMinute {
             if sessionRate <= baselineFiller {
                 return "Your filler rate sat at or below your usual — the discipline is holding."
             }
@@ -14233,7 +14249,8 @@ struct AICoachService: AICoachServicing {
         if ConversationalPaceBand.contains(input.wordsPerMinute) {
             return "Your pace stayed in a listenable band — easy to follow, no rush."
         }
-        if input.fillerCount == 0 {
+        if input.fillerEvidence.status == .qualified,
+           input.fillerCount == 0 {
             return "Not a single filler word — the delivery stayed clean throughout."
         }
         return "You held a steady delivery and saw the rep through."
@@ -14249,7 +14266,11 @@ struct AICoachService: AICoachServicing {
         if input.wordsPerMinute > 0 && input.wordsPerMinute < 95 {
             return "Your pace ran slow at \(input.wordsPerMinute) WPM. Lift the energy a touch so the line carries."
         }
-        if input.fillerCount >= 4 {
+        if input.fillerEvidence.status == .qualified,
+           FillerBurden(
+            fillerCount: input.fillerCount,
+            duration: input.duration
+           ).meets(.elevated) {
             return "Fillers crept in this rep. Try a deliberate pause where a filler wants to go, then say the next word cleanly."
         }
         return "Pick one concrete idea and make it the spine of the next rep, then cut anything that doesn't serve it."
@@ -14364,7 +14385,7 @@ struct AICoachService: AICoachServicing {
 
     /// Build the continuity summaries the Coach Read feeds into
     /// `recentSessionSummaries`: drop the current rep, take the next 3 prior
-    /// reps, map each to the same "Mode | score X/10 | N fillers" shape the
+    /// reps, map each to a quantity-qualified filler evidence shape the
     /// session debrief renders (`AIInsightsService.userPrompt`). Pure over
     /// the inputs so the exclude-current-rep + bound-to-3 contract is tested
     /// without the View. Never invents — only describes real stored sessions.
@@ -14377,7 +14398,8 @@ struct AICoachService: AICoachServicing {
             .prefix(3)
             .map { rep in
                 let scoreText = rep.score.map { "\($0)/10" } ?? "n/a"
-                return "\(rep.mode.displayLabel) | score \(scoreText) | \(rep.fillerWordCount) filler\(rep.fillerWordCount == 1 ? "" : "s")"
+                let fillerEvidence = QuantityQualifiedFillerEvidence.historical(rep)
+                return "\(rep.mode.displayLabel) | score \(scoreText) | \(fillerEvidence.summary ?? "filler comparison withheld")"
             }
     }
 }

@@ -30,6 +30,7 @@ struct LatestRepEvidencePack: Codable, Equatable {
     var durationSeconds: Int
     var wordsPerMinute: Int?
     var transcriptWordCount: Int
+    var transcriptConfidence: Double? = nil
     var transcriptExcerpt: String?
     var evidenceLines: [String]
 
@@ -45,13 +46,21 @@ struct LatestRepEvidencePack: Codable, Equatable {
     }
 
     var qualifyingFillerBurden: FillerBurden? {
-        guard meetsQuantityFloor else { return nil }
-        let burden = FillerBurden(
+        FillerBurden.quantityQualified(
             fillerCount: fillerCount,
-            duration: TimeInterval(durationSeconds)
+            duration: TimeInterval(durationSeconds),
+            wordCount: transcriptWordCount,
+            transcriptConfidence: transcriptConfidence
         )
-        guard burden.ratePerMinute != nil else { return nil }
-        return burden
+    }
+
+    var qualifyingFillerEvidence: QuantityQualifiedFillerEvidence {
+        QuantityQualifiedFillerEvidence.current(
+            fillerCount: fillerCount,
+            duration: TimeInterval(durationSeconds),
+            wordCount: transcriptWordCount,
+            transcriptConfidence: transcriptConfidence
+        )
     }
 }
 
