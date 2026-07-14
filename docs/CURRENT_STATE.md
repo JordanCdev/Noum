@@ -1,5 +1,40 @@
 # Noum — Current state
 
+## 2026-07-14 — Ask Noum now qualifies filler evidence end to end
+
+Implementation commits `3eaea4da` through `ac664112` extend the existing
+`FillerBurden`, trajectory, Coach Context, Coach Read, Summary, and deterministic
+repair owners rather than adding a parallel metric path. Direct filler questions
+now expose one exact qualified projection: count, duration, and fillers per
+minute. Samples below 15 seconds or 20 words, low-confidence transcripts, stale
+comparison schemas, and evaluation-only historical rows fail closed with a
+neutral comparison-withheld boundary. A thin latest rep cannot inherit an older
+count, and placement evidence supports only a tentative pause test rather than a
+pressure-pattern claim.
+
+The same boundary now governs recent trajectory context, provisional Coach Read,
+AI Coach input/fallbacks, direct follow-through repairs, and comparable proof
+tests. Arbitrary `N fillers` scraping, raw-count improvement claims, and
+unsupported “pressure leak” / close-cluster certainty were removed. The local
+Arena scorer accepts count + duration only when a per-minute rate and concrete
+coaching move are also present; raw metric dumps remain capped.
+
+The complete serial `NoumTests` target passes **4,109/4,109** with zero failures
+or skips on the iPhone 17 simulator. Offline Coach Arena validation passes 51
+fixtures with zero errors or warnings, plus 119 Node and 152 Python tests. A
+detached clean evidence refresh at `ac664112` / fingerprint
+`sha256:adfcd7bce86a2e248a923865aa4d014f93ab564670acc42e690585a14cbae2f4`
+passes source preflight, all 53 conversations / 109 turns, all 50 scored fixtures
+at a 79.78 average, and trace-quality gates with zero fixture failures or
+placeholder leaks.
+
+This is local target-shape and real-pipeline evidence only. Production readiness
+remains **NO-GO at 18/100**: one historical live artifact is present but invalid,
+zero of five required external artifacts passes, and there is no validated
+attachment-backed release run. The next verified local integrity gap is Path
+filler-milestone qualification; `GoalOutcomeRead` weighting and durable Pace
+Training attribution remain separate follow-on decisions.
+
 ## 2026-07-14 — Public filler comparisons now use qualified rate
 
 Implementation commit `dbafb01b` extends the existing `FillerBurden`,
@@ -26,9 +61,9 @@ rate-delta and accessibility state still needs focused visual evidence.
 `git diff --check` passes, and the user's unrelated localization catalog remains
 byte-for-byte unchanged.
 
-This closes the Summary and `CoachingPlanner` duration-fairness gap. The direct
-filler-question coach-context response remains corpus-bound and needs a separate
-normalization pass. Standalone Pace Training still lacks canonical persisted
+This closes the Summary and `CoachingPlanner` duration-fairness gap. The later
+`ac664112` entry above closes the direct filler-question coach-context and
+provisional Coach Read gap. Standalone Pace Training still lacks canonical persisted
 mode/demand and followed-rep attribution. No external evidence was collected.
 Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
 
