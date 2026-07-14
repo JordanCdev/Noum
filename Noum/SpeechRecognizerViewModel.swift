@@ -186,6 +186,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
+    /// Launch-time exercise provenance for the rep currently being captured.
+    /// `prepareSession` replaces it on every route; nil is an explicit unknown,
+    /// not permission to read mutable settings during finalization.
+    private var currentSessionDemand: PracticeSessionDemand?
     private var hasPreparedInteractiveUse = false
     var shouldRecordPracticeSession = true
 
@@ -354,8 +358,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    func prepareSession(mode: PracticeMode) {
+    func prepareSession(
+        mode: PracticeMode,
+        practiceDemand: PracticeSessionDemand? = nil
+    ) {
         currentSessionMode = mode
+        currentSessionDemand = practiceDemand?.isValid(for: mode) == true
+            ? practiceDemand
+            : nil
     }
 
     func prepareForInteractiveUse() {
@@ -1022,6 +1032,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func saveCurrentSession() {
+        defer { currentSessionDemand = nil }
         let duration = Date().timeIntervalSince(sessionStart ?? Date())
         lastSessionDuration = duration
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1048,6 +1059,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
         let pressure = BaselineEngine.classifyPressure(
             mode: currentSessionMode,
+            difficulty: currentSessionDemand?.timedDifficulty?.rawValue,
             isPressureModeOn: pressureOn,
             streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
         )
@@ -1080,6 +1092,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 transcriptionProvider: activeProviderIdentifier,
                 pressureLevel: pressure,
                 isRated: pressureOn,
+                practiceDemand: currentSessionDemand,
                 pauseMetrics: pauseMetrics,
                 pitchMetrics: pitchMetrics,
                 vocalEnergyMetrics: vocalEnergyMetrics,
@@ -1173,6 +1186,9 @@ struct PracticeSession: Identifiable, Codable {
     var isRated: Bool = false
     /// Nil for sessions persisted before comparison provenance existed.
     var comparisonMetricSchemaVersion: Int? = currentComparisonMetricSchemaVersion
+    /// Exact exercise demand for current sessions. Nil is preserved for legacy
+    /// rows and Timed-adjacent mini drills whose difficulty was never selected.
+    var practiceDemand: PracticeSessionDemand? = nil
     /// Pause statistics for this session. Optional because (a) older
     /// persisted sessions decode without it, and (b) some transcription
     /// providers may not emit word-level timings on certain reps.
@@ -1244,6 +1260,7 @@ struct PracticeSession: Identifiable, Codable {
         case pressureLevel
         case isRated
         case comparisonMetricSchemaVersion
+        case practiceDemand
         case pauseMetrics
         case pitchMetrics
         case grammarFindings
@@ -1277,6 +1294,7 @@ struct PracticeSession: Identifiable, Codable {
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
         comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
+        practiceDemand: PracticeSessionDemand? = nil,
         pauseMetrics: PauseMetrics? = nil,
         pitchMetrics: PitchMetrics? = nil,
         grammarFindings: [GrammarFinding]? = nil,
@@ -1308,6 +1326,7 @@ struct PracticeSession: Identifiable, Codable {
         self.pressureLevel = pressureLevel
         self.isRated = isRated
         self.comparisonMetricSchemaVersion = comparisonMetricSchemaVersion
+        self.practiceDemand = practiceDemand
         self.pauseMetrics = pauseMetrics
         self.pitchMetrics = pitchMetrics
         self.grammarFindings = grammarFindings
@@ -1342,6 +1361,7 @@ struct PracticeSession: Identifiable, Codable {
         pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
         comparisonMetricSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .comparisonMetricSchemaVersion)
+        practiceDemand = try container.decodeIfPresent(PracticeSessionDemand.self, forKey: .practiceDemand)
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
         pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
         grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)

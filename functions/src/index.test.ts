@@ -249,6 +249,51 @@ test("private profile optional fields remain type and size bounded", () => {
   }
 });
 
+test("private sessions validate demand and metric provenance", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  const demandStart = rules.indexOf("function validPracticeDemand(data)");
+  const sessionStart = rules.indexOf(
+    "function validPrivateSession(data, sessionID)"
+  );
+  const sessionEnd = rules.indexOf(
+    "function validPublicProfile(data, accountID)"
+  );
+  assert.equal(demandStart >= 0 && sessionStart > demandStart, true);
+  assert.equal(sessionEnd > sessionStart, true);
+
+  const demandValidator = rules.slice(demandStart, sessionStart);
+  const sessionValidator = rules.slice(sessionStart, sessionEnd);
+  const demandFragments = [
+    "!('practiceDemand' in data)",
+    "data.practiceDemand is map",
+    "'schemaVersion', 'timedDifficulty'",
+    "data.practiceDemand.schemaVersion == 1",
+    "data.mode == 'timed'",
+    "'free', 'easy', 'medium', 'hard'",
+    "!('suddenDeathDifficulty' in data.practiceDemand)",
+    "data.mode == 'suddenDeath'",
+    "'easy', 'medium', 'hard'",
+    "!('timedDifficulty' in data.practiceDemand)",
+    "'ice_breaker', 'table_topic', 'vocal_variety'",
+  ];
+  for (const fragment of demandFragments) {
+    assert.equal(demandValidator.includes(fragment), true, fragment);
+  }
+
+  const sessionFragments = [
+    "'comparisonMetricSchemaVersion', 'practiceDemand'",
+    "data.comparisonMetricSchemaVersion is int",
+    "data.comparisonMetricSchemaVersion == 1",
+    "validPracticeDemand(data)",
+  ];
+  for (const fragment of sessionFragments) {
+    assert.equal(sessionValidator.includes(fragment), true, fragment);
+  }
+});
+
 test("private profile enum fields match Codable raw values", () => {
   const rules = readFileSync(
     resolve(process.cwd(), "../firestore.rules"),

@@ -243,17 +243,16 @@ struct ShareableSessionCard: View {
 
     private var modeLabel: String {
         switch session.mode {
-        case .timed:          return "TIMED PRACTICE · \(modeDifficulty)"
+        case .timed:
+            if let difficulty = session.practiceDemand?.timedDifficulty,
+               session.practiceDemand?.isValid(for: .timed) == true {
+                return "TIMED PRACTICE · \(difficulty.title.uppercased())"
+            }
+            return "TIMED PRACTICE"
         case .suddenDeath:    return "PRESSURE DRILL"
         case .ahCounter:      return "FILLER CONTROL"
         case .imConversation: return "CONVERSATION PRACTICE"
         }
-    }
-
-    private var modeDifficulty: String {
-        // Lossy — we don't store difficulty per session in the sharable
-        // shape. Keep generic for the card.
-        "1-MINUTE"
     }
 
     private var scoreText: String {

@@ -743,6 +743,9 @@ struct TimedPracticeView: View {
     @State private var elapsedSeconds: Int = 0
     @State private var evaluation: PracticeEvaluation?
     @State private var isStopping = false
+    /// Immutable scoring/demand input captured when this rep begins. Settings
+    /// may change between reps, but never retroactively change an active rep.
+    @State private var activeTimedDifficulty: TimedPracticeDifficulty?
     @State private var showExitConfirmation = false
     @State private var activeDrill: DrillRecommendation?
 
@@ -2936,6 +2939,7 @@ struct TimedPracticeView: View {
 
         elapsedSeconds = 0
         isStopping = false
+        activeTimedDifficulty = practiceSettings.timedDifficulty
         lastMilestoneState = .neutral
         milestoneScale = 1.0
 
@@ -2949,7 +2953,13 @@ struct TimedPracticeView: View {
         }
 
         speechVM.sessionPrompt = question
-        speechVM.prepareSession(mode: .timed)
+        speechVM.prepareSession(
+            mode: .timed,
+            practiceDemand: .timed(
+                difficulty: activeTimedDifficulty ?? practiceSettings.timedDifficulty,
+                speechProjectID: speechProject?.id
+            )
+        )
         Task { @MainActor in
             guard await speechVM.startRecordingAwaitingReadiness() else {
                 speakingTask?.cancel()
@@ -3009,7 +3019,7 @@ struct TimedPracticeView: View {
             transcript: transcript,
             fillerCount: fillerCount,
             duration: duration,
-            difficulty: practiceSettings.timedDifficulty,
+            difficulty: activeTimedDifficulty ?? practiceSettings.timedDifficulty,
             recentSessions: sessionStore.sessions,
             profile: coachingProfileStore.profile,
             question: question.isEmpty ? nil : question,
@@ -3020,6 +3030,7 @@ struct TimedPracticeView: View {
         let pressureOn = practiceSettings.pressureModeEnabled
         let pressure = BaselineEngine.classifyPressure(
             mode: .timed,
+            difficulty: (activeTimedDifficulty ?? practiceSettings.timedDifficulty).rawValue,
             isPressureModeOn: pressureOn,
             streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
         )
@@ -3034,7 +3045,11 @@ struct TimedPracticeView: View {
                 transcriptConfidence: 0.98,
                 transcriptionProvider: "ui-testing",
                 pressureLevel: pressure,
-                isRated: pressureOn
+                isRated: pressureOn,
+                practiceDemand: .timed(
+                    difficulty: activeTimedDifficulty ?? practiceSettings.timedDifficulty,
+                    speechProjectID: speechProject?.id
+                )
             ),
             annotation: PracticeSessionAnnotation(
                 score: result.score,
@@ -3126,7 +3141,7 @@ struct TimedPracticeView: View {
                 transcript: speechVM.transcribedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
-                difficulty: practiceSettings.timedDifficulty,
+                difficulty: activeTimedDifficulty ?? practiceSettings.timedDifficulty,
                 recentSessions: speechVM.pastSessions,
                 profile: coachingProfileStore.profile,
                 question: question.isEmpty ? nil : question,

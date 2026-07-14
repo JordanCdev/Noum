@@ -202,7 +202,8 @@ function socialSessionFields(
   id: string,
   dateSeconds: number,
   score = 8,
-  isRated = true
+  isRated = true,
+  overrides: Record<string, FirestoreValue> = {}
 ): Record<string, FirestoreValue> {
   return {
     id: {stringValue: id},
@@ -215,8 +216,14 @@ function socialSessionFields(
     insights: {arrayValue: {values: []}},
     pressureLevel: {stringValue: "standard"},
     isRated: {booleanValue: isRated},
+    comparisonMetricSchemaVersion: {integerValue: "1"},
+    practiceDemand: {mapValue: {fields: {
+      schemaVersion: {integerValue: "1"},
+      timedDifficulty: {stringValue: "medium"},
+    }}},
     isEvaluationFixture: {booleanValue: false},
     headline: {stringValue: "Clear structure"},
+    ...overrides,
   };
 }
 
@@ -815,6 +822,71 @@ test("private profile enums accept only current Codable raw values", async () =>
     assert.equal((await writeFirestoreDocument(
       profilePath,
       privateProfileFields(rejectedValue),
+      identity
+    )).status, 403);
+  }
+});
+
+test("private session demand is mode-coupled and bounded", async () => {
+  const identity = await anonymousIdentity();
+  const sessionID = "8A713738-D9ED-4337-986E-09205089D42E";
+  const path = `users/${identity.localId}/sessions/${sessionID}`;
+  const now = Date.now() / 1_000;
+  const demand = (fields: Record<string, FirestoreValue>): FirestoreValue => ({
+    mapValue: {fields},
+  });
+
+  assert.equal((await writeFirestoreDocument(
+    path,
+    socialSessionFields(sessionID, now, 8, true, {
+      practiceDemand: demand({
+        schemaVersion: {integerValue: "1"},
+        timedDifficulty: {stringValue: "hard"},
+        speechProjectID: {stringValue: "ice_breaker"},
+      }),
+    }),
+    identity
+  )).status, 200);
+
+  assert.equal((await writeFirestoreDocument(
+    path,
+    socialSessionFields(sessionID, now, 8, true, {
+      mode: {stringValue: "suddenDeath"},
+      practiceDemand: demand({
+        schemaVersion: {integerValue: "1"},
+        suddenDeathDifficulty: {stringValue: "medium"},
+      }),
+    }),
+    identity
+  )).status, 200);
+
+  const rejected: Array<Record<string, FirestoreValue>> = [
+    {
+      practiceDemand: demand({
+        schemaVersion: {integerValue: "1"},
+        timedDifficulty: {stringValue: "extreme"},
+      }),
+    },
+    {
+      practiceDemand: demand({
+        schemaVersion: {integerValue: "1"},
+        timedDifficulty: {stringValue: "medium"},
+        suddenDeathDifficulty: {stringValue: "medium"},
+      }),
+    },
+    {
+      practiceDemand: demand({
+        schemaVersion: {integerValue: "1"},
+        timedDifficulty: {stringValue: "medium"},
+        speechProjectID: {stringValue: "unknown_project"},
+      }),
+    },
+    {comparisonMetricSchemaVersion: {integerValue: "2"}},
+  ];
+  for (const override of rejected) {
+    assert.equal((await writeFirestoreDocument(
+      path,
+      socialSessionFields(sessionID, now, 8, true, override),
       identity
     )).status, 403);
   }

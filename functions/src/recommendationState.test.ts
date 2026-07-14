@@ -163,8 +163,11 @@ test("public request rejects account identity, oversized ledgers, and bad enums"
   assert.throws(() => validateRecommendationMutation(request({
     outcomes: [{...outcome, wordsPerMinute: -1}],
   })));
-  assert.throws(() => validateRecommendationMutation(request({
+  assert.doesNotThrow(() => validateRecommendationMutation(request({
     outcomes: [{...outcome, comparisonSchemaVersion: 2}],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{...outcome, comparisonSchemaVersion: 3}],
   })));
 });
 

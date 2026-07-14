@@ -221,6 +221,46 @@ final class AccountDataRegistryTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: mutationKey))
     }
 
+    func testPracticeDemandExportsAndDeletesWithItsAccountSessionBlob() throws {
+        let suite = "AccountDataRegistryDemand.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountA = "account-a"
+        let accountB = "account-b"
+        let keyA = "practiceSessions.\(accountA)"
+        let keyB = "practiceSessions.\(accountB)"
+        let session = PracticeSession(
+            transcript: "The recommendation is clear and the next step is specific.",
+            fillerWordCount: 0,
+            duration: 40,
+            date: Date(timeIntervalSince1970: 1_720_000_000),
+            mode: .timed,
+            practiceDemand: .timed(
+                difficulty: .hard,
+                speechProjectID: "ice_breaker"
+            )
+        )
+        defaults.set(try JSONEncoder().encode([session]), forKey: keyA)
+        defaults.set(try JSONEncoder().encode([session]), forKey: keyB)
+        let registry = AccountDataRegistry.production(defaults: defaults)
+
+        let entries = try registry.exportEntries(for: accountA)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try data(in: entries, path: "data/practice-sessions.json")
+        ) as? [String: Any])
+        let records = try XCTUnwrap(payload["records"] as? [String: Any])
+        let sessions = try XCTUnwrap(records[keyA] as? [[String: Any]])
+        let demand = try XCTUnwrap(sessions.first?["practiceDemand"] as? [String: Any])
+        XCTAssertEqual(demand["schemaVersion"] as? Int, 1)
+        XCTAssertEqual(demand["timedDifficulty"] as? String, "hard")
+        XCTAssertEqual(demand["speechProjectID"] as? String, "ice_breaker")
+        XCTAssertNil(records[keyB])
+
+        try registry.deleteAllData(for: accountA)
+        XCTAssertNil(defaults.data(forKey: keyA))
+        XCTAssertNotNil(defaults.data(forKey: keyB))
+    }
+
     func testAppManagedRecordingsExportAndDeleteWithUnattributedScope() throws {
         let suite = "AccountDataRegistryMedia.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

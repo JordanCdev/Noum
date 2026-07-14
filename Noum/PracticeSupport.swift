@@ -362,6 +362,68 @@ enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+/// The exact exercise demand that produced a persisted rep.
+///
+/// `PracticeMode` alone is not enough provenance for longitudinal comparison:
+/// a 15-second Timed answer is not the same task as a 60-second answer, and a
+/// curated Speech Project should only be compared with that same project.
+/// This value stays optional on `PracticeSession` so legacy history remains
+/// readable. Consumers must treat nil or invalid demand as unknown rather than
+/// inferring a default from duration, prompt text, or current settings.
+struct PracticeSessionDemand: Codable, Equatable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let timedDifficulty: TimedPracticeDifficulty?
+    let suddenDeathDifficulty: SuddenDeathDifficulty?
+    let speechProjectID: String?
+
+    static func timed(
+        difficulty: TimedPracticeDifficulty,
+        speechProjectID: String? = nil
+    ) -> PracticeSessionDemand {
+        PracticeSessionDemand(
+            schemaVersion: currentSchemaVersion,
+            timedDifficulty: difficulty,
+            suddenDeathDifficulty: nil,
+            speechProjectID: speechProjectID
+        )
+    }
+
+    static func suddenDeath(
+        difficulty: SuddenDeathDifficulty
+    ) -> PracticeSessionDemand {
+        PracticeSessionDemand(
+            schemaVersion: currentSchemaVersion,
+            timedDifficulty: nil,
+            suddenDeathDifficulty: difficulty,
+            speechProjectID: nil
+        )
+    }
+
+    func isValid(for mode: PracticeMode) -> Bool {
+        guard schemaVersion == Self.currentSchemaVersion else { return false }
+        switch mode {
+        case .timed:
+            guard timedDifficulty != nil,
+                  suddenDeathDifficulty == nil else { return false }
+            return speechProjectID.map(Self.isValidProjectID) ?? true
+        case .suddenDeath:
+            return suddenDeathDifficulty != nil
+                && timedDifficulty == nil
+                && speechProjectID == nil
+        case .ahCounter, .imConversation:
+            return false
+        }
+    }
+
+    private static func isValidProjectID(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 80 else { return false }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+        return value.unicodeScalars.allSatisfy(allowed.contains)
+    }
+}
+
 /// How the speaker's duration compares to the target range.
 enum DurationAssessment: String {
     case tooShort = "Too short"
@@ -8615,6 +8677,9 @@ struct PracticeSessionDraft {
     let transcriptionProvider: String?
     let pressureLevel: PressureLevel
     let isRated: Bool
+    /// Exact difficulty/project provenance for comparison. Nil means unknown
+    /// (legacy or a Timed-adjacent mini drill), never "use current settings".
+    let practiceDemand: PracticeSessionDemand?
     let pauseMetrics: PauseMetrics?
     let pitchMetrics: PitchMetrics?
     /// M21: the declared focus the user committed to before the rep,
@@ -8645,6 +8710,7 @@ struct PracticeSessionDraft {
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
+        practiceDemand: PracticeSessionDemand? = nil,
         pauseMetrics: PauseMetrics? = nil,
         pitchMetrics: PitchMetrics? = nil,
         intentFocus: CoachingPriority? = nil,
@@ -8662,6 +8728,7 @@ struct PracticeSessionDraft {
         self.transcriptionProvider = transcriptionProvider
         self.pressureLevel = pressureLevel
         self.isRated = isRated
+        self.practiceDemand = practiceDemand
         self.pauseMetrics = pauseMetrics
         self.pitchMetrics = pitchMetrics
         self.intentFocus = intentFocus
@@ -8738,6 +8805,7 @@ final class PracticeSessionStore: ObservableObject {
             transcriptionProvider: draft.transcriptionProvider,
             pressureLevel: draft.pressureLevel,
             isRated: draft.isRated,
+            practiceDemand: draft.practiceDemand,
             pauseMetrics: draft.pauseMetrics,
             pitchMetrics: draft.pitchMetrics,
             intentFocus: draft.intentFocus,
@@ -8907,9 +8975,9 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
     let fillerRateDelta: Double?
     let fillerDelta: Double
     let durationDelta: Double
-    /// Number of recent sessions admitted by the persisted-demand proxy
-    /// (mode, pressure, rated state, duration, and IM setup). Difficulty and
-    /// Speech Project identity are not yet persisted on PracticeSession.
+    /// Number of recent sessions admitted by the persisted-demand comparison
+    /// (exact Timed/Pressure difficulty and project identity, pressure, rated
+    /// state, duration, or exact IM setup). Legacy unknown demand is excluded.
     let comparisonSessionCount: Int?
     /// Version of the comparison recipe that produced the normalized
     /// evidence. Missing or unknown versions fail closed. Metric-evaluator
@@ -8998,11 +9066,11 @@ struct RecommendationComparisonBaseline: Equatable {
 
 /// Builds the evidence attached to one recommendation outcome. Comparison is
 /// intentionally strict within what PracticeSession persists: recent attempts
-/// must share mode, pressure, rated state, approximate duration, and (for IM)
-/// scenario/tone setup. Sparse history stays unmeasured. Timed/Pressure
-/// difficulty and Speech Project identity remain outside this v1 proxy.
+/// must share exact exercise demand, pressure, rated state, approximate
+/// duration, and (for IM) scenario/tone setup. Sparse or legacy history stays
+/// unmeasured rather than being assigned an inferred difficulty/project.
 enum RecommendationComparisonEngine {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
     static let recentSessionCap = 5
     static let minimumComparisonSamples = 2
     static let recencyWindow: TimeInterval = 28 * 86_400
@@ -9098,10 +9166,20 @@ enum RecommendationComparisonEngine {
         guard durationRatio >= minimumDurationRatio,
               durationRatio <= maximumDurationRatio else { return false }
 
-        guard session.mode == .imConversation else { return true }
-        guard let currentSetup = session.imConversationDetails?.setup,
-              let candidateSetup = candidate.imConversationDetails?.setup else { return false }
-        return currentSetup == candidateSetup
+        switch session.mode {
+        case .timed, .suddenDeath:
+            guard let currentDemand = session.practiceDemand,
+                  let candidateDemand = candidate.practiceDemand,
+                  currentDemand.isValid(for: session.mode),
+                  candidateDemand.isValid(for: candidate.mode) else { return false }
+            return currentDemand == candidateDemand
+        case .imConversation:
+            guard let currentSetup = session.imConversationDetails?.setup,
+                  let candidateSetup = candidate.imConversationDetails?.setup else { return false }
+            return currentSetup == candidateSetup
+        case .ahCounter:
+            return true
+        }
     }
 
     private static func fillerRate(for session: PracticeSession) -> Double? {
@@ -9307,7 +9385,15 @@ enum EvaluationCorpus {
         _ pressure: PressureLevel = .standard,
         _ confidence: Double? = 0.9
     ) -> PracticeSession {
-        PracticeSession(
+        let practiceDemand: PracticeSessionDemand? = switch mode {
+        case .timed:
+            .timed(difficulty: .medium)
+        case .suddenDeath:
+            .suddenDeath(difficulty: .medium)
+        case .ahCounter, .imConversation:
+            nil
+        }
+        return PracticeSession(
             id: stableUUID(ordinal),
             transcript: transcript,
             fillerWordCount: fillers,
@@ -9318,6 +9404,7 @@ enum EvaluationCorpus {
             transcriptConfidence: confidence,
             pressureLevel: pressure,
             isRated: score != nil,
+            practiceDemand: practiceDemand,
             isEvaluationFixture: true,
             fixtureID: String(fixtureID.prefix(64))
         )
@@ -10606,6 +10693,36 @@ final class RecommendationLearningStore: ObservableObject {
 
 @MainActor
 enum PracticeSessionFinalizer {
+    /// Pure copy boundary used when a pending intent is attached. Keeping this
+    /// explicit prevents newly added session evidence from disappearing only
+    /// on the intent path.
+    static func applying(
+        pendingIntent intent: SessionIntent?,
+        to draft: PracticeSessionDraft
+    ) -> PracticeSessionDraft {
+        if draft.intentFocus != nil { return draft }
+        guard let intent else { return draft }
+        return PracticeSessionDraft(
+            transcript: draft.transcript,
+            fillerWordCount: draft.fillerWordCount,
+            duration: draft.duration,
+            date: draft.date,
+            mode: draft.mode,
+            imDetails: draft.imDetails,
+            transcriptConfidence: draft.transcriptConfidence,
+            transcriptionProvider: draft.transcriptionProvider,
+            pressureLevel: draft.pressureLevel,
+            isRated: draft.isRated,
+            practiceDemand: draft.practiceDemand,
+            pauseMetrics: draft.pauseMetrics,
+            pitchMetrics: draft.pitchMetrics,
+            intentFocus: intent.priority,
+            intentLabel: intent.label,
+            vocalEnergyMetrics: draft.vocalEnergyMetrics,
+            repEventLocations: draft.repEventLocations
+        )
+    }
+
     static func finalize(
         store: PracticeSessionStore,
         draft: PracticeSessionDraft,
@@ -10617,29 +10734,7 @@ enum PracticeSessionFinalizer {
         // Death, Ah-Counter, drill mini-runs) untouched; the intent
         // landing is a single-source decision here.
         let intent = SessionIntentStore.shared.pendingIntent
-        let intentAwareDraft: PracticeSessionDraft = {
-            // Preserve any caller-supplied intent (tests can pass one
-            // directly); only inject from the store when the draft has
-            // none of its own.
-            if draft.intentFocus != nil { return draft }
-            guard let intent else { return draft }
-            return PracticeSessionDraft(
-                transcript: draft.transcript,
-                fillerWordCount: draft.fillerWordCount,
-                duration: draft.duration,
-                date: draft.date,
-                mode: draft.mode,
-                imDetails: draft.imDetails,
-                transcriptConfidence: draft.transcriptConfidence,
-                transcriptionProvider: draft.transcriptionProvider,
-                pressureLevel: draft.pressureLevel,
-                isRated: draft.isRated,
-                pauseMetrics: draft.pauseMetrics,
-                pitchMetrics: draft.pitchMetrics,
-                intentFocus: intent.priority,
-                intentLabel: intent.label
-            )
-        }()
+        let intentAwareDraft = applying(pendingIntent: intent, to: draft)
         let session = store.append(intentAwareDraft)
         // Link the pending intent to the session and drop it from
         // pending state — single-rep lifecycle, no leakage to the next

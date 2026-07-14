@@ -298,8 +298,9 @@ struct GoalOutcomeLoopTests {
         }
 
         #expect(!(try decode(versionField: "")).hasComparableBaseline)
+        #expect(!(try decode(versionField: ", \"comparisonSchemaVersion\":1")).hasComparableBaseline)
         #expect(!(try decode(versionField: ", \"comparisonSchemaVersion\":999")).hasComparableBaseline)
-        #expect((try decode(versionField: ", \"comparisonSchemaVersion\":1")).hasComparableBaseline)
+        #expect((try decode(versionField: ", \"comparisonSchemaVersion\":2")).hasComparableBaseline)
     }
 
     @Test func comparableBaselineNormalizesFillerExposureInsteadOfRawCounts() {
@@ -406,6 +407,74 @@ struct GoalOutcomeLoopTests {
         )
         #expect(RecommendationComparisonEngine.baseline(
             for: legacyCurrent, previousSessions: [first, second]
+        ).sessionCount == 0)
+    }
+
+    @Test func comparableBaselineRequiresExactTimedAndSuddenDeathDemand() {
+        let current = comparisonSession(fillers: 2, duration: 60)
+        let ordinaryOne = comparisonSession(dayOffset: -1, fillers: 1, duration: 60)
+        let ordinaryTwo = comparisonSession(dayOffset: -2, fillers: 1, duration: 60)
+        let hard = comparisonSession(
+            dayOffset: -3, fillers: 9, duration: 60, timedDifficulty: .hard
+        )
+        let project = comparisonSession(
+            dayOffset: -4, fillers: 9, duration: 60,
+            speechProjectID: "ice_breaker"
+        )
+        let legacy = comparisonSession(
+            dayOffset: -5, fillers: 9, duration: 60,
+            includePracticeDemand: false
+        )
+
+        #expect(RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [legacy, project, hard, ordinaryTwo, ordinaryOne]
+        ).sessionIDs == [ordinaryOne.id, ordinaryTwo.id])
+
+        let projectCurrent = comparisonSession(
+            fillers: 2, duration: 60, speechProjectID: "ice_breaker"
+        )
+        let sameProjectOne = comparisonSession(
+            dayOffset: -1, fillers: 1, duration: 60,
+            speechProjectID: "ice_breaker"
+        )
+        let sameProjectTwo = comparisonSession(
+            dayOffset: -2, fillers: 1, duration: 60,
+            speechProjectID: "ice_breaker"
+        )
+        let otherProject = comparisonSession(
+            dayOffset: -3, fillers: 9, duration: 60,
+            speechProjectID: "table_topic"
+        )
+        #expect(RecommendationComparisonEngine.baseline(
+            for: projectCurrent,
+            previousSessions: [otherProject, sameProjectTwo, sameProjectOne]
+        ).sessionIDs == [sameProjectOne.id, sameProjectTwo.id])
+
+        let suddenCurrent = comparisonSession(
+            fillers: 2, duration: 60, mode: .suddenDeath
+        )
+        let suddenOne = comparisonSession(
+            dayOffset: -1, fillers: 1, duration: 60, mode: .suddenDeath
+        )
+        let suddenTwo = comparisonSession(
+            dayOffset: -2, fillers: 1, duration: 60, mode: .suddenDeath
+        )
+        let suddenHard = comparisonSession(
+            dayOffset: -3, fillers: 9, duration: 60, mode: .suddenDeath,
+            suddenDeathDifficulty: .hard
+        )
+        #expect(RecommendationComparisonEngine.baseline(
+            for: suddenCurrent,
+            previousSessions: [suddenHard, suddenTwo, suddenOne]
+        ).sessionIDs == [suddenOne.id, suddenTwo.id])
+
+        let legacyCurrent = comparisonSession(
+            fillers: 2, duration: 60, includePracticeDemand: false
+        )
+        #expect(RecommendationComparisonEngine.baseline(
+            for: legacyCurrent,
+            previousSessions: [ordinaryOne, ordinaryTwo]
         ).sessionCount == 0)
     }
 
@@ -560,7 +629,11 @@ struct GoalOutcomeLoopTests {
         score: Int? = 7,
         confidence: Double? = 0.9,
         imSetup: IMConversationSetup? = nil,
-        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion
+        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
+        timedDifficulty: TimedPracticeDifficulty = .medium,
+        speechProjectID: String? = nil,
+        suddenDeathDifficulty: SuddenDeathDifficulty = .medium,
+        includePracticeDemand: Bool = true
     ) -> PracticeSession {
         let details = imSetup.map {
             IMConversationDetails(
@@ -570,6 +643,14 @@ struct GoalOutcomeLoopTests {
                 finalState: nil,
                 outcome: nil
             )
+        }
+        let practiceDemand: PracticeSessionDemand? = switch mode {
+        case .timed where includePracticeDemand:
+            .timed(difficulty: timedDifficulty, speechProjectID: speechProjectID)
+        case .suddenDeath where includePracticeDemand:
+            .suddenDeath(difficulty: suddenDeathDifficulty)
+        default:
+            nil
         }
         return PracticeSession(
             transcript: "The recommendation is clear and the supporting evidence gives the listener one practical decision before the explanation moves into the next useful point.",
@@ -582,7 +663,8 @@ struct GoalOutcomeLoopTests {
             transcriptConfidence: confidence,
             pressureLevel: pressure,
             isRated: isRated,
-            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion
+            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
+            practiceDemand: practiceDemand
         )
     }
 

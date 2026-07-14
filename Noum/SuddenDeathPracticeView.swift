@@ -1364,6 +1364,7 @@ struct SuddenDeathPracticeView: View {
                 mode: .suddenDeath,
                 pressureLevel: pressure,
                 isRated: pressureOn,
+                practiceDemand: .suddenDeath(difficulty: result.difficulty),
                 pauseMetrics: speechVM.currentSessionPauseMetrics()
             ),
             annotation: PracticeSessionAnnotation(

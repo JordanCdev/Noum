@@ -11,11 +11,10 @@ import Foundation
 // Timed is the mode where the user's job is "answer this prompt
 // inside the bell" — so the per-mode signal is delivery quality:
 // score, pace (WPM), and whether the rep landed inside the shared
-// conversational pace band. No per-difficulty
-// breakdown because difficulty isn't persisted on `PracticeSession`;
-// the score the evaluator emits already reflects difficulty (the
-// duration assessment + xpMultiplier are folded into it). What the
-// user reads here is the same number the engine emitted at finalize.
+// conversational pace band. Exact difficulty/project demand is now
+// persisted for current sessions, while legacy rows remain explicitly
+// unknown. This summary intentionally stays aggregate until a demand-aware
+// breakdown can represent that mixed history without implying defaults.
 //
 // Vision-aligned (docs/VISION.md pillar #3 — Conversational
 // intelligence + pillar #4 — Believable progress): the numbers

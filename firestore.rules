@@ -131,6 +131,40 @@ service cloud.firestore {
              && data.xp <= 1000000000;
     }
 
+    function validPracticeDemand(data) {
+      return !('practiceDemand' in data)
+             || (data.practiceDemand is map
+                 && data.practiceDemand.keys().hasOnly([
+                   'schemaVersion', 'timedDifficulty',
+                   'suddenDeathDifficulty', 'speechProjectID'
+                 ])
+                 && data.practiceDemand.keys().hasAll(['schemaVersion'])
+                 && data.practiceDemand.schemaVersion is int
+                 && data.practiceDemand.schemaVersion == 1
+                 && ((data.mode == 'timed'
+                      && data.practiceDemand.keys().hasAll(['timedDifficulty'])
+                      && data.practiceDemand.timedDifficulty in [
+                        'free', 'easy', 'medium', 'hard'
+                      ]
+                      && !('suddenDeathDifficulty' in data.practiceDemand)
+                      && (!('speechProjectID' in data.practiceDemand)
+                          || data.practiceDemand.speechProjectID in [
+                            'ice_breaker', 'table_topic', 'vocal_variety',
+                            'body_of_evidence', 'storytelling_arc',
+                            'persuade_structure', 'teach_in_90',
+                            'inspire_audience'
+                          ]))
+                     || (data.mode == 'suddenDeath'
+                         && data.practiceDemand.keys().hasAll([
+                           'suddenDeathDifficulty'
+                         ])
+                         && data.practiceDemand.suddenDeathDifficulty in [
+                           'easy', 'medium', 'hard'
+                         ]
+                         && !('timedDifficulty' in data.practiceDemand)
+                         && !('speechProjectID' in data.practiceDemand))));
+    }
+
     function validPrivateSession(data, sessionID) {
       return sessionID.matches(
                '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$'
@@ -141,6 +175,7 @@ service cloud.firestore {
                'headline', 'insights', 'coachSummary', 'aiCoachFeedback',
                'prompt', 'theme', 'drillResult', 'transcriptConfidence',
                'transcriptionProvider', 'pressureLevel', 'isRated',
+               'comparisonMetricSchemaVersion', 'practiceDemand',
                'pauseMetrics', 'pitchMetrics', 'grammarFindings',
                'intentFocus', 'intentLabel', 'vocalEnergyMetrics',
                'repEventLocations', 'isEvaluationFixture', 'fixtureID'
@@ -165,6 +200,10 @@ service cloud.firestore {
              && data.insights.size() <= 32
              && validBoundedString(data.pressureLevel, 64)
              && data.isRated is bool
+             && (!('comparisonMetricSchemaVersion' in data)
+                 || (data.comparisonMetricSchemaVersion is int
+                     && data.comparisonMetricSchemaVersion == 1))
+             && validPracticeDemand(data)
              && data.isEvaluationFixture == false;
     }
 

@@ -974,13 +974,22 @@ enum DevSeedData {
         pressure: PressureLevel,
         categoryOverrides: [String: String]? = nil
     ) -> PracticeSession {
+        let practiceDemand: PracticeSessionDemand? = switch mode {
+        case .timed:
+            .timed(difficulty: .medium)
+        case .suddenDeath:
+            .suddenDeath(difficulty: .medium)
+        case .ahCounter, .imConversation:
+            nil
+        }
         var session = PracticeSession(
             transcript: transcript,
             fillerWordCount: fillers,
             duration: duration,
             date: date,
             mode: mode,
-            pressureLevel: pressure
+            pressureLevel: pressure,
+            practiceDemand: practiceDemand
         )
         session.score = score
         session.headline = headlineForScore(score)

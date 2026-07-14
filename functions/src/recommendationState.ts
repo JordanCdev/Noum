@@ -237,7 +237,8 @@ function validateOutcome(value: unknown, index: number): JsonMap {
   }
   const comparisonSchemaVersion = value.comparisonSchemaVersion;
   if (comparisonSchemaVersion !== undefined &&
-      comparisonSchemaVersion !== null && comparisonSchemaVersion !== 1) {
+      comparisonSchemaVersion !== null && comparisonSchemaVersion !== 1 &&
+      comparisonSchemaVersion !== 2) {
     throw new HttpsError(
       "invalid-argument",
       `${field}.comparisonSchemaVersion is invalid.`
