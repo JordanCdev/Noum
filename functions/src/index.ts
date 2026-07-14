@@ -1,7 +1,13 @@
 import {GoogleGenAI} from "@google/genai";
+import {randomUUID} from "node:crypto";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore, Timestamp} from "firebase-admin/firestore";
+import {
+  getFirestore,
+  Timestamp,
+  type DocumentReference,
+  type DocumentSnapshot,
+} from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {setGlobalOptions} from "firebase-functions/v2";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
@@ -44,20 +50,26 @@ import {
   challengeSubmissionDocument,
   combinedChallengeDocument,
   currentTrustedLeagueBucket,
+  friendLinkEnvelope,
   isSocialReferenceCutoverComplete,
   profileFromSocialState,
   promptDigest,
   socialDateMilliseconds,
   socialReferenceManifestIncludingChallenge,
+  socialReferenceManifestIncludingFriend,
+  socialReferenceManifestRemovingFriend,
   socialReferenceManifestUpdatingLeagueMembership,
   stableLegacyUUID,
   storedSocialState,
   validateChallengeSubmission,
   validateCombinedChallengeResult,
   validateCreateChallengeRequest,
+  validateCurrentFriendManifest,
   validateGetPeerProfileRequest,
   validateListLeagueMembersRequest,
   validateReciprocalFriendLinks,
+  validateReciprocalFriendManifests,
+  validateServerFriendLink,
   validateRecordPeerSessionRequest,
   validateSetChallengeReactionRequest,
   validateSocialReferenceManifest,
@@ -66,7 +78,9 @@ import {
   validateSubmitChallengeResultRequest,
   validateVerifiedSessionEvidence,
   type ChallengeSubmission,
+  type FriendLinkEnvelope,
   type PublicProfileEnvelope,
+  type ValidatedFriendLinkPair,
 } from "./socialAuthority.js";
 import {
   decideRecommendationMutation,
@@ -93,6 +107,29 @@ import {
   type StoredCompetitiveObservation,
   type StoredCompetitiveObservationIntent,
 } from "./competitiveObservation.js";
+import {
+  FRIEND_INVITE_ACCEPT_HOUR_LIMIT,
+  FRIEND_INVITE_ACCEPT_MINUTE_LIMIT,
+  FRIEND_INVITE_CREATE_HOUR_LIMIT,
+  FRIEND_INVITE_CREATE_MINUTE_LIMIT,
+  FRIEND_INVITE_LIFETIME_MS,
+  FRIEND_LINK_LIST_HOUR_LIMIT,
+  FRIEND_LINK_LIST_MINUTE_LIMIT,
+  FRIEND_LINK_REMOVE_HOUR_LIMIT,
+  FRIEND_LINK_REMOVE_MINUTE_LIMIT,
+  FRIEND_LINK_SCHEMA_VERSION,
+  FRIENDSHIP_SCHEMA_VERSION,
+  MAX_ACTIVE_FRIEND_INVITES,
+  friendInviteDigest,
+  generateFriendInviteSecret,
+  validateAcceptFriendInviteRequest,
+  validateBoundFriendInviteReference,
+  validateCreateFriendInviteRequest,
+  validateListFriendLinksRequest,
+  validateRemoveFriendLinkRequest,
+  validateStoredFriendInvite,
+  validateStoredFriendInviteReference,
+} from "./friendshipAuthority.js";
 
 initializeApp();
 setGlobalOptions({
@@ -1281,7 +1318,9 @@ function socialProfileDisplayName(value: unknown): string {
 
 type SocialRateOperation =
   "challengeCreate" | "challengeReaction" |
-  "peerProfileRead" | "leagueListRead";
+  "peerProfileRead" | "leagueListRead" |
+  "friendInviteCreate" | "friendInviteAccept" |
+  "friendLinkList" | "friendLinkRemove";
 
 /**
  * Rejects every social mutation while account deletion is pending.
@@ -1294,6 +1333,37 @@ function assertAccountDeletionNotPending(pending: boolean): void {
     "Account deletion is already in progress.",
     {reason: "account-deletion-pending"}
   );
+}
+
+/**
+ * Returns the deliberately indistinguishable invite lookup failure.
+ * @return {HttpsError} Generic invite-unavailable error.
+ */
+function friendInviteUnavailableError(): HttpsError {
+  return new HttpsError(
+    "failed-precondition",
+    "This friend invite is unavailable.",
+    {reason: "friend-invite-unavailable"}
+  );
+}
+
+/**
+ * Returns exact server link facts, or null for security-favoring cleanup.
+ * @param {unknown} value Candidate link document.
+ * @param {string} accountID Owning account ID.
+ * @param {string} friendAccountID Reciprocal account ID.
+ * @return {ValidatedFriendLinkPair|null} Link facts.
+ */
+function validatedFriendLinkOrNull(
+  value: unknown,
+  accountID: string,
+  friendAccountID: string
+): ValidatedFriendLinkPair | null {
+  try {
+    return validateServerFriendLink(value, accountID, friendAccountID);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1399,6 +1469,8 @@ export const getPeerProfile = onCall(
         .collection("friends").doc(input.accountID),
       firestore.collection("_socialFriendLinks").doc(input.accountID)
         .collection("friends").doc(uid),
+      firestore.collection("_socialReferences").doc(uid),
+      firestore.collection("_socialReferences").doc(input.accountID),
       firestore.collection("profiles_public").doc(input.accountID)
     );
     assertAccountDeletionNotPending(snapshots[0].exists || snapshots[1].exists);
@@ -1408,13 +1480,19 @@ export const getPeerProfile = onCall(
       uid,
       input.accountID
     );
-    if (!snapshots[4].exists) {
+    validateReciprocalFriendManifests(
+      snapshots[4].data(),
+      snapshots[5].data(),
+      uid,
+      input.accountID
+    );
+    if (!snapshots[6].exists) {
       throw new HttpsError("not-found", "Peer profile not found.");
     }
     return {
       schemaVersion: SOCIAL_SCHEMA_VERSION,
       profile: validateStoredPublicProfile(
-        snapshots[4].data(),
+        snapshots[6].data(),
         input.accountID
       ),
     };
@@ -1462,6 +1540,621 @@ export const listLeagueMembers = onCall(
         validateStoredPublicProfile(document.data(), document.id)
       ),
     };
+  }
+);
+
+export const createFriendInvite = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    await assertSocialCallablesAvailable();
+    const input = validateCreateFriendInviteRequest(request.data);
+    await enforceSocialRateLimit(
+      uid,
+      "friendInviteCreate",
+      FRIEND_INVITE_CREATE_MINUTE_LIMIT,
+      FRIEND_INVITE_CREATE_HOUR_LIMIT
+    );
+    const secret = generateFriendInviteSecret();
+    const nowMs = Date.now();
+    const expiresAtMs = nowMs + FRIEND_INVITE_LIFETIME_MS;
+    const firestore = getFirestore();
+    const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
+    const inviteRef = firestore.collection("_socialFriendInvites")
+      .doc(secret.tokenDigest);
+    const accountInviteRefs = firestore.collection("_socialReferences")
+      .doc(uid).collection("friendInvites");
+    const accountInviteRef = accountInviteRefs.doc(secret.tokenDigest);
+
+    await firestore.runTransaction(async (transaction) => {
+      const deletionSnapshot = await transaction.get(deletionRef);
+      const activeSnapshot = await transaction.get(
+        accountInviteRefs.where("status", "==", "active")
+          .limit(MAX_ACTIVE_FRIEND_INVITES + 1)
+      );
+      assertAccountDeletionNotPending(deletionSnapshot.exists);
+      let activeCount = 0;
+      const expiredDigests: string[] = [];
+      for (const document of activeSnapshot.docs) {
+        const reference = validateStoredFriendInviteReference(
+          document.data(),
+          uid,
+          document.id,
+          socialDateMilliseconds
+        );
+        if (reference.expiresAtMs <= nowMs) expiredDigests.push(document.id);
+        else activeCount += 1;
+      }
+      if (activeCount >= MAX_ACTIVE_FRIEND_INVITES) {
+        throw new HttpsError(
+          "resource-exhausted",
+          "Too many active friend invites. " +
+            "Let one expire before creating another.",
+          {reason: "friend-invite-capacity"}
+        );
+      }
+      for (const expiredDigest of expiredDigests) {
+        transaction.delete(accountInviteRefs.doc(expiredDigest));
+        transaction.delete(
+          firestore.collection("_socialFriendInvites").doc(expiredDigest)
+        );
+      }
+      const createdAt = Timestamp.fromMillis(nowMs);
+      const expiresAt = Timestamp.fromMillis(expiresAtMs);
+      transaction.create(inviteRef, {
+        schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+        status: "active",
+        tokenDigest: secret.tokenDigest,
+        inviterAccountID: uid,
+        inviterDisplayName: input.displayName,
+        createdAt,
+        expiresAt,
+        acceptedAccountID: null,
+        acceptorDisplayName: null,
+        acceptedAt: null,
+        pairID: null,
+        revokedAt: null,
+      });
+      transaction.create(accountInviteRef, {
+        schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+        tokenDigest: secret.tokenDigest,
+        accountID: uid,
+        role: "inviter",
+        status: "active",
+        counterpartAccountID: null,
+        expiresAt,
+        updatedAt: createdAt,
+      });
+    });
+    return {
+      schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+      inviteToken: secret.inviteToken,
+      expiresAt: expiresAtMs / 1_000,
+    };
+  }
+);
+
+export const acceptFriendInvite = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    await assertSocialCallablesAvailable();
+    const input = validateAcceptFriendInviteRequest(request.data);
+    await enforceSocialRateLimit(
+      uid,
+      "friendInviteAccept",
+      FRIEND_INVITE_ACCEPT_MINUTE_LIMIT,
+      FRIEND_INVITE_ACCEPT_HOUR_LIMIT
+    );
+    const tokenDigest = friendInviteDigest(input.inviteToken);
+    const pairID = randomUUID().toUpperCase();
+    const nowMs = Date.now();
+    const linkedAt = Timestamp.fromMillis(nowMs);
+    const firestore = getFirestore();
+    const inviteRef = firestore.collection("_socialFriendInvites")
+      .doc(tokenDigest);
+
+    const outcome = await firestore.runTransaction(async (transaction) => {
+      const inviteSnapshot = await transaction.get(inviteRef);
+      const invite = validateStoredFriendInvite(
+        inviteSnapshot.data(),
+        tokenDigest,
+        socialDateMilliseconds
+      );
+      const inviterAccountID = invite.inviterAccountID;
+      if (inviterAccountID === uid) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Use this invite with another account.",
+          {reason: "friend-invite-self"}
+        );
+      }
+      if (invite.expiresAtMs <= nowMs) {
+        throw friendInviteUnavailableError();
+      }
+      if (invite.status !== "active" && invite.status !== "accepted") {
+        throw friendInviteUnavailableError();
+      }
+
+      const ownDeletionRef = firestore.collection("_accountDeletionState")
+        .doc(uid);
+      const inviterDeletionRef = firestore.collection("_accountDeletionState")
+        .doc(inviterAccountID);
+      const ownLinkRef = firestore.collection("_socialFriendLinks").doc(uid)
+        .collection("friends").doc(inviterAccountID);
+      const inviterLinkRef = firestore.collection("_socialFriendLinks")
+        .doc(inviterAccountID).collection("friends").doc(uid);
+      const ownReferencesRef = firestore.collection("_socialReferences")
+        .doc(uid);
+      const inviterReferencesRef = firestore.collection("_socialReferences")
+        .doc(inviterAccountID);
+      const ownInviteRef = ownReferencesRef.collection("friendInvites")
+        .doc(tokenDigest);
+      const inviterInviteRef = inviterReferencesRef.collection("friendInvites")
+        .doc(tokenDigest);
+      const ownDeletion = await transaction.get(ownDeletionRef);
+      const inviterDeletion = await transaction.get(inviterDeletionRef);
+      const ownLink = await transaction.get(ownLinkRef);
+      const inviterLink = await transaction.get(inviterLinkRef);
+      const ownReferences = await transaction.get(ownReferencesRef);
+      const inviterReferences = await transaction.get(inviterReferencesRef);
+      const ownInvite = await transaction.get(ownInviteRef);
+      const inviterInvite = await transaction.get(inviterInviteRef);
+      assertAccountDeletionNotPending(
+        ownDeletion.exists || inviterDeletion.exists
+      );
+
+      if (invite.status === "accepted") {
+        if (invite.acceptedAccountID !== uid || invite.pairID === null) {
+          throw friendInviteUnavailableError();
+        }
+        const pair = validateReciprocalFriendLinks(
+          ownLink.data(),
+          inviterLink.data(),
+          uid,
+          inviterAccountID
+        );
+        validateReciprocalFriendManifests(
+          ownReferences.data(),
+          inviterReferences.data(),
+          uid,
+          inviterAccountID
+        );
+        validateBoundFriendInviteReference(
+          ownInvite.data(),
+          uid,
+          tokenDigest,
+          "acceptor",
+          "accepted",
+          inviterAccountID,
+          socialDateMilliseconds
+        );
+        validateBoundFriendInviteReference(
+          inviterInvite.data(),
+          inviterAccountID,
+          tokenDigest,
+          "inviter",
+          "accepted",
+          uid,
+          socialDateMilliseconds
+        );
+        if (pair.inviteDigest !== tokenDigest ||
+            pair.pairID !== invite.pairID) {
+          throw new HttpsError(
+            "failed-precondition",
+            "This friend connection is unavailable.",
+            {reason: "friend-authorization-unavailable"}
+          );
+        }
+        return {
+          schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+          friend: friendLinkEnvelope(pair),
+        };
+      }
+
+      validateBoundFriendInviteReference(
+        inviterInvite.data(),
+        inviterAccountID,
+        tokenDigest,
+        "inviter",
+        "active",
+        null,
+        socialDateMilliseconds
+      );
+      if (ownInvite.exists) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This friend invite is unavailable.",
+          {reason: "friend-invite-unavailable"}
+        );
+      }
+      const ownBaseManifest = validateCurrentFriendManifest(
+        ownReferences.data(), uid
+      );
+      const inviterBaseManifest = validateCurrentFriendManifest(
+        inviterReferences.data(), inviterAccountID
+      );
+      if (ownLink.exists || inviterLink.exists) {
+        if (ownLink.exists && inviterLink.exists) {
+          validateReciprocalFriendLinks(
+            ownLink.data(), inviterLink.data(), uid, inviterAccountID
+          );
+          validateReciprocalFriendManifests(
+            ownReferences.data(),
+            inviterReferences.data(),
+            uid,
+            inviterAccountID
+          );
+          transaction.update(inviteRef, {
+            status: "superseded",
+            revokedAt: linkedAt,
+          });
+          transaction.update(inviterInviteRef, {
+            status: "superseded",
+            counterpartAccountID: uid,
+            updatedAt: linkedAt,
+          });
+          return {superseded: true as const};
+        }
+        throw new HttpsError(
+          "failed-precondition",
+          "This friend connection is unavailable.",
+          {reason: "friend-authorization-unavailable"}
+        );
+      }
+      if (ownBaseManifest.friendAccountIDs.includes(inviterAccountID) ||
+          inviterBaseManifest.friendAccountIDs.includes(uid)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This friend connection is unavailable.",
+          {reason: "friend-authorization-unavailable"}
+        );
+      }
+      const ownManifest = socialReferenceManifestIncludingFriend(
+        ownBaseManifest, uid, inviterAccountID
+      );
+      const inviterManifest = socialReferenceManifestIncludingFriend(
+        inviterBaseManifest, inviterAccountID, uid
+      );
+      const ownLinkDocument = {
+        schemaVersion: FRIEND_LINK_SCHEMA_VERSION,
+        status: "active",
+        accountID: uid,
+        friendAccountID: inviterAccountID,
+        pairID,
+        friendDisplayName: invite.inviterDisplayName,
+        inviteDigest: tokenDigest,
+        inviteExpiresAt: Timestamp.fromMillis(invite.expiresAtMs),
+        linkedAt,
+      };
+      const inviterLinkDocument = {
+        schemaVersion: FRIEND_LINK_SCHEMA_VERSION,
+        status: "active",
+        accountID: inviterAccountID,
+        friendAccountID: uid,
+        pairID,
+        friendDisplayName: input.displayName,
+        inviteDigest: tokenDigest,
+        inviteExpiresAt: Timestamp.fromMillis(invite.expiresAtMs),
+        linkedAt,
+      };
+      transaction.create(ownLinkRef, ownLinkDocument);
+      transaction.create(inviterLinkRef, inviterLinkDocument);
+      transaction.set(ownReferencesRef, ownManifest);
+      transaction.set(inviterReferencesRef, inviterManifest);
+      transaction.update(inviteRef, {
+        status: "accepted",
+        acceptedAccountID: uid,
+        acceptorDisplayName: input.displayName,
+        acceptedAt: linkedAt,
+        pairID,
+      });
+      transaction.update(inviterInviteRef, {
+        status: "accepted",
+        counterpartAccountID: uid,
+        updatedAt: linkedAt,
+      });
+      transaction.create(ownInviteRef, {
+        schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+        tokenDigest,
+        accountID: uid,
+        role: "acceptor",
+        status: "accepted",
+        counterpartAccountID: inviterAccountID,
+        expiresAt: Timestamp.fromMillis(invite.expiresAtMs),
+        updatedAt: linkedAt,
+      });
+      return {
+        schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+        friend: friendLinkEnvelope(validateReciprocalFriendLinks(
+          ownLinkDocument,
+          inviterLinkDocument,
+          uid,
+          inviterAccountID
+        )),
+      };
+    });
+    if ("superseded" in outcome) throw friendInviteUnavailableError();
+    return outcome;
+  }
+);
+
+export const listFriendLinks = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    await assertSocialCallablesAvailable();
+    validateListFriendLinksRequest(request.data);
+    await enforceSocialRateLimit(
+      uid,
+      "friendLinkList",
+      FRIEND_LINK_LIST_MINUTE_LIMIT,
+      FRIEND_LINK_LIST_HOUR_LIMIT
+    );
+    const firestore = getFirestore();
+    return firestore.runTransaction(async (transaction) => {
+      const deletion = await transaction.get(
+        firestore.collection("_accountDeletionState").doc(uid)
+      );
+      const ownReferences = await transaction.get(
+        firestore.collection("_socialReferences").doc(uid)
+      );
+      assertAccountDeletionNotPending(deletion.exists);
+      const ownManifest = validateCurrentFriendManifest(
+        ownReferences.data(), uid
+      );
+      const friendIDs = [...ownManifest.friendAccountIDs].sort();
+      const friends: FriendLinkEnvelope[] = [];
+      for (const friendAccountID of friendIDs) {
+        const friendDeletion = await transaction.get(
+          firestore.collection("_accountDeletionState").doc(friendAccountID)
+        );
+        const ownLink = await transaction.get(
+          firestore.collection("_socialFriendLinks").doc(uid)
+            .collection("friends").doc(friendAccountID)
+        );
+        const friendLink = await transaction.get(
+          firestore.collection("_socialFriendLinks").doc(friendAccountID)
+            .collection("friends").doc(uid)
+        );
+        const friendReferences = await transaction.get(
+          firestore.collection("_socialReferences").doc(friendAccountID)
+        );
+        assertAccountDeletionNotPending(friendDeletion.exists);
+        const pair = validateReciprocalFriendLinks(
+          ownLink.data(), friendLink.data(), uid, friendAccountID
+        );
+        validateReciprocalFriendManifests(
+          ownReferences.data(), friendReferences.data(), uid, friendAccountID
+        );
+        friends.push(friendLinkEnvelope(pair));
+      }
+      return {schemaVersion: FRIENDSHIP_SCHEMA_VERSION, friends};
+    });
+  }
+);
+
+export const removeFriendLink = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    await assertSocialCallablesAvailable();
+    const input = validateRemoveFriendLinkRequest(request.data);
+    if (input.friendAccountID === uid) {
+      throw new HttpsError("invalid-argument", "Choose another account.");
+    }
+    await enforceSocialRateLimit(
+      uid,
+      "friendLinkRemove",
+      FRIEND_LINK_REMOVE_MINUTE_LIMIT,
+      FRIEND_LINK_REMOVE_HOUR_LIMIT
+    );
+    const firestore = getFirestore();
+    const friendAccountID = input.friendAccountID;
+    return firestore.runTransaction(async (transaction) => {
+      const ownDeletion = await transaction.get(
+        firestore.collection("_accountDeletionState").doc(uid)
+      );
+      const friendDeletion = await transaction.get(
+        firestore.collection("_accountDeletionState").doc(friendAccountID)
+      );
+      const ownLinkRef = firestore.collection("_socialFriendLinks").doc(uid)
+        .collection("friends").doc(friendAccountID);
+      const friendLinkRef = firestore.collection("_socialFriendLinks")
+        .doc(friendAccountID).collection("friends").doc(uid);
+      const ownReferencesRef = firestore.collection("_socialReferences")
+        .doc(uid);
+      const friendReferencesRef = firestore.collection("_socialReferences")
+        .doc(friendAccountID);
+      const ownLink = await transaction.get(ownLinkRef);
+      const friendLink = await transaction.get(friendLinkRef);
+      const ownReferences = await transaction.get(ownReferencesRef);
+      const friendReferences = await transaction.get(friendReferencesRef);
+      assertAccountDeletionNotPending(
+        ownDeletion.exists || friendDeletion.exists
+      );
+      const ownManifest = validateSocialReferenceManifest(
+        ownReferences.data(), uid
+      );
+      const friendManifest = validateSocialReferenceManifest(
+        friendReferences.data(), friendAccountID
+      );
+      const ownHadFriend = ownManifest.friendAccountIDs
+        .includes(friendAccountID);
+      const friendHadOwner = friendManifest.friendAccountIDs.includes(uid);
+      const candidateLinks = [
+        ownLink.exists ? validatedFriendLinkOrNull(
+          ownLink.data(), uid, friendAccountID
+        ) : null,
+        friendLink.exists ? validatedFriendLinkOrNull(
+          friendLink.data(), friendAccountID, uid
+        ) : null,
+      ].filter((candidate): candidate is NonNullable<typeof candidate> =>
+        candidate !== null
+      );
+      const uniqueLinks = candidateLinks.filter((candidate, index, all) =>
+        all.findIndex((other) =>
+          other.inviteDigest === candidate.inviteDigest
+        ) === index
+      );
+      const receipts: Array<{
+        link: ReturnType<typeof validateServerFriendLink>;
+        inviteRef: DocumentReference;
+        ownInviteRef: DocumentReference;
+        friendInviteRef: DocumentReference;
+        inviteSnapshot: DocumentSnapshot;
+        ownInviteSnapshot: DocumentSnapshot;
+        friendInviteSnapshot: DocumentSnapshot;
+      }> = [];
+      for (const link of uniqueLinks) {
+        const inviteRef = firestore.collection("_socialFriendInvites")
+          .doc(link.inviteDigest);
+        const ownInviteRef = ownReferencesRef.collection("friendInvites")
+          .doc(link.inviteDigest);
+        const friendInviteRef = friendReferencesRef
+          .collection("friendInvites").doc(link.inviteDigest);
+        receipts.push({
+          link,
+          inviteRef,
+          ownInviteRef,
+          friendInviteRef,
+          inviteSnapshot: await transaction.get(inviteRef),
+          ownInviteSnapshot: await transaction.get(ownInviteRef),
+          friendInviteSnapshot: await transaction.get(friendInviteRef),
+        });
+      }
+      const revokedAt = Timestamp.now();
+      for (const receipt of receipts) {
+        let invite: ReturnType<typeof validateStoredFriendInvite> | null = null;
+        try {
+          invite = receipt.inviteSnapshot.exists ? validateStoredFriendInvite(
+            receipt.inviteSnapshot.data(),
+            receipt.link.inviteDigest,
+            socialDateMilliseconds
+          ) : null;
+        } catch {
+          invite = null;
+        }
+        const participants = invite ? new Set([
+          invite.inviterAccountID,
+          invite.acceptedAccountID,
+        ]) : new Set<string>();
+        const matchesLink = invite !== null &&
+          (invite.status === "accepted" || invite.status === "revoked") &&
+          invite.pairID === receipt.link.pairID && participants.size === 2 &&
+          participants.has(uid) && participants.has(friendAccountID);
+        if (receipt.inviteSnapshot.exists) {
+          if (matchesLink) {
+            transaction.update(receipt.inviteRef, {
+              status: "revoked",
+              revokedAt,
+            });
+          } else {
+            transaction.delete(receipt.inviteRef);
+          }
+        }
+        for (const reference of [
+          {
+            snapshot: receipt.ownInviteSnapshot,
+            ref: receipt.ownInviteRef,
+            accountID: uid,
+            counterpartAccountID: friendAccountID,
+          },
+          {
+            snapshot: receipt.friendInviteSnapshot,
+            ref: receipt.friendInviteRef,
+            accountID: friendAccountID,
+            counterpartAccountID: uid,
+          },
+        ]) {
+          if (!reference.snapshot.exists) continue;
+          let referenceMatches = false;
+          if (matchesLink && invite) {
+            const role = invite.inviterAccountID === reference.accountID ?
+              "inviter" : "acceptor";
+            try {
+              const stored = validateStoredFriendInviteReference(
+                reference.snapshot.data(),
+                reference.accountID,
+                receipt.link.inviteDigest,
+                socialDateMilliseconds
+              );
+              referenceMatches = stored.role === role &&
+                (stored.status === "accepted" || stored.status === "revoked") &&
+                stored.counterpartAccountID === reference.counterpartAccountID;
+            } catch {
+              referenceMatches = false;
+            }
+          }
+          if (referenceMatches) {
+            transaction.update(reference.ref, {
+              status: "revoked",
+              updatedAt: revokedAt,
+            });
+          } else {
+            transaction.delete(reference.ref);
+          }
+        }
+      }
+      transaction.delete(ownLinkRef);
+      transaction.delete(friendLinkRef);
+      if (ownReferences.exists) {
+        transaction.set(ownReferencesRef, socialReferenceManifestRemovingFriend(
+          ownManifest, uid, friendAccountID
+        ));
+      }
+      if (friendReferences.exists) {
+        transaction.set(
+          friendReferencesRef,
+          socialReferenceManifestRemovingFriend(
+            friendManifest, friendAccountID, uid
+          )
+        );
+      }
+      const removed = ownLink.exists || friendLink.exists ||
+        ownHadFriend || friendHadOwner;
+      return {
+        schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
+        friendAccountID,
+        removed,
+      };
+    });
   }
 );
 
@@ -1561,10 +2254,7 @@ export const recordPeerSession = onCall(
           previous.currentBucket,
           advanced.state.currentBucket
         );
-      transaction.set(referencesRef, {
-        ...updatedReferences,
-        updatedAt,
-      });
+      transaction.set(referencesRef, updatedReferences);
       if (advanced.state.currentBucket) {
         transaction.set(
           firestore.collection("leagues").doc(advanced.state.currentBucket)
@@ -1675,6 +2365,12 @@ export const createChallenge = onCall(
       const opponentReferencesSnapshot = await transaction.get(
         opponentReferencesRef
       );
+      validateReciprocalFriendManifests(
+        creatorReferencesSnapshot.data(),
+        opponentReferencesSnapshot.data(),
+        uid,
+        input.opponentAccountID
+      );
       if (!creatorProfile.exists || !opponentProfile.exists) {
         throw new HttpsError(
           "failed-precondition",
@@ -1709,14 +2405,8 @@ export const createChallenge = onCall(
         input.challengeID
       );
       transaction.create(challengeRef, challenge);
-      transaction.set(creatorReferencesRef, {
-        ...creatorReferences,
-        updatedAt: Timestamp.fromMillis(nowMs),
-      });
-      transaction.set(opponentReferencesRef, {
-        ...opponentReferences,
-        updatedAt: Timestamp.fromMillis(nowMs),
-      });
+      transaction.set(creatorReferencesRef, creatorReferences);
+      transaction.set(opponentReferencesRef, opponentReferences);
       return {
         schemaVersion: SOCIAL_SCHEMA_VERSION,
         created: true,
@@ -2181,11 +2871,67 @@ export const deleteAccount = onCall(
                 challengeIDs: otherReferences.challengeIDs.filter(
                   (candidate) => candidate !== challengeID
                 ),
-                updatedAt: Timestamp.now(),
               });
             });
           }
           await firestore.recursiveDelete(challengeRef);
+        }
+      },
+      friendInvites: async () => {
+        const inviteCollection = firestore.collection("_socialFriendInvites");
+        const [inviteReferences, invited, accepted] = await Promise.all([
+          firestore.collection("_socialReferences").doc(uid)
+            .collection("friendInvites").get(),
+          inviteCollection.where("inviterAccountID", "==", uid).get(),
+          inviteCollection.where("acceptedAccountID", "==", uid).get(),
+        ]);
+        const inviteDigests = new Set<string>();
+        const participantIDs = new Map<string, Set<string>>();
+        const addParticipant = (digest: string, candidate: unknown) => {
+          if (typeof candidate !== "string" || candidate === uid ||
+              candidate.length < 1 || candidate.length > 128 ||
+              candidate.includes("/")) return;
+          const participants = participantIDs.get(digest) ?? new Set<string>();
+          participants.add(candidate);
+          participantIDs.set(digest, participants);
+        };
+        for (const document of inviteReferences.docs) {
+          inviteDigests.add(document.id);
+          try {
+            const reference = validateStoredFriendInviteReference(
+              document.data(),
+              uid,
+              document.id,
+              socialDateMilliseconds
+            );
+            addParticipant(document.id, reference.counterpartAccountID);
+          } catch {
+            addParticipant(
+              document.id,
+              document.data().counterpartAccountID
+            );
+          }
+        }
+        for (const document of [...invited.docs, ...accepted.docs]) {
+          inviteDigests.add(document.id);
+          addParticipant(document.id, document.data().inviterAccountID);
+          addParticipant(document.id, document.data().acceptedAccountID);
+        }
+        for (const digest of inviteDigests) {
+          await firestore.runTransaction(async (transaction) => {
+            transaction.delete(inviteCollection.doc(digest));
+            transaction.delete(
+              firestore.collection("_socialReferences").doc(uid)
+                .collection("friendInvites").doc(digest)
+            );
+            for (const participantID of participantIDs.get(digest) ?? []) {
+              transaction.delete(
+                firestore.collection("_socialReferences")
+                  .doc(participantID)
+                  .collection("friendInvites").doc(digest)
+              );
+            }
+          });
         }
       },
       friendLinks: async () => {
@@ -2216,7 +2962,6 @@ export const deleteAccount = onCall(
                 friendAccountIDs: friendReferences.friendAccountIDs.filter(
                   (candidate) => candidate !== uid
                 ),
-                updatedAt: Timestamp.now(),
               });
             }
             transaction.delete(ownLinkRef);

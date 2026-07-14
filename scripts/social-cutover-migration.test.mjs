@@ -217,6 +217,8 @@ test("lowercase challenge document and manifest IDs fail closed", () => {
       existingManifests: [{
         path: `_socialReferences/${ACCOUNT_A}`,
         data: {
+          schemaVersion: 2,
+          accountID: ACCOUNT_A,
           leagueMembershipPaths: [],
           challengeIDs: [lowercaseID],
           friendAccountIDs: [],
@@ -234,6 +236,39 @@ test("lowercase challenge document and manifest IDs fail closed", () => {
     }),
     /Invalid challenge descendant/
   );
+});
+
+test("social manifests reject extra fields and duplicate references", () => {
+  const base = {
+    schemaVersion: 2,
+    accountID: ACCOUNT_A,
+    leagueMembershipPaths: [],
+    challengeIDs: [],
+    friendAccountIDs: [],
+  };
+  assert.throws(() => envelope({
+    existingManifests: [{
+      path: `_socialReferences/${ACCOUNT_A}`,
+      data: {...base, clientOwnedAuthority: true},
+    }],
+  }), /exact v2 social manifest/);
+  assert.throws(() => envelope({
+    existingManifests: [{
+      path: `_socialReferences/${ACCOUNT_A}`,
+      data: {...base, friendAccountIDs: [ACCOUNT_B, ACCOUNT_B]},
+    }],
+  }), /duplicate friendAccountIDs/);
+  assert.throws(() => envelope({
+    existingManifests: [{
+      path: `_socialReferences/${ACCOUNT_A}`,
+      data: {
+        ...base,
+        friendAccountIDs: Array.from(
+          {length: 51}, (_, index) => `friend-account-${index}`
+        ),
+      },
+    }],
+  }), /invalid friendAccountIDs/);
 });
 
 test("backup construction is local-only and performs zero remote writes", () => {
@@ -274,6 +309,8 @@ test("apply quarantines and deletes atomically without trusting client scores", 
   );
   const manifest = await store.get(`_socialReferences/${ACCOUNT_A}`);
   assert.deepEqual(manifest, {
+    schemaVersion: 2,
+    accountID: ACCOUNT_A,
     leagueMembershipPaths: [],
     challengeIDs: [],
     friendAccountIDs: [],
@@ -285,7 +322,7 @@ test("apply quarantines and deletes atomically without trusting client scores", 
     assert.deepEqual(stored, quarantine.data);
   }
   const marker = await store.get(CUTOVER_JOURNAL_PATH);
-  assert.equal(marker.schemaVersion, 3);
+  assert.equal(marker.schemaVersion, 4);
   assert.equal(marker.status, "complete");
   assert.equal(marker.inventoryDigest, marker.verifiedInventoryDigest);
   assert.equal(marker.sourceGitCommit, SOURCE_BINDING.repositoryCommit);

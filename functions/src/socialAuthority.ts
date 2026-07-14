@@ -2,6 +2,7 @@
 
 import {createHash} from "node:crypto";
 import {HttpsError} from "firebase-functions/v2/https";
+import {FRIEND_LINK_SCHEMA_VERSION, MAX_ACTIVE_FRIENDS} from "./friendshipAuthority.js";
 
 export const SOCIAL_SCHEMA_VERSION = 1;
 export const CHALLENGE_DOCUMENT_SCHEMA_VERSION = 2;
@@ -40,7 +41,7 @@ const MAX_SESSION_DURATION_SECONDS = 4 * 60 * 60;
 const ROLLING_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 const MAX_REFERENCE_CHALLENGES = 100;
 const MAX_REFERENCE_LEAGUES = 16;
-const MAX_REFERENCE_FRIENDS = 200;
+const MAX_REFERENCE_FRIENDS = MAX_ACTIVE_FRIENDS;
 
 export type LeagueTier =
   "bronze" | "silver" | "gold" | "platinum" | "diamond";
@@ -189,9 +190,23 @@ export interface ChallengeEnvelope {
 }
 
 export interface SocialReferenceManifest {
+  schemaVersion: 2;
+  accountID: string;
   leagueMembershipPaths: string[];
   challengeIDs: string[];
   friendAccountIDs: string[];
+}
+
+export interface FriendLinkEnvelope {
+  friendAccountID: string;
+  displayName: string;
+  pairID: string;
+  linkedAt: number;
+}
+
+export interface ValidatedFriendLinkPair extends FriendLinkEnvelope {
+  inviteDigest: string;
+  inviteExpiresAtMs: number;
 }
 
 export function isSocialRecord(
@@ -774,7 +789,7 @@ export function isSocialReferenceCutoverComplete(value: unknown): boolean {
     "inventoryDigest",
     "verifiedInventoryDigest",
     "completedAt",
-  ]) || value.schemaVersion !== 3 || value.status !== "complete" ||
+  ]) || value.schemaVersion !== 4 || value.status !== "complete" ||
       typeof value.runID !== "string" ||
       !SOCIAL_CUTOVER_RUN_ID_PATTERN.test(value.runID) ||
       value.projectID !== PRODUCTION_PROJECT_ID ||
@@ -1053,42 +1068,86 @@ function combinedSideAsSubmission(
   };
 }
 
+export function validateServerFriendLink(
+  value: unknown,
+  accountID: string,
+  friendAccountID: string
+): ValidatedFriendLinkPair {
+  const valid = isSocialRecord(value) && hasExactKeys(value, [
+    "schemaVersion", "status", "accountID", "friendAccountID", "pairID",
+    "friendDisplayName", "inviteDigest", "inviteExpiresAt", "linkedAt",
+  ]) &&
+    value.schemaVersion === FRIEND_LINK_SCHEMA_VERSION &&
+    value.status === "active" && value.accountID === accountID &&
+    value.friendAccountID === friendAccountID &&
+    typeof value.pairID === "string" && UUID_PATTERN.test(value.pairID) &&
+    typeof value.inviteDigest === "string" &&
+    SHA256_PATTERN.test(value.inviteDigest) &&
+    isServerTimestamp(value.inviteExpiresAt) &&
+    typeof value.friendDisplayName === "string" &&
+    value.friendDisplayName === value.friendDisplayName.trim() &&
+    value.friendDisplayName.length >= 1 &&
+    value.friendDisplayName.length <= MAX_DISPLAY_NAME_CHARS &&
+    isServerTimestamp(value.linkedAt) &&
+    (socialDateMilliseconds(value.inviteExpiresAt) as number) >=
+      (socialDateMilliseconds(value.linkedAt) as number);
+  if (!valid) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This friend connection is unavailable.",
+      {reason: "friend-authorization-unavailable"}
+    );
+  }
+  return {
+    friendAccountID,
+    displayName: value.friendDisplayName as string,
+    pairID: value.pairID as string,
+    linkedAt: (socialDateMilliseconds(value.linkedAt) as number) / 1_000,
+    inviteDigest: value.inviteDigest as string,
+    inviteExpiresAtMs: socialDateMilliseconds(
+      value.inviteExpiresAt
+    ) as number,
+  };
+}
+
 export function validateReciprocalFriendLinks(
   creatorLinkValue: unknown,
   opponentLinkValue: unknown,
   creatorAccountID: string,
   opponentAccountID: string
-): void {
-  const valid = isSocialRecord(creatorLinkValue) &&
-    isSocialRecord(opponentLinkValue) &&
-    hasExactKeys(creatorLinkValue, [
-      "schemaVersion", "status", "accountID", "friendAccountID", "pairID",
-      "linkedAt",
-    ]) &&
-    hasExactKeys(opponentLinkValue, [
-      "schemaVersion", "status", "accountID", "friendAccountID", "pairID",
-      "linkedAt",
-    ]) &&
-    creatorLinkValue.schemaVersion === 1 &&
-    opponentLinkValue.schemaVersion === 1 &&
-    creatorLinkValue.status === "active" &&
-    opponentLinkValue.status === "active" &&
-    creatorLinkValue.accountID === creatorAccountID &&
-    creatorLinkValue.friendAccountID === opponentAccountID &&
-    opponentLinkValue.accountID === opponentAccountID &&
-    opponentLinkValue.friendAccountID === creatorAccountID &&
-    typeof creatorLinkValue.pairID === "string" &&
-    UUID_PATTERN.test(creatorLinkValue.pairID) &&
-    opponentLinkValue.pairID === creatorLinkValue.pairID &&
-    isServerTimestamp(creatorLinkValue.linkedAt) &&
-    isServerTimestamp(opponentLinkValue.linkedAt);
-  if (!valid) {
+): ValidatedFriendLinkPair {
+  const creator = validateServerFriendLink(
+    creatorLinkValue,
+    creatorAccountID,
+    opponentAccountID
+  );
+  const opponent = validateServerFriendLink(
+    opponentLinkValue,
+    opponentAccountID,
+    creatorAccountID
+  );
+  if (creator.pairID !== opponent.pairID ||
+      creator.inviteDigest !== opponent.inviteDigest ||
+      creator.inviteExpiresAtMs !== opponent.inviteExpiresAtMs ||
+      creator.linkedAt !== opponent.linkedAt) {
     throw new HttpsError(
       "failed-precondition",
-      "Challenges require a server-verified friend link.",
+      "This friend connection is unavailable.",
       {reason: "friend-authorization-unavailable"}
     );
   }
+  return creator;
+}
+
+export function friendLinkEnvelope(
+  pair: ValidatedFriendLinkPair
+): FriendLinkEnvelope {
+  return {
+    friendAccountID: pair.friendAccountID,
+    displayName: pair.displayName,
+    pairID: pair.pairID,
+    linkedAt: pair.linkedAt,
+  };
 }
 
 export function validateSocialReferenceManifest(
@@ -1097,12 +1156,17 @@ export function validateSocialReferenceManifest(
 ): SocialReferenceManifest {
   if (value === undefined || value === null) {
     return {
+      schemaVersion: 2,
+      accountID,
       leagueMembershipPaths: [],
       challengeIDs: [],
       friendAccountIDs: [],
     };
   }
-  if (!isSocialRecord(value)) {
+  if (!isSocialRecord(value) || !hasExactKeys(value, [
+    "schemaVersion", "accountID", "leagueMembershipPaths", "challengeIDs",
+    "friendAccountIDs",
+  ]) || value.schemaVersion !== 2 || value.accountID !== accountID) {
     throw new Error("Corrupt server social references.");
   }
   const leagueMembershipPaths = value.leagueMembershipPaths;
@@ -1119,15 +1183,18 @@ export function validateSocialReferenceManifest(
       !Array.isArray(friendAccountIDs) ||
       friendAccountIDs.length > MAX_REFERENCE_FRIENDS ||
       !friendAccountIDs.every((id) =>
-        isValidFirebaseUID(id) && id !== accountID)) {
+        isValidFirebaseUID(id) && id !== accountID) ||
+      new Set(leagueMembershipPaths).size !== leagueMembershipPaths.length ||
+      new Set(challengeIDs).size !== challengeIDs.length ||
+      new Set(friendAccountIDs).size !== friendAccountIDs.length) {
     throw new Error("Corrupt server social references.");
   }
   return {
-    leagueMembershipPaths: [...new Set(leagueMembershipPaths as string[])],
-    challengeIDs: [...new Set(
-      (challengeIDs as string[]).map((id) => id.toUpperCase())
-    )],
-    friendAccountIDs: [...new Set(friendAccountIDs as string[])],
+    schemaVersion: 2,
+    accountID,
+    leagueMembershipPaths: [...leagueMembershipPaths as string[]],
+    challengeIDs: [...challengeIDs as string[]],
+    friendAccountIDs: [...friendAccountIDs as string[]],
   };
 }
 
@@ -1152,10 +1219,95 @@ export function socialReferenceManifestIncludingChallenge(
     );
   }
   return {
+    schemaVersion: 2,
+    accountID,
     leagueMembershipPaths: references.leagueMembershipPaths,
     challengeIDs: [...references.challengeIDs, canonicalChallengeID],
     friendAccountIDs: references.friendAccountIDs,
   };
+}
+
+export function socialReferenceManifestIncludingFriend(
+  value: unknown,
+  accountID: string,
+  friendAccountID: string
+): SocialReferenceManifest {
+  const references = validateSocialReferenceManifest(value, accountID);
+  if (!isValidFirebaseUID(friendAccountID) || friendAccountID === accountID) {
+    throw new Error("Invalid server friend reference.");
+  }
+  if (references.friendAccountIDs.includes(friendAccountID)) return references;
+  if (references.friendAccountIDs.length >= MAX_ACTIVE_FRIENDS) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "Your friend list has reached its current limit.",
+      {reason: "friend-capacity"}
+    );
+  }
+  return {
+    schemaVersion: 2,
+    accountID,
+    leagueMembershipPaths: references.leagueMembershipPaths,
+    challengeIDs: references.challengeIDs,
+    friendAccountIDs: [...references.friendAccountIDs, friendAccountID],
+  };
+}
+
+export function socialReferenceManifestRemovingFriend(
+  value: unknown,
+  accountID: string,
+  friendAccountID: string
+): SocialReferenceManifest {
+  const references = validateSocialReferenceManifest(value, accountID);
+  return {
+    schemaVersion: 2,
+    accountID,
+    leagueMembershipPaths: references.leagueMembershipPaths,
+    challengeIDs: references.challengeIDs,
+    friendAccountIDs: references.friendAccountIDs.filter(
+      (candidate) => candidate !== friendAccountID
+    ),
+  };
+}
+
+export function validateCurrentFriendManifest(
+  value: unknown,
+  accountID: string
+): SocialReferenceManifest {
+  const references = validateSocialReferenceManifest(value, accountID);
+  if (references.friendAccountIDs.length > MAX_ACTIVE_FRIENDS) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Friend connections are temporarily unavailable.",
+      {reason: "friend-authorization-unavailable"}
+    );
+  }
+  return references;
+}
+
+export function validateReciprocalFriendManifests(
+  creatorValue: unknown,
+  opponentValue: unknown,
+  creatorAccountID: string,
+  opponentAccountID: string
+): {creator: SocialReferenceManifest; opponent: SocialReferenceManifest} {
+  const creator = validateCurrentFriendManifest(
+    creatorValue,
+    creatorAccountID
+  );
+  const opponent = validateCurrentFriendManifest(
+    opponentValue,
+    opponentAccountID
+  );
+  if (!creator.friendAccountIDs.includes(opponentAccountID) ||
+      !opponent.friendAccountIDs.includes(creatorAccountID)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This friend connection is unavailable.",
+      {reason: "friend-authorization-unavailable"}
+    );
+  }
+  return {creator, opponent};
 }
 
 export function socialReferenceManifestUpdatingLeagueMembership(
@@ -1183,6 +1335,8 @@ export function socialReferenceManifestUpdatingLeagueMembership(
     leagueMembershipPaths.push(nextPath);
   }
   return {
+    schemaVersion: 2,
+    accountID,
     leagueMembershipPaths,
     challengeIDs: references.challengeIDs,
     friendAccountIDs: references.friendAccountIDs,

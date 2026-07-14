@@ -227,7 +227,7 @@ test("recommendation state is callable-only", () => {
 });
 
 test(
-  "exactly eight competitive and social callables share the cutover gate",
+  "exactly twelve competitive and social callables share the cutover gate",
   () => {
     const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
     const exportedCallables = [...source.matchAll(
@@ -241,12 +241,16 @@ test(
       .map((match) => match[1])
       .sort();
     assert.deepEqual(gated, [
+      "acceptFriendInvite",
       "beginCompetitiveObservation",
       "completeCompetitiveObservation",
       "createChallenge",
+      "createFriendInvite",
       "getPeerProfile",
+      "listFriendLinks",
       "listLeagueMembers",
       "recordPeerSession",
+      "removeFriendLink",
       "setChallengeReaction",
       "submitChallengeResult",
     ]);
@@ -261,7 +265,7 @@ test(
       const isObservation = callableName.includes("CompetitiveObservation");
       const firstProtectedWork = isObservation ?
         callable[0].indexOf("enforceCompetitiveObservationRateLimit") :
-        callable[0].indexOf("const input = validate");
+        callable[0].search(/(?:const input = )?validate[A-Z]/);
       assert.equal(gateIndex >= 0 && gateIndex < firstProtectedWork, true);
     }
 
@@ -337,12 +341,77 @@ test(
   }
 );
 
+test("friendship callables preserve server-only reciprocal authority", () => {
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  const names = [
+    "createFriendInvite",
+    "acceptFriendInvite",
+    "listFriendLinks",
+    "removeFriendLink",
+  ];
+  for (const [index, name] of names.entries()) {
+    const start = source.indexOf(`export const ${name}`);
+    const endName = names[index + 1] ?? "recordPeerSession";
+    const end = source.indexOf(`export const ${endName}`, start + 1);
+    const callable = source.slice(start, end);
+    assert.match(callable, /enforceAppCheck: true/);
+    assert.match(callable, /SOCIAL_RUNTIME_SERVICE_ACCOUNT/);
+    assert.match(
+      callable,
+      /assertTrustedCaller\(request\.auth, request\.app\)/
+    );
+    assert.match(callable, /await assertSocialCallablesAvailable\(\)/);
+    assert.match(callable, /_accountDeletionState/);
+  }
+  const create = source.slice(
+    source.indexOf("export const createFriendInvite"),
+    source.indexOf("export const acceptFriendInvite")
+  );
+  assert.match(create, /where\("status", "==", "active"\)/);
+  assert.match(create, /MAX_ACTIVE_FRIEND_INVITES \+ 1/);
+  assert.match(create, /friend-invite-capacity/);
+  const accept = source.slice(
+    source.indexOf("export const acceptFriendInvite"),
+    source.indexOf("export const listFriendLinks")
+  );
+  assert.match(accept, /FRIEND_LINK_SCHEMA_VERSION/);
+  assert.match(accept, /inviteDigest: tokenDigest/);
+  assert.match(accept, /validateReciprocalFriendManifests/);
+  assert.doesNotMatch(accept, /logger\.(info|warn|error)/);
+  const remove = source.slice(
+    source.indexOf("export const removeFriendLink"),
+    source.indexOf("export const recordPeerSession")
+  );
+  assert.match(remove, /status: "revoked"/);
+  assert.match(remove, /transaction\.delete\(ownLinkRef\)/);
+  assert.match(remove, /transaction\.delete\(friendLinkRef\)/);
+  assert.match(remove, /friendAccountID,/);
+  const list = source.slice(
+    source.indexOf("export const listFriendLinks"),
+    source.indexOf("export const removeFriendLink")
+  );
+  assert.match(list, /\.friendAccountIDs\]\.sort\(\)/);
+  assert.doesNotMatch(list, /\.slice\(/);
+  const peer = source.slice(
+    source.indexOf("export const getPeerProfile"),
+    source.indexOf("export const listLeagueMembers")
+  );
+  assert.match(peer, /validateReciprocalFriendLinks/);
+  assert.match(peer, /validateReciprocalFriendManifests/);
+  const challenge = source.slice(
+    source.indexOf("export const createChallenge"),
+    source.indexOf("export const submitChallengeResult")
+  );
+  assert.match(challenge, /validateReciprocalFriendLinks/);
+  assert.match(challenge, /validateReciprocalFriendManifests/);
+});
+
 test(
   "social callable gate rejects unavailable markers with a stable error",
   async () => {
     await assert.doesNotReject(
       () => assertSocialCallablesAvailable(async () => ({
-        schemaVersion: 3,
+        schemaVersion: 4,
         status: "complete",
         runID: "B713738E-D9ED-4337-986E-09205089D42E",
         projectID: "noum-d0b6f",
@@ -498,6 +567,8 @@ test("account deletion uses exact server-owned social references", () => {
   assert.match(source, /references\.leagueMembershipPaths/);
   assert.match(source, /references\.challengeIDs/);
   assert.match(source, /references\.friendAccountIDs/);
+  assert.match(source, /friendInvites: async/);
+  assert.match(source, /_socialFriendInvites/);
   const observationStart = source.indexOf("competitiveObservations: async");
   const rateStart = source.indexOf("rateLimits: async");
   const finalizerStart = source.indexOf("socialReferenceManifest: async");
@@ -524,6 +595,25 @@ test("competitive observation storage is callable-only", () => {
   for (const collection of [
     "_competitiveCaptureIntents",
     "_competitiveObservations",
+  ]) {
+    const start = rules.indexOf(`match /${collection}/{document=**}`);
+    assert.notEqual(start, -1, collection);
+    assert.match(
+      rules.slice(start, start + 130),
+      /allow read, write: if false;/
+    );
+  }
+});
+
+test("friendship authority storage is callable-only", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  for (const collection of [
+    "_socialFriendLinks",
+    "_socialFriendInvites",
+    "_socialReferences",
   ]) {
     const start = rules.indexOf(`match /${collection}/{document=**}`);
     assert.notEqual(start, -1, collection);

@@ -146,8 +146,6 @@ function sourceDocuments(firestore) {
       leagueMembershipPaths: [MEMBERSHIP_PATH],
       challengeIDs: [],
       friendAccountIDs: [],
-      rating: 9_999,
-      clientAuthoredResult: "never-promote-this",
       updatedAt: new Timestamp(1_720_000_000, 0),
     }],
   ]);
@@ -340,7 +338,7 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
         "status",
         "verifiedInventoryDigest",
       ]);
-      assert.equal(marker.schemaVersion, 3);
+      assert.equal(marker.schemaVersion, 4);
       assert.equal(marker.status, "complete");
       assert.equal(marker.projectID, PROJECT_ID);
       assert.equal(marker.inventoryDigest, marker.verifiedInventoryDigest);
@@ -348,6 +346,8 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
 
       const manifest = await store.get(MANIFEST_PATH);
       assert.deepEqual(manifest, {
+        schemaVersion: 2,
+        accountID: ACCOUNT_A,
         leagueMembershipPaths: [],
         challengeIDs: [],
         friendAccountIDs: [],
@@ -413,7 +413,7 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
         store.transaction(async (transaction) => {
           assert.deepEqual(await transaction.get(PROFILE_PATH), before);
           transaction.set(quarantinePath, {
-            schemaVersion: 3,
+            schemaVersion: 4,
             sourcePath: PROFILE_PATH,
           });
           transaction.delete(PROFILE_PATH);

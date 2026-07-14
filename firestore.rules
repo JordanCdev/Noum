@@ -298,6 +298,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /_socialFriendInvites/{document=**} {
+      allow read, write: if false;
+    }
+
     // The iOS sync owner has exactly five private paths. Explicit matches stop
     // an authenticated client from manufacturing an unbounded nested subtree
     // that later makes account deletion expensive or incomplete.

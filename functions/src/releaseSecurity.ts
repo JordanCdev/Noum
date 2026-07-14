@@ -73,6 +73,7 @@ const ACCOUNT_DELETION_DEPENDENT_STEPS = [
   "publicProfile",
   "leagueMemberships",
   "challenges",
+  "friendInvites",
   "friendLinks",
   "competitiveObservations",
   "rateLimits",

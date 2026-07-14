@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 
-export const CUTOVER_SCHEMA_VERSION = 3;
+export const CUTOVER_SCHEMA_VERSION = 4;
+export const SOCIAL_MANIFEST_SCHEMA_VERSION = 2;
 export const CUTOVER_JOURNAL_PATH = "_socialReferenceCutover/current";
 export const CUTOVER_PHASES = Object.freeze([
   "journaled",
@@ -24,7 +25,7 @@ export const SOCIAL_LIMITS = Object.freeze({
 const ACCOUNT_LIMITS = Object.freeze({
   leagueMembershipPaths: 16,
   challengeIDs: 100,
-  friendAccountIDs: 200,
+  friendAccountIDs: 50,
 });
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -301,7 +302,7 @@ function validateInventory(raw) {
   for (const manifest of inventory.existingManifests) {
     const match = /^_socialReferences\/([^/]+)$/.exec(manifest.path);
     if (!match) throw new Error(`Invalid social manifest path ${manifest.path}.`);
-    validateManifest(manifest.data, match[1], manifest.path);
+    validateExistingManifest(manifest.data, match[1], manifest.path);
   }
   if (inventory.existingCutover !== null) {
     if (inventory.existingCutover.path !== CUTOVER_JOURNAL_PATH) {
@@ -311,8 +312,7 @@ function validateInventory(raw) {
   return inventory;
 }
 
-function validateManifest(data, accountID, label) {
-  if (!isPlainObject(data)) throw new Error(`${label} is not an object.`);
+function validateManifestArrays(data, accountID, label) {
   for (const [field, maximum] of Object.entries(ACCOUNT_LIMITS)) {
     if (!Array.isArray(data[field]) || data[field].length > maximum) {
       throw new Error(`${label} has invalid ${field}.`);
@@ -338,6 +338,37 @@ function validateManifest(data, accountID, label) {
     }
     assertAccountID(id, "manifest friend account ID");
   }
+  for (const field of Object.keys(ACCOUNT_LIMITS)) {
+    if (new Set(data[field]).size !== data[field].length) {
+      throw new Error(`${label} has duplicate ${field}.`);
+    }
+  }
+}
+
+function validateManifest(data, accountID, label) {
+  if (!isPlainObject(data) || data.schemaVersion !== SOCIAL_MANIFEST_SCHEMA_VERSION ||
+      data.accountID !== accountID ||
+      !matching(Object.keys(data).sort(), [
+        "accountID", "challengeIDs", "friendAccountIDs",
+        "leagueMembershipPaths", "schemaVersion",
+      ])) {
+    throw new Error(`${label} is not an exact v2 social manifest.`);
+  }
+  validateManifestArrays(data, accountID, label);
+}
+
+function validateExistingManifest(data, accountID, label) {
+  if (!isPlainObject(data)) throw new Error(`${label} is not an object.`);
+  if (data.schemaVersion === SOCIAL_MANIFEST_SCHEMA_VERSION) {
+    validateManifest(data, accountID, label);
+    return;
+  }
+  if (!matching(Object.keys(data).sort(), [
+    "challengeIDs", "friendAccountIDs", "leagueMembershipPaths", "updatedAt",
+  ])) {
+    throw new Error(`${label} is not an exact legacy social manifest.`);
+  }
+  validateManifestArrays(data, accountID, label);
 }
 
 function sourceBinding(binding) {
@@ -466,6 +497,8 @@ function buildPlan(envelope, runID) {
     a.localeCompare(b)
   ).map(([accountID, values]) => {
     const data = {
+      schemaVersion: SOCIAL_MANIFEST_SCHEMA_VERSION,
+      accountID,
       leagueMembershipPaths: [],
       challengeIDs: [...values.challengeIDs].sort(),
       friendAccountIDs: [...values.friendAccountIDs].sort(),

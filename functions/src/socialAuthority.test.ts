@@ -1,4 +1,4 @@
-/* eslint-disable valid-jsdoc, max-len */
+/* eslint-disable valid-jsdoc, require-jsdoc, max-len */
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -19,6 +19,8 @@ import {
   isoWeekKey,
   promptDigest,
   socialReferenceManifestIncludingChallenge,
+  socialReferenceManifestIncludingFriend,
+  socialReferenceManifestRemovingFriend,
   socialReferenceManifestUpdatingLeagueMembership,
   stableLegacyUUID,
   storedSocialState,
@@ -27,6 +29,8 @@ import {
   validateListLeagueMembersRequest,
   validateRecordPeerSessionRequest,
   validateReciprocalFriendLinks,
+  validateReciprocalFriendManifests,
+  validateCurrentFriendManifest,
   validateSetChallengeReactionRequest,
   validateSocialReferenceManifest,
   validateStoredPublicProfile,
@@ -41,6 +45,20 @@ const nowMs = Date.UTC(2026, 6, 11, 12);
 /** Firestore Timestamp-compatible deterministic test value. */
 function timestamp(milliseconds: number): {toMillis: () => number} {
   return {toMillis: () => milliseconds};
+}
+
+function manifest(
+  accountID: string,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    schemaVersion: 2,
+    accountID,
+    leagueMembershipPaths: [],
+    challengeIDs: [],
+    friendAccountIDs: [],
+    ...overrides,
+  };
 }
 
 /** Builds one server evidence fixture with focused overrides. */
@@ -283,7 +301,7 @@ test("public profiles and legacy cutover proof validate strictly", () => {
     "firebase-user"
   ));
   const completeMarker = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "complete",
     runID: "B713738E-D9ED-4337-986E-09205089D42E",
     projectID: "noum-d0b6f",
@@ -302,7 +320,7 @@ test("public profiles and legacy cutover proof validate strictly", () => {
   const rejectedMarkers = [
     undefined,
     {},
-    {...completeMarker, schemaVersion: 2},
+    {...completeMarker, schemaVersion: 3},
     {...completeMarker, status: "preparing"},
     {...completeMarker, status: "failed"},
     {...completeMarker, status: "rollingBack"},
@@ -438,28 +456,42 @@ test("server challenge metadata rejects legacy or injected fields", () => {
 
 test("reciprocal server friend links fail closed on local-only claims", () => {
   const pairID = "C713738E-D9ED-4337-986E-09205089D42E";
+  const inviteDigest = "a".repeat(64);
   const creatorLink = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "active",
     accountID: "firebase-user",
     friendAccountID: "firebase-opponent",
     pairID,
+    friendDisplayName: "Alex",
+    inviteDigest,
+    inviteExpiresAt: timestamp(nowMs + 86_400_000),
     linkedAt: timestamp(nowMs),
   };
   const opponentLink = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "active",
     accountID: "firebase-opponent",
     friendAccountID: "firebase-user",
     pairID,
+    friendDisplayName: "Jordan",
+    inviteDigest,
+    inviteExpiresAt: timestamp(nowMs + 86_400_000),
     linkedAt: timestamp(nowMs),
   };
-  assert.doesNotThrow(() => validateReciprocalFriendLinks(
+  assert.deepEqual(validateReciprocalFriendLinks(
     creatorLink,
     opponentLink,
     "firebase-user",
     "firebase-opponent"
-  ));
+  ), {
+    friendAccountID: "firebase-opponent",
+    displayName: "Alex",
+    pairID,
+    linkedAt: nowMs / 1_000,
+    inviteDigest,
+    inviteExpiresAtMs: nowMs + 86_400_000,
+  });
   assert.throws(() => validateReciprocalFriendLinks(
     {displayName: "Alex", accountID: "firebase-opponent"},
     opponentLink,
@@ -473,54 +505,109 @@ test("reciprocal server friend links fail closed on local-only claims", () => {
     "firebase-opponent"
   ));
   assert.throws(() => validateReciprocalFriendLinks(
-    {...creatorLink, schemaVersion: 0},
+    {...creatorLink, schemaVersion: 1},
     opponentLink,
+    "firebase-user",
+    "firebase-opponent"
+  ));
+  assert.throws(() => validateReciprocalFriendLinks(
+    creatorLink,
+    {...opponentLink, linkedAt: timestamp(nowMs + 1)},
     "firebase-user",
     "firebase-opponent"
   ));
 });
 
+test("friend authorization requires reciprocal current manifests", () => {
+  const own = manifest("firebase-user", {
+    friendAccountIDs: ["firebase-opponent"],
+  });
+  const other = manifest("firebase-opponent", {
+    friendAccountIDs: ["firebase-user"],
+  });
+  assert.deepEqual(validateReciprocalFriendManifests(
+    own, other, "firebase-user", "firebase-opponent"
+  ), {creator: own, opponent: other});
+  assert.throws(() => validateReciprocalFriendManifests(
+    own, {...other, friendAccountIDs: []},
+    "firebase-user", "firebase-opponent"
+  ));
+});
+
+test("all exact v2 friendship manifests enforce the active 50-friend cap", () => {
+  const empty = manifest("firebase-user");
+  const included = socialReferenceManifestIncludingFriend(
+    empty, "firebase-user", "firebase-opponent"
+  );
+  assert.deepEqual(included.friendAccountIDs, ["firebase-opponent"]);
+  assert.deepEqual(socialReferenceManifestRemovingFriend(
+    included, "firebase-user", "firebase-opponent"
+  ).friendAccountIDs, []);
+  const fifty = Array.from({length: 50}, (_, index) => `friend-${index}`);
+  assert.equal(validateCurrentFriendManifest({
+    ...empty,
+    friendAccountIDs: fifty,
+  }, "firebase-user").friendAccountIDs.length, 50);
+  assert.throws(() => socialReferenceManifestIncludingFriend({
+    ...empty,
+    friendAccountIDs: fifty,
+  }, "firebase-user", "overflow-friend"));
+  assert.throws(() => validateCurrentFriendManifest({
+    ...empty,
+    friendAccountIDs: [...fifty, "historical-friend"],
+  }, "firebase-user"));
+  assert.throws(() => validateSocialReferenceManifest({
+    ...empty,
+    friendAccountIDs: [...fifty, "historical-friend"],
+  }, "firebase-user"));
+});
+
 test("exact deletion manifests reject injected or unbounded paths", () => {
   assert.deepEqual(validateSocialReferenceManifest({
+    schemaVersion: 2,
+    accountID: "firebase-user",
     leagueMembershipPaths: [
       "leagues/silver_2026-W28/members/firebase-user",
     ],
     challengeIDs: [challengeID],
     friendAccountIDs: ["firebase-opponent"],
   }, "firebase-user"), {
+    schemaVersion: 2,
+    accountID: "firebase-user",
     leagueMembershipPaths: [
       "leagues/silver_2026-W28/members/firebase-user",
     ],
     challengeIDs: [challengeID],
     friendAccountIDs: ["firebase-opponent"],
   });
-  assert.throws(() => validateSocialReferenceManifest({
-    leagueMembershipPaths: ["profiles_public/victim"],
-    challengeIDs: [],
-    friendAccountIDs: [],
-  }, "firebase-user"));
-  assert.throws(() => validateSocialReferenceManifest({
-    leagueMembershipPaths: [],
-    challengeIDs: Array.from({length: 101}, () => challengeID),
-    friendAccountIDs: [],
-  }, "firebase-user"));
+  assert.throws(() => validateSocialReferenceManifest(manifest(
+    "firebase-user", {leagueMembershipPaths: ["profiles_public/victim"]}
+  ), "firebase-user"));
+  assert.throws(() => validateSocialReferenceManifest(manifest(
+    "firebase-user", {
+      challengeIDs: Array.from({length: 101}, () => challengeID),
+    }), "firebase-user"));
   const legacyMemberships = Array.from({length: 5}, (_, index) =>
     `leagues/silver_2026-W${String(index + 1).padStart(2, "0")}/` +
       "members/firebase-user"
   );
-  assert.equal(validateSocialReferenceManifest({
-    leagueMembershipPaths: legacyMemberships,
-    challengeIDs: [],
-    friendAccountIDs: [],
-  }, "firebase-user").leagueMembershipPaths.length, 5);
-  assert.throws(() => validateSocialReferenceManifest({
-    leagueMembershipPaths: Array.from({length: 17}, (_, index) =>
-      `leagues/silver_2025-W${String(index + 1).padStart(2, "0")}/` +
+  assert.equal(validateSocialReferenceManifest(manifest(
+    "firebase-user", {leagueMembershipPaths: legacyMemberships}
+  ), "firebase-user").leagueMembershipPaths.length, 5);
+  assert.throws(() => validateSocialReferenceManifest(manifest(
+    "firebase-user", {
+      leagueMembershipPaths: Array.from({length: 17}, (_, index) =>
+        `leagues/silver_2025-W${String(index + 1).padStart(2, "0")}/` +
         "members/firebase-user"
-    ),
-    challengeIDs: [],
-    friendAccountIDs: [],
+      ),
+    }), "firebase-user"));
+  assert.throws(() => validateSocialReferenceManifest({
+    ...manifest("firebase-user"),
+    extra: true,
   }, "firebase-user"));
+  assert.throws(() => validateSocialReferenceManifest(manifest(
+    "firebase-user", {friendAccountIDs: ["duplicate", "duplicate"]}
+  ), "firebase-user"));
 });
 
 test("challenge references preserve a complete bounded deletion manifest", () => {
@@ -529,6 +616,8 @@ test("challenge references preserve a complete bounded deletion manifest", () =>
     "firebase-user",
     challengeID.toLowerCase()
   ), {
+    schemaVersion: 2,
+    accountID: "firebase-user",
     leagueMembershipPaths: [],
     challengeIDs: [challengeID],
     friendAccountIDs: [],
@@ -537,11 +626,9 @@ test("challenge references preserve a complete bounded deletion manifest", () =>
     `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`
       .toUpperCase()
   );
-  assert.throws(() => socialReferenceManifestIncludingChallenge({
-    leagueMembershipPaths: [],
-    challengeIDs,
-    friendAccountIDs: [],
-  }, "firebase-user", challengeID));
+  assert.throws(() => socialReferenceManifestIncludingChallenge(manifest(
+    "firebase-user", {challengeIDs}
+  ), "firebase-user", challengeID));
 });
 
 test("trusted reps preserve backfilled legacy league references", () => {
@@ -549,11 +636,13 @@ test("trusted reps preserve backfilled legacy league references", () => {
     `leagues/silver_2026-W${String(index + 1).padStart(2, "0")}/` +
       "members/firebase-user"
   );
-  const updated = socialReferenceManifestUpdatingLeagueMembership({
-    leagueMembershipPaths: legacyPaths,
-    challengeIDs: [challengeID],
-    friendAccountIDs: ["firebase-opponent"],
-  }, "firebase-user", null, "silver_2026-W28");
+  const updated = socialReferenceManifestUpdatingLeagueMembership(manifest(
+    "firebase-user", {
+      leagueMembershipPaths: legacyPaths,
+      challengeIDs: [challengeID],
+      friendAccountIDs: ["firebase-opponent"],
+    }
+  ), "firebase-user", null, "silver_2026-W28");
   assert.deepEqual(updated.leagueMembershipPaths, [
     ...legacyPaths,
     "leagues/silver_2026-W28/members/firebase-user",

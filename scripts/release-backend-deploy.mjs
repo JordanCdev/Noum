@@ -7,8 +7,10 @@ export const DEPLOYMENT_BLOCKERS = Object.freeze([
     "server-observation substrate remains disabled and ineligible, has no " +
     "calibrated deterministic evaluator, and lacks cross-account replay, " +
     "retention, and live-provider evidence.",
-  "Reciprocal friendship authority is missing; implement and verify it " +
-    "before deployment.",
+  "Local reciprocal friendship authority and invite-retention policy are " +
+    "not deployed or live-verified, and the client capability remains " +
+    "disabled; complete the guarded cutover and independent verification " +
+    "before release.",
   "Independently trusted deployment authorization evidence is missing; " +
     "obtain and verify it before deployment.",
   "An immutable source-bound deployment artifact is missing; build and " +

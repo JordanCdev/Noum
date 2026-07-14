@@ -40,6 +40,14 @@ const getPeerProfileURL =
   `http://${functionsHost}/${projectID}/${region}/getPeerProfile`;
 const listLeagueMembersURL =
   `http://${functionsHost}/${projectID}/${region}/listLeagueMembers`;
+const createFriendInviteURL =
+  `http://${functionsHost}/${projectID}/${region}/createFriendInvite`;
+const acceptFriendInviteURL =
+  `http://${functionsHost}/${projectID}/${region}/acceptFriendInvite`;
+const listFriendLinksURL =
+  `http://${functionsHost}/${projectID}/${region}/listFriendLinks`;
+const removeFriendLinkURL =
+  `http://${functionsHost}/${projectID}/${region}/removeFriendLink`;
 const adminApp = initializeApp({projectId: projectID}, "social-emulator-tests");
 const adminFirestore = getAdminFirestore(adminApp);
 
@@ -322,6 +330,14 @@ function promptHash(prompt: string): string {
   return createHash("sha256").update(prompt, "utf8").digest("hex");
 }
 
+/** Returns the domain-separated digest for one canonical invite token. */
+function friendInviteHash(inviteToken: string): string {
+  return createHash("sha256")
+    .update(Buffer.from("noum.friend-invite.v1\0", "utf8"))
+    .update(Buffer.from(inviteToken, "base64url"))
+    .digest("hex");
+}
+
 interface EvidenceOptions {
   score?: number;
   completedAtSeconds?: number;
@@ -366,17 +382,36 @@ async function seedReciprocalFriendLink(
   opponent: EmulatorIdentity
 ): Promise<void> {
   const pairID = "C713738E-D9ED-4337-986E-09205089D42E";
+  const inviteDigest = "a".repeat(64);
   const linkedAt = AdminTimestamp.now();
+  const inviteExpiresAt = AdminTimestamp.fromMillis(
+    linkedAt.toMillis() + 24 * 60 * 60 * 1_000
+  );
+  const creatorManifestSnapshot = await adminFirestore
+    .collection("_socialReferences").doc(creator.localId).get();
+  const opponentManifestSnapshot = await adminFirestore
+    .collection("_socialReferences").doc(opponent.localId).get();
+  const creatorManifest = socialManifest(creator.localId, {
+    ...creatorManifestSnapshot.data(),
+    friendAccountIDs: [opponent.localId],
+  });
+  const opponentManifest = socialManifest(opponent.localId, {
+    ...opponentManifestSnapshot.data(),
+    friendAccountIDs: [creator.localId],
+  });
   const batch = adminFirestore.batch();
   batch.set(
     adminFirestore.collection("_socialFriendLinks").doc(creator.localId)
       .collection("friends").doc(opponent.localId),
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: "active",
       accountID: creator.localId,
       friendAccountID: opponent.localId,
       pairID,
+      friendDisplayName: "Opponent",
+      inviteDigest,
+      inviteExpiresAt,
       linkedAt,
     }
   );
@@ -384,21 +419,49 @@ async function seedReciprocalFriendLink(
     adminFirestore.collection("_socialFriendLinks").doc(opponent.localId)
       .collection("friends").doc(creator.localId),
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: "active",
       accountID: opponent.localId,
       friendAccountID: creator.localId,
       pairID,
+      friendDisplayName: "Creator",
+      inviteDigest,
+      inviteExpiresAt,
       linkedAt,
     }
   );
+  batch.set(
+    adminFirestore.collection("_socialReferences").doc(creator.localId),
+    creatorManifest
+  );
+  batch.set(
+    adminFirestore.collection("_socialReferences").doc(opponent.localId),
+    opponentManifest
+  );
   await batch.commit();
+}
+
+/** Builds one exact account-bound server social manifest. */
+function socialManifest(
+  accountID: string,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const candidate: Record<string, unknown> = {
+    schemaVersion: 2,
+    accountID,
+    leagueMembershipPaths: [],
+    challengeIDs: [],
+    friendAccountIDs: [],
+    ...overrides,
+  };
+  delete candidate.updatedAt;
+  return candidate;
 }
 
 /** Marks the one-time legacy social inventory as completely backfilled. */
 async function seedSocialReferenceCutover(): Promise<void> {
   await adminFirestore.collection("_socialReferenceCutover").doc("current").set({
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "complete",
     runID: "0713738e-d9ed-4337-986e-09205089d42e",
     projectID: productionProjectID,
@@ -624,6 +687,41 @@ test(
           limit: 51,
         },
       },
+      {
+        url: createFriendInviteURL,
+        validShape: {schemaVersion: 1, displayName: "Jordan"},
+        invalidShape: {
+          schemaVersion: 1,
+          displayName: "Jordan",
+          accountID: identity.localId,
+        },
+      },
+      {
+        url: acceptFriendInviteURL,
+        validShape: {
+          schemaVersion: 1,
+          inviteToken: Buffer.alloc(32, 1).toString("base64url"),
+          displayName: "Jordan",
+        },
+        invalidShape: {
+          schemaVersion: 1,
+          inviteToken: "raw-token",
+          displayName: "Jordan",
+        },
+      },
+      {
+        url: listFriendLinksURL,
+        validShape: {schemaVersion: 1, limit: 50},
+        invalidShape: {schemaVersion: 1, limit: 51},
+      },
+      {
+        url: removeFriendLinkURL,
+        validShape: {schemaVersion: 1, friendAccountID: "peer-account"},
+        invalidShape: {
+          schemaVersion: 1,
+          friendAccountID: "peer/account",
+        },
+      },
     ];
     for (const request of requests) {
       assert.equal(
@@ -655,7 +753,7 @@ test("social callables require the exact complete cutover marker", async () => {
   const markerRef = adminFirestore.collection("_socialReferenceCutover")
     .doc("current");
   const completeMarker = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "complete",
     runID: "1713738e-d9ed-4337-986e-09205089d42e",
     projectID: productionProjectID,
@@ -667,7 +765,7 @@ test("social callables require the exact complete cutover marker", async () => {
     completedAt: AdminTimestamp.now(),
   };
   const inProgressMarker = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "in-progress",
     runID: completeMarker.runID,
     projectID: productionProjectID,
@@ -735,10 +833,31 @@ test("social callables require the exact complete cutover marker", async () => {
       url: listLeagueMembersURL,
       data: {schemaVersion: 1, limit: 20},
     },
+    {
+      url: createFriendInviteURL,
+      data: {schemaVersion: 1, displayName: "Jordan"},
+    },
+    {
+      url: acceptFriendInviteURL,
+      data: {
+        schemaVersion: 1,
+        inviteToken: Buffer.alloc(32, 1).toString("base64url"),
+        displayName: "Jordan",
+      },
+    },
+    {
+      url: listFriendLinksURL,
+      data: {schemaVersion: 1, limit: 50},
+    },
+    {
+      url: removeFriendLinkURL,
+      data: {schemaVersion: 1, friendAccountID: "opponent"},
+    },
   ];
   const unavailableMarkers: Array<Record<string, unknown> | undefined> = [
     undefined,
     inProgressMarker,
+    {...completeMarker, schemaVersion: 3},
     {...completeMarker, verifiedInventoryDigest: "5".repeat(64)},
   ];
 
@@ -760,6 +879,11 @@ test("social callables require the exact complete cutover marker", async () => {
     }
   }
 
+  assert.equal((await adminFirestore.collection("_serverRateLimits")
+    .doc(identity.localId).get()).exists, false);
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .where("inviterAccountID", "==", identity.localId).get()).empty, true);
+
   await markerRef.delete();
   const recommendation = await callable(
     recommendationSyncURL,
@@ -774,6 +898,340 @@ test("social callables require the exact complete cutover marker", async () => {
     true
   );
   assert.equal(recommendation.status, 200);
+});
+
+test("friendship authority creates, validates, revokes, and deletes reciprocal state", async () => {
+  await seedSocialReferenceCutover();
+  const inviter = await anonymousIdentity();
+  const acceptor = await anonymousIdentity();
+  const outsider = await anonymousIdentity();
+  const createResponse = await callable(
+    createFriendInviteURL,
+    {schemaVersion: 1, displayName: "Inviter"},
+    inviter,
+    true
+  );
+  assert.equal(createResponse.status, 200);
+  const createBody = await createResponse.json() as {
+    result?: {inviteToken?: string; expiresAt?: number};
+  };
+  const inviteToken = createBody.result?.inviteToken ?? "";
+  assert.match(inviteToken, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(typeof createBody.result?.expiresAt, "number");
+  const tokenDigest = friendInviteHash(inviteToken);
+  const globalInviteRef = adminFirestore.collection("_socialFriendInvites")
+    .doc(tokenDigest);
+  const inviterInviteRef = adminFirestore.collection("_socialReferences")
+    .doc(inviter.localId).collection("friendInvites").doc(tokenDigest);
+  const globalInvite = await globalInviteRef.get();
+  const inviterInvite = await inviterInviteRef.get();
+  assert.equal(globalInvite.exists, true);
+  assert.equal(inviterInvite.exists, true);
+  assert.equal(JSON.stringify(globalInvite.data()).includes(inviteToken), false);
+  assert.equal(JSON.stringify(inviterInvite.data()).includes(inviteToken), false);
+
+  const selfAccept = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken, displayName: "Inviter"},
+    inviter,
+    true
+  );
+  assert.equal(selfAccept.status, 400);
+  assert.equal(await callableFailureReason(selfAccept), "friend-invite-self");
+
+  const expiredCreate = await callable(
+    createFriendInviteURL,
+    {schemaVersion: 1, displayName: "Inviter"},
+    inviter,
+    true
+  );
+  const expiredToken = ((await expiredCreate.json()) as {
+    result?: {inviteToken?: string};
+  }).result?.inviteToken ?? "";
+  const expiredDigest = friendInviteHash(expiredToken);
+  const expiredAt = AdminTimestamp.fromMillis(Date.now() - 1_000);
+  const expiredCreatedAt = AdminTimestamp.fromMillis(
+    expiredAt.toMillis() - 24 * 60 * 60 * 1_000
+  );
+  await adminFirestore.collection("_socialFriendInvites").doc(expiredDigest)
+    .update({createdAt: expiredCreatedAt, expiresAt: expiredAt});
+  await adminFirestore.collection("_socialReferences").doc(inviter.localId)
+    .collection("friendInvites").doc(expiredDigest)
+    .update({expiresAt: expiredAt});
+  const expiredAccept = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken: expiredToken, displayName: "Acceptor"},
+    acceptor,
+    true
+  );
+  assert.equal(expiredAccept.status, 400);
+  assert.equal(
+    await callableFailureReason(expiredAccept),
+    "friend-invite-unavailable"
+  );
+
+  const acceptedResponse = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken, displayName: "Acceptor"},
+    acceptor,
+    true
+  );
+  assert.equal(acceptedResponse.status, 200);
+  const acceptedBody = await acceptedResponse.json() as {
+    result?: {friend?: {friendAccountID?: string; displayName?: string}};
+  };
+  assert.equal(acceptedBody.result?.friend?.friendAccountID, inviter.localId);
+  assert.equal(acceptedBody.result?.friend?.displayName, "Inviter");
+  const acceptorLinkRef = adminFirestore.collection("_socialFriendLinks")
+    .doc(acceptor.localId).collection("friends").doc(inviter.localId);
+  const inviterLinkRef = adminFirestore.collection("_socialFriendLinks")
+    .doc(inviter.localId).collection("friends").doc(acceptor.localId);
+  const [acceptorLink, inviterLink] = await Promise.all([
+    acceptorLinkRef.get(), inviterLinkRef.get(),
+  ]);
+  assert.equal(acceptorLink.data()?.schemaVersion, 2);
+  assert.equal(inviterLink.data()?.schemaVersion, 2);
+  assert.equal(acceptorLink.data()?.pairID, inviterLink.data()?.pairID);
+  assert.equal(acceptorLink.data()?.inviteDigest, tokenDigest);
+  assert.equal(inviterLink.data()?.inviteDigest, tokenDigest);
+  assert.equal(
+    (acceptorLink.data()?.linkedAt as AdminTimestamp).toMillis(),
+    (inviterLink.data()?.linkedAt as AdminTimestamp).toMillis()
+  );
+  const acceptorManifest = await adminFirestore.collection("_socialReferences")
+    .doc(acceptor.localId).get();
+  assert.deepEqual(Object.keys(acceptorManifest.data() ?? {}).sort(), [
+    "accountID", "challengeIDs", "friendAccountIDs",
+    "leagueMembershipPaths", "schemaVersion",
+  ]);
+  assert.deepEqual(acceptorManifest.data()?.friendAccountIDs, [inviter.localId]);
+
+  const replay = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken, displayName: "Changed Name"},
+    acceptor,
+    true
+  );
+  assert.equal(replay.status, 200);
+  assert.deepEqual(await replay.json(), acceptedBody);
+  const mismatchedReplay = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken, displayName: "Outsider"},
+    outsider,
+    true
+  );
+  assert.equal(mismatchedReplay.status, 400);
+  assert.equal(
+    await callableFailureReason(mismatchedReplay),
+    "friend-invite-unavailable"
+  );
+
+  const supersededCreate = await callable(
+    createFriendInviteURL,
+    {schemaVersion: 1, displayName: "Inviter"},
+    inviter,
+    true
+  );
+  const supersededToken = ((await supersededCreate.json()) as {
+    result?: {inviteToken?: string};
+  }).result?.inviteToken ?? "";
+  const supersededDigest = friendInviteHash(supersededToken);
+  const supersededAccept = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken: supersededToken, displayName: "Acceptor"},
+    acceptor,
+    true
+  );
+  assert.equal(supersededAccept.status, 400);
+  assert.equal(
+    await callableFailureReason(supersededAccept),
+    "friend-invite-unavailable"
+  );
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .doc(supersededDigest).get()).data()?.status, "superseded");
+  assert.equal((await inviterLinkRef.get()).data()?.inviteDigest, tokenDigest);
+  const supersededRetry = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken: supersededToken, displayName: "Acceptor"},
+    acceptor,
+    true
+  );
+  assert.equal(supersededRetry.status, 400);
+  assert.equal(
+    await callableFailureReason(supersededRetry),
+    "friend-invite-unavailable"
+  );
+
+  const listed = await callable(
+    listFriendLinksURL,
+    {schemaVersion: 1, limit: 50},
+    acceptor,
+    true
+  );
+  assert.equal(listed.status, 200);
+  const listBody = await listed.json() as {result?: {friends?: unknown[]}};
+  assert.equal(listBody.result?.friends?.length, 1);
+  const partialList = await callable(
+    listFriendLinksURL,
+    {schemaVersion: 1, limit: 49},
+    acceptor,
+    true
+  );
+  assert.equal(partialList.status, 400);
+
+  const removed = await callable(
+    removeFriendLinkURL,
+    {schemaVersion: 1, friendAccountID: inviter.localId},
+    acceptor,
+    true
+  );
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), {
+    result: {
+      schemaVersion: 1,
+      friendAccountID: inviter.localId,
+      removed: true,
+    },
+  });
+  assert.equal((await globalInviteRef.get()).data()?.status, "revoked");
+  assert.equal((await acceptorLinkRef.get()).exists, false);
+  assert.equal((await inviterLinkRef.get()).exists, false);
+  const revokedReplay = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken, displayName: "Acceptor"},
+    acceptor,
+    true
+  );
+  assert.equal(revokedReplay.status, 400);
+  assert.equal(
+    await callableFailureReason(revokedReplay),
+    "friend-invite-unavailable"
+  );
+  const idempotent = await callable(
+    removeFriendLinkURL,
+    {schemaVersion: 1, friendAccountID: inviter.localId},
+    acceptor,
+    true
+  );
+  assert.deepEqual(await idempotent.json(), {
+    result: {
+      schemaVersion: 1,
+      friendAccountID: inviter.localId,
+      removed: false,
+    },
+  });
+
+  const corruptInviter = await anonymousIdentity();
+  const corruptAcceptor = await anonymousIdentity();
+  const corruptCreate = await callable(
+    createFriendInviteURL,
+    {schemaVersion: 1, displayName: "Corrupt Inviter"},
+    corruptInviter,
+    true
+  );
+  const corruptToken = ((await corruptCreate.json()) as {
+    result?: {inviteToken?: string};
+  }).result?.inviteToken ?? "";
+  const corruptDigest = friendInviteHash(corruptToken);
+  assert.equal((await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken: corruptToken, displayName: "Corrupt Peer"},
+    corruptAcceptor,
+    true
+  )).status, 200);
+  await adminFirestore.collection("_socialFriendLinks")
+    .doc(corruptInviter.localId).collection("friends")
+    .doc(corruptAcceptor.localId).delete();
+  const corruptList = await callable(
+    listFriendLinksURL,
+    {schemaVersion: 1, limit: 50},
+    corruptAcceptor,
+    true
+  );
+  assert.equal(corruptList.status, 400);
+  assert.equal(
+    await callableFailureReason(corruptList),
+    "friend-authorization-unavailable"
+  );
+  const corruptRemove = await callable(
+    removeFriendLinkURL,
+    {schemaVersion: 1, friendAccountID: corruptInviter.localId},
+    corruptAcceptor,
+    true
+  );
+  assert.equal(corruptRemove.status, 200);
+  assert.deepEqual(await corruptRemove.json(), {
+    result: {
+      schemaVersion: 1,
+      friendAccountID: corruptInviter.localId,
+      removed: true,
+    },
+  });
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .doc(corruptDigest).get()).data()?.status, "revoked");
+  assert.equal((await adminFirestore.collection("_socialFriendLinks")
+    .doc(corruptAcceptor.localId).collection("friends")
+    .doc(corruptInviter.localId).get()).exists, false);
+  assert.deepEqual((await adminFirestore.collection("_socialReferences")
+    .doc(corruptAcceptor.localId).get()).data()?.friendAccountIDs, []);
+  assert.deepEqual((await adminFirestore.collection("_socialReferences")
+    .doc(corruptInviter.localId).get()).data()?.friendAccountIDs, []);
+  const corruptReplay = await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken: corruptToken, displayName: "Corrupt Peer"},
+    corruptAcceptor,
+    true
+  );
+  assert.equal(corruptReplay.status, 400);
+  assert.equal(
+    await callableFailureReason(corruptReplay),
+    "friend-invite-unavailable"
+  );
+
+  const deleteOwner = await anonymousIdentity();
+  const deleteFriend = await anonymousIdentity();
+  const deleteCreate = await callable(
+    createFriendInviteURL,
+    {schemaVersion: 1, displayName: "Delete Owner"},
+    deleteOwner,
+    true
+  );
+  const deleteToken = ((await deleteCreate.json()) as {
+    result?: {inviteToken?: string};
+  }).result?.inviteToken ?? "";
+  const deleteDigest = friendInviteHash(deleteToken);
+  assert.equal((await callable(
+    acceptFriendInviteURL,
+    {schemaVersion: 1, inviteToken: deleteToken, displayName: "Delete Friend"},
+    deleteFriend,
+    true
+  )).status, 200);
+  // Global discovery must still erase the receipt when the owner's local
+  // reference was lost or corrupted before deletion began.
+  await adminFirestore.collection("_socialReferences")
+    .doc(deleteOwner.localId).collection("friendInvites")
+    .doc(deleteDigest).delete();
+  const deletion = await callable(
+    deletionURL,
+    {
+      schemaVersion: 1,
+      requestID: "6713738e-d9ed-4337-986e-09205089d42e",
+    },
+    deleteOwner,
+    true
+  );
+  assert.equal(deletion.status, 200);
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .doc(deleteDigest).get()).exists, false);
+  assert.equal((await adminFirestore.collection("_socialReferences")
+    .doc(deleteFriend.localId).collection("friendInvites")
+    .doc(deleteDigest).get()).exists, false);
+  assert.equal((await adminFirestore.collection("_socialFriendLinks")
+    .doc(deleteFriend.localId).collection("friends")
+    .doc(deleteOwner.localId).get()).exists, false);
+  const deleteFriendManifest = await adminFirestore
+    .collection("_socialReferences").doc(deleteFriend.localId).get();
+  assert.deepEqual(deleteFriendManifest.data()?.friendAccountIDs, []);
 });
 
 test("private account sync is limited to registered bounded paths", async () => {
@@ -1136,12 +1594,9 @@ test("owner sessions cannot become competitive evidence", async () => {
     `leagues/silver_2026-W01/members/${identity.localId}`;
   await adminFirestore.doc(legacyLeaguePath).set({accountID: identity.localId});
   await adminFirestore.collection("_socialReferences").doc(identity.localId)
-    .set({
+    .set(socialManifest(identity.localId, {
       leagueMembershipPaths: [legacyLeaguePath],
-      challengeIDs: [],
-      friendAccountIDs: [],
-      updatedAt: AdminTimestamp.now(),
-    });
+    }));
   await seedVerifiedEvidence(identity, peerSessionID, {score: 8});
   const first = await recordSocialSession(
     identity,
@@ -1691,11 +2146,14 @@ test("social migration control data denies every client", async () => {
     `_socialReferenceQuarantine/${runID}/documents`;
   const quarantinePath = `${quarantineCollection}/${sourcePathSHA256}`;
   const manifestPath = `_socialReferences/${owner.localId}`;
+  const inviteDigest = "f".repeat(64);
+  const invitePath = `_socialFriendInvites/${inviteDigest}`;
+  const inviteReferencePath = `${manifestPath}/friendInvites/${inviteDigest}`;
   const backupDigest = "a".repeat(64);
   const inventoryDigest = "b".repeat(64);
 
   await adminFirestore.doc(journalPath).set({
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "in-progress",
     runID,
     projectID,
@@ -1706,7 +2164,7 @@ test("social migration control data denies every client", async () => {
     inventoryDigest,
   });
   await adminFirestore.doc(quarantinePath).set({
-    schemaVersion: 3,
+    schemaVersion: 4,
     runID,
     backupDigest,
     sourcePath,
@@ -1715,11 +2173,14 @@ test("social migration control data denies every client", async () => {
       .update(JSON.stringify(sourceData))
       .digest("hex"),
   });
-  await adminFirestore.doc(manifestPath).set({
-    leagueMembershipPaths: [],
-    challengeIDs: [],
-    friendAccountIDs: [],
-    updatedAt: AdminTimestamp.now(),
+  await adminFirestore.doc(manifestPath).set(socialManifest(owner.localId));
+  await adminFirestore.doc(invitePath).set({
+    schemaVersion: 1,
+    tokenDigest: inviteDigest,
+  });
+  await adminFirestore.doc(inviteReferencePath).set({
+    schemaVersion: 1,
+    tokenDigest: inviteDigest,
   });
 
   const resources = [
@@ -1740,6 +2201,18 @@ test("social migration control data denies every client", async () => {
       documentPath: manifestPath,
       collectionPath: "_socialReferences",
       createPath: "_socialReferences/client-forged",
+    },
+    {
+      name: "friend invite digest",
+      documentPath: invitePath,
+      collectionPath: "_socialFriendInvites",
+      createPath: `_socialFriendInvites/${"0".repeat(64)}`,
+    },
+    {
+      name: "friend invite reference",
+      documentPath: inviteReferencePath,
+      collectionPath: `${manifestPath}/friendInvites`,
+      createPath: `${manifestPath}/friendInvites/${"0".repeat(64)}`,
     },
   ];
   const callers: Array<{
@@ -1804,7 +2277,7 @@ test("social migration control data denies every client", async () => {
   }
 
   await adminFirestore.doc(journalPath).set({
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "complete",
     runID,
     projectID,
@@ -1891,12 +2364,9 @@ test("legacy social data fails closed until exact cutover is backfilled", async 
   )).status, 200);
 
   await adminFirestore.collection("_socialReferences").doc(identity.localId)
-    .set({
+    .set(socialManifest(identity.localId, {
       leagueMembershipPaths: leaguePaths,
-      challengeIDs: [],
-      friendAccountIDs: [],
-      updatedAt: AdminTimestamp.now(),
-    });
+    }));
   await seedSocialReferenceCutover();
   const retried = await callable(deletionURL, request, identity, true);
   assert.equal(retried.status, 200);
@@ -1936,19 +2406,16 @@ test("intermediate deletion failure preserves worklist and retries", async () =>
   await adminFirestore.doc(leaguePath).set({accountID: identity.localId});
   await seedReciprocalFriendLink(identity, opponent);
   await adminFirestore.collection("_socialReferences").doc(identity.localId)
-    .set({
+    .set(socialManifest(identity.localId, {
       leagueMembershipPaths: [leaguePath],
       challengeIDs: [challengeID],
       friendAccountIDs: [opponent.localId],
-      updatedAt: seededAt,
-    });
+    }));
   await adminFirestore.collection("_socialReferences").doc(opponent.localId)
-    .set({
-      leagueMembershipPaths: [],
+    .set(socialManifest(opponent.localId, {
       challengeIDs: [challengeID],
       friendAccountIDs: [identity.localId],
-      updatedAt: seededAt,
-    });
+    }));
   const request = {
     schemaVersion: 1,
     requestID: "A813738E-D9ED-4337-986E-09205089D42E",
@@ -2037,19 +2504,16 @@ test("anonymous deletion is complete and retry-safe", async () => {
   });
   await seedReciprocalFriendLink(identity, opponent);
   await adminFirestore.collection("_socialReferences")
-    .doc(identity.localId).set({
+    .doc(identity.localId).set(socialManifest(identity.localId, {
       leagueMembershipPaths: [leaguePath],
       challengeIDs: [challengeID],
       friendAccountIDs: [opponent.localId],
-      updatedAt: seededAt,
-    });
+    }));
   await adminFirestore.collection("_socialReferences")
-    .doc(opponent.localId).set({
-      leagueMembershipPaths: [],
+    .doc(opponent.localId).set(socialManifest(opponent.localId, {
       challengeIDs: [challengeID],
       friendAccountIDs: [identity.localId],
-      updatedAt: seededAt,
-    });
+    }));
   const captureIntentRef = adminFirestore
     .collection("_competitiveCaptureIntents").doc(identity.localId)
     .collection("captureIntents").doc(challengeID);
