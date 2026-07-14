@@ -70,6 +70,134 @@ struct TimedPracticePromptHandoffTests {
         #expect(handoff.consume(token: liveToken) == "Current prompt")
     }
 
+    @Test func challengePayloadPreservesExactBytesAndObservationBinding() throws {
+        let challengeID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let exactPrompt = "Résumé  update:\tname the risk.\nThen stop."
+        let handoff = TimedPracticePromptHandoff(
+            accountIDProvider: { "account-a" }
+        )
+        let token = try #require(handoff.offerChallengeToken(
+            exactPrompt: exactPrompt,
+            challengeID: challengeID
+        ))
+
+        let payload = try #require(handoff.consumePayload(token: token))
+
+        #expect(payload.text == exactPrompt)
+        #expect(payload.competitiveObservationIntent?.challengeID == challengeID)
+        #expect(payload.competitiveObservationIntent?.matches(exactPrompt: exactPrompt) == true)
+        #expect(payload.competitiveObservationIntent?.matches(
+            exactPrompt: "Résumé update: name the risk. Then stop."
+        ) == false)
+        #expect(payload.observationIntent(
+            matchingDisplayedPrompt: exactPrompt,
+            activeAccountID: "account-a"
+        )?.challengeID == challengeID)
+        #expect(payload.observationIntent(
+            matchingDisplayedPrompt: "Résumé update: name the risk. Then stop.",
+            activeAccountID: "account-a"
+        ) == nil)
+        #expect(payload.observationIntent(
+            matchingDisplayedPrompt: exactPrompt,
+            activeAccountID: "account-b"
+        ) == nil)
+        #expect(handoff.consumePayload(token: token) == nil)
+    }
+
+    @Test func challengePayloadDoesNotNormalizeUnicodeOrCase() throws {
+        let challengeID = UUID()
+        let decomposedPrompt = "Defend THIS decision — Cafe\u{301}?"
+        let originalBytes = Data(decomposedPrompt.utf8)
+        let handoff = TimedPracticePromptHandoff(
+            accountIDProvider: { "account-a" }
+        )
+        let token = try #require(handoff.offerChallengeToken(
+            exactPrompt: decomposedPrompt,
+            challengeID: challengeID
+        ))
+        let payload = try #require(handoff.consumePayload(token: token))
+
+        #expect(Data(payload.text.utf8) == originalBytes)
+        #expect(payload.observationIntent(
+            matchingDisplayedPrompt: "Defend THIS decision — Café?",
+            activeAccountID: "account-a"
+        ) == nil)
+        #expect(payload.observationIntent(
+            matchingDisplayedPrompt: "Defend this decision — Cafe\u{301}?",
+            activeAccountID: "account-a"
+        ) == nil)
+    }
+
+    @Test func staleRouteCannotConsumeOrEraseNewerChallengeAuthority() throws {
+        let handoff = TimedPracticePromptHandoff(
+            accountIDProvider: { "account-a" }
+        )
+        let staleToken = try #require(handoff.offerToken("Older prompt"))
+        let challengeID = UUID()
+        let liveToken = try #require(handoff.offerChallengeToken(
+            exactPrompt: "Current  challenge prompt",
+            challengeID: challengeID
+        ))
+
+        #expect(handoff.consumePayload(token: staleToken) == nil)
+        let live = try #require(handoff.consumePayload(token: liveToken))
+        #expect(live.text == "Current  challenge prompt")
+        #expect(live.competitiveObservationIntent?.challengeID == challengeID)
+    }
+
+    @Test func challengePayloadFailsClosedWithoutMutatingExactAuthority() throws {
+        let challengeID = UUID()
+        let handoff = TimedPracticePromptHandoff(
+            accountIDProvider: { "account-a" }
+        )
+        let oversized = String(
+            repeating: "x",
+            count: AsyncChallengeAuthorityEnvelope.maximumPromptUTF16CodeUnits + 1
+        )
+
+        #expect(handoff.offerChallengeToken(
+            exactPrompt: "   \n\t",
+            challengeID: challengeID
+        ) == nil)
+        #expect(handoff.offerChallengeToken(
+            exactPrompt: " Prompt with outer whitespace ",
+            challengeID: challengeID
+        ) == nil)
+        #expect(handoff.offerChallengeToken(
+            exactPrompt: oversized,
+            challengeID: challengeID
+        ) == nil)
+        #expect(handoff.offerChallengeToken(
+            exactPrompt: "Exact prompt",
+            challengeID: challengeID,
+            accountID: nil
+        ) == nil)
+
+        let token = try #require(handoff.offerChallengeToken(
+            exactPrompt: "Exact  prompt",
+            challengeID: challengeID
+        ))
+        #expect(handoff.consumePayload(token: token, accountID: "account-b") == nil)
+        #expect(handoff.consumePayload(token: token, accountID: "account-a") == nil)
+    }
+
+    @Test func ordinaryPromptPayloadCarriesNoCompetitiveAuthorityAndClearDropsChallenge() throws {
+        let handoff = TimedPracticePromptHandoff(
+            accountIDProvider: { "account-a" }
+        )
+        let ordinaryToken = try #require(handoff.offerToken("  Ordinary   prompt  "))
+        let ordinary = try #require(handoff.consumePayload(token: ordinaryToken))
+        #expect(ordinary.text == "Ordinary prompt")
+        #expect(ordinary.competitiveObservationIntent == nil)
+
+        let challengeToken = try #require(handoff.offerChallengeToken(
+            exactPrompt: "Exact challenge prompt",
+            challengeID: UUID()
+        ))
+        handoff.clear()
+        #expect(handoff.consumePayload(token: challengeToken) == nil)
+    }
+
     @Test func deepLinkCarriesOnlyTheOpaquePromptToken() throws {
         let token = UUID()
         let url = try #require(URL(string:

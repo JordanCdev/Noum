@@ -16,10 +16,37 @@ final class TimedPracticePromptHandoff {
     nonisolated static let legacySuggestedWordDefaultsKey = "timedPractice.suggestedWord"
     nonisolated static let maximumPromptCharacters = 1_000
 
+    struct Payload: Equatable {
+        let text: String
+        let competitiveObservationIntent: CompetitiveObservationIntent?
+        fileprivate let accountID: String
+
+        func isBound(to activeAccountID: String?) -> Bool {
+            let normalized = activeAccountID?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ) ?? ""
+            return !normalized.isEmpty && normalized == accountID
+        }
+
+        func observationIntent(
+            matchingDisplayedPrompt displayedPrompt: String,
+            activeAccountID: String?
+        ) -> CompetitiveObservationIntent? {
+            guard isBound(to: activeAccountID),
+                  text.utf8.elementsEqual(displayedPrompt.utf8),
+                  competitiveObservationIntent?.matches(
+                    exactPrompt: displayedPrompt
+                  ) == true else {
+                return nil
+            }
+            return competitiveObservationIntent
+        }
+    }
+
     private struct PendingPrompt: Equatable {
         let token: UUID
         let accountID: String
-        let text: String
+        let payload: Payload
     }
 
     private var pending: PendingPrompt?
@@ -52,8 +79,67 @@ final class TimedPracticePromptHandoff {
             pending = nil
             return nil
         }
+        return store(
+            Payload(
+                text: text,
+                competitiveObservationIntent: nil,
+                accountID: accountID
+            ),
+            accountID: accountID
+        )
+    }
+
+    /// Prepare the exact server-authored challenge prompt and its content-free
+    /// observation binding as one account- and route-bound value. Unlike
+    /// ordinary seeded prompts, challenge text is never normalized or
+    /// truncated because its SHA-256 authority covers the exact UTF-8 bytes.
+    func offerChallengeToken(exactPrompt: String, challengeID: UUID) -> UUID? {
+        offerChallengeToken(
+            exactPrompt: exactPrompt,
+            challengeID: challengeID,
+            accountID: accountIDProvider()
+        )
+    }
+
+    func offerChallengeToken(
+        exactPrompt: String,
+        challengeID: UUID,
+        accountID: String?
+    ) -> UUID? {
+        let trimmedPrompt = exactPrompt.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard let accountID = normalizedAccountID(accountID),
+              exactPrompt == trimmedPrompt,
+              !exactPrompt.isEmpty,
+              exactPrompt.utf16.count
+                <= AsyncChallengeAuthorityEnvelope.maximumPromptUTF16CodeUnits,
+              let intent = CompetitiveObservationIntent.bound(
+                source: .challenge,
+                exactPrompt: exactPrompt,
+                challengeID: challengeID
+              ),
+              intent.matches(exactPrompt: exactPrompt) else {
+            pending = nil
+            return nil
+        }
+        return store(
+            Payload(
+                text: exactPrompt,
+                competitiveObservationIntent: intent,
+                accountID: accountID
+            ),
+            accountID: accountID
+        )
+    }
+
+    private func store(_ payload: Payload, accountID: String) -> UUID {
         let token = UUID()
-        pending = PendingPrompt(token: token, accountID: accountID, text: text)
+        pending = PendingPrompt(
+            token: token,
+            accountID: accountID,
+            payload: payload
+        )
         return token
     }
 
@@ -66,6 +152,14 @@ final class TimedPracticePromptHandoff {
     }
 
     func consume(token: UUID, accountID: String?) -> String? {
+        consumePayload(token: token, accountID: accountID)?.text
+    }
+
+    func consumePayload(token: UUID) -> Payload? {
+        consumePayload(token: token, accountID: accountIDProvider())
+    }
+
+    func consumePayload(token: UUID, accountID: String?) -> Payload? {
         guard let accountID = normalizedAccountID(accountID) else {
             self.pending = nil
             return nil
@@ -77,7 +171,7 @@ final class TimedPracticePromptHandoff {
         }
         guard pending.token == token else { return nil }
         self.pending = nil
-        return pending.text
+        return pending.payload
     }
 
     func pendingPrompt(accountID: String?) -> String? {
@@ -85,7 +179,7 @@ final class TimedPracticePromptHandoff {
               pending?.accountID == accountID else {
             return nil
         }
-        return pending?.text
+        return pending?.payload.text
     }
 
     func clear() {

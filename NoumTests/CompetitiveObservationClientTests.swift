@@ -70,6 +70,32 @@ struct CompetitiveObservationClientTests {
         ).matches(exactPrompt: "Hello "))
     }
 
+    @Test("Challenge begin carries the same ID and exact prompt digest")
+    func challengeBeginBinding() throws {
+        let exactPrompt = "Defend  THIS\tdecision — Cafe\u{301}?"
+        let intent = try #require(CompetitiveObservationIntent.bound(
+            source: .challenge,
+            exactPrompt: exactPrompt,
+            challengeID: challengeID
+        ))
+        let request = try #require(BeginCompetitiveObservationRequest(
+            sessionID: sessionID,
+            locale: .enUS,
+            mode: .timed,
+            demand: .timed(difficulty: .medium),
+            promptProvenance: intent.promptProvenance,
+            challengeID: intent.challengeID
+        ))
+        let payload = try jsonObject(request)
+        let provenance = try #require(payload["promptProvenance"] as? [String: Any])
+
+        #expect(payload["challengeID"] as? String == challengeID.uuidString)
+        #expect(provenance["source"] as? String == "challenge")
+        #expect(provenance["promptDigest"] as? String == intent.promptProvenance.promptDigest)
+        #expect(intent.matches(exactPrompt: exactPrompt))
+        #expect(!intent.matches(exactPrompt: "Defend THIS decision — Café?"))
+    }
+
     @Test("Challenge and project coupling fail closed")
     func provenanceCoupling() throws {
         let challenge = try #require(CompetitiveObservationPromptProvenance.bound(

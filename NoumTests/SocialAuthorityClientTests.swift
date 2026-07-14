@@ -97,6 +97,39 @@ struct SocialAuthorityClientTests {
         #expect(!result.challenge.bothHavePlayed)
     }
 
+    @Test("Challenge envelopes preserve only the server's exact bounded prompt shape")
+    func challengePromptShapeIsExact() throws {
+        let challengeID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let valid = challengeEnvelope(id: challengeID)
+        let decoded = try valid.challenge()
+        #expect(decoded.prompt == valid.prompt)
+
+        var invalid = valid
+        invalid = AsyncChallengeAuthorityEnvelope(
+            id: invalid.id,
+            prompt: " \(invalid.prompt)",
+            createdAt: invalid.createdAt,
+            expiresAt: invalid.expiresAt,
+            creatorID: invalid.creatorID,
+            creatorName: invalid.creatorName,
+            creatorAccountID: invalid.creatorAccountID,
+            opponentID: invalid.opponentID,
+            opponentName: invalid.opponentName,
+            opponentAccountID: invalid.opponentAccountID,
+            creatorScore: invalid.creatorScore,
+            creatorDuration: invalid.creatorDuration,
+            creatorSummary: invalid.creatorSummary,
+            opponentScore: invalid.opponentScore,
+            opponentDuration: invalid.opponentDuration,
+            opponentSummary: invalid.opponentSummary,
+            creatorReaction: invalid.creatorReaction,
+            opponentReaction: invalid.opponentReaction
+        )
+        #expect(throws: SocialAuthorityError.invalidResponse) {
+            try invalid.challenge()
+        }
+    }
+
     @Test("Same challenge submission replay stays successful and complete only from server envelope")
     func submissionReplayUsesEnvelope() throws {
         let challengeID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
@@ -248,10 +281,14 @@ struct SocialAuthorityClientTests {
                 != ClubsManager.accountKey(base: "NoumSavedClubs", accountID: "b"))
     }
 
-    @Test("Only the rep carrying the armed speak-off prompt may submit")
-    func armedPromptMatchIsExactButWhitespaceSafe() {
+    @Test("Only the rep carrying the exact armed speak-off bytes may submit")
+    func armedPromptMatchIsByteExact() {
         let prompt = "Name one decision you would defend under pressure?"
         #expect(ChallengesManager.repMatchesArmedPrompt(
+            sessionPrompt: prompt,
+            armedPrompt: prompt
+        ))
+        #expect(!ChallengesManager.repMatchesArmedPrompt(
             sessionPrompt: "  NAME one decision you would defend under pressure?  ",
             armedPrompt: prompt
         ))
@@ -262,6 +299,12 @@ struct SocialAuthorityClientTests {
         #expect(!ChallengesManager.repMatchesArmedPrompt(
             sessionPrompt: nil,
             armedPrompt: prompt
+        ))
+
+        let decomposed = "Defend Cafe\u{301}."
+        #expect(!ChallengesManager.repMatchesArmedPrompt(
+            sessionPrompt: "Defend Café.",
+            armedPrompt: decomposed
         ))
     }
 

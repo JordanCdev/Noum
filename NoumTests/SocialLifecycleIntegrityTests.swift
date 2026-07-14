@@ -22,10 +22,14 @@ struct SocialLifecycleIntegrityTests {
     func releaseCapabilitiesAreStableAndUnavailable() {
         #expect(!SocialReleaseCapabilities.peerProgress.isAvailable)
         #expect(!SocialReleaseCapabilities.friendProfiles.isAvailable)
+        #expect(!SocialReleaseCapabilities.friendConnections.isAvailable)
         #expect(!SocialReleaseCapabilities.speakOffs.isAvailable)
+        #expect(!SocialReleaseCapabilities.competitiveObservation.isAvailable)
         #expect(!SocialReleaseCapabilities.peerProgress.message.isEmpty)
         #expect(!SocialReleaseCapabilities.friendProfiles.message.isEmpty)
+        #expect(!SocialReleaseCapabilities.friendConnections.message.isEmpty)
         #expect(!SocialReleaseCapabilities.speakOffs.message.isEmpty)
+        #expect(!SocialReleaseCapabilities.competitiveObservation.message.isEmpty)
     }
 
     @Test("Disabled social actions fail before Firebase configuration is consulted")

@@ -557,14 +557,8 @@ final class ChallengesManager: ObservableObject {
         sessionPrompt: String?,
         armedPrompt: String
     ) -> Bool {
-        guard let sessionPrompt else { return false }
-        let normalize: (String) -> String = {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                .lowercased()
-        }
-        let expected = normalize(armedPrompt)
-        return !expected.isEmpty && normalize(sessionPrompt) == expected
+        guard let sessionPrompt, !armedPrompt.isEmpty else { return false }
+        return sessionPrompt.utf8.elementsEqual(armedPrompt.utf8)
     }
 
     /// Pull challenges where the current user is a participant. Used at

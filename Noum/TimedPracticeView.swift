@@ -746,6 +746,9 @@ struct TimedPracticeView: View {
     @State private var elapsedSeconds: Int = 0
     @State private var evaluation: PracticeEvaluation?
     @State private var isStopping = false
+    /// One-shot route payload carrying an exact server challenge prompt and
+    /// its content-free authority together. Prompt replacement invalidates it.
+    @State private var seededPromptPayload: TimedPracticePromptHandoff.Payload?
     /// Immutable scoring/demand input captured when this rep begins. Settings
     /// may change between reps, but never retroactively change an active rep.
     @State private var activeTimedDifficulty: TimedPracticeDifficulty?
@@ -1065,9 +1068,11 @@ struct TimedPracticeView: View {
 
     private func consumeSeededPrompt() -> String? {
         guard let promptHandoffToken else { return nil }
-        return normalizedSeed(
-            TimedPracticePromptHandoff.shared.consume(token: promptHandoffToken)
-        )
+        guard let payload = TimedPracticePromptHandoff.shared.consumePayload(
+            token: promptHandoffToken
+        ) else { return nil }
+        seededPromptPayload = payload
+        return payload.text
     }
 
     private func nextPrompt() async -> String {
@@ -1080,11 +1085,6 @@ struct TimedPracticeView: View {
             baseline: baselineStore.baseline,
             theme: selectedTheme
         )
-    }
-
-    private func normalizedSeed(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func formattedTime(_ seconds: Int) -> String {
@@ -1726,6 +1726,7 @@ struct TimedPracticeView: View {
         animateSetupChange {
             selectedTheme = theme
             question = ""
+            seededPromptPayload = nil
         }
     }
 
@@ -2966,12 +2967,17 @@ struct TimedPracticeView: View {
         }
 
         speechVM.sessionPrompt = question
+        let observationIntent = seededPromptPayload?.observationIntent(
+            matchingDisplayedPrompt: question,
+            activeAccountID: AuthManager.shared.currentAccountID
+        )
         speechVM.prepareSession(
             mode: .timed,
             practiceDemand: .timed(
                 difficulty: activeTimedDifficulty ?? practiceSettings.timedDifficulty,
                 speechProjectID: speechProject?.id
-            )
+            ),
+            competitiveObservationIntent: observationIntent
         )
         Task { @MainActor in
             guard await speechVM.startRecordingAwaitingReadiness() else {
@@ -3199,6 +3205,7 @@ struct TimedPracticeView: View {
     /// Pick a new random prompt and start a new session.
     private func newPromptSession() {
         cleanup()
+        seededPromptPayload = nil
         resetState(keepPrompt: false)
         Task { @MainActor in
             question = await nextPrompt()

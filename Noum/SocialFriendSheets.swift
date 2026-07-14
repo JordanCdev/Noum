@@ -326,8 +326,9 @@ struct ChallengePickFriendSheet: View {
                         Spacer()
 
                         Button {
-                            guard let token = TimedPracticePromptHandoff.shared.offerToken(
-                                challenge.prompt
+                            guard let token = TimedPracticePromptHandoff.shared.offerChallengeToken(
+                                exactPrompt: challenge.prompt,
+                                challengeID: challenge.id
                             ) else { return }
                             challenges.armSubmission(for: challenge)
                             speakOffNavPath.append(

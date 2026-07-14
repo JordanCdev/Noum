@@ -939,6 +939,8 @@ struct SetChallengeReactionRequest: Codable, Equatable, Sendable {
 /// Numeric seconds are explicit at the callable boundary; Foundation `Date`
 /// encoding is intentionally not relied on across Firebase SDK versions.
 struct AsyncChallengeAuthorityEnvelope: Codable, Equatable, Sendable {
+    static let maximumPromptUTF16CodeUnits = 500
+
     let id: String
     let prompt: String
     let createdAt: Double
@@ -963,6 +965,8 @@ struct AsyncChallengeAuthorityEnvelope: Codable, Equatable, Sendable {
               let creatorID = UUID(uuidString: creatorID),
               let opponentID = UUID(uuidString: opponentID),
               !prompt.isEmpty,
+              prompt == prompt.trimmingCharacters(in: .whitespacesAndNewlines),
+              prompt.utf16.count <= Self.maximumPromptUTF16CodeUnits,
               !creatorName.isEmpty,
               !creatorAccountID.isEmpty,
               !opponentName.isEmpty,
