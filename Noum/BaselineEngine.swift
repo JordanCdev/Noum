@@ -971,6 +971,46 @@ enum SessionQualifier {
     }
 }
 
+// MARK: - Filler Burden
+
+/// A duration-normalized projection for deciding when filler evidence should
+/// influence practice selection. Detection stays with `FillerWordDetector`;
+/// this type only interprets its already-filtered count.
+struct FillerBurden {
+    enum Threshold: Double {
+        case elevated = 2
+        case primaryFocus = 3
+        case urgent = 5
+        case severe = 8
+
+        fileprivate var minimumCount: Int {
+            self == .severe ? 3 : 2
+        }
+    }
+
+    let fillerCount: Int
+    let duration: TimeInterval
+
+    var ratePerMinute: Double? {
+        guard fillerCount >= 0,
+              duration.isFinite,
+              duration >= SessionQualifier.minimumDuration else { return nil }
+        let rate = Double(fillerCount) / (duration / 60.0)
+        return rate.isFinite ? rate : nil
+    }
+
+    func meets(_ threshold: Threshold) -> Bool {
+        guard fillerCount >= threshold.minimumCount,
+              let ratePerMinute else { return false }
+        return ratePerMinute >= threshold.rawValue
+    }
+
+    func isAtMost(_ threshold: Threshold) -> Bool {
+        guard let ratePerMinute else { return false }
+        return ratePerMinute <= threshold.rawValue
+    }
+}
+
 // MARK: - Baseline Engine
 
 /// Computes and maintains the communication baseline from session history.

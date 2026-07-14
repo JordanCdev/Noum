@@ -51,7 +51,7 @@ struct ReleaseIdentityPrivacyTests {
     @Test("One versioned manifest drives production processor disclosure")
     func processorManifestIsProductionScoped() {
         #expect(AISettingsManager.processorManifestVersion == CloudProcessorManifest.version)
-        #expect(CloudProcessorManifest.version == 5)
+        #expect(CloudProcessorManifest.version == 6)
         #expect(Set(CloudProcessorManifest.processors.map(\.id)) == Set([
             "deepgram",
             "apple-speech",

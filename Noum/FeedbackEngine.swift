@@ -580,7 +580,7 @@ enum VerdictEngine {
         for trait in traits {
             let hint = trait.evaluationHint.lowercased()
             if hint.contains("low hedging") || hint.contains("minimal filler") {
-                if fillerCount >= 5 {
+                if FillerBurden(fillerCount: fillerCount, duration: duration).meets(.urgent) {
                     mismatches.append("Your \(goal.lowercased()) goal needs fewer fillers — they undercut \(trait.name.lowercased()).")
                     break
                 }
@@ -736,9 +736,10 @@ enum VerdictEngine {
     ) -> String {
         switch skillArea {
         case .fillerReduction:
-            if fillerCount >= 8 {
+            let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
+            if fillerBurden.meets(.severe) {
                 return "You used \(fillerCount) filler words — they clustered at transition points before the next idea was ready."
-            } else if fillerCount >= 5 {
+            } else if fillerBurden.meets(.urgent) {
                 return "You used \(fillerCount) filler words this session. Most speakers can cut these significantly with focused practice."
             } else {
                 return "You had \(fillerCount) filler words — they appeared between ideas and made transitions less clean."
@@ -824,6 +825,7 @@ enum DrillEngineV2 {
     ) -> DrillRecommendationV2 {
         let wpm = duration > 0 ? Double(wordCount) / duration * 60 : 0
         let isMinimal = wordCount < 5 || duration < 5
+        let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
 
         // Build category ratings dict
         let categoryRatings = Dictionary(uniqueKeysWithValues: feedbackCategories.map { ($0.dimension, $0.rating) })
@@ -851,7 +853,7 @@ enum DrillEngineV2 {
             focusArea = .answerDevelopment
         } else {
             focusArea = determineFocus(
-                fillerCount: fillerCount,
+                fillerBurden: fillerBurden,
                 wpm: wpm,
                 duration: duration,
                 score: score,
@@ -911,7 +913,7 @@ enum DrillEngineV2 {
     // MARK: - Focus Determination
 
     private static func determineFocus(
-        fillerCount: Int,
+        fillerBurden: FillerBurden,
         wpm: Double,
         duration: TimeInterval,
         score: Int,
@@ -923,7 +925,7 @@ enum DrillEngineV2 {
     ) -> SkillArea {
         // First: check if current session has a clear, urgent weakness
         let urgentFocus = urgentSessionFocus(
-            fillerCount: fillerCount,
+            fillerBurden: fillerBurden,
             wpm: wpm,
             duration: duration,
             categoryRatings: categoryRatings
@@ -946,7 +948,7 @@ enum DrillEngineV2 {
             // If session has an urgent weakness but trend says something else,
             // use session weakness if it's severe, otherwise trust trends
             if let urgent = urgentFocus {
-                if fillerCount >= 8 || duration < 10 || wpm > 180 {
+                if fillerBurden.meets(.severe) || duration < 10 || wpm > 180 {
                     return urgent  // Severe session issue overrides trend
                 }
                 return trendFocus  // Moderate issue — trust the trend analysis
@@ -957,7 +959,7 @@ enum DrillEngineV2 {
 
         // No trend data — fall back to session-only analysis
         return urgentFocus ?? sessionOnlyFocus(
-            fillerCount: fillerCount,
+            fillerBurden: fillerBurden,
             wpm: wpm,
             duration: duration,
             score: score,
@@ -968,12 +970,12 @@ enum DrillEngineV2 {
 
     /// Check for urgent single-session weaknesses.
     private static func urgentSessionFocus(
-        fillerCount: Int,
+        fillerBurden: FillerBurden,
         wpm: Double,
         duration: TimeInterval,
         categoryRatings: [String: String]
     ) -> SkillArea? {
-        if fillerCount >= 5 { return .fillerReduction }
+        if fillerBurden.meets(.urgent) { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
         if wpm > ConversationalPaceBand.maxWPM { return .paceControl }
         if wpm > 0 && wpm < ConversationalPaceBand.minWPM && duration >= 15 { return .paceControl }
@@ -981,23 +983,23 @@ enum DrillEngineV2 {
         if categoryRatings["Structure"] == "Could improve" { return .structure }
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
         if categoryRatings["Depth"] == "Could improve" { return .answerDevelopment }
-        if fillerCount >= 2 { return .fillerReduction }
+        if fillerBurden.meets(.elevated) { return .fillerReduction }
         return nil
     }
 
     /// Session-only focus when no trend data exists (new users).
     private static func sessionOnlyFocus(
-        fillerCount: Int,
+        fillerBurden: FillerBurden,
         wpm: Double,
         duration: TimeInterval,
         score: Int,
         categoryRatings: [String: String],
         styleGoal: SpeakingStyleGoal? = nil
     ) -> SkillArea {
-        if fillerCount >= 5 { return .fillerReduction }
+        if fillerBurden.meets(.urgent) { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
         if wpm > ConversationalPaceBand.maxWPM { return .paceControl }
-        if fillerCount >= 2 { return .fillerReduction }
+        if fillerBurden.meets(.elevated) { return .fillerReduction }
         if categoryRatings["Opening"] == "Could improve" { return .openingStrength }
         if categoryRatings["Structure"] == "Could improve" { return .structure }
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }

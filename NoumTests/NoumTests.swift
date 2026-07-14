@@ -1192,6 +1192,110 @@ struct NextActionEngineTests {
         #expect(result.reasoning.contains("clear constraint"), "Severe session should name the measured constraint calmly. Got: \(result.reasoning)")
     }
 
+    @Test func longLowRateFillerCountDoesNotTriggerSevereAction() {
+        let input = NextActionInput(
+            fillerCount: 10, duration: 600, wordCount: 1_300, wpm: 130, score: 4,
+            categoryRatings: ["Structure": "Could improve"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        let result = NextActionEngine.recommend(input: input)
+
+        #expect(!result.reasoning.contains("clear constraint"))
+        guard case .drill(let drill) = result.primary else {
+            Issue.record("Expected the non-severe session fallback drill")
+            return
+        }
+        #expect(drill.variation.skillArea != .fillerReduction)
+    }
+
+    @Test func shortQualifyingHighRateTriggersSevereFillerAction() {
+        let input = NextActionInput(
+            fillerCount: 3, duration: 20, wordCount: 47, wpm: 141, score: 5,
+            categoryRatings: ["Structure": "Could improve"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        let result = NextActionEngine.recommend(input: input)
+
+        #expect(result.reasoning.contains("clear constraint"))
+        guard case .drill(let drill) = result.primary else {
+            Issue.record("Expected a filler drill for severe rate evidence")
+            return
+        }
+        #expect(drill.variation.skillArea == .fillerReduction)
+    }
+
+    @Test func severeFillerActionRequiresCountAndDurationEvidenceFloors() {
+        let inputs = [
+            NextActionInput(
+                fillerCount: 2, duration: 15, wordCount: 35, wpm: 140, score: 5,
+                categoryRatings: ["Structure": "Could improve"],
+                mode: .timed, pressureLevel: .standard,
+                baseline: .empty, pressureProfile: .empty,
+                trends: [], drillHistory: [],
+                sessionCount: 1, streakDays: 1, styleGoal: nil
+            ),
+            NextActionInput(
+                fillerCount: 3, duration: 14, wordCount: 33, wpm: 141, score: 5,
+                categoryRatings: ["Structure": "Could improve"],
+                mode: .timed, pressureLevel: .standard,
+                baseline: .empty, pressureProfile: .empty,
+                trends: [], drillHistory: [],
+                sessionCount: 1, streakDays: 1, styleGoal: nil
+            ),
+        ]
+
+        for input in inputs {
+            let result = NextActionEngine.recommend(input: input)
+            #expect(!result.reasoning.contains("clear constraint"))
+        }
+    }
+
+    @Test func severeFillerEvidenceKeepsPriorityOverSeverePace() {
+        let input = NextActionInput(
+            fillerCount: 3, duration: 20, wordCount: 70, wpm: 210, score: 4,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        let result = NextActionEngine.recommend(input: input)
+
+        guard case .drill(let drill) = result.primary else {
+            Issue.record("Expected a severe-issue drill")
+            return
+        }
+        #expect(drill.variation.skillArea == .fillerReduction)
+    }
+
+    @Test func belowCountFillerEvidenceDoesNotMaskSeverePace() {
+        let input = NextActionInput(
+            fillerCount: 2, duration: 15, wordCount: 55, wpm: 220, score: 4,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        let result = NextActionEngine.recommend(input: input)
+
+        guard case .drill(let drill) = result.primary else {
+            Issue.record("Expected a severe pace drill")
+            return
+        }
+        #expect(drill.variation.skillArea == .paceControl)
+    }
+
     @Test func persistentBlockerGetsConfidenceRebuilding() {
         let input = NextActionInput(
             fillerCount: 4, duration: 35, wordCount: 90, wpm: 154, score: 5,
@@ -1519,7 +1623,7 @@ struct NextActionEngineTests {
 
     /// Stable + strong (Priority 7) input. `.empty` pressure profile makes P3's
     /// resilience nil (P3 skips); empty trends skip P4/P5/P6; score 8 + the
-    /// suddenDeath stretch branch (drillHistory empty, fillerCount ≤ 2) reach P7.
+    /// suddenDeath stretch branch (drillHistory empty, filler rate ≤ 2/min) reach P7.
     private func stretchInput(mode: PracticeMode, outcomes: [RecommendationOutcome]) -> NextActionInput {
         NextActionInput(
             fillerCount: 0, duration: 50, wordCount: 140, wpm: 135, score: 8,
@@ -1572,7 +1676,7 @@ struct NextActionEngineTests {
     }
 
     @Test func hardSignalsWinRegardlessOfReplaceVerdict() {
-        // P1 severe (fillerCount ≥ 10) must return its corrective drill even with a
+        // P1 severe (qualifying filler burden ≥ 8/min) must return its corrective drill even with a
         // confident-replace ledger spanning every mode — the tie-breaker never
         // touches P1/P2/P4/P5.
         let everyMode = replaceLedger(for: [.timed, .suddenDeath, .imConversation, .ahCounter])
@@ -3002,14 +3106,54 @@ struct FillerRateComparisonTests {
     }
 }
 
+struct FillerBurdenTests {
+
+    @Test func qualifyingEvidenceComputesFillersPerMinute() {
+        let burden = FillerBurden(fillerCount: 3, duration: 20)
+        #expect(burden.ratePerMinute == 9)
+        #expect(burden.meets(.severe))
+        #expect(FillerBurden(fillerCount: 3, duration: 22.5).meets(.severe))
+    }
+
+    @Test func longLowDensityRepDoesNotMeetAnyPrescriptionThreshold() {
+        let burden = FillerBurden(fillerCount: 10, duration: 600)
+        #expect(burden.ratePerMinute == 1)
+        #expect(!burden.meets(.elevated))
+        #expect(!burden.meets(.severe))
+        #expect(burden.isAtMost(.elevated))
+    }
+
+    @Test func evidenceFailsClosedBelowDurationAndCountFloors() {
+        #expect(FillerBurden(fillerCount: 3, duration: 14).ratePerMinute == nil)
+        #expect(!FillerBurden(fillerCount: 2, duration: 15).meets(.severe))
+        #expect(!FillerBurden(fillerCount: -1, duration: 60).meets(.elevated))
+        #expect(!FillerBurden(fillerCount: 3, duration: .infinity).meets(.severe))
+        #expect(!FillerBurden(fillerCount: 0, duration: 5).isAtMost(.elevated))
+    }
+
+    @Test func thresholdsTranslatePerMinuteBoundaries() {
+        let burden = FillerBurden(fillerCount: 2, duration: 24)
+        #expect(burden.meets(.elevated))
+        #expect(burden.meets(.primaryFocus))
+        #expect(burden.meets(.urgent))
+        #expect(!burden.meets(.severe))
+    }
+}
+
 struct DrillTargetAreaTests {
 
+    private func emptyTrendStore() -> SkillTrendStore {
+        let defaults = UserDefaults(suiteName: "DrillTargetAreaTests.\(UUID().uuidString)")!
+        return SkillTrendStore(defaults: defaults, accountIDProvider: { "filler-rate-test" })
+    }
+
     @Test func selectDrillRespectsTargetArea() {
-        // When NextActionEngine passes .openingStrength, the drill should be for openings
+        // An explicit target remains authoritative even when filler evidence is severe.
         let rec = DrillEngineV2.recommend(
-            fillerCount: 0, duration: 50, wordCount: 130, score: 7,
+            fillerCount: 12, duration: 30, wordCount: 80, score: 3,
             feedbackCategories: [("Opening", "Good"), ("Structure", "Good")],
-            targetArea: .openingStrength
+            targetArea: .openingStrength,
+            trendStore: emptyTrendStore()
         )
         #expect(rec.variation.skillArea == .openingStrength,
             "Drill should target opening strength when requested. Got: \(rec.variation.skillArea)")
@@ -3024,6 +3168,37 @@ struct DrillTargetAreaTests {
         // With 12 fillers in 30 seconds, filler reduction should be the focus
         #expect(rec.variation.skillArea == .fillerReduction,
             "High filler count should auto-target filler reduction. Got: \(rec.variation.skillArea)")
+    }
+
+    @Test func longLowRateSpeechDoesNotAutoSelectFillerReduction() {
+        let rec = DrillEngineV2.recommend(
+            fillerCount: 10, duration: 600, wordCount: 1_300, score: 4,
+            feedbackCategories: [("Structure", "Could improve")],
+            trendStore: emptyTrendStore()
+        )
+
+        #expect(rec.variation.skillArea != .fillerReduction)
+    }
+
+    @Test func shortQualifyingHighRateSpeechSelectsFillerReduction() {
+        let rec = DrillEngineV2.recommend(
+            fillerCount: 3, duration: 20, wordCount: 47, score: 5,
+            feedbackCategories: [("Structure", "Could improve")],
+            trendStore: emptyTrendStore()
+        )
+
+        #expect(rec.variation.skillArea == .fillerReduction)
+    }
+
+    @Test func explicitFillerTargetRemainsExactForLowRateSpeech() {
+        let rec = DrillEngineV2.recommend(
+            fillerCount: 10, duration: 600, wordCount: 1_300, score: 4,
+            feedbackCategories: [("Structure", "Could improve")],
+            targetArea: .fillerReduction,
+            trendStore: emptyTrendStore()
+        )
+
+        #expect(rec.variation.skillArea == .fillerReduction)
     }
 }
 
@@ -7854,6 +8029,21 @@ struct LookingAheadCardVoiceAlignmentTests {
 /// itself* does too.
 struct GoalAwareDrillSelectionTests {
 
+    private func snapshot(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wpm: Double = 130
+    ) -> SkillSnapshot {
+        SkillSnapshot(
+            sessionId: UUID(),
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: Int(wpm * duration / 60),
+            wpm: wpm,
+            score: 6
+        )
+    }
+
     private func warmTrend(level: SkillLevel, direction: TrendDirection = .stable) -> SkillTrend {
         SkillTrend(skillArea: .paceControl,            // warm-aligned
                    direction: direction, confidence: .medium,
@@ -8005,6 +8195,46 @@ struct GoalAwareDrillSelectionTests {
             #expect(pick == expected,
                     "\(voice) should map to \(expected) for day-one users")
         }
+    }
+
+    @Test func sessionFallbackUsesDurationNormalizedFillerEvidence() {
+        let longLowRate = TrendAnalyzer.primaryFocus(
+            trends: [],
+            currentSessionSnapshot: snapshot(fillerCount: 10, duration: 600),
+            recentDrills: []
+        )
+        let shortHighRate = TrendAnalyzer.primaryFocus(
+            trends: [],
+            currentSessionSnapshot: snapshot(fillerCount: 3, duration: 20),
+            recentDrills: []
+        )
+
+        #expect(longLowRate == .structure)
+        #expect(shortHighRate == .fillerReduction)
+    }
+
+    @Test func fillerTrendUsesRatesAndSkipsSubfloorSamples() {
+        let longLowRate = (0..<6).map { _ in
+            snapshot(fillerCount: 10, duration: 600)
+        }
+        let shortHighRate = (0..<6).map { _ in
+            snapshot(fillerCount: 3, duration: 20)
+        }
+        let subfloor = (0..<6).map { _ in
+            snapshot(fillerCount: 3, duration: 14)
+        }
+
+        let lowTrend = TrendAnalyzer.analyze(snapshots: longLowRate)
+            .first(where: { $0.skillArea == .fillerReduction })
+        let highTrend = TrendAnalyzer.analyze(snapshots: shortHighRate)
+            .first(where: { $0.skillArea == .fillerReduction })
+        let thinTrend = TrendAnalyzer.analyze(snapshots: subfloor)
+            .first(where: { $0.skillArea == .fillerReduction })
+
+        #expect(lowTrend?.currentLevel == .strong)
+        #expect(highTrend?.currentLevel == .weak)
+        #expect(thinTrend?.windowSize == 0)
+        #expect(thinTrend?.confidence == .low)
     }
 
     @Test func noGoalFallbackStaysStructureForBackCompat() {

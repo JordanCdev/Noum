@@ -503,7 +503,11 @@ enum TrendAnalyzer {
 
         // Final fallback: use current session metrics
         if let snapshot = currentSessionSnapshot {
-            if snapshot.fillerCount >= 3 { return .fillerReduction }
+            let fillerBurden = FillerBurden(
+                fillerCount: snapshot.fillerCount,
+                duration: snapshot.duration
+            )
+            if fillerBurden.meets(.primaryFocus) { return .fillerReduction }
             if snapshot.wpm > ConversationalPaceBand.maxWPM { return .paceControl }
             if snapshot.duration < 15 { return .answerDevelopment }
         }
@@ -554,11 +558,14 @@ enum TrendAnalyzer {
 
     private static func analyzeFillers(_ snapshots: [SkillSnapshot]) -> SkillTrend {
         let window = Array(snapshots.prefix(8))
-        let confidence = trendConfidence(window.count)
+        let rates = window.compactMap {
+            FillerBurden(fillerCount: $0.fillerCount, duration: $0.duration).ratePerMinute
+        }
+        let confidence = trendConfidence(rates.count)
 
-        let current = window.first?.fillerCount ?? 0
-        let recentAvg = window.prefix(3).map(\.fillerCount).average
-        let olderAvg = window.dropFirst(3).map(\.fillerCount).average
+        let current = rates.first ?? 0
+        let recentAvg = rates.prefix(3).average
+        let olderAvg = rates.dropFirst(3).average
 
         let level: SkillLevel
         if recentAvg <= 1 { level = .strong }
@@ -569,13 +576,13 @@ enum TrendAnalyzer {
         let direction: TrendDirection
         let delta: String?
 
-        if window.count < 3 {
+        if rates.count < 3 {
             direction = current >= 5 ? .stable : .stable
             delta = nil
         } else if olderAvg > 0 && recentAvg < olderAvg * 0.7 {
-            let diff = Int(olderAvg - recentAvg)
+            let diff = max(1, Int((olderAvg - recentAvg).rounded()))
             direction = .improving
-            delta = "Your filler count dropped by ~\(diff) compared to earlier sessions."
+            delta = "Your filler rate dropped by ~\(diff)/min compared to earlier sessions."
         } else if olderAvg > 0 && recentAvg > olderAvg * 1.3 {
             direction = .declining
             delta = nil
@@ -591,7 +598,7 @@ enum TrendAnalyzer {
             skillArea: .fillerReduction,
             direction: direction,
             confidence: confidence,
-            windowSize: window.count,
+            windowSize: rates.count,
             currentLevel: level,
             recentDelta: delta
         )

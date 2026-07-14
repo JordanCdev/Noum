@@ -399,7 +399,7 @@ struct NextActionInput {
 /// The unified decision engine. After every session, it produces ONE strategic recommendation.
 ///
 /// Decision priority (highest → lowest):
-/// 1. Severe session issue (fillers ≥ 10, duration < 8s, WPM > 200)
+/// 1. Severe session issue (qualifying filler burden ≥ 8/min, duration < 8s, WPM > 200)
 /// 2. Persistent blocker (same issue for 10+ sessions)
 /// 3. Pressure gap (strong casually but untested under pressure)
 /// 4. Declining trend with high confidence
@@ -609,7 +609,11 @@ enum NextActionEngine {
 
     /// Priority 1: Severe session issues that need immediate correction.
     private static func checkSevereIssue(input: NextActionInput) -> ActionRecommendation? {
-        if input.fillerCount >= 10 {
+        let fillerBurden = FillerBurden(
+            fillerCount: input.fillerCount,
+            duration: input.duration
+        )
+        if fillerBurden.meets(.severe) {
             if let drill = selectDrill(for: .fillerReduction, input: input) {
                 return .drill(drill)
             }
@@ -785,10 +789,14 @@ enum NextActionEngine {
     /// leaving today's branches byte-for-byte unchanged.
     private static func stretchChallenge(input: NextActionInput) -> ActionRecommendation? {
         let imSwitch: ActionRecommendation = .practiceMode(.imConversation, reason: "Try a conversation rep to test a different communication demand.")
+        let fillerBurden = FillerBurden(
+            fillerCount: input.fillerCount,
+            duration: input.duration
+        )
 
         // If they haven't tried sudden death much, suggest it
         let recentSuddenDeath = input.drillHistory.filter { $0.skillArea == .fillerReduction }.count
-        if recentSuddenDeath < 3 && input.fillerCount <= 2 {
+        if recentSuddenDeath < 3 && fillerBurden.isAtMost(.elevated) {
             if confidentReplace(forMode: .suddenDeath, input: input) {
                 // Sudden death is the candidate but the ledger says replace it →
                 // switch modality instead of repeating a not-moving pressure mode.
