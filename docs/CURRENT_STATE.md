@@ -1,5 +1,45 @@
 # Noum — Current state
 
+## 2026-07-14 — Prescribed Timed reps preserve exact recommendation demand
+
+Implementation commits `d1d25ca6` and `77b1361a` close the verified gap between
+the Timed difficulty shown by a recommendation and the demand used to judge its
+outcome. The existing Home/Train projections and blueprint router now carry an
+optional `PracticeSessionDemand` into the existing Timed destination. The
+prescription is instance-local: it is visible in Train and Timed accessibility,
+is captured when the rep starts, and never overwrites the user's saved practice
+setting. Manual, Adjust, Practice Again, free-form Ask, and capability-fallback
+routes remain deliberately mode-only.
+
+The existing `RecommendationLearningStore` now records an adherence schema plus
+prescribed and executed demand. A current outcome counts as followed only when
+explicit acceptance, mode, and exact Timed difficulty agree. Legacy mode-only
+rows remain readable but fail closed for coaching response, case status, and KPI
+consumers. Reconciliation prefers current exact-adherence evidence over legacy
+rows, and the Firebase callable validator strictly bounds the new nested demand
+fields without creating a parallel recommendation owner.
+
+At final source boundary `77b1361a`, Functions lint and all 69 Node tests pass.
+An unsigned optimized Release simulator build from the same detached clean
+boundary succeeds.
+The implementation-focused simulator result passed 89/89 tests with no failures
+or skips, and a serial iPhone 17 UI result passed the seeded Train recommendation
+through the real Timed prompt route while visibly asserting `Medium · 30 sec`.
+The complete scheme attempt at `d1d25ca6` did **not** pass: 4,032 tests passed
+and 18 failed, primarily across parallel account-bootstrap UI flows, with one
+simulator-clone disappearance and one isolated unit assertion. It is retained
+as failed evidence and does not replace the last complete clean regression at
+`47cbab5f`.
+
+The light five-tab sweep was blocked by the existing account-bootstrap recovery
+surface. A separate seeded Train capture in
+`.screenshots/2026-07-14_prescribed-timed-demand/` visually verifies the new
+demand capsule but not a normal-account end-to-end route. The current readiness
+rerun remains NO-GO at 18/100, with local target shape 85/100, maximum allowed
+20/100, one of five external sidecars present, and zero of five passing. No
+live-provider, professional-calibration, longitudinal-user, physical-TestFlight,
+security-incident, or launch-operations evidence was collected.
+
 ## 2026-07-14 — Current reps preserve exact executed practice demand
 
 Implementation commit `ea7a3845` closes the verified exact-demand history gap
@@ -36,10 +76,9 @@ toolchain, and the callable/rules remain undeployed without runtime IAM, App
 Check, active-client, minimum-client, or mixed-build device evidence.
 
 The light screenshot sweep was blocked by the account-bootstrap recovery
-surface, so it does not visually prove the changed share-card label. Home can
-display a suggested Timed difficulty, but its current recommendation route and
-acceptance attribution still carry only the mode; exact prescribed-difficulty
-adherence therefore remains incomplete. No live-provider,
+surface, so it does not visually prove the changed share-card label. That
+section's mode-only prescribed-demand gap is superseded by `d1d25ca6` and
+`77b1361a`; the external evidence limitations remain unchanged. No live-provider,
 professional-calibration, longitudinal-user, physical-TestFlight,
 security-incident, or launch-operations evidence was collected. Production
 readiness remains NO-GO.
