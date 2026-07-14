@@ -580,7 +580,7 @@ enum SpeakingOutcome: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum SpeakingStyleGoal: String, CaseIterable, Codable, Identifiable {
+enum SpeakingStyleGoal: String, CaseIterable, Codable, Identifiable, Sendable {
     case authoritative
     case warm
     case concise
@@ -8841,7 +8841,7 @@ final class PracticeSessionStore: ObservableObject {
 // SpeakingRankView (its last co-consumer) is removed. Zero references
 // verified by grep at deletion time.
 #if canImport(SwiftUI)
-struct RecommendationExposure: Codable, Equatable {
+struct RecommendationExposure: Codable, Equatable, Sendable {
     let fingerprint: String
     let title: String
     let focus: String
@@ -8860,14 +8860,14 @@ struct RecommendationExposure: Codable, Equatable {
     var observabilityID: UUID? = nil
 }
 
-enum GoalFollowUpResult: String, Codable, Equatable {
+enum GoalFollowUpResult: String, Codable, Equatable, Sendable {
     case held
     case earlyImprovement
     case mixed
     case needsMoreEvidence
 }
 
-struct RecommendationOutcome: Codable, Equatable, Identifiable {
+struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let fingerprint: String
     let title: String
@@ -9913,6 +9913,34 @@ final class RecommendationLearningStore: ObservableObject {
 
     private let accountKey = "NoumAccountID"
     private let providerKey = "NoumAccountProvider"
+    private var stateRevisions: [String: Int] = [:]
+    private var scheduledSyncTask: Task<Void, Never>?
+
+    var stateRevision: Int {
+        stateRevisions[currentRevisionScope, default: 0]
+    }
+
+    var hasUnconfirmedDestructiveReset: Bool {
+        unconfirmedDestructiveResetAt != nil
+    }
+
+    var unconfirmedDestructiveResetAt: Date? {
+        let key = Self.destructiveResetKey(for: KeychainHelper.load(key: accountKey))
+        guard let seconds = UserDefaults.standard.object(forKey: key) as? NSNumber else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: seconds.doubleValue)
+    }
+
+    var hasUnconfirmedSync: Bool {
+        UserDefaults.standard.object(
+            forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
+        ) != nil
+    }
+
+    var hasStateToSync: Bool {
+        pendingExposure != nil || !outcomes.isEmpty
+    }
 
     private init() {
         // Start with empty state; reloadForCurrentAccount() is called
@@ -9926,13 +9954,168 @@ final class RecommendationLearningStore: ObservableObject {
         let accountID = KeychainHelper.load(key: accountKey)
         pendingExposure = Self.loadPending(forKey: Self.pendingKey(for: accountID))
         outcomes = Self.loadOutcomes(forKey: Self.outcomesKey(for: accountID))
+        advanceStateRevision()
     }
 
-    func replaceFromRemote(pendingExposure: RecommendationExposure?, outcomes: [RecommendationOutcome]) {
+    @discardableResult
+    func replaceFromRemote(
+        pendingExposure: RecommendationExposure?,
+        outcomes: [RecommendationOutcome],
+        ifUnchangedSince expectedRevision: Int? = nil
+    ) -> Bool {
+        guard Self.shouldReplaceFromRemote(
+            expectedRevision: expectedRevision,
+            currentRevision: stateRevision
+        ) else { return false }
         self.pendingExposure = pendingExposure
         self.outcomes = outcomes.sorted { $0.completedAt > $1.completedAt }
+        advanceStateRevision()
         persistOutcomes()
         persistPending()
+        return true
+    }
+
+    nonisolated static func shouldReplaceFromRemote(
+        expectedRevision: Int?,
+        currentRevision: Int
+    ) -> Bool {
+        expectedRevision == nil || expectedRevision == currentRevision
+    }
+
+    @discardableResult
+    func reconcileRemoteState(
+        pendingExposure remotePendingExposure: RecommendationExposure?,
+        outcomes remoteOutcomes: [RecommendationOutcome],
+        changedSince expectedRevision: Int,
+        force: Bool = false
+    ) -> Bool {
+        guard force || stateRevision != expectedRevision else { return false }
+        // A reset is an intentional deletion, not an empty state that should
+        // be additively repaired. Keep the local tombstone and let the caller
+        // sync it after the in-flight hydration finishes.
+        if hasUnconfirmedDestructiveReset {
+            return true
+        }
+        let reconciledOutcomes = Self.mergedOutcomes(
+            local: outcomes,
+            remote: remoteOutcomes
+        )
+        pendingExposure = Self.mergedPendingExposure(
+            local: pendingExposure,
+            remote: remotePendingExposure,
+            localOutcomes: reconciledOutcomes
+        )
+        outcomes = reconciledOutcomes
+        advanceStateRevision(markSyncUnconfirmed: true)
+        persistOutcomes()
+        persistPending()
+        return true
+    }
+
+    nonisolated static func mergedOutcomes(
+        local: [RecommendationOutcome],
+        remote: [RecommendationOutcome]
+    ) -> [RecommendationOutcome] {
+        var merged: [UUID: RecommendationOutcome] = [:]
+        for outcome in local + remote {
+            if let existing = merged[outcome.id],
+               evidenceDepth(of: existing) >= evidenceDepth(of: outcome) {
+                continue
+            } else {
+                merged[outcome.id] = outcome
+            }
+        }
+        return Array(merged.values)
+            .sorted { $0.completedAt > $1.completedAt }
+            .prefix(40)
+            .map { $0 }
+    }
+
+    nonisolated static func mergedPendingExposure(
+        local: RecommendationExposure?,
+        remote: RecommendationExposure?,
+        localOutcomes: [RecommendationOutcome]
+    ) -> RecommendationExposure? {
+        func unconsumed(_ exposure: RecommendationExposure?) -> RecommendationExposure? {
+            guard let exposure else { return nil }
+            let wasConsumed = localOutcomes.contains {
+                $0.fingerprint == exposure.fingerprint
+                    && $0.completedAt >= exposure.shownAt
+            }
+            return wasConsumed ? nil : exposure
+        }
+
+        switch (unconsumed(local), unconsumed(remote)) {
+        case (nil, nil):
+            return nil
+        case (let local?, nil):
+            return local
+        case (nil, let remote?):
+            return remote
+        case (let local?, let remote?):
+            guard local.fingerprint == remote.fingerprint else {
+                return local.shownAt >= remote.shownAt ? local : remote
+            }
+            var newest = local.shownAt >= remote.shownAt ? local : remote
+            let hasMatchingObservabilityID = local.observabilityID.flatMap { localID in
+                remote.observabilityID.map { $0 == localID }
+            } ?? false
+            if hasMatchingObservabilityID || local.shownAt == remote.shownAt {
+                newest.tappedAt = [local.tappedAt, remote.tappedAt]
+                    .compactMap { $0 }
+                    .max()
+            }
+            return newest
+        }
+    }
+
+    nonisolated private static func evidenceDepth(
+        of outcome: RecommendationOutcome
+    ) -> Int {
+        [
+            outcome.hasComparableScore.map { _ in 1 },
+            outcome.fillerRateDelta.map { _ in 1 },
+            outcome.comparisonSessionCount.map { _ in 1 },
+            outcome.comparisonSchemaVersion.map { _ in 1 },
+            outcome.wordsPerMinute.map { _ in 1 },
+            outcome.paceDelta.map { _ in 1 },
+            outcome.goal.map { _ in 1 },
+            outcome.targetDimensionID.map { _ in 1 },
+            outcome.sourceSessionID.map { _ in 1 },
+            outcome.goalFollowUpResult.map { _ in 1 }
+        ].compactMap { $0 }.count
+    }
+
+    func syncCurrentState() {
+        UserDefaults.standard.set(
+            Date().timeIntervalSince1970,
+            forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
+        )
+        syncIfPossible()
+    }
+
+    func waitForScheduledSyncs() async {
+        await scheduledSyncTask?.value
+    }
+
+    func confirmDestructiveReset() {
+        UserDefaults.standard.removeObject(
+            forKey: Self.destructiveResetKey(for: KeychainHelper.load(key: accountKey))
+        )
+    }
+
+    func confirmCurrentStateSync(
+        accountID: String? = nil,
+        revision expectedRevision: Int
+    ) {
+        if let accountID,
+           KeychainHelper.load(key: accountKey) != accountID {
+            return
+        }
+        guard stateRevision == expectedRevision else { return }
+        UserDefaults.standard.removeObject(
+            forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
+        )
     }
 
     func recordShown(
@@ -9962,6 +10145,7 @@ final class RecommendationLearningStore: ObservableObject {
             sourceSessionID: sourceSessionID,
             observabilityID: observabilityID
         )
+        advanceStateRevision(markSyncUnconfirmed: true)
         persistPending()
         syncIfPossible()
         FlowEventLog.shared.recordPrescriptionShown(correlationId: observabilityID)
@@ -9973,6 +10157,7 @@ final class RecommendationLearningStore: ObservableObject {
         guard pendingExposure.tappedAt == nil else { return }
         pendingExposure.tappedAt = Date()
         self.pendingExposure = pendingExposure
+        advanceStateRevision(markSyncUnconfirmed: true)
         persistPending()
         syncIfPossible()
         if let observabilityID = pendingExposure.observabilityID {
@@ -10037,6 +10222,7 @@ final class RecommendationLearningStore: ObservableObject {
         outcomes.insert(outcome, at: 0)
         outcomes = Array(outcomes.prefix(40))
         self.pendingExposure = nil
+        advanceStateRevision(markSyncUnconfirmed: true)
         persistOutcomes()
         persistPending()
         syncIfPossible()
@@ -10105,6 +10291,11 @@ final class RecommendationLearningStore: ObservableObject {
     func resetDiagnostics() {
         outcomes = []
         pendingExposure = nil
+        advanceStateRevision(markSyncUnconfirmed: true)
+        UserDefaults.standard.set(
+            Date().timeIntervalSince1970,
+            forKey: Self.destructiveResetKey(for: KeychainHelper.load(key: accountKey))
+        )
         persistOutcomes()
         persistPending()
         syncIfPossible()
@@ -10151,12 +10342,33 @@ final class RecommendationLearningStore: ObservableObject {
               let providerRawValue = KeychainHelper.load(key: providerKey) else { return }
         let pendingExposure = pendingExposure
         let outcomes = outcomes
-        Task {
+        let revision = stateRevision
+        let previousTask = scheduledSyncTask
+        let task = Task {
+            await previousTask?.value
             await BackendSyncManager.shared.syncRecommendationState(
                 pendingExposure: pendingExposure,
                 outcomes: outcomes,
                 accountID: accountID,
-                providerRawValue: providerRawValue
+                providerRawValue: providerRawValue,
+                revision: revision
+            )
+        }
+        scheduledSyncTask = task
+    }
+
+    private var currentRevisionScope: String {
+        guard let accountID = KeychainHelper.load(key: accountKey),
+              !accountID.isEmpty else { return "guest" }
+        return accountID
+    }
+
+    private func advanceStateRevision(markSyncUnconfirmed: Bool = false) {
+        stateRevisions[currentRevisionScope, default: 0] &+= 1
+        if markSyncUnconfirmed {
+            UserDefaults.standard.set(
+                Date().timeIntervalSince1970,
+                forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
             )
         }
     }
@@ -10173,6 +10385,20 @@ final class RecommendationLearningStore: ObservableObject {
             return "recommendation.outcomes.\(accountID)"
         }
         return "recommendation.outcomes.guest"
+    }
+
+    private static func destructiveResetKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "recommendation.resetPending.\(accountID)"
+        }
+        return "recommendation.resetPending.guest"
+    }
+
+    private static func unconfirmedSyncKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "recommendation.syncPending.\(accountID)"
+        }
+        return "recommendation.syncPending.guest"
     }
 
     private static func loadPending(forKey key: String) -> RecommendationExposure? {

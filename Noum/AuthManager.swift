@@ -881,12 +881,22 @@ class AuthManager: ObservableObject {
         }
 
         accountDeletionState = .deleting
+        let backendSync = BackendSyncManager.shared
+        var recommendationSyncSuspended = false
+        var remoteDeletionCommitted = false
         do {
+            guard await backendSync.suspendRecommendationSyncForDeletion(
+                accountID: accountID
+            ) else {
+                throw AccountDeletionError.serviceUnavailable
+            }
+            recommendationSyncSuspended = true
             if !Self.isLocalGuestAccountID(accountID) {
-                let outcome = try await BackendSyncManager.shared.deleteAccount(
+                let outcome = try await backendSync.deleteAccount(
                     accountID: accountID,
                     providerRawValue: providerRawValue
                 )
+                remoteDeletionCommitted = true
                 if outcome == .dataDeleted {
                     try await deleteFirebaseUserIfNeeded(expectedAccountID: accountID)
                 }
@@ -896,6 +906,12 @@ class AuthManager: ObservableObject {
             signOut()
             accountDeletionState = .completed
         } catch {
+            if recommendationSyncSuspended && !remoteDeletionCommitted {
+                await backendSync.resumeRecommendationSyncAfterFailedDeletion(
+                    accountID: accountID
+                )
+                RecommendationLearningStore.shared.syncCurrentState()
+            }
             let mapped = Self.mapAccountDeletionError(error)
             accountDeletionState = .failed(mapped)
             throw mapped
@@ -1073,6 +1089,55 @@ class AuthManager: ObservableObject {
             ) else { return }
 
             self.reloadAccountScopedStores()
+            let recommendationStore = RecommendationLearningStore.shared
+            let expectedRecommendationRevision = recommendationStore.stateRevision
+            let recommendationHydrationRequiresMerge =
+                recommendationStore.hasUnconfirmedDestructiveReset
+                || recommendationStore.hasUnconfirmedSync
+            var recommendationHydrationIsSafe = true
+            if fetchRemote {
+                recommendationHydrationIsSafe = await BackendSyncManager.shared.beginRecommendationHydration(
+                    accountID: accountID,
+                    hydrationToken: generation
+                )
+                // Register every mutation task before raising the lane's
+                // hydration watermark. A durable reset also re-enqueues its
+                // empty state after relaunch until remote confirmation.
+                if recommendationHydrationIsSafe,
+                   recommendationHydrationRequiresMerge {
+                    recommendationStore.syncCurrentState()
+                }
+                await recommendationStore.waitForScheduledSyncs()
+                if recommendationHydrationIsSafe {
+                    recommendationHydrationIsSafe = await BackendSyncManager.shared.fenceRecommendationSync(
+                        accountID: accountID,
+                        revision: expectedRecommendationRevision,
+                        hydrationToken: generation
+                    )
+                }
+                guard self.isCurrentHydration(
+                    generation: generation,
+                    accountID: accountID,
+                    providerRawValue: providerRawValue
+                ) else {
+                    await BackendSyncManager.shared.finishRecommendationHydration(
+                        accountID: accountID,
+                        hydrationToken: generation
+                    )
+                    return
+                }
+                if !recommendationHydrationIsSafe {
+                    // The local whole-state write did not commit. Retry the
+                    // current snapshot, but never let an older bootstrap
+                    // replace it during this hydration generation.
+                    RecommendationLearningStore.shared.syncCurrentState()
+                } else if !recommendationHydrationRequiresMerge {
+                    recommendationStore.confirmCurrentStateSync(
+                        accountID: accountID,
+                        revision: expectedRecommendationRevision
+                    )
+                }
+            }
 
             // A locally saved profile is enough to route immediately. When a
             // remote-backed account has no local profile (for example, first
@@ -1094,27 +1159,60 @@ class AuthManager: ObservableObject {
                         generation: generation,
                         accountID: accountID,
                         providerRawValue: providerRawValue
-                    ) else { return }
-                    guard case .fetched(.success(let bootstrap)) = outcome else { return }
+                    ) else {
+                        await BackendSyncManager.shared.finishRecommendationHydration(
+                            accountID: accountID,
+                            hydrationToken: generation
+                        )
+                        return
+                    }
+                    guard case .fetched(.success(let bootstrap)) = outcome else {
+                        await self.finishRecommendationHydration(
+                            accountID: accountID,
+                            generation: generation
+                        )
+                        return
+                    }
                     self.applyBackendBootstrap(
                         bootstrap,
                         accountID: accountID,
                         providerRawValue: providerRawValue,
                         generation: generation,
-                        expectedProfile: nil
+                        expectedProfile: nil,
+                        expectedRecommendationRevision: expectedRecommendationRevision,
+                        recommendationHydrationIsSafe: recommendationHydrationIsSafe,
+                        recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
+                    )
+                    await self.finishRecommendationHydration(
+                        accountID: accountID,
+                        generation: generation
                     )
                 case .retry:
                     guard self.isCurrentHydration(
                         generation: generation,
                         accountID: accountID,
                         providerRawValue: providerRawValue
-                    ) else { return }
+                    ) else {
+                        await BackendSyncManager.shared.finishRecommendationHydration(
+                            accountID: accountID,
+                            hydrationToken: generation
+                        )
+                        return
+                    }
+                    await self.finishRecommendationHydration(
+                        accountID: accountID,
+                        generation: generation
+                    )
                     self.signInError = Self.remoteProfileRecoveryMessage
                     self.initialAccountHydrationState = .failed(
                         message: Self.remoteProfileRecoveryMessage
                     )
                     return
                 case .superseded:
+                    await BackendSyncManager.shared.finishRecommendationHydration(
+                        accountID: accountID,
+                        hydrationToken: generation
+                    )
                     return
                 }
             } else if fetchRemote {
@@ -1124,7 +1222,10 @@ class AuthManager: ObservableObject {
                         accountID: accountID,
                         providerRawValue: providerRawValue,
                         generation: generation,
-                        expectedProfile: expectedProfile
+                        expectedProfile: expectedProfile,
+                        expectedRecommendationRevision: expectedRecommendationRevision,
+                        recommendationHydrationIsSafe: recommendationHydrationIsSafe,
+                        recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
                     )
                 }
             }
@@ -1459,22 +1560,52 @@ class AuthManager: ObservableObject {
         accountID: String,
         providerRawValue: String,
         generation: UUID,
-        expectedProfile: CoachingProfile?
+        expectedProfile: CoachingProfile?,
+        expectedRecommendationRevision: Int,
+        recommendationHydrationIsSafe: Bool,
+        recommendationHydrationRequiresMerge: Bool
     ) async {
-        let result = await BackendSyncManager.shared.fetchBootstrap(
+        let outcome = await boundedInitialRemoteProfileHydration(
             accountID: accountID,
             providerRawValue: providerRawValue
         )
-        guard case .success(let bootstrap) = result else {
+        guard isCurrentHydration(
+            generation: generation,
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else {
+            await BackendSyncManager.shared.finishRecommendationHydration(
+                accountID: accountID,
+                hydrationToken: generation
+            )
             return
         }
-
-        applyBackendBootstrap(
-            bootstrap,
+        if case .fetched(.success(let bootstrap)) = outcome {
+            applyBackendBootstrap(
+                bootstrap,
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                generation: generation,
+                expectedProfile: expectedProfile,
+                expectedRecommendationRevision: expectedRecommendationRevision,
+                recommendationHydrationIsSafe: recommendationHydrationIsSafe,
+                recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
+            )
+        }
+        await finishRecommendationHydration(
             accountID: accountID,
-            providerRawValue: providerRawValue,
-            generation: generation,
-            expectedProfile: expectedProfile
+            generation: generation
+        )
+    }
+
+    private func finishRecommendationHydration(
+        accountID: String,
+        generation: UUID
+    ) async {
+        await RecommendationLearningStore.shared.waitForScheduledSyncs()
+        await BackendSyncManager.shared.finishRecommendationHydration(
+            accountID: accountID,
+            hydrationToken: generation
         )
     }
 
@@ -1483,7 +1614,10 @@ class AuthManager: ObservableObject {
         accountID: String,
         providerRawValue: String,
         generation: UUID,
-        expectedProfile: CoachingProfile?
+        expectedProfile: CoachingProfile?,
+        expectedRecommendationRevision: Int,
+        recommendationHydrationIsSafe: Bool,
+        recommendationHydrationRequiresMerge: Bool
     ) {
 
         guard Self.shouldApplyHydrationBootstrap(
@@ -1512,10 +1646,61 @@ class AuthManager: ObservableObject {
         if let sessions = bootstrap.sessions {
             PracticeSessionStore.shared.replaceFromRemote(sessions)
         }
-        RecommendationLearningStore.shared.replaceFromRemote(
-            pendingExposure: bootstrap.recommendationPending,
-            outcomes: bootstrap.recommendationOutcomes ?? []
-        )
+        let recommendationStore = RecommendationLearningStore.shared
+        if recommendationHydrationIsSafe,
+           bootstrap.hasAuthoritativeRecommendationState {
+            if recommendationStore.hasUnconfirmedDestructiveReset {
+                let remoteResetIsConfirmed = recommendationStore.unconfirmedDestructiveResetAt.map {
+                    Self.recommendationResetIsConfirmed(
+                        resetAt: $0,
+                        pendingExposure: bootstrap.recommendationPending,
+                        outcomes: bootstrap.recommendationOutcomes ?? []
+                    )
+                } ?? false
+                if remoteResetIsConfirmed {
+                    recommendationStore.confirmDestructiveReset()
+                } else {
+                    // The local destructive intent remains newer than this
+                    // bootstrap. Keep the empty ledger and retry it.
+                    recommendationStore.syncCurrentState()
+                    return
+                }
+            }
+            let didReplace = !recommendationHydrationRequiresMerge
+                && recommendationStore.replaceFromRemote(
+                    pendingExposure: bootstrap.recommendationPending,
+                    outcomes: bootstrap.recommendationOutcomes ?? [],
+                    ifUnchangedSince: expectedRecommendationRevision
+                )
+            if !didReplace,
+               recommendationStore.reconcileRemoteState(
+                   pendingExposure: bootstrap.recommendationPending,
+                   outcomes: bootstrap.recommendationOutcomes ?? [],
+                   changedSince: expectedRecommendationRevision,
+                   force: recommendationHydrationRequiresMerge
+               ) {
+                // Local work happened during the fetch. Restore any unseen
+                // remote outcomes into that newer state before syncing it.
+                recommendationStore.syncCurrentState()
+            }
+        } else if recommendationHydrationIsSafe,
+                  !bootstrap.hasAuthoritativeRecommendationState,
+                  recommendationStore.hasStateToSync {
+            // A confirmed absent document can happen on a legacy install or
+            // after backend migration. Preserve and seed real local evidence;
+            // the hydration queue prevents an in-flight local write from
+            // racing ahead of this read.
+            recommendationStore.syncCurrentState()
+        }
+    }
+
+    nonisolated static func recommendationResetIsConfirmed(
+        resetAt: Date,
+        pendingExposure: RecommendationExposure?,
+        outcomes: [RecommendationOutcome]
+    ) -> Bool {
+        let pendingIsCurrent = pendingExposure.map { $0.shownAt >= resetAt } ?? true
+        return pendingIsCurrent && outcomes.allSatisfy { $0.completedAt >= resetAt }
     }
 
     nonisolated static func shouldApplyBackendBootstrap(

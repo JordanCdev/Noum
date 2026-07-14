@@ -189,6 +189,30 @@ final class AccountDataRegistryTests: XCTestCase {
         XCTAssertTrue(registry.coverage.hasParity)
     }
 
+    func testRecommendationResetTombstoneExportsAndDeletesWithItsAccount() throws {
+        let suite = "AccountDataRegistryRecommendationReset.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-a"
+        let key = "recommendation.resetPending.\(accountID)"
+        let syncKey = "recommendation.syncPending.\(accountID)"
+        defaults.set(1_720_000_000.0, forKey: key)
+        defaults.set(1_720_000_001.0, forKey: syncKey)
+        let registry = AccountDataRegistry.production(defaults: defaults)
+
+        let entries = try registry.exportEntries(for: accountID)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try data(in: entries, path: "data/recommendation-learning.json")
+        ) as? [String: Any])
+        let records = try XCTUnwrap(payload["records"] as? [String: Any])
+        XCTAssertEqual(records[key] as? Double, 1_720_000_000.0)
+        XCTAssertEqual(records[syncKey] as? Double, 1_720_000_001.0)
+
+        try registry.deleteAllData(for: accountID)
+        XCTAssertNil(defaults.object(forKey: key))
+        XCTAssertNil(defaults.object(forKey: syncKey))
+    }
+
     func testAppManagedRecordingsExportAndDeleteWithUnattributedScope() throws {
         let suite = "AccountDataRegistryMedia.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

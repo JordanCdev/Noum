@@ -51,6 +51,33 @@ struct BackendBootstrap: Codable {
     let sessions: [PracticeSession]?
     let recommendationPending: RecommendationExposure?
     let recommendationOutcomes: [RecommendationOutcome]?
+    /// Firebase can distinguish an absent recommendation document from an
+    /// explicit empty state. Older REST payloads omit this field; in that case
+    /// non-nil pending/outcome fields remain the only evidence of remote state.
+    let recommendationStateExists: Bool?
+
+    init(
+        xp: Int?,
+        profile: CoachingProfile?,
+        sessions: [PracticeSession]?,
+        recommendationPending: RecommendationExposure?,
+        recommendationOutcomes: [RecommendationOutcome]?,
+        recommendationStateExists: Bool? = nil
+    ) {
+        self.xp = xp
+        self.profile = profile
+        self.sessions = sessions
+        self.recommendationPending = recommendationPending
+        self.recommendationOutcomes = recommendationOutcomes
+        self.recommendationStateExists = recommendationStateExists
+    }
+
+    var hasAuthoritativeRecommendationState: Bool {
+        if let recommendationStateExists {
+            return recommendationStateExists
+        }
+        return recommendationPending != nil || recommendationOutcomes != nil
+    }
 }
 
 enum BackendBootstrapFetchResult {
@@ -114,6 +141,127 @@ private struct RecommendationSyncPayload: Codable {
     let outcomes: [RecommendationOutcome]
 }
 
+struct RecommendationSyncSnapshot: Equatable, Sendable {
+    let pendingExposure: RecommendationExposure?
+    let outcomes: [RecommendationOutcome]
+    let accountID: String
+    let providerRawValue: String
+    let revision: Int
+}
+
+/// One lane per account keeps whole-state recommendation writes ordered while
+/// coalescing bursts to their newest snapshot. Revision rejection also covers
+/// tasks that reach the backend actor out of launch order.
+actor RecommendationSyncLane {
+    typealias Writer = @Sendable (RecommendationSyncSnapshot) async -> Bool
+
+    private let writer: Writer
+    private var pending: RecommendationSyncSnapshot?
+    private var failedSnapshot: RecommendationSyncSnapshot?
+    private var highestEnqueuedRevision = -1
+    private var isDraining = false
+    private var isClosed = false
+    private var idleWaiters: [CheckedContinuation<Bool, Never>] = []
+
+    init(writer: @escaping Writer) {
+        self.writer = writer
+    }
+
+    func enqueue(
+        _ snapshot: RecommendationSyncSnapshot,
+        allowAtWatermark: Bool = false
+    ) {
+        guard !isClosed else { return }
+        let isRetryAtWatermark = snapshot.revision == highestEnqueuedRevision
+            && failedSnapshot != nil
+        let isExplicitAtWatermark = allowAtWatermark
+            && snapshot.revision == highestEnqueuedRevision
+        guard snapshot.revision > highestEnqueuedRevision
+                || isRetryAtWatermark
+                || isExplicitAtWatermark else {
+            return
+        }
+        highestEnqueuedRevision = max(highestEnqueuedRevision, snapshot.revision)
+        failedSnapshot = nil
+        pending = snapshot
+        guard !isDraining else { return }
+        isDraining = true
+        Task { await drain() }
+    }
+
+    func fence(at revision: Int) async -> Bool {
+        guard !isClosed else { return false }
+        if revision > highestEnqueuedRevision {
+            highestEnqueuedRevision = revision
+        }
+        // A hydration fence is an ordering barrier, not cancellation. Drain
+        // work that already reached the lane before reading remote state so
+        // an accepted local prescription cannot be replaced by an older
+        // bootstrap snapshot. The revision watermark still rejects older
+        // tasks that arrive after the barrier.
+        return await waitUntilIdle()
+    }
+
+    func closeAndWait() async {
+        isClosed = true
+        pending = nil
+        failedSnapshot = nil
+        _ = await waitUntilIdle()
+    }
+
+    func waitUntilIdle() async -> Bool {
+        guard isDraining || pending != nil else {
+            return !isClosed && failedSnapshot == nil
+        }
+        return await withCheckedContinuation { continuation in
+            idleWaiters.append(continuation)
+        }
+    }
+
+    private func drain() async {
+        while let snapshot = pending {
+            pending = nil
+            guard await writer(snapshot) else {
+                // Preserve the newest complete state as retryable work. Do
+                // not spin on a failing transport; a later current-state
+                // enqueue can retry at the existing watermark.
+                failedSnapshot = pending ?? snapshot
+                pending = nil
+                break
+            }
+        }
+        isDraining = false
+        let succeeded = !isClosed && failedSnapshot == nil
+        let waiters = idleWaiters
+        idleWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: succeeded) }
+    }
+}
+
+/// Unstructured one-shot used for Firestore operations whose completion may
+/// never arrive while offline. The losing task is allowed to finish later;
+/// the first result alone owns the caller's decision.
+actor RecommendationSyncWaitRace {
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var result: Bool?
+
+    func wait() async -> Bool {
+        if let result { return result }
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resolve(_ value: Bool) {
+        guard result == nil else { return }
+        result = value
+        if let continuation {
+            self.continuation = nil
+            continuation.resume(returning: value)
+        }
+    }
+}
+
 actor BackendSyncManager {
     static let shared = BackendSyncManager()
     static let functionsRegion = SocialAuthorityCallable.region
@@ -125,6 +273,12 @@ actor BackendSyncManager {
     static let submitChallengeResultFunctionName = SocialAuthorityCallable.submitChallengeResult
     static let setChallengeReactionFunctionName = SocialAuthorityCallable.setChallengeReaction
     static let appleRevocationUnavailableReason = "apple-revocation-unavailable"
+    static let recommendationSyncWaitNanoseconds: UInt64 = 4_000_000_000
+
+    private var recommendationSyncLanes: [String: RecommendationSyncLane] = [:]
+    private var recommendationSyncClosedAccounts: Set<String> = []
+    private var recommendationHydrationTokens: [String: UUID] = [:]
+    private var recommendationHydrationPending: [String: RecommendationSyncSnapshot] = [:]
 
     private init() {}
 
@@ -134,6 +288,23 @@ actor BackendSyncManager {
     ) -> String? {
         guard let firebaseUID, requestedID == firebaseUID else { return nil }
         return firebaseUID
+    }
+
+    nonisolated static func recommendationStatePayloadIsWellFormed(
+        _ data: [String: Any]
+    ) -> Bool {
+        guard data.keys.contains("pendingExposure"),
+              data.keys.contains("outcomes") else { return false }
+        if let pending = data["pendingExposure"],
+           !(pending is NSNull),
+           !(pending is [String: Any]) {
+            return false
+        }
+        if let outcomes = data["outcomes"],
+           !(outcomes is [[String: Any]]) {
+            return false
+        }
+        return true
     }
 
     var isConfigured: Bool {
@@ -204,27 +375,154 @@ actor BackendSyncManager {
         pendingExposure: RecommendationExposure?,
         outcomes: [RecommendationOutcome],
         accountID: String,
-        providerRawValue: String
+        providerRawValue: String,
+        revision: Int
     ) async {
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebaseRecommendationState(
-                pendingExposure: pendingExposure,
-                outcomes: outcomes,
-                accountID: accountID,
-                providerRawValue: providerRawValue
-            )
+        guard !recommendationSyncClosedAccounts.contains(accountID) else { return }
+        let snapshot = RecommendationSyncSnapshot(
+            pendingExposure: pendingExposure,
+            outcomes: outcomes,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            revision: revision
+        )
+        if recommendationHydrationTokens[accountID] != nil {
+            if let existing = recommendationHydrationPending[accountID],
+               existing.revision >= snapshot.revision {
+                return
+            }
+            recommendationHydrationPending[accountID] = snapshot
             return
         }
+        let lane = recommendationSyncLane(for: accountID)
+        await lane.enqueue(snapshot)
+    }
+
+    func fenceRecommendationSync(
+        accountID: String,
+        revision: Int,
+        hydrationToken: UUID
+    ) async -> Bool {
+        guard !recommendationSyncClosedAccounts.contains(accountID) else { return false }
+        guard recommendationHydrationTokens[accountID] == hydrationToken else { return false }
+        let lane = recommendationSyncLane(for: accountID)
+        return await Self.boundedRecommendationSyncWait {
+            await lane.fence(at: revision)
+        }
+    }
+
+    func beginRecommendationHydration(
+        accountID: String,
+        hydrationToken: UUID
+    ) -> Bool {
+        guard !recommendationSyncClosedAccounts.contains(accountID) else { return false }
+        recommendationHydrationTokens[accountID] = hydrationToken
+        return true
+    }
+
+    func finishRecommendationHydration(
+        accountID: String,
+        hydrationToken: UUID
+    ) async {
+        guard recommendationHydrationTokens[accountID] == hydrationToken else { return }
+        recommendationHydrationTokens.removeValue(forKey: accountID)
+        guard !recommendationSyncClosedAccounts.contains(accountID),
+              let pending = recommendationHydrationPending.removeValue(forKey: accountID) else {
+            recommendationHydrationPending.removeValue(forKey: accountID)
+            return
+        }
+        await recommendationSyncLane(for: accountID).enqueue(
+            pending,
+            allowAtWatermark: true
+        )
+    }
+
+    func suspendRecommendationSyncForDeletion(accountID: String) async -> Bool {
+        recommendationSyncClosedAccounts.insert(accountID)
+        recommendationHydrationTokens.removeValue(forKey: accountID)
+        recommendationHydrationPending.removeValue(forKey: accountID)
+        guard let lane = recommendationSyncLanes[accountID] else { return true }
+        let didClose = await Self.boundedRecommendationSyncWait {
+            await lane.closeAndWait()
+            return true
+        }
+        if didClose {
+            recommendationSyncLanes.removeValue(forKey: accountID)
+        }
+        return didClose
+    }
+
+    func resumeRecommendationSyncAfterFailedDeletion(accountID: String) {
+        recommendationSyncClosedAccounts.remove(accountID)
+    }
+
+    private func recommendationSyncLane(for accountID: String) -> RecommendationSyncLane {
+        if let existing = recommendationSyncLanes[accountID] {
+            return existing
+        }
+        let created = RecommendationSyncLane { [weak self] snapshot in
+            guard let self else { return false }
+            return await self.writeRecommendationState(snapshot)
+        }
+        recommendationSyncLanes[accountID] = created
+        return created
+    }
+
+    nonisolated static func boundedRecommendationSyncWait(
+        timeoutNanoseconds: UInt64 = recommendationSyncWaitNanoseconds,
+        operation: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let race = RecommendationSyncWaitRace()
+        Task {
+            await race.resolve(await operation())
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            await race.resolve(false)
+        }
+        return await race.wait()
+    }
+
+    private func writeRecommendationState(
+        _ snapshot: RecommendationSyncSnapshot
+    ) async -> Bool {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            let succeeded = await syncFirebaseRecommendationState(
+                pendingExposure: snapshot.pendingExposure,
+                outcomes: snapshot.outcomes,
+                accountID: snapshot.accountID,
+                providerRawValue: snapshot.providerRawValue
+            )
+            if succeeded {
+                await acknowledgeRecommendationSync(snapshot)
+            }
+            return succeeded
+        }
 #endif
-        try? await send(
-            RecommendationSyncPayload(
-                pendingExposure: pendingExposure,
-                outcomes: outcomes
-            ),
-            path: "/v1/me/recommendations",
-            accountID: accountID,
-            providerRawValue: providerRawValue
+        do {
+            try await send(
+                RecommendationSyncPayload(
+                    pendingExposure: snapshot.pendingExposure,
+                    outcomes: snapshot.outcomes
+                ),
+                path: "/v1/me/recommendations",
+                accountID: snapshot.accountID,
+                providerRawValue: snapshot.providerRawValue
+            )
+            await acknowledgeRecommendationSync(snapshot)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func acknowledgeRecommendationSync(
+        _ snapshot: RecommendationSyncSnapshot
+    ) async {
+        await RecommendationLearningStore.shared.confirmCurrentStateSync(
+            accountID: snapshot.accountID,
+            revision: snapshot.revision
         )
     }
 
@@ -588,11 +886,21 @@ actor BackendSyncManager {
             accountID: accountID,
             providerRawValue: providerRawValue
         ) else {
-            return
+            throw URLError(.unsupportedURL)
         }
 
         request.httpBody = try JSONEncoder().encode(payload)
-        _ = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard Self.restWriteResponseIsSuccessful(response) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    nonisolated static func restWriteResponseIsSuccessful(
+        _ response: URLResponse?
+    ) -> Bool {
+        guard let response = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(response.statusCode)
     }
 
     private func request(
@@ -663,7 +971,8 @@ private extension BackendSyncManager {
             let sessionSnapshots = try await sessionDocuments
             let recommendationStateSnapshot = try await recommendationStateDocument
 
-            guard let profileSnapshot else { return .unavailable }
+            guard let profileSnapshot,
+                  let recommendationStateSnapshot else { return .unavailable }
             let profile: CoachingProfile?
             if profileSnapshot.exists {
                 guard let decoded = try decodeDocument(CoachingProfile.self, from: profileSnapshot.data()) else {
@@ -675,13 +984,20 @@ private extension BackendSyncManager {
             }
             let xp = progressionSnapshot?.data()?["xp"] as? Int
             let sessions = try sessionSnapshots.compactMap { try decodeDocument(PracticeSession.self, from: $0.data()) }
+            let recommendationData = recommendationStateSnapshot.data()
+            if recommendationStateSnapshot.exists {
+                guard let recommendationData,
+                      Self.recommendationStatePayloadIsWellFormed(recommendationData) else {
+                    return .unavailable
+                }
+            }
             let recommendationPending = try decodeDocument(
                 RecommendationExposure.self,
-                from: recommendationStateSnapshot?.data()?["pendingExposure"] as? [String: Any]
+                from: recommendationData?["pendingExposure"] as? [String: Any]
             )
             let recommendationOutcomes = try decodeArray(
                 RecommendationOutcome.self,
-                from: recommendationStateSnapshot?.data()?["outcomes"] as? [[String: Any]]
+                from: recommendationData?["outcomes"] as? [[String: Any]]
             )
 
             return .success(BackendBootstrap(
@@ -689,7 +1005,8 @@ private extension BackendSyncManager {
                 profile: profile,
                 sessions: sessions.isEmpty ? nil : sessions,
                 recommendationPending: recommendationPending,
-                recommendationOutcomes: recommendationOutcomes.isEmpty ? nil : recommendationOutcomes
+                recommendationOutcomes: recommendationOutcomes.isEmpty ? nil : recommendationOutcomes,
+                recommendationStateExists: recommendationStateSnapshot.exists
             ))
         } catch {
             return .unavailable
@@ -758,7 +1075,7 @@ private extension BackendSyncManager {
         outcomes: [RecommendationOutcome],
         accountID: String,
         providerRawValue: String
-    ) async {
+    ) async -> Bool {
         do {
             await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
             let pendingData = try pendingExposure.map(encodeDocument)
@@ -766,12 +1083,16 @@ private extension BackendSyncManager {
             try await setDocument(
                 userDocument(accountID: accountID).collection("recommendations").document("state"),
                 data: [
-                    "pendingExposure": pendingData as Any,
+                    "pendingExposure": (pendingData as Any?) ?? NSNull(),
                     "outcomes": outcomesData
                 ],
                 merge: true
             )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+            return true
+        } catch {
+            print("[BackendSync] Error: \(error.localizedDescription)")
+            return false
+        }
     }
 
     func ensureFirebaseUserDocument(accountID: String, providerRawValue: String) async {

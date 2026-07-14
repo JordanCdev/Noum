@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 #endif
 
-enum PracticeMode: String, Codable {
+enum PracticeMode: String, Codable, Sendable {
     case timed
     case suddenDeath
     case ahCounter

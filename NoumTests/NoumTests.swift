@@ -14507,6 +14507,153 @@ struct FirstRunFrictionContractTests {
         ))
     }
 
+    @Test func hydratedRecommendationStateRequiresTheCapturedRevision() {
+        #expect(RecommendationLearningStore.shouldReplaceFromRemote(
+            expectedRevision: 7,
+            currentRevision: 7
+        ))
+        #expect(!RecommendationLearningStore.shouldReplaceFromRemote(
+            expectedRevision: 7,
+            currentRevision: 8
+        ))
+        #expect(RecommendationLearningStore.shouldReplaceFromRemote(
+            expectedRevision: nil,
+            currentRevision: 8
+        ))
+    }
+
+    @Test func recommendationBootstrapDistinguishesAbsentAndExplicitEmptyState() {
+        let absent = BackendBootstrap(
+            xp: nil,
+            profile: nil,
+            sessions: nil,
+            recommendationPending: nil,
+            recommendationOutcomes: nil,
+            recommendationStateExists: false
+        )
+        let explicitEmpty = BackendBootstrap(
+            xp: nil,
+            profile: nil,
+            sessions: nil,
+            recommendationPending: nil,
+            recommendationOutcomes: nil,
+            recommendationStateExists: true
+        )
+        let legacyExplicitArray = BackendBootstrap(
+            xp: nil,
+            profile: nil,
+            sessions: nil,
+            recommendationPending: nil,
+            recommendationOutcomes: []
+        )
+
+        #expect(!absent.hasAuthoritativeRecommendationState)
+        #expect(explicitEmpty.hasAuthoritativeRecommendationState)
+        #expect(legacyExplicitArray.hasAuthoritativeRecommendationState)
+    }
+
+    @Test func destructiveResetConfirmationRejectsPreResetRemoteState() {
+        let resetAt = Date()
+        let stale = RecommendationExposure(
+            fingerprint: "timed|fillers",
+            title: "Clean the opening",
+            focus: "filler control",
+            target: "Below 2 fillers/min",
+            mode: .timed,
+            isAIBacked: false,
+            shownAt: resetAt.addingTimeInterval(-1)
+        )
+        let current = RecommendationExposure(
+            fingerprint: stale.fingerprint,
+            title: stale.title,
+            focus: stale.focus,
+            target: stale.target,
+            mode: stale.mode,
+            isAIBacked: stale.isAIBacked,
+            shownAt: resetAt.addingTimeInterval(1)
+        )
+
+        #expect(AuthManager.recommendationResetIsConfirmed(
+            resetAt: resetAt,
+            pendingExposure: nil,
+            outcomes: []
+        ))
+        #expect(!AuthManager.recommendationResetIsConfirmed(
+            resetAt: resetAt,
+            pendingExposure: stale,
+            outcomes: []
+        ))
+        #expect(AuthManager.recommendationResetIsConfirmed(
+            resetAt: resetAt,
+            pendingExposure: current,
+            outcomes: []
+        ))
+    }
+
+    @Test func legacyBootstrapDecodingUsesFieldPresenceWithoutInventingState() throws {
+        let explicitEmpty = try JSONDecoder().decode(
+            BackendBootstrap.self,
+            from: Data("{\"recommendationOutcomes\":[]}".utf8)
+        )
+        let omitted = try JSONDecoder().decode(
+            BackendBootstrap.self,
+            from: Data("{}".utf8)
+        )
+
+        #expect(explicitEmpty.recommendationStateExists == nil)
+        #expect(explicitEmpty.hasAuthoritativeRecommendationState)
+        #expect(!omitted.hasAuthoritativeRecommendationState)
+    }
+
+    @Test func malformedRecommendationBootstrapPayloadFailsClosed() {
+        #expect(BackendSyncManager.recommendationStatePayloadIsWellFormed([
+            "pendingExposure": NSNull(),
+            "outcomes": []
+        ]))
+        #expect(BackendSyncManager.recommendationStatePayloadIsWellFormed([
+            "pendingExposure": NSNull(),
+            "outcomes": [["id": "outcome"]]
+        ]))
+        #expect(!BackendSyncManager.recommendationStatePayloadIsWellFormed([
+            "pendingExposure": "not-an-object",
+            "outcomes": []
+        ]))
+        #expect(!BackendSyncManager.recommendationStatePayloadIsWellFormed([
+            "pendingExposure": NSNull(),
+            "outcomes": ["not-an-object"]
+        ]))
+        #expect(!BackendSyncManager.recommendationStatePayloadIsWellFormed([
+            "outcomes": []
+        ]))
+        #expect(!BackendSyncManager.recommendationStatePayloadIsWellFormed([
+            "pendingExposure": NSNull()
+        ]))
+    }
+
+    @Test func restWritesRequireAConstructedTwoHundredResponse() throws {
+        let url = try #require(URL(string: "https://example.invalid/recommendations"))
+        func response(_ statusCode: Int) -> HTTPURLResponse {
+            HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            )!
+        }
+
+        #expect(BackendSyncManager.restWriteResponseIsSuccessful(response(200)))
+        #expect(BackendSyncManager.restWriteResponseIsSuccessful(response(204)))
+        #expect(!BackendSyncManager.restWriteResponseIsSuccessful(response(401)))
+        #expect(!BackendSyncManager.restWriteResponseIsSuccessful(response(500)))
+        #expect(!BackendSyncManager.restWriteResponseIsSuccessful(nil))
+        #expect(!BackendSyncManager.restWriteResponseIsSuccessful(URLResponse(
+            url: url,
+            mimeType: nil,
+            expectedContentLength: 0,
+            textEncodingName: nil
+        )))
+    }
+
     @Test func timedOutGuestBootstrapRejectsItsLateFirebaseCompletion() {
         let requested = UUID()
         #expect(AuthManager.shouldAcceptGuestBootstrapCompletion(
@@ -14562,6 +14709,332 @@ struct FirstRunFrictionContractTests {
             coachingBrief: coachingBrief,
             motivationWhyNow: "",
             successVision: ""
+        )
+    }
+}
+
+private actor RecommendationSyncLaneProbe {
+    struct Result: Sendable {
+        let revisions: [Int]
+        let maximumConcurrentWrites: Int
+    }
+
+    private var revisions: [Int] = []
+    private var activeWrites = 0
+    private var maximumConcurrentWrites = 0
+    private var firstWriteStarted = false
+    private var firstWriteReleaseRequested = false
+    private var firstWriteRelease: CheckedContinuation<Void, Never>?
+    private var writesSucceed = true
+
+    func write(_ snapshot: RecommendationSyncSnapshot) async -> Bool {
+        activeWrites += 1
+        maximumConcurrentWrites = max(maximumConcurrentWrites, activeWrites)
+        revisions.append(snapshot.revision)
+        if !firstWriteStarted {
+            firstWriteStarted = true
+            if !firstWriteReleaseRequested {
+                await withCheckedContinuation { continuation in
+                    firstWriteRelease = continuation
+                }
+            }
+        }
+        activeWrites -= 1
+        return writesSucceed
+    }
+
+    func hasStartedFirstWrite() -> Bool {
+        firstWriteStarted
+    }
+
+    func releaseFirstWrite() {
+        firstWriteReleaseRequested = true
+        firstWriteRelease?.resume()
+        firstWriteRelease = nil
+    }
+
+    func setWritesSucceed(_ succeeds: Bool) {
+        writesSucceed = succeeds
+    }
+
+    func result() -> Result {
+        Result(
+            revisions: revisions,
+            maximumConcurrentWrites: maximumConcurrentWrites
+        )
+    }
+}
+
+struct RecommendationSyncLaneTests {
+    @Test func serialLaneCoalescesABurstToTheNewestWholeState() async {
+        let probe = RecommendationSyncLaneProbe()
+        let lane = RecommendationSyncLane { snapshot in
+            await probe.write(snapshot)
+        }
+
+        await lane.enqueue(snapshot(revision: 1))
+        let started = await waitUntilFirstWriteStarts(probe)
+        #expect(started)
+        guard started else {
+            await probe.releaseFirstWrite()
+            return
+        }
+        await lane.enqueue(snapshot(revision: 2))
+        await lane.enqueue(snapshot(revision: 3))
+        await probe.releaseFirstWrite()
+        #expect(await lane.waitUntilIdle())
+
+        let result = await probe.result()
+        #expect(result.revisions == [1, 3])
+        #expect(result.maximumConcurrentWrites == 1)
+    }
+
+    @Test func laneRejectsARevisionThatArrivesAfterANewerSnapshot() async {
+        let probe = RecommendationSyncLaneProbe()
+        let lane = RecommendationSyncLane { snapshot in
+            await probe.write(snapshot)
+        }
+
+        await lane.enqueue(snapshot(revision: 3))
+        let started = await waitUntilFirstWriteStarts(probe)
+        #expect(started)
+        guard started else {
+            await probe.releaseFirstWrite()
+            return
+        }
+        await lane.enqueue(snapshot(revision: 1))
+        await probe.releaseFirstWrite()
+        #expect(await lane.waitUntilIdle())
+
+        let result = await probe.result()
+        #expect(result.revisions == [3])
+        #expect(result.maximumConcurrentWrites == 1)
+    }
+
+    @Test func hydrationFenceDrainsPendingWorkAndRejectsLateArrival() async {
+        let probe = RecommendationSyncLaneProbe()
+        let lane = RecommendationSyncLane { snapshot in
+            await probe.write(snapshot)
+        }
+
+        await lane.enqueue(snapshot(revision: 1))
+        let started = await waitUntilFirstWriteStarts(probe)
+        #expect(started)
+        guard started else {
+            await probe.releaseFirstWrite()
+            return
+        }
+        await lane.enqueue(snapshot(revision: 2))
+        let fence = Task { await lane.fence(at: 3) }
+        await Task.yield()
+        await probe.releaseFirstWrite()
+        #expect(await fence.value)
+        await lane.enqueue(snapshot(revision: 2))
+        await lane.enqueue(snapshot(revision: 4))
+        #expect(await lane.waitUntilIdle())
+
+        let result = await probe.result()
+        #expect(result.revisions == [1, 2, 4])
+        #expect(result.maximumConcurrentWrites == 1)
+    }
+
+    @Test func closedDeletionLaneRejectsLaterSnapshots() async {
+        let probe = RecommendationSyncLaneProbe()
+        let lane = RecommendationSyncLane { snapshot in
+            await probe.write(snapshot)
+        }
+
+        await lane.closeAndWait()
+        await lane.enqueue(snapshot(revision: 1))
+        #expect(await lane.waitUntilIdle() == false)
+
+        let result = await probe.result()
+        #expect(result.revisions.isEmpty)
+    }
+
+    @Test func failedWriteMakesFenceFailAndSameRevisionRetryable() async {
+        let probe = RecommendationSyncLaneProbe()
+        await probe.setWritesSucceed(false)
+        let lane = RecommendationSyncLane { snapshot in
+            await probe.write(snapshot)
+        }
+
+        await lane.enqueue(snapshot(revision: 1))
+        let started = await waitUntilFirstWriteStarts(probe)
+        #expect(started)
+        guard started else {
+            await probe.releaseFirstWrite()
+            return
+        }
+        await probe.releaseFirstWrite()
+        #expect(await lane.fence(at: 1) == false)
+
+        await probe.setWritesSucceed(true)
+        await lane.enqueue(snapshot(revision: 1))
+        #expect(await lane.waitUntilIdle())
+
+        let result = await probe.result()
+        #expect(result.revisions == [1, 1])
+        #expect(result.maximumConcurrentWrites == 1)
+    }
+
+    @Test func hydrationReleaseCanWriteTheCapturedWatermark() async {
+        let probe = RecommendationSyncLaneProbe()
+        let lane = RecommendationSyncLane { snapshot in
+            await probe.write(snapshot)
+        }
+
+        #expect(await lane.fence(at: 4))
+        await lane.enqueue(snapshot(revision: 4), allowAtWatermark: true)
+        let started = await waitUntilFirstWriteStarts(probe)
+        #expect(started)
+        guard started else {
+            await probe.releaseFirstWrite()
+            return
+        }
+        await probe.releaseFirstWrite()
+        #expect(await lane.waitUntilIdle())
+        let result = await probe.result()
+        #expect(result.revisions == [4])
+    }
+
+    @Test func boundedWaitFailsClosedWithoutWaitingForLateCompletion() async {
+        #expect(await BackendSyncManager.boundedRecommendationSyncWait(
+            timeoutNanoseconds: 50_000_000
+        ) {
+            true
+        })
+        #expect(await BackendSyncManager.boundedRecommendationSyncWait(
+            timeoutNanoseconds: 1_000_000
+        ) {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            return true
+        } == false)
+    }
+
+    @Test func hydrationMergeRetainsUnseenRemoteOutcomes() {
+        let local = outcome(id: UUID(), completedAt: Date())
+        let remote = outcome(id: UUID(), completedAt: Date().addingTimeInterval(-10))
+
+        let merged = RecommendationLearningStore.mergedOutcomes(
+            local: [local, local],
+            remote: [remote]
+        )
+
+        #expect(Set(merged.map(\.id)) == [local.id, remote.id])
+        #expect(merged.count == 2)
+    }
+
+    @Test func hydrationMergeDoesNotResurrectAConsumedPendingExposure() {
+        let shownAt = Date().addingTimeInterval(-60)
+        let remote = RecommendationExposure(
+            fingerprint: "timed|fillers",
+            title: "Clean the opening",
+            focus: "filler control",
+            target: "Below 2 fillers/min",
+            mode: .timed,
+            isAIBacked: false,
+            shownAt: shownAt,
+            tappedAt: shownAt
+        )
+        let completed = outcome(
+            id: UUID(),
+            fingerprint: remote.fingerprint,
+            completedAt: shownAt.addingTimeInterval(30)
+        )
+
+        #expect(RecommendationLearningStore.mergedPendingExposure(
+            local: nil,
+            remote: remote,
+            localOutcomes: [completed]
+        ) == nil)
+        #expect(RecommendationLearningStore.mergedPendingExposure(
+            local: remote,
+            remote: nil,
+            localOutcomes: [completed]
+        ) == nil)
+    }
+
+    @Test func legacyExposuresWithoutIDsDoNotShareAcceptance() {
+        let olderShownAt = Date().addingTimeInterval(-120)
+        var olderTapped = RecommendationExposure(
+            fingerprint: "timed|fillers",
+            title: "Clean the opening",
+            focus: "filler control",
+            target: "Below 2 fillers/min",
+            mode: .timed,
+            isAIBacked: false,
+            shownAt: olderShownAt,
+            tappedAt: olderShownAt.addingTimeInterval(10),
+            observabilityID: nil
+        )
+        // Pin this as a legacy payload explicitly; the memberwise initializer
+        // otherwise supplies whatever the current model default is.
+        olderTapped.observabilityID = nil
+        var newerUntapped = RecommendationExposure(
+            fingerprint: olderTapped.fingerprint,
+            title: olderTapped.title,
+            focus: olderTapped.focus,
+            target: olderTapped.target,
+            mode: olderTapped.mode,
+            isAIBacked: olderTapped.isAIBacked,
+            shownAt: olderShownAt.addingTimeInterval(60),
+            observabilityID: nil
+        )
+        newerUntapped.observabilityID = nil
+
+        let merged = RecommendationLearningStore.mergedPendingExposure(
+            local: olderTapped,
+            remote: newerUntapped,
+            localOutcomes: []
+        )
+
+        #expect(merged?.shownAt == newerUntapped.shownAt)
+        #expect(merged?.tappedAt == nil)
+    }
+
+    private func waitUntilFirstWriteStarts(
+        _ probe: RecommendationSyncLaneProbe
+    ) async -> Bool {
+        for _ in 0..<2_000 {
+            if await probe.hasStartedFirstWrite() { return true }
+            await Task.yield()
+        }
+        return false
+    }
+
+    private func snapshot(revision: Int) -> RecommendationSyncSnapshot {
+        RecommendationSyncSnapshot(
+            pendingExposure: nil,
+            outcomes: [],
+            accountID: "account-a",
+            providerRawValue: "apple",
+            revision: revision
+        )
+    }
+
+    private func outcome(
+        id: UUID,
+        fingerprint: String = "timed|fillers",
+        completedAt: Date
+    ) -> RecommendationOutcome {
+        RecommendationOutcome(
+            id: id,
+            fingerprint: fingerprint,
+            title: "Clean the opening",
+            focus: "filler control",
+            target: "Below 2 fillers/min",
+            mode: .timed,
+            sessionID: UUID(),
+            followed: true,
+            completedAt: completedAt,
+            scoreDelta: 1,
+            hasComparableScore: true,
+            fillerDelta: -1,
+            durationDelta: 0,
+            fillerRateDelta: -1,
+            comparisonSessionCount: 2,
+            comparisonSchemaVersion: RecommendationComparisonEngine.schemaVersion
         )
     }
 }
