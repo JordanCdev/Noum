@@ -15,6 +15,11 @@ struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
     /// because there's nothing to query. Optional so legacy friends added
     /// before the M2 release decode cleanly.
     var accountID: String?
+    var pairID: String?
+    /// Present only for links produced by the reciprocal friendship callable.
+    /// Legacy client-authored account IDs decode as local contacts and cannot
+    /// become social authority by surviving an app update.
+    var connectionSchemaVersion: Int?
 
     /// Cached peer stats — populated by backend sync when available.
     /// All optional so existing friends decode cleanly when the fields are absent.
@@ -34,7 +39,7 @@ struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, displayName, addedAt, addedVia, accountID
+        case id, displayName, addedAt, addedVia, accountID, pairID, connectionSchemaVersion
         case lastKnownRating, lastKnownPeakRating, lastKnownStreak, lastKnownRepsThisWeek, lastSyncedAt
     }
 
@@ -44,6 +49,8 @@ struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
         addedAt: Date,
         addedVia: AddMethod,
         accountID: String? = nil,
+        pairID: String? = nil,
+        connectionSchemaVersion: Int? = nil,
         lastKnownRating: Int? = nil,
         lastKnownPeakRating: Int? = nil,
         lastKnownStreak: Int? = nil,
@@ -55,6 +62,8 @@ struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
         self.addedAt = addedAt
         self.addedVia = addedVia
         self.accountID = accountID
+        self.pairID = pairID
+        self.connectionSchemaVersion = connectionSchemaVersion
         self.lastKnownRating = lastKnownRating
         self.lastKnownPeakRating = lastKnownPeakRating
         self.lastKnownStreak = lastKnownStreak
@@ -69,6 +78,8 @@ struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
         self.addedAt = try c.decode(Date.self, forKey: .addedAt)
         self.addedVia = try c.decode(AddMethod.self, forKey: .addedVia)
         self.accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
+        self.pairID = try c.decodeIfPresent(String.self, forKey: .pairID)
+        self.connectionSchemaVersion = try c.decodeIfPresent(Int.self, forKey: .connectionSchemaVersion)
         self.lastKnownRating = try c.decodeIfPresent(Int.self, forKey: .lastKnownRating)
         self.lastKnownPeakRating = try c.decodeIfPresent(Int.self, forKey: .lastKnownPeakRating)
         self.lastKnownStreak = try c.decodeIfPresent(Int.self, forKey: .lastKnownStreak)
@@ -83,6 +94,13 @@ struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
             return String(parts[0].prefix(1) + parts[1].prefix(1)).uppercased()
         }
         return String(displayName.prefix(2)).uppercased()
+    }
+
+    var isServerLinked: Bool {
+        addedVia == .invite
+            && connectionSchemaVersion == ListFriendLinksRequest.currentSchemaVersion
+            && accountID?.isEmpty == false
+            && pairID.flatMap(UUID.init(uuidString:)) != nil
     }
 }
 
@@ -100,6 +118,9 @@ final class FriendsManager: ObservableObject {
 
     @Published private(set) var friends: [NoumFriend] = []
     @Published private(set) var isRefreshingPeerStats = false
+    @Published private(set) var connectionOperation: FriendConnectionOperation?
+    @Published private(set) var activeInvite: FriendInviteAuthorityResult?
+    @Published private(set) var connectionErrorMessage: String?
 
     private let storageKey = "NoumFriendsList"
 
@@ -108,6 +129,7 @@ final class FriendsManager: ObservableObject {
     private static let refreshThrottle: TimeInterval = 60
 
     private var lastRefreshAttempt: Date?
+    private var lastLinkRefreshAttempt: Date?
     private var activeAccountID: String?
     private var accountGeneration: UInt64 = 0
     private var isSessionActive = true
@@ -117,30 +139,43 @@ final class FriendsManager: ObservableObject {
         friends = Self.loadFriends(accountID: activeAccountID ?? "guest")
     }
 
+    enum FriendConnectionOperation: Equatable, Sendable {
+        case creatingInvite
+        case acceptingInvite
+        case refreshing
+        case removing(UUID)
+    }
+
     func addFriend(_ friend: NoumFriend) {
         guard isSessionActive, activeAccountID != nil else { return }
-        guard !friends.contains(where: { $0.id == friend.id }) else { return }
-        if let accountID = friend.accountID,
-           friends.contains(where: { $0.accountID == accountID }) {
-            return
+        guard !friend.isServerLinked,
+              !friends.contains(where: { $0.id == friend.id }) else { return }
+        var localContact = friend
+        localContact.accountID = nil
+        localContact.pairID = nil
+        localContact.connectionSchemaVersion = nil
+        if localContact.addedVia == .invite {
+            localContact.addedVia = .manual
         }
-        friends.insert(friend, at: 0)
+        friends.insert(localContact, at: 0)
         persist()
     }
 
-    func addFriend(name: String, method: NoumFriend.AddMethod = .manual, accountID: String? = nil) {
+    func addFriend(name: String, method: NoumFriend.AddMethod = .manual) {
         let friend = NoumFriend(
             id: UUID(),
             displayName: name,
             addedAt: Date(),
-            addedVia: method,
-            accountID: accountID
+            addedVia: method
         )
         addFriend(friend)
     }
 
     func removeFriend(id: UUID) {
         guard isSessionActive, activeAccountID != nil else { return }
+        // Reciprocal links must be removed server-first through
+        // `removeConnection(id:)`; this local path is for practice contacts.
+        guard friends.first(where: { $0.id == id })?.isServerLinked != true else { return }
         friends.removeAll { $0.id == id }
         persist()
     }
@@ -152,7 +187,7 @@ final class FriendsManager: ObservableObject {
     /// Friends that have an `accountID` and so can be looked up server-side.
     /// Used as the gate for refresh + leaderboard "Awaiting sync" copy.
     var addressableFriendCount: Int {
-        friends.filter { $0.accountID != nil }.count
+        friends.filter(\.isServerLinked).count
     }
 
     /// Best-effort fetch of friend public profiles from the backend. Updates
@@ -166,7 +201,7 @@ final class FriendsManager: ObservableObject {
         }
         if !force, let last = lastRefreshAttempt,
            Date().timeIntervalSince(last) < Self.refreshThrottle { return }
-        let targets = friends.filter { $0.accountID != nil }
+        let targets = friends.filter(\.isServerLinked)
         guard !targets.isEmpty else { return }
         lastRefreshAttempt = Date()
         isRefreshingPeerStats = true
@@ -205,6 +240,157 @@ final class FriendsManager: ObservableObject {
         if didChange { persist(context: context) }
     }
 
+    // MARK: - Reciprocal connection lifecycle
+
+    var isManagingConnections: Bool { connectionOperation != nil }
+
+    func createConnectionInvite(displayName: String) async {
+        guard let context = beginConnectionOperation(.creatingInvite) else { return }
+        defer { finishConnectionOperation(.creatingInvite, context: context) }
+        do {
+            let invite = try await BackendSyncManager.shared.createFriendInvite(
+                displayName: displayName,
+                accountID: context.accountID
+            )
+            guard isOperationContextCurrent(context) else { return }
+            activeInvite = invite
+            connectionErrorMessage = nil
+        } catch {
+            recordConnectionFailure(error, context: context)
+        }
+    }
+
+    func acceptConnectionInvite(token: String, displayName: String) async {
+        guard let context = beginConnectionOperation(.acceptingInvite) else { return }
+        defer { finishConnectionOperation(.acceptingInvite, context: context) }
+        do {
+            let link = try await BackendSyncManager.shared.acceptFriendInvite(
+                inviteToken: token,
+                displayName: displayName,
+                accountID: context.accountID
+            )
+            guard isOperationContextCurrent(context) else { return }
+            friends = Self.mergingAcceptedLink(link, into: friends)
+            activeInvite = nil
+            connectionErrorMessage = nil
+            persist(context: context)
+        } catch {
+            recordConnectionFailure(error, context: context)
+        }
+    }
+
+    /// Reconciles reciprocal membership from one complete server list. Manual
+    /// practice contacts remain untouched, while stale server-linked rows are
+    /// removed and unchanged links retain their cached public statistics.
+    func refreshFriendLinks(force: Bool = false) async {
+        guard SocialReleaseCapabilities.friendConnections.isAvailable else {
+            connectionErrorMessage = SocialReleaseCapabilities.friendConnections.message
+            return
+        }
+        if !force, let lastLinkRefreshAttempt,
+           Date().timeIntervalSince(lastLinkRefreshAttempt) < Self.refreshThrottle {
+            return
+        }
+        guard let context = beginConnectionOperation(.refreshing) else { return }
+        lastLinkRefreshAttempt = Date()
+        defer { finishConnectionOperation(.refreshing, context: context) }
+        do {
+            let links = try await BackendSyncManager.shared.listFriendLinks(
+                limit: 50,
+                accountID: context.accountID
+            )
+            guard isOperationContextCurrent(context) else { return }
+            friends = Self.reconcilingServerLinks(cached: friends, remote: links)
+            connectionErrorMessage = nil
+            persist(context: context)
+        } catch {
+            recordConnectionFailure(error, context: context)
+        }
+    }
+
+    /// Removes server membership before local state. A failed or stale
+    /// response therefore cannot silently hide a still-connected account.
+    func removeConnection(id: UUID) async {
+        guard let friend = friends.first(where: { $0.id == id }),
+              friend.isServerLinked,
+              let friendAccountID = friend.accountID,
+              let context = beginConnectionOperation(.removing(id)) else { return }
+        defer { finishConnectionOperation(.removing(id), context: context) }
+        do {
+            let result = try await BackendSyncManager.shared.removeFriendLink(
+                friendAccountID: friendAccountID,
+                accountID: context.accountID
+            )
+            guard isOperationContextCurrent(context),
+                  result.friendAccountID == friendAccountID else { return }
+            friends.removeAll { $0.id == id && $0.accountID == friendAccountID }
+            connectionErrorMessage = nil
+            persist(context: context)
+        } catch {
+            recordConnectionFailure(error, context: context)
+        }
+    }
+
+    func clearConnectionError() {
+        connectionErrorMessage = nil
+    }
+
+    static func reconcilingServerLinks(
+        cached: [NoumFriend],
+        remote: [FriendAuthorityLink]
+    ) -> [NoumFriend] {
+        let localContacts = cached.filter { !$0.isServerLinked }
+        var existing: [UUID: NoumFriend] = [:]
+        for friend in cached {
+            guard friend.isServerLinked,
+                  let pairID = friend.pairID.flatMap(UUID.init(uuidString:)) else { continue }
+            existing[pairID] = friend
+        }
+        let linked = remote.map { link -> NoumFriend in
+            if var retained = existing[link.pairID], retained.accountID == link.accountID {
+                retained.displayName = link.displayName
+                retained.addedAt = link.linkedAt
+                return retained
+            }
+            return serverFriend(from: link)
+        }
+        return linked + localContacts
+    }
+
+    static func mergingAcceptedLink(
+        _ link: FriendAuthorityLink,
+        into cached: [NoumFriend]
+    ) -> [NoumFriend] {
+        let existing = cached.first {
+            $0.isServerLinked
+                && $0.pairID.flatMap(UUID.init(uuidString:)) == link.pairID
+                && $0.accountID == link.accountID
+        }
+        var remaining = cached.filter {
+            !($0.isServerLinked && ($0.accountID == link.accountID || $0.pairID.flatMap(UUID.init(uuidString:)) == link.pairID))
+        }
+        if var existing {
+            existing.displayName = link.displayName
+            existing.addedAt = link.linkedAt
+            remaining.insert(existing, at: 0)
+        } else {
+            remaining.insert(serverFriend(from: link), at: 0)
+        }
+        return remaining
+    }
+
+    private static func serverFriend(from link: FriendAuthorityLink) -> NoumFriend {
+        NoumFriend(
+            id: UUID(),
+            displayName: link.displayName,
+            addedAt: link.linkedAt,
+            addedVia: .invite,
+            accountID: link.accountID,
+            pairID: link.pairID.uuidString,
+            connectionSchemaVersion: ListFriendLinksRequest.currentSchemaVersion
+        )
+    }
+
     // MARK: - Persistence
 
     private func persist(context: SocialAccountOperationContext? = nil) {
@@ -235,10 +421,20 @@ final class FriendsManager: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "NoumFriendsList")
         }
         guard let data = UserDefaults.standard.data(forKey: key),
-              let friends = try? JSONDecoder().decode([NoumFriend].self, from: data) else {
+              let decoded = try? JSONDecoder().decode([NoumFriend].self, from: data) else {
             return []
         }
-        return friends
+        return decoded.map { friend in
+            guard friend.isServerLinked else {
+                var local = friend
+                local.accountID = nil
+                local.pairID = nil
+                local.connectionSchemaVersion = nil
+                if local.addedVia == .invite { local.addedVia = .manual }
+                return local
+            }
+            return friend
+        }
     }
 
     func reloadForCurrentAccount() {
@@ -248,6 +444,10 @@ final class FriendsManager: ObservableObject {
         friends = Self.loadFriends(accountID: activeAccountID ?? "guest")
         isRefreshingPeerStats = false
         lastRefreshAttempt = nil
+        lastLinkRefreshAttempt = nil
+        connectionOperation = nil
+        activeInvite = nil
+        connectionErrorMessage = nil
     }
 
     func endSession() {
@@ -257,6 +457,10 @@ final class FriendsManager: ObservableObject {
         friends = []
         isRefreshingPeerStats = false
         lastRefreshAttempt = nil
+        lastLinkRefreshAttempt = nil
+        connectionOperation = nil
+        activeInvite = nil
+        connectionErrorMessage = nil
     }
 
     func exportSnapshot(for accountID: String) -> FriendsAccountDataSnapshot {
@@ -287,6 +491,40 @@ final class FriendsManager: ObservableObject {
         isSessionActive
             && context.matches(accountID: activeAccountID, generation: accountGeneration)
             && AuthManager.shared.currentAccountID == context.accountID
+    }
+
+    private func beginConnectionOperation(
+        _ operation: FriendConnectionOperation
+    ) -> SocialAccountOperationContext? {
+        guard SocialReleaseCapabilities.friendConnections.isAvailable else {
+            connectionErrorMessage = SocialReleaseCapabilities.friendConnections.message
+            return nil
+        }
+        guard connectionOperation == nil, let context = captureOperationContext() else {
+            return nil
+        }
+        connectionOperation = operation
+        connectionErrorMessage = nil
+        return context
+    }
+
+    private func finishConnectionOperation(
+        _ operation: FriendConnectionOperation,
+        context: SocialAccountOperationContext
+    ) {
+        guard isOperationContextCurrent(context), connectionOperation == operation else { return }
+        connectionOperation = nil
+    }
+
+    private func recordConnectionFailure(
+        _ error: Error,
+        context: SocialAccountOperationContext
+    ) {
+        guard isOperationContextCurrent(context) else { return }
+        let message = (error as? LocalizedError)?.errorDescription
+            ?? SocialAuthorityError.serviceUnavailable.errorDescription
+            ?? "Connection sync is unavailable right now."
+        connectionErrorMessage = String(message.prefix(240))
     }
 }
 

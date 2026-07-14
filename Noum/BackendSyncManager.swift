@@ -319,6 +319,10 @@ actor BackendSyncManager {
     static let createChallengeFunctionName = SocialAuthorityCallable.createChallenge
     static let submitChallengeResultFunctionName = SocialAuthorityCallable.submitChallengeResult
     static let setChallengeReactionFunctionName = SocialAuthorityCallable.setChallengeReaction
+    static let createFriendInviteFunctionName = SocialAuthorityCallable.createFriendInvite
+    static let acceptFriendInviteFunctionName = SocialAuthorityCallable.acceptFriendInvite
+    static let listFriendLinksFunctionName = SocialAuthorityCallable.listFriendLinks
+    static let removeFriendLinkFunctionName = SocialAuthorityCallable.removeFriendLink
     static let appleRevocationUnavailableReason = "apple-revocation-unavailable"
     static let recommendationSyncWaitNanoseconds: UInt64 = 4_000_000_000
 
@@ -872,6 +876,111 @@ actor BackendSyncManager {
             request: request
         )
         return try response.result(expectedAccountID: request.accountID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    /// Creates a short-lived reciprocal invitation. The current Firebase UID
+    /// is the inviting identity; no account identifier is accepted from UI.
+    func createFriendInvite(
+        displayName: String,
+        accountID: String
+    ) async throws -> FriendInviteAuthorityResult {
+        guard SocialReleaseCapabilities.friendConnections.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
+        }
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        let request = CreateFriendInviteRequest(displayName: displayName)
+        guard request.isValid else { throw SocialAuthorityError.invalidRequest }
+        let response: CreateFriendInviteResponse = try await callSocialAuthority(
+            Self.createFriendInviteFunctionName,
+            request: request
+        )
+        return try response.result()
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    /// Accepts an opaque invitation and trusts only the server-returned peer
+    /// envelope. The token is never written by this backend client.
+    func acceptFriendInvite(
+        inviteToken: String,
+        displayName: String,
+        accountID: String
+    ) async throws -> FriendAuthorityLink {
+        guard SocialReleaseCapabilities.friendConnections.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
+        }
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        let request = AcceptFriendInviteRequest(
+            inviteToken: inviteToken,
+            displayName: displayName
+        )
+        guard request.isValid else { throw SocialAuthorityError.invalidRequest }
+        let response: AcceptFriendInviteResponse = try await callSocialAuthority(
+            Self.acceptFriendInviteFunctionName,
+            request: request
+        )
+        return try response.result(currentAccountID: accountID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    /// Lists the exact reciprocal set for the current caller. This is the only
+    /// authoritative membership reconciliation input used by FriendsManager.
+    func listFriendLinks(
+        limit: Int = 50,
+        accountID: String
+    ) async throws -> [FriendAuthorityLink] {
+        guard SocialReleaseCapabilities.friendConnections.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
+        }
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        let request = ListFriendLinksRequest(limit: limit)
+        guard request.isValid else { throw SocialAuthorityError.invalidRequest }
+        let response: ListFriendLinksResponse = try await callSocialAuthority(
+            Self.listFriendLinksFunctionName,
+            request: request
+        )
+        return try response.result(
+            requestedLimit: request.limit,
+            currentAccountID: accountID
+        )
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    /// Removes one reciprocal relationship. A false `removed` value is a
+    /// successful idempotent response: the link is already absent server-side.
+    func removeFriendLink(
+        friendAccountID: String,
+        accountID: String
+    ) async throws -> FriendRemovalAuthorityResult {
+        guard SocialReleaseCapabilities.friendConnections.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
+        }
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        let request = RemoveFriendLinkRequest(friendAccountID: friendAccountID)
+        guard request.isValid, request.friendAccountID != accountID else {
+            throw SocialAuthorityError.invalidRequest
+        }
+        let response: RemoveFriendLinkResponse = try await callSocialAuthority(
+            Self.removeFriendLinkFunctionName,
+            request: request
+        )
+        return try response.result(expectedFriendAccountID: request.friendAccountID)
         #else
         throw SocialAuthorityError.notConfigured
         #endif

@@ -32,6 +32,8 @@ struct FriendLeaderboardView: View {
     @StateObject private var authManager = AuthManager.shared
 
     @State private var showAddFriendSheet = false
+    @State private var pendingRemoval: NoumFriend?
+    @State private var showRemovalConfirmation = false
 
     var body: some View {
         ZStack {
@@ -44,6 +46,11 @@ struct FriendLeaderboardView: View {
                         capabilityNotice
                     }
                     leaderboardCard
+                    if SocialReleaseCapabilities.friendConnections.isAvailable,
+                       let message = friendsManager.connectionErrorMessage {
+                        ErrorCard(message: message)
+                            .accessibilityIdentifier("friends.connection.error")
+                    }
                     if showsLegacyFriendNote {
                         legacyFriendNoteCard
                     }
@@ -54,6 +61,9 @@ struct FriendLeaderboardView: View {
                 .padding(.bottom, Spacing.lg)
             }
             .refreshable {
+                if SocialReleaseCapabilities.friendConnections.isAvailable {
+                    await friendsManager.refreshFriendLinks(force: true)
+                }
                 await friendsManager.refreshPeerStats(force: true)
             }
         }
@@ -61,6 +71,9 @@ struct FriendLeaderboardView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("leaderboard.screen")
         .task {
+            if SocialReleaseCapabilities.friendConnections.isAvailable {
+                await friendsManager.refreshFriendLinks()
+            }
             await friendsManager.refreshPeerStats()
         }
         .sheet(isPresented: $showAddFriendSheet) {
@@ -68,6 +81,23 @@ struct FriendLeaderboardView: View {
                 friends: friendsManager,
                 challenges: ChallengesManager.shared
             )
+        }
+        .confirmationDialog(
+            "Remove connection?",
+            isPresented: $showRemovalConfirmation,
+            titleVisibility: .visible
+        ) {
+            if let friend = pendingRemoval {
+                Button("Remove \(friend.displayName)", role: .destructive) {
+                    Task { await friendsManager.removeConnection(id: friend.id) }
+                    pendingRemoval = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRemoval = nil
+            }
+        } message: {
+            Text("Noum will remove this reciprocal connection. Saved manual contacts are unaffected.")
         }
     }
 
@@ -191,6 +221,24 @@ struct FriendLeaderboardView: View {
             Spacer(minLength: Spacing.xs)
 
             ratingBlock(row: row)
+
+            if SocialReleaseCapabilities.friendConnections.isAvailable,
+               let friendID = row.friendID,
+               let friend = friendsManager.friends.first(where: { $0.id == friendID }),
+               friend.isServerLinked {
+                Button {
+                    pendingRemoval = friend
+                    showRemovalConfirmation = true
+                } label: {
+                    Label("Remove", systemImage: "person.crop.circle.badge.minus")
+                        .font(.caption.weight(.semibold))
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, Spacing.xs)
+                }
+                .foregroundStyle(AppColor.warning)
+                .accessibilityLabel("Remove connection with \(friend.displayName)")
+                .disabled(friendsManager.isManagingConnections)
+            }
         }
         .frame(minHeight: 56)
         .padding(.horizontal, Spacing.md)
@@ -264,6 +312,7 @@ struct FriendLeaderboardView: View {
         let streak: Int?
         let repsThisWeek: Int?
         let isCurrentUser: Bool
+        let friendID: UUID?
 
         var secondaryLine: String? {
             if isCurrentUser, let reps = repsThisWeek {
@@ -307,7 +356,8 @@ struct FriendLeaderboardView: View {
                 rating: FriendLeaderboardSelfRowPresentation.ratingValue(for: ratingStore.rating),
                 streak: streakFreeze.currentStreak,
                 repsThisWeek: myRepsThisWeek,
-                isCurrentUser: true
+                isCurrentUser: true,
+                friendID: nil
             )
         )
 
@@ -325,6 +375,7 @@ struct FriendLeaderboardView: View {
 
         for friend in sortedWithRating + sortedWithoutRating {
             let sharedStatsAvailable = SocialReleaseCapabilities.friendProfiles.isAvailable
+                && friend.isServerLinked
             rows.append(
                 LeaderboardRow(
                     id: friend.id.uuidString,
@@ -333,7 +384,8 @@ struct FriendLeaderboardView: View {
                     rating: sharedStatsAvailable ? friend.lastKnownRating : nil,
                     streak: sharedStatsAvailable ? friend.lastKnownStreak : nil,
                     repsThisWeek: sharedStatsAvailable ? friend.lastKnownRepsThisWeek : nil,
-                    isCurrentUser: false
+                    isCurrentUser: false,
+                    friendID: friend.id
                 )
             )
         }

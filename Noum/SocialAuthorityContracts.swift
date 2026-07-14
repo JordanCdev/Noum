@@ -16,6 +16,10 @@ enum SocialAuthorityCallable {
     static let createChallenge = "createChallenge"
     static let submitChallengeResult = "submitChallengeResult"
     static let setChallengeReaction = "setChallengeReaction"
+    static let createFriendInvite = "createFriendInvite"
+    static let acceptFriendInvite = "acceptFriendInvite"
+    static let listFriendLinks = "listFriendLinks"
+    static let removeFriendLink = "removeFriendLink"
 }
 
 // MARK: - Competitive observation authority
@@ -377,10 +381,224 @@ enum SocialReleaseCapabilities {
         message: "Shared friend stats are unavailable while Noum finishes secure connection verification."
     )
 
+    /// Reciprocal connection membership has its own release boundary. Turning
+    /// this on must never implicitly publish profiles, enable comparisons, or
+    /// authorize speak-offs.
+    static let friendConnections = SocialCapabilityAvailability(
+        isAvailable: false,
+        message: "Connected accounts are unavailable while Noum finishes reciprocal invite verification. Saved practice contacts remain on this device."
+    )
+
     static let speakOffs = SocialCapabilityAvailability(
         isAvailable: false,
         message: "Speak-offs are unavailable while Noum finishes secure evidence and friend verification."
     )
+}
+
+// MARK: - Reciprocal friendship authority
+
+/// Server-owned friend membership returned by accept and list. The client may
+/// choose a display name for itself, but it never supplies the linked account,
+/// relationship time, or membership list.
+struct FriendAuthorityEnvelope: Codable, Equatable, Sendable {
+    let pairID: String
+    let accountID: String
+    let displayName: String
+    let linkedAt: Double
+
+    func link(currentAccountID: String) throws -> FriendAuthorityLink {
+        guard let pairID = UUID(uuidString: pairID) else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        let cleanAccountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanAccountID == accountID,
+              FriendAuthorityValidation.isValidAccountID(cleanAccountID),
+              cleanAccountID != currentAccountID,
+              cleanName == displayName,
+              (1...60).contains(cleanName.count),
+              linkedAt.isFinite,
+              linkedAt > 0 else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return FriendAuthorityLink(
+            pairID: pairID,
+            accountID: cleanAccountID,
+            displayName: cleanName,
+            linkedAt: Date(timeIntervalSince1970: linkedAt)
+        )
+    }
+}
+
+struct FriendAuthorityLink: Equatable, Sendable {
+    let pairID: UUID
+    let accountID: String
+    let displayName: String
+    let linkedAt: Date
+}
+
+struct CreateFriendInviteRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let displayName: String
+
+    init(displayName: String) {
+        schemaVersion = Self.currentSchemaVersion
+        self.displayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isValid: Bool { (1...60).contains(displayName.count) }
+}
+
+struct CreateFriendInviteResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let inviteToken: String
+    let expiresAt: Double
+
+    func result(now: Date = Date()) throws -> FriendInviteAuthorityResult {
+        let expiry = Date(timeIntervalSince1970: expiresAt)
+        guard schemaVersion == CreateFriendInviteRequest.currentSchemaVersion,
+              FriendAuthorityValidation.isValidInviteToken(inviteToken),
+              expiresAt.isFinite,
+              expiry > now,
+              // The service issues 24-hour invites. Allow a narrow clock-skew
+              // window so a correct server response is not rejected solely
+              // because the device clock trails the server.
+              expiry.timeIntervalSince(now) <= 86_700 else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return FriendInviteAuthorityResult(inviteToken: inviteToken, expiresAt: expiry)
+    }
+}
+
+struct FriendInviteAuthorityResult: Equatable, Sendable {
+    let inviteToken: String
+    let expiresAt: Date
+}
+
+struct AcceptFriendInviteRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let inviteToken: String
+    let displayName: String
+
+    init(inviteToken: String, displayName: String) {
+        schemaVersion = Self.currentSchemaVersion
+        self.inviteToken = inviteToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.displayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isValid: Bool {
+        FriendAuthorityValidation.isValidInviteToken(inviteToken)
+            && (1...60).contains(displayName.count)
+    }
+}
+
+struct AcceptFriendInviteResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let friend: FriendAuthorityEnvelope
+
+    func result(currentAccountID: String) throws -> FriendAuthorityLink {
+        guard schemaVersion == AcceptFriendInviteRequest.currentSchemaVersion else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return try friend.link(currentAccountID: currentAccountID)
+    }
+}
+
+struct ListFriendLinksRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let limit: Int
+
+    init(limit: Int = 50) {
+        schemaVersion = Self.currentSchemaVersion
+        self.limit = limit
+    }
+
+    var isValid: Bool { (1...50).contains(limit) }
+}
+
+struct ListFriendLinksResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let friends: [FriendAuthorityEnvelope]
+
+    func result(
+        requestedLimit: Int,
+        currentAccountID: String
+    ) throws -> [FriendAuthorityLink] {
+        guard schemaVersion == ListFriendLinksRequest.currentSchemaVersion,
+              (1...50).contains(requestedLimit),
+              friends.count <= requestedLimit else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        let links = try friends.map { try $0.link(currentAccountID: currentAccountID) }
+        guard Set(links.map(\.accountID)).count == links.count,
+              Set(links.map(\.pairID)).count == links.count else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return links
+    }
+}
+
+struct RemoveFriendLinkRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let friendAccountID: String
+
+    init(friendAccountID: String) {
+        schemaVersion = Self.currentSchemaVersion
+        self.friendAccountID = friendAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isValid: Bool { FriendAuthorityValidation.isValidAccountID(friendAccountID) }
+}
+
+struct RemoveFriendLinkResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let friendAccountID: String
+    let removed: Bool
+
+    func result(expectedFriendAccountID: String) throws -> FriendRemovalAuthorityResult {
+        guard schemaVersion == RemoveFriendLinkRequest.currentSchemaVersion,
+              friendAccountID == expectedFriendAccountID,
+              FriendAuthorityValidation.isValidAccountID(friendAccountID) else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return FriendRemovalAuthorityResult(
+            friendAccountID: friendAccountID,
+            removedNow: removed
+        )
+    }
+}
+
+struct FriendRemovalAuthorityResult: Equatable, Sendable {
+    let friendAccountID: String
+    let removedNow: Bool
+}
+
+private enum FriendAuthorityValidation {
+    static func isValidAccountID(_ value: String) -> Bool {
+        (1...128).contains(value.count)
+            && value == value.trimmingCharacters(in: .whitespacesAndNewlines)
+            && !value.contains("/")
+            && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+    }
+
+    static func isValidInviteToken(_ value: String) -> Bool {
+        value.utf8.count == 43
+            && value.utf8.allSatisfy { byte in
+                (65...90).contains(byte)
+                    || (97...122).contains(byte)
+                    || (48...57).contains(byte)
+                    || byte == 95
+                    || byte == 45
+            }
+    }
 }
 
 /// Captured before an async social operation. Managers increment their local

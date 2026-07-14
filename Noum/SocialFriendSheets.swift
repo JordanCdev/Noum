@@ -486,67 +486,73 @@ struct ChallengePickFriendSheet: View {
 struct AddFriendSheet: View {
     @ObservedObject var friends: FriendsManager
     @ObservedObject var challenges: ChallengesManager
+    @StateObject private var authManager = AuthManager.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var friendName = ""
+    @State private var inviteToken = ""
     @State private var didAdd = false
     @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: Spacing.lg) {
-                ZStack {
-                    Circle()
-                        .fill(AppColor.brandBlue.opacity(0.12))
-                        .frame(width: 64, height: 64)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: Spacing.lg) {
+                    ZStack {
+                        Circle()
+                            .fill(AppColor.brandBlue.opacity(0.12))
+                            .frame(width: 64, height: 64)
 
-                    if friendName.trimmingCharacters(in: .whitespaces).isEmpty {
-                        Image(systemName: "person.fill")
-                            .font(.title2)
-                            .foregroundStyle(AppColor.brandBlue)
-                    } else {
-                        Text(String(friendName.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
+                        if friendName.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Image(systemName: "person.fill")
+                                .font(.title2)
+                                .foregroundStyle(AppColor.brandBlue)
+                        } else {
+                            Text(String(friendName.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
+                                .font(Typography.cardTitle)
+                                .foregroundStyle(AppColor.brandBlue)
+                        }
+                    }
+                    .padding(.top, 20)
+
+                    VStack(spacing: 8) {
+                        Text("Save a practice contact")
                             .font(Typography.cardTitle)
-                            .foregroundStyle(AppColor.brandBlue)
+                        Text("Keep a name for planning future reps. Shared scores require a connected Noum account.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
-                }
-                .padding(.top, 20)
 
-                VStack(spacing: 8) {
-                    Text("Save a practice contact")
-                        .font(Typography.cardTitle)
-                    Text("Keep a name for planning future reps. Shared scores require a connected Noum account.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+                    TextField("Friend's name", text: $friendName)
+                        .font(.body)
+                        .padding(16)
+                        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                        )
+                        .focused($nameFieldFocused)
+                        .submitLabel(.done)
+                        .onSubmit { addFriend() }
 
-                TextField("Friend's name", text: $friendName)
-                    .font(.body)
-                    .padding(16)
-                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(Color.black.opacity(0.06), lineWidth: 1)
-                    )
-                    .padding(.horizontal, Spacing.screenH)
-                    .focused($nameFieldFocused)
-                    .submitLabel(.done)
-                    .onSubmit { addFriend() }
-
-                if didAdd {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Contact saved")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.green)
+                    if didAdd {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(AppColor.positive)
+                            Text("Contact saved")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(AppColor.positive)
+                        }
+                        .transition(.scale.combined(with: .opacity))
                     }
-                    .transition(.scale.combined(with: .opacity))
+
+                    connectedAccountSection
                 }
-
-                Spacer()
-
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.bottom, Spacing.lg)
+            }
+            .safeAreaInset(edge: .bottom) {
                 Button(action: addFriend) {
                     Text("Save contact")
                         .font(.headline.weight(.semibold))
@@ -566,7 +572,8 @@ struct AddFriendSheet: View {
                 }
                 .disabled(friendName.trimmingCharacters(in: .whitespaces).isEmpty)
                 .padding(.horizontal, Spacing.screenH)
-                .padding(.bottom, 16)
+                .padding(.vertical, Spacing.sm)
+                .background(.regularMaterial)
                 .accessibilityIdentifier("friends.add.save")
             }
             .background(AppColor.screenBackground.ignoresSafeArea())
@@ -580,6 +587,113 @@ struct AddFriendSheet: View {
             .onAppear { nameFieldFocused = true }
         }
         .accessibilityIdentifier("friends.add.sheet")
+    }
+
+    @ViewBuilder
+    private var connectedAccountSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "person.2.badge.gearshape")
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityHidden(true)
+                Text("Connect Noum accounts")
+                    .font(Typography.headline)
+            }
+
+            if SocialReleaseCapabilities.friendConnections.isAvailable {
+                Text("Use a short-lived invite. A connection appears only after Noum confirms both accounts.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let invite = friends.activeInvite, invite.expiresAt > Date() {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(invite.inviteToken)
+                            .font(.callout.monospaced().weight(.semibold))
+                            .textSelection(.enabled)
+                            .accessibilityLabel("Friend invite code. Keep this code private and share it only with the person you want to connect.")
+                        Text("Expires \(invite.expiresAt, style: .relative)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ShareLink(item: "Noum friend invite: \(invite.inviteToken)") {
+                            Label("Share invite", systemImage: "square.and.arrow.up")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(minHeight: 44)
+                        }
+                    }
+                } else {
+                    Button {
+                        Task {
+                            await friends.createConnectionInvite(displayName: currentDisplayName)
+                        }
+                    } label: {
+                        Label("Create invite", systemImage: "link.badge.plus")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(friends.isManagingConnections)
+                    .accessibilityIdentifier("friends.connection.createInvite")
+                }
+
+                Divider()
+
+                TextField("Paste invite token", text: $inviteToken)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .padding(Spacing.md)
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    .accessibilityIdentifier("friends.connection.inviteToken")
+
+                Button {
+                    nameFieldFocused = false
+                    Task {
+                        await friends.acceptConnectionInvite(
+                            token: inviteToken,
+                            displayName: currentDisplayName
+                        )
+                        if friends.connectionErrorMessage == nil {
+                            inviteToken = ""
+                        }
+                    }
+                } label: {
+                    Text("Connect account")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(.white)
+                        .background(AppColor.brandBlue, in: Capsule())
+                }
+                .disabled(
+                    inviteToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || friends.isManagingConnections
+                )
+                .accessibilityIdentifier("friends.connection.acceptInvite")
+
+                if let message = friends.connectionErrorMessage {
+                    ErrorCard(message: message)
+                        .accessibilityIdentifier("friends.connection.error")
+                }
+            } else {
+                Text(SocialReleaseCapabilities.friendConnections.message)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("friends.connection.capabilityUnavailable")
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+    }
+
+    private var currentDisplayName: String {
+        let name = authManager.currentAccountName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let name, !name.isEmpty { return name }
+        return "Speaker"
     }
 
     private func addFriend() {
