@@ -820,6 +820,7 @@ enum DrillEngineV2 {
         feedbackCategories: [(dimension: String, rating: String)],
         targetArea: SkillArea? = nil,
         styleGoal: SpeakingStyleGoal? = nil,
+        trendOverride: [SkillTrend]? = nil,
         trendStore: SkillTrendStore = .shared,
         drillHistory: DrillHistoryStore = .shared
     ) -> DrillRecommendationV2 {
@@ -831,7 +832,7 @@ enum DrillEngineV2 {
         let categoryRatings = Dictionary(uniqueKeysWithValues: feedbackCategories.map { ($0.dimension, $0.rating) })
 
         // Get trends
-        let trends = TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
+        let trends = trendOverride ?? TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
 
         // Build a current session snapshot for trend context
         let sessionSnapshot = SkillSnapshot(

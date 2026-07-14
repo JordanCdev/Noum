@@ -791,7 +791,8 @@ enum NextActionEngine {
             wordCount: input.wordCount,
             score: input.score,
             feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) },
-            styleGoal: style
+            styleGoal: style,
+            trendOverride: input.trends
         )
         return .drill(rec)
     }

@@ -3846,7 +3846,7 @@ enum CoachChatEvaluationCorpus {
             sessions: [
                 session(
                     id: "11111111-1111-1111-1111-111111111111",
-                    transcript: "I think the plan is strong, um, but I need the team to move faster before Friday.",
+                    transcript: "I think the plan is strong, um, but I need the team to move faster before Friday and keep everyone aligned.",
                     fillerCount: 6,
                     duration: 64,
                     daysAgo: 1,
