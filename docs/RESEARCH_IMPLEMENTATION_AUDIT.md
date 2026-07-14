@@ -5,7 +5,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`24b5ad6ac24c44fb6a22b008ef3ce739062b8dcd`
+`f1d6ec72ae2666d227af416225371c74a8621633`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -17,7 +17,9 @@ explicit quarantine of superseded privacy-audit documents. Followed-rep
 learning now also requires explicit recommendation acceptance plus the matching
 completed mode, clean-ancestor evidence reuse is documentation-only, and all
 uncommitted behavior source now blocks evidence binding even when the manual
-coach fingerprint matches. Their
+coach fingerprint matches. Recommendation outcomes now also require bounded,
+unique, persisted-demand-compatible history; normalize fillers per minute;
+judge the prescribed metric; and carry session/outcome schema provenance. Their
 focused and full source/test results are recorded below with their exact source
 boundaries.
 
@@ -192,7 +194,7 @@ coach.
 
 | Report requirement or output | Classification | Current implementation and exact gap |
 |---|---|---|
-| Goal plus latest breakdown drives one best next rep | **Proved** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and style-goal alignment. Summary renders exactly the finalized primary action. A later outcome enters followed-rep learning only when the stored exposure has the existing explicit-acceptance timestamp and the completed mode matches; untapped or different-mode outcomes fail closed and cannot influence goal movement or adaptation. The subsequent response baseline still averages heterogeneous historical modes/durations and raw filler counts, so comparable-attempt normalization remains a separate local coaching-trust gap. |
+| Goal plus latest breakdown drives one best next rep | **Proved** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and style-goal alignment. Summary renders exactly the finalized primary action. A later outcome enters followed-rep learning only when the stored exposure has the existing explicit-acceptance timestamp and the completed mode matches. At `f1d6ec72`, its response baseline admits at most five unique recent sessions inside 28 days, requires two metric-bearing priors, matches mode/pressure/rated state/duration/evaluator epoch and exact IM setup, normalizes fillers per minute, and judges pace/filler/general prescriptions on their target metric. Legacy/unknown schemas and missing target metrics fail closed. Timed/Sudden Death difficulty and Speech Project identity are not yet persisted on `PracticeSession`, so exact-demand comparison and project-specific longitudinal learning remain incomplete rather than inferred. |
 | Up to two alternatives | **Incomplete** | `NextAction` can hold one optional secondary, but `SummaryPrescriptionProjection` deliberately renders only the primary. There is no two-alternative product card. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. Speech Projects are now independently executable: a stable catalog ID resolves into Timed with its curated prompts and project duration contract, but that does not make Projects an adaptive recommendation destination. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
@@ -332,7 +334,7 @@ completed full regression proves only its recorded `47cbab5f` source boundary.
 | Rendered Prep availability fallback | **Proved** | On 2026-07-14, a combined 23-test focused run passed the real locked-shape Prep UI flow plus `PrepSessionAvailabilityTests`, `TimedPracticePromptHandoffTests`, and `ReleaseIdentityPrivacyTests`, with zero failures or skips. Retained attachments `prep-locked-shapes-timed-fallbacks` and `prep-pressure-fallback-exact-timed-prompt` were visually checked after the readiness-copy correction. They prove honest planned-shape status, Timed fallback actions, a 44-point target, and the exact category prompt at the destination on the iPhone 17 Pro simulator—not physical-device or TestFlight behavior. |
 | Rendered Home/Train recommendation ownership | **Proved** | At implementation commit `1e8e3e5e`, a combined iPhone 17 Pro simulator run passed 33/33 tests with zero failures or skips: both `RecommendationSurfaceRoutingUITests` plus `NextActionAvailabilityTests`, `HomeCoachCardVariantTests`, and `TransformationKPIReportTests`. Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a diagnostic attachment showing one 100% correlated shown/accepted pair. Six focused attachments and the light five-tab sweep in `.screenshots/2026-07-14_rendered-recommendation-ownership/` were visually checked. This proves the rendered normal Filler Control path on Home and Train. The four-mode availability matrix is pure/source coverage; it is not four rendered recommendation modes, fallback-tap proof, population effectiveness, physical-device behavior, or TestFlight behavior. |
 | Rendered Speech Project execution | **Proved** | At implementation commit `47cbab5f`, the focused routing and project-duration contracts passed together with `FocusedPracticeSetupUITests.testFocusedSetupIdentifiersSelectionTraitsAndTabBarHiding` on the iPhone 17 Pro simulator. The rendered `noum://projects/ice_breaker` route retained the catalog ID in Timed, exposed its project cue and begin control, hid the tab bar, and showed the aligned four-to-six-minute contract. The light five-tab sweep and project frame in `.screenshots/2026-07-14_speech-project-execution/` were visually checked. This proves local catalog-to-practice execution, not adaptive prescription, per-project longitudinal progress, physical-device behavior, or TestFlight behavior. |
-| Recommendation outcome attribution | **Proved** | At `0da19af1`, 46 focused iPhone 17 Pro simulator tests passed across `GoalOutcomeLoopTests`, `RecommendationResponseAnalyzerTests`, and `RecommendationAdaptationAnalyzerTests`. They prove explicit acceptance plus matching mode is required, legacy untapped exposure fails closed, and unfollowed outcomes stay outside response/adaptation reads. This is source/simulator accounting evidence, not population effectiveness. |
+| Recommendation outcome attribution | **Proved** | `0da19af1` established explicit acceptance plus matching-mode attribution. At the detached clean `f1d6ec72` boundary, 75 focused simulator tests passed across `GoalOutcomeLoopTests`, `RecommendationResponseAnalyzerTests`, `RecommendationAdaptationAnalyzerTests`, and `TransformationKPIReportTests` with zero failures or skips. They additionally prove bounded persisted-demand comparison, unique-session floors, evaluator/outcome schema rejection, normalized filler polarity, focus-matched pace/filler judging, legacy fail-closed behavior, and KPI gating. The seeded light five-tab sweep in `.screenshots/2026-07-14_comparable-recommendation-evidence/` was visually checked; it does not prove the lower DEBUG diagnostic or population effectiveness. |
 | Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and 136 Python runner contracts pass. The suite proves default-deny committed and uncommitted source classification, NUL-safe rename/copy/untracked handling, exact generated-output exclusions, no-overwrite sidecar refusal, and existing score/trace/readiness behavior. The canonical artifact remains bound to `80fbf6d2`; it is no longer current for `24b5ad6a`. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
 | Release-evidence workflow contracts | **Proved** | 29 tests passed. They prove fail-closed dirty-source binding, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
 | Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
@@ -380,7 +382,8 @@ credential revocation, or production traffic.
 Committed-ancestor and dirty-worktree provenance hardening are complete. The
 safe local source/evidence refresh remains due. Keep `40d5e903` and `80fbf6d2`
 as named historical baselines; neither is the current `24b5ad6a` source
-boundary. Regenerate the local
+boundary. `f1d6ec72` is the newer focused recommendation-response boundary, not
+a replacement for the complete `47cbab5f` regression. Regenerate the local
 dump/report from a clean current checkout and preserve the
 provenance contract: explicitly styled rows pass only with typed assessment,
 declared-neutral rows remain truthfully `notEvaluated`, and unknown fixture IDs
@@ -390,8 +393,11 @@ readiness past the external cap by themselves. The current primary checkout is
 intentionally not eligible for refresh while the user's localization edit is
 uncommitted. The next narrow product-accounting repair is to record a displayed
 Home/Train prescription as shown before tap-time capability fallback decides
-whether it can be accepted; the next deeper coaching audit should normalize and
-bound heterogeneous recommendation-response comparisons.
+whether it can be accepted. The next deeper coaching work should persist exact
+difficulty/project demand if product-approved, align
+`PrimaryFocusMemory.followedRepValues` with accepted-prescription and
+normalized-filler evidence, and prevent whole-ledger asynchronous writes from
+losing newer schema fields.
 
 ### External or approval-gated
 

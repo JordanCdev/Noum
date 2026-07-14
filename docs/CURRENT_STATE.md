@@ -1,5 +1,44 @@
 # Noum — Current state
 
+## 2026-07-14 — Recommendation response uses comparable evidence
+
+Implementation commit `f1d6ec72` closes the heterogeneous recommendation-
+response gap without creating another learning store. The existing
+`RecommendationLearningStore` now compares an accepted rep with at most five
+unique recent attempts inside 28 days that match the persisted demand Noum can
+actually prove: mode, pressure, rated state, approximate duration, reliable
+speech quality, metric-evaluator epoch, and exact IM scenario/tone setup.
+Sparse history remains unmeasured. Filler movement is normalized per minute,
+pace prescriptions are judged only on movement toward the established healthy
+pace band, and duplicate session IDs cannot inflate the two-rep evidence floor.
+
+Practice sessions now persist a comparison-metric schema epoch. Legacy or
+unknown session epochs, outcome comparison schemas, and target-metric-missing
+pace rows fail closed across response copy, adaptive selection, goal movement,
+KPI derivation, and developer diagnostics. The outcome record retains raw
+filler/duration deltas only as compatibility diagnostics; coaching reducers use
+normalized, focus-matched evidence. The DEBUG diagnostic surface now preserves
+fractional filler-rate direction instead of rounding threshold-significant
+values to zero.
+
+At the detached clean `f1d6ec72` boundary, 75 focused simulator tests passed
+across `GoalOutcomeLoopTests`, `RecommendationResponseAnalyzerTests`,
+`RecommendationAdaptationAnalyzerTests`, and `TransformationKPIReportTests`
+with zero failures or skips. A seeded light five-tab sweep from the same Debug
+build was visually checked in
+`.screenshots/2026-07-14_comparable-recommendation-evidence/`; the lower DEBUG
+diagnostics card is outside the light Settings frame and is not claimed as
+direct visual proof. This focused run does not replace the complete Swift and
+unsigned Release boundary at `47cbab5f`.
+
+Exact demand is still incomplete because `PracticeSession` does not persist
+Timed/Sudden Death difficulty or Speech Project identity. Home/Train tap-time
+capability fallback can still miss a shown denominator, and
+`PrimaryFocusMemory.followedRepValues` has not yet adopted the accepted-
+prescription/normalized-filler contract. No live-provider, professional-
+calibration, longitudinal-user, physical-TestFlight, security-incident, or
+launch-operations evidence was collected. Production readiness remains NO-GO.
+
 ## 2026-07-14 — App-path evidence now requires a clean behavior source
 
 Implementation commit `24b5ad6a` closes the remaining uncommitted-source
