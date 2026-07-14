@@ -1,5 +1,48 @@
 # Noum — Current state
 
+## 2026-07-14 — Real adapter proof is local; the supported deploy path stays closed
+
+Implementation commits `cf403d2a`, `6435393e`, and `d96afc90` extend the
+existing recoverable social-cutover owner without changing shipping iOS state.
+The canonical emulator workflow now drives the actual migration CLI through the
+Firestore adapter against the pinned `demo-noum` emulator. Explicit emulator
+mode requires the exact demo project, loopback Firestore routing, and a separate
+opt-in flag; it cannot acquire gcloud credentials or inherit ambient emulator
+routing. The integration contract covers zero-write inventory, source drift,
+same-run resume and takeover refusal, pre-completion rollback, native Firestore
+value preservation, and transaction abort behavior.
+
+Backup apply and rollback now open the reviewed file with no-follow semantics,
+validate the exact handle as a regular mode-0600 file, enforce a conservative
+64 MiB bound, and parse through that same handle. The adapter validates the
+actual process environment consumed by the Firestore SDK. Lowercase challenge
+document or manifest IDs fail closed rather than being normalized into a
+different Firestore path.
+
+The supported Functions deploy command is intentionally non-executing. Running
+`npm --prefix functions run deploy` exits nonzero and lists four stable blockers:
+a trusted server-observed competitive evidence producer with a deterministic
+evaluator, reciprocal friendship authority, independently trusted deployment
+authorization, and an immutable source-bound deployment artifact. It accepts
+only `--help`; there is no execute or self-attested authorization path.
+
+Verification passed 39/39 focused migration, credential, backup, and deploy-
+blocker tests; 71/71 Functions unit tests plus 6/6 deploy-blocker tests; 16/16
+cloud-operations contracts; all 19 static readiness checks; and, from a clean
+detached checkout with Node 22.23.1, Java 21.0.11, and Firebase CLI 15.19.1,
+24/24 callable/rules emulator tests plus 6/6 real Firestore-adapter tests. No
+production service was contacted.
+
+The highest-impact product gap remains deliberately open. The current backend
+issues a short-lived transcription token, while the iOS client streams and
+scores locally; there is no server-observed competitive audio/transcript fact
+set or calibrated deterministic evaluator that can honestly write
+`_verifiedSessionEvidence`. Reciprocal friend-link authority is also absent.
+Client-authored sessions, scores, transcripts, or emulator Admin seed data must
+not be promoted as substitutes.
+
+Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Social cutover is recoverable locally and remains closed in production
 
 Implementation commits `afdcd37f`, `dd4a116a`, `03bf5c67`, and `0206eb4d`

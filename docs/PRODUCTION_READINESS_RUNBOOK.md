@@ -329,6 +329,21 @@ Do not run a blanket Firestore-rules or Functions deployment from the current
 repository while this gate is open. The social contract is a coordinated data
 migration and server-authority change, not an independent rules update.
 
+The repository-supported deployment entry point is deliberately closed:
+
+```bash
+npm --prefix functions run deploy
+```
+
+That command performs no deployment. It exits nonzero with the exact missing
+requirements: a trusted server-observed competitive evidence producer and
+deterministic evaluator, reciprocal friendship authority, independently trusted
+authorization evidence, and an immutable source-bound deployment artifact.
+`npm --prefix functions run deploy -- --help` explains the boundary. There is
+no `--execute` flag or authorization-file escape hatch. Do not bypass it with a
+raw Firebase command. Replace the blocker only after a separately reviewed
+implementation proves all four requirements against the same immutable source.
+
 Before deploying the reviewed social rules and functions together:
 
 1. Back up the production legacy social collections and record inventory
@@ -366,6 +381,13 @@ with source deletion; and supports same-run resume and pre-completion rollback.
 All six social callables reject every state except the exact provenance-bearing
 schema-v2 complete marker. This is locally tested mechanics, not authorization
 or evidence that a production migration occurred.
+
+The canonical local workflow now runs both the 24-test Auth/Functions/rules
+matrix and six tests that invoke the actual migration CLI through the Firestore
+adapter against `demo-noum`. Those tests prove local zero-write inventory,
+drift refusal, resume/takeover rules, rollback, native-value preservation, and
+transaction abort behavior. They do not prove production inventory, migration,
+authorization, deployment, or rollback operations.
 
 For the reviewed production inventory on an operator Mac that has an active
 gcloud user identity but no Application Default Credentials, use the explicit

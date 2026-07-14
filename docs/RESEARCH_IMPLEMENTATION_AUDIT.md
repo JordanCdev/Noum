@@ -5,7 +5,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`0206eb4d`
+`d96afc90`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -374,7 +374,8 @@ Historical results are not treated as proof for later behavior.
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
 | Full callable runtime-security inventory | **Proved locally** | At `4dd2182b`, the verifier requires the exact 11 exported callables, their five reviewed dedicated identities, exact production project/region, App Check and trusted-caller source contracts, least-privilege role boundaries, and unauthenticated `401` probes for the same roster. Its 16 local contract tests and three source-contract checks pass. No trusted authenticated production inspection was run, so deployed IAM, App Check, function inventory, and endpoint behavior remain externally unproved. |
 | Source-exact hosted privacy enforcement | **Proved locally** | At `518b3103`, shell and Python readiness paths share bounded decompression and require the approved origin, 2xx HTML, and exact `public/privacy.html` bytes without logging body content. Fourteen focused privacy tests and the full 149-test Python runner suite pass. The 2026-07-14 live probe correctly failed on a digest/size mismatch, so hosted equivalence remains Missing. |
-| Recoverable social cutover source and emulator contract | **Proved locally** | At `afdcd37f`–`0206eb4d`, 25/25 migration/credential tests prove source-bound backup validation, exact private-profile inventory, transactionally paired quarantine/delete, phase fault injection, same-run resume, digest takeover rejection, exact pre-completion rollback, and equal verified completion digests. Functions pass 71/71 units and the canonical Node 22/Java 21/Firebase CLI 15.19.1 `demo-noum` gate passes 24/24, covering the exact six-callable marker gate, recommendation independence, client-denied migration state, deletion, challenges, and recommendation CAS. The production adapter and deployment remain unexecuted. |
+| Recoverable social cutover source and emulator contract | **Proved locally** | At `afdcd37f`–`6435393e`, 33/33 migration, credential, and backup-file tests prove source-bound backup validation, exact private-profile inventory, transactionally paired quarantine/delete, phase fault injection, same-run resume, digest takeover rejection, exact pre-completion rollback, equal verified completion digests, no-follow mode-0600 same-handle reads, a bounded backup size, and actual SDK-environment binding. Functions pass 71/71 units. The canonical Node 22.23.1/Java 21.0.11/Firebase CLI 15.19.1 `demo-noum` gate passes 24/24 callable/rules tests plus 6/6 actual migration-CLI/Firestore-adapter tests covering zero-write inventory, source drift, resume/takeover, rollback, native Firestore values, and transaction abort. No production adapter invocation or deployment occurred. |
+| Supported backend deploy path | **Proved locally closed** | At `d96afc90`, `npm --prefix functions run deploy` is a non-executing blocker with 6/6 tests and no process, network, or file-read primitive. It lists the four missing requirements and rejects every mutation-looking argument. This proves that the supported repository path cannot deploy; it is not deployment authorization or production evidence. |
 | Production readiness | **Missing** | The clean detached `70b0b380` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Later verifier commits do not increase that score and require a new current-source capture before any current-HEAD claim. No validated attachment-backed release run is available, zero of five required external sidecars is present, and the hosted privacy body differs from source. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
 
 ## External proof gates
@@ -399,7 +400,10 @@ credential revocation, or production traffic.
 | Replacement transcription boundary in source | **Proved** | Release construction uses the authenticated Firebase/Deepgram route with local fallback. This is product substrate, not a signed-device or live-service proof. |
 | Historical Deepgram/AWS incident closed | **Missing** | The runbook still requires legacy credential revocation, disabling/authenticating every legacy endpoint, and provider usage/billing audit. |
 | Protected social cutover | **Missing** | Recoverable mechanics are proved locally, but production active-client inventory/minimum-client disposition, writer suspension, backup/quarantine, explicit legacy-data approval, trusted server-authored evidence producer, authorized source-bound dry run/apply, coordinated rules/functions deployment, mixed-build smoke, and rollback drill remain unperformed. |
-| Recoverable social migration/quarantine mechanics | **Proved locally** | At `afdcd37f`–`0206eb4d`, a clean-source, project- and implementation-bound mode-0600 backup inventories exact private profiles and legacy social data. Apply journals before mutation, transactionally pairs each quarantine copy with source deletion, binds resume to the same run/backup digest, restores exact source/manifests during pre-completion rollback, and completes only after identical expected/observed inventory digests. All six social callables require the exact provenance-bearing v2 marker; recommendation sync stays independent; clients cannot access journal, quarantine, or manifests. Migration/credential tests pass 25/25, Functions units 71/71, and the combined `demo-noum` emulator gate 24/24. This proves pure migration mechanics plus callable/rules enforcement locally; the production Firestore adapter, inventory, backup, quarantine, migration, deployment, and rollback drill were not executed. |
+| Trusted competitive session-evidence producer/evaluator | **Missing** | `_verifiedSessionEvidence` has a strict server consumer contract, but no trusted producer exists. The current callable issues a short-lived transcription token; iOS streams and scores locally, and emulator Admin seeds are hypothetical fixtures. There is no server-observed audio/transcript fact set or calibrated deterministic evaluator. Client sessions, scores, transcripts, and fixture data cannot close this row. |
+| Reciprocal friendship authority | **Missing** | Callables fail closed on local-only friend claims, but there is no server-owned request/accept/remove lifecycle that materializes reciprocal friend links. Challenges and friend-scoped reads cannot be production-authoritative until that lifecycle exists. |
+| Executable deployment authorization and immutable artifact | **Missing** | The supported deploy command intentionally refuses to execute. No independently trusted authorization evidence or immutable source-bound deployment artifact exists, and self-attested files are not acceptable substitutes. |
+| Recoverable social migration/quarantine mechanics | **Proved locally** | At `afdcd37f`–`6435393e`, a clean-source, project- and implementation-bound mode-0600 backup inventories exact private profiles and legacy social data. Apply journals before mutation, transactionally pairs each quarantine copy with source deletion, binds resume to the same run/backup digest, restores exact source/manifests during pre-completion rollback, and completes only after identical expected/observed inventory digests. Backup apply/rollback uses no-follow, exact mode and bounded same-handle parsing. All six social callables require the exact provenance-bearing v2 marker; recommendation sync stays independent; clients cannot access journal, quarantine, or manifests. Migration/credential/backup tests pass 33/33, Functions units 71/71, and the combined `demo-noum` emulator gate passes 24/24 callable/rules tests plus 6/6 actual CLI/adapter tests. This proves local mechanics and the real emulator adapter path; production inventory, backup, quarantine, migration, deployment, and rollback drill were not executed. |
 | Hosted Firebase privacy endpoint reachability | **Proved** | The public Firebase Hosting endpoint responded on 2026-07-14. Reachability alone is not policy equivalence or deployment proof. |
 | Hosted Firebase privacy body matches source | **Missing** | The exact-body probe expected 25,462 bytes / `2b5c1f71…fee44d67` but received 24,274 bytes / `34eee13a…7908607`. An authorized deploy and a fresh passing exact-body probe are required. |
 | `noum.app` custom privacy domain | **Missing** | The runbook records it as parked at GoDaddy pending DNS, TLS, and policy verification. |
@@ -427,14 +431,20 @@ fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
 
 The custom dump-directory wrapper, recoverable social migration state machine,
-and canonical local Firebase emulator matrix are now proved. The highest-
-leverage remaining work is operational and approval-gated: production identity
-inspection, a reviewed active-client inventory and minimum-client disposition,
-safe writer suspension, an authorized source-bound dry run and backup review,
-privacy deployment, and the coordinated migration/rules/functions cutover. A
-two-device mixed-build conflict/replay/deletion smoke, plus backup and rollback
-evidence, must accompany that deployment. The user's localization edit and
-staged screenshot handoffs remain deliberately outside these commits.
+actual Firestore adapter on the demo emulator, and an explicitly closed
+supported deploy path are now proved. The highest-impact remaining product work
+is a server-mediated competitive observation path with a calibrated,
+deterministic evaluator, plus a server-owned reciprocal friend lifecycle.
+Neither can be replaced honestly by copying client sessions, scores,
+transcripts, or emulator fixtures into trusted collections. After those exist,
+the remaining work is operational and approval-gated: independent deployment
+authorization bound to an immutable artifact, production identity inspection,
+a reviewed active-client inventory and minimum-client disposition, safe writer
+suspension, an authorized source-bound dry run and backup review, privacy
+deployment, and the coordinated migration/rules/functions cutover. A two-device
+mixed-build conflict/replay/deletion smoke, plus backup and rollback evidence,
+must accompany that deployment. The user's localization edit and staged
+screenshot handoffs remain deliberately outside these commits.
 
 ### External or approval-gated
 
