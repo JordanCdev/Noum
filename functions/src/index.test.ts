@@ -226,51 +226,106 @@ test("recommendation state is callable-only", () => {
   assert.doesNotMatch(callable, /assertSocialCallablesAvailable/);
 });
 
-test("exactly the six social callables share the cutover gate", () => {
-  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
-  const exportedCallables = [...source.matchAll(
+test(
+  "exactly eight competitive and social callables share the cutover gate",
+  () => {
+    const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+    const exportedCallables = [...source.matchAll(
     // eslint-disable-next-line max-len
-    /export const (\w+) = onCall\([\s\S]*?(?=\nexport const \w+ = onCall|\n\/\*\*|$)/g
-  )];
-  const gated = exportedCallables
-    .filter((match) =>
-      match[0].includes("await assertSocialCallablesAvailable();")
-    )
-    .map((match) => match[1])
-    .sort();
-  assert.deepEqual(gated, [
-    "createChallenge",
-    "getPeerProfile",
-    "listLeagueMembers",
-    "recordPeerSession",
-    "setChallengeReaction",
-    "submitChallengeResult",
-  ]);
-  for (const callableName of gated) {
-    const callable = exportedCallables.find(
-      (match) => match[1] === callableName
+      /export const (\w+) = onCall\([\s\S]*?(?=\nexport const \w+ = onCall|\n\/\*\*|$)/g
+    )];
+    const gated = exportedCallables
+      .filter((match) =>
+        match[0].includes("await assertSocialCallablesAvailable();")
+      )
+      .map((match) => match[1])
+      .sort();
+    assert.deepEqual(gated, [
+      "beginCompetitiveObservation",
+      "completeCompetitiveObservation",
+      "createChallenge",
+      "getPeerProfile",
+      "listLeagueMembers",
+      "recordPeerSession",
+      "setChallengeReaction",
+      "submitChallengeResult",
+    ]);
+    for (const callableName of gated) {
+      const callable = exportedCallables.find(
+        (match) => match[1] === callableName
+      );
+      assert.ok(callable);
+      const gateIndex = callable[0].indexOf(
+        "await assertSocialCallablesAvailable();"
+      );
+      const isObservation = callableName.includes("CompetitiveObservation");
+      const firstProtectedWork = isObservation ?
+        callable[0].indexOf("enforceCompetitiveObservationRateLimit") :
+        callable[0].indexOf("const input = validate");
+      assert.equal(gateIndex >= 0 && gateIndex < firstProtectedWork, true);
+    }
+
+    const recommendation = exportedCallables.find(
+      (match) => match[1] === "syncRecommendationState"
     );
-    assert.ok(callable);
-    const gateIndex = callable[0].indexOf(
-      "await assertSocialCallablesAvailable();"
+    assert.ok(recommendation);
+    assert.doesNotMatch(recommendation[0], /assertSocialCallablesAvailable/);
+
+    const deletion = exportedCallables.find(
+      (match) => match[1] === "deleteAccount"
     );
-    const inputValidationIndex = callable[0].indexOf("const input = validate");
-    assert.equal(gateIndex >= 0 && gateIndex < inputValidationIndex, true);
+    assert.ok(deletion);
+    assert.match(deletion[0], /assertSocialReferenceCutoverComplete/);
+    assert.doesNotMatch(deletion[0], /assertSocialCallablesAvailable/);
   }
+);
 
-  const recommendation = exportedCallables.find(
-    (match) => match[1] === "syncRecommendationState"
-  );
-  assert.ok(recommendation);
-  assert.doesNotMatch(recommendation[0], /assertSocialCallablesAvailable/);
-
-  const deletion = exportedCallables.find(
-    (match) => match[1] === "deleteAccount"
-  );
-  assert.ok(deletion);
-  assert.match(deletion[0], /assertSocialReferenceCutoverComplete/);
-  assert.doesNotMatch(deletion[0], /assertSocialCallablesAvailable/);
-});
+test(
+  "competitive observation callables preserve the ineligible boundary",
+  () => {
+    const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+    const beginStart = source.indexOf(
+      "export const beginCompetitiveObservation"
+    );
+    const completeStart = source.indexOf(
+      "export const completeCompetitiveObservation"
+    );
+    const completeEnd = source.indexOf(
+      "function publicProfileDocument",
+      completeStart
+    );
+    assert.equal(beginStart >= 0 && completeStart > beginStart, true);
+    assert.equal(completeEnd > completeStart, true);
+    const begin = source.slice(beginStart, completeStart);
+    const complete = source.slice(completeStart, completeEnd);
+    for (const callable of [begin, complete]) {
+      assert.match(callable, /enforceAppCheck: true/);
+      assert.match(callable, /TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT/);
+      assert.match(
+        callable,
+        /assertTrustedCaller\(request\.auth, request\.app\)/
+      );
+      assert.match(callable, /await assertSocialCallablesAvailable\(\)/);
+      assert.match(callable, /_accountDeletionState/);
+      assert.doesNotMatch(callable, /_verifiedSessionEvidence/);
+    }
+    assert.match(complete, /secrets: \[deepgramManagementKey\]/);
+    assert.match(complete, /collection\("captureIntents"\)/);
+    assert.match(complete, /collection\("audioDigests"\)/);
+    assert.match(complete, /collection\("observations"\)/);
+    assert.match(complete, /competitiveEligible: false/);
+    assert.doesNotMatch(complete, /fillerWordCount|isRated|score:/);
+    const workStart = complete.indexOf("completeCompetitiveObservationWork");
+    const claimStart = complete.indexOf("claimAudio:", workStart);
+    const providerStart = complete.indexOf("transcribe:", workStart);
+    const commitStart = complete.indexOf("commitObservation:", workStart);
+    assert.equal(
+      workStart >= 0 && claimStart > workStart && providerStart > claimStart &&
+      commitStart > providerStart,
+      true
+    );
+  }
+);
 
 test(
   "social callable gate rejects unavailable markers with a stable error",
@@ -296,6 +351,14 @@ test(
         return httpsError.code === "failed-precondition" &&
           httpsError.details?.reason === "social-reference-cutover-incomplete";
       }
+    );
+    await assert.rejects(
+      () => assertSocialCallablesAvailable(async () => ({
+        schemaVersion: 2,
+        status: "complete",
+      })),
+      (error: unknown) => (error as HttpsErrorShape)
+        .details?.reason === "social-reference-cutover-incomplete"
     );
     await assert.rejects(
       () => assertSocialCallablesAvailable(async () => {

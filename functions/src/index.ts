@@ -73,6 +73,27 @@ import {
   normalizeStoredRecommendationState,
   validateRecommendationMutation,
 } from "./recommendationState.js";
+import {
+  COMPETITIVE_OBSERVATION_HOUR_LIMIT,
+  COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS,
+  COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
+  competitiveObservationDocument,
+  competitiveObservationIntentMatches,
+  competitiveObservationRetryMatches,
+  completeCompetitiveObservationWork,
+  DeepgramObservationError,
+  assertCompetitiveObservationIntentUsable,
+  transcribeCompetitivePCM,
+  validateBeginCompetitiveObservationRequest,
+  validateStoredCompetitiveAudioDigestClaim,
+  validateStoredCompetitiveObservation,
+  validateStoredCompetitiveObservationIntent,
+  type CompetitiveObservationAudio,
+  type CompetitiveObservationRateState,
+  type DeepgramCompetitiveObservation,
+  type StoredCompetitiveObservation,
+  type StoredCompetitiveObservationIntent,
+} from "./competitiveObservation.js";
 
 initializeApp();
 setGlobalOptions({
@@ -806,6 +827,441 @@ export const transcriptionToken = onCall(
     }
   }
 );
+
+type CompetitiveObservationRateOperation =
+  "competitiveObservationBegin" | "competitiveObservationComplete";
+
+/**
+ * Consumes one server-owned competitive-observation request budget.
+ * @param {string} uid Authenticated Firebase account ID.
+ * @param {CompetitiveObservationRateOperation} operation Protected operation.
+ * @return {Promise<void>} Resolves after budget consumption.
+ */
+async function enforceCompetitiveObservationRateLimit(
+  uid: string,
+  operation: CompetitiveObservationRateOperation
+): Promise<void> {
+  const firestore = getFirestore();
+  const ref = firestore.collection("_serverRateLimits").doc(uid);
+  const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
+  await firestore.runTransaction(async (transaction) => {
+    const deletionSnapshot = await transaction.get(deletionRef);
+    const snapshot = await transaction.get(ref);
+    assertAccountDeletionNotPending(deletionSnapshot.exists);
+    const data = snapshot.data();
+    const current = isRecord(data?.[operation]) ?
+      data?.[operation] as CompetitiveObservationRateState : undefined;
+    const decision = nextWindowRateState(
+      current,
+      Date.now(),
+      COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
+      COMPETITIVE_OBSERVATION_HOUR_LIMIT
+    );
+    if (!decision.allowed) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Competitive observation requests are taking a short pause."
+      );
+    }
+    transaction.set(ref, {[operation]: decision.state}, {merge: true});
+  });
+}
+
+/**
+ * Verifies a challenge prompt against the exact server-owned challenge.
+ * @param {string} uid Authenticated Firebase account ID.
+ * @param {string} challengeID Bound challenge UUID.
+ * @param {string} expectedPromptDigest Client-declared prompt digest.
+ * @return {Promise<void>} Resolves only for an active participant binding.
+ */
+async function assertCompetitiveChallengeBinding(
+  uid: string,
+  challengeID: string,
+  expectedPromptDigest: string
+): Promise<void> {
+  await assertSocialCallablesAvailable();
+  const snapshot = await getFirestore().collection("challenges")
+    .doc(challengeID).get();
+  if (!snapshot.exists) {
+    throw new HttpsError("not-found", "Challenge not found.");
+  }
+  const challenge = validateStoredChallenge(snapshot.data(), challengeID);
+  challengeSide(challenge, uid);
+  const expiresAt = socialDateMilliseconds(challenge.expiresAt);
+  if (expiresAt === null || expiresAt < Date.now() ||
+      challenge.completedAt !== null ||
+      challenge.promptDigest !== expectedPromptDigest) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Challenge observation binding is unavailable."
+    );
+  }
+}
+
+export const beginCompetitiveObservation = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    await assertSocialCallablesAvailable();
+    const input = validateBeginCompetitiveObservationRequest(request.data);
+    await enforceCompetitiveObservationRateLimit(
+      uid,
+      "competitiveObservationBegin"
+    );
+    if (input.challengeID && input.promptProvenance.promptDigest) {
+      await assertCompetitiveChallengeBinding(
+        uid,
+        input.challengeID,
+        input.promptProvenance.promptDigest
+      );
+    }
+    const firestore = getFirestore();
+    const nowMs = Date.now();
+    const expiresAtMs = nowMs + COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS;
+    const intentRef = firestore.collection("_competitiveCaptureIntents")
+      .doc(uid).collection("captureIntents").doc(input.sessionID);
+    const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
+    const result = await firestore.runTransaction(async (transaction) => {
+      const deletionSnapshot = await transaction.get(deletionRef);
+      const intentSnapshot = await transaction.get(intentRef);
+      assertAccountDeletionNotPending(deletionSnapshot.exists);
+      if (intentSnapshot.exists) {
+        const existing = validateStoredCompetitiveObservationIntent(
+          intentSnapshot.data(),
+          uid,
+          input.sessionID,
+          socialDateMilliseconds
+        );
+        if (!competitiveObservationIntentMatches(existing, input)) {
+          throw new HttpsError(
+            "already-exists",
+            "This session already has a different observation intent."
+          );
+        }
+        assertCompetitiveObservationIntentUsable(
+          existing,
+          uid,
+          input.sessionID,
+          nowMs
+        );
+        return {expiresAtMs: existing.expiresAtMs, replayed: true};
+      }
+      const now = Timestamp.fromMillis(nowMs);
+      transaction.create(intentRef, {
+        ...input,
+        uid,
+        status: "pending",
+        competitiveEligible: false,
+        audioSHA256: null,
+        startedAt: now,
+        expiresAt: Timestamp.fromMillis(expiresAtMs),
+        updatedAt: now,
+        observationCompletedAt: null,
+      });
+      return {expiresAtMs, replayed: false};
+    });
+    logger.info("beginCompetitiveObservation completed", {
+      operation: "beginCompetitiveObservation",
+      status: result.replayed ? "replayed" : "created",
+    });
+    return {
+      schemaVersion: 1,
+      sessionID: input.sessionID,
+      expiresAt: new Date(result.expiresAtMs).toISOString(),
+      replayed: result.replayed,
+    };
+  }
+);
+
+/**
+ * Converts pure observation timestamps to server Firestore timestamps.
+ * @param {StoredCompetitiveObservation} observation Validated observation.
+ * @return {Record<string, unknown>} Exact Firestore document.
+ */
+function competitiveObservationFirestoreDocument(
+  observation: StoredCompetitiveObservation
+): Record<string, unknown> {
+  return {
+    schemaVersion: observation.schemaVersion,
+    uid: observation.uid,
+    sessionID: observation.sessionID,
+    observationSource: observation.observationSource,
+    competitiveEligible: observation.competitiveEligible,
+    locale: observation.locale,
+    mode: observation.mode,
+    demand: observation.demand,
+    promptProvenance: observation.promptProvenance,
+    challengeID: observation.challengeID,
+    audio: observation.audio,
+    provider: observation.provider,
+    transcriptSHA256: observation.transcriptSHA256,
+    wordCount: observation.wordCount,
+    startedAt: Timestamp.fromMillis(observation.startedAtMs),
+    expiresAt: Timestamp.fromMillis(observation.expiresAtMs),
+    observedAt: Timestamp.fromMillis(observation.observedAtMs),
+  };
+}
+
+export const completeCompetitiveObservation = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    serviceAccount: TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT,
+    secrets: [deepgramManagementKey],
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    await assertSocialCallablesAvailable();
+    await enforceCompetitiveObservationRateLimit(
+      uid,
+      "competitiveObservationComplete"
+    );
+    const firestore = getFirestore();
+    const startedAt = Date.now();
+    try {
+      const result = await completeCompetitiveObservationWork(request.data, {
+        claimAudio: async (input) => {
+          const intentRef = firestore.collection("_competitiveCaptureIntents")
+            .doc(uid).collection("captureIntents").doc(input.sessionID);
+          const digestRef = firestore.collection("_competitiveCaptureIntents")
+            .doc(uid).collection("audioDigests").doc(input.audio.sha256);
+          const deletionRef = firestore.collection("_accountDeletionState")
+            .doc(uid);
+          return firestore.runTransaction(async (transaction) => {
+            const deletionSnapshot = await transaction.get(deletionRef);
+            const intentSnapshot = await transaction.get(intentRef);
+            const digestSnapshot = await transaction.get(digestRef);
+            assertAccountDeletionNotPending(deletionSnapshot.exists);
+            const nowMs = Date.now();
+            const intent = validateStoredCompetitiveObservationIntent(
+              intentSnapshot.data(),
+              uid,
+              input.sessionID,
+              socialDateMilliseconds
+            );
+            assertCompetitiveObservationIntentUsable(
+              intent,
+              uid,
+              input.sessionID,
+              nowMs
+            );
+            if (intent.audioSHA256 !== null &&
+                intent.audioSHA256 !== input.audio.sha256) {
+              throw new HttpsError(
+                "already-exists",
+                "This observation is already bound to different audio."
+              );
+            }
+            if (digestSnapshot.exists) {
+              const digestData = digestSnapshot.data();
+              if (isRecord(digestData) &&
+                  digestData.sessionID !== input.sessionID) {
+                throw new HttpsError(
+                  "already-exists",
+                  "This audio was already used for another observation."
+                );
+              }
+              validateStoredCompetitiveAudioDigestClaim(
+                digestData,
+                uid,
+                input.sessionID,
+                input.audio.sha256,
+                socialDateMilliseconds
+              );
+              if (intent.audioSHA256 === null) {
+                throw new HttpsError(
+                  "data-loss",
+                  "Audio binding is incomplete."
+                );
+              }
+            } else if (intent.audioSHA256 !== null) {
+              throw new HttpsError("data-loss", "Audio binding is incomplete.");
+            } else {
+              transaction.create(digestRef, {
+                schemaVersion: 1,
+                uid,
+                sessionID: input.sessionID,
+                audioSHA256: input.audio.sha256,
+                claimedAt: Timestamp.fromMillis(nowMs),
+                expiresAt: Timestamp.fromMillis(intent.expiresAtMs),
+              });
+              transaction.update(intentRef, {
+                audioSHA256: input.audio.sha256,
+                updatedAt: Timestamp.fromMillis(nowMs),
+              });
+            }
+            return {...intent, audioSHA256: input.audio.sha256};
+          });
+        },
+        transcribe: async (intent, audio) => {
+          const token = await grantDeepgramTranscriptionToken(
+            deepgramManagementKey.value(),
+            {nowMs: Date.now(), signal: AbortSignal.timeout(8_000)}
+          );
+          return transcribeCompetitivePCM(
+            token.accessToken,
+            intent.locale,
+            audio,
+            {signal: AbortSignal.timeout(90_000)}
+          );
+        },
+        commitObservation: async (claimedIntent, audio, provider) => {
+          return commitCompetitiveObservation(
+            uid,
+            claimedIntent,
+            audio,
+            provider
+          );
+        },
+      });
+      logger.info("completeCompetitiveObservation completed", {
+        operation: "completeCompetitiveObservation",
+        status: result.replayed ? "replayed" : "observed",
+        latencyMs: Date.now() - startedAt,
+      });
+      return {
+        schemaVersion: 1,
+        sessionID: result.input.sessionID,
+        transcript: result.provider.transcript,
+        durationSeconds: result.input.audio.durationSeconds,
+        wordCount: result.provider.wordCount,
+        competitiveEligible: false,
+        replayed: result.replayed,
+      };
+    } catch (error) {
+      const status = error instanceof DeepgramObservationError ?
+        error.reason : error instanceof ProviderGrantError ?
+          error.reason : error instanceof HttpsError ?
+            error.code : "unavailable";
+      logger.error("completeCompetitiveObservation failed", {
+        operation: "completeCompetitiveObservation",
+        status,
+        latencyMs: Date.now() - startedAt,
+      });
+      if (error instanceof HttpsError) throw error;
+      if (error instanceof DeepgramObservationError &&
+          error.reason === "provider-response") {
+        throw new HttpsError("data-loss", "Speech observation was unusable.");
+      }
+      if ((error instanceof DeepgramObservationError &&
+           error.reason === "configuration") ||
+          (error instanceof ProviderGrantError &&
+           error.reason === "configuration")) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Speech observation is not configured."
+        );
+      }
+      throw new HttpsError(
+        "unavailable",
+        "Speech observation is unavailable. Try again."
+      );
+    }
+  }
+);
+
+/**
+ * Atomically writes or verifies one transcript-free server observation.
+ * @param {string} uid Authenticated Firebase account ID.
+ * @param {StoredCompetitiveObservationIntent} claimedIntent Claimed intent.
+ * @param {CompetitiveObservationAudio} audio Validated PCM facts.
+ * @param {DeepgramCompetitiveObservation} provider Provider observation.
+ * @return {Promise<{replayed: boolean}>} Commit or matching-retry result.
+ */
+async function commitCompetitiveObservation(
+  uid: string,
+  claimedIntent: StoredCompetitiveObservationIntent,
+  audio: CompetitiveObservationAudio,
+  provider: DeepgramCompetitiveObservation
+): Promise<{replayed: boolean}> {
+  const firestore = getFirestore();
+  const intentRef = firestore.collection("_competitiveCaptureIntents")
+    .doc(uid).collection("captureIntents").doc(claimedIntent.sessionID);
+  const digestRef = firestore.collection("_competitiveCaptureIntents")
+    .doc(uid).collection("audioDigests").doc(audio.sha256);
+  const observationRef = firestore.collection("_competitiveObservations")
+    .doc(uid).collection("observations").doc(claimedIntent.sessionID);
+  const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
+  return firestore.runTransaction(async (transaction) => {
+    const deletionSnapshot = await transaction.get(deletionRef);
+    const intentSnapshot = await transaction.get(intentRef);
+    const digestSnapshot = await transaction.get(digestRef);
+    const observationSnapshot = await transaction.get(observationRef);
+    assertAccountDeletionNotPending(deletionSnapshot.exists);
+    const nowMs = Date.now();
+    const intent = validateStoredCompetitiveObservationIntent(
+      intentSnapshot.data(),
+      uid,
+      claimedIntent.sessionID,
+      socialDateMilliseconds
+    );
+    assertCompetitiveObservationIntentUsable(
+      intent,
+      uid,
+      claimedIntent.sessionID,
+      nowMs
+    );
+    if (intent.audioSHA256 !== audio.sha256) {
+      throw new HttpsError("data-loss", "Audio binding changed.");
+    }
+    validateStoredCompetitiveAudioDigestClaim(
+      digestSnapshot.data(),
+      uid,
+      claimedIntent.sessionID,
+      audio.sha256,
+      socialDateMilliseconds
+    );
+    const candidate = competitiveObservationDocument(
+      intent,
+      audio,
+      provider,
+      nowMs
+    );
+    if (observationSnapshot.exists) {
+      const existing = validateStoredCompetitiveObservation(
+        observationSnapshot.data(),
+        uid,
+        claimedIntent.sessionID,
+        socialDateMilliseconds
+      );
+      if (intent.status !== "observed" ||
+          !competitiveObservationRetryMatches(existing, candidate)) {
+        throw new HttpsError(
+          "data-loss",
+          "Repeated speech observation did not match the first result."
+        );
+      }
+      return {replayed: true};
+    }
+    if (intent.status !== "pending") {
+      throw new HttpsError("data-loss", "Observation state is incomplete.");
+    }
+    transaction.create(
+      observationRef,
+      competitiveObservationFirestoreDocument(candidate)
+    );
+    transaction.update(intentRef, {
+      status: "observed",
+      updatedAt: Timestamp.fromMillis(nowMs),
+      observationCompletedAt: Timestamp.fromMillis(nowMs),
+    });
+    return {replayed: false};
+  });
+}
 
 /**
  * Firestore representation of the public, non-PII peer profile.
