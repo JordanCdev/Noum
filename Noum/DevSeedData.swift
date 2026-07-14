@@ -72,18 +72,26 @@ enum DevSeedData {
         // Rebuild baseline from the injected sessions
         BaselineStore.shared.rebuild(from: sessions)
 
-        // Record trend snapshots (oldest first so trends compute correctly)
-        for session in sessions.reversed() {
+        // Replace trend evidence along with the session fixture. Appending here
+        // makes a forced persona seed inherit up to 30 snapshots from the prior
+        // persona, which can honestly—but incorrectly for the fixture—override
+        // the seeded recommendation with a stale coaching focus.
+        let trendSnapshots = sessions.map { session in
             let wordCount = session.transcript.split { !$0.isLetter }.count
-            SkillTrendStore.shared.recordFromSession(
+            return SkillSnapshot(
                 sessionId: session.id,
+                date: session.date,
                 fillerCount: session.fillerWordCount,
                 duration: session.duration,
                 wordCount: wordCount,
+                wpm: session.duration > 0
+                    ? Double(wordCount) / session.duration * 60.0
+                    : 0,
                 score: session.score ?? 5,
                 categoryRatings: categoryRatingsForSession(session)
             )
         }
+        SkillTrendStore.shared.replaceForDebug(trendSnapshots)
 
         // Seed a plausible SpeakingRating so the premium personal-best hero
         // has something honest to display. The current-week peak is held

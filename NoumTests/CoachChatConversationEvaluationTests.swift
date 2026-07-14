@@ -6612,6 +6612,7 @@ struct CoachChatConversationCorpusTests {
                     judgementPassEnabled: true,
                     realtimeCoachModeEnabled: true,
                     sessionsOverride: sourceSessions,
+                    coachMemoryOverride: { nil },
                     onQualityGateEvent: { event in
                         qualityGateEvents.append(event)
                     }

@@ -1523,6 +1523,45 @@ final class AICallDiagnosticsStore: ObservableObject {
 }
 
 enum AICallDiagnostics {
+    nonisolated static func makeRecord(
+        surface: String,
+        providerName: String?,
+        model: String?,
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        statusCode: Int? = nil,
+        startedAt: Date? = nil,
+        now: Date = Date(),
+        cacheCreationInputTokens: Int? = nil,
+        cacheReadInputTokens: Int? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        cachedContentTokenCount: Int? = nil
+    ) -> AICallDiagnosticRecord {
+        let latencyMs = startedAt.map { max(0, Int(now.timeIntervalSince($0) * 1_000)) }
+        return AICallDiagnosticRecord.make(
+            createdAt: now,
+            surface: surface,
+            provider: providerName,
+            model: model,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            latencyMs: latencyMs,
+            cacheCreationInputTokens: cacheCreationInputTokens,
+            cacheReadInputTokens: cacheReadInputTokens,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cachedContentTokenCount: cachedContentTokenCount
+        )
+    }
+
+    nonisolated static func record(_ record: AICallDiagnosticRecord) {
+        Task { @MainActor in
+            AICallDiagnosticsStore.shared.record(record)
+        }
+    }
+
     nonisolated static func record(
         surface: String,
         provider: AIProvider?,
@@ -1559,25 +1598,22 @@ enum AICallDiagnostics {
         outputTokens: Int? = nil,
         cachedContentTokenCount: Int? = nil
     ) {
-        let latencyMs = startedAt.map { max(0, Int(now.timeIntervalSince($0) * 1_000)) }
-        let record = AICallDiagnosticRecord.make(
-            createdAt: now,
+        let record = makeRecord(
             surface: surface,
-            provider: providerName,
+            providerName: providerName,
             model: model,
             outcome: outcome,
             reason: reason,
             statusCode: statusCode,
-            latencyMs: latencyMs,
+            startedAt: startedAt,
+            now: now,
             cacheCreationInputTokens: cacheCreationInputTokens,
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,
             outputTokens: outputTokens,
             cachedContentTokenCount: cachedContentTokenCount
         )
-        Task { @MainActor in
-            AICallDiagnosticsStore.shared.record(record)
-        }
+        self.record(record)
     }
 }
 
@@ -4916,7 +4952,8 @@ final class CoachingProfileStore: ObservableObject {
     }
 
     private func syncProfileIfPossible(_ profile: CoachingProfile, accountID: String) {
-        guard let providerRawValue = currentProviderRawValue else { return }
+        guard AuthManager.shouldSyncBackend(accountID: accountID),
+              let providerRawValue = currentProviderRawValue else { return }
         Task {
             await BackendSyncManager.shared.syncProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
         }
@@ -8947,7 +8984,9 @@ final class PracticeSessionStore: ObservableObject {
 
     private func syncSessionIfPossible(_ session: PracticeSession) {
         guard !session.isEvaluationFixture else { return }
-        guard let accountID = currentAccountID, let providerRawValue = currentProviderRawValue else { return }
+        guard let accountID = currentAccountID,
+              AuthManager.shouldSyncBackend(accountID: accountID),
+              let providerRawValue = currentProviderRawValue else { return }
         Task {
             await BackendSyncManager.shared.syncSession(session, accountID: accountID, providerRawValue: providerRawValue)
         }
@@ -10151,6 +10190,10 @@ final class RecommendationLearningStore: ObservableObject {
         let accountID = KeychainHelper.load(key: accountKey)
         pendingExposure = Self.loadPending(forKey: Self.pendingKey(for: accountID))
         outcomes = Self.loadOutcomes(forKey: Self.outcomesKey(for: accountID))
+        if let accountID,
+           !AuthManager.shouldSyncBackend(accountID: accountID) {
+            clearRemoteSyncBookkeeping(for: accountID)
+        }
         immediateConflictRetries[currentRevisionScope] = 0
         advanceStateRevision()
     }
@@ -10357,9 +10400,16 @@ final class RecommendationLearningStore: ObservableObject {
 
     func syncCurrentState() {
         immediateConflictRetries[currentRevisionScope] = 0
+        guard let accountID = KeychainHelper.load(key: accountKey),
+              AuthManager.shouldSyncBackend(accountID: accountID) else {
+            if let accountID = KeychainHelper.load(key: accountKey) {
+                clearRemoteSyncBookkeeping(for: accountID)
+            }
+            return
+        }
         UserDefaults.standard.set(
             Date().timeIntervalSince1970,
-            forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
+            forKey: Self.unconfirmedSyncKey(for: accountID)
         )
         syncIfPossible()
     }
@@ -10642,10 +10692,16 @@ final class RecommendationLearningStore: ObservableObject {
         outcomes = []
         pendingExposure = nil
         advanceStateRevision(markSyncUnconfirmed: true)
-        UserDefaults.standard.set(
-            Date().timeIntervalSince1970,
-            forKey: Self.destructiveResetKey(for: KeychainHelper.load(key: accountKey))
-        )
+        let accountID = KeychainHelper.load(key: accountKey)
+        if let accountID,
+           AuthManager.shouldSyncBackend(accountID: accountID) {
+            UserDefaults.standard.set(
+                Date().timeIntervalSince1970,
+                forKey: Self.destructiveResetKey(for: accountID)
+            )
+        } else if let accountID {
+            clearRemoteSyncBookkeeping(for: accountID)
+        }
         persistOutcomes()
         persistPending()
         syncIfPossible()
@@ -10689,6 +10745,7 @@ final class RecommendationLearningStore: ObservableObject {
 
     private func syncIfPossible() {
         guard let accountID = KeychainHelper.load(key: accountKey),
+              AuthManager.shouldSyncBackend(accountID: accountID),
               let providerRawValue = KeychainHelper.load(key: providerKey) else { return }
         let mutationID = ensurePendingMutation()
         let pendingExposure = pendingExposure
@@ -10723,6 +10780,11 @@ final class RecommendationLearningStore: ObservableObject {
     ) {
         stateRevisions[currentRevisionScope, default: 0] &+= 1
         if markSyncUnconfirmed {
+            if let accountID = KeychainHelper.load(key: accountKey),
+               !AuthManager.shouldSyncBackend(accountID: accountID) {
+                clearRemoteSyncBookkeeping(for: accountID)
+                return
+            }
             persistPendingMutation(UUID())
             if resetsConflictRetry {
                 immediateConflictRetries[currentRevisionScope] = 0
@@ -10732,6 +10794,12 @@ final class RecommendationLearningStore: ObservableObject {
                 forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
             )
         }
+    }
+
+    private func clearRemoteSyncBookkeeping(for accountID: String) {
+        UserDefaults.standard.removeObject(forKey: Self.pendingMutationKey(for: accountID))
+        UserDefaults.standard.removeObject(forKey: Self.unconfirmedSyncKey(for: accountID))
+        UserDefaults.standard.removeObject(forKey: Self.destructiveResetKey(for: accountID))
     }
 
     private static func pendingKey(for accountID: String?) -> String {

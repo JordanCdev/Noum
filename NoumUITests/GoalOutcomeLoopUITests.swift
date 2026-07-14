@@ -149,7 +149,24 @@ final class GoalOutcomeLoopUITests: XCTestCase {
         let toggle = app.descendants(matching: .any)["summary.details.toggle"]
         scrollUntilHittable(toggle, in: app, attempts: 8)
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        if app.buttons["goalOutcome.practice"].exists == false { toggle.tap() }
+        guard app.descendants(matching: .any)["goalOutcome.status"].exists == false else { return }
+
+        if toggle.isHittable {
+            toggle.tap()
+        } else {
+            // SwiftUI can report a false-negative hit point for this plain
+            // button after the prescribed-rep route returns to Summary. Only
+            // bypass that resolver when the full 44-point control is visibly
+            // inside the active scroll viewport; the caller verifies the
+            // expanded goal-outcome content immediately afterwards.
+            let scroll = app.scrollViews.firstMatch
+            XCTAssertTrue(scroll.exists)
+            XCTAssertTrue(
+                scroll.frame.contains(toggle.frame),
+                "The details control must be fully visible before a coordinate tap."
+            )
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
     }
 
     @MainActor

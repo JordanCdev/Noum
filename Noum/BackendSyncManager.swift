@@ -422,6 +422,7 @@ actor BackendSyncManager {
     }
 
     func syncProfile(_ profile: CoachingProfile, accountID: String, providerRawValue: String) async {
+        guard AuthManager.shouldSyncBackend(accountID: accountID) else { return }
 #if canImport(FirebaseFirestore)
         if firebaseIsConfigured {
             await syncFirebaseProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
@@ -432,6 +433,7 @@ actor BackendSyncManager {
     }
 
     func syncXP(_ xp: Int, accountID: String, providerRawValue: String) async {
+        guard AuthManager.shouldSyncBackend(accountID: accountID) else { return }
 #if canImport(FirebaseFirestore)
         if firebaseIsConfigured {
             await syncFirebaseXP(xp, accountID: accountID, providerRawValue: providerRawValue)
@@ -442,6 +444,7 @@ actor BackendSyncManager {
     }
 
     func syncSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
+        guard AuthManager.shouldSyncBackend(accountID: accountID) else { return }
 #if canImport(FirebaseFirestore)
         if firebaseIsConfigured {
             await syncFirebaseSession(session, accountID: accountID, providerRawValue: providerRawValue)
@@ -460,7 +463,8 @@ actor BackendSyncManager {
         expectedRemoteRevision: Int,
         mutationID: UUID
     ) async {
-        guard !recommendationSyncClosedAccounts.contains(accountID) else { return }
+        guard AuthManager.shouldSyncBackend(accountID: accountID),
+              !recommendationSyncClosedAccounts.contains(accountID) else { return }
         let snapshot = RecommendationSyncSnapshot(
             pendingExposure: pendingExposure,
             outcomes: outcomes,

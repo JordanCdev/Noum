@@ -161,6 +161,17 @@ final class SkillTrendStore: ObservableObject {
         snapshots = []
     }
 
+    #if DEBUG
+    /// Replace the active account's trend evidence for deterministic fixtures.
+    /// A forced persona seed represents one coherent user history, so retaining
+    /// snapshots from a previously seeded persona would fabricate a mixed
+    /// coaching signal even though the session store itself was replaced.
+    func replaceForDebug(_ seededSnapshots: [SkillSnapshot]) {
+        snapshots = Array(seededSnapshots.prefix(30))
+        save()
+    }
+    #endif
+
     private func save() {
         if let data = try? JSONEncoder().encode(snapshots) {
             defaults.set(data, forKey: storageKey)

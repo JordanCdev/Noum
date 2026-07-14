@@ -102,7 +102,9 @@ final class ProfileManager: ObservableObject {
     }
 
     private func syncXPIfPossible() {
-        guard let accountID = currentAccountID, let providerRawValue = currentProviderRawValue else { return }
+        guard let accountID = currentAccountID,
+              AuthManager.shouldSyncBackend(accountID: accountID),
+              let providerRawValue = currentProviderRawValue else { return }
         let value = xp
         Task {
             await BackendSyncManager.shared.syncXP(value, accountID: accountID, providerRawValue: providerRawValue)

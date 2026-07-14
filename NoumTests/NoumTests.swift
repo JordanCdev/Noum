@@ -12373,17 +12373,26 @@ struct CoachContextBuilderTests {
 //      with a clean thread (no orphaned typing indicators).
 
 @MainActor
-// Serialized: the immediate-pushback diagnostic tests assert on the process-wide
-// `AICallDiagnosticsStore.shared.latest`; running them in parallel lets one test's
-// reset/write clobber another's, which flaked only under full-suite contention.
-@Suite(.serialized)
 struct AskNoumStoreTests {
 
-    private func freshStore() -> AskNoumStore {
+    private func freshStore(
+        diagnosticsStore: AICallDiagnosticsStore? = nil
+    ) -> AskNoumStore {
         // Each test gets its own UserDefaults suite + a deterministic
         // account ID so persistence is isolated and reproducible.
         let suite = UserDefaults(suiteName: UUID().uuidString)!
-        return AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        return AskNoumStore(
+            defaults: suite,
+            accountIDProvider: { "tester" },
+            diagnosticsStore: diagnosticsStore
+        )
+    }
+
+    private func isolatedDiagnosticsStore() -> AICallDiagnosticsStore {
+        AICallDiagnosticsStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            storageKey: "askNoum.immediatePushback"
+        )
     }
 
     private func sampleTurnMetadata(
@@ -12895,9 +12904,9 @@ struct AskNoumStoreTests {
         #expect(store.messages[1].metadata?.softPushbackFlag == false)
     }
 
-    @Test func immediatePushbackRecordsDiagnosticWithPriorTurnContext() async {
-        AICallDiagnosticsStore.shared.reset()
-        let store = freshStore()
+    @Test func immediatePushbackRecordsDiagnosticWithPriorTurnContext() {
+        let diagnostics = isolatedDiagnosticsStore()
+        let store = freshStore(diagnosticsStore: diagnostics)
         let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
         store.completeCoachTurn(
             id: ids.coachID,
@@ -12906,10 +12915,7 @@ struct AskNoumStoreTests {
         )
 
         _ = store.appendUserTurn("That's not informative at all.")
-        await Task.yield()
-        await Task.yield()
-
-        let latest = AICallDiagnosticsStore.shared.latest
+        let latest = diagnostics.latest
         #expect(latest?.surface == "Ask Noum immediate pushback")
         #expect(latest?.provider == "User feedback")
         #expect(latest?.model == "claude-sonnet-4-6")
@@ -12920,12 +12926,11 @@ struct AskNoumStoreTests {
         #expect(latest?.reason.contains("userPushbackWithinTwoTurns=true") == true)
         #expect(latest?.reason.contains("coldnessComplaint=false") == true)
         #expect(latest?.reason.contains("softPushback=false") == true)
-        AICallDiagnosticsStore.shared.reset()
     }
 
-    @Test func immediatePushbackDiagnosticNamesSoftPushback() async {
-        AICallDiagnosticsStore.shared.reset()
-        let store = freshStore()
+    @Test func immediatePushbackDiagnosticNamesSoftPushback() {
+        let diagnostics = isolatedDiagnosticsStore()
+        let store = freshStore(diagnosticsStore: diagnostics)
         let ids = store.appendUserTurn("How do I make this warmer?")
         store.completeCoachTurn(
             id: ids.coachID,
@@ -12934,20 +12939,16 @@ struct AskNoumStoreTests {
         )
 
         _ = store.appendUserTurn("Okay, that's cool. However, I don't feel like that answered what I meant.")
-        await Task.yield()
-        await Task.yield()
-
-        let latest = AICallDiagnosticsStore.shared.latest
+        let latest = diagnostics.latest
         #expect(latest?.surface == "Ask Noum immediate pushback")
         #expect(latest?.reason.contains("userPushbackWithinTwoTurns=true") == true)
         #expect(latest?.reason.contains("coldnessComplaint=false") == true)
         #expect(latest?.reason.contains("softPushback=true") == true)
-        AICallDiagnosticsStore.shared.reset()
     }
 
-    @Test func immediatePushbackDiagnosticNamesColdnessComplaint() async {
-        AICallDiagnosticsStore.shared.reset()
-        let store = freshStore()
+    @Test func immediatePushbackDiagnosticNamesColdnessComplaint() {
+        let diagnostics = isolatedDiagnosticsStore()
+        let store = freshStore(diagnosticsStore: diagnostics)
         let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
         store.completeCoachTurn(
             id: ids.coachID,
@@ -12956,14 +12957,10 @@ struct AskNoumStoreTests {
         )
 
         _ = store.appendUserTurn("This still feels robotic and cold, like generic AI tips.")
-        await Task.yield()
-        await Task.yield()
-
-        let latest = AICallDiagnosticsStore.shared.latest
+        let latest = diagnostics.latest
         #expect(latest?.surface == "Ask Noum immediate pushback")
         #expect(latest?.reason.contains("coldnessComplaint=true") == true)
         #expect(latest?.reason.contains("softPushback=false") == true)
-        AICallDiagnosticsStore.shared.reset()
     }
 
     @Test func cancelPendingCoachTurnRemovesPlaceholder() {
@@ -14350,6 +14347,12 @@ struct FirstRunFrictionContractTests {
             accountID: "local-guest-123",
             providerRawValue: "unknown"
         ))
+    }
+
+    @Test func onlyBackendOwnedIdentitiesScheduleRemotePersistence() {
+        #expect(!AuthManager.shouldSyncBackend(accountID: "local-guest-offline-id"))
+        #expect(AuthManager.shouldSyncBackend(accountID: "firebase-anonymous-uid"))
+        #expect(AuthManager.shouldSyncBackend(accountID: "signed-in-account"))
     }
 
     @Test func onboardingNeverAdvancesAfterProfilePersistenceFails() {

@@ -558,12 +558,15 @@ final class AskNoumStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
+    private let diagnosticsStore: AICallDiagnosticsStore?
 
     init(
         defaults: UserDefaults = .standard,
-        accountIDProvider: (() -> String?)? = nil
+        accountIDProvider: (() -> String?)? = nil,
+        diagnosticsStore: AICallDiagnosticsStore? = nil
     ) {
         self.defaults = defaults
+        self.diagnosticsStore = diagnosticsStore
         if let provider = accountIDProvider {
             self.accountIDProvider = provider
         } else {
@@ -755,7 +758,7 @@ final class AskNoumStore: ObservableObject {
         metadata.coldnessComplaintFlag = Self.isColdnessComplaint(trimmed)
         metadata.softPushbackFlag = Self.isSoftPushback(trimmed)
         messages[idx].metadata = metadata
-        AICallDiagnostics.record(
+        let diagnostic = AICallDiagnostics.makeRecord(
             surface: "Ask Noum immediate pushback",
             providerName: "User feedback",
             model: metadata.providerModel,
@@ -787,6 +790,11 @@ final class AskNoumStore: ObservableObject {
                 "timeToCompleteReplyMs=\(metadata.timeToCompleteReplyMs ?? -1)"
             ].joined(separator: " ")
         )
+        if let diagnosticsStore {
+            diagnosticsStore.record(diagnostic)
+        } else {
+            AICallDiagnostics.record(diagnostic)
+        }
     }
 
     private static func isSoftPushback(_ text: String) -> Bool {

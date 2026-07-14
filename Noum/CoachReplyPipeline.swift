@@ -170,6 +170,11 @@ enum CoachReplyPipeline {
         // sessions so the trajectory carries genuine evidence coverage — matching the
         // shipping precondition that Ask Noum chat happens after a baseline exists.
         sessionsOverride: [PracticeSession]? = nil,
+        // Evaluation harnesses can explicitly isolate the durable case memory.
+        // The optional closure distinguishes "use production shared state"
+        // (nil closure) from "this fixture has no memory" (closure returning
+        // nil), avoiding cross-suite singleton evidence leaking into a turn.
+        coachMemoryOverride: (() -> CoachMemory?)? = nil,
         onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
@@ -187,7 +192,12 @@ enum CoachReplyPipeline {
         let trends = TrendAnalyzer.analyze(snapshots: snapshots)
 
         let sessions = sessionsOverride ?? PracticeSessionStore.shared.sessions
-        let coachMemoryStore = CoachMemoryStore.shared
+        let coachMemory: CoachMemory?
+        if let coachMemoryOverride {
+            coachMemory = coachMemoryOverride()
+        } else {
+            coachMemory = CoachMemoryStore.shared.currentMemory
+        }
         let weeklyCheckInDue = !sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
         let recentProofs = ProofMomentStore.shared.recent(
             limit: 3,
@@ -240,7 +250,7 @@ enum CoachReplyPipeline {
         // in. Text chat can use the optional semantic rerank; live mode stays
         // on pure BM25 so it never kicks embedding warmup or waits on the actor
         // path inside a spoken-response budget.
-        let activeLever = coachMemoryStore.currentMemory?.currentLever
+        let activeLever = coachMemory?.currentLever
         let hasDiagnosis = activeLever != nil
         let retrievalQuery = knowledgeRetrievalQuery(
             latestUserTurn: latestUserTurn,
@@ -291,7 +301,7 @@ enum CoachReplyPipeline {
             baseline: BaselineStore.shared.baseline,
             rating: RatingStore.shared.rating,
             sessions: sessions,
-            coachMemory: coachMemoryStore.currentMemory
+            coachMemory: coachMemory
         )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
         let reasoningStartedAt = Date()
@@ -426,7 +436,7 @@ enum CoachReplyPipeline {
             latestRepNote: PostRepCoachNoteStore.shared.latestNote(
                 chosenStyleGoal: profileStore.profile?.chosenStyleGoal
             ),
-            coachMemory: coachMemoryStore.currentMemory,
+            coachMemory: coachMemory,
             pendingRecommendation: RecommendationLearningStore.shared.pendingExposure,
             recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
             trends: trends,

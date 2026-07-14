@@ -432,6 +432,30 @@ struct AccountScopedCoachingTrendTests {
         #expect(store.snapshots.isEmpty)
     }
 
+    @Test func debugReplacementRemovesThePreviousPersonaEvidenceAndPersists() throws {
+        let suiteName = "AccountScopedCoachingTrendReplacementTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = SkillTrendStore(
+            defaults: defaults,
+            accountIDProvider: { "seeded-account" }
+        )
+        let plateauSnapshots = (0..<20).map { _ in snapshot(score: 8) }
+        let beginnerSnapshots = (0..<5).map { _ in snapshot(score: 4) }
+
+        store.replaceForDebug(plateauSnapshots)
+        store.replaceForDebug(beginnerSnapshots)
+
+        #expect(store.snapshots.map(\.id) == beginnerSnapshots.map(\.id))
+
+        let reloaded = SkillTrendStore(
+            defaults: defaults,
+            accountIDProvider: { "seeded-account" }
+        )
+        #expect(reloaded.snapshots.map(\.id) == beginnerSnapshots.map(\.id))
+    }
+
     private func snapshot(score: Int) -> SkillSnapshot {
         SkillSnapshot(
             sessionId: UUID(),

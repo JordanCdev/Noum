@@ -240,7 +240,7 @@ class AuthManager: ObservableObject {
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
     private var activeInitialRemoteProfileHydrationRace: InitialRemoteProfileHydrationRace?
-    private static let localGuestPrefix = "local-guest-"
+    private nonisolated static let localGuestPrefix = "local-guest-"
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
     private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
@@ -891,7 +891,7 @@ class AuthManager: ObservableObject {
                 throw AccountDeletionError.serviceUnavailable
             }
             recommendationSyncSuspended = true
-            if !Self.isLocalGuestAccountID(accountID) {
+            if Self.shouldSyncBackend(accountID: accountID) {
                 let outcome = try await backendSync.deleteAccount(
                     accountID: accountID,
                     providerRawValue: providerRawValue
@@ -1348,8 +1348,17 @@ class AuthManager: ObservableObject {
             )
     }
 
-    private static func isLocalGuestAccountID(_ accountID: String) -> Bool {
+    private nonisolated static func isLocalOnlyAccountID(_ accountID: String) -> Bool {
         accountID.hasPrefix(localGuestPrefix)
+    }
+
+    /// Local fallback guests own durable, account-scoped data on this device,
+    /// but they have no Firebase identity that can authorize backend reads or
+    /// writes. Keep this policy beside guest creation/hydration so every store
+    /// uses the same identity boundary instead of inferring it from provider
+    /// labels or waiting for Firestore to reject the request.
+    nonisolated static func shouldSyncBackend(accountID: String) -> Bool {
+        !isLocalOnlyAccountID(accountID)
     }
 
     static func shouldFetchRemoteForDurableIdentity(accountID: String) -> Bool {
@@ -1364,7 +1373,7 @@ class AuthManager: ObservableObject {
         case .freshlyCreated:
             return false
         case .restored:
-            return !isLocalGuestAccountID(accountID)
+            return shouldSyncBackend(accountID: accountID)
         }
     }
 
