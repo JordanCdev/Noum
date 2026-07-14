@@ -1,5 +1,49 @@
 # Noum — Current state
 
+## 2026-07-14 — Current reps preserve exact executed practice demand
+
+Implementation commit `ea7a3845` closes the verified exact-demand history gap
+through the existing account-scoped `PracticeSessionStore`, recorder, and
+finalizer. Current sessions persist the Timed difficulty actually captured when
+the rep starts, the Pressure Drill result difficulty, or a stable Speech Project
+catalog ID. The captured Timed difficulty also drives scoring and pressure
+classification. Mini-drills do not inherit unrelated demand, and legacy rows
+remain readable with unknown demand rather than receiving inferred values.
+
+`RecommendationComparisonEngine` schema v2 now requires exact demand for
+current comparisons: Timed and Pressure Drill difficulties must match, ordinary
+Timed reps cannot mix with Projects, and Project evidence must share the same
+catalog ID. Legacy unknown-demand rows fail closed for comparison. Ah Counter
+and IM Conversation retain their established comparison rules. Pending-intent
+copying is explicit and preserves the already recorded vocal-energy and rep
+event-location evidence.
+
+The private-session Firestore validator now admits and bounds the already
+encoded comparison schema version and the mode-coupled demand fields, repairing
+the pre-existing strict-allowlist omission. The recommendation server accepts
+schema v1 and v2 as transport, while product comparison accepts only current
+schema v2. The new fields participate in the established account export and
+deletion owner.
+
+At detached clean `ea7a3845`, Functions lint and all 67 Node tests passed. A
+fresh iPhone 17 Pro simulator build passed 43/43 focused tests with zero failures
+or skips; the source-bound result is
+`/private/tmp/NoumExactDemand-ea7a3845.xcresult`. The clean readiness rerun
+remains NO-GO at 18/100, with local target shape 85/100, maximum allowed 20/100,
+and zero of five external artifacts passing. The authored Firestore emulator
+matrix was not executed because this machine lacks the supported Java/Node
+toolchain, and the callable/rules remain undeployed without runtime IAM, App
+Check, active-client, minimum-client, or mixed-build device evidence.
+
+The light screenshot sweep was blocked by the account-bootstrap recovery
+surface, so it does not visually prove the changed share-card label. Home can
+display a suggested Timed difficulty, but its current recommendation route and
+acceptance attribution still carry only the mode; exact prescribed-difficulty
+adherence therefore remains incomplete. No live-provider,
+professional-calibration, longitudinal-user, physical-TestFlight,
+security-incident, or launch-operations evidence was collected. Production
+readiness remains NO-GO.
+
 ## 2026-07-14 — Recommendation state has a local transactional CAS boundary
 
 Implementation commit `00dd5975` closes the verified source-level distributed
@@ -41,8 +85,9 @@ the protected social migration. There is no active-client inventory,
 minimum-client decision, staged two-device/mixed-build smoke, production App
 Check proof, or backup/rollback evidence. Older clients retain read compatibility
 through the legacy fields but their direct writes will be rejected after
-cutover. Exact Timed/Sudden Death difficulty and Speech Project demand also
-remain unpersisted. No live-provider, professional-calibration,
+cutover. At that `00dd5975` boundary, exact Timed/Sudden Death difficulty and
+Speech Project demand were still unpersisted; `ea7a3845` supersedes that local
+gap. No live-provider, professional-calibration,
 longitudinal-user, physical-TestFlight, security-incident, or launch-operations
 evidence was collected. Production readiness remains NO-GO at 18/100 with zero
 of five external artifacts passing.
