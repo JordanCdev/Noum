@@ -1,5 +1,48 @@
 # Noum — Current state
 
+## 2026-07-14 — Recommendation state sync is ordered and retryable in-process
+
+Implementation commit `9378b6ef` closes the verified same-process whole-state
+recommendation overwrite and hydration-loss gaps in the existing
+`RecommendationLearningStore`, `BackendSyncManager`, and `AuthManager` owners.
+Each account now has one revisioned sync lane: writes are serialized, bursts
+coalesce to the newest state, older revisions are rejected, and a write is
+acknowledged only after a real Firestore completion or REST 2xx response.
+Failed writes remain retryable at the same revision. Account-scoped durable
+dirty and destructive-reset markers survive relaunch, participate in export
+and deletion, and clear only when the matching account/revision or safe remote
+state is confirmed.
+
+Backend bootstrap now distinguishes confirmed absence, explicit empty state,
+legacy field presence, and malformed/partial payloads. A tokenized hydration
+gate queues recommendation mutations before the authoritative read, drains the
+pre-read lane, merges retained remote outcomes without duplicating IDs or
+resurrecting consumed exposures, and releases the newest queued state after
+reconciliation. Both foreground and background bootstrap waits are bounded;
+late or superseded fetches cannot mutate the current account. Account deletion
+closes the lane before the remote operation and fails closed if pending work
+cannot be boundedly drained.
+
+At the detached clean `9378b6ef` boundary, the selected iPhone 17 Pro simulator
+run passed 81 tests with zero failures or skips across first-run hydration,
+recommendation sync, goal-outcome, release identity/privacy, and account-data
+registry coverage. The source-bound result bundle is
+`/private/tmp/NoumRecommendationSyncCommit9378b6ef.xcresult`. This is focused
+local evidence; it does not replace the complete 3,946-test Swift regression
+and unsigned Release boundary at `47cbab5f`, and the manager-level hydration
+queue lifecycle is supported indirectly by lane/bootstrap contracts rather
+than a live backend integration test.
+
+Distributed conflict safety is still incomplete. The backend has no
+compare-and-swap/version contract or mixed-old-client policy, so two devices
+can still overwrite newer state, and a process crash after server commit but
+before local acknowledgement can replay a snapshot. Home/Train shown-
+denominator fallback and exact Timed/Sudden Death difficulty or Speech Project
+demand also remain open. No live-provider, professional-calibration,
+longitudinal-user, physical-TestFlight, security-incident, or launch-operations
+evidence was collected. Production readiness remains NO-GO at 18/100 with
+zero of five external artifacts passing.
+
 ## 2026-07-14 — Case status is grounded in accepted comparable reps
 
 Implementation commit `488f8040` closes the case-status attribution gap in
