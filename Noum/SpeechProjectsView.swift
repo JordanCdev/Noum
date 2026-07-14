@@ -129,11 +129,10 @@ struct SpeechProjectsView: View {
     }
 
     private func start(project: SpeechProject) {
-        // Push timed practice with the project context. The timed practice
-        // view reads `SpeechProjectContext.current` to render objectives in
-        // the pre-roll and seed a project prompt.
-        SpeechProjectContext.current = project
-        navigationPath.append(AppDestination.timedPractice)
+        // Carry only stable catalog identity through navigation. Timed
+        // Practice resolves the project from `SpeechProjects`, keeping the
+        // curated prompt and objectives out of navigation persistence.
+        navigationPath.append(AppDestination.speechProject(id: project.id))
     }
 }
 
@@ -275,16 +274,6 @@ struct SpeechProjectDetailSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
-}
-
-// MARK: - Speech Project context
-
-/// Lightweight handoff between the project picker and `TimedPracticeView`.
-/// Set when a project is started, read once on TimedPractice setup, then
-/// cleared. Uses a static var instead of a real environment so we don't
-/// have to thread a Binding through the destination enum.
-enum SpeechProjectContext {
-    static var current: SpeechProject?
 }
 
 #if DEBUG

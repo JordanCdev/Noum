@@ -53,6 +53,7 @@ final class FocusedPracticeSetupUITests: XCTestCase {
             deepLink: "noum://lesson/pause_beats_filler",
             screenID: "lesson.screen"
         )
+        assertSpeechProjectSetup()
     }
 
     @MainActor
@@ -127,6 +128,22 @@ final class FocusedPracticeSetupUITests: XCTestCase {
         let screen = app.descendants(matching: .any)[screenID]
         XCTAssertTrue(screen.waitForExistence(timeout: 10), "Missing focused destination: \(screenID)")
         assertNativeTabBarHidden(in: app, destinationID: screenID)
+    }
+
+    @MainActor
+    private func assertSpeechProjectSetup() {
+        let app = launchSeededAt("noum://projects/ice_breaker")
+        defer { app.terminate() }
+
+        let screen = app.descendants(matching: .any)["timedPractice.screen"]
+        XCTAssertTrue(screen.waitForExistence(timeout: 10), "Speech Project did not reach Timed Practice")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.speechProject.ice_breaker"]
+                .waitForExistence(timeout: 5),
+            "Timed Practice did not retain the selected project identity"
+        )
+        XCTAssertTrue(app.buttons["timedPractice.begin"].waitForExistence(timeout: 3))
+        assertNativeTabBarHidden(in: app, destinationID: "timedPractice.screen")
     }
 
     @MainActor

@@ -33,6 +33,16 @@ struct SpeechProject: Identifiable, Hashable {
     /// IM Mode is reserved for relationship-driven projects.
     var mode: PracticeMode { .timed }
 
+    /// Prepared speeches reuse Timed's evaluator but bring their own honest
+    /// evidence floor. Reaching the minimum is enough to avoid a false
+    /// "too short" verdict; progress continues toward the stated target.
+    var timedDurationTarget: TimedPracticeDurationTarget {
+        TimedPracticeDurationTarget(
+            minimum: durationMinimum,
+            target: durationTarget
+        )
+    }
+
     enum Focus: String, Codable {
         case openingClose       // Ice Breaker, Inspire — opening and close
         case vocalVariety       // Pacing, pause, emphasis
@@ -82,8 +92,8 @@ enum SpeechProjects {
         id: "ice_breaker",
         title: "Ice Breaker",
         tagline: "Introduce yourself in four to six minutes.",
-        durationTarget: 5 * 60,
-        durationMinimum: 3 * 60,
+        durationTarget: 6 * 60,
+        durationMinimum: 4 * 60,
         focus: .openingClose,
         objectives: [
             "Open with a sentence that names you and a single specific detail.",

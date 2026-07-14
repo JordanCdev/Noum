@@ -20,6 +20,10 @@ enum AppDestination: Hashable {
     case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
     case cutTheCrutchPractice
     case paceTrainingPractice
+    /// A curated prepared-speech project. Navigation carries only the stable
+    /// catalog identity; `AppDestinationView` resolves the current project so
+    /// prompt text and objectives keep a single owner in `SpeechProjects`.
+    case speechProject(id: String)
     case friendLeaderboard
     case league
     case speechProjects
@@ -362,6 +366,44 @@ enum DurationAssessment: String {
         case .onTarget: return AppColor.positive
         case .tooLong: return AppColor.caution
         }
+    }
+}
+
+/// Optional duration contract for a prepared speech running through Timed
+/// Practice. Ordinary Timed reps keep using `TimedPracticeDifficulty`; a
+/// project supplies its own minimum and target without creating another
+/// evaluator or session model.
+struct TimedPracticeDurationTarget: Equatable {
+    let minimum: TimeInterval
+    let target: TimeInterval
+
+    init(minimum: TimeInterval, target: TimeInterval) {
+        self.minimum = max(1, minimum)
+        self.target = max(self.minimum, target)
+    }
+
+    var targetRange: (min: Double, target: Double, max: Double) {
+        (minimum, target, target)
+    }
+
+    func assessment(for duration: TimeInterval) -> DurationAssessment {
+        if duration < minimum { return .tooShort }
+        if duration > target { return .tooLong }
+        return .onTarget
+    }
+
+    func progress(for duration: TimeInterval) -> Double {
+        guard duration > 0 else { return 0 }
+        if duration < minimum {
+            return max(0, min(duration / minimum, 1)) * 0.8
+        }
+        guard target > minimum else { return 1 }
+        if duration > target {
+            let overshoot = duration - target
+            return max(0, 1 - (overshoot / target))
+        }
+        let movement = min((duration - minimum) / (target - minimum), 1)
+        return 0.8 + (movement * 0.2)
     }
 }
 
@@ -6872,11 +6914,14 @@ enum PracticeEvaluator {
         recentSessions: [PracticeSession],
         profile: CoachingProfile?,
         transcriptConfidence: Double? = nil,
-        question: String? = nil
+        question: String? = nil,
+        durationTarget: TimedPracticeDurationTarget? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
-        let durationProgress = durationRangeScore(duration, difficulty: difficulty)
+        let durationProgress = durationTarget?.progress(for: duration)
+            ?? durationRangeScore(duration, difficulty: difficulty)
+        let resolvedTargetRange = durationTarget?.targetRange ?? difficulty.targetRange
         // Content cap raised from 35 → 65 words. 35 was ~12s of speech and
         // gave full content credit too easily — the user's real-device
         // 8/10 read came partly from this cap being too lenient.
@@ -6915,7 +6960,8 @@ enum PracticeEvaluator {
         }()
 
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
-        let durationAssessment = assessDuration(duration, difficulty: difficulty)
+        let durationAssessment = durationTarget?.assessment(for: duration)
+            ?? assessDuration(duration, difficulty: difficulty)
 
         let score: Int
         if wordCount < 3 || duration < 3 {
@@ -6983,10 +7029,10 @@ enum PracticeEvaluator {
         if wordCount < 3 || duration < 3 {
             feedback = "This response ended before the answer could develop. Aim for a clear opening, one supporting point, and a brief close."
         } else if durationAssessment == .tooShort && fillerCount <= 2 {
-            let range = difficulty.targetRange
+            let range = resolvedTargetRange
             feedback = "Your answer was only \(Int(duration))s — the target range is \(Int(range.min))–\(Int(range.max))s. Give your answer more room to develop."
         } else if durationAssessment == .tooLong {
-            let range = difficulty.targetRange
+            let range = resolvedTargetRange
             feedback = "At \(Int(duration))s you went well past the \(Int(range.max))s mark. Tighten the structure: opening, one strong point, then close."
         } else if fillerCount == 0 && durationProgress >= 0.8 {
             feedback = "Strong control. You kept the answer clean while giving it enough shape to sound complete."
@@ -7063,7 +7109,7 @@ enum PracticeEvaluator {
             strongMoments: strongMoments,
             weakMoments: weakMoments,
             durationAssessment: durationAssessment,
-            targetRange: difficulty.targetRange
+            targetRange: resolvedTargetRange
         )
     }
 

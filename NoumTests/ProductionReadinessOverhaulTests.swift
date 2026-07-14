@@ -9,6 +9,7 @@ struct ProductionAppShellRoutingTests {
             ("noum://home", .home),
             ("noum://ask/type", .home),
             ("noum://practice/timed", .train),
+            ("noum://projects/ice_breaker", .train),
             ("noum://lessons", .train),
             ("noum://path", .train),
             ("noum://review", .review),
@@ -51,6 +52,82 @@ struct ProductionAppShellRoutingTests {
             Issue.record("Pace did not resolve")
             return
         }
+
+        let project = try #require(URL(string: "noum://projects/ice_breaker"))
+        guard case .speechProject(let projectID)? = AppTab.rootDestination(for: project) else {
+            Issue.record("Known Speech Project did not resolve through AppDestination")
+            return
+        }
+        #expect(projectID == SpeechProjects.iceBreaker.id)
+    }
+}
+
+@Suite("Speech Project practice contract")
+struct SpeechProjectPracticeContractTests {
+    @Test func everyProjectCarriesCuratedPromptsAndCanReachItsOwnTarget() {
+        for project in SpeechProjects.all {
+            #expect(!project.prompts.isEmpty)
+            #expect(project.prompts.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+
+            let timing = TimedPracticeTimingPolicy.project(project)
+            #expect(timing.targetSeconds == Int(project.durationTarget))
+            #expect(timing.greenStart == Int(project.durationMinimum))
+            #expect(timing.automaticStopSeconds == nil)
+            #expect(timing.state(for: timing.greenStart) == .green)
+            #expect(timing.state(for: timing.redStart) == .red)
+
+            let target = project.timedDurationTarget
+            #expect(target.assessment(for: project.durationMinimum - 1) == .tooShort)
+            #expect(target.assessment(for: project.durationMinimum) == .onTarget)
+            #expect(target.assessment(for: project.durationTarget + 120) == .tooLong)
+            #expect(target.progress(for: project.durationMinimum - 1) < target.progress(for: project.durationMinimum))
+            #expect(target.progress(for: project.durationTarget) == 1)
+            #expect(target.progress(for: project.durationTarget + 1) < target.progress(for: project.durationTarget))
+        }
+    }
+
+    @Test func ordinaryTimedPolicyPreservesTheExistingThresholdsAndHardStop() {
+        let policy = TimedPracticeTimingPolicy.standard
+        #expect(policy.targetSeconds == 150)
+        #expect(policy.automaticStopSeconds == 150)
+        #expect(policy.state(for: 59) == .neutral)
+        #expect(policy.state(for: 60) == .green)
+        #expect(policy.state(for: 90) == .yellow)
+        #expect(policy.state(for: 120) == .red)
+        #expect(policy.state(for: 150) == .overtime)
+    }
+
+    @Test func preparedSpeechEvaluationUsesTheProjectDurationRange() {
+        let project = SpeechProjects.iceBreaker
+        let transcript = Array(repeating: "One clear idea with supporting detail.", count: 80)
+            .joined(separator: " ")
+
+        let belowMinimum = PracticeEvaluator.evaluateTimedPractice(
+            transcript: transcript,
+            fillerCount: 0,
+            duration: project.durationMinimum - 1,
+            difficulty: .easy,
+            recentSessions: [],
+            profile: nil,
+            question: project.prompts[0],
+            durationTarget: project.timedDurationTarget
+        )
+        #expect(belowMinimum.durationAssessment == .tooShort)
+
+        let beyondTarget = PracticeEvaluator.evaluateTimedPractice(
+            transcript: transcript,
+            fillerCount: 0,
+            duration: project.durationTarget + 90,
+            difficulty: .easy,
+            recentSessions: [],
+            profile: nil,
+            question: project.prompts[0],
+            durationTarget: project.timedDurationTarget
+        )
+        #expect(beyondTarget.durationAssessment == .tooLong)
+        #expect(beyondTarget.feedback.localizedCaseInsensitiveContains("went well past"))
+        #expect(beyondTarget.targetRange.min == project.durationMinimum)
+        #expect(beyondTarget.targetRange.target == project.durationTarget)
     }
 }
 

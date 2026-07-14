@@ -87,6 +87,9 @@ enum AppTab: String, CaseIterable, Identifiable {
             return .cutTheCrutchPractice
         case ("practice", "pace"), ("train", "pace"):
             return .paceTrainingPractice
+        case ("projects", let projectID):
+            guard SpeechProjects.project(id: projectID) != nil else { return nil }
+            return .speechProject(id: projectID)
         case ("lesson", let lessonID):
             guard LessonsCatalog.lesson(id: lessonID) != nil else { return nil }
             return .lesson(id: lessonID)
@@ -525,6 +528,16 @@ struct AppDestinationView: View {
         case .paceTrainingPractice:
             PaceTrainingView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)
+        case .speechProject(let id):
+            if let project = SpeechProjects.project(id: id) {
+                TimedPracticeView(
+                    navigationPath: $navigationPath,
+                    speechProject: project
+                )
+                .toolbar(.hidden, for: .tabBar)
+            } else {
+                SpeechProjectsView(navigationPath: $navigationPath)
+            }
         case .friendLeaderboard:
             FriendLeaderboardView()
         case .league:

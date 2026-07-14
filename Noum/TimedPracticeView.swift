@@ -138,6 +138,66 @@ enum ImpromptuTimingState: Equatable {
     static let hardStopSeconds = 150
 }
 
+/// Pure timing projection shared by Timed's timer UI and automatic stop.
+/// The default preserves the established 60/90/120/150 impromptu contract.
+/// Prepared speeches use their own minimum and target and remain user-ended,
+/// so a four-to-six-minute brief is never terminated by the short-rep cap.
+struct TimedPracticeTimingPolicy: Equatable {
+    struct Milestone: Identifiable, Equatable {
+        let seconds: Int
+        let state: ImpromptuTimingState
+        var id: Int { seconds }
+    }
+
+    let targetSeconds: Int
+    let greenStart: Int
+    let yellowStart: Int
+    let redStart: Int
+    let overtimeStart: Int
+    let automaticStopSeconds: Int?
+
+    static let standard = TimedPracticeTimingPolicy(
+        targetSeconds: ImpromptuTimingState.hardStopSeconds,
+        greenStart: 60,
+        yellowStart: 90,
+        redStart: 120,
+        overtimeStart: ImpromptuTimingState.hardStopSeconds,
+        automaticStopSeconds: ImpromptuTimingState.hardStopSeconds
+    )
+
+    static func project(_ project: SpeechProject) -> TimedPracticeTimingPolicy {
+        let minimum = max(1, Int(project.durationMinimum.rounded(.up)))
+        let target = max(minimum, Int(project.durationTarget.rounded(.up)))
+        let midpoint = minimum + ((target - minimum) / 2)
+        return TimedPracticeTimingPolicy(
+            targetSeconds: target,
+            greenStart: minimum,
+            yellowStart: midpoint,
+            redStart: target,
+            overtimeStart: target + max(15, target / 10),
+            automaticStopSeconds: nil
+        )
+    }
+
+    var milestones: [Milestone] {
+        [
+            Milestone(seconds: greenStart, state: .green),
+            Milestone(seconds: yellowStart, state: .yellow),
+            Milestone(seconds: redStart, state: .red),
+        ]
+    }
+
+    func state(for elapsedSeconds: Int) -> ImpromptuTimingState {
+        switch elapsedSeconds {
+        case ..<greenStart: return .neutral
+        case greenStart..<yellowStart: return .green
+        case yellowStart..<redStart: return .yellow
+        case redStart..<overtimeStart: return .red
+        default: return .overtime
+        }
+    }
+}
+
 // MARK: - Timer Display Option
 
 private enum TimerDisplayOption: String, CaseIterable, Identifiable {
@@ -235,6 +295,7 @@ private struct SpotlightOrbView: View {
     let timingState: ImpromptuTimingState
     let elapsedSeconds: Int
     let totalDuration: Int
+    let timingPolicy: TimedPracticeTimingPolicy
     /// Smoothed mic level from `SpeechRecognizerViewModel.audioLevel` —
     /// the orb renders the microphone's live read of the user's voice,
     /// not a generic decorative pulse.
@@ -314,11 +375,7 @@ private struct SpotlightOrbView: View {
     }
 
     private var milestoneMarkers: some View {
-        let milestones: [(seconds: Int, state: ImpromptuTimingState)] = [
-            (60, .green), (90, .yellow), (120, .red)
-        ]
-
-        return ForEach(milestones, id: \.seconds) { milestone in
+        ForEach(timingPolicy.milestones) { milestone in
             let angle = Angle.degrees(Double(milestone.seconds) / Double(totalDuration) * 360 - 90)
             let reached = elapsedSeconds >= milestone.seconds
 
@@ -665,6 +722,9 @@ struct TimedPracticeView: View {
     /// Present only for a seeded launch. Ordinary Timed routes deliberately do
     /// not consume a pending prompt from another surface.
     var promptHandoffToken: UUID? = nil
+    /// Optional immutable catalog context for an existing Speech Project.
+    /// It never becomes a second session or persistence owner.
+    var speechProject: SpeechProject? = nil
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -767,7 +827,11 @@ struct TimedPracticeView: View {
     @State private var recPulse: Bool = false
     @State private var showCelebration: Bool = false
 
-    private let totalDuration = ImpromptuTimingState.hardStopSeconds
+    private var timingPolicy: TimedPracticeTimingPolicy {
+        speechProject.map(TimedPracticeTimingPolicy.project) ?? .standard
+    }
+
+    private var totalDuration: Int { timingPolicy.targetSeconds }
 
     private var thinkingSubtitle: String {
         if practiceSettings.pressureModeEnabled {
@@ -890,11 +954,7 @@ struct TimedPracticeView: View {
                 if let seeded = seededPrompt {
                     question = seeded
                 } else {
-                    question = await PracticeTopics.next(
-                        profile: coachingProfileStore.profile,
-                        baseline: baselineStore.baseline,
-                        theme: selectedTheme
-                    )
+                    question = await nextPrompt()
                 }
             }
             speechVM.prepareForInteractiveUse()
@@ -975,7 +1035,7 @@ struct TimedPracticeView: View {
 
     /// Update timing state only when the actual zone changes, avoiding unnecessary re-renders
     private func refreshTimingState() {
-        let newState = ImpromptuTimingState.state(forElapsedSeconds: elapsedSeconds)
+        let newState = timingPolicy.state(for: elapsedSeconds)
         if newState != currentTimingState {
             updateWithMotion(.easeInOut(duration: 0.6)) {
                 currentTimingState = newState
@@ -1004,6 +1064,18 @@ struct TimedPracticeView: View {
         )
     }
 
+    private func nextPrompt() async -> String {
+        if let speechProject,
+           let prompt = speechProject.prompts.randomElement() {
+            return prompt
+        }
+        return await PracticeTopics.next(
+            profile: coachingProfileStore.profile,
+            baseline: baselineStore.baseline,
+            theme: selectedTheme
+        )
+    }
+
     private func normalizedSeed(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
@@ -1021,8 +1093,8 @@ struct TimedPracticeView: View {
         FocusedPracticeScaffold(
             style: .timed,
             status: enableThinkingTime ? "Ready with 15-second prep" : "Ready for instant start",
-            title: PracticeMode.timed.displayLabel,
-            subtitle: "One prompt. One take. A clear landing."
+            title: speechProject?.title ?? PracticeMode.timed.displayLabel,
+            subtitle: speechProject?.tagline ?? "One prompt. One take. A clear landing."
         ) {
             Button {
                 CoachHaptic.selectionTap()
@@ -1042,7 +1114,9 @@ struct TimedPracticeView: View {
         } content: {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Think fast. Land one clear answer.")
+                    Text(speechProject == nil
+                         ? "Think fast. Land one clear answer."
+                         : "Prepare one complete speech.")
                         .font(Typography.figtree(size: 30, weight: .bold, relativeTo: .title))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1053,7 +1127,11 @@ struct TimedPracticeView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                impromptuSetupCue
+                if let speechProject {
+                    speechProjectSetupCue(speechProject)
+                } else {
+                    impromptuSetupCue
+                }
 
                 microphoneReadinessCard
             }
@@ -1097,6 +1175,39 @@ struct TimedPracticeView: View {
         .focusedGlassSurface()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(impromptuSetupCueAccessibilityLabel)
+    }
+
+    private func speechProjectSetupCue(_ project: SpeechProject) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: project.symbolName)
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(project.focus.label)
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("\(formattedTime(Int(project.durationMinimum))) minimum · \(formattedTime(Int(project.durationTarget))) target")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.focusedTextSecondary)
+                }
+            }
+
+            Text(project.coachLine)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.focusedTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .focusedGlassSurface()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("timedPractice.speechProject.\(project.id)")
+        .accessibilityLabel("\(project.title) speech project")
+        .accessibilityValue("\(Int(project.durationMinimum)) second minimum, \(Int(project.durationTarget)) second target")
     }
 
     private var impromptuSetupCueAccessibilityLabel: String {
@@ -2256,6 +2367,7 @@ struct TimedPracticeView: View {
             timingState: timingState,
             elapsedSeconds: elapsedSeconds,
             totalDuration: totalDuration,
+            timingPolicy: timingPolicy,
             audioLevel: speechVM.audioLevel,
             spotlightPulse: $spotlightPulse
         )
@@ -2443,9 +2555,13 @@ struct TimedPracticeView: View {
         VStack(spacing: 5) {
             HStack(spacing: 4) {
                 timingSegment(active: elapsedSeconds >= 0, state: .neutral, label: "0:00")
-                timingSegment(active: elapsedSeconds >= 60, state: .green, label: "1:00")
-                timingSegment(active: elapsedSeconds >= 90, state: .yellow, label: "1:30")
-                timingSegment(active: elapsedSeconds >= 120, state: .red, label: "2:00")
+                ForEach(timingPolicy.milestones) { milestone in
+                    timingSegment(
+                        active: elapsedSeconds >= milestone.seconds,
+                        state: milestone.state,
+                        label: formattedTime(milestone.seconds)
+                    )
+                }
             }
             .padding(.horizontal, 16)
 
@@ -2710,7 +2826,9 @@ struct TimedPracticeView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         if usesInjectedFirstValueLoop {
-            question = "Brief the team on a customer handoff risk."
+            if speechProject == nil {
+                question = "Brief the team on a customer handoff risk."
+            }
             if ttsEngine.delegate == nil { configureTTSDelegate() }
             phase = .speaking
             elapsedSeconds = 0
@@ -2730,11 +2848,7 @@ struct TimedPracticeView: View {
             SoundscapeEngine.shared.startPreferredMode()
 
             if question.isEmpty {
-                question = await PracticeTopics.next(
-                    profile: coachingProfileStore.profile,
-                    baseline: baselineStore.baseline,
-                    theme: selectedTheme
-                )
+                question = await nextPrompt()
             }
 
             // Ensure TTS is ready (may already be prewarmed from onAppear)
@@ -2866,7 +2980,8 @@ struct TimedPracticeView: View {
                     await MainActor.run {
                         elapsedSeconds += 1
                         refreshTimingState()
-                        if elapsedSeconds >= ImpromptuTimingState.hardStopSeconds {
+                        if let automaticStop = timingPolicy.automaticStopSeconds,
+                           elapsedSeconds >= automaticStop {
                             stopSession()
                         }
                     }
@@ -2883,7 +2998,7 @@ struct TimedPracticeView: View {
         speakingTask?.cancel()
         speakingTask = nil
         elapsedSeconds = 46
-        currentTimingState = ImpromptuTimingState.state(forElapsedSeconds: elapsedSeconds)
+        currentTimingState = timingPolicy.state(for: elapsedSeconds)
 
         let transcript = """
         I would start by naming the decision clearly. The team needs one owner for the customer handoff, then a weekly check on risk. I would tell the client what changed, what stays on track, and exactly when they will hear from us again.
@@ -2897,7 +3012,8 @@ struct TimedPracticeView: View {
             difficulty: practiceSettings.timedDifficulty,
             recentSessions: sessionStore.sessions,
             profile: coachingProfileStore.profile,
-            question: question.isEmpty ? nil : question
+            question: question.isEmpty ? nil : question,
+            durationTarget: speechProject?.timedDurationTarget
         )
         evaluation = result
 
@@ -2961,7 +3077,7 @@ struct TimedPracticeView: View {
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,
             showDuration: false,
-            practiceTitle: PracticeMode.timed.displayLabel,
+            practiceTitle: speechProject?.title ?? PracticeMode.timed.displayLabel,
             feedbackOverride: result.feedback,
             headlineOverride: result.headline,
             scoreBreakdown: result.segments,
@@ -3013,7 +3129,8 @@ struct TimedPracticeView: View {
                 difficulty: practiceSettings.timedDifficulty,
                 recentSessions: speechVM.pastSessions,
                 profile: coachingProfileStore.profile,
-                question: question.isEmpty ? nil : question
+                question: question.isEmpty ? nil : question,
+                durationTarget: speechProject?.timedDurationTarget
             )
             evaluation = result
             speechVM.annotateLatestSession(
@@ -3056,11 +3173,7 @@ struct TimedPracticeView: View {
         cleanup()
         resetState(keepPrompt: false)
         Task { @MainActor in
-            question = await PracticeTopics.next(
-                profile: coachingProfileStore.profile,
-                baseline: baselineStore.baseline,
-                theme: selectedTheme
-            )
+            question = await nextPrompt()
             launchSessionFlow()
         }
     }
