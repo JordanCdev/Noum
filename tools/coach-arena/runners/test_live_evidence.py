@@ -1,9 +1,12 @@
 import copy
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import live_evidence as live
 import test_readiness_gate as readiness_fixtures
@@ -87,6 +90,42 @@ def attestation_for(capture_path, **changes):
 
 
 class LiveEvidenceTests(unittest.TestCase):
+    def test_swift_capture_runs_through_shared_simulator_environment_bridge(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            staging_dir = Path(temp_dir)
+            args = SimpleNamespace(
+                allow_live_network=True,
+                xcodebuild="xcodebuild",
+                destination="platform=iOS Simulator,id=SIMULATOR-UDID",
+                derived_data=staging_dir / "DerivedData",
+            )
+
+            def fake_run(command, **kwargs):
+                (staging_dir / live.ARTIFACT_NAME).write_text("{}\n", encoding="utf-8")
+                return SimpleNamespace(returncode=0)
+
+            with (
+                mock.patch.dict(os.environ, {"GEMINI_API_KEY": "real-exported-key"}, clear=False),
+                mock.patch.object(live.subprocess, "run", side_effect=fake_run) as run,
+            ):
+                capture, _ = live.run_swift_live_capture(
+                    args,
+                    SOURCE_EXPECTATIONS,
+                    staging_dir,
+                )
+
+        command = run.call_args.args[0]
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(capture.name, live.ARTIFACT_NAME)
+        self.assertEqual(command[:2], [str(live.SIMULATOR_ENVIRONMENT_HELPER), "run-xcodebuild"])
+        self.assertIn(["--inherit-env", "NOUM_LIVE_AI_EVAL"], [command[index:index + 2] for index in range(len(command) - 1)])
+        self.assertIn(["--inherit-env", "GEMINI_API_KEY"], [command[index:index + 2] for index in range(len(command) - 1)])
+        self.assertEqual(environment["NOUM_COACH_EVAL_DUMP_DIR"], str(staging_dir))
+        self.assertEqual(
+            environment["SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR"],
+            str(staging_dir),
+        )
+
     def test_complete_attested_capture_validates_and_preserves_operational_telemetry(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             payload = complete_real_live_capture()

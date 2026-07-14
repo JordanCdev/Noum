@@ -14,6 +14,12 @@ dump_dir="${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}"
 derived_data="${NOUM_COACH_DERIVED_DATA:-/private/tmp/noum-derived-data-apppath}"
 spm_dir="${NOUM_COACH_SPM_DIR:-$repo_root/.build/fast-lane-release/SourcePackages}"
 destination="${NOUM_COACH_XCODE_DESTINATION:-platform=iOS Simulator,name=iPhone 17 Pro}"
+source "$script_dir/simulator-evidence-environment.sh"
+
+trap noum_coach_simulator_environment_exit_trap EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 mkdir -p "$dump_dir" "$derived_data"
 if [[ ! -d "$spm_dir/checkouts" ]]; then
@@ -24,6 +30,9 @@ fi
 
 ./tools/coach-arena/run.sh app-path-source "$dump_dir"
 
+noum_coach_install_simulator_environment "$destination" "$dump_dir"
+destination="platform=iOS Simulator,id=$NOUM_COACH_SIMULATOR_UDID"
+
 env \
   -u COACH_ARENA_LLM_JUDGE_CMD \
   -u ANTHROPIC_API_KEY \
@@ -31,6 +40,11 @@ env \
   -u OPENAI_API_KEY \
   -u DEEPSEEK_API_KEY \
   NOUM_COACH_EVAL_DUMP_DIR="$dump_dir" \
+  NOUM_SOURCE_GIT_COMMIT="$NOUM_COACH_SOURCE_GIT_COMMIT" \
+  NOUM_SOURCE_COACH_FINGERPRINT="$NOUM_COACH_SOURCE_COACH_FINGERPRINT" \
+  SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR="$dump_dir" \
+  SIMCTL_CHILD_NOUM_SOURCE_GIT_COMMIT="$NOUM_COACH_SOURCE_GIT_COMMIT" \
+  SIMCTL_CHILD_NOUM_SOURCE_COACH_FINGERPRINT="$NOUM_COACH_SOURCE_COACH_FINGERPRINT" \
   xcodebuild test \
   -quiet \
   -project Noum.xcodeproj \
@@ -44,6 +58,8 @@ env \
   -only-testing:NoumTests/CoachChatConversationArtifactDumpXCTest \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES
+
+noum_coach_simulator_environment_cleanup
 
 env -u COACH_ARENA_LLM_JUDGE_CMD \
   ./tools/coach-arena/run.sh app-path "$dump_dir/coach-chat-conversation-app-path-eval-v1.json"

@@ -30,6 +30,9 @@ REPO_ROOT = ARENA_ROOT.parents[1]
 DEFAULT_DUMP_DIR = Path(
     os.environ.get("NOUM_COACH_EVAL_DUMP_DIR", "/private/tmp/noum-coach-eval")
 )
+SIMULATOR_ENVIRONMENT_HELPER = (
+    REPO_ROOT / "tools" / "coach-arena" / "simulator-evidence-environment.sh"
+)
 ARTIFACT_NAME = "coach-live-eval-v1.json"
 ATTESTATION_SCHEMA = "coach-live-capture-attestation-v1"
 PRODUCER = "NoumTests/CoachLiveEvaluationTests.liveGeminiRepliesClearFixtureRubric"
@@ -290,16 +293,17 @@ def run_swift_live_capture(args, source_expectations, staging_dir):
         "SIMCTL_CHILD_NOUM_SOURCE_COACH_FINGERPRINT": source_expectations["source-coach-fingerprint.txt"],
     }
     environment.update(test_environment)
-    # xcodebuild normally forwards its environment to XCTest. Mirror the
-    # runtime selectors and explicitly exported secrets through simctl too so
-    # the behavior remains deterministic across Xcode runner versions.
+    # Keep the host and SIMCTL_CHILD forms for Xcode versions that forward
+    # them. The shared simulator bridge below also installs the base keys in
+    # launchd and restores them after xcodebuild, covering versions that strip
+    # both forms before the iOS test host starts.
     for key, value in test_environment.items():
         if not key.startswith("SIMCTL_CHILD_"):
             environment[f"SIMCTL_CHILD_{key}"] = value
     for key in LIVE_CREDENTIAL_KEYS:
         if trimmed(environment.get(key)):
             environment[f"SIMCTL_CHILD_{key}"] = environment[key]
-    command = [
+    xcodebuild_command = [
         args.xcodebuild,
         "test",
         "-project", str(REPO_ROOT / "Noum.xcodeproj"),
@@ -309,6 +313,25 @@ def run_swift_live_capture(args, source_expectations, staging_dir):
         "-only-testing:NoumTests/CoachLiveEvaluationTests",
         "OTHER_SWIFT_FLAGS=$(inherited) -D NOUM_LIVE_AI_EVAL_READINESS",
     ]
+    simulator_environment_keys = [
+        key for key in test_environment
+        if not key.startswith("SIMCTL_CHILD_")
+        and key not in {
+            "NOUM_COACH_EVAL_DUMP_DIR",
+            "NOUM_SOURCE_GIT_COMMIT",
+            "NOUM_SOURCE_COACH_FINGERPRINT",
+        }
+    ]
+    simulator_environment_keys.extend(configured)
+    command = [
+        str(SIMULATOR_ENVIRONMENT_HELPER),
+        "run-xcodebuild",
+        "--destination", args.destination,
+        "--dump-dir", str(staging_dir),
+    ]
+    for key in simulator_environment_keys:
+        command.extend(["--inherit-env", key])
+    command.extend(["--", *xcodebuild_command])
     result = subprocess.run(command, cwd=REPO_ROOT, env=environment, check=False)
     if result.returncode != 0:
         raise LiveEvidenceError(
