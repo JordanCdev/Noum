@@ -985,6 +985,7 @@ struct TimedPracticeView: View {
             // setup page never renders for an armed one-tap launch.)
         }
         .onDisappear {
+            discardSeededChallengeAuthority()
             cleanup()
             // Drop any pending intent that wasn't consumed by a finalize.
             SessionIntentStore.shared.clearPending()
@@ -1067,12 +1068,35 @@ struct TimedPracticeView: View {
     }
 
     private func consumeSeededPrompt() -> String? {
+        if let seededPromptPayload {
+            return seededPromptPayload.text
+        }
         guard let promptHandoffToken else { return nil }
         guard let payload = TimedPracticePromptHandoff.shared.consumePayload(
             token: promptHandoffToken
         ) else { return nil }
+        if let challengeID = payload.competitiveObservationIntent?.challengeID,
+           !ChallengesManager.shared.armSubmission(
+            challengeID: challengeID,
+            exactPrompt: payload.text,
+            routeToken: promptHandoffToken
+           ) {
+            return nil
+        }
         seededPromptPayload = payload
         return payload.text
+    }
+
+    private func discardSeededChallengeAuthority() {
+        guard let promptHandoffToken,
+              seededPromptPayload?.competitiveObservationIntent?.challengeID != nil else {
+            seededPromptPayload = nil
+            return
+        }
+        ChallengesManager.shared.disarmSubmission(
+            matchingRouteToken: promptHandoffToken
+        )
+        seededPromptPayload = nil
     }
 
     private func nextPrompt() async -> String {
@@ -1726,7 +1750,7 @@ struct TimedPracticeView: View {
         animateSetupChange {
             selectedTheme = theme
             question = ""
-            seededPromptPayload = nil
+            discardSeededChallengeAuthority()
         }
     }
 
@@ -3167,7 +3191,7 @@ struct TimedPracticeView: View {
                 durationTarget: speechProject?.timedDurationTarget
             )
             evaluation = result
-            speechVM.annotateLatestSession(
+            let savedSessionID = speechVM.annotateLatestSession(
                 score: result.score,
                 xpEarned: result.xpEarned,
                 headline: result.headline,
@@ -3176,6 +3200,15 @@ struct TimedPracticeView: View {
                 prompt: question,
                 theme: selectedTheme
             )
+            if let savedSessionID,
+               let promptHandoffToken,
+               seededPromptPayload?.competitiveObservationIntent?.challengeID != nil {
+                _ = ChallengesManager.shared.bindArmedSubmission(
+                    matchingRouteToken: promptHandoffToken,
+                    sessionID: savedSessionID,
+                    sessionPrompt: question
+                )
+            }
 
             // Celebration haptic for good scores
             if result.score >= 70 {
@@ -3205,7 +3238,7 @@ struct TimedPracticeView: View {
     /// Pick a new random prompt and start a new session.
     private func newPromptSession() {
         cleanup()
-        seededPromptPayload = nil
+        discardSeededChallengeAuthority()
         resetState(keepPrompt: false)
         Task { @MainActor in
             question = await nextPrompt()

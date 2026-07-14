@@ -423,6 +423,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         recordingLifecycle.completedUsableCapture
     }
 
+    @discardableResult
     func annotateLatestSession(
         score: Int? = nil,
         xpEarned: Int? = nil,
@@ -431,13 +432,13 @@ class SpeechRecognizerViewModel: ObservableObject {
         coachSummary: String? = nil,
         prompt: String? = nil,
         theme: PromptTheme? = nil
-    ) {
+    ) -> UUID? {
         // Only annotate the session THIS rep actually persisted. If the rep
         // produced no usable session (empty / too short), `lastSavedSessionID`
         // is nil and we annotate NOTHING — writing to `sessions[0]` here would
         // silently overwrite the user's PREVIOUS real rep with this aborted
         // rep's score/headline (the data-corruption bug this guard closes).
-        guard let sessionID = lastSavedSessionID else { return }
+        guard let sessionID = lastSavedSessionID else { return nil }
         sessionStore.annotateLatest(
             PracticeSessionAnnotation(
                 score: score,
@@ -458,6 +459,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 previousSessions: Array(sessionStore.sessions.dropFirst())
             )
         }
+        return sessionID
     }
 
     func startRecording() {

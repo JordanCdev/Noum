@@ -239,13 +239,58 @@ struct ChallengesAccountDataSnapshot: Codable, Equatable, Sendable {
     let active: [SpeakingChallenge2]
     let completed: [SpeakingChallenge2]
     let asyncChallenges: [AsyncChallenge]
-    let armedRep: ArmedAsyncChallengeRep?
 }
 
-struct ArmedAsyncChallengeRep: Codable, Equatable, Sendable {
+struct ArmedAsyncChallengeRep: Equatable, Sendable {
     let challengeID: UUID
     let prompt: String
+    let routeToken: UUID
+    let expiresAt: Date
     let armedAt: Date
+    let boundSessionID: UUID?
+
+    var isBound: Bool { boundSessionID != nil }
+
+    func canCancel(matchingRouteToken routeToken: UUID) -> Bool {
+        self.routeToken == routeToken && !isBound
+    }
+
+    func binding(
+        routeToken: UUID,
+        sessionID: UUID,
+        sessionPrompt: String?,
+        now: Date = Date()
+    ) -> ArmedAsyncChallengeRep? {
+        guard self.routeToken == routeToken,
+              boundSessionID == nil,
+              expiresAt > now,
+              Self.promptBytesMatch(sessionPrompt, prompt) else {
+            return nil
+        }
+        return ArmedAsyncChallengeRep(
+            challengeID: challengeID,
+            prompt: prompt,
+            routeToken: self.routeToken,
+            expiresAt: expiresAt,
+            armedAt: armedAt,
+            boundSessionID: sessionID
+        )
+    }
+
+    func permitsSubmission(
+        sessionID: UUID,
+        sessionPrompt: String?,
+        now: Date = Date()
+    ) -> Bool {
+        boundSessionID == sessionID
+            && expiresAt > now
+            && Self.promptBytesMatch(sessionPrompt, prompt)
+    }
+
+    private static func promptBytesMatch(_ candidate: String?, _ exact: String) -> Bool {
+        guard let candidate, !exact.isEmpty else { return false }
+        return candidate.utf8.elementsEqual(exact.utf8)
+    }
 }
 
 // MARK: - Challenges Manager
@@ -269,7 +314,7 @@ final class ChallengesManager: ObservableObject {
     private let storageKey = "NoumChallenges"
     private let completedKey = "NoumCompletedChallenges"
     private let asyncKey = "NoumAsyncChallenges"
-    private let armedRepKey = "NoumAsyncChallengeArmedRep"
+    private let legacyArmedRepKey = "NoumAsyncChallengeArmedRep"
     private var activeAccountID: String?
     private var accountGeneration: UInt64 = 0
     private var isSessionActive = true
@@ -277,11 +322,12 @@ final class ChallengesManager: ObservableObject {
     private init() {
         let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
         activeAccountID = accountID
+        Self.purgeLegacyArmedRepPersistence()
         Self.migrateLegacyDataIfNeeded(accountID: accountID)
         activeChallenges = Self.load(key: Self.accountKey(base: "NoumChallenges", accountID: accountID))
         completedChallenges = Self.load(key: Self.accountKey(base: "NoumCompletedChallenges", accountID: accountID))
         asyncChallenges = Self.loadAsync(key: Self.accountKey(base: "NoumAsyncChallenges", accountID: accountID))
-        armedRep = Self.loadArmedRep(key: Self.accountKey(base: "NoumAsyncChallengeArmedRep", accountID: accountID))
+        armedRep = nil
         refreshChallengesIfNeeded()
     }
 
@@ -449,7 +495,16 @@ final class ChallengesManager: ObservableObject {
             return nil
         }
         guard let failure = lastAuthorityFailure else { return nil }
-        return await performAuthorityIntent(failure.intent)
+        let result = await performAuthorityIntent(failure.intent)
+        if result != nil,
+           case .submit(let request) = failure.intent,
+           let challengeID = UUID(uuidString: request.challengeID),
+           let sessionID = UUID(uuidString: request.sessionID),
+           armedRep?.challengeID == challengeID,
+           armedRep?.boundSessionID == sessionID {
+            armedRep = nil
+        }
+        return result
     }
 
     private func performAuthorityIntent(
@@ -518,19 +573,88 @@ final class ChallengesManager: ObservableObject {
         persistAsync(context: context)
     }
 
-    /// Arms the exact server-created prompt before navigating into Timed
-    /// Practice. The resulting session must carry the same prompt or it cannot
-    /// be submitted to the speak-off.
-    func armSubmission(for challenge: AsyncChallenge) {
+    /// Arms only after Timed Practice consumes the exact account-bound route.
+    /// This is a process-local lease, not durable challenge history: the route
+    /// token disappears on relaunch, so persisting the prompt would resurrect
+    /// authority that can no longer prove where it came from.
+    @discardableResult
+    func armSubmission(
+        challengeID: UUID,
+        exactPrompt: String,
+        routeToken: UUID,
+        now: Date = Date()
+    ) -> Bool {
         guard SocialReleaseCapabilities.speakOffs.isAvailable,
-              isSessionActive,
-              activeAccountID != nil else { return }
-        armedRep = ArmedAsyncChallengeRep(
+              let context = captureOperationContext(),
+              let challenge = asyncChallenges.first(where: { $0.id == challengeID }),
+              let candidate = Self.armedRepCandidate(
+                challenge: challenge,
+                participantID: context.accountID,
+                exactPrompt: exactPrompt,
+                routeToken: routeToken,
+                now: now
+              ) else {
+            return false
+        }
+        armedRep = candidate
+        return true
+    }
+
+    nonisolated static func armedRepCandidate(
+        challenge: AsyncChallenge,
+        participantID: String,
+        exactPrompt: String,
+        routeToken: UUID,
+        now: Date
+    ) -> ArmedAsyncChallengeRep? {
+        guard challenge.participantIDs.contains(participantID),
+              challenge.expiresAt > now,
+              challenge.prompt.utf8.elementsEqual(exactPrompt.utf8) else {
+            return nil
+        }
+        let isCreator = challenge.isCreatorPerspective(participantID: participantID)
+        guard isCreator ? !challenge.creatorHasPlayed : !challenge.opponentHasPlayed else {
+            return nil
+        }
+        return ArmedAsyncChallengeRep(
             challengeID: challenge.id,
             prompt: challenge.prompt,
-            armedAt: Date()
+            routeToken: routeToken,
+            expiresAt: challenge.expiresAt,
+            armedAt: now,
+            boundSessionID: nil
         )
-        persistArmedRep()
+    }
+
+    /// Binds the route lease to the exact session persisted by the speech
+    /// owner. Summary may then disappear without racing submission cleanup.
+    @discardableResult
+    func bindArmedSubmission(
+        matchingRouteToken routeToken: UUID,
+        sessionID: UUID,
+        sessionPrompt: String?,
+        now: Date = Date()
+    ) -> Bool {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable,
+              captureOperationContext() != nil,
+              let bound = armedRep?.binding(
+                routeToken: routeToken,
+                sessionID: sessionID,
+                sessionPrompt: sessionPrompt,
+                now: now
+              ) else {
+            return false
+        }
+        armedRep = bound
+        return true
+    }
+
+    /// Cancels only an unbound lease for this exact route. A stale Timed view
+    /// cannot erase a newer route, and the Timed-to-Summary transition cannot
+    /// erase a lease already bound to its saved session.
+    func disarmSubmission(matchingRouteToken routeToken: UUID) {
+        guard armedRep?.canCancel(matchingRouteToken: routeToken) == true else { return }
+        armedRep = nil
     }
 
     @discardableResult
@@ -538,17 +662,30 @@ final class ChallengesManager: ObservableObject {
         guard SocialReleaseCapabilities.speakOffs.isAvailable,
               let context = captureOperationContext(),
               let armedRep,
-              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == sessionID }),
-              Self.repMatchesArmedPrompt(sessionPrompt: session.prompt, armedPrompt: armedRep.prompt) else {
+              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == sessionID }) else {
+            return false
+        }
+        guard armedRep.permitsSubmission(
+            sessionID: sessionID,
+            sessionPrompt: session.prompt
+        ) else {
+            if armedRep.expiresAt <= Date(), self.armedRep == armedRep {
+                self.armedRep = nil
+            }
             return false
         }
         let submitted = await recordAsyncResult(
             challengeID: armedRep.challengeID,
             sessionID: session.id
         )
-        if submitted, isOperationContextCurrent(context) {
+        let terminalFailure = lastAuthorityFailure.map {
+            !$0.isRetryable
+                && $0.intent.challengeID == armedRep.challengeID.uuidString
+        } ?? false
+        if (submitted || terminalFailure),
+           isOperationContextCurrent(context),
+           self.armedRep == armedRep {
             self.armedRep = nil
-            persistArmedRep(context: context)
         }
         return submitted
     }
@@ -672,16 +809,6 @@ final class ChallengesManager: ObservableObject {
         UserDefaults.standard.set(data, forKey: key)
     }
 
-    private func persistArmedRep(context: SocialAccountOperationContext? = nil) {
-        guard canPersist(context: context), let key = scopedKey(armedRepKey) else { return }
-        guard let armedRep else {
-            UserDefaults.standard.removeObject(forKey: key)
-            return
-        }
-        guard let data = try? JSONEncoder().encode(armedRep) else { return }
-        UserDefaults.standard.set(data, forKey: key)
-    }
-
     private static func load(key: String) -> [SpeakingChallenge2] {
         guard let data = UserDefaults.standard.data(forKey: key),
               let challenges = try? JSONDecoder().decode([SpeakingChallenge2].self, from: data) else {
@@ -696,11 +823,6 @@ final class ChallengesManager: ObservableObject {
             return []
         }
         return challenges
-    }
-
-    private static func loadArmedRep(key: String) -> ArmedAsyncChallengeRep? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(ArmedAsyncChallengeRep.self, from: data)
     }
 
     private func scopedKey(_ base: String) -> String? {
@@ -719,7 +841,7 @@ final class ChallengesManager: ObservableObject {
 
     private static func migrateLegacyDataIfNeeded(accountID: String) {
         guard accountID != "guest" else { return }
-        for base in ["NoumChallenges", "NoumCompletedChallenges", "NoumAsyncChallenges", "NoumAsyncChallengeArmedRep"] {
+        for base in ["NoumChallenges", "NoumCompletedChallenges", "NoumAsyncChallenges"] {
             let scoped = accountKey(base: base, accountID: accountID)
             guard UserDefaults.standard.data(forKey: scoped) == nil,
                   let legacy = UserDefaults.standard.data(forKey: base) else { continue }
@@ -733,11 +855,12 @@ final class ChallengesManager: ObservableObject {
         accountGeneration &+= 1
         activeAccountID = accountID
         isSessionActive = true
+        Self.purgeLegacyArmedRepPersistence()
         Self.migrateLegacyDataIfNeeded(accountID: accountID)
         activeChallenges = Self.load(key: Self.accountKey(base: storageKey, accountID: accountID))
         completedChallenges = Self.load(key: Self.accountKey(base: completedKey, accountID: accountID))
         asyncChallenges = Self.loadAsync(key: Self.accountKey(base: asyncKey, accountID: accountID))
-        armedRep = Self.loadArmedRep(key: Self.accountKey(base: armedRepKey, accountID: accountID))
+        armedRep = nil
         pendingAuthorityIntent = nil
         lastAuthorityFailure = nil
         refreshChallengesIfNeeded()
@@ -759,17 +882,30 @@ final class ChallengesManager: ObservableObject {
         ChallengesAccountDataSnapshot(
             active: Self.load(key: Self.accountKey(base: storageKey, accountID: accountID)),
             completed: Self.load(key: Self.accountKey(base: completedKey, accountID: accountID)),
-            asyncChallenges: Self.loadAsync(key: Self.accountKey(base: asyncKey, accountID: accountID)),
-            armedRep: Self.loadArmedRep(key: Self.accountKey(base: armedRepKey, accountID: accountID))
+            asyncChallenges: Self.loadAsync(key: Self.accountKey(base: asyncKey, accountID: accountID))
         )
     }
 
     func deleteAllData(for accountID: String) {
-        for base in [storageKey, completedKey, asyncKey, armedRepKey] {
+        for base in [storageKey, completedKey, asyncKey, legacyArmedRepKey] {
             UserDefaults.standard.removeObject(forKey: Self.accountKey(base: base, accountID: accountID))
         }
         if activeAccountID == accountID {
             endSession()
+        }
+    }
+
+    /// Removes the historical prompt-bearing pre-route archive. Route tokens
+    /// were always process-local, so no persisted row can retain valid proof
+    /// after a relaunch. Purging every scoped key also prevents an inactive
+    /// account's prompt from surviving until a later switch-back.
+    nonisolated static func purgeLegacyArmedRepPersistence(
+        defaults: UserDefaults = .standard
+    ) {
+        let base = "NoumAsyncChallengeArmedRep"
+        for key in defaults.dictionaryRepresentation().keys
+            where key == base || key.hasPrefix("\(base).") {
+            defaults.removeObject(forKey: key)
         }
     }
 

@@ -308,6 +308,165 @@ struct SocialAuthorityClientTests {
         ))
     }
 
+    @Test("Challenge arm is an unexpired participant route lease")
+    func armedRouteLeaseRequiresAuthoritativeChallengeState() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let routeToken = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+        let challenge = challengeFixture(expiresAt: now.addingTimeInterval(600))
+
+        let lease = try #require(ChallengesManager.armedRepCandidate(
+            challenge: challenge,
+            participantID: "firebase-speaker",
+            exactPrompt: challenge.prompt,
+            routeToken: routeToken,
+            now: now
+        ))
+        #expect(lease.routeToken == routeToken)
+        #expect(lease.expiresAt == challenge.expiresAt)
+        #expect(!lease.isBound)
+        #expect(lease.canCancel(matchingRouteToken: routeToken))
+        #expect(!lease.canCancel(matchingRouteToken: UUID()))
+
+        #expect(ChallengesManager.armedRepCandidate(
+            challenge: challenge,
+            participantID: "not-a-participant",
+            exactPrompt: challenge.prompt,
+            routeToken: routeToken,
+            now: now
+        ) == nil)
+        #expect(ChallengesManager.armedRepCandidate(
+            challenge: challenge,
+            participantID: "firebase-speaker",
+            exactPrompt: "\(challenge.prompt) ",
+            routeToken: routeToken,
+            now: now
+        ) == nil)
+        #expect(ChallengesManager.armedRepCandidate(
+            challenge: challengeFixture(
+                expiresAt: now.addingTimeInterval(600),
+                creatorScore: 8
+            ),
+            participantID: "firebase-speaker",
+            exactPrompt: challenge.prompt,
+            routeToken: routeToken,
+            now: now
+        ) == nil)
+        #expect(ChallengesManager.armedRepCandidate(
+            challenge: challengeFixture(expiresAt: now),
+            participantID: "firebase-speaker",
+            exactPrompt: challenge.prompt,
+            routeToken: routeToken,
+            now: now
+        ) == nil)
+    }
+
+    @Test("Only the exact route may bind the exact saved session")
+    func armedRouteLeaseBindsOnceToExactSession() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let routeToken = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+        let sessionID = UUID(uuidString: "55555555-5555-4555-8555-555555555555")!
+        let challenge = challengeFixture(expiresAt: now.addingTimeInterval(600))
+        let lease = try #require(ChallengesManager.armedRepCandidate(
+            challenge: challenge,
+            participantID: "firebase-speaker",
+            exactPrompt: challenge.prompt,
+            routeToken: routeToken,
+            now: now
+        ))
+
+        #expect(lease.binding(
+            routeToken: UUID(),
+            sessionID: sessionID,
+            sessionPrompt: challenge.prompt,
+            now: now
+        ) == nil)
+        #expect(lease.binding(
+            routeToken: routeToken,
+            sessionID: sessionID,
+            sessionPrompt: "Résumé update: name the risk.",
+            now: now
+        ) == nil)
+
+        let bound = try #require(lease.binding(
+            routeToken: routeToken,
+            sessionID: sessionID,
+            sessionPrompt: challenge.prompt,
+            now: now
+        ))
+        #expect(bound.isBound)
+        #expect(!bound.canCancel(matchingRouteToken: routeToken))
+        #expect(bound.permitsSubmission(
+            sessionID: sessionID,
+            sessionPrompt: challenge.prompt,
+            now: now
+        ))
+        #expect(!bound.permitsSubmission(
+            sessionID: UUID(),
+            sessionPrompt: challenge.prompt,
+            now: now
+        ))
+        #expect(!bound.permitsSubmission(
+            sessionID: sessionID,
+            sessionPrompt: "Résumé update: name the risk.",
+            now: now
+        ))
+        #expect(!bound.permitsSubmission(
+            sessionID: sessionID,
+            sessionPrompt: challenge.prompt,
+            now: challenge.expiresAt
+        ))
+        #expect(bound.binding(
+            routeToken: routeToken,
+            sessionID: UUID(),
+            sessionPrompt: challenge.prompt,
+            now: now
+        ) == nil)
+    }
+
+    @Test("Legacy prompt-bearing armed rows are purged across accounts")
+    func legacyArmedRowsArePurged() throws {
+        let suite = "SocialAuthorityClientTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data([1]), forKey: "NoumAsyncChallengeArmedRep")
+        defaults.set(Data([2]), forKey: "NoumAsyncChallengeArmedRep.account-a")
+        defaults.set(Data([3]), forKey: "NoumAsyncChallengeArmedRep.account-b")
+        defaults.set(Data([4]), forKey: "NoumAsyncChallenges.account-a")
+
+        ChallengesManager.purgeLegacyArmedRepPersistence(defaults: defaults)
+
+        #expect(defaults.object(forKey: "NoumAsyncChallengeArmedRep") == nil)
+        #expect(defaults.object(forKey: "NoumAsyncChallengeArmedRep.account-a") == nil)
+        #expect(defaults.object(forKey: "NoumAsyncChallengeArmedRep.account-b") == nil)
+        #expect(defaults.data(forKey: "NoumAsyncChallenges.account-a") == Data([4]))
+    }
+
+    private func challengeFixture(
+        expiresAt: Date,
+        creatorScore: Int? = nil
+    ) -> AsyncChallenge {
+        AsyncChallenge(
+            id: UUID(uuidString: "22222222-2222-4222-8222-222222222222")!,
+            prompt: "Résumé  update:\tname the risk.\nThen stop.",
+            createdAt: expiresAt.addingTimeInterval(-3_600),
+            expiresAt: expiresAt,
+            creatorID: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
+            creatorName: "Speaker",
+            creatorAccountID: "firebase-speaker",
+            opponentID: UUID(uuidString: "33333333-3333-4333-8333-333333333333")!,
+            opponentName: "Partner",
+            opponentAccountID: "firebase-partner",
+            creatorScore: creatorScore,
+            creatorDuration: creatorScore == nil ? nil : 40,
+            creatorSummary: nil,
+            opponentScore: nil,
+            opponentDuration: nil,
+            opponentSummary: nil,
+            creatorReaction: nil,
+            opponentReaction: nil
+        )
+    }
+
     private var profileEnvelope: PublicProfileAuthorityEnvelope {
         PublicProfileAuthorityEnvelope(
             accountID: "firebase-speaker",

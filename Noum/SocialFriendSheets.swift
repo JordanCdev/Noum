@@ -330,7 +330,6 @@ struct ChallengePickFriendSheet: View {
                                 exactPrompt: challenge.prompt,
                                 challengeID: challenge.id
                             ) else { return }
-                            challenges.armSubmission(for: challenge)
                             speakOffNavPath.append(
                                 AppDestination.timedPracticePrompt(token: token)
                             )
