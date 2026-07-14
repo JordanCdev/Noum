@@ -175,6 +175,39 @@ struct GoalOutcomeLoopTests {
         ) == nil)
     }
 
+    @Test func recommendationOutcomeRequiresExplicitAcceptanceAndMatchingMode() {
+        let untapped = recommendationExposure(mode: .timed, tappedAt: nil)
+        let tapped = recommendationExposure(mode: .timed, tappedAt: Date())
+
+        #expect(!RecommendationLearningStore.followedPrescription(
+            untapped,
+            completedMode: .timed
+        ))
+        #expect(RecommendationLearningStore.followedPrescription(
+            tapped,
+            completedMode: .timed
+        ))
+        #expect(!RecommendationLearningStore.followedPrescription(
+            tapped,
+            completedMode: .ahCounter
+        ))
+    }
+
+    @Test func legacyUntappedExposureFailsClosedForOutcomeAttribution() throws {
+        let json = """
+        {"fingerprint":"legacy","title":"Timed rep","focus":"Structure","target":"Land one clear point","mode":"timed","isAIBacked":false,"shownAt":0}
+        """.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let exposure = try decoder.decode(RecommendationExposure.self, from: json)
+
+        #expect(exposure.tappedAt == nil)
+        #expect(!RecommendationLearningStore.followedPrescription(
+            exposure,
+            completedMode: .timed
+        ))
+    }
+
     @Test func preM26OutcomeStillDecodes() throws {
         let json = """
         {"id":"00000000-0000-0000-0000-000000000001","fingerprint":"old","title":"Old","mode":"timed","sessionID":"00000000-0000-0000-0000-000000000002","followed":true,"completedAt":0,"scoreDelta":0,"fillerDelta":0,"durationDelta":0}
@@ -286,6 +319,22 @@ struct GoalOutcomeLoopTests {
             missingEvidence: [],
             nextProofTest: "Repeat the answer and finish with the ask.",
             responseMode: .expandable
+        )
+    }
+
+    private func recommendationExposure(
+        mode: PracticeMode,
+        tappedAt: Date?
+    ) -> RecommendationExposure {
+        RecommendationExposure(
+            fingerprint: "goal-outcome-attribution",
+            title: "One focused rep",
+            focus: "Structure",
+            target: "Land one clear point",
+            mode: mode,
+            isAIBacked: false,
+            shownAt: Date(timeIntervalSince1970: 0),
+            tappedAt: tappedAt
         )
     }
 

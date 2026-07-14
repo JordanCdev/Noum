@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import readiness_gate
+
 
 ROOT = Path(__file__).resolve().parents[3]
 ARENA = ROOT / "tools" / "coach-arena"
@@ -1033,18 +1035,6 @@ def current_git_commit(short=True):
     return proc.stdout.strip()
 
 
-def git_commit_is_ancestor(ancestor, descendant):
-    if not ancestor or not descendant:
-        return False
-    proc = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-        cwd=str(ROOT),
-        text=True,
-        capture_output=True
-    )
-    return proc.returncode == 0
-
-
 def coach_source_fingerprint(paths=COACH_SOURCE_STATUS_PATHS):
     digest = hashlib.sha256()
     for rel_path in sorted(paths):
@@ -1112,6 +1102,7 @@ def app_path_regeneration_preflight(
     missing_commit_count = 0
     missing_fingerprint_count = 0
     trace_count = 0
+    clean_ancestor_audits = {}
 
     if not dump_path.is_dir():
         blockers.append("missingDumpDir")
@@ -1143,11 +1134,15 @@ def app_path_regeneration_preflight(
             return False
         if source_commit == current_commit:
             return True
-        return bool(
-            not dirty_source_files and
-            source_fingerprints_match_current and
-            git_commit_is_ancestor(source_commit, current_commit)
+        if dirty_source_files or not source_fingerprints_match_current:
+            return False
+        audit = readiness_gate.clean_ancestor_descendant_audit(
+            ROOT,
+            source_commit,
+            current_commit,
         )
+        clean_ancestor_audits[source_commit] = audit
+        return audit["passes"]
 
     if sidecar_commit is None:
         blockers.append("missingSourceGitCommitSidecar")
@@ -1203,6 +1198,18 @@ def app_path_regeneration_preflight(
         "currentGitCommit": current_commit,
         "currentCoachSourceFingerprint": current_source_fingerprint,
         "dirtyCoachSourceFiles": dirty_source_files,
+        "cleanAncestorChangedPaths": sorted(set(
+            path for audit in clean_ancestor_audits.values()
+            for path in audit["changedPaths"]
+        )),
+        "cleanAncestorBehaviorSourcePaths": sorted(set(
+            path for audit in clean_ancestor_audits.values()
+            for path in audit["behaviorSourcePaths"]
+        )),
+        "cleanAncestorDiffErrors": sorted(set(
+            audit["error"] for audit in clean_ancestor_audits.values()
+            if audit["error"]
+        )),
         "sourceSidecars": {
             SOURCE_GIT_COMMIT_SIDECAR: sidecar_commit,
             SOURCE_FINGERPRINT_SIDECAR: sidecar_fingerprint,
@@ -1219,7 +1226,8 @@ def app_path_source_freshness_fields(
     coverage,
     current_git_commit,
     dirty_source_files,
-    current_source_fingerprint=None
+    current_source_fingerprint=None,
+    repo_root=ROOT,
 ):
     source_commits = coverage.get("sourceTraceGitCommits") or []
     missing_commit_count = coverage.get("sourceTraceMissingGitCommitCount") or 0
@@ -1230,6 +1238,22 @@ def app_path_source_freshness_fields(
         bool(source_fingerprints) and
         bool(current_source_fingerprint) and
         all(fingerprint == current_source_fingerprint for fingerprint in source_fingerprints)
+    )
+    ancestor_audits = [
+        readiness_gate.clean_ancestor_descendant_audit(
+            repo_root,
+            commit,
+            current_git_commit,
+        )
+        for commit in source_commits
+        if current_git_commit and commit != current_git_commit
+    ]
+    commits_match_current_or_documentation_ancestor = bool(source_commits) and all(
+        commit == current_git_commit or any(
+            audit["ancestor"] == commit and audit["passes"]
+            for audit in ancestor_audits
+        )
+        for commit in source_commits
     )
     failures = []
     if missing_commit_count:
@@ -1242,10 +1266,8 @@ def app_path_source_freshness_fields(
         )
     if not source_commits:
         failures.append("source app-path report has no source git commit")
-    elif (
-        current_git_commit and
-        any(commit != current_git_commit for commit in source_commits) and
-        not fingerprint_matches
+    elif current_git_commit and not (
+        fingerprint_matches and commits_match_current_or_documentation_ancestor
     ):
         failures.append(
             "source app-path git commit(s) do not match current HEAD: " +
@@ -1263,6 +1285,15 @@ def app_path_source_freshness_fields(
         "currentGitCommit": current_git_commit,
         "currentCoachSourceFingerprint": current_source_fingerprint,
         "currentDirtyCoachSourceFiles": dirty_source_files,
+        "cleanAncestorChangedPaths": sorted(set(
+            path for audit in ancestor_audits for path in audit["changedPaths"]
+        )),
+        "cleanAncestorBehaviorSourcePaths": sorted(set(
+            path for audit in ancestor_audits for path in audit["behaviorSourcePaths"]
+        )),
+        "cleanAncestorDiffErrors": sorted(set(
+            audit["error"] for audit in ancestor_audits if audit["error"]
+        )),
         "sourceFingerprintMatchesCurrent": fingerprint_matches,
         "sourceFreshnessPasses": not failures,
         "sourceFreshnessFailures": sorted(set(failures)),

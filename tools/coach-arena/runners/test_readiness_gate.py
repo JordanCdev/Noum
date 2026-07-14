@@ -2003,7 +2003,18 @@ class ReadinessGateTests(unittest.TestCase):
             with (
                 mock.patch.object(gate, "current_git_commit", return_value="def567"),
                 mock.patch.object(gate, "current_dirty_coach_source_files", return_value=[]),
-                mock.patch.object(gate, "git_commit_is_ancestor", return_value=True),
+                mock.patch.object(
+                    gate,
+                    "clean_ancestor_descendant_audit",
+                    return_value={
+                        "ancestor": "abc123",
+                        "descendant": "def567",
+                        "changedPaths": ["docs/CURRENT_STATE.md"],
+                        "behaviorSourcePaths": [],
+                        "error": None,
+                        "passes": True,
+                    },
+                ),
             ):
                 status = gate.build_readiness_status(
                     report,
@@ -2020,6 +2031,110 @@ class ReadinessGateTests(unittest.TestCase):
             status["sourceFreshnessAudit"]["cleanAncestorCommitsAccepted"],
             ["abc123"],
         )
+
+    def test_clean_ancestor_audit_allows_docs_and_rejects_behavior_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            subprocess.run(
+                ["git", "-C", root, "config", "user.email", "tests@noum.local"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", root, "config", "user.name", "Noum Tests"],
+                check=True,
+            )
+            (root / "docs").mkdir()
+            (root / "docs/CURRENT_STATE.md").write_text("baseline\n", encoding="utf-8")
+            subprocess.run(["git", "-C", root, "add", "docs/CURRENT_STATE.md"], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-qm", "baseline"], check=True)
+            baseline = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+
+            (root / "docs/CURRENT_STATE.md").write_text("documented\n", encoding="utf-8")
+            subprocess.run(["git", "-C", root, "commit", "-qam", "docs"], check=True)
+            docs_commit = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+
+            docs_audit = gate.clean_ancestor_descendant_audit(root, baseline, docs_commit)
+            self.assertTrue(docs_audit["passes"])
+            self.assertEqual(docs_audit["behaviorSourcePaths"], [])
+
+            (root / "Noum").mkdir()
+            (root / "Noum/PracticeSupport.swift").write_text("let changed = true\n", encoding="utf-8")
+            subprocess.run(["git", "-C", root, "add", "Noum/PracticeSupport.swift"], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-qm", "behavior"], check=True)
+            behavior_commit = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+
+            behavior_audit = gate.clean_ancestor_descendant_audit(
+                root,
+                docs_commit,
+                behavior_commit,
+            )
+            self.assertFalse(behavior_audit["passes"])
+            self.assertEqual(
+                behavior_audit["behaviorSourcePaths"],
+                ["Noum/PracticeSupport.swift"],
+            )
+
+            subprocess.run(
+                [
+                    "git", "-C", root, "mv", "Noum/PracticeSupport.swift",
+                    "docs/PracticeSupport.md",
+                ],
+                check=True,
+            )
+            subprocess.run(["git", "-C", root, "commit", "-qm", "rename"], check=True)
+            rename_commit = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+
+            rename_audit = gate.clean_ancestor_descendant_audit(
+                root,
+                behavior_commit,
+                rename_commit,
+            )
+            self.assertFalse(rename_audit["passes"])
+            self.assertEqual(
+                rename_audit["changedPaths"],
+                ["Noum/PracticeSupport.swift", "docs/PracticeSupport.md"],
+            )
+            self.assertEqual(
+                rename_audit["behaviorSourcePaths"],
+                ["Noum/PracticeSupport.swift"],
+            )
+
+    def test_clean_ancestor_path_policy_is_default_deny(self):
+        self.assertTrue(gate.clean_ancestor_documentation_path("docs/CURRENT_STATE.md"))
+        self.assertTrue(gate.clean_ancestor_documentation_path(".screenshots/run/HANDOFF.md"))
+        self.assertTrue(gate.clean_ancestor_documentation_path("README.md"))
+        self.assertFalse(gate.clean_ancestor_documentation_path("Noum/PrivacyPolicy.md"))
+        self.assertFalse(gate.clean_ancestor_documentation_path("tools/coach-arena/judges/rubric-judge.md"))
+        self.assertFalse(gate.clean_ancestor_documentation_path("tools/coach-arena/reports/app-path/latest.json"))
+
+        invalid = gate.clean_ancestor_descendant_audit(
+            Path(__file__).resolve().parents[3],
+            "not-a-commit",
+            "also-not-a-commit",
+        )
+        self.assertFalse(invalid["passes"])
+        self.assertEqual(invalid["error"], "notAncestor")
 
     def test_source_freshness_rejects_unrelated_matching_commit(self):
         readiness = {

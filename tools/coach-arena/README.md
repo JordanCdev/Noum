@@ -111,8 +111,13 @@ typed assessment/reasoning layer, prompt bundles, reliability gate, rubrics,
 trajectory cache/snapshot, retrieval knowledge, and their coach-eval tests.
 The readiness gate compares the canonical app-path report and dump sidecars
 against the current checkout's coach-source fingerprint and git commit when
-available, so a stale but internally consistent report remains blocked until
-the Swift dump and app-path report are regenerated from the current source.
+available. A clean ancestor is accepted only when every intervening committed
+path is explicitly documentation-only (`docs/*.md`, a screenshot `HANDOFF.md`,
+or the root `README.md`, `AGENTS.md`, or `HANDOFF.md`). App, test, project,
+script, evaluator, prompt/rubric, generated-report, resource, and unknown paths
+fail closed even when the manually scoped coach fingerprint is unchanged. This
+keeps a stale but internally consistent report blocked until the Swift dump and
+app-path report are regenerated from the relevant current source.
 The same source sidecars now gate `coach-live-eval-v1.json`: a live-provider
 sweep only clears `.noLiveProviderTranscriptSweep` when its `sourceGitCommit`
 and `sourceCoachFingerprint` match the sidecars in the dump directory, and the

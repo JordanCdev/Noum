@@ -9694,6 +9694,15 @@ final class RecommendationLearningStore: ObservableObject {
     func recordOutcome(for session: PracticeSession, previousSessions: [PracticeSession]) {
         guard let pendingExposure else { return }
 
+        // A same-mode rep is not enough to claim the user followed the
+        // prescription: they may have ignored the rendered action and opened
+        // that mode elsewhere. The existing tap timestamp is the explicit
+        // acceptance boundary shared by Summary, Home, and Train.
+        let followed = Self.followedPrescription(
+            pendingExposure,
+            completedMode: session.mode
+        )
+
         let relevantHistory = previousSessions.isEmpty ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id } : previousSessions
         let priorScores = relevantHistory.compactMap(\.score)
         let comparableScoreDelta: Double? = {
@@ -9729,7 +9738,7 @@ final class RecommendationLearningStore: ObservableObject {
             target: pendingExposure.target,
             mode: pendingExposure.mode,
             sessionID: session.id,
-            followed: pendingExposure.mode == session.mode,
+            followed: followed,
             completedAt: Date(),
             scoreDelta: comparableScoreDelta ?? 0,
             hasComparableScore: comparableScoreDelta != nil,
@@ -9741,7 +9750,7 @@ final class RecommendationLearningStore: ObservableObject {
             targetDimensionID: pendingExposure.targetDimensionID,
             sourceSessionID: pendingExposure.sourceSessionID,
             goalFollowUpResult: Self.goalFollowUpResult(
-                followed: pendingExposure.mode == session.mode,
+                followed: followed,
                 comparableScoreDelta: comparableScoreDelta,
                 fillerDelta: Double(session.fillerWordCount) - averageFillers,
                 comparablePaceDelta: comparablePaceDelta
@@ -9754,6 +9763,13 @@ final class RecommendationLearningStore: ObservableObject {
         persistOutcomes()
         persistPending()
         syncIfPossible()
+    }
+
+    nonisolated static func followedPrescription(
+        _ exposure: RecommendationExposure,
+        completedMode: PracticeMode
+    ) -> Bool {
+        exposure.tappedAt != nil && exposure.mode == completedMode
     }
 
     nonisolated static func goalFollowUpResult(

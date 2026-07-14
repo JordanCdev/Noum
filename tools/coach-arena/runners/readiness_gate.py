@@ -88,6 +88,16 @@ COACH_SOURCE_STATUS_PATHS = [
     "NoumTests/NoumTests.swift",
 ]
 
+# Clean-ancestor reuse exists to avoid regenerating coach evidence after a
+# documentation-only commit. Keep this list deliberately narrow and
+# default-deny: Markdown under the evaluator can be an executable prompt or
+# rubric, and generated reports are evidence rather than documentation.
+CLEAN_ANCESTOR_DOCUMENTATION_FILES = {
+    "AGENTS.md",
+    "HANDOFF.md",
+    "README.md",
+}
+
 
 LOCAL_GATE_REQUIREMENTS = [
     {
@@ -902,6 +912,86 @@ def git_commit_is_ancestor(repo_root, ancestor, descendant):
     return proc.returncode == 0
 
 
+def clean_ancestor_documentation_path(path):
+    normalized = str(path).replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized in CLEAN_ANCESTOR_DOCUMENTATION_FILES:
+        return True
+    if normalized.startswith("docs/") and normalized.endswith(".md"):
+        return True
+    parts = normalized.split("/")
+    return (
+        len(parts) == 3 and
+        parts[0] == ".screenshots" and
+        parts[2] == "HANDOFF.md"
+    )
+
+
+def clean_ancestor_descendant_audit(repo_root, ancestor, descendant):
+    result = {
+        "ancestor": ancestor,
+        "descendant": descendant,
+        "changedPaths": [],
+        "behaviorSourcePaths": [],
+        "error": None,
+        "passes": False,
+    }
+    if not ancestor or not descendant:
+        result["error"] = "missingCommit"
+        return result
+    if ancestor == descendant:
+        result["passes"] = True
+        return result
+    if not git_commit_is_ancestor(repo_root, ancestor, descendant):
+        result["error"] = "notAncestor"
+        return result
+
+    proc = subprocess.run(
+        [
+            "git", "-C", str(Path(repo_root)), "diff", "--name-status", "-z",
+            "--find-renames", f"{ancestor}..{descendant}", "--",
+        ],
+        text=False,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        result["error"] = "diffUnavailable"
+        return result
+
+    tokens = proc.stdout.split(b"\0")
+    if tokens and tokens[-1] == b"":
+        tokens.pop()
+    paths = []
+    index = 0
+    try:
+        while index < len(tokens):
+            status = tokens[index].decode("utf-8")
+            index += 1
+            kind = status[:1]
+            if kind not in {"A", "C", "D", "M", "R", "T", "U", "X", "B"}:
+                raise ValueError("unknownStatus")
+            path_count = 2 if kind in {"C", "R"} else 1
+            if index + path_count > len(tokens):
+                raise ValueError("malformedDiff")
+            for _ in range(path_count):
+                paths.append(tokens[index].decode("utf-8"))
+                index += 1
+    except (UnicodeDecodeError, ValueError) as error:
+        result["error"] = str(error)
+        return result
+
+    changed_paths = sorted(set(paths))
+    behavior_paths = [
+        path for path in changed_paths
+        if not clean_ancestor_documentation_path(path)
+    ]
+    result["changedPaths"] = changed_paths
+    result["behaviorSourcePaths"] = behavior_paths
+    result["passes"] = not behavior_paths
+    return result
+
+
 def coach_source_fingerprint(repo_root, paths=COACH_SOURCE_STATUS_PATHS):
     root = Path(repo_root)
     if not any((root / rel_path).exists() for rel_path in paths):
@@ -981,6 +1071,9 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
         report_commits,
     )
     clean_ancestor_commits_accepted = []
+    clean_ancestor_changed_paths = []
+    clean_ancestor_behavior_source_paths = []
+    clean_ancestor_diff_errors = []
     if commit_current_mismatch and repo_root:
         source_commits = sorted(set(
             [value for value in [sidecar_commit, *report_commits] if value]
@@ -991,10 +1084,22 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
             report_fingerprints and
             all(value == current_fingerprint for value in report_fingerprints)
         )
-        clean_ancestor_commits_accepted = [
-            value for value in source_commits
-            if git_commit_is_ancestor(repo_root, value, current_commit)
+        ancestor_audits = [
+            clean_ancestor_descendant_audit(repo_root, value, current_commit)
+            for value in source_commits
         ]
+        clean_ancestor_commits_accepted = [
+            audit["ancestor"] for audit in ancestor_audits if audit["passes"]
+        ]
+        clean_ancestor_changed_paths = sorted(set(
+            path for audit in ancestor_audits for path in audit["changedPaths"]
+        ))
+        clean_ancestor_behavior_source_paths = sorted(set(
+            path for audit in ancestor_audits for path in audit["behaviorSourcePaths"]
+        ))
+        clean_ancestor_diff_errors = sorted(set(
+            audit["error"] for audit in ancestor_audits if audit["error"]
+        ))
         if (
             not dirty_source_files and
             fingerprints_match_current and
@@ -1018,6 +1123,9 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
         "currentGitCommit": current_commit,
         "dirtyCoachSourceFiles": dirty_source_files,
         "cleanAncestorCommitsAccepted": clean_ancestor_commits_accepted,
+        "cleanAncestorChangedPaths": clean_ancestor_changed_paths,
+        "cleanAncestorBehaviorSourcePaths": clean_ancestor_behavior_source_paths,
+        "cleanAncestorDiffErrors": clean_ancestor_diff_errors,
         "sidecarCoachFingerprint": sidecar_fingerprint,
         "sidecarGitCommit": sidecar_commit,
         "reportCoachFingerprints": report_fingerprints,

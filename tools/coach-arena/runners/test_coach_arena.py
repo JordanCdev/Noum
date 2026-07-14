@@ -880,7 +880,7 @@ class AppPathBoundaryTests(unittest.TestCase):
     def test_source_fingerprint_allows_dirty_tree_app_path_trace_to_prove_fresh_source(self):
         coverage = {
             "source": "appPathReport",
-            "sourceTraceGitCommits": ["older"],
+            "sourceTraceGitCommits": ["current"],
             "sourceTraceMissingGitCommitCount": 0,
             "sourceTraceCoachSourceFingerprints": ["sha256:fresh"],
             "sourceTraceMissingCoachSourceFingerprintCount": 0,
@@ -991,7 +991,19 @@ class AppPathBoundaryTests(unittest.TestCase):
                 }]
             }), encoding="utf-8")
 
-            with mock.patch.object(arena, "git_commit_is_ancestor", return_value=True):
+            documentation_audit = {
+                "ancestor": "abc1234",
+                "descendant": "def5678",
+                "changedPaths": ["docs/CURRENT_STATE.md"],
+                "behaviorSourcePaths": [],
+                "error": None,
+                "passes": True,
+            }
+            with mock.patch.object(
+                arena.readiness_gate,
+                "clean_ancestor_descendant_audit",
+                return_value=documentation_audit,
+            ):
                 result = arena.app_path_regeneration_preflight(
                     temp_dir,
                     current_commit="def5678",
@@ -1003,6 +1015,7 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertEqual(result["blockers"], [])
         self.assertIn("sourceGitCommitSidecarCleanAncestor", result["warnings"])
         self.assertIn("traceGitCommitCleanAncestor", result["warnings"])
+        self.assertEqual(result["cleanAncestorBehaviorSourcePaths"], [])
 
     def test_app_path_regeneration_preflight_blocks_unrelated_matching_commit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1021,7 +1034,19 @@ class AppPathBoundaryTests(unittest.TestCase):
                 }]
             }), encoding="utf-8")
 
-            with mock.patch.object(arena, "git_commit_is_ancestor", return_value=False):
+            rejected_audit = {
+                "ancestor": "abc1234",
+                "descendant": "def5678",
+                "changedPaths": [],
+                "behaviorSourcePaths": [],
+                "error": "notAncestor",
+                "passes": False,
+            }
+            with mock.patch.object(
+                arena.readiness_gate,
+                "clean_ancestor_descendant_audit",
+                return_value=rejected_audit,
+            ):
                 result = arena.app_path_regeneration_preflight(
                     temp_dir,
                     current_commit="def5678",
@@ -1032,6 +1057,41 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertFalse(result["passes"])
         self.assertIn("sourceGitCommitSidecarStale", result["blockers"])
         self.assertIn("traceGitCommitStale", result["blockers"])
+
+    def test_source_freshness_fields_reject_behavior_source_descendant(self):
+        coverage = {
+            "source": "appPathReport",
+            "sourceTraceGitCommits": ["abc1234"],
+            "sourceTraceMissingGitCommitCount": 0,
+            "sourceTraceCoachSourceFingerprints": ["sha256:fresh"],
+            "sourceTraceMissingCoachSourceFingerprintCount": 0,
+        }
+        behavior_audit = {
+            "ancestor": "abc1234",
+            "descendant": "def5678",
+            "changedPaths": ["Noum/PracticeSupport.swift"],
+            "behaviorSourcePaths": ["Noum/PracticeSupport.swift"],
+            "error": None,
+            "passes": False,
+        }
+
+        with mock.patch.object(
+            arena.readiness_gate,
+            "clean_ancestor_descendant_audit",
+            return_value=behavior_audit,
+        ):
+            fields = arena.app_path_source_freshness_fields(
+                coverage,
+                "def5678",
+                [],
+                current_source_fingerprint="sha256:fresh",
+            )
+
+        self.assertFalse(fields["sourceFreshnessPasses"])
+        self.assertEqual(
+            fields["cleanAncestorBehaviorSourcePaths"],
+            ["Noum/PracticeSupport.swift"],
+        )
 
     def test_write_app_path_source_sidecars_stamps_commit_and_fingerprint(self):
         with tempfile.TemporaryDirectory() as temp_dir:
