@@ -106,6 +106,29 @@ struct GoalOutcomeLoopTests {
         #expect(read.map { GoalMilestoneShare.isAvailable(for: $0) } == true)
     }
 
+    @Test func matureHistoryCannotPromoteASubFloorLatestRepGoalRead() throws {
+        let sessions = (0..<10).map { index in
+            comparisonSession(
+                dayOffset: -index,
+                fillers: index == 0 ? 0 : 1,
+                duration: index == 0 ? 5 : 60,
+                score: index == 0 ? 9 : 7
+            )
+        }
+        let read = try #require(GoalOutcomeEngine.read(
+            profile: makeProfile(style: .executive, chosenStyle: .executive),
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            coachMemory: nil,
+            outcomes: []
+        ))
+
+        #expect(read.evidenceLevel == .insufficient)
+        #expect(read.confidence < 0.35)
+        #expect(!GoalMilestoneShare.isAvailable(for: read))
+    }
+
     @Test func milestoneShareIsEvidenceBoundedAndTranscriptFree() {
         let established = GoalOutcomeRead.make(
             style: .concise,

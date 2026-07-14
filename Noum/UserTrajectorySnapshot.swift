@@ -32,6 +32,27 @@ struct LatestRepEvidencePack: Codable, Equatable {
     var transcriptWordCount: Int
     var transcriptExcerpt: String?
     var evidenceLines: [String]
+
+    /// Rubric mechanics may only interpret delivery metrics when the latest
+    /// rep contains enough speech to make duration-normalized comparisons.
+    /// Keep this computed so cached payloads and existing fixtures remain
+    /// backward compatible.
+    var meetsQuantityFloor: Bool {
+        SessionQualifier.meetsQuantityFloor(
+            duration: TimeInterval(durationSeconds),
+            wordCount: transcriptWordCount
+        )
+    }
+
+    var qualifyingFillerBurden: FillerBurden? {
+        guard meetsQuantityFloor else { return nil }
+        let burden = FillerBurden(
+            fillerCount: fillerCount,
+            duration: TimeInterval(durationSeconds)
+        )
+        guard burden.ratePerMinute != nil else { return nil }
+        return burden
+    }
 }
 
 struct ActiveInterventionState: Codable, Equatable {

@@ -164,16 +164,19 @@ enum TrajectorySummaryBuilder {
         guard !currentWeek.isEmpty, !previousWeek.isEmpty else { return [] }
 
         var signals: [MemoryTrendSignal] = []
-        let example = exampleLine(from: currentWeek)
-
-        if let fillerSignal = trendSignal(
-            metricLabel: "Filler words",
-            current: average(currentWeek.map { Double($0.fillerWordCount) }),
-            previous: average(previousWeek.map { Double($0.fillerWordCount) }),
-            lowerIsBetter: true,
-            formatter: { String(format: "%.1f", $0) },
-            exampleEvidence: example
-        ) {
+        let scoreExample = exampleLine(from: currentWeek)
+        let currentFillerSessions = quantityQualifiedSessions(in: currentWeek)
+        let previousFillerSessions = quantityQualifiedSessions(in: previousWeek)
+        if currentFillerSessions.count >= 2,
+           previousFillerSessions.count >= 2,
+           let fillerSignal = trendSignal(
+               metricLabel: "Filler rate",
+               current: average(fillerRates(in: currentFillerSessions)),
+               previous: average(fillerRates(in: previousFillerSessions)),
+               lowerIsBetter: true,
+               formatter: { String(format: "%.1f/min", $0) },
+               exampleEvidence: fillerExampleLine(from: currentFillerSessions)
+           ) {
             signals.append(fillerSignal)
         }
 
@@ -186,7 +189,7 @@ enum TrajectorySummaryBuilder {
                previous: average(previousScores),
                lowerIsBetter: false,
                formatter: { String(format: "%.1f/10", $0) },
-               exampleEvidence: example
+               exampleEvidence: scoreExample
            ) {
             signals.append(scoreSignal)
         }
@@ -235,7 +238,36 @@ enum TrajectorySummaryBuilder {
     private static func exampleLine(from week: [PracticeSession]) -> String? {
         guard let example = week.max(by: { $0.date < $1.date }) else { return nil }
         let score = example.score.map { "\($0)/10" } ?? "no score"
-        return "Example: \(example.mode.displayLabel) rep, \(score), \(example.fillerWordCount) fillers."
+        return "Example: \(example.mode.displayLabel) rep, \(score), \(example.fillerWordCount) fillers across \(Int(example.duration.rounded()))s."
+    }
+
+    private static func quantityQualifiedSessions(
+        in sessions: [PracticeSession]
+    ) -> [PracticeSession] {
+        sessions.filter {
+            SessionQualifier.meetsQuantityFloor(
+                duration: $0.duration,
+                wordCount: $0.wordCount
+            )
+        }
+    }
+
+    private static func fillerRates(in sessions: [PracticeSession]) -> [Double] {
+        sessions.compactMap {
+            FillerBurden(
+                fillerCount: $0.fillerWordCount,
+                duration: $0.duration
+            ).ratePerMinute
+        }
+    }
+
+    private static func fillerExampleLine(from week: [PracticeSession]) -> String? {
+        guard let example = week.max(by: { $0.date < $1.date }),
+              let rate = FillerBurden(
+                  fillerCount: example.fillerWordCount,
+                  duration: example.duration
+              ).ratePerMinute else { return nil }
+        return "Example: \(example.mode.displayLabel) rep, \(example.fillerWordCount) fillers across \(Int(example.duration.rounded()))s (\(String(format: "%.1f", rate))/min)."
     }
 
     private static func average(_ values: [Double]) -> Double {

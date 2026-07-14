@@ -101,10 +101,11 @@ enum CoachReasoningPass {
     ) -> RubricScore {
         let pack = trajectory.latestRepEvidencePack
         let transcript = (pack?.transcriptExcerpt ?? "").lowercased()
-        let fillerCount = pack?.fillerCount ?? 0
         let wpm = pack?.wordsPerMinute
         let score = pack?.score
         let sessionCount = trajectory.sessionCount
+        let fillerBurden = pack?.qualifyingFillerBurden
+        let fillerRate = fillerBurden?.ratePerMinute
 
         let raw: Double
         let evidence: [String]
@@ -120,8 +121,18 @@ enum CoachReasoningPass {
             let hedgeHits = countOccurrences(in: transcript, needles: [
                 "maybe", "probably", "kind of", "sort of", "just", "i think"
             ])
-            raw = max(0.20, min(0.92, 0.88 - Double(hedgeHits) * 0.16 - Double(fillerCount) * 0.03))
-            evidence = ["latest rep had \(fillerCount) fillers and \(hedgeHits) hedge markers in the available excerpt"]
+            if let pack, let fillerRate {
+                raw = max(
+                    0.20,
+                    min(0.92, 0.88 - Double(hedgeHits) * 0.16 - fillerRate * 0.03)
+                )
+                evidence = [
+                    "latest rep had \(pack.fillerCount) fillers across \(pack.durationSeconds)s (\(formattedRate(fillerRate))/min) and \(hedgeHits) hedge markers in the available excerpt"
+                ]
+            } else {
+                raw = 0.45
+                evidence = ["not enough duration-qualified speech to judge filler or hedge control in the latest rep"]
+            }
         case "clean_close":
             let trailing = transcript.hasSuffix("yeah") || transcript.hasSuffix("so") || transcript.hasSuffix("um") || transcript.hasSuffix("uh")
             raw = trailing ? 0.35 : (score.map { min(0.82, Double($0) / 10.0) } ?? 0.48)
@@ -134,13 +145,27 @@ enum CoachReasoningPass {
             raw = hasPressureEvidence ? min(0.78, 0.45 + Double(sessionCount) / 20.0) : min(0.55, Double(sessionCount) / 18.0)
             evidence = hasPressureEvidence ? ["recent history includes a pressure-style rep"] : ["no explicit pressure-mode proof in the current evidence pack"]
         case "controlled_pacing":
-            if let wpm {
+            if let pack, pack.meetsQuantityFloor, let wpm {
                 let paceScore = wpm < 105 ? 0.48 : (wpm > 175 ? 0.50 : 0.76)
-                raw = max(0.25, paceScore - Double(fillerCount) * 0.025)
-                evidence = ["latest pace estimate \(wpm) WPM with \(fillerCount) fillers"]
+                let fillerPenalty: Double
+                if let fillerBurden,
+                   fillerBurden.meets(.elevated),
+                   let fillerRate {
+                    fillerPenalty = fillerRate * 0.025
+                } else {
+                    fillerPenalty = 0
+                }
+                raw = max(0.25, paceScore - fillerPenalty)
+                if let fillerRate {
+                    evidence = [
+                        "latest pace estimate \(wpm) WPM with \(formattedRate(fillerRate)) fillers/min across \(pack.durationSeconds)s"
+                    ]
+                } else {
+                    evidence = ["latest pace estimate \(wpm) WPM; filler-rate evidence was unavailable"]
+                }
             } else {
                 raw = 0.42
-                evidence = ["no reliable pace estimate in the latest evidence pack"]
+                evidence = ["no duration-qualified pace estimate in the latest evidence pack"]
             }
         case "salience":
             let hasSalience = containsAny(transcript, ["because", "so ", "therefore", "means", "matters"])
@@ -255,7 +280,7 @@ enum CoachReasoningPass {
 
         if let pack = trajectory.latestRepEvidencePack {
             let mode = shortModeName(pack.mode)
-            if pack.fillerCount > 0 {
+            if pack.qualifyingFillerBurden?.meets(.elevated) == true {
                 let noun = pack.fillerCount == 1 ? "filler" : "fillers"
                 return "Use the latest \(mode) rep: replace one of the \(pack.fillerCount) \(noun) with a silent beat, then compare the sentence."
             }
@@ -573,7 +598,7 @@ enum CoachReasoningPass {
                     candidates.append("Repeat the latest \(mode) rep with one silent beat after sentence one.")
                 }
             case "hedge_control":
-                if pack.fillerCount > 0 {
+                if pack.qualifyingFillerBurden?.meets(.elevated) == true {
                     candidates.append("Replay the latest \(mode) rep and replace the first filler or hedge with the direct verb.")
                 } else {
                     candidates.append("Replay the latest \(mode) rep and remove one softening word before the recommendation.")
@@ -942,15 +967,19 @@ enum CoachReasoningPass {
     }
 
     private static func pressureFillerProofTest(from trajectory: UserTrajectorySnapshot) -> String {
-        let fillerCount = trajectory.latestRepEvidencePack?.fillerCount
         let countPhrase: String
-        if let fillerCount, fillerCount > 0 {
-            let noun = fillerCount == 1 ? "filler" : "fillers"
-            countPhrase = " with \(fillerCount) \(noun)"
+        if let pack = trajectory.latestRepEvidencePack,
+           pack.qualifyingFillerBurden?.meets(.elevated) == true {
+            let noun = pack.fillerCount == 1 ? "filler" : "fillers"
+            countPhrase = " with \(pack.fillerCount) \(noun) across \(pack.durationSeconds)s"
         } else {
             countPhrase = ""
         }
         return "Repeat the latest pressure rep\(countPhrase): replace the filler urge with one silent beat before the final sentence, then finish the ask."
+    }
+
+    private static func formattedRate(_ rate: Double) -> String {
+        String(format: "%.1f", rate)
     }
 
     private static func weakestTacticalEvidenceDimensionID(from scores: [RubricScore]) -> String? {

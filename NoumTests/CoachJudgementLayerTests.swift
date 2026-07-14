@@ -518,6 +518,73 @@ struct UserTrajectoryCacheTests {
         cache.invalidate()
     }
 
+    @Test func latestPackWithholdsPaceBelowTheSharedQuantityFloor() {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        defer { cache.invalidate() }
+        let session = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 6_250),
+            fillerWordCount: 2,
+            transcript: Array(repeating: "word", count: 30).joined(separator: " "),
+            duration: 14.9
+        )
+
+        let snapshot = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        ).snapshot
+
+        #expect(snapshot.latestRepEvidencePack?.meetsQuantityFloor == false)
+        #expect(snapshot.latestRepEvidencePack?.wordsPerMinute == nil)
+        #expect(snapshot.latestRepEvidencePack?.qualifyingFillerBurden == nil)
+    }
+
+    @Test func recentFillerTrendUsesRatesOnlyWhenAllThreeRepsQualify() {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        defer { cache.invalidate() }
+        let transcript = Array(repeating: "word", count: 30).joined(separator: " ")
+        let sessions = [
+            Self.session(id: UUID(), date: Date(timeIntervalSince1970: 6_500), fillerWordCount: 3, transcript: transcript, duration: 60),
+            Self.session(id: UUID(), date: Date(timeIntervalSince1970: 6_400), fillerWordCount: 2, transcript: transcript, duration: 15),
+            Self.session(id: UUID(), date: Date(timeIntervalSince1970: 6_300), fillerWordCount: 0, transcript: transcript, duration: 30),
+        ]
+
+        let qualified = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            coachMemory: nil
+        ).snapshot
+        #expect(qualified.trendLines.contains {
+            $0.contains("recent filler rate: 3.7/min")
+                && $0.contains("3 quantity-qualified reps")
+        })
+
+        cache.invalidate()
+        var underFloor = sessions
+        underFloor[2] = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 6_300),
+            fillerWordCount: 0,
+            transcript: transcript,
+            duration: 14
+        )
+        let withheld = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: underFloor,
+            coachMemory: nil
+        ).snapshot
+        #expect(!withheld.trendLines.contains { $0.contains("recent filler rate:") })
+    }
+
     @Test @MainActor func practiceFinalizerPrewarmsCurrentStoreSnapshot() {
         let cache = UserTrajectoryCache.shared
         let sessionStore = PracticeSessionStore.shared
@@ -779,6 +846,113 @@ struct CoachAssessmentCacheTests {
 
 @Suite("CoachReasoningPassTests")
 struct CoachReasoningPassTests {
+
+    @Test func fillerRubricPenaltyNormalizesEqualCountsByDuration() throws {
+        func assessment(duration: Int) -> CoachAssessment {
+            var trajectory = Self.singleRepTrajectory
+            trajectory.latestRepEvidencePack = LatestRepEvidencePack(
+                mode: "Timed",
+                score: 7,
+                fillerCount: 2,
+                durationSeconds: duration,
+                wordsPerMinute: 120,
+                transcriptWordCount: 30,
+                transcriptExcerpt: "The recommendation is clear because one owner can make the decision today",
+                evidenceLines: ["latest rep: Timed, 7/10, 2 fillers, \(duration)s"]
+            )
+            return CoachReasoningPass.assess(
+                turnDepth: .groundedRead,
+                userQuestion: "How is this moving toward my goal?",
+                trajectory: trajectory,
+                rubric: ActiveGoalRubric(
+                    rubric: GoalRubricStore.rubric(for: .authoritative),
+                    voice: .authoritative
+                ),
+                surface: .text
+            )
+        }
+
+        let dense = try #require(assessment(duration: 15).rubricScores.first { $0.dimensionID == "hedge_control" })
+        let sparse = try #require(assessment(duration: 120).rubricScores.first { $0.dimensionID == "hedge_control" })
+        #expect(dense.score < sparse.score)
+        #expect(dense.evidence.first?.contains("8.0/min") == true)
+        #expect(sparse.evidence.first?.contains("1.0/min") == true)
+    }
+
+    @Test func subFloorLatestRepCannotDemonstrateHedgeOrPaceControl() throws {
+        var trajectory = Self.singleRepTrajectory
+        trajectory.evidenceCoverage = 0.82
+        trajectory.latestRepEvidencePack = LatestRepEvidencePack(
+            mode: "Timed",
+            score: 9,
+            fillerCount: 0,
+            durationSeconds: 14,
+            wordsPerMinute: 145,
+            transcriptWordCount: 30,
+            transcriptExcerpt: "The recommendation is clear because one owner can make the decision today",
+            evidenceLines: ["latest rep: Timed, 9/10, 0 fillers, 14s"]
+        )
+
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "How is this moving toward my goal?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .authoritative
+            ),
+            surface: .text
+        )
+        let hedge = try #require(assessment.rubricScores.first { $0.dimensionID == "hedge_control" })
+        let pace = try #require(assessment.rubricScores.first { $0.dimensionID == "controlled_pacing" })
+        #expect(hedge.score == 0.45)
+        #expect(pace.score == 0.42)
+        #expect(hedge.missingEvidence != nil)
+        #expect(pace.missingEvidence != nil)
+        #expect(hedge.evidence.first?.contains("not enough duration-qualified speech") == true)
+        #expect(pace.evidence.first?.contains("no duration-qualified pace estimate") == true)
+    }
+
+    @Test func absentEvidencePackDoesNotBecomeStrongHedgeControl() throws {
+        var trajectory = Self.singleRepTrajectory
+        trajectory.latestRepEvidencePack = nil
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "How is this moving toward my goal?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .authoritative
+            ),
+            surface: .text
+        )
+        let hedge = try #require(assessment.rubricScores.first { $0.dimensionID == "hedge_control" })
+        #expect(hedge.score == 0.45)
+        #expect(hedge.missingEvidence != nil)
+    }
+
+    @Test func genericQuickMoveDoesNotPrescribeFillersFromTinyRep() {
+        var trajectory = Self.singleRepTrajectory
+        trajectory.latestRepEvidencePack = LatestRepEvidencePack(
+            mode: "Timed",
+            score: nil,
+            fillerCount: 3,
+            durationSeconds: 5,
+            wordsPerMinute: 120,
+            transcriptWordCount: 10,
+            transcriptExcerpt: "um this is a brief answer",
+            evidenceLines: ["latest rep: Timed, no score, 3 fillers, 5s"]
+        )
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "What should I do next?",
+            trajectory: trajectory,
+            rubric: Self.openEndedRubric,
+            surface: .text
+        )
+
+        #expect(!assessment.directVerdict.lowercased().contains("replace one of the 3 fillers"))
+    }
 
     @Test func singleSevenOutOfTenDoesNotBecomeOverallCloseness() {
         let assessment = CoachReasoningPass.assess(

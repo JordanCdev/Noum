@@ -52171,10 +52171,12 @@ struct TrajectorySummaryBuilderTests {
             now: now
         )
 
-        let fillerSignal = snapshot.trendSignals.first { $0.metricLabel == "Filler words" }
+        let fillerSignal = snapshot.trendSignals.first { $0.metricLabel == "Filler rate" }
         #expect(fillerSignal != nil)
         #expect(fillerSignal?.direction == .improving)
         #expect(fillerSignal?.exampleEvidenceLine != nil)
+        #expect(fillerSignal?.deltaLine.contains("/min") == true)
+        #expect(fillerSignal?.exampleEvidenceLine?.contains("across 45s") == true)
 
         let scoreSignal = snapshot.trendSignals.first { $0.metricLabel == "Score" }
         #expect(scoreSignal != nil)
@@ -52183,6 +52185,46 @@ struct TrajectorySummaryBuilderTests {
         // Every signal must cite a concrete example rep — never an
         // unsubstantiated claim.
         #expect(snapshot.trendSignals.allSatisfy { $0.exampleEvidenceLine != nil })
+    }
+
+    @Test func weeklyFillerTrendUsesRatesAndRequiresTwoQualifiedRepsPerWeek() {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(weekday: 4, weekOfYear: 10, yearForWeekOfYear: 2026))!
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: now)!
+        let lastWeekEarlier = calendar.date(byAdding: .day, value: -1, to: lastWeek)!
+
+        let normalized = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [
+                testSession(date: now, fillerWordCount: 3, score: 7, duration: 60),
+                testSession(date: yesterday, fillerWordCount: 3, score: 7, duration: 60),
+                testSession(date: lastWeek, fillerWordCount: 2, score: 7, duration: 15),
+                testSession(date: lastWeekEarlier, fillerWordCount: 2, score: 7, duration: 15),
+            ],
+            coachMemory: nil,
+            now: now
+        )
+        let filler = normalized.trendSignals.first { $0.metricLabel == "Filler rate" }
+        #expect(filler?.direction == .improving)
+        #expect(filler?.deltaLine.contains("8.0/min to 3.0/min") == true)
+
+        let underFloor = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [
+                testSession(date: now, fillerWordCount: 1, score: 7, duration: 60),
+                testSession(date: yesterday, fillerWordCount: 1, score: 7, duration: 14),
+                testSession(date: lastWeek, fillerWordCount: 3, score: 7, duration: 60),
+                testSession(date: lastWeekEarlier, fillerWordCount: 3, score: 7, duration: 60),
+            ],
+            coachMemory: nil,
+            now: now
+        )
+        #expect(!underFloor.trendSignals.contains { $0.metricLabel == "Filler rate" })
+        #expect(underFloor.trendSignals.contains { $0.metricLabel == "Score" })
     }
 
     @Test func recentRepsAreBoundedToThreeEvenWithLongerHistory() {
@@ -52226,11 +52268,16 @@ struct TrajectorySummaryBuilderTests {
         )
     }
 
-    private func testSession(date: Date, fillerWordCount: Int, score: Int) -> PracticeSession {
+    private func testSession(
+        date: Date,
+        fillerWordCount: Int,
+        score: Int,
+        duration: TimeInterval = 45
+    ) -> PracticeSession {
         PracticeSession(
-            transcript: "test transcript",
+            transcript: Array(repeating: "word", count: 30).joined(separator: " "),
             fillerWordCount: fillerWordCount,
-            duration: 45,
+            duration: duration,
             date: date,
             mode: .timed,
             score: score,

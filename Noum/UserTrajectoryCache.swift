@@ -309,7 +309,11 @@ final class UserTrajectoryCache {
         let words = session.transcript
             .split { $0.isWhitespace || $0.isNewline }
             .map(String.init)
-        let wordsPerMinute: Int? = session.duration > 0
+        let quantityQualified = SessionQualifier.meetsQuantityFloor(
+            duration: session.duration,
+            wordCount: words.count
+        )
+        let wordsPerMinute: Int? = quantityQualified
             ? Int((Double(words.count) / max(session.duration, 1)) * 60.0)
             : nil
         let excerpt = words.isEmpty ? nil : words.prefix(26).joined(separator: " ")
@@ -326,7 +330,9 @@ final class UserTrajectoryCache {
             mode: session.mode.displayLabel,
             score: session.score,
             fillerCount: session.fillerWordCount,
-            durationSeconds: Int(session.duration.rounded()),
+            // Floor the persisted integer so a 14.x-second rep cannot round
+            // up across the shared 15-second evidence boundary.
+            durationSeconds: Int(session.duration.rounded(.down)),
             wordsPerMinute: wordsPerMinute,
             transcriptWordCount: words.count,
             transcriptExcerpt: excerpt,
@@ -341,8 +347,22 @@ final class UserTrajectoryCache {
         var lines: [String] = []
         if sorted.count >= 3 {
             let latestThree = Array(sorted.prefix(3))
-            let avgFillers = Double(latestThree.map(\.fillerWordCount).reduce(0, +)) / Double(latestThree.count)
-            lines.append("recent filler average: \(String(format: "%.1f", avgFillers)) per rep across last 3")
+            let qualifyingRates = latestThree.compactMap { session -> Double? in
+                guard SessionQualifier.meetsQuantityFloor(
+                    duration: session.duration,
+                    wordCount: session.wordCount
+                ) else { return nil }
+                return FillerBurden(
+                    fillerCount: session.fillerWordCount,
+                    duration: session.duration
+                ).ratePerMinute
+            }
+            if qualifyingRates.count == latestThree.count {
+                let averageRate = qualifyingRates.reduce(0, +) / Double(qualifyingRates.count)
+                lines.append(
+                    "recent filler rate: \(String(format: "%.1f", averageRate))/min across \(qualifyingRates.count) quantity-qualified reps"
+                )
+            }
         }
         if baseline.fillerRate.confidence != .insufficient {
             lines.append("baseline filler rate: \(String(format: "%.1f", baseline.fillerRate.value))/min")

@@ -23,14 +23,20 @@ enum GoalOutcomeEngine {
         let effectiveLocale = locale ?? currentLocale()
         guard effectiveLocale.aiSupported else { return nil }
         guard let style = selectedGoal(from: profile), !sessions.isEmpty else { return nil }
-        let trajectory = UserTrajectoryCache.shared.snapshot(
+        var trajectory = UserTrajectoryCache.shared.snapshot(
             profile: profile,
             baseline: baseline,
             rating: rating,
             sessions: sessions,
             coachMemory: coachMemory
         ).snapshot
-        let assessment = CoachReasoningPass.assess(
+        // This card answers how the latest rep moved toward the goal. Mature
+        // history may support the wider coaching case, but it cannot turn a
+        // sub-floor latest rep into a comparable goal-outcome read.
+        if trajectory.latestRepEvidencePack?.meetsQuantityFloor != true {
+            trajectory.evidenceCoverage = min(trajectory.evidenceCoverage, 0.34)
+        }
+        var assessment = CoachReasoningPass.assess(
             turnDepth: .groundedRead,
             userQuestion: "How is my latest rep moving toward my speaking goal?",
             trajectory: trajectory,
@@ -40,6 +46,9 @@ enum GoalOutcomeEngine {
             ),
             surface: .text
         )
+        if trajectory.latestRepEvidencePack?.meetsQuantityFloor != true {
+            assessment.confidence = min(assessment.confidence, 0.34)
+        }
         return GoalOutcomeRead.make(style: style, assessment: assessment, outcomes: outcomes)
     }
 
