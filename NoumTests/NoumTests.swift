@@ -10015,7 +10015,8 @@ struct HomeCoachCardVariantTests {
     private func blueprint(
         mode: PracticeMode = .timed,
         focus: String = "Pause before the point",
-        target: String = "One clean pause"
+        target: String = "One clean pause",
+        timedDifficulty: TimedPracticeDifficulty? = nil
     ) -> RecommendationBiasBlueprint {
         RecommendationBiasBlueprint(
             recommendedMode: mode,
@@ -10026,7 +10027,7 @@ struct HomeCoachCardVariantTests {
             modeBenefit: "Build control.",
             whyMode: "The next useful rep.",
             whyNow: "Use the signal while it is fresh.",
-            suggestedTimedDifficulty: nil,
+            suggestedTimedDifficulty: timedDifficulty,
             suggestedTheme: .all
         )
     }
@@ -10060,6 +10061,32 @@ struct HomeCoachCardVariantTests {
         )
         #expect(changedCopy.fingerprint != exposure.fingerprint)
         #expect(changedMode.fingerprint != exposure.fingerprint)
+    }
+
+    @Test func timedExposurePersistsTheRenderedDemandInItsIdentity() {
+        let medium = HomeCoachRecommendationExposure.make(
+            blueprint: blueprint(timedDifficulty: .medium),
+            title: "Land the point.",
+            profile: nil,
+            recentSessions: []
+        )
+        let hard = HomeCoachRecommendationExposure.make(
+            blueprint: blueprint(timedDifficulty: .hard),
+            title: medium.title,
+            profile: nil,
+            recentSessions: []
+        )
+        let visibleFallback = HomeCoachRecommendationExposure.make(
+            blueprint: blueprint(timedDifficulty: nil),
+            title: medium.title,
+            profile: nil,
+            recentSessions: []
+        )
+
+        #expect(medium.prescribedDemand == .timed(difficulty: .medium))
+        #expect(hard.prescribedDemand == .timed(difficulty: .hard))
+        #expect(visibleFallback.prescribedDemand == .timed(difficulty: .medium))
+        #expect(medium.fingerprint != hard.fingerprint)
     }
 
     @Test func tierTitleFormatMatchesHoldingPattern() {
@@ -14925,6 +14952,77 @@ struct RecommendationSyncLaneTests {
         #expect(merged.count == 2)
     }
 
+    @Test func hydrationMergePrefersCurrentAdherenceOverLegacyInEitherDirection() {
+        let id = UUID()
+        let completedAt = Date()
+        let exactDemand = PracticeSessionDemand.timed(difficulty: .hard)
+        let current = outcome(
+            id: id,
+            completedAt: completedAt,
+            adherenceSchemaVersion: RecommendationAdherenceContract.schemaVersion,
+            prescribedDemand: exactDemand,
+            executedDemand: exactDemand
+        )
+        let legacy = outcome(
+            id: id,
+            completedAt: completedAt,
+            adherenceSchemaVersion: nil
+        )
+
+        #expect(RecommendationLearningStore.mergedOutcomes(
+            local: [current],
+            remote: [legacy]
+        ).first == current)
+        #expect(RecommendationLearningStore.mergedOutcomes(
+            local: [legacy],
+            remote: [current]
+        ).first == current)
+    }
+
+    @Test func pendingExposureMergeRetainsCurrentDemandAcrossLegacyTimestampWinner() {
+        let demand = PracticeSessionDemand.timed(difficulty: .hard)
+        let shownAt = Date().addingTimeInterval(-60)
+        let current = RecommendationExposure(
+            fingerprint: "timed|hard|same",
+            title: "Land the point",
+            focus: "Structure",
+            target: "One clean point",
+            mode: .timed,
+            isAIBacked: false,
+            shownAt: shownAt,
+            tappedAt: shownAt,
+            adherenceSchemaVersion: RecommendationAdherenceContract.schemaVersion,
+            prescribedDemand: demand
+        )
+        let legacy = RecommendationExposure(
+            fingerprint: current.fingerprint,
+            title: current.title,
+            focus: current.focus,
+            target: current.target,
+            mode: current.mode,
+            isAIBacked: current.isAIBacked,
+            shownAt: shownAt.addingTimeInterval(10),
+            tappedAt: nil,
+            adherenceSchemaVersion: nil,
+            prescribedDemand: nil
+        )
+
+        let localCurrent = RecommendationLearningStore.mergedPendingExposure(
+            local: current,
+            remote: legacy,
+            localOutcomes: []
+        )
+        let remoteCurrent = RecommendationLearningStore.mergedPendingExposure(
+            local: legacy,
+            remote: current,
+            localOutcomes: []
+        )
+        #expect(localCurrent?.shownAt == legacy.shownAt)
+        #expect(localCurrent?.prescribedDemand == demand)
+        #expect(remoteCurrent?.shownAt == legacy.shownAt)
+        #expect(remoteCurrent?.prescribedDemand == demand)
+    }
+
     @Test func hydrationMergeDoesNotResurrectAConsumedPendingExposure() {
         let shownAt = Date().addingTimeInterval(-60)
         let remote = RecommendationExposure(
@@ -15018,7 +15116,10 @@ struct RecommendationSyncLaneTests {
     private func outcome(
         id: UUID,
         fingerprint: String = "timed|fillers",
-        completedAt: Date
+        completedAt: Date,
+        adherenceSchemaVersion: Int? = RecommendationAdherenceContract.schemaVersion,
+        prescribedDemand: PracticeSessionDemand? = nil,
+        executedDemand: PracticeSessionDemand? = nil
     ) -> RecommendationOutcome {
         RecommendationOutcome(
             id: id,
@@ -15029,6 +15130,9 @@ struct RecommendationSyncLaneTests {
             mode: .timed,
             sessionID: UUID(),
             followed: true,
+            adherenceSchemaVersion: adherenceSchemaVersion,
+            prescribedDemand: prescribedDemand,
+            executedDemand: executedDemand,
             completedAt: completedAt,
             scoreDelta: 1,
             hasComparableScore: true,
@@ -38433,11 +38537,11 @@ struct SummaryPracticeAgainRouterTests {
         #expect(SummaryPracticeAgainRouter.destination(
             for: .timed,
             imSetup: setup
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
         #expect(SummaryPracticeAgainRouter.destination(
             for: .timed,
             imSetup: nil
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
     }
 
     @Test func suddenDeathIgnoresImSetup() {
@@ -38497,7 +38601,8 @@ struct SummaryLookingAheadRouterTests {
     private func blueprint(
         mode: PracticeMode,
         scenario: IMConversationScenario? = nil,
-        tone: IMTargetTone? = nil
+        tone: IMTargetTone? = nil,
+        timedDifficulty: TimedPracticeDifficulty? = nil
     ) -> RecommendationBiasBlueprint {
         RecommendationBiasBlueprint(
             recommendedMode: mode,
@@ -38508,7 +38613,7 @@ struct SummaryLookingAheadRouterTests {
             modeBenefit: "",
             whyMode: "",
             whyNow: "",
-            suggestedTimedDifficulty: nil,
+            suggestedTimedDifficulty: timedDifficulty,
             suggestedTheme: .all
         )
     }
@@ -38558,7 +38663,7 @@ struct SummaryLookingAheadRouterTests {
             imAvailable: false,
             modeAvailability: .allAvailable
         )
-        #expect(destination == .timedPractice)
+        #expect(destination == .timedPractice(difficulty: nil))
     }
 
     @Test func timedIgnoresImFields() {
@@ -38570,11 +38675,36 @@ struct SummaryLookingAheadRouterTests {
         #expect(SummaryLookingAheadRouter.destination(
             for: plan,
             imAvailable: true
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
         #expect(SummaryLookingAheadRouter.destination(
             for: plan,
             imAvailable: false
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
+    }
+
+    @Test func timedRecommendationCarriesExactDifficultyWithoutChangingFallbacks() {
+        let plan = blueprint(mode: .timed, timedDifficulty: .hard)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: true,
+            modeAvailability: .allAvailable
+        ) == .timedPractice(difficulty: .hard))
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .timed,
+            scenario: nil,
+            tone: nil,
+            timedDifficulty: .medium,
+            imAvailable: true,
+            modeAvailability: .allAvailable
+        ) == .timedPractice(difficulty: .medium))
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .suddenDeath,
+            scenario: nil,
+            tone: nil,
+            timedDifficulty: .hard,
+            imAvailable: true,
+            modeAvailability: .failClosed
+        ) == .timedPractice(difficulty: nil))
     }
 
     @Test func suddenDeathIgnoresImFields() {
@@ -38615,11 +38745,11 @@ struct SummaryLookingAheadRouterTests {
         #expect(SummaryLookingAheadRouter.destination(
             for: blueprint(mode: .suddenDeath),
             imAvailable: true
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
         #expect(SummaryLookingAheadRouter.destination(
             for: blueprint(mode: .imConversation),
             imAvailable: true
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
     }
 
     @Test func fourModeCapabilityMatrixRoutesAndAcceptsOnlyAvailableModes() {
@@ -38652,11 +38782,11 @@ struct SummaryLookingAheadRouterTests {
                         #expect(launch.acceptsDisplayedPrescription == shouldLaunchDisplayedMode)
                         #expect(launch.launchedMode == (shouldLaunchDisplayedMode ? mode : .timed))
                         if !shouldLaunchDisplayedMode {
-                            #expect(launch.destination == .timedPractice)
+                            #expect(launch.destination == .timedPractice(difficulty: nil))
                         } else {
                             switch mode {
                             case .timed:
-                                #expect(launch.destination == .timedPractice)
+                                #expect(launch.destination == .timedPractice(difficulty: nil))
                             case .suddenDeath:
                                 #expect(launch.destination == .suddenDeathPractice)
                             case .ahCounter:
@@ -38723,7 +38853,7 @@ struct SummaryLookingAheadRouterTests {
             imAvailable: false,
             modeAvailability: .allAvailable
         )
-        #expect(destination == .timedPractice)
+        #expect(destination == .timedPractice(difficulty: nil))
     }
 
     @Test func lowerLevelTimedIgnoresImFields() {
@@ -38732,13 +38862,13 @@ struct SummaryLookingAheadRouterTests {
             scenario: .workUpdate,
             tone: .confident,
             imAvailable: true
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
         #expect(SummaryLookingAheadRouter.destination(
             for: .timed,
             scenario: .workUpdate,
             tone: .confident,
             imAvailable: false
-        ) == .timedPractice)
+        ) == .timedPractice(difficulty: nil))
     }
 
     @Test func lowerLevelSuddenDeathIgnoresImFields() {
@@ -38875,6 +39005,29 @@ struct RecommendationTapAttributionTests {
         )
 
         #expect(events(for: launch) == [.shown, .accepted(.timed)])
+    }
+
+    @Test func exactTimedDemandMustSurviveTheRouteToCountAsAccepted() {
+        let demand = PracticeSessionDemand.timed(difficulty: .hard)
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: .timed,
+            prescribedDemand: demand,
+            imAvailable: true,
+            modeAvailability: .allAvailable
+        )
+
+        #expect(launch.destination == .timedPractice(difficulty: .hard))
+        #expect(launch.prescribedDemand == demand)
+        #expect(launch.acceptsDisplayedPrescription)
+
+        let invalid = PracticeModeLaunchProjection.resolve(
+            displayedMode: .timed,
+            prescribedDemand: .suddenDeath(difficulty: .hard),
+            imAvailable: true,
+            modeAvailability: .allAvailable
+        )
+        #expect(invalid.destination == .timedPractice(difficulty: nil))
+        #expect(!invalid.acceptsDisplayedPrescription)
     }
 }
 
@@ -41061,12 +41214,12 @@ struct AskNoumModeSuggestionTests {
         #expect(AskNoumModeSuggestion.detect(in: "Try a Sudden Death round to test composure.") == .suddenDeathPractice)
         #expect(AskNoumModeSuggestion.detect(in: "Try a Pressure Drill round to test composure.") == .suddenDeathPractice)
         #expect(AskNoumModeSuggestion.detect(in: "Run a difficult conversation rep next.") == .imPractice(scenario: nil, tone: nil))
-        #expect(AskNoumModeSuggestion.detect(in: "Warm up with a Timed rep first.") == .timedPractice)
+        #expect(AskNoumModeSuggestion.detect(in: "Warm up with a Timed rep first.") == .timedPractice(difficulty: nil))
     }
 
     @Test func mapsHighConfidenceSkillPhrasesToTimed() {
-        #expect(AskNoumModeSuggestion.detect(in: "Let's focus on vocal variety.") == .timedPractice)
-        #expect(AskNoumModeSuggestion.detect(in: "For your next rep, vary your pitch more.") == .timedPractice)
+        #expect(AskNoumModeSuggestion.detect(in: "Let's focus on vocal variety.") == .timedPractice(difficulty: nil))
+        #expect(AskNoumModeSuggestion.detect(in: "For your next rep, vary your pitch more.") == .timedPractice(difficulty: nil))
     }
 
     @Test func returnsNilOnAmbiguousAdvice() {
@@ -41087,14 +41240,14 @@ struct AskNoumModeSuggestionTests {
     }
 
     @Test func labelsAreActionShaped() {
-        #expect(AskNoumModeSuggestion.label(for: .timedPractice) == "Start Timed Practice")
+        #expect(AskNoumModeSuggestion.label(for: .timedPractice(difficulty: nil)) == "Start Timed Practice")
         #expect(AskNoumModeSuggestion.label(for: .ahCounterPractice) == "Start Filler Control")
         #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice) == "Start Pressure Drill")
         #expect(AskNoumModeSuggestion.label(for: .imPractice(scenario: nil, tone: nil)) == "Start Conversation Practice")
     }
 
     @Test func launchableSuggestionsMapToQuickStartModes() {
-        #expect(AskNoumModeSuggestion.quickStartMode(for: .timedPractice) == .timed)
+        #expect(AskNoumModeSuggestion.quickStartMode(for: .timedPractice(difficulty: nil)) == .timed)
         #expect(AskNoumModeSuggestion.quickStartMode(for: .suddenDeathPractice) == .suddenDeath)
         #expect(AskNoumModeSuggestion.quickStartMode(for: .ahCounterPractice) == .ahCounter)
         #expect(AskNoumModeSuggestion.quickStartMode(for: .imPractice(scenario: nil, tone: nil)) == .imConversation)
@@ -41111,7 +41264,7 @@ struct AskNoumModeSuggestionTests {
         #expect(launch.mode == .timed)
         #expect(launch.label == "Start Timed Practice")
         #expect(launch.quickStartMode == .timed)
-        #expect(launch.destination == .timedPractice)
+        #expect(launch.destination == .timedPractice(difficulty: nil))
     }
 
     @Test func unavailableConversationSuggestionFailsClosedAsOneTimedLaunch() throws {
@@ -41127,7 +41280,7 @@ struct AskNoumModeSuggestionTests {
         #expect(launch.mode == .timed)
         #expect(launch.label == "Start Timed Practice")
         #expect(launch.quickStartMode == .timed)
-        #expect(launch.destination == .timedPractice)
+        #expect(launch.destination == .timedPractice(difficulty: nil))
     }
 
     @Test func availableGatedSuggestionsKeepLabelsArmingAndRoutesAligned() throws {
@@ -41169,7 +41322,7 @@ struct AskNoumModeSuggestionTests {
         #expect(tapped.mode == .timed)
         #expect(tapped.label == "Start Timed Practice")
         #expect(tapped.quickStartMode == .timed)
-        #expect(tapped.destination == .timedPractice)
+        #expect(tapped.destination == .timedPractice(difficulty: nil))
     }
 
     @Test func capabilityGainDoesNotUpgradeAnAlreadyRenderedTimedFallback() throws {
@@ -41186,7 +41339,7 @@ struct AskNoumModeSuggestionTests {
         #expect(tapped.mode == .timed)
         #expect(tapped.label == "Start Timed Practice")
         #expect(tapped.quickStartMode == .timed)
-        #expect(tapped.destination == .timedPractice)
+        #expect(tapped.destination == .timedPractice(difficulty: nil))
     }
 }
 

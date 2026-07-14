@@ -253,7 +253,7 @@ struct PrepSessionView: View {
             modeAvailability: tapAvailability,
             imAvailable: imAvailable
         )
-        if launch.destination == .timedPractice,
+        if case .timedPractice = launch.destination,
            let moment = bigMomentStore.activeMoment,
            let prompt = PrepSessionPlanner.timedFallbackPrompt(
                for: step.mode,

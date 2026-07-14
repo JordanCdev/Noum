@@ -2072,7 +2072,7 @@ enum CoachMemoryEngine {
 
         return outcomes
             .filter { outcome in
-                outcome.followed
+                outcome.isVerifiedFollowed
                     && outcome.hasComparableBaseline
                     && outcome.mode == mode
                     && boundedText(outcome.focus, maximumLength: 80) == normalizedFocus
@@ -2221,7 +2221,7 @@ enum CoachMemoryEngine {
         let sessionsByID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
         guard let outcome = outcomes
             .filter({
-                $0.followed
+                $0.isVerifiedFollowed
                     && $0.hasComparableBaseline
                     && $0.mode == mode
                     && boundedText($0.focus, maximumLength: 80) == normalizedFocus
@@ -2430,7 +2430,7 @@ enum CoachMemoryEngine {
             return nil
         }
 
-        guard latest.followed else {
+        guard latest.isVerifiedFollowed else {
             return CoachIntervention(
                 title: boundedText(latest.title) ?? latest.mode.displayLabel,
                 focus: boundedText(latest.focus),

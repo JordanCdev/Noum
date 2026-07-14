@@ -48,6 +48,7 @@ struct HomeCoachRecommendationExposure: Equatable {
     let scenario: IMConversationScenario?
     let tone: IMTargetTone?
     let suggestedTheme: PromptTheme
+    let prescribedDemand: PracticeSessionDemand?
 
     static func make(
         blueprint: RecommendationBiasBlueprint,
@@ -61,6 +62,15 @@ struct HomeCoachRecommendationExposure: Equatable {
         let profileKey = profile.map {
             "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.chosenStyleGoal?.rawValue ?? "no-style")"
         } ?? "no-profile"
+        // Home's duration micro-label is part of the prescription. Its Timed
+        // fallback copy says 30 SEC, so persist Medium rather than silently
+        // falling back to the user's unrelated saved setting at launch time.
+        let prescribedDemand: PracticeSessionDemand? = blueprint.recommendedMode == .timed
+            ? .timed(
+                difficulty: blueprint.suggestedTimedDifficulty ?? .medium,
+                speechProjectID: nil
+            )
+            : nil
         let fingerprint = [
             "home-coach",
             profileKey,
@@ -68,6 +78,7 @@ struct HomeCoachRecommendationExposure: Equatable {
             blueprint.recommendedMode.rawValue,
             blueprint.recommendedScenario?.rawValue ?? "no-scenario",
             blueprint.recommendedTone?.rawValue ?? "no-tone",
+            prescribedDemand?.recommendationFingerprintComponent ?? "mode-only",
             blueprint.suggestedTheme.rawValue,
             title,
             blueprint.focus,
@@ -82,7 +93,8 @@ struct HomeCoachRecommendationExposure: Equatable {
             mode: blueprint.recommendedMode,
             scenario: blueprint.recommendedScenario,
             tone: blueprint.recommendedTone,
-            suggestedTheme: blueprint.suggestedTheme
+            suggestedTheme: blueprint.suggestedTheme,
+            prescribedDemand: prescribedDemand
         )
     }
 }
@@ -791,6 +803,7 @@ struct HomeCoachCard: View {
             displayedMode: exposure.mode,
             scenario: exposure.scenario,
             tone: exposure.tone,
+            prescribedDemand: exposure.prescribedDemand,
             imAvailable: IMModeAvailability.isAvailable,
             modeAvailability: liveAvailability
         )
@@ -963,7 +976,8 @@ struct HomeCoachCard: View {
             target: exposure.target,
             mode: exposure.mode,
             isAIBacked: false,
-            goal: coachingProfileStore.profile?.chosenStyleGoal
+            goal: coachingProfileStore.profile?.chosenStyleGoal,
+            prescribedDemand: exposure.prescribedDemand
         )
     }
 

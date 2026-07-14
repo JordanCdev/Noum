@@ -36,7 +36,7 @@ struct PrepSessionAvailabilityTests {
         #expect(plan.steps.map(\.mode) == [.timed, .suddenDeath, .imConversation])
         #expect(plan.steps.map(\.renderedMode) == [.timed, .suddenDeath, .imConversation])
         #expect(plan.steps.allSatisfy { !$0.isAvailabilityFallback })
-        #expect(step(.timed, in: plan).renderedLaunch.destination == .timedPractice)
+        #expect(step(.timed, in: plan).renderedLaunch.destination == .timedPractice(difficulty: nil))
         #expect(step(.suddenDeath, in: plan).renderedLaunch.destination == .suddenDeathPractice)
         #expect(
             step(.imConversation, in: plan).renderedLaunch.destination
@@ -56,7 +56,7 @@ struct PrepSessionAvailabilityTests {
 
         #expect(pressure.mode == .suddenDeath)
         #expect(pressure.renderedMode == .timed)
-        #expect(pressure.renderedLaunch.destination == .timedPractice)
+        #expect(pressure.renderedLaunch.destination == .timedPractice(difficulty: nil))
         #expect(pressure.isAvailabilityFallback)
         #expect(pressure.displayLabel == "Build-up rep: Timed Practice")
         #expect(pressure.rationale == NextActionModeAvailability.suddenDeathFallbackReason)
@@ -74,7 +74,7 @@ struct PrepSessionAvailabilityTests {
 
         #expect(audience.mode == .imConversation)
         #expect(audience.renderedMode == .timed)
-        #expect(audience.renderedLaunch.destination == .timedPractice)
+        #expect(audience.renderedLaunch.destination == .timedPractice(difficulty: nil))
         #expect(audience.isAvailabilityFallback)
         #expect(audience.displayLabel == "Question rehearsal: Timed Practice")
         #expect(audience.rationale == NextActionModeAvailability.imConversationFallbackReason)
@@ -115,9 +115,9 @@ struct PrepSessionAvailabilityTests {
         #expect(plan.steps.map(\.mode) == [.timed, .suddenDeath, .imConversation])
         #expect(plan.steps.map(\.renderedMode) == [.timed, .timed, .timed])
         #expect(plan.steps.map(\.renderedLaunch.destination) == [
-            .timedPractice,
-            .timedPractice,
-            .timedPractice,
+            .timedPractice(difficulty: nil),
+            .timedPractice(difficulty: nil),
+            .timedPractice(difficulty: nil),
         ])
         #expect(plan.imScenario == nil)
         #expect(plan.introductionCopy.contains("two focused Timed Practice passes"))
@@ -162,7 +162,7 @@ struct PrepSessionAvailabilityTests {
         )
         #expect(lostPressure.displayedMode == .suddenDeath)
         #expect(lostPressure.launchedMode == .timed)
-        #expect(lostPressure.destination == .timedPractice)
+        #expect(lostPressure.destination == .timedPractice(difficulty: nil))
         #expect(!lostPressure.acceptsDisplayedPrescription)
 
         let conversation = step(.imConversation, in: availablePlan)
@@ -184,7 +184,7 @@ struct PrepSessionAvailabilityTests {
         )
         #expect(capabilityReturned.displayedMode == .timed)
         #expect(capabilityReturned.launchedMode == .timed)
-        #expect(capabilityReturned.destination == .timedPractice)
+        #expect(capabilityReturned.destination == .timedPractice(difficulty: nil))
         #expect(capabilityReturned.acceptsDisplayedPrescription)
     }
 }

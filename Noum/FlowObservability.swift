@@ -592,7 +592,7 @@ struct TransformationKPIReport: Equatable {
                 .filter {
                     $0.completedAt >= cutoff
                         && $0.hasComparableBaseline
-                        && $0.followed
+                        && $0.isVerifiedFollowed
                         && $0.goal != nil
                 }
                 .compactMap(\.goalFollowUpResult)

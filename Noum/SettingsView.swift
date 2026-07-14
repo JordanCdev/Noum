@@ -1991,7 +1991,7 @@ struct SettingsView: View {
     // MARK: - Recommendation Diagnostic Helpers
 
     private var followedRecommendationCount: Int {
-        recommendationLearningStore.outcomes.filter(\.followed).count
+        recommendationLearningStore.outcomes.filter(\.isVerifiedFollowed).count
     }
 
     private var followRate: Double {
@@ -2031,7 +2031,7 @@ struct SettingsView: View {
     }
 
     private var followedOutcomes: [RecommendationOutcome] {
-        recommendationLearningStore.outcomes.filter(\.followed)
+        recommendationLearningStore.outcomes.filter(\.isVerifiedFollowed)
     }
 
     private func signedValue(_ value: Double) -> String {

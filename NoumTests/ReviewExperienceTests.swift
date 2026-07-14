@@ -336,7 +336,7 @@ struct SessionHistoryDetailReplayPresentationTests {
 
     @Test func everyPlainModeRoutesToItsFreshRep() {
         let expectations: [(PracticeMode, AppDestination)] = [
-            (.timed, .timedPractice),
+            (.timed, .timedPractice(difficulty: nil)),
             (.suddenDeath, .suddenDeathPractice),
             (.ahCounter, .ahCounterPractice),
         ]

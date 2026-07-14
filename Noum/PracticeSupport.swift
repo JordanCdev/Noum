@@ -10,7 +10,10 @@ import AVFAudio
 
 enum AppDestination: Hashable {
     case practiceSelection
-    case timedPractice
+    /// Timed Practice with an optional per-rep prescription. `nil` preserves
+    /// the user's saved difficulty for ordinary, fallback, and manual routes;
+    /// a value configures only this view instance and never rewrites settings.
+    case timedPractice(difficulty: TimedPracticeDifficulty?)
     /// A seeded Timed route bound to one process-local prompt handoff. The
     /// opaque token carries no user content and prevents another Timed route
     /// from consuming or replacing the visible launch's prompt.
@@ -88,7 +91,7 @@ enum SummaryPracticeAgainRouter {
         imSetup: IMConversationSetup?
     ) -> AppDestination {
         switch mode {
-        case .timed: return .timedPractice
+        case .timed: return .timedPractice(difficulty: nil)
         case .suddenDeath: return .suddenDeathPractice
         case .ahCounter: return .ahCounterPractice
         case .imConversation:
@@ -131,6 +134,7 @@ enum SummaryLookingAheadRouter {
             for: blueprint.recommendedMode,
             scenario: blueprint.recommendedScenario,
             tone: blueprint.recommendedTone,
+            timedDifficulty: blueprint.suggestedTimedDifficulty,
             imAvailable: imAvailable,
             modeAvailability: modeAvailability
         )
@@ -144,19 +148,20 @@ enum SummaryLookingAheadRouter {
         for mode: PracticeMode,
         scenario: IMConversationScenario?,
         tone: IMTargetTone?,
+        timedDifficulty: TimedPracticeDifficulty? = nil,
         imAvailable: Bool,
         modeAvailability: NextActionModeAvailability = .failClosed
     ) -> AppDestination {
         guard modeAvailability.isAvailable(mode) else {
-            return .timedPractice
+            return .timedPractice(difficulty: nil)
         }
         switch mode {
-        case .timed: return .timedPractice
+        case .timed: return .timedPractice(difficulty: timedDifficulty)
         case .suddenDeath: return .suddenDeathPractice
         case .ahCounter: return .ahCounterPractice
         case .imConversation:
             guard imAvailable, modeAvailability.imConversationAvailable else {
-                return .timedPractice
+                return .timedPractice(difficulty: nil)
             }
             return .imPractice(scenario: scenario, tone: tone)
         }
@@ -170,32 +175,55 @@ enum SummaryLookingAheadRouter {
 /// adaptive prescription.
 struct PracticeModeLaunchProjection: Equatable {
     let displayedMode: PracticeMode
+    let prescribedDemand: PracticeSessionDemand?
     let launchedMode: PracticeMode
     let destination: AppDestination
 
     var acceptsDisplayedPrescription: Bool {
-        displayedMode == launchedMode
+        guard displayedMode == launchedMode else { return false }
+        guard let prescribedDemand else { return true }
+        guard prescribedDemand.isValid(for: displayedMode) else { return false }
+        switch destination {
+        case .timedPractice(let difficulty):
+            guard let difficulty else { return false }
+            return prescribedDemand == .timed(
+                difficulty: difficulty,
+                speechProjectID: nil
+            )
+        default:
+            return false
+        }
     }
 
     static func resolve(
         displayedMode: PracticeMode,
         scenario: IMConversationScenario? = nil,
         tone: IMTargetTone? = nil,
+        prescribedDemand: PracticeSessionDemand? = nil,
         imAvailable: Bool,
         modeAvailability: NextActionModeAvailability
     ) -> PracticeModeLaunchProjection {
+        let timedDifficulty = prescribedDemand?.isValid(for: displayedMode) == true
+            && prescribedDemand?.speechProjectID == nil
+            ? prescribedDemand?.timedDifficulty
+            : nil
         let destination = SummaryLookingAheadRouter.destination(
             for: displayedMode,
             scenario: scenario,
             tone: tone,
+            timedDifficulty: timedDifficulty,
             imAvailable: imAvailable,
             modeAvailability: modeAvailability
         )
-        let launchedMode: PracticeMode = destination == .timedPractice
-            ? .timed
-            : displayedMode
+        let launchedMode: PracticeMode
+        if case .timedPractice = destination {
+            launchedMode = .timed
+        } else {
+            launchedMode = displayedMode
+        }
         return PracticeModeLaunchProjection(
             displayedMode: displayedMode,
+            prescribedDemand: prescribedDemand,
             launchedMode: launchedMode,
             destination: destination
         )
@@ -306,7 +334,7 @@ extension URLRequest {
     }
 }
 
-enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
+enum TimedPracticeDifficulty: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case free
     case easy
     case medium
@@ -341,6 +369,10 @@ enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    var compactDemandLabel: String {
+        duration.map { "\(title) · \($0) sec" } ?? title
+    }
+
     var xpMultiplier: Double {
         switch self {
         case .free: return 0.9
@@ -370,7 +402,7 @@ enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
 /// This value stays optional on `PracticeSession` so legacy history remains
 /// readable. Consumers must treat nil or invalid demand as unknown rather than
 /// inferring a default from duration, prompt text, or current settings.
-struct PracticeSessionDemand: Codable, Equatable {
+struct PracticeSessionDemand: Codable, Equatable, Sendable {
     static let currentSchemaVersion = 1
 
     let schemaVersion: Int
@@ -421,6 +453,18 @@ struct PracticeSessionDemand: Codable, Equatable {
         guard !value.isEmpty, value.count <= 80 else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
         return value.unicodeScalars.allSatisfy(allowed.contains)
+    }
+
+    /// Stable, content-free identity for recommendation exposure deduping.
+    /// A demand change must create a new exposure even when coaching copy and
+    /// mode stay the same.
+    var recommendationFingerprintComponent: String {
+        [
+            "demand-v\(schemaVersion)",
+            timedDifficulty?.rawValue ?? "no-timed-difficulty",
+            suddenDeathDifficulty?.rawValue ?? "no-pressure-difficulty",
+            speechProjectID ?? "no-project"
+        ].joined(separator: "-")
     }
 }
 
@@ -8925,6 +8969,10 @@ final class PracticeSessionStore: ObservableObject {
 // SpeakingRankView (its last co-consumer) is removed. Zero references
 // verified by grep at deletion time.
 #if canImport(SwiftUI)
+enum RecommendationAdherenceContract {
+    static let schemaVersion = 1
+}
+
 struct RecommendationExposure: Codable, Equatable, Sendable {
     let fingerprint: String
     let title: String
@@ -8942,6 +8990,13 @@ struct RecommendationExposure: Codable, Equatable, Sendable {
     /// remains optional so pre-instrumentation exposures decode; a remote
     /// exposure without a matching local shown event never enters the KPI.
     var observabilityID: UUID? = nil
+    /// Versioned proof that the persisted prescription fields below were
+    /// captured from the rendered action. Missing means legacy mode-only
+    /// attribution and must fail closed for followed-rep learning.
+    var adherenceSchemaVersion: Int? = RecommendationAdherenceContract.schemaVersion
+    /// Exact demand shown to the user when the prescription named one. A nil
+    /// value on a current schema is an intentionally mode-level prescription.
+    var prescribedDemand: PracticeSessionDemand? = nil
 }
 
 enum GoalFollowUpResult: String, Codable, Equatable, Sendable {
@@ -8963,6 +9018,11 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
     let mode: PracticeMode
     let sessionID: UUID
     let followed: Bool
+    /// The prescription/execution pair retained after `pendingExposure` is
+    /// consumed, so exact adherence remains inspectable after hydration.
+    let adherenceSchemaVersion: Int?
+    let prescribedDemand: PracticeSessionDemand?
+    let executedDemand: PracticeSessionDemand?
     let completedAt: Date
     let scoreDelta: Double
     /// True only when both this rep and earlier reps supplied scores.
@@ -9006,6 +9066,9 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
         mode: PracticeMode,
         sessionID: UUID,
         followed: Bool,
+        adherenceSchemaVersion: Int? = RecommendationAdherenceContract.schemaVersion,
+        prescribedDemand: PracticeSessionDemand? = nil,
+        executedDemand: PracticeSessionDemand? = nil,
         completedAt: Date,
         scoreDelta: Double,
         hasComparableScore: Bool?,
@@ -9029,6 +9092,9 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
         self.mode = mode
         self.sessionID = sessionID
         self.followed = followed
+        self.adherenceSchemaVersion = adherenceSchemaVersion
+        self.prescribedDemand = prescribedDemand
+        self.executedDemand = executedDemand
         self.completedAt = completedAt
         self.scoreDelta = scoreDelta
         self.hasComparableScore = hasComparableScore
@@ -9049,6 +9115,19 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
     var hasComparableBaseline: Bool {
         comparisonSchemaVersion == RecommendationComparisonEngine.schemaVersion
             && (comparisonSessionCount ?? 0) >= RecommendationComparisonEngine.minimumComparisonSamples
+    }
+
+    /// Raw `followed` remains decode-compatible diagnostics. Coaching and KPI
+    /// consumers use this stricter boundary so legacy mode-only rows cannot be
+    /// mistaken for current exact-adherence evidence.
+    var isVerifiedFollowed: Bool {
+        guard followed,
+              adherenceSchemaVersion == RecommendationAdherenceContract.schemaVersion else {
+            return false
+        }
+        guard let prescribedDemand else { return true }
+        return prescribedDemand.isValid(for: mode)
+            && prescribedDemand == executedDemand
     }
 }
 
@@ -9528,7 +9607,7 @@ enum RecommendationResponseAnalyzer {
     ) -> [RecommendationResponseSummary] {
         guard limit > 0 else { return [] }
         let recentFollowed = outcomes
-            .filter(\.followed)
+            .filter(\.isVerifiedFollowed)
             .sorted { $0.completedAt > $1.completedAt }
             .prefix(12)
 
@@ -9601,7 +9680,7 @@ enum RecommendationResponseAnalyzer {
     static func promptLines(from outcomes: [RecommendationOutcome]) -> [String] {
         let goalLines = outcomes
             .filter {
-                $0.followed
+                $0.isVerifiedFollowed
                     && $0.hasComparableBaseline
                     && $0.goal != nil
                     && $0.goalFollowUpResult != nil
@@ -9811,7 +9890,7 @@ enum RecommendationAdaptationAnalyzer {
     private static func resolve(mode: PracticeMode, focus: String?, matchFocus: Bool, in outcomes: [RecommendationOutcome]) -> Resolved? {
         let key = normalizedFocus(focus)
         let scoped = outcomes.filter { outcome in
-            outcome.followed
+            outcome.isVerifiedFollowed
                 && outcome.mode == mode
                 && (!matchFocus || normalizedFocus(outcome.focus) == key)
         }
@@ -9974,7 +10053,7 @@ enum RecommendationAdaptationAnalyzer {
 
     private static func isStale(newestMovingDate: Date?, in outcomes: [RecommendationOutcome]) -> Bool {
         guard let newestMovingDate else { return false }
-        let followedDates = outcomes.filter(\.followed).map(\.completedAt).sorted(by: >)
+        let followedDates = outcomes.filter(\.isVerifiedFollowed).map(\.completedAt).sorted(by: >)
         guard followedDates.count >= stalenessDecayHorizon else { return false }
         let boundary = followedDates[stalenessDecayHorizon - 1]
         return newestMovingDate < boundary
@@ -10171,12 +10250,16 @@ final class RecommendationLearningStore: ObservableObject {
     ) -> [RecommendationOutcome] {
         var merged: [UUID: RecommendationOutcome] = [:]
         for outcome in local + remote {
-            if let existing = merged[outcome.id],
-               evidenceDepth(of: existing) >= evidenceDepth(of: outcome) {
-                continue
-            } else {
-                merged[outcome.id] = outcome
+            if let existing = merged[outcome.id] {
+                let existingAdherence = adherenceDepth(of: existing)
+                let candidateAdherence = adherenceDepth(of: outcome)
+                if existingAdherence > candidateAdherence
+                    || (existingAdherence == candidateAdherence
+                        && evidenceDepth(of: existing) >= evidenceDepth(of: outcome)) {
+                    continue
+                }
             }
+            merged[outcome.id] = outcome
         }
         return Array(merged.values)
             .sorted { $0.completedAt > $1.completedAt }
@@ -10210,6 +10293,18 @@ final class RecommendationLearningStore: ObservableObject {
                 return local.shownAt >= remote.shownAt ? local : remote
             }
             var newest = local.shownAt >= remote.shownAt ? local : remote
+            let richerAdherence = adherenceDepth(of: local) >= adherenceDepth(of: remote)
+                ? local
+                : remote
+            // Same-fingerprint reconciliation may compare a current exact
+            // copy with a legacy mode-only copy whose timestamp won. Retain
+            // the current provenance fields; the fingerprint is the demand
+            // identity boundary for newly written exposures.
+            if newest.adherenceSchemaVersion != RecommendationAdherenceContract.schemaVersion,
+               richerAdherence.adherenceSchemaVersion == RecommendationAdherenceContract.schemaVersion {
+                newest.adherenceSchemaVersion = richerAdherence.adherenceSchemaVersion
+                newest.prescribedDemand = richerAdherence.prescribedDemand
+            }
             let hasMatchingObservabilityID = local.observabilityID.flatMap { localID in
                 remote.observabilityID.map { $0 == localID }
             } ?? false
@@ -10237,6 +10332,27 @@ final class RecommendationLearningStore: ObservableObject {
             outcome.sourceSessionID.map { _ in 1 },
             outcome.goalFollowUpResult.map { _ in 1 }
         ].compactMap { $0 }.count
+    }
+
+    nonisolated private static func adherenceDepth(
+        of outcome: RecommendationOutcome
+    ) -> Int {
+        guard outcome.adherenceSchemaVersion == RecommendationAdherenceContract.schemaVersion else {
+            return 0
+        }
+        guard let prescribedDemand = outcome.prescribedDemand else { return 1 }
+        guard prescribedDemand.isValid(for: outcome.mode) else { return 1 }
+        return outcome.executedDemand == nil ? 2 : 3
+    }
+
+    nonisolated private static func adherenceDepth(
+        of exposure: RecommendationExposure
+    ) -> Int {
+        guard exposure.adherenceSchemaVersion == RecommendationAdherenceContract.schemaVersion else {
+            return 0
+        }
+        guard let prescribedDemand = exposure.prescribedDemand else { return 1 }
+        return prescribedDemand.isValid(for: exposure.mode) ? 2 : 1
     }
 
     func syncCurrentState() {
@@ -10346,7 +10462,8 @@ final class RecommendationLearningStore: ObservableObject {
         isAIBacked: Bool,
         goal: SpeakingStyleGoal? = nil,
         targetDimensionID: String? = nil,
-        sourceSessionID: UUID? = nil
+        sourceSessionID: UUID? = nil,
+        prescribedDemand: PracticeSessionDemand? = nil
     ) {
         if pendingExposure?.fingerprint == fingerprint { return }
         let observabilityID = UUID()
@@ -10362,7 +10479,9 @@ final class RecommendationLearningStore: ObservableObject {
             goal: goal,
             targetDimensionID: targetDimensionID,
             sourceSessionID: sourceSessionID,
-            observabilityID: observabilityID
+            observabilityID: observabilityID,
+            adherenceSchemaVersion: RecommendationAdherenceContract.schemaVersion,
+            prescribedDemand: prescribedDemand
         )
         advanceStateRevision(markSyncUnconfirmed: true)
         persistPending()
@@ -10393,7 +10512,7 @@ final class RecommendationLearningStore: ObservableObject {
         // acceptance boundary shared by Summary, Home, and Train.
         let followed = Self.followedPrescription(
             pendingExposure,
-            completedMode: session.mode
+            completedSession: session
         )
 
         let history = previousSessions.isEmpty
@@ -10413,6 +10532,9 @@ final class RecommendationLearningStore: ObservableObject {
             mode: pendingExposure.mode,
             sessionID: session.id,
             followed: followed,
+            adherenceSchemaVersion: pendingExposure.adherenceSchemaVersion,
+            prescribedDemand: pendingExposure.prescribedDemand,
+            executedDemand: session.practiceDemand,
             completedAt: Date(),
             scoreDelta: comparison.scoreDelta ?? 0,
             hasComparableScore: comparison.scoreDelta != nil,
@@ -10449,9 +10571,18 @@ final class RecommendationLearningStore: ObservableObject {
 
     nonisolated static func followedPrescription(
         _ exposure: RecommendationExposure,
-        completedMode: PracticeMode
+        completedSession: PracticeSession
     ) -> Bool {
-        exposure.tappedAt != nil && exposure.mode == completedMode
+        guard exposure.tappedAt != nil,
+              exposure.mode == completedSession.mode,
+              exposure.adherenceSchemaVersion == RecommendationAdherenceContract.schemaVersion else {
+            return false
+        }
+        guard let prescribedDemand = exposure.prescribedDemand else {
+            return true
+        }
+        return prescribedDemand.isValid(for: exposure.mode)
+            && prescribedDemand == completedSession.practiceDemand
     }
 
     nonisolated static func goalFollowUpResult(

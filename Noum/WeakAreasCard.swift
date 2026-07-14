@@ -83,7 +83,7 @@ struct WeakAreasCard: View {
         var destination: AppDestination {
             switch self {
             case .fillerControl: return .cutTheCrutchPractice
-            case .opening:       return .timedPractice
+            case .opening:       return .timedPractice(difficulty: nil)
             case .structure:     return .lessons
             case .pace:          return .ahCounterPractice
             case .pressure:      return .suddenDeathPractice

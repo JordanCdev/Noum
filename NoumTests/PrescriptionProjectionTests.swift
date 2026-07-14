@@ -88,7 +88,7 @@ struct PrescriptionProjectionTests {
         #expect(projection.reason == NextActionModeAvailability.suddenDeathFallbackReason)
         #expect(projection.evidence == nil)
         #expect(projection.confidenceLabel == nil)
-        #expect(projection.destination(imAvailable: true) == .timedPractice)
+        #expect(projection.destination(imAvailable: true) == .timedPractice(difficulty: nil))
     }
 
     @Test func stabilizingRepProjectsToOneFullRep() {
@@ -154,7 +154,7 @@ struct PrescriptionProjectionTests {
         #expect(tone == nil)
         // Decision-time unavailability remains authoritative even if the
         // tap-time provider probe later reads available.
-        #expect(projection.destination(imAvailable: true) == .timedPractice)
+        #expect(projection.destination(imAvailable: true) == .timedPractice(difficulty: nil))
     }
 
     @Test func availableImProjectionPreservesSetupButRechecksAvailabilityAtTap() {
@@ -174,7 +174,7 @@ struct PrescriptionProjectionTests {
             scenario: .difficultConversation,
             tone: .calm
         ))
-        #expect(projection.destination(imAvailable: false) == .timedPractice)
+        #expect(projection.destination(imAvailable: false) == .timedPractice(difficulty: nil))
         let fallbackLaunch = projection.launch(imAvailable: false)
         #expect(fallbackLaunch?.displayedMode == .imConversation)
         #expect(fallbackLaunch?.launchedMode == .timed)
@@ -236,7 +236,7 @@ struct PrescriptionProjectionTests {
         #expect(mode == .timed)
         #expect(scenario == nil)
         #expect(tone == nil)
-        #expect(projection.destination(imAvailable: false) == .timedPractice)
+        #expect(projection.destination(imAvailable: false) == .timedPractice(difficulty: nil))
     }
 
     @Test func duplicateReasoningIsNotRenderedAsDuplicateEvidence() {

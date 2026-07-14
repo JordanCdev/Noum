@@ -200,7 +200,7 @@ struct NextActionAvailabilityTests {
             modeAvailability: .failClosed
         )
         #expect(lockedPressure.launchedMode == .timed)
-        #expect(lockedPressure.destination == .timedPractice)
+        #expect(lockedPressure.destination == .timedPractice(difficulty: nil))
         #expect(!lockedPressure.acceptsDisplayedPrescription)
 
         let availablePressure = PracticeModeLaunchProjection.resolve(
@@ -220,7 +220,7 @@ struct NextActionAvailabilityTests {
             modeAvailability: .allAvailable
         )
         #expect(lostConversationProvider.launchedMode == .timed)
-        #expect(lostConversationProvider.destination == .timedPractice)
+        #expect(lostConversationProvider.destination == .timedPractice(difficulty: nil))
         #expect(!lostConversationProvider.acceptsDisplayedPrescription)
 
         let availableConversation = PracticeModeLaunchProjection.resolve(

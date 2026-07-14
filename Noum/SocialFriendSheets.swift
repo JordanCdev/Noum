@@ -363,8 +363,11 @@ struct ChallengePickFriendSheet: View {
                         }
                     }
                     .navigationDestination(for: AppDestination.self) { destination in
-                        if case .timedPractice = destination {
-                            TimedPracticeView(navigationPath: $speakOffNavPath)
+                        if case .timedPractice(let difficulty) = destination {
+                            TimedPracticeView(
+                                navigationPath: $speakOffNavPath,
+                                prescribedTimedDifficulty: difficulty
+                            )
                         } else if case .timedPracticePrompt(let token) = destination {
                             TimedPracticeView(
                                 navigationPath: $speakOffNavPath,

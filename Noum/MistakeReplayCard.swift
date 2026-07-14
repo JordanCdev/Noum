@@ -378,7 +378,7 @@ struct MistakeReplayCard: View {
 
     private func destination(for mode: PracticeMode) -> AppDestination {
         switch mode {
-        case .timed: return .timedPractice
+        case .timed: return .timedPractice(difficulty: nil)
         case .suddenDeath: return .suddenDeathPractice
         case .ahCounter: return .ahCounterPractice
         // IM Mode requires scenario/tone selection; route the user back through

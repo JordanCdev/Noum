@@ -30,6 +30,10 @@ const FOLLOW_UP_RESULTS = new Set([
   "mixed",
   "needsMoreEvidence",
 ]);
+const TIMED_DIFFICULTIES = new Set(["free", "easy", "medium", "hard"]);
+const PRESSURE_DIFFICULTIES = new Set(["easy", "medium", "hard"]);
+const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const RECOMMENDATION_ADHERENCE_SCHEMA_VERSION = 1;
 
 type JsonMap = Record<string, unknown>;
 
@@ -126,12 +130,57 @@ function optionalUUID(value: unknown, field: string): void {
   }
 }
 
+function validateOptionalAdherenceVersion(value: unknown, field: string): void {
+  if (value === undefined || value === null) return;
+  if (value !== RECOMMENDATION_ADHERENCE_SCHEMA_VERSION) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+}
+
+function validateDemand(
+  value: unknown,
+  field: string,
+  mode: string
+): JsonMap | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "schemaVersion", "timedDifficulty", "suddenDeathDifficulty",
+    "speechProjectID",
+  ]) || value.schemaVersion !== 1) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  const timedDifficulty = value.timedDifficulty;
+  const pressureDifficulty = value.suddenDeathDifficulty;
+  const projectID = value.speechProjectID;
+  if (mode === "timed") {
+    if (typeof timedDifficulty !== "string" ||
+        !TIMED_DIFFICULTIES.has(timedDifficulty) ||
+        (pressureDifficulty !== undefined && pressureDifficulty !== null)) {
+      throw new HttpsError("invalid-argument", `${field} is invalid.`);
+    }
+    if (projectID !== undefined && projectID !== null &&
+        (typeof projectID !== "string" || projectID.length === 0 ||
+         projectID.length > 80 || !PROJECT_ID_PATTERN.test(projectID))) {
+      throw new HttpsError("invalid-argument", `${field} is invalid.`);
+    }
+    return value;
+  }
+  if (mode === "suddenDeath" &&
+      typeof pressureDifficulty === "string" &&
+      PRESSURE_DIFFICULTIES.has(pressureDifficulty) &&
+      (timedDifficulty === undefined || timedDifficulty === null) &&
+      (projectID === undefined || projectID === null)) {
+    return value;
+  }
+  throw new HttpsError("invalid-argument", `${field} is invalid.`);
+}
+
 function validateExposure(value: unknown): JsonMap | null {
   if (value === null) return null;
   if (!isRecord(value) || !hasOnlyKeys(value, [
     "fingerprint", "title", "focus", "target", "mode", "isAIBacked",
     "shownAt", "tappedAt", "goal", "targetDimensionID", "sourceSessionID",
-    "observabilityID",
+    "observabilityID", "adherenceSchemaVersion", "prescribedDemand",
   ])) {
     throw new HttpsError("invalid-argument", "pendingExposure is invalid.");
   }
@@ -139,11 +188,12 @@ function validateExposure(value: unknown): JsonMap | null {
   requiredString(value.title, "pendingExposure.title", 240);
   requiredString(value.focus, "pendingExposure.focus", 240);
   requiredString(value.target, "pendingExposure.target", 240);
-  if (!PRACTICE_MODES.has(requiredString(
+  const mode = requiredString(
     value.mode,
     "pendingExposure.mode",
     32
-  ))) {
+  );
+  if (!PRACTICE_MODES.has(mode)) {
     throw new HttpsError("invalid-argument", "pendingExposure.mode is invalid.");
   }
   if (typeof value.isAIBacked !== "boolean") {
@@ -171,6 +221,22 @@ function validateExposure(value: unknown): JsonMap | null {
   optionalString(value.targetDimensionID, "pendingExposure.targetDimensionID", 120);
   optionalUUID(value.sourceSessionID, "pendingExposure.sourceSessionID");
   optionalUUID(value.observabilityID, "pendingExposure.observabilityID");
+  validateOptionalAdherenceVersion(
+    value.adherenceSchemaVersion,
+    "pendingExposure.adherenceSchemaVersion"
+  );
+  const prescribedDemand = validateDemand(
+    value.prescribedDemand,
+    "pendingExposure.prescribedDemand",
+    mode
+  );
+  if (prescribedDemand !== null &&
+      value.adherenceSchemaVersion !== RECOMMENDATION_ADHERENCE_SCHEMA_VERSION) {
+    throw new HttpsError(
+      "invalid-argument",
+      "pendingExposure.adherenceSchemaVersion is invalid."
+    );
+  }
   return value;
 }
 
@@ -179,6 +245,7 @@ function validateOutcome(value: unknown, index: number): JsonMap {
   if (!isRecord(value) || !hasOnlyKeys(value, [
     "id", "fingerprint", "title", "focus", "target", "mode", "sessionID",
     "followed", "completedAt", "scoreDelta", "hasComparableScore",
+    "adherenceSchemaVersion", "prescribedDemand", "executedDemand",
     "fillerRateDelta", "fillerDelta", "durationDelta",
     "comparisonSessionCount", "comparisonSchemaVersion", "wordsPerMinute",
     "paceDelta", "goal", "targetDimensionID", "sourceSessionID",
@@ -194,13 +261,39 @@ function validateOutcome(value: unknown, index: number): JsonMap {
   requiredString(value.title, `${field}.title`, 240);
   optionalString(value.focus, `${field}.focus`, 240);
   optionalString(value.target, `${field}.target`, 240);
-  if (!PRACTICE_MODES.has(requiredString(value.mode, `${field}.mode`, 32))) {
+  const mode = requiredString(value.mode, `${field}.mode`, 32);
+  if (!PRACTICE_MODES.has(mode)) {
     throw new HttpsError("invalid-argument", `${field}.mode is invalid.`);
   }
   optionalUUID(value.sessionID, `${field}.sessionID`);
   if (value.sessionID === undefined || value.sessionID === null ||
       typeof value.followed !== "boolean") {
     throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  validateOptionalAdherenceVersion(
+    value.adherenceSchemaVersion,
+    `${field}.adherenceSchemaVersion`
+  );
+  const prescribedDemand = validateDemand(
+    value.prescribedDemand,
+    `${field}.prescribedDemand`,
+    mode
+  );
+  const executedDemand = validateDemand(
+    value.executedDemand,
+    `${field}.executedDemand`,
+    mode
+  );
+  if ((prescribedDemand !== null || executedDemand !== null) &&
+      value.adherenceSchemaVersion !== RECOMMENDATION_ADHERENCE_SCHEMA_VERSION) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${field}.adherenceSchemaVersion is invalid.`
+    );
+  }
+  if (value.followed === true && prescribedDemand !== null &&
+      canonicalJSON(prescribedDemand) !== canonicalJSON(executedDemand)) {
+    throw new HttpsError("invalid-argument", `${field}.followed is invalid.`);
   }
   boundedNumber(
     value.completedAt,

@@ -249,6 +249,7 @@ struct TrainRecommendationProjection {
     let scenario: IMConversationScenario?
     let tone: IMTargetTone?
     let suggestedTheme: PromptTheme
+    let prescribedDemand: PracticeSessionDemand?
 
     static var initialBlueprint: RecommendationBiasBlueprint {
         timedBlueprint(theme: .all, source: .coldStart)
@@ -271,6 +272,11 @@ struct TrainRecommendationProjection {
             )
         )
 
+        let prescribedDemand: PracticeSessionDemand? = visibleBlueprint.recommendedMode == .timed
+            ? visibleBlueprint.suggestedTimedDifficulty.map {
+                PracticeSessionDemand.timed(difficulty: $0, speechProjectID: nil)
+            }
+            : nil
         return TrainRecommendationProjection(
             blueprint: visibleBlueprint,
             mode: visibleBlueprint.recommendedMode,
@@ -280,7 +286,8 @@ struct TrainRecommendationProjection {
             target: visibleBlueprint.target,
             scenario: visibleBlueprint.recommendedScenario,
             tone: visibleBlueprint.recommendedTone,
-            suggestedTheme: visibleBlueprint.suggestedTheme
+            suggestedTheme: visibleBlueprint.suggestedTheme,
+            prescribedDemand: prescribedDemand
         )
     }
 
@@ -578,6 +585,18 @@ struct PracticeModeSelectionView: View {
                 nextMove: instruction,
                 tint: option.tint
             )
+
+            if let difficulty = recommendation.prescribedDemand?.timedDifficulty {
+                Label(difficulty.compactDemandLabel, systemImage: "timer")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(option.tint)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 8)
+                    .background(option.tint.opacity(0.09), in: Capsule())
+                    .accessibilityLabel("Recommended difficulty, \(difficulty.title)")
+                    .accessibilityValue(difficulty.subtitle)
+                    .accessibilityIdentifier("practiceModes.recommendedHero.timedDifficulty")
+            }
 
             if !showsFloatingStartCTA {
                 PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: option.tint) {
@@ -1628,7 +1647,7 @@ struct PracticeModeSelectionView: View {
                 navigationPath.append(AppDestination.cutTheCrutchPractice)
             } else if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
                 selectedMode = .timed
-                navigationPath.append(AppDestination.timedPractice)
+                navigationPath.append(AppDestination.timedPractice(difficulty: nil))
             } else {
                 launchMode(
                     selectedMode,
@@ -1706,7 +1725,8 @@ struct PracticeModeSelectionView: View {
             focus: recommendation.focus,
             target: recommendation.target,
             mode: recommendation.mode,
-            isAIBacked: false
+            isAIBacked: false,
+            prescribedDemand: recommendation.prescribedDemand
         )
     }
 
@@ -1724,11 +1744,25 @@ struct PracticeModeSelectionView: View {
             blueprint.recommendedMode.rawValue,
             blueprint.recommendedScenario?.rawValue ?? "no-scenario",
             blueprint.recommendedTone?.rawValue ?? "no-tone",
+            recommendationDemandFingerprint(for: blueprint),
             blueprint.suggestedTheme.rawValue,
             blueprint.focus,
             blueprint.target,
             recent
         ].joined(separator: ".")
+    }
+
+    private func recommendationDemandFingerprint(
+        for blueprint: RecommendationBiasBlueprint
+    ) -> String {
+        guard blueprint.recommendedMode == .timed,
+              let difficulty = blueprint.suggestedTimedDifficulty else {
+            return "mode-only"
+        }
+        return PracticeSessionDemand.timed(
+            difficulty: difficulty,
+            speechProjectID: nil
+        ).recommendationFingerprintComponent
     }
 
     private func launchMode(
@@ -1739,6 +1773,9 @@ struct PracticeModeSelectionView: View {
     ) {
         let launchRecommendation = recommendation ?? renderedRecommendation
         let carriesRecommendationSetup = displayedMode == launchRecommendation.mode
+        let prescribedDemand = recordsRecommendationAcceptance && carriesRecommendationSetup
+            ? launchRecommendation.prescribedDemand
+            : nil
         let imAvailable = IMModeAvailability.isAvailable
         let launch = PracticeModeLaunchProjection.resolve(
             displayedMode: displayedMode,
@@ -1748,6 +1785,7 @@ struct PracticeModeSelectionView: View {
             tone: displayedMode == .imConversation && carriesRecommendationSetup
                 ? launchRecommendation.tone
                 : nil,
+            prescribedDemand: prescribedDemand,
             imAvailable: imAvailable,
             modeAvailability: NextActionModeAvailability(
                 rating: ratingStore.rating,

@@ -185,10 +185,74 @@ test("current versioned state validates its bounded nested payload", () => {
       isAIBacked: false,
       shownAt: 1_720_000_000,
       observabilityID: secondMutationID,
+      adherenceSchemaVersion: 1,
+      prescribedDemand: {
+        schemaVersion: 1,
+        timedDifficulty: "hard",
+      },
     },
     outcomes: [],
     updatedAt: {},
   });
   assert.equal(current.remoteRevision, 4);
   assert.equal(current.pendingExposure?.mode, "timed");
+});
+
+test("exact recommendation demand accepts matching adherence and rejects drift", () => {
+  const demand = {
+    schemaVersion: 1,
+    timedDifficulty: "hard",
+  };
+  const outcome = {
+    id: secondMutationID,
+    fingerprint: "timed|hard",
+    title: "Land the point",
+    mode: "timed",
+    sessionID: firstMutationID,
+    followed: true,
+    adherenceSchemaVersion: 1,
+    prescribedDemand: demand,
+    executedDemand: demand,
+    completedAt: 1_720_000_010,
+    scoreDelta: 1,
+    fillerDelta: -1,
+    durationDelta: 0,
+  };
+
+  assert.doesNotThrow(() => validateRecommendationMutation(request({
+    outcomes: [outcome],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{
+      ...outcome,
+      executedDemand: {...demand, timedDifficulty: "easy"},
+    }],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{...outcome, adherenceSchemaVersion: undefined}],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{
+      ...outcome,
+      prescribedDemand: {...demand, speechProjectID: "bad/project"},
+      executedDemand: {...demand, speechProjectID: "bad/project"},
+    }],
+  })));
+});
+
+test("legacy mode-only outcomes remain readable but carry no adherence proof", () => {
+  assert.doesNotThrow(() => validateRecommendationMutation(request({
+    outcomes: [{
+      id: secondMutationID,
+      fingerprint: "timed|legacy",
+      title: "Legacy recommendation",
+      mode: "timed",
+      sessionID: firstMutationID,
+      followed: true,
+      completedAt: 1_720_000_010,
+      scoreDelta: 0,
+      fillerDelta: 0,
+      durationDelta: 0,
+    }],
+  })));
 });

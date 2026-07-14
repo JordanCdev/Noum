@@ -70,9 +70,9 @@ enum AppTab: String, CaseIterable, Identifiable {
             if let token = timedPromptToken(from: url) {
                 return .timedPracticePrompt(token: token)
             }
-            return .timedPractice
+            return .timedPractice(difficulty: nil)
         case ("practice", "impromptu"), ("train", "impromptu"):
-            return .timedPractice
+            return .timedPractice(difficulty: nil)
         case ("practice", "pressure"), ("practice", "sudden-death"),
              ("train", "pressure"), ("train", "sudden-death"):
             return .suddenDeathPractice
@@ -495,8 +495,11 @@ struct AppDestinationView: View {
         switch destination {
         case .practiceSelection:
             PracticeModeSelectionView(selectedMode: $selectedPracticeMode, navigationPath: $navigationPath)
-        case .timedPractice:
-            TimedPracticeView(navigationPath: $navigationPath)
+        case .timedPractice(let difficulty):
+            TimedPracticeView(
+                navigationPath: $navigationPath,
+                prescribedTimedDifficulty: difficulty
+            )
                 .toolbar(.hidden, for: .tabBar)
         case .timedPracticePrompt(let token):
             TimedPracticeView(

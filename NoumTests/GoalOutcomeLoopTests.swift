@@ -203,30 +203,72 @@ struct GoalOutcomeLoopTests {
 
         #expect(!RecommendationLearningStore.followedPrescription(
             untapped,
-            completedMode: .timed
+            completedSession: comparisonSession(fillers: 1, duration: 30)
         ))
         #expect(RecommendationLearningStore.followedPrescription(
             tapped,
-            completedMode: .timed
+            completedSession: comparisonSession(fillers: 1, duration: 30)
         ))
         #expect(!RecommendationLearningStore.followedPrescription(
             tapped,
-            completedMode: .ahCounter
+            completedSession: comparisonSession(
+                fillers: 1,
+                duration: 30,
+                mode: .ahCounter
+            )
+        ))
+    }
+
+    @Test func exactRecommendationDemandMustMatchTheCompletedRep() {
+        let prescribed = PracticeSessionDemand.timed(
+            difficulty: .hard,
+            speechProjectID: nil
+        )
+        let exposure = recommendationExposure(
+            mode: .timed,
+            tappedAt: Date(),
+            prescribedDemand: prescribed
+        )
+
+        #expect(RecommendationLearningStore.followedPrescription(
+            exposure,
+            completedSession: comparisonSession(
+                fillers: 1,
+                duration: 15,
+                timedDifficulty: .hard
+            )
+        ))
+        #expect(!RecommendationLearningStore.followedPrescription(
+            exposure,
+            completedSession: comparisonSession(
+                fillers: 1,
+                duration: 30,
+                timedDifficulty: .medium
+            )
+        ))
+        #expect(!RecommendationLearningStore.followedPrescription(
+            exposure,
+            completedSession: comparisonSession(
+                fillers: 1,
+                duration: 15,
+                includePracticeDemand: false
+            )
         ))
     }
 
     @Test func legacyUntappedExposureFailsClosedForOutcomeAttribution() throws {
         let json = """
-        {"fingerprint":"legacy","title":"Timed rep","focus":"Structure","target":"Land one clear point","mode":"timed","isAIBacked":false,"shownAt":0}
+        {"fingerprint":"legacy","title":"Timed rep","focus":"Structure","target":"Land one clear point","mode":"timed","isAIBacked":false,"shownAt":0,"tappedAt":1}
         """.data(using: .utf8)!
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         let exposure = try decoder.decode(RecommendationExposure.self, from: json)
 
-        #expect(exposure.tappedAt == nil)
+        #expect(exposure.tappedAt != nil)
+        #expect(exposure.adherenceSchemaVersion == nil)
         #expect(!RecommendationLearningStore.followedPrescription(
             exposure,
-            completedMode: .timed
+            completedSession: comparisonSession(fillers: 1, duration: 30)
         ))
     }
 
@@ -670,7 +712,8 @@ struct GoalOutcomeLoopTests {
 
     private func recommendationExposure(
         mode: PracticeMode,
-        tappedAt: Date?
+        tappedAt: Date?,
+        prescribedDemand: PracticeSessionDemand? = nil
     ) -> RecommendationExposure {
         RecommendationExposure(
             fingerprint: "goal-outcome-attribution",
@@ -680,7 +723,9 @@ struct GoalOutcomeLoopTests {
             mode: mode,
             isAIBacked: false,
             shownAt: Date(timeIntervalSince1970: 0),
-            tappedAt: tappedAt
+            tappedAt: tappedAt,
+            adherenceSchemaVersion: RecommendationAdherenceContract.schemaVersion,
+            prescribedDemand: prescribedDemand
         )
     }
 

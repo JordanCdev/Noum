@@ -61,7 +61,7 @@ enum AskNoumModeSuggestion {
         }
         if t.contains("timed rep") || t.contains("timed round")
             || t.contains("timed mode") || t.contains("timed practice") {
-            return .timedPractice
+            return .timedPractice(difficulty: nil)
         }
 
         // High-confidence delivery-skill phrases → Timed (free delivery
@@ -70,7 +70,7 @@ enum AskNoumModeSuggestion {
         if t.contains("vocal variety") || t.contains("vary your pitch")
             || t.contains("vary your tone") || t.contains("pitch range")
             || t.contains("vary your delivery") {
-            return .timedPractice
+            return .timedPractice(difficulty: nil)
         }
 
         return nil

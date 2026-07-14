@@ -9,7 +9,7 @@ import SwiftUI
 /// `medium` is the canonical baseline — tuned curve shipped before this enum
 /// existed. Easy and Hard are multiplicative tweaks on top, not separate
 /// curves, so the engine state machine stays unchanged.
-enum SuddenDeathDifficulty: String, Codable, CaseIterable, Identifiable {
+enum SuddenDeathDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
     case easy
     case medium
     case hard

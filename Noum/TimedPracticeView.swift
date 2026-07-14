@@ -719,6 +719,9 @@ struct TimedPracticeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
     @Binding var navigationPath: NavigationPath
+    /// Exact per-rep demand carried by a rendered recommendation. This value
+    /// never mutates the user's saved difficulty.
+    var prescribedTimedDifficulty: TimedPracticeDifficulty? = nil
     /// Present only for a seeded launch. Ordinary Timed routes deliberately do
     /// not consume a pending prompt from another surface.
     var promptHandoffToken: UUID? = nil
@@ -1167,12 +1170,20 @@ struct TimedPracticeView: View {
 
             Spacer(minLength: Spacing.sm)
 
-            Text(enableThinkingTime ? "15s prep" : "Instant start")
-                .font(Typography.caption.weight(.bold))
-                .foregroundStyle(AppColor.focusedTextSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(.white.opacity(0.12), in: Capsule())
+            VStack(alignment: .trailing, spacing: 6) {
+                if let prescribedTimedDifficulty {
+                    Text(prescribedTimedDifficulty.title)
+                        .font(Typography.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.white.opacity(0.18), in: Capsule())
+                }
+
+                Text(enableThinkingTime ? "15s prep" : "Instant start")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.focusedTextSecondary)
+            }
         }
         .padding(Spacing.md)
         .focusedGlassSurface()
@@ -1217,7 +1228,8 @@ struct TimedPracticeView: View {
         let promptContext = wordOfTheDayTarget.map { "Today's word, \($0)" }
             ?? "Prompt pool, \(selectedTheme.rawValue)"
         let startStyle = enableThinkingTime ? "15 seconds to prepare" : "instant start"
-        return "\(promptContext). \(startStyle)."
+        let demand = prescribedTimedDifficulty.map { " Recommended difficulty, \($0.title)." } ?? ""
+        return "\(promptContext).\(demand) \(startStyle)."
     }
 
     private var setupHeader: some View {
@@ -2939,7 +2951,7 @@ struct TimedPracticeView: View {
 
         elapsedSeconds = 0
         isStopping = false
-        activeTimedDifficulty = practiceSettings.timedDifficulty
+        activeTimedDifficulty = prescribedTimedDifficulty ?? practiceSettings.timedDifficulty
         lastMilestoneState = .neutral
         milestoneScale = 1.0
 
@@ -3293,7 +3305,10 @@ struct TimedPracticeView: View {
             strongMoments: evaluation?.strongMoments ?? [],
             weakMoments: evaluation?.weakMoments ?? [],
             durationAssessment: evaluation?.durationAssessment ?? .onTarget,
-            targetRange: evaluation?.targetRange ?? practiceSettings.timedDifficulty.targetRange,
+            targetRange: evaluation?.targetRange
+                ?? activeTimedDifficulty?.targetRange
+                ?? prescribedTimedDifficulty?.targetRange
+                ?? practiceSettings.timedDifficulty.targetRange,
             onStartDrill: { [self] drill in
                 activeDrill = drill
                 restartSession()
