@@ -319,7 +319,23 @@ test(
     }
     assert.match(complete, /secrets: \[deepgramManagementKey\]/);
     assert.match(complete, /collection\("captureIntents"\)/);
-    assert.match(complete, /collection\("audioDigests"\)/);
+    assert.match(complete, /_competitiveAudioReplayClaims/);
+    assert.match(complete, /competitiveAudioReplayDigest/);
+    assert.match(complete, /competitiveAudioReplayClaim/);
+    assert.match(complete, /validateStoredCompetitiveAudioReplayClaim/);
+    assert.doesNotMatch(complete, /collection\("audioDigests"\)/);
+    const replayCreate = complete.match(
+      /transaction\.create\(replayRef, \{([\s\S]*?)\}\);/
+    );
+    assert.ok(replayCreate);
+    assert.match(replayCreate[1], /schemaVersion/);
+    assert.match(replayCreate[1], /digest/);
+    assert.match(replayCreate[1], /claimedAt/);
+    assert.match(replayCreate[1], /expiresAt/);
+    assert.doesNotMatch(
+      replayCreate[1],
+      /uid|sessionID|audioSHA256|competitiveEligible|transcript/
+    );
     assert.match(complete, /collection\("observations"\)/);
     assert.match(complete, /competitiveEligible: false/);
     assert.match(rateOwner, /COMPETITIVE_OBSERVATION_MINUTE_LIMIT/);
@@ -600,6 +616,7 @@ test("competitive observation storage is callable-only", () => {
   for (const collection of [
     "_competitiveCaptureIntents",
     "_competitiveObservations",
+    "_competitiveAudioReplayClaims",
   ]) {
     const start = rules.indexOf(`match /${collection}/{document=**}`);
     assert.notEqual(start, -1, collection);
@@ -607,6 +624,24 @@ test("competitive observation storage is callable-only", () => {
       rules.slice(start, start + 130),
       /allow read, write: if false;/
     );
+  }
+});
+
+test("competitive observation expiry fields have source-declared TTL", () => {
+  const config = JSON.parse(readFileSync(
+    resolve(process.cwd(), "../firestore.indexes.json"),
+    "utf8"
+  )) as {fieldOverrides?: Array<Record<string, unknown>>};
+  const ttlGroups = new Set((config.fieldOverrides ?? [])
+    .filter((entry) => entry.fieldPath === "expiresAt" && entry.ttl === true &&
+      Array.isArray(entry.indexes) && entry.indexes.length === 0)
+    .map((entry) => entry.collectionGroup));
+  for (const collectionGroup of [
+    "captureIntents",
+    "observations",
+    "_competitiveAudioReplayClaims",
+  ]) {
+    assert.equal(ttlGroups.has(collectionGroup), true, collectionGroup);
   }
 });
 

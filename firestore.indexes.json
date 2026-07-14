@@ -17,6 +17,24 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "captureIntents",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "observations",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_competitiveAudioReplayClaims",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "friends",
       "fieldPath": "accountID",
       "indexes": [

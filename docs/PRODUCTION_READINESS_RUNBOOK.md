@@ -30,7 +30,8 @@ authoritative score remains 18/100; 0/5 required external artifacts pass.**
   or provide the missing usage and billing audit.
 - `https://noum-d0b6f.web.app/privacy` is reachable, but the last live exact-
   body probe targeted an older source body. Current `public/privacy.html` is
-  29,237 bytes / `4cd0af64…599363c`, and no current-source live comparison exists.
+  29,606 bytes / `b0425f51…12bf68f`, and no current-source live comparison
+  exists.
   Treat hosted-policy equivalence as missing. After safe release authentication
   is restored, redeploy the current body and require the exact-body probe to pass.
   The custom `noum.app` domain is still parked at GoDaddy; it must not be
@@ -39,9 +40,10 @@ authoritative score remains 18/100; 0/5 required external artifacts pass.**
 - The repository's hardened social rules and functions must **not** be deployed
   until legacy social data is backed up and quarantined, the explicit cutover is
   complete, and a trusted eligible evidence producer exists. A disabled,
-  transcript-free server-observation substrate now exists locally, but it has
-  no calibrated evaluator, cross-account replay defense, verified retention,
-  or authorization to write `_verifiedSessionEvidence`. Client-authored ratings,
+  transcript-free server-observation substrate now has a bounded, account-
+  unlinkable seven-day exact-PCM replay claim, but it has no calibrated
+  evaluator, deployed TTL/retention proof, transformed-audio replay defense, or
+  authorization to write `_verifiedSessionEvidence`. Client-authored ratings,
   local scores, and ineligible observation receipts are not acceptable
   production evidence.
 - Two cached Firebase CLI user sessions were exposed during release inspection
@@ -350,8 +352,9 @@ npm --prefix functions run deploy
 That command performs no deployment. It exits nonzero with four exact missing
 requirements. Eligible competitive evidence production is missing because the
 local server-observation substrate remains disabled and ineligible, has no
-calibrated deterministic evaluator, and lacks cross-account replay, retention,
-and live-provider evidence. Local friendship authority is present but remains
+calibrated deterministic evaluator, and its bounded exact-audio replay and
+retention contracts lack deployed TTL and live-provider evidence. Local
+friendship authority is present but remains
 disabled and lacks production cutover, deployed index/rules/functions, TTL,
 and two-device evidence. Independently trusted authorization evidence and an
 immutable source-bound deployment artifact are also missing.
@@ -373,12 +376,16 @@ Before deploying the reviewed social rules and functions together:
    must fail safely before cutover without leaving a deletion tombstone or
    discarding either the legacy or current cleanup worklist.
 4. Treat the local begin/complete path only as disabled observation substrate.
-   Before it can produce eligible competitive results, close the privacy-
-   preserving cross-account replay threat, configure and independently verify
-   Firestore TTL, prove the live Deepgram request/retention contract, calibrate
-   the deterministic evaluator and evidence floor, and authorize a reviewed
-   producer to write `_verifiedSessionEvidence`. The current receipt is
-   permanently ineligible and the consumer contract alone is not a producer.
+   Its shared seven-day domain-separated claim rejects byte-identical PCM across
+   accounts without storing an account or session identifier, and checked-in
+   index configuration declares TTL for intents, observations, and replay
+   claims. Before it can produce eligible competitive results, independently
+   approve and verify that retention policy and deployed TTL, address replay
+   outside the window or after audio transformation, prove the live Deepgram
+   request/retention contract, calibrate the deterministic evaluator and
+   evidence floor, and authorize a reviewed producer to write
+   `_verifiedSessionEvidence`. The current receipt is permanently ineligible
+   and the consumer contract alone is not a producer.
 5. Deploy and verify the reviewed friendship collection-group indexes and TTL
    policies for global and per-account invite receipts, then prove create,
    accept, complete-list, pair-bound removal, replay refusal, deletion, and

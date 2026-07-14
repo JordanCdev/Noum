@@ -14,6 +14,9 @@ export const COMPETITIVE_OBSERVATION_MAX_AUDIO_BYTES = 4_800_000;
 export const COMPETITIVE_OBSERVATION_MIN_AUDIO_BYTES = 8_000;
 export const COMPETITIVE_OBSERVATION_MINUTE_LIMIT = 3;
 export const COMPETITIVE_OBSERVATION_HOUR_LIMIT = 12;
+export const COMPETITIVE_AUDIO_REPLAY_CLAIM_SCHEMA_VERSION = 1;
+export const COMPETITIVE_AUDIO_REPLAY_CLAIM_LIFETIME_MS =
+  7 * 24 * 60 * 60 * 1_000;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -81,11 +84,9 @@ export interface StoredCompetitiveObservationIntent
   observationCompletedAtMs: number | null;
 }
 
-export interface StoredCompetitiveAudioDigestClaim {
+export interface StoredCompetitiveAudioReplayClaim {
   schemaVersion: 1;
-  uid: string;
-  sessionID: string;
-  audioSHA256: string;
+  digest: string;
   claimedAtMs: number;
   expiresAtMs: number;
 }
@@ -467,33 +468,54 @@ export type CompetitiveObservationDateMilliseconds = (
   value: unknown
 ) => number | null;
 
-export function validateStoredCompetitiveAudioDigestClaim(
+export function competitiveAudioReplayDigest(audioSHA256: string): string {
+  if (!SHA256_PATTERN.test(audioSHA256)) {
+    throw new HttpsError("invalid-argument", "Invalid audio digest.");
+  }
+  return createHash("sha256")
+    .update("noum-competitive-audio-replay-v1\0", "utf8")
+    .update(audioSHA256, "ascii")
+    .digest("hex");
+}
+
+export function competitiveAudioReplayClaim(
+  audioSHA256: string,
+  claimedAtMs: number
+): StoredCompetitiveAudioReplayClaim {
+  if (!Number.isFinite(claimedAtMs)) {
+    throw new HttpsError("invalid-argument", "Invalid replay claim time.");
+  }
+  return {
+    schemaVersion: COMPETITIVE_AUDIO_REPLAY_CLAIM_SCHEMA_VERSION,
+    digest: competitiveAudioReplayDigest(audioSHA256),
+    claimedAtMs,
+    expiresAtMs: claimedAtMs + COMPETITIVE_AUDIO_REPLAY_CLAIM_LIFETIME_MS,
+  };
+}
+
+export function validateStoredCompetitiveAudioReplayClaim(
   value: unknown,
-  expectedUID: string,
-  expectedSessionID: string,
-  expectedSHA256: string,
+  expectedDigest: string,
   dateMilliseconds: CompetitiveObservationDateMilliseconds
-): StoredCompetitiveAudioDigestClaim {
+): StoredCompetitiveAudioReplayClaim {
   if (!isRecord(value) || !hasExactKeys(value, [
-    "schemaVersion", "uid", "sessionID", "audioSHA256", "claimedAt",
-    "expiresAt",
-  ]) || value.schemaVersion !== 1 || value.uid !== expectedUID ||
-      value.sessionID !== expectedSessionID ||
-      value.audioSHA256 !== expectedSHA256 ||
-      !SHA256_PATTERN.test(expectedSHA256)) {
+    "schemaVersion", "digest", "claimedAt", "expiresAt",
+  ]) || value.schemaVersion !==
+      COMPETITIVE_AUDIO_REPLAY_CLAIM_SCHEMA_VERSION ||
+      value.digest !== expectedDigest ||
+      !SHA256_PATTERN.test(expectedDigest)) {
     throw new HttpsError("data-loss", "Audio replay claim is invalid.");
   }
   const claimedAtMs = dateMilliseconds(value.claimedAt);
   const expiresAtMs = dateMilliseconds(value.expiresAt);
   if (claimedAtMs === null || expiresAtMs === null ||
-      claimedAtMs > expiresAtMs) {
+      expiresAtMs - claimedAtMs !==
+        COMPETITIVE_AUDIO_REPLAY_CLAIM_LIFETIME_MS) {
     throw new HttpsError("data-loss", "Audio replay claim is invalid.");
   }
   return {
-    schemaVersion: 1,
-    uid: expectedUID,
-    sessionID: expectedSessionID,
-    audioSHA256: expectedSHA256,
+    schemaVersion: COMPETITIVE_AUDIO_REPLAY_CLAIM_SCHEMA_VERSION,
+    digest: expectedDigest,
     claimedAtMs,
     expiresAtMs,
   };

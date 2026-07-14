@@ -93,6 +93,8 @@ import {
   COMPETITIVE_OBSERVATION_HOUR_LIMIT,
   COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS,
   COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
+  competitiveAudioReplayClaim,
+  competitiveAudioReplayDigest,
   competitiveObservationDocument,
   competitiveObservationIntentMatches,
   competitiveObservationProcessingIntent,
@@ -101,7 +103,7 @@ import {
   assertCompetitiveObservationIntentUsable,
   transcribeCompetitivePCM,
   validateBeginCompetitiveObservationRequest,
-  validateStoredCompetitiveAudioDigestClaim,
+  validateStoredCompetitiveAudioReplayClaim,
   validateStoredCompetitiveObservationIntent,
   type CompetitiveObservationAudio,
   type CompetitiveObservationRateState,
@@ -1083,14 +1085,18 @@ export const completeCompetitiveObservation = onCall(
         claimAudio: async (input) => {
           const intentRef = firestore.collection("_competitiveCaptureIntents")
             .doc(uid).collection("captureIntents").doc(input.sessionID);
-          const digestRef = firestore.collection("_competitiveCaptureIntents")
-            .doc(uid).collection("audioDigests").doc(input.audio.sha256);
+          const replayDigest = competitiveAudioReplayDigest(
+            input.audio.sha256
+          );
+          const replayRef = firestore.collection(
+            "_competitiveAudioReplayClaims"
+          ).doc(replayDigest);
           const deletionRef = firestore.collection("_accountDeletionState")
             .doc(uid);
           return firestore.runTransaction(async (transaction) => {
             const deletionSnapshot = await transaction.get(deletionRef);
             const intentSnapshot = await transaction.get(intentRef);
-            const digestSnapshot = await transaction.get(digestRef);
+            const replaySnapshot = await transaction.get(replayRef);
             assertAccountDeletionNotPending(deletionSnapshot.exists);
             const nowMs = Date.now();
             const intent = validateStoredCompetitiveObservationIntent(
@@ -1110,19 +1116,21 @@ export const completeCompetitiveObservation = onCall(
               input.audio.sha256,
               nowMs
             );
-            if (digestSnapshot.exists) {
+            if (replaySnapshot.exists) {
               throw new HttpsError(
                 "already-exists",
                 "This audio was already used for another observation."
               );
             }
-            transaction.create(digestRef, {
-              schemaVersion: 1,
-              uid,
-              sessionID: input.sessionID,
-              audioSHA256: input.audio.sha256,
-              claimedAt: Timestamp.fromMillis(nowMs),
-              expiresAt: Timestamp.fromMillis(intent.expiresAtMs),
+            const claim = competitiveAudioReplayClaim(
+              input.audio.sha256,
+              nowMs
+            );
+            transaction.create(replayRef, {
+              schemaVersion: claim.schemaVersion,
+              digest: claim.digest,
+              claimedAt: Timestamp.fromMillis(claim.claimedAtMs),
+              expiresAt: Timestamp.fromMillis(claim.expiresAtMs),
             });
             transaction.update(intentRef, {
               status: "processing",
@@ -1217,15 +1225,16 @@ async function commitCompetitiveObservation(
   const firestore = getFirestore();
   const intentRef = firestore.collection("_competitiveCaptureIntents")
     .doc(uid).collection("captureIntents").doc(claimedIntent.sessionID);
-  const digestRef = firestore.collection("_competitiveCaptureIntents")
-    .doc(uid).collection("audioDigests").doc(audio.sha256);
+  const replayDigest = competitiveAudioReplayDigest(audio.sha256);
+  const replayRef = firestore.collection("_competitiveAudioReplayClaims")
+    .doc(replayDigest);
   const observationRef = firestore.collection("_competitiveObservations")
     .doc(uid).collection("observations").doc(claimedIntent.sessionID);
   const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
   return firestore.runTransaction(async (transaction) => {
     const deletionSnapshot = await transaction.get(deletionRef);
     const intentSnapshot = await transaction.get(intentRef);
-    const digestSnapshot = await transaction.get(digestRef);
+    const replaySnapshot = await transaction.get(replayRef);
     const observationSnapshot = await transaction.get(observationRef);
     assertAccountDeletionNotPending(deletionSnapshot.exists);
     const nowMs = Date.now();
@@ -1244,13 +1253,14 @@ async function commitCompetitiveObservation(
     if (intent.audioSHA256 !== audio.sha256) {
       throw new HttpsError("data-loss", "Audio binding changed.");
     }
-    validateStoredCompetitiveAudioDigestClaim(
-      digestSnapshot.data(),
-      uid,
-      claimedIntent.sessionID,
-      audio.sha256,
+    const replayClaim = validateStoredCompetitiveAudioReplayClaim(
+      replaySnapshot.data(),
+      replayDigest,
       socialDateMilliseconds
     );
+    if (replayClaim.claimedAtMs !== intent.processingStartedAtMs) {
+      throw new HttpsError("data-loss", "Audio replay binding changed.");
+    }
     if (observationSnapshot.exists) {
       throw new HttpsError(
         "already-exists",

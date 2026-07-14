@@ -1783,10 +1783,8 @@ test("competitive observation internals deny their authenticated owner", async (
         "captureIntents",
     },
     {
-      path: `_competitiveCaptureIntents/${identity.localId}/` +
-        `audioDigests/${sha256}`,
-      collection: `_competitiveCaptureIntents/${identity.localId}/` +
-        "audioDigests",
+      path: `_competitiveAudioReplayClaims/${sha256}`,
+      collection: "_competitiveAudioReplayClaims",
     },
     {
       path: `_competitiveObservations/${identity.localId}/` +
@@ -2604,8 +2602,18 @@ test("anonymous deletion is complete and retry-safe", async () => {
   const observationRef = adminFirestore
     .collection("_competitiveObservations").doc(identity.localId)
     .collection("observations").doc(challengeID);
+  const replayClaimRef = adminFirestore
+    .collection("_competitiveAudioReplayClaims").doc("a".repeat(64));
   await captureIntentRef.set({schemaVersion: 1, deletionFixture: true});
   await observationRef.set({schemaVersion: 1, deletionFixture: true});
+  await replayClaimRef.set({
+    schemaVersion: 1,
+    digest: "a".repeat(64),
+    claimedAt: seededAt,
+    expiresAt: AdminTimestamp.fromMillis(
+      seededAt.toMillis() + 7 * 24 * 60 * 60 * 1_000
+    ),
+  });
   const request = {
     schemaVersion: 1,
     requestID: "a713738e-d9ed-4337-986e-09205089d42e",
@@ -2632,6 +2640,7 @@ test("anonymous deletion is complete and retry-safe", async () => {
         .doc(identity.localId).get()).exists, false);
       assert.equal((await captureIntentRef.get()).exists, false);
       assert.equal((await observationRef.get()).exists, false);
+      assert.equal((await replayClaimRef.get()).exists, true);
       assert.equal((await adminFirestore.collection("_socialFriendLinks")
         .doc(opponent.localId).collection("friends")
         .doc(identity.localId).get()).exists, false);

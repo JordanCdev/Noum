@@ -1,5 +1,43 @@
 # Noum — Current state
 
+## 2026-07-14 — Exact competitive PCM replay is bounded across accounts
+
+The disabled competitive-observation authority now uses one global seven-day
+claim for byte-identical canonical PCM instead of a per-account digest subtree.
+The document ID is a domain-separated digest; its exact stored body contains
+only schema, digest, claimed-at, and expiry timestamps. It contains no account
+or session identifier, raw audio, transcript, score, or eligibility field. The
+same Firestore transaction that transitions an intent into provider processing
+creates the claim, so simultaneous accounts serialize on one path before
+Deepgram work. Final observation commit revalidates the global claim against the
+intent's processing timestamp.
+
+Account deletion still removes the account-linked intent and transcript-free
+observation trees, but deliberately retains this account-unlinked tombstone
+until expiry so delete-and-recreate cannot reopen the same replay window. Source
+index configuration now declares Firestore TTL for capture intents,
+observations, and global replay claims. Processor manifest v6 and both generated
+policy surfaces disclose the seven-day retention and deletion exception. The
+shipping capability remains false, receipts remain permanently
+`competitiveEligible: false`, and no path writes `_verifiedSessionEvidence`.
+
+Functions lint/build, 109/109 unit tests, 6/6 deploy-blocker tests, processor
+generation, 14 privacy-body tests, 16 cloud-operations contracts, and all 19
+static readiness checks pass. The Node-22/Java-21 `demo-noum` emulator passed
+26/26 callable/rules/lifecycle tests, including direct denial and preservation
+of the unlinkable replay tombstone through account deletion. The combined main-
+checkout wrapper then correctly refused 4/5 adapter cases because its migration
+owner requires a clean tracked source; that dirty-checkout refusal is not a
+product failure and is not counted as adapter proof.
+
+This closes only bounded exact-byte replay inside seven days. Resampled,
+transformed, or post-window audio remains outside the local contract. Deployed
+TTL, policy approval, live-provider behavior, non-challenge provenance,
+deterministic evaluator calibration, eligible-producer authorization, production
+cutover, physical-device evidence, and every external readiness artifact remain
+missing. Production readiness therefore remains **NO-GO at 18/100 with 0/5
+external artifacts**.
+
 ## 2026-07-14 — Reciprocal friendship lifecycle is proved locally and remains release-disabled
 
 Implementation commits `578ed2e1`, `10321f2a`, `2259b49b`, and `40e728f5`

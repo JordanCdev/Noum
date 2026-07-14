@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import test from "node:test";
 import {
+  COMPETITIVE_AUDIO_REPLAY_CLAIM_LIFETIME_MS,
   COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS,
   COMPETITIVE_OBSERVATION_HOUR_LIMIT,
   COMPETITIVE_OBSERVATION_MAX_AUDIO_BYTES,
@@ -12,6 +13,8 @@ import {
   COMPETITIVE_OBSERVATION_MIN_AUDIO_BYTES,
   COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
   assertCompetitiveObservationIntentUsable,
+  competitiveAudioReplayClaim,
+  competitiveAudioReplayDigest,
   competitiveObservationDocument,
   competitiveObservationIntentMatches,
   competitiveObservationProcessingIntent,
@@ -21,7 +24,7 @@ import {
   validateBeginCompetitiveObservationRequest,
   validateCompleteCompetitiveObservationRequest,
   validateDeepgramObservationResponse,
-  validateStoredCompetitiveAudioDigestClaim,
+  validateStoredCompetitiveAudioReplayClaim,
   validateStoredCompetitiveObservation,
   validateStoredCompetitiveObservationIntent,
   type BeginCompetitiveObservationInput,
@@ -426,24 +429,45 @@ test("intent usability rejects wrong owner, backdating, and expiry", () => {
   ));
 });
 
-test("per-UID audio digest claim has an exact replay schema", () => {
+test("global audio replay claim is domain-separated and account-unlinkable", () => {
   const sha = "b".repeat(64);
+  const digest = competitiveAudioReplayDigest(sha);
+  assert.notEqual(digest, sha);
+  assert.equal(digest, competitiveAudioReplayDigest(sha));
+  assert.notEqual(digest, competitiveAudioReplayDigest("c".repeat(64)));
+  const claim = competitiveAudioReplayClaim(sha, startedAtMs);
+  assert.deepEqual(claim, {
+    schemaVersion: 1,
+    digest,
+    claimedAtMs: startedAtMs,
+    expiresAtMs: startedAtMs +
+      COMPETITIVE_AUDIO_REPLAY_CLAIM_LIFETIME_MS,
+  });
   const document = {
     schemaVersion: 1,
-    uid,
-    sessionID: sessionID.toUpperCase(),
-    audioSHA256: sha,
+    digest,
     claimedAt: startedAtMs,
-    expiresAt: expiresAtMs,
+    expiresAt: claim.expiresAtMs,
   };
-  assert.equal(validateStoredCompetitiveAudioDigestClaim(
-    document, uid, sessionID.toUpperCase(), sha, numericDate
-  ).audioSHA256, sha);
-  assert.throws(() => validateStoredCompetitiveAudioDigestClaim(
-    {...document, extra: true},
-    uid,
-    sessionID.toUpperCase(),
-    sha,
+  assert.equal(validateStoredCompetitiveAudioReplayClaim(
+    document, digest, numericDate
+  ).digest, digest);
+  for (const invalid of [
+    {...document, uid},
+    {...document, sessionID},
+    {...document, audioSHA256: sha},
+    {...document, competitiveEligible: false},
+    {...document, expiresAt: claim.expiresAtMs - 1},
+  ]) {
+    assert.throws(() => validateStoredCompetitiveAudioReplayClaim(
+      invalid,
+      digest,
+      numericDate
+    ));
+  }
+  assert.throws(() => validateStoredCompetitiveAudioReplayClaim(
+    document,
+    "d".repeat(64),
     numericDate
   ));
 });

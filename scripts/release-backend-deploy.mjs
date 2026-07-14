@@ -5,8 +5,8 @@ export const PRODUCTION_RUNBOOK = "docs/PRODUCTION_READINESS_RUNBOOK.md";
 export const DEPLOYMENT_BLOCKERS = Object.freeze([
   "Eligible competitive evidence production is missing: the local " +
     "server-observation substrate remains disabled and ineligible, has no " +
-    "calibrated deterministic evaluator, and lacks cross-account replay, " +
-    "retention, and live-provider evidence.",
+    "calibrated deterministic evaluator, and its bounded exact-audio replay " +
+    "and retention contracts lack deployed TTL and live-provider evidence.",
   "Local reciprocal friendship authority and invite-retention policy are " +
     "not deployed or live-verified, and the client capability remains " +
     "disabled; complete the guarded cutover and independent verification " +
