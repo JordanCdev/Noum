@@ -350,7 +350,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should change next time?",
-                    coachReply: "Your latest qualified rep gives one rate, not a pressure pattern. On the same prompt, check whether a filler appears after the decision line, then compare fillers per minute."
+                    coachReply: "Your latest qualified rep gives one rate, not a pressure pattern, so run the same prompt and check whether a filler appears after the decision line. Then compare fillers per minute."
                 )
             ]
         ),
