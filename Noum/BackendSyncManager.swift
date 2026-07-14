@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 #if canImport(FirebaseCore)
 import FirebaseCore
 #endif
@@ -10,6 +11,9 @@ import FirebaseAuth
 #endif
 #if canImport(FirebaseFunctions)
 import FirebaseFunctions
+#endif
+#if canImport(FirebaseSharedSwift)
+import FirebaseSharedSwift
 #endif
 
 enum BackendAccountDeletionOutcome: Equatable {
@@ -55,6 +59,10 @@ struct BackendBootstrap: Codable {
     /// explicit empty state. Older REST payloads omit this field; in that case
     /// non-nil pending/outcome fields remain the only evidence of remote state.
     let recommendationStateExists: Bool?
+    /// Versioned Firebase documents carry the server CAS cursor. Legacy
+    /// recommendation documents decode at revision zero; REST payloads that do
+    /// not implement the contract leave this nil and cannot acknowledge writes.
+    let recommendationRemoteRevision: Int?
 
     init(
         xp: Int?,
@@ -62,7 +70,8 @@ struct BackendBootstrap: Codable {
         sessions: [PracticeSession]?,
         recommendationPending: RecommendationExposure?,
         recommendationOutcomes: [RecommendationOutcome]?,
-        recommendationStateExists: Bool? = nil
+        recommendationStateExists: Bool? = nil,
+        recommendationRemoteRevision: Int? = nil
     ) {
         self.xp = xp
         self.profile = profile
@@ -70,6 +79,7 @@ struct BackendBootstrap: Codable {
         self.recommendationPending = recommendationPending
         self.recommendationOutcomes = recommendationOutcomes
         self.recommendationStateExists = recommendationStateExists
+        self.recommendationRemoteRevision = recommendationRemoteRevision
     }
 
     var hasAuthoritativeRecommendationState: Bool {
@@ -136,9 +146,41 @@ enum BackendAsyncChallengeFetchResult: Equatable, Sendable {
     case success(BackendAsyncChallengeSnapshot)
 }
 
-private struct RecommendationSyncPayload: Codable {
+struct RecommendationSyncCallableRequest: Codable, Sendable {
+    static let schemaVersion = 1
+
+    let schemaVersion: Int
+    let mutationID: UUID
+    let expectedRemoteRevision: Int
     let pendingExposure: RecommendationExposure?
     let outcomes: [RecommendationOutcome]
+
+    init(snapshot: RecommendationSyncSnapshot) {
+        schemaVersion = Self.schemaVersion
+        mutationID = snapshot.mutationID
+        expectedRemoteRevision = snapshot.expectedRemoteRevision
+        pendingExposure = snapshot.pendingExposure
+        outcomes = snapshot.outcomes
+    }
+}
+
+enum RecommendationSyncCallableStatus: String, Codable, Sendable {
+    case committed
+    case alreadyCommitted
+    case conflict
+}
+
+struct RecommendationSyncRemoteState: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let remoteRevision: Int
+    let lastMutationID: UUID?
+    let pendingExposure: RecommendationExposure?
+    let outcomes: [RecommendationOutcome]
+}
+
+struct RecommendationSyncCallableResponse: Codable, Sendable {
+    let status: RecommendationSyncCallableStatus
+    let state: RecommendationSyncRemoteState
 }
 
 struct RecommendationSyncSnapshot: Equatable, Sendable {
@@ -147,6 +189,8 @@ struct RecommendationSyncSnapshot: Equatable, Sendable {
     let accountID: String
     let providerRawValue: String
     let revision: Int
+    let expectedRemoteRevision: Int
+    let mutationID: UUID
 }
 
 /// One lane per account keeps whole-state recommendation writes ordered while
@@ -266,6 +310,7 @@ actor BackendSyncManager {
     static let shared = BackendSyncManager()
     static let functionsRegion = SocialAuthorityCallable.region
     static let deleteAccountFunctionName = "deleteAccount"
+    static let syncRecommendationStateFunctionName = "syncRecommendationState"
     static let recordPeerSessionFunctionName = SocialAuthorityCallable.recordPeerSession
     static let getPeerProfileFunctionName = SocialAuthorityCallable.getPeerProfile
     static let listLeagueMembersFunctionName = SocialAuthorityCallable.listLeagueMembers
@@ -304,7 +349,42 @@ actor BackendSyncManager {
            !(outcomes is [[String: Any]]) {
             return false
         }
+        let legacyKeys: Set<String> = ["pendingExposure", "outcomes"]
+        let metadataKeys = ["schemaVersion", "remoteRevision", "lastMutationID"]
+        let presentMetadataCount = metadataKeys.filter { data.keys.contains($0) }.count
+        if presentMetadataCount == 0 {
+            return Set(data.keys).isSubset(of: legacyKeys)
+        }
+        let versionedKeys = legacyKeys.union(metadataKeys).union(["updatedAt"])
+        guard presentMetadataCount == metadataKeys.count,
+              Set(data.keys).isSubset(of: versionedKeys),
+              integerValue(data["schemaVersion"]) == RecommendationSyncCallableRequest.schemaVersion,
+              let remoteRevision = integerValue(data["remoteRevision"]),
+              remoteRevision > 0,
+              let mutation = data["lastMutationID"] as? String,
+              UUID(uuidString: mutation) != nil else {
+            return false
+        }
         return true
+    }
+
+    nonisolated static func recommendationRemoteRevision(
+        from data: [String: Any]?
+    ) -> Int? {
+        guard let data else { return 0 }
+        guard recommendationStatePayloadIsWellFormed(data) else { return nil }
+        return integerValue(data["remoteRevision"]) ?? 0
+    }
+
+    nonisolated private static func integerValue(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber else { return nil }
+        guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite,
+              double.rounded(.towardZero) == double,
+              double >= Double(Int.min),
+              double <= Double(Int.max) else { return nil }
+        return number.intValue
     }
 
     var isConfigured: Bool {
@@ -376,7 +456,9 @@ actor BackendSyncManager {
         outcomes: [RecommendationOutcome],
         accountID: String,
         providerRawValue: String,
-        revision: Int
+        revision: Int,
+        expectedRemoteRevision: Int,
+        mutationID: UUID
     ) async {
         guard !recommendationSyncClosedAccounts.contains(accountID) else { return }
         let snapshot = RecommendationSyncSnapshot(
@@ -384,7 +466,9 @@ actor BackendSyncManager {
             outcomes: outcomes,
             accountID: accountID,
             providerRawValue: providerRawValue,
-            revision: revision
+            revision: revision,
+            expectedRemoteRevision: expectedRemoteRevision,
+            mutationID: mutationID
         )
         if recommendationHydrationTokens[accountID] != nil {
             if let existing = recommendationHydrationPending[accountID],
@@ -486,45 +570,90 @@ actor BackendSyncManager {
     private func writeRecommendationState(
         _ snapshot: RecommendationSyncSnapshot
     ) async -> Bool {
-#if canImport(FirebaseFirestore)
+#if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth) && canImport(FirebaseSharedSwift)
         if firebaseIsConfigured {
-            let succeeded = await syncFirebaseRecommendationState(
-                pendingExposure: snapshot.pendingExposure,
-                outcomes: snapshot.outcomes,
-                accountID: snapshot.accountID,
-                providerRawValue: snapshot.providerRawValue
-            )
-            if succeeded {
-                await acknowledgeRecommendationSync(snapshot)
+            do {
+                try requireFirebaseAccount(snapshot.accountID)
+                let functions = Functions.functions(region: Self.functionsRegion)
+                let callable: Callable<RecommendationSyncCallableRequest, RecommendationSyncCallableResponse> = functions
+                    .httpsCallable(
+                        Self.syncRecommendationStateFunctionName,
+                        encoder: Self.recommendationCallableEncoder(),
+                        decoder: Self.recommendationCallableDecoder()
+                    )
+                let response = try await callable.call(
+                    RecommendationSyncCallableRequest(snapshot: snapshot)
+                )
+                return await applyRecommendationSyncResponse(response, to: snapshot)
+            } catch {
+                return false
             }
-            return succeeded
         }
 #endif
-        do {
-            try await send(
-                RecommendationSyncPayload(
-                    pendingExposure: snapshot.pendingExposure,
-                    outcomes: snapshot.outcomes
-                ),
-                path: "/v1/me/recommendations",
-                accountID: snapshot.accountID,
-                providerRawValue: snapshot.providerRawValue
-            )
-            await acknowledgeRecommendationSync(snapshot)
-            return true
-        } catch {
+        // The optional REST server is not present in this repository and its
+        // legacy 2xx whole-state endpoint has no compare-and-swap contract.
+        // Keep the durable dirty marker instead of acknowledging an overwrite.
+        return false
+    }
+
+    private func applyRecommendationSyncResponse(
+        _ response: RecommendationSyncCallableResponse,
+        to snapshot: RecommendationSyncSnapshot
+    ) async -> Bool {
+        guard response.state.schemaVersion == RecommendationSyncCallableRequest.schemaVersion,
+              response.state.remoteRevision >= 0,
+              response.state.outcomes.count <= 40 else {
             return false
+        }
+        switch response.status {
+        case .committed:
+            guard response.state.lastMutationID == snapshot.mutationID,
+                  snapshot.expectedRemoteRevision < Int.max,
+                  response.state.remoteRevision == snapshot.expectedRemoteRevision + 1 else {
+                return false
+            }
+            await RecommendationLearningStore.shared.confirmCurrentStateSync(
+                accountID: snapshot.accountID,
+                revision: snapshot.revision,
+                mutationID: snapshot.mutationID,
+                remoteRevision: response.state.remoteRevision
+            )
+            return true
+        case .alreadyCommitted:
+            guard response.state.lastMutationID == snapshot.mutationID,
+                  response.state.remoteRevision >= snapshot.expectedRemoteRevision else {
+                return false
+            }
+            await RecommendationLearningStore.shared.confirmCurrentStateSync(
+                accountID: snapshot.accountID,
+                revision: snapshot.revision,
+                mutationID: snapshot.mutationID,
+                remoteRevision: response.state.remoteRevision
+            )
+            return true
+        case .conflict:
+            return await RecommendationLearningStore.shared.reconcileRemoteConflict(
+                accountID: snapshot.accountID,
+                pendingExposure: response.state.pendingExposure,
+                outcomes: response.state.outcomes,
+                remoteRevision: response.state.remoteRevision
+            )
         }
     }
 
-    private func acknowledgeRecommendationSync(
-        _ snapshot: RecommendationSyncSnapshot
-    ) async {
-        await RecommendationLearningStore.shared.confirmCurrentStateSync(
-            accountID: snapshot.accountID,
-            revision: snapshot.revision
-        )
+#if canImport(FirebaseFunctions) && canImport(FirebaseSharedSwift)
+    nonisolated static func recommendationCallableEncoder() -> FirebaseDataEncoder {
+        let encoder = FirebaseDataEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        return encoder
     }
+
+    nonisolated static func recommendationCallableDecoder() -> FirebaseDataDecoder {
+        let decoder = FirebaseDataDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        return decoder
+    }
+#endif
 
     func deleteAccount(
         accountID: String,
@@ -1006,7 +1135,10 @@ private extension BackendSyncManager {
                 sessions: sessions.isEmpty ? nil : sessions,
                 recommendationPending: recommendationPending,
                 recommendationOutcomes: recommendationOutcomes.isEmpty ? nil : recommendationOutcomes,
-                recommendationStateExists: recommendationStateSnapshot.exists
+                recommendationStateExists: recommendationStateSnapshot.exists,
+                recommendationRemoteRevision: recommendationStateSnapshot.exists
+                    ? Self.recommendationRemoteRevision(from: recommendationData)
+                    : 0
             ))
         } catch {
             return .unavailable
@@ -1068,31 +1200,6 @@ private extension BackendSyncManager {
             data: data,
             merge: true
         )
-    }
-
-    func syncFirebaseRecommendationState(
-        pendingExposure: RecommendationExposure?,
-        outcomes: [RecommendationOutcome],
-        accountID: String,
-        providerRawValue: String
-    ) async -> Bool {
-        do {
-            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
-            let pendingData = try pendingExposure.map(encodeDocument)
-            let outcomesData = try outcomes.map(encodeDocument)
-            try await setDocument(
-                userDocument(accountID: accountID).collection("recommendations").document("state"),
-                data: [
-                    "pendingExposure": (pendingData as Any?) ?? NSNull(),
-                    "outcomes": outcomesData
-                ],
-                merge: true
-            )
-            return true
-        } catch {
-            print("[BackendSync] Error: \(error.localizedDescription)")
-            return false
-        }
     }
 
     func ensureFirebaseUserDocument(accountID: String, providerRawValue: String) async {

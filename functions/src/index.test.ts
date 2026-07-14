@@ -198,6 +198,27 @@ test("client rules deny every rate-limit collection operation", () => {
   );
 });
 
+test("recommendation state is callable-only", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  assert.match(
+    rules,
+    // eslint-disable-next-line max-len
+    /match \/recommendations\/\{recommendationID\}[\s\S]*?allow read:[\s\S]*?allow create, update: if false;[\s\S]*?allow delete: if false;/
+  );
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  const start = source.indexOf("export const syncRecommendationState");
+  const end = source.indexOf("function isAuthUserNotFound", start);
+  assert.equal(start >= 0 && end > start, true);
+  const callable = source.slice(start, end);
+  assert.match(callable, /enforceAppCheck: true/);
+  assert.match(callable, /assertTrustedCaller\(request\.auth, request\.app\)/);
+  assert.match(callable, /runTransaction/);
+  assert.match(callable, /_accountDeletionState/);
+});
+
 test("private profile optional fields remain type and size bounded", () => {
   const rules = readFileSync(
     resolve(process.cwd(), "../firestore.rules"),

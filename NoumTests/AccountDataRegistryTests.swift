@@ -189,15 +189,19 @@ final class AccountDataRegistryTests: XCTestCase {
         XCTAssertTrue(registry.coverage.hasParity)
     }
 
-    func testRecommendationResetTombstoneExportsAndDeletesWithItsAccount() throws {
+    func testRecommendationSyncMetadataExportsAndDeletesWithItsAccount() throws {
         let suite = "AccountDataRegistryRecommendationReset.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let accountID = "account-a"
         let key = "recommendation.resetPending.\(accountID)"
         let syncKey = "recommendation.syncPending.\(accountID)"
+        let revisionKey = "recommendation.remoteRevision.\(accountID)"
+        let mutationKey = "recommendation.pendingMutationID.\(accountID)"
         defaults.set(1_720_000_000.0, forKey: key)
         defaults.set(1_720_000_001.0, forKey: syncKey)
+        defaults.set(7, forKey: revisionKey)
+        defaults.set(UUID().uuidString, forKey: mutationKey)
         let registry = AccountDataRegistry.production(defaults: defaults)
 
         let entries = try registry.exportEntries(for: accountID)
@@ -207,10 +211,14 @@ final class AccountDataRegistryTests: XCTestCase {
         let records = try XCTUnwrap(payload["records"] as? [String: Any])
         XCTAssertEqual(records[key] as? Double, 1_720_000_000.0)
         XCTAssertEqual(records[syncKey] as? Double, 1_720_000_001.0)
+        XCTAssertEqual(records[revisionKey] as? Int, 7)
+        XCTAssertNotNil(records[mutationKey] as? String)
 
         try registry.deleteAllData(for: accountID)
         XCTAssertNil(defaults.object(forKey: key))
         XCTAssertNil(defaults.object(forKey: syncKey))
+        XCTAssertNil(defaults.object(forKey: revisionKey))
+        XCTAssertNil(defaults.object(forKey: mutationKey))
     }
 
     func testAppManagedRecordingsExportAndDeleteWithUnattributedScope() throws {

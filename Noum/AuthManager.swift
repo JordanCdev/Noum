@@ -1670,12 +1670,14 @@ class AuthManager: ObservableObject {
                 && recommendationStore.replaceFromRemote(
                     pendingExposure: bootstrap.recommendationPending,
                     outcomes: bootstrap.recommendationOutcomes ?? [],
+                    remoteRevision: bootstrap.recommendationRemoteRevision,
                     ifUnchangedSince: expectedRecommendationRevision
                 )
             if !didReplace,
                recommendationStore.reconcileRemoteState(
                    pendingExposure: bootstrap.recommendationPending,
                    outcomes: bootstrap.recommendationOutcomes ?? [],
+                   remoteRevision: bootstrap.recommendationRemoteRevision,
                    changedSince: expectedRecommendationRevision,
                    force: recommendationHydrationRequiresMerge
                ) {

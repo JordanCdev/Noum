@@ -67,6 +67,11 @@ import {
   type ChallengeSubmission,
   type PublicProfileEnvelope,
 } from "./socialAuthority.js";
+import {
+  decideRecommendationMutation,
+  normalizeStoredRecommendationState,
+  validateRecommendationMutation,
+} from "./recommendationState.js";
 
 initializeApp();
 setGlobalOptions({
@@ -79,6 +84,8 @@ const TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT =
   "noum-transcription-runtime@noum-d0b6f.iam.gserviceaccount.com";
 const ACCOUNT_RUNTIME_SERVICE_ACCOUNT =
   "noum-account-runtime@noum-d0b6f.iam.gserviceaccount.com";
+const RECOMMENDATION_RUNTIME_SERVICE_ACCOUNT =
+  "noum-recommendation-runtime@noum-d0b6f.iam.gserviceaccount.com";
 const SOCIAL_RUNTIME_SERVICE_ACCOUNT =
   "noum-social-runtime@noum-d0b6f.iam.gserviceaccount.com";
 
@@ -1526,6 +1533,44 @@ export const setChallengeReaction = onCall(
           {...combined, ...combinedUpdates}
         ),
       };
+    });
+  }
+);
+
+export const syncRecommendationState = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: RECOMMENDATION_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateRecommendationMutation(request.data);
+    const firestore = getFirestore();
+    const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
+    const stateRef = firestore.collection("users").doc(uid)
+      .collection("recommendations").doc("state");
+
+    return firestore.runTransaction(async (transaction) => {
+      const deletionSnapshot = await transaction.get(deletionRef);
+      const stateSnapshot = await transaction.get(stateRef);
+      assertAccountDeletionNotPending(deletionSnapshot.exists);
+      const current = normalizeStoredRecommendationState(
+        stateSnapshot.exists ? stateSnapshot.data() : undefined
+      );
+      const decision = decideRecommendationMutation(current, input);
+      if (decision.status === "committed") {
+        transaction.set(stateRef, {
+          ...decision.state,
+          updatedAt: Timestamp.now(),
+        });
+      }
+      return decision;
     });
   }
 );

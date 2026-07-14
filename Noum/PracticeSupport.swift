@@ -9930,10 +9930,25 @@ final class RecommendationLearningStore: ObservableObject {
     private let accountKey = "NoumAccountID"
     private let providerKey = "NoumAccountProvider"
     private var stateRevisions: [String: Int] = [:]
+    private var immediateConflictRetries: [String: Int] = [:]
     private var scheduledSyncTask: Task<Void, Never>?
 
     var stateRevision: Int {
         stateRevisions[currentRevisionScope, default: 0]
+    }
+
+    var remoteRevision: Int {
+        let value = UserDefaults.standard.integer(
+            forKey: Self.remoteRevisionKey(for: KeychainHelper.load(key: accountKey))
+        )
+        return max(0, value)
+    }
+
+    var pendingMutationID: UUID? {
+        guard let value = UserDefaults.standard.string(
+            forKey: Self.pendingMutationKey(for: KeychainHelper.load(key: accountKey))
+        ) else { return nil }
+        return UUID(uuidString: value)
     }
 
     var hasUnconfirmedDestructiveReset: Bool {
@@ -9970,6 +9985,7 @@ final class RecommendationLearningStore: ObservableObject {
         let accountID = KeychainHelper.load(key: accountKey)
         pendingExposure = Self.loadPending(forKey: Self.pendingKey(for: accountID))
         outcomes = Self.loadOutcomes(forKey: Self.outcomesKey(for: accountID))
+        immediateConflictRetries[currentRevisionScope] = 0
         advanceStateRevision()
     }
 
@@ -9977,6 +9993,7 @@ final class RecommendationLearningStore: ObservableObject {
     func replaceFromRemote(
         pendingExposure: RecommendationExposure?,
         outcomes: [RecommendationOutcome],
+        remoteRevision: Int? = nil,
         ifUnchangedSince expectedRevision: Int? = nil
     ) -> Bool {
         guard Self.shouldReplaceFromRemote(
@@ -9985,6 +10002,13 @@ final class RecommendationLearningStore: ObservableObject {
         ) else { return false }
         self.pendingExposure = pendingExposure
         self.outcomes = outcomes.sorted { $0.completedAt > $1.completedAt }
+        if let remoteRevision {
+            persistRemoteRevision(remoteRevision)
+        }
+        clearPendingMutation()
+        UserDefaults.standard.removeObject(
+            forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
+        )
         advanceStateRevision()
         persistOutcomes()
         persistPending()
@@ -10002,6 +10026,7 @@ final class RecommendationLearningStore: ObservableObject {
     func reconcileRemoteState(
         pendingExposure remotePendingExposure: RecommendationExposure?,
         outcomes remoteOutcomes: [RecommendationOutcome],
+        remoteRevision: Int? = nil,
         changedSince expectedRevision: Int,
         force: Bool = false
     ) -> Bool {
@@ -10010,22 +10035,47 @@ final class RecommendationLearningStore: ObservableObject {
         // be additively repaired. Keep the local tombstone and let the caller
         // sync it after the in-flight hydration finishes.
         if hasUnconfirmedDestructiveReset {
+            if let remoteRevision { persistRemoteRevision(remoteRevision) }
             return true
         }
         let reconciledOutcomes = Self.mergedOutcomes(
             local: outcomes,
             remote: remoteOutcomes
         )
-        pendingExposure = Self.mergedPendingExposure(
+        let reconciledPendingExposure = Self.mergedPendingExposure(
             local: pendingExposure,
             remote: remotePendingExposure,
             localOutcomes: reconciledOutcomes
         )
+        let stateChanged = Self.reconciledStateDiffers(
+            localPendingExposure: pendingExposure,
+            localOutcomes: outcomes,
+            reconciledPendingExposure: reconciledPendingExposure,
+            reconciledOutcomes: reconciledOutcomes
+        )
+        pendingExposure = reconciledPendingExposure
         outcomes = reconciledOutcomes
-        advanceStateRevision(markSyncUnconfirmed: true)
+        // An identical authoritative body after relaunch is the crash-replay
+        // path. Preserve its durable mutation UUID so the server can return
+        // alreadyCommitted; rotate only when reconciliation changes the body.
+        advanceStateRevision(markSyncUnconfirmed: stateChanged)
         persistOutcomes()
         persistPending()
+        // Persist the server cursor last. A crash before this write causes a
+        // harmless repeat conflict; the inverse order could pair a new cursor
+        // with the stale pre-merge body and overwrite remote evidence.
+        if let remoteRevision { persistRemoteRevision(remoteRevision) }
         return true
+    }
+
+    nonisolated static func reconciledStateDiffers(
+        localPendingExposure: RecommendationExposure?,
+        localOutcomes: [RecommendationOutcome],
+        reconciledPendingExposure: RecommendationExposure?,
+        reconciledOutcomes: [RecommendationOutcome]
+    ) -> Bool {
+        localPendingExposure != reconciledPendingExposure
+            || localOutcomes != reconciledOutcomes
     }
 
     nonisolated static func mergedOutcomes(
@@ -10103,11 +10153,51 @@ final class RecommendationLearningStore: ObservableObject {
     }
 
     func syncCurrentState() {
+        immediateConflictRetries[currentRevisionScope] = 0
         UserDefaults.standard.set(
             Date().timeIntervalSince1970,
             forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
         )
         syncIfPossible()
+    }
+
+    @discardableResult
+    func reconcileRemoteConflict(
+        accountID: String,
+        pendingExposure remotePendingExposure: RecommendationExposure?,
+        outcomes remoteOutcomes: [RecommendationOutcome],
+        remoteRevision: Int
+    ) -> Bool {
+        guard KeychainHelper.load(key: accountKey) == accountID,
+              remoteRevision >= 0 else { return false }
+        if !hasUnconfirmedDestructiveReset {
+            let reconciledOutcomes = Self.mergedOutcomes(
+                local: outcomes,
+                remote: remoteOutcomes
+            )
+            pendingExposure = Self.mergedPendingExposure(
+                local: pendingExposure,
+                remote: remotePendingExposure,
+                localOutcomes: reconciledOutcomes
+            )
+            outcomes = reconciledOutcomes
+        }
+        advanceStateRevision(
+            markSyncUnconfirmed: true,
+            resetsConflictRetry: false
+        )
+        persistOutcomes()
+        persistPending()
+        // Keep body + mutation durable before advancing the CAS cursor.
+        persistRemoteRevision(remoteRevision)
+
+        let retries = immediateConflictRetries[currentRevisionScope, default: 0]
+        guard Self.shouldRetryConflictImmediately(
+            previousImmediateRetries: retries
+        ) else { return false }
+        immediateConflictRetries[currentRevisionScope] = 1
+        syncIfPossible()
+        return true
     }
 
     func waitForScheduledSyncs() async {
@@ -10122,16 +10212,42 @@ final class RecommendationLearningStore: ObservableObject {
 
     func confirmCurrentStateSync(
         accountID: String? = nil,
-        revision expectedRevision: Int
+        revision expectedRevision: Int,
+        mutationID expectedMutationID: UUID? = nil,
+        remoteRevision: Int? = nil
     ) {
         if let accountID,
            KeychainHelper.load(key: accountKey) != accountID {
             return
         }
-        guard stateRevision == expectedRevision else { return }
+        if let remoteRevision { persistRemoteRevision(remoteRevision) }
+        guard Self.acknowledgementMatches(
+            expectedRevision: expectedRevision,
+            currentRevision: stateRevision,
+            expectedMutationID: expectedMutationID,
+            currentMutationID: pendingMutationID
+        ) else { return }
+        clearPendingMutation()
+        immediateConflictRetries[currentRevisionScope] = 0
         UserDefaults.standard.removeObject(
             forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
         )
+    }
+
+    nonisolated static func acknowledgementMatches(
+        expectedRevision: Int,
+        currentRevision: Int,
+        expectedMutationID: UUID?,
+        currentMutationID: UUID?
+    ) -> Bool {
+        expectedRevision == currentRevision
+            && (expectedMutationID == nil || expectedMutationID == currentMutationID)
+    }
+
+    nonisolated static func shouldRetryConflictImmediately(
+        previousImmediateRetries: Int
+    ) -> Bool {
+        previousImmediateRetries == 0
     }
 
     func recordShown(
@@ -10356,9 +10472,11 @@ final class RecommendationLearningStore: ObservableObject {
     private func syncIfPossible() {
         guard let accountID = KeychainHelper.load(key: accountKey),
               let providerRawValue = KeychainHelper.load(key: providerKey) else { return }
+        let mutationID = ensurePendingMutation()
         let pendingExposure = pendingExposure
         let outcomes = outcomes
         let revision = stateRevision
+        let expectedRemoteRevision = remoteRevision
         let previousTask = scheduledSyncTask
         let task = Task {
             await previousTask?.value
@@ -10367,7 +10485,9 @@ final class RecommendationLearningStore: ObservableObject {
                 outcomes: outcomes,
                 accountID: accountID,
                 providerRawValue: providerRawValue,
-                revision: revision
+                revision: revision,
+                expectedRemoteRevision: expectedRemoteRevision,
+                mutationID: mutationID
             )
         }
         scheduledSyncTask = task
@@ -10379,9 +10499,16 @@ final class RecommendationLearningStore: ObservableObject {
         return accountID
     }
 
-    private func advanceStateRevision(markSyncUnconfirmed: Bool = false) {
+    private func advanceStateRevision(
+        markSyncUnconfirmed: Bool = false,
+        resetsConflictRetry: Bool = true
+    ) {
         stateRevisions[currentRevisionScope, default: 0] &+= 1
         if markSyncUnconfirmed {
+            persistPendingMutation(UUID())
+            if resetsConflictRetry {
+                immediateConflictRetries[currentRevisionScope] = 0
+            }
             UserDefaults.standard.set(
                 Date().timeIntervalSince1970,
                 forKey: Self.unconfirmedSyncKey(for: KeychainHelper.load(key: accountKey))
@@ -10415,6 +10542,48 @@ final class RecommendationLearningStore: ObservableObject {
             return "recommendation.syncPending.\(accountID)"
         }
         return "recommendation.syncPending.guest"
+    }
+
+    static func remoteRevisionKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "recommendation.remoteRevision.\(accountID)"
+        }
+        return "recommendation.remoteRevision.guest"
+    }
+
+    static func pendingMutationKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "recommendation.pendingMutationID.\(accountID)"
+        }
+        return "recommendation.pendingMutationID.guest"
+    }
+
+    private func persistRemoteRevision(_ revision: Int) {
+        guard revision >= 0 else { return }
+        UserDefaults.standard.set(
+            revision,
+            forKey: Self.remoteRevisionKey(for: KeychainHelper.load(key: accountKey))
+        )
+    }
+
+    private func ensurePendingMutation() -> UUID {
+        if let pendingMutationID { return pendingMutationID }
+        let mutationID = UUID()
+        persistPendingMutation(mutationID)
+        return mutationID
+    }
+
+    private func persistPendingMutation(_ mutationID: UUID) {
+        UserDefaults.standard.set(
+            mutationID.uuidString,
+            forKey: Self.pendingMutationKey(for: KeychainHelper.load(key: accountKey))
+        )
+    }
+
+    private func clearPendingMutation() {
+        UserDefaults.standard.removeObject(
+            forKey: Self.pendingMutationKey(for: KeychainHelper.load(key: accountKey))
+        )
     }
 
     private static func loadPending(forKey key: String) -> RecommendationExposure? {

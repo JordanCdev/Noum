@@ -21,6 +21,8 @@ const transcriptionURL =
   `http://${functionsHost}/${projectID}/${region}/transcriptionToken`;
 const deletionURL =
   `http://${functionsHost}/${projectID}/${region}/deleteAccount`;
+const recommendationSyncURL =
+  `http://${functionsHost}/${projectID}/${region}/syncRecommendationState`;
 const recordPeerSessionURL =
   `http://${functionsHost}/${projectID}/${region}/recordPeerSession`;
 const createChallengeURL =
@@ -497,6 +499,24 @@ test(
         },
       },
       {
+        url: recommendationSyncURL,
+        validShape: {
+          schemaVersion: 1,
+          mutationID: "2CB446D8-4F39-43A6-A95C-2486E47155BC",
+          expectedRemoteRevision: 0,
+          pendingExposure: null,
+          outcomes: [],
+        },
+        invalidShape: {
+          schemaVersion: 1,
+          mutationID: "2CB446D8-4F39-43A6-A95C-2486E47155BC",
+          expectedRemoteRevision: 0,
+          pendingExposure: null,
+          outcomes: [],
+          accountID: identity.localId,
+        },
+      },
+      {
         url: getPeerProfileURL,
         validShape: {
           schemaVersion: 1,
@@ -573,7 +593,7 @@ test("private account sync is limited to registered bounded paths", async () => 
       outcomes: {arrayValue: {values: []}},
     },
     identity
-  )).status, 200);
+  )).status, 403);
   assert.equal((await writeFirestoreDocument(
     `users/${identity.localId}/profile/not-main`,
     {speakingContext: {stringValue: "forged"}},
@@ -584,6 +604,111 @@ test("private account sync is limited to registered bounded paths", async () => 
     {payload: {stringValue: "unregistered private subtree"}},
     identity
   )).status, 403);
+});
+
+test("recommendation callable migrates, replays, and conflicts atomically", async () => {
+  const identity = await anonymousIdentity();
+  const stateRef = adminFirestore.collection("users").doc(identity.localId)
+    .collection("recommendations").doc("state");
+  await stateRef.set({pendingExposure: null, outcomes: []});
+  const mutationID = "2CB446D8-4F39-43A6-A95C-2486E47155BC";
+  const payload = {
+    schemaVersion: 1,
+    mutationID,
+    expectedRemoteRevision: 0,
+    pendingExposure: {
+      fingerprint: "timed|fillers",
+      title: "Clean the opening",
+      focus: "Filler control",
+      target: "Below 2 fillers/min",
+      mode: "timed",
+      isAIBacked: false,
+      shownAt: 1_720_000_000,
+      tappedAt: 1_720_000_002,
+    },
+    outcomes: [],
+  };
+
+  const committed = await callable(
+    recommendationSyncURL,
+    payload,
+    identity,
+    true
+  );
+  assert.equal(committed.status, 200);
+  const committedBody = await committed.json() as {
+    result?: {status?: string; state?: {remoteRevision?: number}};
+  };
+  assert.equal(committedBody.result?.status, "committed");
+  assert.equal(committedBody.result?.state?.remoteRevision, 1);
+  assert.equal(
+    (await stateRef.get()).data()?.pendingExposure?.shownAt,
+    1_720_000_000
+  );
+
+  const replay = await callable(
+    recommendationSyncURL,
+    payload,
+    identity,
+    true
+  );
+  assert.equal(replay.status, 200);
+  const replayBody = await replay.json() as {result?: {status?: string}};
+  assert.equal(replayBody.result?.status, "alreadyCommitted");
+
+  const conflict = await callable(
+    recommendationSyncURL,
+    {...payload, mutationID: "783AB966-E91B-4CA4-8F7A-7E50113FA2C6"},
+    identity,
+    true
+  );
+  assert.equal(conflict.status, 200);
+  const conflictBody = await conflict.json() as {
+    result?: {status?: string; state?: {remoteRevision?: number}};
+  };
+  assert.equal(conflictBody.result?.status, "conflict");
+  assert.equal(conflictBody.result?.state?.remoteRevision, 1);
+  assert.equal((await stateRef.get()).data()?.remoteRevision, 1);
+
+  await adminFirestore.collection("_accountDeletionState")
+    .doc(identity.localId).set({startedAt: new Date()});
+  const blocked = await callable(
+    recommendationSyncURL,
+    {...payload, mutationID: "088D28EE-1400-452C-8880-2ED23FAAE45E"},
+    identity,
+    true
+  );
+  assert.equal(blocked.status, 400);
+  assert.equal(await callableFailureReason(blocked), "account-deletion-pending");
+});
+
+test("concurrent recommendation mutations commit exactly one revision", async () => {
+  const identity = await anonymousIdentity();
+  const base = {
+    schemaVersion: 1,
+    expectedRemoteRevision: 0,
+    pendingExposure: null,
+    outcomes: [],
+  };
+  const responses = await Promise.all([
+    callable(recommendationSyncURL, {
+      ...base,
+      mutationID: "64B62DA9-1778-42F6-9CBA-A3E781B61168",
+    }, identity, true),
+    callable(recommendationSyncURL, {
+      ...base,
+      mutationID: "D5CB406D-D70A-42F0-9055-A413360519F2",
+    }, identity, true),
+  ]);
+  assert.deepEqual(responses.map((response) => response.status), [200, 200]);
+  const statuses = await Promise.all(responses.map(async (response) => {
+    const body = await response.json() as {result?: {status?: string}};
+    return body.result?.status;
+  }));
+  assert.deepEqual(statuses.sort(), ["committed", "conflict"]);
+  const state = await adminFirestore.collection("users").doc(identity.localId)
+    .collection("recommendations").doc("state").get();
+  assert.equal(state.data()?.remoteRevision, 1);
 });
 
 test("private profile optional fields enforce app encoding bounds", async () => {

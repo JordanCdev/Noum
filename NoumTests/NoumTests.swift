@@ -15009,7 +15009,9 @@ struct RecommendationSyncLaneTests {
             outcomes: [],
             accountID: "account-a",
             providerRawValue: "apple",
-            revision: revision
+            revision: revision,
+            expectedRemoteRevision: 0,
+            mutationID: UUID()
         )
     }
 
