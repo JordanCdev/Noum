@@ -7,18 +7,19 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
-The explicit-style, rendered-Home ownership, unified four-mode
-availability, Train/Prep projection, active-week phrase handoff, and historical
-privacy-document quarantine work, including the account- and route-bound Timed
-prompt handoff, passed the final integrated current-working-tree regression:
-3,924 tests across 406 suites with zero failures. Its unsigned Release simulator
-build also succeeded. Canonical coach evidence is now current for clean source
+The explicit-style, rendered-Home ownership, unified four-mode availability,
+Train/Prep projection, active-week phrase handoff, typed-ID Speech Project
+execution, and historical privacy-document quarantine work, including the
+account- and route-bound Timed prompt handoff, passed the final clean-source
+regression at `47cbab5f`: 3,946 tests across 411 suites with zero failures or
+skips. Its unsigned optimized Release simulator build also succeeded. Canonical
+coach evidence is current for clean source
 commit `80fbf6d2` / fingerprint `sha256:8087e26d…ca71`: 53 conversations and
 109 turns pass the app-path floor, while all 50 required arena fixtures pass the
 real-pipeline and trace-quality gates at a 79.76 average. The remaining launch
 closure is external evidence and release authority, not another local fixture.
 
-## Current execution status — 2026-07-13
+## Current execution status — 2026-07-14
 
 The research plan is no longer a greenfield specification. Noum already reuses
 the established goal, session, coach, recommendation, privacy, transcription,
@@ -30,7 +31,7 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Baseline and contracts | Implemented as account-local, content-free diagnostics | Keep cohort claims honest; population analytics still requires a privacy decision |
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
 | Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration and unsupported locales fail closed | Bind a deidentified source-evidence package, complete professional/longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals |
-| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's single coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented; unavailable Prep pressure/audience steps receive category-bounded Timed prompts without changing readiness identity; the unread global prescription snapshot was removed; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof |
+| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's single coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented; unavailable Prep pressure/audience steps receive category-bounded Timed prompts without changing readiness identity; Speech Projects now retain catalog identity, curated prompts, and project timing through the real Timed route, but remain separate from adaptive prescriptions; the unread global prescription snapshot was removed; an exact-token generic-review versus outcome-loop assignment/exposure/next-rep contract exists but is inactive | Obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, and physical-device visual/interaction proof; decide explicitly whether project identity and completion belong in longitudinal session state before expanding the prescription domain |
 | Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, a process-local account- and route-bound Timed prompt handoff, a versioned single-source processor manifest with readiness-enforced generation freshness, Codable-aligned private-profile Firestore validation, atomic live evidence, exact launch-prerequisite/history-scan validation, a status-only five-route containment probe, source-bound Apple archive preflight, and the exact 14-surface/77-check TestFlight evidence contract are implemented | Revoke the leaked legacy Deepgram credential and both exposed Firebase CLI sessions, inventory/migrate any unknown private-profile enum values before rules deployment, protect/disable every legacy route, audit provider usage/billing, install paid-team distribution authority, and complete physical-device and release-policy verification |
 | Retention and expansion | Local KPI, persisted `ForwardPlan`, weekly check-in, explicit-style-aware weekly digest, goal-movement substrate, and an ID-only Phrase Bank handoff into the active week are implemented; both research experiment contracts default to unassigned | Obtain product approval and real cohort analysis, protected social cutover, calibrated language expansion, and signed-device verification of the weekly phrase loop |
 

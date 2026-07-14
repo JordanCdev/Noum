@@ -1,5 +1,33 @@
 # Noum — Current state
 
+## 2026-07-14 — Speech Projects now preserve their guided-speech contract
+
+Speech Projects no longer write an unread process-global value and then open a
+generic Timed rep. Project selection now carries only the stable catalog ID
+through the established `AppDestination` router. The destination resolves the
+current catalog entry and Timed Practice retains that project's title, coaching
+focus, curated prompt pool, and duration range without introducing another
+store, evaluator, or session system.
+
+Prepared speeches now use a project timing policy while ordinary Timed Practice
+keeps its existing 60/90/120/150-second contract. A project rep remains
+user-ended instead of being cut off at 150 seconds, but the existing evaluator
+reads the project's minimum and upper target and gives continuous, honest
+too-short/on-target/too-long feedback. Ice Breaker's stored range now matches
+its explicit four-to-six-minute brief.
+
+At clean implementation commit `47cbab5f`, the source-bound iPhone 17 Pro
+simulator result bundle passed 3,946 tests across 411 suites with zero failures
+or skips, and the unsigned optimized Release simulator build succeeded. The
+focused route/timing suites and full practice-setup UI matrix also passed; the
+UI route retained `ice_breaker`, exposed the real begin control, and kept the
+tab bar hidden. A light five-tab sweep plus the project setup frame in
+`.screenshots/2026-07-14_speech-project-execution/` were visually checked. This
+proves local project execution, not adaptive recommendation coverage,
+project-specific longitudinal progress, physical-device/TestFlight behavior,
+live-provider quality, professional calibration, real-user outcomes, or launch
+operations. Production readiness remains NO-GO.
+
 ## 2026-07-14 — Home and Train recommendations are proved through rendered ownership
 
 Home and Train now have focused simulator evidence that the recommendation a
