@@ -4,6 +4,7 @@ import {resolve} from "node:path";
 import test from "node:test";
 import {
   assertTrustedCaller,
+  assertSocialCallablesAvailable,
   buildVertexContents,
   type CoachGenerateContentResponse,
   coachCompletionLogMetadata,
@@ -25,6 +26,11 @@ const request = {
   coachingContext: "One completed rep. Evidence remains early.",
   messages: [{role: "user", content: "What should I fix first?"}],
 };
+
+interface HttpsErrorShape {
+  code?: string;
+  details?: {reason?: string};
+}
 
 test("validates the versioned coach request", () => {
   assert.deepEqual(validateCoachChatRequest(request), request);
@@ -217,7 +223,89 @@ test("recommendation state is callable-only", () => {
   assert.match(callable, /assertTrustedCaller\(request\.auth, request\.app\)/);
   assert.match(callable, /runTransaction/);
   assert.match(callable, /_accountDeletionState/);
+  assert.doesNotMatch(callable, /assertSocialCallablesAvailable/);
 });
+
+test("exactly the six social callables share the cutover gate", () => {
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  const exportedCallables = [...source.matchAll(
+    // eslint-disable-next-line max-len
+    /export const (\w+) = onCall\([\s\S]*?(?=\nexport const \w+ = onCall|\n\/\*\*|$)/g
+  )];
+  const gated = exportedCallables
+    .filter((match) =>
+      match[0].includes("await assertSocialCallablesAvailable();")
+    )
+    .map((match) => match[1])
+    .sort();
+  assert.deepEqual(gated, [
+    "createChallenge",
+    "getPeerProfile",
+    "listLeagueMembers",
+    "recordPeerSession",
+    "setChallengeReaction",
+    "submitChallengeResult",
+  ]);
+  for (const callableName of gated) {
+    const callable = exportedCallables.find(
+      (match) => match[1] === callableName
+    );
+    assert.ok(callable);
+    const gateIndex = callable[0].indexOf(
+      "await assertSocialCallablesAvailable();"
+    );
+    const inputValidationIndex = callable[0].indexOf("const input = validate");
+    assert.equal(gateIndex >= 0 && gateIndex < inputValidationIndex, true);
+  }
+
+  const recommendation = exportedCallables.find(
+    (match) => match[1] === "syncRecommendationState"
+  );
+  assert.ok(recommendation);
+  assert.doesNotMatch(recommendation[0], /assertSocialCallablesAvailable/);
+
+  const deletion = exportedCallables.find(
+    (match) => match[1] === "deleteAccount"
+  );
+  assert.ok(deletion);
+  assert.match(deletion[0], /assertSocialReferenceCutoverComplete/);
+  assert.doesNotMatch(deletion[0], /assertSocialCallablesAvailable/);
+});
+
+test(
+  "social callable gate rejects unavailable markers with a stable error",
+  async () => {
+    await assert.doesNotReject(
+      () => assertSocialCallablesAvailable(async () => ({
+        schemaVersion: 2,
+        status: "complete",
+        runID: "B713738E-D9ED-4337-986E-09205089D42E",
+        projectID: "noum-d0b6f",
+        sourceGitCommit: "a".repeat(40),
+        sourceImplementationSHA256: "b".repeat(64),
+        backupDigest: "c".repeat(64),
+        inventoryDigest: "d".repeat(64),
+        verifiedInventoryDigest: "d".repeat(64),
+        completedAt: {toMillis: () => 1_800_000},
+      }))
+    );
+    await assert.rejects(
+      () => assertSocialCallablesAvailable(async () => undefined),
+      (error: unknown) => {
+        const httpsError = error as HttpsErrorShape;
+        return httpsError.code === "failed-precondition" &&
+          httpsError.details?.reason === "social-reference-cutover-incomplete";
+      }
+    );
+    await assert.rejects(
+      () => assertSocialCallablesAvailable(async () => {
+        throw new Error("backend unavailable");
+      }),
+      (error: unknown) => (error as {details?: {reason?: string}})
+        .details?.reason === "social-reference-cutover-incomplete"
+    );
+  }
+);
 
 test("private profile optional fields remain type and size bounded", () => {
   const rules = readFileSync(

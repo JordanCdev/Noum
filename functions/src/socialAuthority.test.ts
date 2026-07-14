@@ -9,6 +9,7 @@ import {
   advanceSocialState,
   assertEvidenceBoundToChallenge,
   assertSocialReferenceCutoverComplete,
+  isSocialReferenceCutoverComplete,
   calculateCurrentStreak,
   calculateRatingDelta,
   challengeEnvelope,
@@ -281,16 +282,50 @@ test("public profiles and legacy cutover proof validate strictly", () => {
     {...profile, accountID: "forged"},
     "firebase-user"
   ));
-  assert.doesNotThrow(() => assertSocialReferenceCutoverComplete({
-    schemaVersion: 1,
+  const completeMarker = {
+    schemaVersion: 2,
     status: "complete",
+    runID: "B713738E-D9ED-4337-986E-09205089D42E",
+    projectID: "noum-d0b6f",
+    sourceGitCommit: "a".repeat(40),
+    sourceImplementationSHA256: "b".repeat(64),
+    backupDigest: "c".repeat(64),
+    inventoryDigest: "d".repeat(64),
+    verifiedInventoryDigest: "d".repeat(64),
     completedAt: timestamp(nowMs),
-  }));
-  assert.throws(
-    () => assertSocialReferenceCutoverComplete(undefined),
-    (error: unknown) => (error as {details?: {reason?: string}})
-      .details?.reason === "social-reference-cutover-incomplete"
+  };
+  assert.equal(isSocialReferenceCutoverComplete(completeMarker), true);
+  assert.doesNotThrow(() =>
+    assertSocialReferenceCutoverComplete(completeMarker)
   );
+
+  const rejectedMarkers = [
+    undefined,
+    {},
+    {...completeMarker, schemaVersion: 1},
+    {...completeMarker, status: "preparing"},
+    {...completeMarker, status: "failed"},
+    {...completeMarker, status: "rollingBack"},
+    {...completeMarker, status: "complete", completedAt: nowMs},
+    {...completeMarker, unreviewed: true},
+    {...completeMarker, runID: "unsafe/run"},
+    {...completeMarker, runID: ""},
+    {...completeMarker, projectID: "noum-staging"},
+    {...completeMarker, sourceGitCommit: "A".repeat(40)},
+    {...completeMarker, sourceGitCommit: "a".repeat(39)},
+    {...completeMarker, sourceImplementationSHA256: "B".repeat(64)},
+    {...completeMarker, backupDigest: "c".repeat(63)},
+    {...completeMarker, inventoryDigest: "e".repeat(64)},
+    {...completeMarker, verifiedInventoryDigest: "E".repeat(64)},
+  ];
+  for (const marker of rejectedMarkers) {
+    assert.equal(isSocialReferenceCutoverComplete(marker), false);
+    assert.throws(
+      () => assertSocialReferenceCutoverComplete(marker),
+      (error: unknown) => (error as {details?: {reason?: string}})
+        .details?.reason === "social-reference-cutover-incomplete"
+    );
+  }
 });
 
 test("league reads reject a trusted bucket from a previous ISO week", () => {

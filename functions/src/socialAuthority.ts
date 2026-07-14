@@ -29,6 +29,9 @@ export const CHALLENGE_REACTIONS = [
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const GIT_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+const SOCIAL_CUTOVER_RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PRODUCTION_PROJECT_ID = "noum-d0b6f";
 const LEAGUE_BUCKET_PATTERN =
   /^(bronze|silver|gold|platinum|diamond)_\d{4}-W\d{2}$/;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1_000;
@@ -759,9 +762,41 @@ export function currentTrustedLeagueBucket(
   return state.currentBucket;
 }
 
+export function isSocialReferenceCutoverComplete(value: unknown): boolean {
+  if (!isSocialRecord(value) || !hasExactKeys(value, [
+    "schemaVersion",
+    "status",
+    "runID",
+    "projectID",
+    "sourceGitCommit",
+    "sourceImplementationSHA256",
+    "backupDigest",
+    "inventoryDigest",
+    "verifiedInventoryDigest",
+    "completedAt",
+  ]) || value.schemaVersion !== 2 || value.status !== "complete" ||
+      typeof value.runID !== "string" ||
+      !SOCIAL_CUTOVER_RUN_ID_PATTERN.test(value.runID) ||
+      value.projectID !== PRODUCTION_PROJECT_ID ||
+      typeof value.sourceGitCommit !== "string" ||
+      !GIT_COMMIT_PATTERN.test(value.sourceGitCommit) ||
+      typeof value.sourceImplementationSHA256 !== "string" ||
+      !SHA256_PATTERN.test(value.sourceImplementationSHA256) ||
+      typeof value.backupDigest !== "string" ||
+      !SHA256_PATTERN.test(value.backupDigest) ||
+      typeof value.inventoryDigest !== "string" ||
+      !SHA256_PATTERN.test(value.inventoryDigest) ||
+      typeof value.verifiedInventoryDigest !== "string" ||
+      !SHA256_PATTERN.test(value.verifiedInventoryDigest) ||
+      value.inventoryDigest !== value.verifiedInventoryDigest ||
+      !isServerTimestamp(value.completedAt)) {
+    return false;
+  }
+  return true;
+}
+
 export function assertSocialReferenceCutoverComplete(value: unknown): void {
-  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
-      value.status !== "complete" || !isServerTimestamp(value.completedAt)) {
+  if (!isSocialReferenceCutoverComplete(value)) {
     throw new HttpsError(
       "failed-precondition",
       "Account deletion is waiting for the legacy social index.",

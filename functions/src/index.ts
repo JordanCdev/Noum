@@ -44,6 +44,7 @@ import {
   challengeSubmissionDocument,
   combinedChallengeDocument,
   currentTrustedLeagueBucket,
+  isSocialReferenceCutoverComplete,
   profileFromSocialState,
   promptDigest,
   socialDateMilliseconds,
@@ -902,6 +903,34 @@ async function enforceSocialRateLimit(
   });
 }
 
+type SocialCutoverMarkerLoader = () => Promise<unknown>;
+
+/**
+ * Fails closed unless the exact reviewed global social cutover is complete.
+ * @param {SocialCutoverMarkerLoader} loadMarker Injectable marker read seam.
+ * @return {Promise<void>} Resolves only when social callables may proceed.
+ */
+export async function assertSocialCallablesAvailable(
+  loadMarker: SocialCutoverMarkerLoader = async () => {
+    const snapshot = await getFirestore()
+      .collection("_socialReferenceCutover").doc("current").get();
+    return snapshot.data();
+  }
+): Promise<void> {
+  let marker: unknown;
+  try {
+    marker = await loadMarker();
+  } catch {
+    marker = undefined;
+  }
+  if (isSocialReferenceCutoverComplete(marker)) return;
+  throw new HttpsError(
+    "failed-precondition",
+    "Social features are temporarily unavailable.",
+    {reason: "social-reference-cutover-incomplete"}
+  );
+}
+
 export const getPeerProfile = onCall(
   {
     enforceAppCheck: true,
@@ -915,6 +944,7 @@ export const getPeerProfile = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
+    await assertSocialCallablesAvailable();
     const input = validateGetPeerProfileRequest(request.data);
     if (input.accountID === uid) {
       throw new HttpsError(
@@ -971,6 +1001,7 @@ export const listLeagueMembers = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
+    await assertSocialCallablesAvailable();
     const input = validateListLeagueMembersRequest(request.data);
     await enforceSocialRateLimit(
       uid,
@@ -1014,6 +1045,7 @@ export const recordPeerSession = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
+    await assertSocialCallablesAvailable();
     const input = validateRecordPeerSessionRequest(request.data);
     const firestore = getFirestore();
     const nowMs = Date.now();
@@ -1130,6 +1162,7 @@ export const createChallenge = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
+    await assertSocialCallablesAvailable();
     const input = validateCreateChallengeRequest(request.data);
     if (input.opponentAccountID === uid) {
       throw new HttpsError(
@@ -1273,6 +1306,7 @@ export const submitChallengeResult = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
+    await assertSocialCallablesAvailable();
     const input = validateSubmitChallengeResultRequest(request.data);
     const firestore = getFirestore();
     const challengeRef = firestore.collection("challenges")
@@ -1440,6 +1474,7 @@ export const setChallengeReaction = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
+    await assertSocialCallablesAvailable();
     const input = validateSetChallengeReactionRequest(request.data);
     await enforceSocialRateLimit(
       uid,
