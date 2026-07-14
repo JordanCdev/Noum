@@ -1,5 +1,40 @@
 # Noum — Current state
 
+## 2026-07-14 — Speech quantity no longer distorts coaching severity
+
+Implementation commit `4da56e3e` extends the existing `FillerBurden`,
+`SessionQualifier`, `PracticeEvaluator`, and `NextActionEngine` owners rather
+than creating another scoring or prescription path. Timed Practice and Ah
+Counter now interpret filler evidence per minute for score, XP, feedback,
+clarity ratings, weak moments, insights, and recent-session comparisons. Ten
+fillers across a ten-minute Speech Project therefore receive the same read as
+one filler across one minute; three fillers in twenty seconds still produce a
+strong intervention. Samples below 15 seconds withhold filler judgment, while
+an explicit zero remains positive evidence. Sudden Death keeps its intentional
+exact-zero rule.
+
+The immediate severe-pace path now reuses the shared 15-second / 20-word
+quantity floor and rejects non-finite WPM. A short first rep can no longer
+manufacture a pace prescription, while established blocker evidence still
+falls through normally and a qualifying severe pace observation can retain its
+existing focused-drill route.
+
+The focused recommendation/scoring selection passed 53 unique tests, including
+nine new duration-equivalence, evidence-floor, finite-value, fall-through, and
+Sudden Death boundary cases. The complete simulator unit target passed 4,075
+unique tests / 4,090 executions with zero failures or skips on iPhone 17 / iOS
+26.3.1. `git diff --check` passes. No visual layout changed, so no screenshot
+claim is added.
+
+This does not yet normalize the raw filler counts embedded in
+`UserTrajectoryCache`, `TrajectorySummaryBuilder`, or `CoachReasoningPass`.
+Because `GoalOutcomeEngine` reads through that trajectory/reasoning path, its
+qualitative next dimension must be made duration-fair before it can safely
+drive `NextActionEngine`. The standalone Pace Training destination still lacks
+durable outcome attribution. No professional calibration, live-provider,
+physical-device, longitudinal, or operational artifact was added. Production
+readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Supplemental speech surfaces require terminal capture
 
 Implementation commit `c44bd91c` closes a false-progress path in Mini-drills
