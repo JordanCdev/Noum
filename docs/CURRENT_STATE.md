@@ -1,5 +1,42 @@
 # Noum — Current state
 
+## 2026-07-14 — Recommendation learning and coach evidence now fail closed
+
+Two independent trust gaps are closed at implementation commit `0da19af1`.
+First, a completed rep is no longer classified as following a prescription just
+because its mode matches a recommendation the user happened to see. The
+existing `RecommendationLearningStore` now requires both the established
+explicit-acceptance timestamp and the matching completed mode. Untapped,
+legacy-untapped, and different-mode outcomes remain recorded as unfollowed, so
+they cannot influence goal movement, coach memory, or adaptive intervention
+analysis as accepted recommendations.
+
+Second, local coach evidence can no longer inherit freshness through an
+arbitrary clean descendant merely because the manually scoped coach fingerprint
+is unchanged. The existing source-freshness owner now audits the complete
+committed diff from evidence commit to checkout, handles both sides of renames,
+and accepts only an explicit documentation-only set. App, test, project,
+resource, script, evaluator, prompt/rubric, generated-report, and unknown paths
+fail closed with diagnostic path lists.
+
+The focused iPhone 17 Pro simulator run passed 46 tests across the goal-outcome,
+recommendation-response, and adaptation suites with zero failures or skips.
+Coach Arena passed 119 Node contracts and 129 Python runner contracts; the 28
+release-evidence and 31 TestFlight-preflight tests also passed. The real
+app-path preflight now correctly rejects the `80fbf6d2` dump at the current
+checkout with `sourceGitCommitSidecarStale` and `traceGitCommitStale`, naming
+the intervening behavior-bearing paths. That artifact remains valid historical
+evidence for `80fbf6d2`, but it is not current-source readiness evidence.
+Dirty-worktree detection still uses the manual coach-source path list, so a
+clean checkout remains required for the next refresh; broadening that detector
+without misclassifying regenerated evidence outputs is a separate local gap.
+
+The last complete Swift regression and unsigned optimized Release simulator
+build remain bound to `47cbab5f`; this focused run does not replace them. No
+live-provider, professional-calibration, longitudinal-user, physical-TestFlight,
+security-incident, or launch-operations evidence was collected. Production
+readiness remains NO-GO.
+
 ## 2026-07-14 — Speech Projects now preserve their guided-speech contract
 
 Speech Projects no longer write an unread process-global value and then open a

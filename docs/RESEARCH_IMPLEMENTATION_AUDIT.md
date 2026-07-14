@@ -5,7 +5,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`47cbab5f5e60a8d9cb2eb8be6feeebfc199cd28d`
+`0da19af1c0b0a0df8685918d73b6ed904050157a`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -13,20 +13,25 @@ availability fallback with category-bounded Timed prompts, the Phrase
 Bank→active-week handoff, the account- and route-bound Timed prompt owner, and
 selected-surface ownership for Home and Train prescription exposure, typed-ID
 Speech Project execution through the existing Timed route, and
-explicit quarantine of superseded privacy-audit documents. Their focused and
-full source/test results are recorded below and now have clean commit-bound
-source fingerprints.
+explicit quarantine of superseded privacy-audit documents. Followed-rep
+learning now also requires explicit recommendation acceptance plus the matching
+completed mode, and clean-ancestor evidence reuse is documentation-only. Their
+focused and full source/test results are recorded below with their exact source
+boundaries.
 
 Last complete source-bound evidence checkout:
 `47cbab5f5e60a8d9cb2eb8be6feeebfc199cd28d`
 
-The current clean-source regression passed 3,946 tests across 411 suites with
+The last complete clean-source regression passed 3,946 tests across 411 suites with
 zero failures or skips, and its unsigned optimized Release simulator build
-succeeded. Xcode logged one transient parallel-clone launch rejection, retried
-the work, and produced a Passed result containing the complete count. The
-canonical coach-evidence refresh from its clean source boundary also passes
-app-path, real-pipeline, and trace-quality gates. The current four-mode
-availability contract is **Proved** at its pure/source boundary. Prep's
+succeeded at `47cbab5f`. Xcode logged one transient parallel-clone launch
+rejection, retried the work, and produced a Passed result containing the
+complete count. The canonical coach artifact passes app-path, real-pipeline,
+and trace-quality gates for its named `80fbf6d2` boundary, but the hardened
+preflight now rejects it as current-source evidence because committed descendant
+changes include behavior-bearing paths outside the old manual fingerprint. The
+current four-mode availability contract is **Proved** at its pure/source
+boundary. Prep's
 locked-shape fallback and the current Home/Train Filler Control prescription are
 additionally proved through their rendered routes. Speech Projects now have a
 separate rendered catalog-to-Timed execution proof, but remain outside the
@@ -85,6 +90,10 @@ audio stream, and extension of existing owners rather than parallel stores.
   choices and duplicate state owners.
 - The committed canonical app-path baseline is local fixture/target-shape
   evidence only and can become stale if later integration changes coach source.
+- Clean-ancestor committed diffs now fail closed, but dirty-worktree detection
+  still follows the manual coach-source path list. Uncommitted behavior or
+  resource changes outside that list require a clean-checkout discipline until
+  the detector can distinguish source from regenerated evidence outputs.
 - Apple signing, TestFlight, security-incident closure, protected social
   migration, and external studies cannot be completed by local code changes.
 
@@ -181,7 +190,7 @@ coach.
 
 | Report requirement or output | Classification | Current implementation and exact gap |
 |---|---|---|
-| Goal plus latest breakdown drives one best next rep | **Proved** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and style-goal alignment. Summary renders exactly the finalized primary action. |
+| Goal plus latest breakdown drives one best next rep | **Proved** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and style-goal alignment. Summary renders exactly the finalized primary action. A later outcome enters followed-rep learning only when the stored exposure has the existing explicit-acceptance timestamp and the completed mode matches; untapped or different-mode outcomes fail closed and cannot influence goal movement or adaptation. |
 | Up to two alternatives | **Incomplete** | `NextAction` can hold one optional secondary, but `SummaryPrescriptionProjection` deliberately renders only the primary. There is no two-alternative product card. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. Speech Projects are now independently executable: a stable catalog ID resolves into Timed with its curated prompts and project duration contract, but that does not make Projects an adaptive recommendation destination. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
@@ -303,11 +312,13 @@ substrate, but it is not a cohort analytics service.
 ## Local implementation evidence
 
 Source binding matters here. The `40d5e903` rows remain valid historical evidence
-for that named baseline. The current canonical artifact is bound to clean source
-commit `80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; the currently
-inspected implementation is `47cbab5f`. Focused checks prove their narrowed
-contracts and the completed full regression proves its recorded integrated
-source boundary.
+for that named baseline. The canonical artifact is bound to clean source commit
+`80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; the currently inspected
+implementation is `0da19af1`. It remains valid historical evidence for that
+source, but the current preflight rejects ancestor reuse because intervening
+app, test, script, evaluator, and generated-report paths are not
+documentation-only. Focused checks prove the narrowed current contracts; the
+completed full regression proves only its recorded `47cbab5f` source boundary.
 
 | Evidence item | Classification | Result |
 |---|---|---|
@@ -319,14 +330,15 @@ source boundary.
 | Rendered Prep availability fallback | **Proved** | On 2026-07-14, a combined 23-test focused run passed the real locked-shape Prep UI flow plus `PrepSessionAvailabilityTests`, `TimedPracticePromptHandoffTests`, and `ReleaseIdentityPrivacyTests`, with zero failures or skips. Retained attachments `prep-locked-shapes-timed-fallbacks` and `prep-pressure-fallback-exact-timed-prompt` were visually checked after the readiness-copy correction. They prove honest planned-shape status, Timed fallback actions, a 44-point target, and the exact category prompt at the destination on the iPhone 17 Pro simulator—not physical-device or TestFlight behavior. |
 | Rendered Home/Train recommendation ownership | **Proved** | At implementation commit `1e8e3e5e`, a combined iPhone 17 Pro simulator run passed 33/33 tests with zero failures or skips: both `RecommendationSurfaceRoutingUITests` plus `NextActionAvailabilityTests`, `HomeCoachCardVariantTests`, and `TransformationKPIReportTests`. Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a diagnostic attachment showing one 100% correlated shown/accepted pair. Six focused attachments and the light five-tab sweep in `.screenshots/2026-07-14_rendered-recommendation-ownership/` were visually checked. This proves the current four-mode Home/Train surface contract locally, not the wider destination catalog, population effectiveness, physical-device behavior, or TestFlight behavior. |
 | Rendered Speech Project execution | **Proved** | At implementation commit `47cbab5f`, the focused routing and project-duration contracts passed together with `FocusedPracticeSetupUITests.testFocusedSetupIdentifiersSelectionTraitsAndTabBarHiding` on the iPhone 17 Pro simulator. The rendered `noum://projects/ice_breaker` route retained the catalog ID in Timed, exposed its project cue and begin control, hid the tab bar, and showed the aligned four-to-six-minute contract. The light five-tab sweep and project frame in `.screenshots/2026-07-14_speech-project-execution/` were visually checked. This proves local catalog-to-practice execution, not adaptive prescription, per-project longitudinal progress, physical-device behavior, or TestFlight behavior. |
-| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and the current 126-test Python runner suite pass. The canonical artifact is refreshed from `80fbf6d2` and its current coach-source fingerprint. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
+| Recommendation outcome attribution | **Proved** | At `0da19af1`, 46 focused iPhone 17 Pro simulator tests passed across `GoalOutcomeLoopTests`, `RecommendationResponseAnalyzerTests`, and `RecommendationAdaptationAnalyzerTests`. They prove explicit acceptance plus matching mode is required, legacy untapped exposure fails closed, and unfollowed outcomes stay outside response/adaptation reads. This is source/simulator accounting evidence, not population effectiveness. |
+| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and 129 Python runner contracts pass. The suite now proves default-deny clean-ancestor diff classification as well as existing score, trace, and readiness behavior. The canonical artifact remains bound to `80fbf6d2`; it is no longer current for `0da19af1`. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
 | Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate now revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
 | Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
 | Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 31 signing/TestFlight preflight tests passed. The preflight forwards and independently requires the explicit attachment-backed run accepted by readiness. These results prove local tooling behavior only. |
-| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `80fbf6d2` and coach fingerprint `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`; 53 conversations/109 turns pass the app-path floor with no source warnings. |
-| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T10:20:06+00:00` embeds `80fbf6d2` / `sha256:8087e26d…ca71`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero local fixture failures. It is still local real-pipeline/target-shape evidence, not external provider, reviewer, longitudinal, or device proof. |
+| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `80fbf6d2` and coach fingerprint `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`; 53 conversations/109 turns pass the app-path floor for that source. At `0da19af1`, the real preflight correctly returns nonzero with `sourceGitCommitSidecarStale` and `traceGitCommitStale`, reporting the intervening behavior-bearing paths. |
+| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T10:20:06+00:00` embeds `80fbf6d2` / `sha256:8087e26d…ca71`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero local fixture failures for that named source. It is historical local real-pipeline/target-shape evidence, not current-source, external-provider, reviewer, longitudinal, or device proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
-| Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. No validated attachment-backed release run is available to the gate, and none of the external rows is earned. |
+| Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. At `0da19af1`, source freshness additionally blocks on `currentGitCommit` because the active dump is bound to `80fbf6d2`. No validated attachment-backed release run is available to the gate, and none of the external rows is earned. |
 
 ## External proof gates
 
@@ -363,10 +375,11 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-The safe local source/evidence refresh and final-gate provenance hardening are
-complete. Keep `40d5e903` as a named
-historical baseline and `80fbf6d2` as the current canonical source boundary.
-Future coach-source changes must rerun the same atomic refresh and preserve the
+The clean-ancestor provenance hardening is complete, but dirty-worktree coverage
+outside the manual coach path list and the safe local source/evidence refresh
+remain due. Keep `40d5e903` and `80fbf6d2` as named historical baselines;
+neither is the current `0da19af1` source boundary. Regenerate the local
+dump/report from a clean current checkout and preserve the
 provenance contract: explicitly styled rows pass only with typed assessment,
 declared-neutral rows remain truthfully `notEvaluated`, and unknown fixture IDs
 fail closed. The gate also requires the original validated release run and
