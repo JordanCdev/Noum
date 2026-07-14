@@ -1,5 +1,42 @@
 # Noum — Current state
 
+## 2026-07-14 — Goal evidence now respects speech quantity
+
+Implementation commit `ac393554` extends the existing `UserTrajectoryCache`,
+`CoachReasoningPass`, `GoalOutcomeEngine`, `TrajectorySummaryBuilder`,
+`SessionQualifier`, and `FillerBurden` owners. The latest-rep pack now withholds
+WPM below the shared 15-second / 20-word floor and exposes a computed qualified
+filler burden without changing its persisted schema. Recent trajectory evidence
+uses fillers per minute only when all three reps qualify, and public weekly
+filler trends require two qualifying reps in each week. Descriptive raw counts
+are paired with duration and rate.
+
+Goal rubric deductions now use qualified filler rate rather than count. Missing
+or undersized evidence produces a neutral, explicitly missing hedge/pace read;
+it cannot demonstrate control, trigger count-based filler prescriptions, or let
+mature history promote the latest goal card beyond insufficient evidence. The
+15-second boundary also floors the stored integer duration so a 14.x-second rep
+cannot round up into eligibility. The existing `GoalOutcomeRead` remains a
+qualitative projection and is still not an input to `NextActionEngine`.
+
+Focused trajectory, reasoning, goal-outcome, coach-calibration, and
+action-availability suites pass on the iPhone 17 simulator, including
+duration-equivalence, absent/sub-floor evidence, weekly rate, mature-history,
+and 14.x-second boundary cases. Follow-up commit `5bbb850b` makes the finalized
+`NextActionInput.trends` authoritative when the existing drill engine chooses a
+standard drill, removing an order-dependent reread of shared trend state. Its
+57 affected-suite tests pass. The complete unit target then passes 4,083 unique
+tests / 4,098 executions with zero failures or skips. `git diff --check` passes,
+and the user's unrelated localization catalog remains byte-for-byte unchanged.
+
+This closes the qualitative goal/trajectory normalization slice, not every raw
+comparison. The Summary hero, `CoachingPlanner`, and filler-question coach copy
+still need duration-fair comparison work. Standalone Pace Training also lacks a
+canonical persisted mode/demand and followed-rep attribution; adding it safely
+requires a backend-schema and mixed-client decision rather than mislabelling it
+as Timed. No external evidence was collected. Production readiness remains
+**NO-GO at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Speech quantity no longer distorts coaching severity
 
 Implementation commit `4da56e3e` extends the existing `FillerBurden`,
@@ -26,14 +63,14 @@ unique tests / 4,090 executions with zero failures or skips on iPhone 17 / iOS
 26.3.1. `git diff --check` passes. No visual layout changed, so no screenshot
 claim is added.
 
-This does not yet normalize the raw filler counts embedded in
-`UserTrajectoryCache`, `TrajectorySummaryBuilder`, or `CoachReasoningPass`.
-Because `GoalOutcomeEngine` reads through that trajectory/reasoning path, its
-qualitative next dimension must be made duration-fair before it can safely
-drive `NextActionEngine`. The standalone Pace Training destination still lacks
-durable outcome attribution. No professional calibration, live-provider,
-physical-device, longitudinal, or operational artifact was added. Production
-readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+At this source boundary, raw filler counts still remained in
+`UserTrajectoryCache`, `TrajectorySummaryBuilder`, and `CoachReasoningPass`.
+The later `ac393554` entry above closes that goal/trajectory gap while leaving
+the qualitative next dimension disconnected from `NextActionEngine`. The
+standalone Pace Training destination still lacks durable outcome attribution.
+No professional calibration, live-provider, physical-device, longitudinal, or
+operational artifact was added. Production readiness remains **NO-GO at 18/100
+with 0/5 external artifacts**.
 
 ## 2026-07-14 — Supplemental speech surfaces require terminal capture
 
