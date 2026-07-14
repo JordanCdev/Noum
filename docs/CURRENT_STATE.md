@@ -1,5 +1,53 @@
 # Noum — Current state
 
+## 2026-07-14 — Durable local guests stay outside Firebase persistence
+
+Implementation commit `7ae1fe43153f76c682f8a2d909842632cdcb4410`
+closes a verified first-run trust gap without creating a second identity or
+persistence system. `AuthManager.shouldSyncBackend` is the single policy
+boundary: durable fallback identities named `local-guest-*` keep their existing
+account-scoped local state, but are not Firebase authorities. The established
+profile, coaching-profile, practice-session, recommendation, and backend-sync
+owners now skip remote reads/writes for those identities, and local-guest
+deletion deliberately avoids a remote account-deletion request. Firebase-backed
+identities retain their existing behavior.
+
+The same commit makes local verification deterministic at the existing
+boundaries. Ask Noum diagnostics are injected in tests while production keeps
+its shared collector. Full app-path evaluation explicitly supplies no prior
+case memory, so an arbitrary simulator account cannot add unrelated semantic
+anchors to a gold conversation. DEBUG profile seeding now replaces the active
+account's complete trend fixture instead of appending to a capped history;
+serial plateaued→beginner recommendation tests therefore exercise the intended
+evidence rather than a mixed predecessor profile. The Summary UI test's
+coordinate fallback is restricted to a proved 44-point control inside the
+visible scroll viewport; product interaction behavior is unchanged.
+
+A detached worktree at that exact commit passed the complete signed, serial
+scheme on the iPhone 17 simulator. The result bundle
+`/private/tmp/NoumProductionClosureSerial-7ae1fe43-20260714T105310Z.xcresult`
+records 4,061 tests, zero failures, and zero skips; Xcode's phase output records
+3,989 unit tests across 411 suites and all 56 UI tests passing. The same clean
+source boundary passed an optimized Release build and the release bundle scan.
+Provider credential variables were removed, automatic package resolution was
+disabled, and the populated offline Swift package cache was used.
+
+The clean source also produced a fresh real Swift app-path dump. Provenance
+preflight passed for all 109 traces at commit `7ae1fe43` and coach fingerprint
+`sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
+The canonical 50-fixture report scores 79.76/100 with zero failures or
+placeholder leaks and passes local coverage, real-pipeline, production-evidence,
+and trace-quality gates. The repository's refresh wrapper did not propagate its
+custom dump directory into the simulator test host on this Xcode version; the
+successful run used the same supported variables through the simulator launch
+environment and removed them immediately afterward.
+
+Production readiness remains **NO-GO at 18/100**. The local target shape is
+85/100, the external-evidence cap is 20/100, and zero of five required external
+sidecars is present. No live-provider sweep, professional calibration,
+longitudinal-user outcome study, physical-TestFlight verification,
+attachment-backed release run, or launch-operations evidence was collected.
+
 ## 2026-07-14 — Prescribed Timed reps preserve exact recommendation demand
 
 Implementation commits `d1d25ca6` and `77b1361a` close the verified gap between
@@ -36,7 +84,7 @@ surface. A separate seeded Train capture in
 `.screenshots/2026-07-14_prescribed-timed-demand/` visually verifies the new
 demand capsule but not a normal-account end-to-end route. The current readiness
 rerun remains NO-GO at 18/100, with local target shape 85/100, maximum allowed
-20/100, one of five external sidecars present, and zero of five passing. No
+20/100, and zero of five current external sidecars present or passing. No
 live-provider, professional-calibration, longitudinal-user, physical-TestFlight,
 security-incident, or launch-operations evidence was collected.
 
