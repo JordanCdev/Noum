@@ -344,6 +344,7 @@ struct PracticeModeSelectionView: View {
     @State private var expandedModes: Set<PracticeMode> = []
     @State private var showOtherWays: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isSelectedAppTab) private var isSelectedAppTab
 
     private struct CrutchOption {
         let title: String = PracticeModePrescriptionCopy.cutTheCrutchTitle
@@ -480,6 +481,9 @@ struct PracticeModeSelectionView: View {
         let recommendationOption = renderedOptions.first {
             $0.mode == recommendation.mode
         } ?? renderedOptions[0]
+        let recommendationExposureFingerprint = recommendationFingerprint(
+            for: recommendation.blueprint
+        )
         let showsFloatingStartCTA = crutchSelected
             || paceSelected
             || selectedMode != recommendation.mode
@@ -516,6 +520,16 @@ struct PracticeModeSelectionView: View {
             // routed through a one-tap skip the user no longer wants.
             PracticeModeQuickStart.clear()
             PracticeModeQuickStart.clearCrutch()
+        }
+        .task(id: "\(recommendationExposureFingerprint)|\(isSelectedAppTab)") {
+            // State hydration can replace the initial blueprint immediately
+            // after mount. Count only a projection that remains rendered long
+            // enough to be perceptible; a fast tap records synchronously in
+            // launchMode before acceptance is marked.
+            guard isSelectedAppTab else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, isSelectedAppTab else { return }
+            recordRecommendationShown(recommendation)
         }
         .onChange(of: skillTrendStore.snapshots.count) { _, _ in
             let recommendation = computeRecommendation()
@@ -611,6 +625,7 @@ struct PracticeModeSelectionView: View {
         .shadow(color: option.tint.opacity(0.10), radius: 16, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("practiceModes.recommendedHero")
+        .accessibilityValue(recommendation.mode.displayLabel)
     }
 
     private func recommendedSuccessMarker(tint: Color) -> some View {
@@ -1681,7 +1696,6 @@ struct PracticeModeSelectionView: View {
             ),
             visibleModes: renderedOptions.map(\.mode)
         )
-        recordRecommendationShown(recommendation)
         return recommendation
     }
 
@@ -1745,6 +1759,7 @@ struct PracticeModeSelectionView: View {
                 PracticeModeQuickStart.arm(for: launch.launchedMode)
             }
             if recordsRecommendationAcceptance {
+                recordRecommendationShown(launchRecommendation)
                 recommendationLearningStore.markTapped(mode: launch.launchedMode)
             }
         } else {

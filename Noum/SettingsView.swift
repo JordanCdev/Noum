@@ -299,6 +299,7 @@ struct SettingsView: View {
             .accessibilityAddTraits(.isHeader)
             .accessibilityLabel("Advanced settings")
             .accessibilityHint(advancedExpanded ? "Tap to hide advanced settings" : "Tap to show advanced settings")
+            .accessibilityValue(advancedExpanded ? "Expanded" : "Collapsed")
             .accessibilityIdentifier("settings.advancedToggle")
 
             if advancedExpanded {
@@ -313,9 +314,19 @@ struct SettingsView: View {
                     section(label: "Flow log") { flowEventsCard }
                     section(label: "Diagnostics") { recommendationDiagnosticsCard }
                     section(label: "Seed data") { developerSeedCard }
+                } else if exposesRecommendationFlowLogForUITesting {
+                    section(label: "Flow log") { flowEventsCard }
                 }
             }
         }
+    }
+
+    private var exposesRecommendationFlowLogForUITesting: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("UI_TESTING_RECOMMENDATION_FLOW_LOG")
+        #else
+        false
+        #endif
     }
 
     private var advancedHomeCard: some View {

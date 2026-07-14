@@ -189,6 +189,7 @@ struct HomeCoachCard: View {
     @State private var emanationProgress: Double = 1.0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isSelectedAppTab) private var isSelectedAppTab
 
     var body: some View {
         _ = aiSettings.cloudProcessingConsent
@@ -294,11 +295,20 @@ struct HomeCoachCard: View {
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
             syncMoodForFreshRecommendation()
-            recordRecommendationShown(renderedExposure)
         }
         .onChange(of: renderedExposure.fingerprint) { _, _ in
             lastRenderedRecommendationExposure = renderedExposure
             syncMoodForFreshRecommendation()
+        }
+        .task(id: "\(renderedExposure.fingerprint)|\(isSelectedAppTab)") {
+            // A cold deep link briefly mounts Home before AppShell selects the
+            // destination tab. Require a small, cancellable visibility dwell
+            // so that transient mount is not counted as a shown prescription.
+            // The tap path still records synchronously (and idempotently), so
+            // a legitimate fast tap cannot lose its exposure event.
+            guard isSelectedAppTab else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, isSelectedAppTab else { return }
             recordRecommendationShown(renderedExposure)
         }
         .alert(

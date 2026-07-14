@@ -136,10 +136,21 @@ private struct AppTabRootKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct SelectedAppTabKey: EnvironmentKey {
+    // Standalone/previews are visible by definition. AppShell overrides this
+    // for retained tab roots so off-tab content cannot claim an exposure.
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
     var isAppTabRoot: Bool {
         get { self[AppTabRootKey.self] }
         set { self[AppTabRootKey.self] = newValue }
+    }
+
+    var isSelectedAppTab: Bool {
+        get { self[SelectedAppTabKey.self] }
+        set { self[SelectedAppTabKey.self] = newValue }
     }
 }
 
@@ -161,6 +172,7 @@ struct AppShellView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             ContentView(navigationPath: $homePath, externalRoute: $homeRoute)
+                .environment(\.isSelectedAppTab, selectedTab == .home)
                 .tabItem { tabLabel(.home) }
                 .tag(AppTab.home)
 
@@ -170,6 +182,7 @@ struct AppShellView: View {
                     navigationPath: $trainPath
                 )
                 .environment(\.isAppTabRoot, true)
+                .environment(\.isSelectedAppTab, selectedTab == .train)
             }
             .tabItem { tabLabel(.train) }
             .tag(AppTab.train)
@@ -177,6 +190,7 @@ struct AppShellView: View {
             destinationStack(path: $reviewPath) {
                 SessionHistoryView(navigationPath: $reviewPath)
                     .environment(\.isAppTabRoot, true)
+                    .environment(\.isSelectedAppTab, selectedTab == .review)
             }
             .tabItem { tabLabel(.review) }
             .tag(AppTab.review)
@@ -184,6 +198,7 @@ struct AppShellView: View {
             destinationStack(path: $profilePath) {
                 ProfileView()
                     .environment(\.isAppTabRoot, true)
+                    .environment(\.isSelectedAppTab, selectedTab == .profile)
             }
             .tabItem { tabLabel(.profile) }
             .tag(AppTab.profile)
@@ -191,6 +206,7 @@ struct AppShellView: View {
             destinationStack(path: $settingsPath) {
                 SettingsView()
                     .environment(\.isAppTabRoot, true)
+                    .environment(\.isSelectedAppTab, selectedTab == .settings)
             }
             .tabItem { tabLabel(.settings) }
             .tag(AppTab.settings)
