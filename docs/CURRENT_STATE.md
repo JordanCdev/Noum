@@ -1,5 +1,35 @@
 # Noum — Current state
 
+## 2026-07-14 — Home and Train recommendations are proved through rendered ownership
+
+Home and Train now have focused simulator evidence that the recommendation a
+user can see is the recommendation Noum launches and measures. The existing
+`plateauedAdvanced` seed resolves both surfaces to Filler Control. Home renders
+the exact “Filler Words.” prescription and Train renders its recommended-rep
+hero; both expose a 44-point action and route into the real Filler Control
+destination.
+
+The verification run also found and corrected an observability defect. SwiftUI
+retains off-tab roots, and Train could replace its initial projection during
+hydration, so appearance/computation callbacks could emit prescription
+denominators that were never meaningfully visible. `AppShellView` now lends its
+existing selected-tab state to retained roots, while Home and Train record only
+a settled, selected projection. Their fast-tap paths still record the exact
+visible exposure synchronously before marking acceptance, through the existing
+`RecommendationLearningStore` and `FlowEventLog` owners.
+
+A DEBUG-only Settings seam renders the existing account-local flow log for UI
+verification; it creates no new analytics store and is absent from Release. The
+final iPhone 17 Pro simulator run passed 33/33 selected tests with zero failures
+or skips: two rendered UI routes plus next-action availability, Home-card
+variant, and privacy-bounded KPI derivation contracts. Six retained UI
+attachments and a light five-tab sweep were visually checked. Both surfaces
+show one correlated `prescription.shown` / `prescription.accepted` pair at 100%.
+This does not complete the report's wider Roleplay, Lessons, Projects, Path, or
+pace prescription catalog, and it is not physical-device, TestFlight,
+live-provider, professional-calibration, longitudinal-outcome, or launch-
+operations evidence. Production readiness remains NO-GO.
+
 ## 2026-07-14 — Prep fallback behavior is proved through the rendered route
 
 Prep Session's existing stable-shape availability model now has rendered

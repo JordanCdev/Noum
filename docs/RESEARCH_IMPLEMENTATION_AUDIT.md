@@ -5,29 +5,30 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`6db7457fba622893f320bae297de49b988822d44`
+`1e8e3e5e83dab08c47e7db3f0121d6ca3484795b`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
 availability fallback with category-bounded Timed prompts, the Phrase
 Bank→active-week handoff, the account- and route-bound Timed prompt owner, and
+selected-surface ownership for Home and Train prescription exposure, plus
 explicit quarantine of superseded privacy-audit documents. Their focused and
-full source/test results are recorded below and now have a clean commit-bound
-source fingerprint.
+full source/test results are recorded below and now have clean commit-bound
+source fingerprints.
 
 Last complete source-bound evidence checkout:
 `80fbf6d25cfda2b46932a0b0a1a963d156fe7b52`
 
 The previously recorded complete regression passed all 3,924 `NoumTests` tests
 across 406 suites with zero failures and an unsigned Release simulator build.
-Later rendered Home and Prep changes are covered by their focused simulator runs
+Later rendered Home, Train, and Prep changes are covered by their focused simulator runs
 below; the 3,924-test suite has not been rerun at this inspected commit. The
 canonical coach-evidence refresh from its clean source boundary also passes
 app-path, real-pipeline, and trace-quality gates. The current four-mode
-availability contract is **Proved** at its pure/source boundary, and Prep's
-locked-shape fallback is additionally proved through its rendered route. That
-does not prove rendered behavior for every recommendation surface or the
-report's wider destination catalog.
+availability contract is **Proved** at its pure/source boundary. Prep's
+locked-shape fallback and the current Home/Train Filler Control prescription are
+additionally proved through their rendered routes. That does not prove rendered
+behavior for every recommendation destination in the report's wider catalog.
 
 Integrated branch: `ux-overhaul`
 
@@ -181,7 +182,7 @@ coach.
 | Up to two alternatives | **Incomplete** | `NextAction` can hold one optional secondary, but `SummaryPrescriptionProjection` deliberately renders only the primary. There is no two-alternative product card. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
-| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. Source inspection shows Home and Train consume the shared availability projection; focused unit tests prove projection values, exposure fingerprints, setup/destination, and launch acceptance/fallback semantics. They do not mount either SwiftUI view or execute the real `recordShown`/`markTapped` calls. Home owns its visible exposure; the phantom `ContentView` path and unread global snapshot were removed. This row remains incomplete because the report's wider destination catalog and a rendered end-to-end card/deep-link contract are absent. |
+| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. On 2026-07-14, focused UI tests mounted the real Home and Train surfaces from the `plateauedAdvanced` profile, verified their exact Filler Control prescription and 44-point actions, followed both into `ahCounter.screen`, and read the existing account-local flow log back as one correlated `prescription.shown` / `prescription.accepted` pair at 100%. Exposure now waits for a settled selected-tab projection, so retained off-tab Home and Train's transient initial blueprint cannot create false denominators; a fast tap still writes the exact visible exposure synchronously. Home and Train continue to reuse `RecommendationLearningStore`, `FlowEventLog`, `NextActionModeAvailability`, and the established router. This row remains incomplete because Roleplay, Lessons, Projects, Path, pace, and the rest of the report's wider destination catalog still lack one rendered prescription contract. |
 | Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, and no false acceptance. Prep-specific tests preserve the planned rehearsal identity, render honest Timed fallback copy/setup, withhold false readiness credit, prevent a fallback from upgrading at tap, and route unavailable pressure/audience shapes with a category-bounded prompt containing neither the moment title nor transcript. A focused iPhone 17 Pro simulator UI test now mounts the real Prep surface with both planned shapes locked, verifies the honest readiness labels and 44-point action, follows the Pressure fallback, and proves the exact category prompt reaches Timed. Other recommendation surfaces and the report's wider destination catalog remain outside this rendered proof. |
 
 ### 4. Fast-lane first session
@@ -276,7 +277,7 @@ substrate, but it is not a cohort analytics service.
 | Practice sessions per active user per week | **Proved** | **Missing** | Active days and sessions per active week are derived locally; no population aggregation exists. |
 | Goal-score improvement over 7/28 days | **Contradicted** | **Missing** | The public metric is qualitative goal follow-up/movement, not numeric goal-score improvement or a causal slope. |
 | Session-review open rate | **Proved** | **Missing** | Account-local eligible-session/review-open counts exist. |
-| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces, and the shared launch projection records acceptance only when the displayed mode is the mode actually launched. A tap-time operational fallback routes safely but is excluded from acceptance. No population result exists. |
+| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces, and the shared launch projection records acceptance only when the displayed mode is the mode actually launched. A tap-time operational fallback routes safely but is excluded from acceptance. The 2026-07-14 Home/Train UI run proves both real surfaces produce a content-free correlated shown/accepted pair without off-tab or unsettled-projection inflation. No population result exists. |
 | Notification opt-in after first value | **Proved** | **Missing** | Decisions before value are excluded and the local conversion signal exists. |
 | D1/D7/D28 retention | **Proved** | **Missing** | Account-local active-day return anchors exist; there is no retention cohort. |
 | Cloud-to-local fallback rate | **Proved** | **Missing** | Only cloud-requested routes resolved locally enter the denominator; deliberate local sessions are excluded. |
@@ -300,18 +301,20 @@ substrate, but it is not a cohort analytics service.
 
 Source binding matters here. The `40d5e903` rows remain valid historical evidence
 for that named baseline. The current canonical artifact is bound to clean source
-commit `80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; focused checks
-prove their narrowed contracts and the completed full regression proves its
-recorded integrated source boundary.
+commit `80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; the currently
+inspected implementation is `1e8e3e5e`. Focused checks prove their narrowed
+contracts and the completed full regression proves its recorded integrated
+source boundary.
 
 | Evidence item | Classification | Result |
 |---|---|---|
-| Recorded full integrated Swift regression | **Proved** | The recorded integrated source boundary passed 3,924/3,924 `NoumTests` tests across 406 suites with zero failures. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. Its unsigned Release simulator build also succeeded. Later rendered Home and Prep commits have focused coverage, not a rerun of this complete suite. |
+| Recorded full integrated Swift regression | **Proved** | The recorded integrated source boundary passed 3,924/3,924 `NoumTests` tests across 406 suites with zero failures. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. Its unsigned Release simulator build also succeeded. Later rendered Home, Train, and Prep commits have focused coverage, not a rerun of this complete suite. |
 | Selected pre-baseline Swift product/test contracts | **Proved** | At `40d5e903`, focused simulator tests passed for goal calibration/outcomes, rewrite, Phrase Bank, prescription, fast lane, local speech, privacy, KPI, and experiment contracts. They remain valid for that named source boundary, not as a substitute for the final full run. |
 | Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. App-path rows carry an explicit styled, neutral, or unknown semantic expectation. Styled turns require a passed gate and typed assessment; known neutral turns require `notEvaluated` without typed assessment; unknown IDs fail closed. The 25 supplemental arena scenarios are explicitly neutral at construction, so missing fixtures cannot silently inherit neutrality. Fabricated/default voice telemetry remains rejected. The refreshed commit-bound report preserves this contract with 23 styled, 27 neutral, and zero invalid selected traces. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
 | Rendered active-week phrase execution | **Proved** | On 2026-07-14, `testActiveWeekPhraseLaunchesExactPromptFromHome` passed on the iPhone 17 Pro simulator and retained an attachment of the exact saved line in Timed's thinking phase. The same 19-test focused run passed `ForwardPlanPhraseHandoffTests`, `PhrasePracticeIntentTests`, and `TimedPracticePromptHandoffTests`, including account binding and exact-once consumption. This is simulator/source evidence, not physical-device, TestFlight, or longitudinal outcome evidence. |
 | Rendered Prep availability fallback | **Proved** | On 2026-07-14, a combined 23-test focused run passed the real locked-shape Prep UI flow plus `PrepSessionAvailabilityTests`, `TimedPracticePromptHandoffTests`, and `ReleaseIdentityPrivacyTests`, with zero failures or skips. Retained attachments `prep-locked-shapes-timed-fallbacks` and `prep-pressure-fallback-exact-timed-prompt` were visually checked after the readiness-copy correction. They prove honest planned-shape status, Timed fallback actions, a 44-point target, and the exact category prompt at the destination on the iPhone 17 Pro simulator—not physical-device or TestFlight behavior. |
+| Rendered Home/Train recommendation ownership | **Proved** | At implementation commit `1e8e3e5e`, a combined iPhone 17 Pro simulator run passed 33/33 tests with zero failures or skips: both `RecommendationSurfaceRoutingUITests` plus `NextActionAvailabilityTests`, `HomeCoachCardVariantTests`, and `TransformationKPIReportTests`. Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a diagnostic attachment showing one 100% correlated shown/accepted pair. Six focused attachments and the light five-tab sweep in `.screenshots/2026-07-14_rendered-recommendation-ownership/` were visually checked. This proves the current four-mode Home/Train surface contract locally, not the wider destination catalog, population effectiveness, physical-device behavior, or TestFlight behavior. |
 | Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and the current 126-test Python runner suite pass. The canonical artifact is refreshed from `80fbf6d2` and its current coach-source fingerprint. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
 | Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate now revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
 | Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
