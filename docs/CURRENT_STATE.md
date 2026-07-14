@@ -1,5 +1,36 @@
 # Noum — Current state
 
+## 2026-07-14 — Filler prescription is duration-normalized
+
+Implementation commit `c3d1ff65` replaces raw filler-count routing in the
+existing coaching owners with one non-persisted `FillerBurden` projection. It
+reuses `SessionQualifier.minimumDuration` and interprets the already-filtered
+detector count at 2/3/5/8 fillers per minute for elevated, primary-focus,
+urgent, and severe decisions. Samples below 15 seconds fail closed; severe
+intervention additionally requires at least three detected fillers.
+
+`NextActionEngine`, `DrillEngineV2`, `TrendAnalyzer`, filler-aligned style copy,
+and pressure-stretch eligibility now consume the same rate policy. Cross-session
+filler trends also compare qualifying rates rather than raw counts. Explicit
+caller-selected drill targets remain authoritative, and the existing
+filler-first priority is preserved when filler and pace are both severe.
+`FillerWordDetector` and semantic filler classification are unchanged.
+
+The focused simulator selection reported 184 passing test cases across the new
+boundaries, production copy, evaluation corpus, and downstream response and
+adaptation owners. The first complete unit run found two stale privacy-test
+expectations for already-checked-in processor-manifest v6 and the July 14 policy;
+those assertions were aligned and rerun successfully. The rebuilt no-build unit
+rerun then passed 4,061 tests with zero failures or skips on an iPhone 17 / iOS
+26.3.1 simulator.
+
+The 8/min threshold is a local routing heuristic inherited from the existing
+baseline saturation boundary, not professional calibration or a diagnosis. The
+report's literal Ah Counter/Sudden Death-only destination remains incomplete.
+No live-provider, physical-device, longitudinal, professional-review, or
+operational evidence was added. Production readiness stays **NO-GO at 18/100
+with 0/5 external artifacts**.
+
 ## 2026-07-14 — Checked-in Firebase backend deployment paths fail closed
 
 Implementation commit `77352b03` closes a production-mutation bypass in the
