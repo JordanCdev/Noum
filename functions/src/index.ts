@@ -4,9 +4,12 @@ import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {
   getFirestore,
+  FieldValue,
   Timestamp,
   type DocumentReference,
   type DocumentSnapshot,
+  type QueryDocumentSnapshot,
+  type QuerySnapshot,
 } from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {setGlobalOptions} from "firebase-functions/v2";
@@ -57,7 +60,6 @@ import {
   socialDateMilliseconds,
   socialReferenceManifestIncludingChallenge,
   socialReferenceManifestIncludingFriend,
-  socialReferenceManifestRemovingFriend,
   socialReferenceManifestUpdatingLeagueMembership,
   stableLegacyUUID,
   storedSocialState,
@@ -119,6 +121,7 @@ import {
   FRIEND_LINK_REMOVE_MINUTE_LIMIT,
   FRIEND_LINK_SCHEMA_VERSION,
   FRIENDSHIP_SCHEMA_VERSION,
+  MAX_ACTIVE_FRIENDS,
   MAX_ACTIVE_FRIEND_INVITES,
   friendInviteDigest,
   generateFriendInviteSecret,
@@ -1805,6 +1808,8 @@ export const acceptFriendInvite = onCall(
           );
           transaction.update(inviteRef, {
             status: "superseded",
+            acceptedAccountID: uid,
+            acceptorDisplayName: input.displayName,
             revokedAt: linkedAt,
           });
           transaction.update(inviterInviteRef, {
@@ -2009,15 +2014,12 @@ export const removeFriendLink = onCall(
       assertAccountDeletionNotPending(
         ownDeletion.exists || friendDeletion.exists
       );
-      const ownManifest = validateSocialReferenceManifest(
-        ownReferences.data(), uid
-      );
-      const friendManifest = validateSocialReferenceManifest(
-        friendReferences.data(), friendAccountID
-      );
-      const ownHadFriend = ownManifest.friendAccountIDs
-        .includes(friendAccountID);
-      const friendHadOwner = friendManifest.friendAccountIDs.includes(uid);
+      const ownFriendIDs = ownReferences.data()?.friendAccountIDs;
+      const friendFriendIDs = friendReferences.data()?.friendAccountIDs;
+      const ownHadFriend = Array.isArray(ownFriendIDs) &&
+        ownFriendIDs.includes(friendAccountID);
+      const friendHadOwner = Array.isArray(friendFriendIDs) &&
+        friendFriendIDs.includes(uid);
       const candidateLinks = [
         ownLink.exists ? validatedFriendLinkOrNull(
           ownLink.data(), uid, friendAccountID
@@ -2033,6 +2035,13 @@ export const removeFriendLink = onCall(
           other.inviteDigest === candidate.inviteDigest
         ) === index
       );
+      if (candidateLinks.some((link) => link.pairID !== input.pairID)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This friend connection has changed.",
+          {reason: "friend-link-generation-mismatch"}
+        );
+      }
       const receipts: Array<{
         link: ReturnType<typeof validateServerFriendLink>;
         inviteRef: DocumentReference;
@@ -2135,23 +2144,21 @@ export const removeFriendLink = onCall(
       transaction.delete(ownLinkRef);
       transaction.delete(friendLinkRef);
       if (ownReferences.exists) {
-        transaction.set(ownReferencesRef, socialReferenceManifestRemovingFriend(
-          ownManifest, uid, friendAccountID
-        ));
+        transaction.update(ownReferencesRef, {
+          friendAccountIDs: FieldValue.arrayRemove(friendAccountID),
+        });
       }
       if (friendReferences.exists) {
-        transaction.set(
-          friendReferencesRef,
-          socialReferenceManifestRemovingFriend(
-            friendManifest, friendAccountID, uid
-          )
-        );
+        transaction.update(friendReferencesRef, {
+          friendAccountIDs: FieldValue.arrayRemove(uid),
+        });
       }
       const removed = ownLink.exists || friendLink.exists ||
         ownHadFriend || friendHadOwner;
       return {
         schemaVersion: FRIENDSHIP_SCHEMA_VERSION,
         friendAccountID,
+        pairID: input.pairID,
         removed,
       };
     });
@@ -2937,36 +2944,90 @@ export const deleteAccount = onCall(
       friendLinks: async () => {
         const snapshot = await firestore.collection("_socialReferences")
           .doc(uid).get();
-        const references = validateSocialReferenceManifest(
-          snapshot.data(),
-          uid
-        );
-        for (const friendAccountID of references.friendAccountIDs) {
-          const friendReferencesRef = firestore
-            .collection("_socialReferences").doc(friendAccountID);
-          const ownLinkRef = firestore.collection("_socialFriendLinks")
-            .doc(uid).collection("friends").doc(friendAccountID);
-          const reciprocalLinkRef = firestore.collection("_socialFriendLinks")
-            .doc(friendAccountID).collection("friends").doc(uid);
-          await firestore.runTransaction(async (transaction) => {
-            const friendReferencesSnapshot = await transaction.get(
-              friendReferencesRef
-            );
-            if (friendReferencesSnapshot.exists) {
-              const friendReferences = validateSocialReferenceManifest(
-                friendReferencesSnapshot.data(),
-                friendAccountID
-              );
-              transaction.set(friendReferencesRef, {
-                ...friendReferences,
-                friendAccountIDs: friendReferences.friendAccountIDs.filter(
-                  (candidate) => candidate !== uid
-                ),
+        const safeAccountID = (candidate: unknown): candidate is string =>
+          typeof candidate === "string" && candidate !== uid &&
+          candidate.length >= 1 && candidate.length <= 128 &&
+          !candidate.includes("/");
+        const manifestFriendIDs = new Set<string>();
+        const rawFriendIDs = snapshot.data()?.friendAccountIDs;
+        if (Array.isArray(rawFriendIDs)) {
+          for (const candidate of rawFriendIDs.slice(
+            0, MAX_ACTIVE_FRIENDS + 1
+          )) {
+            if (safeAccountID(candidate)) manifestFriendIDs.add(candidate);
+          }
+        }
+        let includeManifest = true;
+        let discoveringLinks = true;
+        while (discoveringLinks) {
+          const discoveryResults: [QuerySnapshot, QuerySnapshot] =
+            await Promise.all([
+              firestore.collectionGroup("friends")
+                .where("accountID", "==", uid)
+                .limit(MAX_ACTIVE_FRIENDS + 1).get(),
+              firestore.collectionGroup("friends")
+                .where("friendAccountID", "==", uid)
+                .limit(MAX_ACTIVE_FRIENDS + 1).get(),
+            ]);
+          const [ownedLinks, incomingLinks] = discoveryResults;
+          const linkDocuments = new Map<string, QueryDocumentSnapshot>(
+            [...ownedLinks.docs, ...incomingLinks.docs]
+              .map((document) => [document.ref.path, document] as const)
+          );
+          const friendAccountIDs = new Set<string>(
+            includeManifest ? manifestFriendIDs : []
+          );
+          includeManifest = false;
+          for (const document of linkDocuments.values()) {
+            const data = document.data();
+            if (data.accountID === uid && safeAccountID(data.friendAccountID)) {
+              friendAccountIDs.add(data.friendAccountID);
+            }
+            if (data.friendAccountID === uid && safeAccountID(data.accountID)) {
+              friendAccountIDs.add(data.accountID);
+            }
+            const ownerID = document.ref.parent.parent?.id;
+            if (ownerID === uid && safeAccountID(document.id)) {
+              friendAccountIDs.add(document.id);
+            } else if (document.id === uid && safeAccountID(ownerID)) {
+              friendAccountIDs.add(ownerID);
+            }
+          }
+          if (linkDocuments.size === 0 && friendAccountIDs.size === 0) {
+            discoveringLinks = false;
+            continue;
+          }
+          const friendReferences = [...friendAccountIDs].map(
+            (friendAccountID) => firestore.collection("_socialReferences")
+              .doc(friendAccountID)
+          );
+          const referenceSnapshots = await Promise.all(
+            friendReferences.map((reference) => reference.get())
+          );
+          const deleteReferences = new Map<string, DocumentReference>();
+          for (const document of linkDocuments.values()) {
+            deleteReferences.set(document.ref.path, document.ref);
+          }
+          for (const friendAccountID of friendAccountIDs) {
+            const ownLinkRef = firestore.collection("_socialFriendLinks")
+              .doc(uid).collection("friends").doc(friendAccountID);
+            const reciprocalLinkRef = firestore.collection("_socialFriendLinks")
+              .doc(friendAccountID).collection("friends").doc(uid);
+            deleteReferences.set(ownLinkRef.path, ownLinkRef);
+            deleteReferences.set(reciprocalLinkRef.path, reciprocalLinkRef);
+          }
+          const batch = firestore.batch();
+          for (const reference of deleteReferences.values()) {
+            batch.delete(reference);
+          }
+          for (const referenceSnapshot of referenceSnapshots) {
+            if (referenceSnapshot.exists) {
+              batch.update(referenceSnapshot.ref, {
+                friendAccountIDs: FieldValue.arrayRemove(uid),
               });
             }
-            transaction.delete(ownLinkRef);
-            transaction.delete(reciprocalLinkRef);
-          });
+          }
+          await batch.commit();
         }
       },
       competitiveObservations: async () => {

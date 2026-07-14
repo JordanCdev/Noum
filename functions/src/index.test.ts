@@ -383,6 +383,8 @@ test("friendship callables preserve server-only reciprocal authority", () => {
     source.indexOf("export const recordPeerSession")
   );
   assert.match(remove, /status: "revoked"/);
+  assert.match(remove, /friend-link-generation-mismatch/);
+  assert.match(remove, /pairID: input\.pairID/);
   assert.match(remove, /transaction\.delete\(ownLinkRef\)/);
   assert.match(remove, /transaction\.delete\(friendLinkRef\)/);
   assert.match(remove, /friendAccountID,/);
@@ -392,6 +394,9 @@ test("friendship callables preserve server-only reciprocal authority", () => {
   );
   assert.match(list, /\.friendAccountIDs\]\.sort\(\)/);
   assert.doesNotMatch(list, /\.slice\(/);
+  const deletion = source.slice(source.indexOf("export const deleteAccount"));
+  assert.match(deletion, /collectionGroup\("friends"\)/);
+  assert.match(deletion, /FieldValue\.arrayRemove\(uid\)/);
   const peer = source.slice(
     source.indexOf("export const getPeerProfile"),
     source.indexOf("export const listLeagueMembers")
@@ -561,12 +566,12 @@ test("private profile enum fields match Codable raw values", () => {
 
 test("account deletion uses exact server-owned social references", () => {
   const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
-  assert.equal(source.includes("collectionGroup("), false);
+  assert.equal(source.includes("collectionGroup(\"friends\")"), true);
   assert.match(source, /collection\("_socialReferences"\)/);
   assert.match(source, /validateSocialReferenceManifest\(/);
   assert.match(source, /references\.leagueMembershipPaths/);
   assert.match(source, /references\.challengeIDs/);
-  assert.match(source, /references\.friendAccountIDs/);
+  assert.match(source, /rawFriendIDs/);
   assert.match(source, /friendInvites: async/);
   assert.match(source, /_socialFriendInvites/);
   const observationStart = source.indexOf("competitiveObservations: async");

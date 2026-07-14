@@ -48,6 +48,7 @@ export interface ListFriendLinksInput {
 export interface RemoveFriendLinkInput {
   schemaVersion: 1;
   friendAccountID: string;
+  pairID: string;
 }
 
 export interface FriendInviteSecret {
@@ -160,12 +161,17 @@ export function validateRemoveFriendLinkRequest(
   data: unknown
 ): RemoveFriendLinkInput {
   if (!isRecord(data) || !hasExactKeys(data, [
-    "schemaVersion", "friendAccountID",
+    "schemaVersion", "friendAccountID", "pairID",
   ]) || data.schemaVersion !== FRIENDSHIP_SCHEMA_VERSION ||
-      !isValidAccountID(data.friendAccountID)) {
+      !isValidAccountID(data.friendAccountID) ||
+      typeof data.pairID !== "string" || !UUID_PATTERN.test(data.pairID)) {
     throw new HttpsError("invalid-argument", "Invalid friend removal request.");
   }
-  return {schemaVersion: 1, friendAccountID: data.friendAccountID};
+  return {
+    schemaVersion: 1,
+    friendAccountID: data.friendAccountID,
+    pairID: data.pairID.toUpperCase(),
+  };
 }
 
 function validatedInviteToken(value: unknown): string {
@@ -249,7 +255,12 @@ export function validateStoredFriendInvite(
     acceptedAtMs !== null && typeof value.pairID === "string" &&
     UUID_PATTERN.test(value.pairID) && revokedAtMs !== null;
   const supersededShape = value.status === "superseded" &&
-    value.acceptedAccountID === null && value.acceptorDisplayName === null &&
+    isValidAccountID(value.acceptedAccountID) &&
+    value.acceptedAccountID !== value.inviterAccountID &&
+    typeof value.acceptorDisplayName === "string" &&
+    value.acceptorDisplayName === value.acceptorDisplayName.trim() &&
+    value.acceptorDisplayName.length >= 1 &&
+    value.acceptorDisplayName.length <= MAX_DISPLAY_NAME_CHARS &&
     value.acceptedAt === null && value.pairID === null && revokedAtMs !== null;
   if (createdAtMs === null || expiresAtMs === null ||
       expiresAtMs - createdAtMs !== FRIEND_INVITE_LIFETIME_MS ||

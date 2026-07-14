@@ -99,10 +99,21 @@ test("friendship requests require exact bounded v1 contracts", () => {
   assert.deepEqual(validateRemoveFriendLinkRequest({
     schemaVersion: 1,
     friendAccountID: "friend-account",
-  }), {schemaVersion: 1, friendAccountID: "friend-account"});
+    pairID: "c713738e-d9ed-4337-986e-09205089d42e",
+  }), {
+    schemaVersion: 1,
+    friendAccountID: "friend-account",
+    pairID: "C713738E-D9ED-4337-986E-09205089D42E",
+  });
   assert.throws(() => validateRemoveFriendLinkRequest({
     schemaVersion: 1,
     friendAccountID: "friend/account",
+    pairID: "C713738E-D9ED-4337-986E-09205089D42E",
+  }));
+  assert.throws(() => validateRemoveFriendLinkRequest({
+    schemaVersion: 1,
+    friendAccountID: "friend-account",
+    pairID: "not-a-pair",
   }));
 });
 
@@ -166,6 +177,8 @@ test("stored invites enforce every exact terminal state shape", () => {
   assert.equal(validateStoredFriendInvite(
     activeInvite({
       status: "superseded",
+      acceptedAccountID: "acceptor-account",
+      acceptorDisplayName: "Alex",
       revokedAt: timestamp(nowMs + 2_000),
     }),
     digest,

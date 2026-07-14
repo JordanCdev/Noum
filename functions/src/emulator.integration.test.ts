@@ -716,10 +716,15 @@ test(
       },
       {
         url: removeFriendLinkURL,
-        validShape: {schemaVersion: 1, friendAccountID: "peer-account"},
+        validShape: {
+          schemaVersion: 1,
+          friendAccountID: "peer-account",
+          pairID: "C713738E-D9ED-4337-986E-09205089D42E",
+        },
         invalidShape: {
           schemaVersion: 1,
           friendAccountID: "peer/account",
+          pairID: "C713738E-D9ED-4337-986E-09205089D42E",
         },
       },
     ];
@@ -851,7 +856,11 @@ test("social callables require the exact complete cutover marker", async () => {
     },
     {
       url: removeFriendLinkURL,
-      data: {schemaVersion: 1, friendAccountID: "opponent"},
+      data: {
+        schemaVersion: 1,
+        friendAccountID: "opponent",
+        pairID: "C713738E-D9ED-4337-986E-09205089D42E",
+      },
     },
   ];
   const unavailableMarkers: Array<Record<string, unknown> | undefined> = [
@@ -994,6 +1003,7 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
   assert.equal(acceptorLink.data()?.pairID, inviterLink.data()?.pairID);
   assert.equal(acceptorLink.data()?.inviteDigest, tokenDigest);
   assert.equal(inviterLink.data()?.inviteDigest, tokenDigest);
+  const primaryPairID = acceptorLink.data()?.pairID as string;
   assert.equal(
     (acceptorLink.data()?.linkedAt as AdminTimestamp).toMillis(),
     (inviterLink.data()?.linkedAt as AdminTimestamp).toMillis()
@@ -1049,6 +1059,8 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
   );
   assert.equal((await adminFirestore.collection("_socialFriendInvites")
     .doc(supersededDigest).get()).data()?.status, "superseded");
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .doc(supersededDigest).get()).data()?.acceptedAccountID, acceptor.localId);
   assert.equal((await inviterLinkRef.get()).data()?.inviteDigest, tokenDigest);
   const supersededRetry = await callable(
     acceptFriendInviteURL,
@@ -1079,9 +1091,29 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
   );
   assert.equal(partialList.status, 400);
 
+  const staleRemoval = await callable(
+    removeFriendLinkURL,
+    {
+      schemaVersion: 1,
+      friendAccountID: inviter.localId,
+      pairID: "C713738E-D9ED-4337-986E-09205089D42E",
+    },
+    acceptor,
+    true
+  );
+  assert.equal(staleRemoval.status, 400);
+  assert.equal(
+    await callableFailureReason(staleRemoval),
+    "friend-link-generation-mismatch"
+  );
+  assert.equal((await acceptorLinkRef.get()).exists, true);
   const removed = await callable(
     removeFriendLinkURL,
-    {schemaVersion: 1, friendAccountID: inviter.localId},
+    {
+      schemaVersion: 1,
+      friendAccountID: inviter.localId,
+      pairID: primaryPairID,
+    },
     acceptor,
     true
   );
@@ -1090,6 +1122,7 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
     result: {
       schemaVersion: 1,
       friendAccountID: inviter.localId,
+      pairID: primaryPairID,
       removed: true,
     },
   });
@@ -1109,7 +1142,11 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
   );
   const idempotent = await callable(
     removeFriendLinkURL,
-    {schemaVersion: 1, friendAccountID: inviter.localId},
+    {
+      schemaVersion: 1,
+      friendAccountID: inviter.localId,
+      pairID: primaryPairID,
+    },
     acceptor,
     true
   );
@@ -1117,6 +1154,7 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
     result: {
       schemaVersion: 1,
       friendAccountID: inviter.localId,
+      pairID: primaryPairID,
       removed: false,
     },
   });
@@ -1139,6 +1177,11 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
     corruptAcceptor,
     true
   )).status, 200);
+  const corruptAcceptorLinkRef = adminFirestore
+    .collection("_socialFriendLinks").doc(corruptAcceptor.localId)
+    .collection("friends").doc(corruptInviter.localId);
+  const corruptPairID = (await corruptAcceptorLinkRef.get())
+    .data()?.pairID as string;
   await adminFirestore.collection("_socialFriendLinks")
     .doc(corruptInviter.localId).collection("friends")
     .doc(corruptAcceptor.localId).delete();
@@ -1153,9 +1196,17 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
     await callableFailureReason(corruptList),
     "friend-authorization-unavailable"
   );
+  await adminFirestore.collection("_socialReferences")
+    .doc(corruptAcceptor.localId).update({corruptField: true});
+  await adminFirestore.collection("_socialReferences")
+    .doc(corruptInviter.localId).update({corruptField: true});
   const corruptRemove = await callable(
     removeFriendLinkURL,
-    {schemaVersion: 1, friendAccountID: corruptInviter.localId},
+    {
+      schemaVersion: 1,
+      friendAccountID: corruptInviter.localId,
+      pairID: corruptPairID,
+    },
     corruptAcceptor,
     true
   );
@@ -1164,6 +1215,7 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
     result: {
       schemaVersion: 1,
       friendAccountID: corruptInviter.localId,
+      pairID: corruptPairID,
       removed: true,
     },
   });
@@ -1206,11 +1258,38 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
     deleteFriend,
     true
   )).status, 200);
+  const incomingSupersededCreate = await callable(
+    createFriendInviteURL,
+    {schemaVersion: 1, displayName: "Delete Friend"},
+    deleteFriend,
+    true
+  );
+  const incomingSupersededToken = ((await incomingSupersededCreate.json()) as {
+    result?: {inviteToken?: string};
+  }).result?.inviteToken ?? "";
+  const incomingSupersededDigest = friendInviteHash(incomingSupersededToken);
+  const incomingSupersededAccept = await callable(
+    acceptFriendInviteURL,
+    {
+      schemaVersion: 1,
+      inviteToken: incomingSupersededToken,
+      displayName: "Delete Owner",
+    },
+    deleteOwner,
+    true
+  );
+  assert.equal(incomingSupersededAccept.status, 400);
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .doc(incomingSupersededDigest).get()).data()?.acceptedAccountID,
+  deleteOwner.localId
+  );
   // Global discovery must still erase the receipt when the owner's local
   // reference was lost or corrupted before deletion began.
   await adminFirestore.collection("_socialReferences")
     .doc(deleteOwner.localId).collection("friendInvites")
     .doc(deleteDigest).delete();
+  await adminFirestore.collection("_socialReferences")
+    .doc(deleteOwner.localId).delete();
   const deletion = await callable(
     deletionURL,
     {
@@ -1223,6 +1302,11 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
   assert.equal(deletion.status, 200);
   assert.equal((await adminFirestore.collection("_socialFriendInvites")
     .doc(deleteDigest).get()).exists, false);
+  assert.equal((await adminFirestore.collection("_socialFriendInvites")
+    .doc(incomingSupersededDigest).get()).exists, false);
+  assert.equal((await adminFirestore.collection("_socialReferences")
+    .doc(deleteFriend.localId).collection("friendInvites")
+    .doc(incomingSupersededDigest).get()).exists, false);
   assert.equal((await adminFirestore.collection("_socialReferences")
     .doc(deleteFriend.localId).collection("friendInvites")
     .doc(deleteDigest).get()).exists, false);
