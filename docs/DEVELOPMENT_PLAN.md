@@ -76,6 +76,15 @@ short qualifying high-rate rep. The rebuilt complete unit target passes 4,061
 tests with zero failures or skips. These thresholds are local routing
 heuristics, not professional calibration or a production-effectiveness result.
 
+At `ec10990f`, severe qualifying filler burden now lands in Ah Counter
+(`Filler Control`) as one full corrective rep rather than a generic mini-drill
+or Sudden Death. The finalizer may make this direct observation after the first
+qualifying severe rep, while non-severe thin evidence still waits for the
+baseline floor. Home, Train, and Summary share duration-normalized
+recommendation inputs. The focused selection passes 93/93 and the full unit
+target passes 4,065 tests with zero failures or skips. This closes local PR-1
+destination behavior only; calibration and effectiveness remain external.
+
 The `80fbf6d2` coach artifact remains a valid historical local baseline: 53
 conversations/109 turns pass the app-path floor and all 50 required fixtures
 pass real-pipeline and trace-quality gates at a 79.76 average. It is no longer
@@ -96,7 +105,7 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Baseline and contracts | Implemented as account-local, content-free diagnostics | Keep cohort claims honest; population analytics still requires a privacy decision |
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
 | Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration, unsupported locales fail closed, and its review intake now requires complete two-reviewer professional coverage with exact evidence/rubric integrity | Bind a deidentified source-evidence package, obtain actual independent professional results, complete longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals |
-| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented; immediate filler selection and cross-session filler trends use the shared qualifying fillers-per-minute policy rather than raw counts; followed-rep learning requires explicit acceptance plus matching mode, comparable bounded history, normalized metrics, serialized persistence, and exact prescribed/executed Timed demand; Speech Projects retain stable catalog identity through the real Timed route but remain outside adaptive prescriptions; the exact-token experiment contract exists but is inactive | Obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, professional calibration, longitudinal transfer evidence, and physical-device proof before expanding the prescription domain |
+| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented; severe qualifying filler burden selects Filler Control, including from a first severe rep, while non-severe thin evidence stays suppressed; Home, Train, Summary, immediate selection, and cross-session trends use the shared qualifying fillers-per-minute policy rather than raw counts; followed-rep learning requires explicit acceptance plus matching mode, comparable bounded history, normalized metrics, serialized persistence, and exact prescribed/executed Timed demand; Speech Projects retain stable catalog identity through the real Timed route but remain outside adaptive prescriptions; the exact-token experiment contract exists but is inactive | Obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, professional calibration, longitudinal transfer evidence, and physical-device proof before expanding the prescription domain |
 | Trust and reliability | Local speech, consent routing, startup-fallback transparency, privacy, export/deletion, exact processor-manifest generation, private-profile validation, atomic evidence, default-deny source binding, legacy-route containment, source-bound Apple preflight, the 14-surface/77-check TestFlight contract, exact 17-callable runtime-security inventory, exact hosted-policy-body verification, a disabled transcript-free competitive observation substrate with a shared account-unlinked seven-day exact-PCM replay claim, source-declared TTL fields, and an exact account/token/prompt-bound post-create challenge→Timed handoff whose prompt-bearing arm is process-local, authoritatively validated, exact-session-bound, expiry-bounded, and omitted from reload/export/migration, a disabled server-owned reciprocal friendship lifecycle, and a source-bound recoverable social quarantine/resume/rollback state machine are implemented locally. Ten social plus two competitive-observation callables share fail-closed cutover enforcement. Cutover schema v4 recursively quarantines client-authorable challenges and friend links instead of promoting them and writes exact schema-v2 manifests. The actual migration CLI/Firestore adapter and friendship lifecycle are proved against the demo emulator. At `77352b03`, both the npm deploy entry and every checked-in Firebase Functions/Firestore target refuse before preparation or network mutation; Hosting stays independent for authorized privacy corrections | Obtain and verify all four backend release prerequisites, then atomically replace both checked-in deployment hooks; deploy and live-verify both disabled authority paths; give hydrated/opponent challenges a coherent production launch route only after the capability gate can be earned; independently approve and prove observation/invite retention and TTL; address transformed or post-window competitive replay as required by the future evaluator's freshness policy; externally calibrate and authorize that deterministic evaluator before eligibility; deploy and verify friendship indexes/rules/functions plus a two-device lifecycle; add independently trusted deployment authorization bound to an immutable source artifact; revoke the leaked legacy Deepgram credential and both exposed Firebase CLI sessions; deploy the checked-in privacy body; verify production IAM/App Check; inventory active clients and private-profile values; approve a minimum-client policy and writer-suspension plan; protect every legacy route; audit provider usage/billing; execute and independently verify the guarded social cutover; install paid-team distribution authority; and complete physical-device and release-policy verification |
 | Retention and expansion | Local KPI, persisted `ForwardPlan`, weekly check-in, explicit-style-aware weekly digest, goal-movement substrate, and an ID-only Phrase Bank handoff into the active week are implemented; both research experiment contracts default to unassigned | Obtain product approval and real cohort analysis, protected social cutover, calibrated language expansion, and signed-device verification of the weekly phrase loop |
 
@@ -314,12 +323,17 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
   `GoalPrescriptionEngine`.
 - Output exactly one best next rep with a short rationale. Historical Review
   may replay a recorded setup but does not record adaptive acceptance.
+- Treat the report's “up to two alternatives” as zero alternatives in the
+  shipping card. Do not add an action menu unless product research shows that
+  one prescribed rep is less clear or less trustworthy.
 - Keep the current strategic destination contract to the four established
   `PracticeMode` routes plus existing focused mini-drills. Cut the Crutch, pace
   training, Roleplay, Lessons, Speech Projects, and Path remain separate product
   domains until an explicit router/measurement decision expands that contract.
 - Use the shared qualifying filler-rate projection for session focus, severity,
-  cross-session trends, and pressure-stretch eligibility. Keep semantic filler
+  cross-session trends, Home/Train/Summary recommendation input, and
+  pressure-stretch eligibility. Severe qualifying burden routes to Filler
+  Control; non-severe first-rep evidence stays suppressed. Keep semantic filler
   detection upstream, fail closed below the evidence floor, and do not present
   the local thresholds as professional calibration.
 - The shared implementation resolves availability from the current rating/
@@ -345,8 +359,8 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
 ### Acceptance criteria
 
 - Review always ends with one clear next action.
-- High filler burden maps to filler-focused practice and pacing issues map to
-  pace work inside the established action domain. Widening strategic
+- Severe qualifying filler burden maps to Filler Control and pacing issues map
+  to pace work inside the established action domain. Widening strategic
   prescriptions to the separate Roleplay curriculum, Lessons, Speech Projects,
   or Path requires a product decision and router expansion.
 - Locked or unavailable modes fall back gracefully.

@@ -1,5 +1,37 @@
 # Noum — Current state
 
+## 2026-07-14 — Severe filler burden prescribes Filler Control
+
+Implementation commit `ec10990f` closes the literal PR-1 routing gap through
+the existing `SessionFinalizer`, `NextActionEngine`, `FillerBurden`, and
+recommendation-context owners. A severe qualifying filler burden now produces
+one Ah Counter (`Filler Control`) full rep rather than a generic filler
+mini-drill or the zero-tolerance Sudden Death mode.
+
+The finalizer can make that directly observed corrective prescription after a
+first qualifying severe rep without pretending a trend exists. Non-severe thin
+evidence remains suppressed until the established baseline floor. Home and
+Train now compare qualifying fillers-per-minute rates and rate trends; Summary
+reuses the same context builder instead of constructing a raw-count input.
+Samples below 15 seconds remain excluded and semantic filler detection is
+unchanged.
+
+The focused simulator run passes 93/93 tests across destination priority,
+first-rep evidence, duration boundaries, shared Home/Train/Summary context,
+projection, outcome, corpus, and copy contracts. After recovering one
+CoreSimulator install failure that executed no tests, the rebuilt full Noum unit
+target passes 4,065 tests with zero failures or skips on iPhone 17 / iOS 26.3.1.
+`git diff --check` passes, and the user's unrelated localization catalog remains
+byte-for-byte unchanged.
+
+This proves local destination behavior only. The 8/min threshold is still an
+uncalibrated heuristic; remaining raw-count descriptive/planning copy outside
+adaptive prescription needs separate review. Roleplay and the wider
+Lessons/Projects/Path destination set remain outside the recommendation domain.
+No live-provider, professional-review, longitudinal, physical-device, or
+operational evidence was added. Production readiness stays **NO-GO at 18/100
+with 0/5 external artifacts**.
+
 ## 2026-07-14 — Filler prescription is duration-normalized
 
 Implementation commit `c3d1ff65` replaces raw filler-count routing in the
