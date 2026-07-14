@@ -1,3 +1,5 @@
+import gzip
+import io
 import json
 import plistlib
 import re
@@ -10,6 +12,9 @@ from pathlib import Path
 from unittest import mock
 
 import readiness_gate as gate
+
+
+STATIC_PRIVACY_BODY = b"<title>Noum \xe2\x80\x94 Privacy Policy</title><main>Noum Privacy Policy</main>"
 
 
 def report_with_readiness(readiness, **local_overrides):
@@ -122,10 +127,7 @@ service cloud.firestore {
 """,
         encoding="utf-8",
     )
-    (root / "public/privacy.html").write_text(
-        "<title>Noum — Privacy Policy</title><main>Noum Privacy Policy</main>",
-        encoding="utf-8",
-    )
+    (root / "public/privacy.html").write_bytes(STATIC_PRIVACY_BODY)
     (root / "public/index.html").write_text("<title>Noum</title>", encoding="utf-8")
     (root / "Noum/PrivacyPolicy.md").write_text("# Privacy Policy\n", encoding="utf-8")
     (root / "Noum/PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps({
@@ -705,11 +707,67 @@ def successful_privacy_fetch(url):
     return {
         "status": 200,
         "finalURL": url,
-        "bodyPreview": "Noum Privacy Policy",
+        "contentType": "text/html; charset=utf-8",
+        "bodyBytes": STATIC_PRIVACY_BODY,
+        "bodyComplete": True,
+        "bodySize": len(STATIC_PRIVACY_BODY),
     }
 
 
 class ReadinessGateTests(unittest.TestCase):
+    def test_default_fetch_url_returns_complete_decompressed_gzip_body(self):
+        class FakeResponse(io.BytesIO):
+            status = 200
+
+            def __init__(self, body):
+                super().__init__(body)
+                self.headers = {
+                    "Content-Encoding": "gzip",
+                    "Content-Type": "text/html; charset=utf-8",
+                }
+
+            def getcode(self):
+                return self.status
+
+            def geturl(self):
+                return "https://noum-d0b6f.web.app/privacy"
+
+        response = FakeResponse(gzip.compress(STATIC_PRIVACY_BODY))
+        with mock.patch.object(gate.urllib.request, "urlopen", return_value=response):
+            result = gate.default_fetch_url(
+                "https://noum-d0b6f.web.app/privacy",
+            )
+
+        self.assertEqual(result["bodyBytes"], STATIC_PRIVACY_BODY)
+        self.assertTrue(result["bodyComplete"])
+        self.assertEqual(result["bodySize"], len(STATIC_PRIVACY_BODY))
+
+    def test_default_fetch_url_caps_decompressed_body_before_comparison(self):
+        class FakeResponse(io.BytesIO):
+            status = 200
+
+            def __init__(self, body):
+                super().__init__(body)
+                self.headers = {
+                    "Content-Encoding": "identity",
+                    "Content-Type": "text/html",
+                }
+
+            def getcode(self):
+                return self.status
+
+            def geturl(self):
+                return "https://noum-d0b6f.web.app/privacy"
+
+        response = FakeResponse(b"x" * (gate.MAX_PRIVACY_BODY_BYTES + 100))
+        with mock.patch.object(gate.urllib.request, "urlopen", return_value=response):
+            result = gate.default_fetch_url(
+                "https://noum-d0b6f.web.app/privacy",
+            )
+
+        self.assertEqual(len(result["bodyBytes"]), gate.MAX_PRIVACY_BODY_BYTES + 1)
+        self.assertFalse(result["bodyComplete"])
+
     def test_lists_vision_blockers_as_concrete_evidence_requirements(self):
         readiness = {
             "score": 18,
@@ -2634,8 +2692,89 @@ class ReadinessGateTests(unittest.TestCase):
             probe = gate.operational_live_probe(root, successful_privacy_fetch)
 
         self.assertEqual(probe["failureCount"], 0)
+        self.assertEqual(probe["checkCount"], 5)
         self.assertEqual(probe["passCount"], probe["checkCount"])
-        self.assertIn("Live ops probe", probe["validationBoundary"])
+        self.assertIn("source-exact", probe["validationBoundary"])
+
+    def test_operational_live_probe_rejects_marker_complete_stale_body(self):
+        stale_marker = b"TEST-ONLY-STALE-PRIVACY-BODY-MUST-NOT-LEAK"
+
+        def fetch_stale(url):
+            result = successful_privacy_fetch(url)
+            result["bodyBytes"] += stale_marker
+            result["bodySize"] = len(result["bodyBytes"])
+            return result
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+
+            probe = gate.operational_live_probe(root, fetch_stale)
+
+        self.assertEqual(
+            [item["key"] for item in probe["failures"]],
+            ["privacyURLExactBody"],
+        )
+        self.assertNotIn(stale_marker.decode(), json.dumps(probe))
+        self.assertIn("expectedSHA256=", probe["failures"][0]["observed"])
+
+    def test_operational_live_probe_rejects_oversize_body(self):
+        def fetch_oversize(url):
+            body = b"x" * (gate.MAX_PRIVACY_BODY_BYTES + 1)
+            return {
+                "status": 200,
+                "finalURL": url,
+                "contentType": "text/html",
+                "bodyBytes": body,
+                "bodyComplete": False,
+                "bodySize": len(body),
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+
+            probe = gate.operational_live_probe(root, fetch_oversize)
+
+        self.assertEqual(
+            [item["key"] for item in probe["failures"]],
+            ["privacyURLExactBody"],
+        )
+        self.assertIn("observedSHA256=unavailable-incomplete", probe["failures"][0]["observed"])
+
+    def test_operational_live_probe_rejects_wrong_mime_type(self):
+        def fetch_plain_text(url):
+            result = successful_privacy_fetch(url)
+            result["contentType"] = "text/plain; charset=utf-8"
+            return result
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+
+            probe = gate.operational_live_probe(root, fetch_plain_text)
+
+        self.assertEqual(
+            [item["key"] for item in probe["failures"]],
+            ["privacyURLContentType"],
+        )
+
+    def test_operational_live_probe_rejects_redirect_origin_escape(self):
+        def fetch_redirect_escape(url):
+            result = successful_privacy_fetch(url)
+            result["finalURL"] = "https://lookalike.example/privacy"
+            return result
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+
+            probe = gate.operational_live_probe(root, fetch_redirect_escape)
+
+        self.assertEqual(
+            [item["key"] for item in probe["failures"]],
+            ["privacyURLOrigin"],
+        )
 
     def test_operational_live_probe_flags_privacy_url_404(self):
         def fetch_404(url):
@@ -2647,10 +2786,10 @@ class ReadinessGateTests(unittest.TestCase):
 
             probe = gate.operational_live_probe(root, fetch_404)
 
-        self.assertEqual(probe["failureCount"], 2)
+        self.assertEqual(probe["failureCount"], 3)
         self.assertEqual(
             [item["key"] for item in probe["failures"]],
-            ["privacyURLHTTP", "privacyURLContent"],
+            ["privacyURLHTTP", "privacyURLContentType", "privacyURLExactBody"],
         )
         self.assertEqual(probe["failures"][0]["observed"], 404)
 
@@ -2686,7 +2825,7 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertEqual(status["vision"]["productionReady"], True)
         self.assertEqual(
             [item["label"] for item in status["operationalLiveBlockingRequirements"]],
-            ["privacyURLHTTP", "privacyURLContent"],
+            ["privacyURLHTTP", "privacyURLContentType", "privacyURLExactBody"],
         )
 
     def test_live_probe_can_pass_with_all_other_launch_gates(self):

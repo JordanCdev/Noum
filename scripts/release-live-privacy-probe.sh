@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+verifier="$repo_root/scripts/privacy_body_verifier.py"
+expected_body="$repo_root/public/privacy.html"
 url="${1:-https://noum-d0b6f.web.app/privacy}"
 if [[ "$url" != https://* ]]; then
   echo "Privacy probe requires an HTTPS URL." >&2
@@ -8,27 +11,36 @@ if [[ "$url" != https://* ]]; then
 fi
 
 response="$(mktemp "${TMPDIR:-/tmp}/noum-live-privacy.XXXXXX")"
-headers="$(mktemp "${TMPDIR:-/tmp}/noum-live-privacy-headers.XXXXXX")"
-trap 'rm -f "$response" "$headers"' EXIT INT TERM
+metadata="$(mktemp "${TMPDIR:-/tmp}/noum-live-privacy-metadata.XXXXXX")"
+trap 'rm -f "$response" "$metadata"' EXIT INT TERM
 
-curl --fail --silent --show-error --location \
+max_body_bytes="$(python3 "$verifier" --print-max-body-bytes)"
+
+curl --silent --show-error --location \
   --proto '=https' \
+  --proto-redir '=https' \
   --tlsv1.2 \
+  --compressed \
   --connect-timeout 10 \
   --max-time 30 \
-  --dump-header "$headers" \
+  --max-filesize "$max_body_bytes" \
   --output "$response" \
-  "$url"
+  --write-out '%{http_code}\n%{url_effective}\n%{content_type}\n' \
+  "$url" > "$metadata"
 
-grep -qi '^content-type:.*text/html' "$headers"
-grep -q '<h1>Privacy Policy</h1>' "$response"
-grep -q 'Your Cloud Processing Choice' "$response"
-grep -q 'Google Vertex AI (Gemini)' "$response"
-grep -q 'mip_opt_out=true' "$response"
-grep -q 'noumsupport@gmail.com' "$response"
-if grep -Eq 'AWS Transcribe|Google Cloud Speech-to-Text|Anthropic Claude|DeepSeek' "$response"; then
-  echo "Hosted privacy policy contains a non-production processor claim." >&2
-  exit 1
-fi
+http_status=""
+final_url=""
+content_type=""
+{
+  IFS= read -r http_status
+  IFS= read -r final_url
+  IFS= read -r content_type
+} < "$metadata"
 
-echo "Live privacy policy probe passed."
+python3 "$verifier" \
+  --expected-body "$expected_body" \
+  --observed-body "$response" \
+  --requested-url "$url" \
+  --final-url "$final_url" \
+  --status "$http_status" \
+  --content-type "$content_type"
