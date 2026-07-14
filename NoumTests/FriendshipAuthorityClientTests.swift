@@ -18,14 +18,18 @@ struct FriendshipAuthorityClientTests {
             displayName: " Speaker "
         ))
         let list = try jsonObject(ListFriendLinksRequest(limit: 50))
-        let remove = try jsonObject(RemoveFriendLinkRequest(friendAccountID: "friend-b"))
+        let remove = try jsonObject(RemoveFriendLinkRequest(
+            pairID: pairB,
+            friendAccountID: "friend-b"
+        ))
 
         #expect(Set(create.keys) == ["schemaVersion", "displayName"])
         #expect(create["displayName"] as? String == "Speaker")
         #expect(Set(accept.keys) == ["schemaVersion", "inviteToken", "displayName"])
         #expect(accept["inviteToken"] as? String == validInviteToken)
         #expect(Set(list.keys) == ["schemaVersion", "limit"])
-        #expect(Set(remove.keys) == ["schemaVersion", "friendAccountID"])
+        #expect(Set(remove.keys) == ["schemaVersion", "pairID", "friendAccountID"])
+        #expect(remove["pairID"] as? String == pairB.uuidString)
     }
 
     @Test("Invite responses require a canonical token and bounded future Unix expiry")
@@ -80,6 +84,28 @@ struct FriendshipAuthorityClientTests {
             inviteToken: String(validInviteToken.dropLast(2)) + " A",
             displayName: "Speaker"
         ).isValid)
+        #expect(!AcceptFriendInviteRequest(
+            inviteToken: nonCanonicalInviteToken,
+            displayName: "Speaker"
+        ).isValid)
+    }
+
+    @Test("Friend envelopes decode the backend friendAccountID key")
+    func friendEnvelopeWireKey() throws {
+        let data = try #require("""
+        {
+          "pairID": "\(pairB.uuidString)",
+          "friendAccountID": "friend-b",
+          "displayName": "Partner",
+          "linkedAt": 1800000000
+        }
+        """.data(using: .utf8))
+        let envelope = try JSONDecoder().decode(FriendAuthorityEnvelope.self, from: data)
+        #expect(envelope.accountID == "friend-b")
+
+        let encoded = try jsonObject(envelope)
+        #expect(encoded["friendAccountID"] as? String == "friend-b")
+        #expect(encoded["accountID"] == nil)
     }
 
     @Test("Accept rejects self links and malformed server-owned fields")
@@ -114,13 +140,15 @@ struct FriendshipAuthorityClientTests {
         }
     }
 
-    @Test("List rejects duplicate, self, and over-limit links")
+    @Test("List requires the complete 50-link snapshot contract")
     func listValidation() throws {
+        #expect(ListFriendLinksRequest(limit: 50).isValid)
+        #expect(!ListFriendLinksRequest(limit: 49).isValid)
         let valid = ListFriendLinksResponse(
             schemaVersion: 1,
             friends: [envelope(accountID: "friend-b"), envelope(accountID: "friend-c")]
         )
-        let links = try valid.result(requestedLimit: 2, currentAccountID: "account-a")
+        let links = try valid.result(requestedLimit: 50, currentAccountID: "account-a")
         #expect(links.map(\.accountID) == ["friend-b", "friend-c"])
 
         let duplicate = ListFriendLinksResponse(
@@ -128,7 +156,7 @@ struct FriendshipAuthorityClientTests {
             friends: [envelope(accountID: "friend-b"), envelope(accountID: "friend-b")]
         )
         #expect(throws: SocialAuthorityError.invalidResponse) {
-            try duplicate.result(requestedLimit: 2, currentAccountID: "account-a")
+            try duplicate.result(requestedLimit: 50, currentAccountID: "account-a")
         }
         let duplicatePair = ListFriendLinksResponse(
             schemaVersion: 1,
@@ -143,10 +171,24 @@ struct FriendshipAuthorityClientTests {
             ]
         )
         #expect(throws: SocialAuthorityError.invalidResponse) {
-            try duplicatePair.result(requestedLimit: 2, currentAccountID: "account-a")
+            try duplicatePair.result(requestedLimit: 50, currentAccountID: "account-a")
         }
         #expect(throws: SocialAuthorityError.invalidResponse) {
-            try valid.result(requestedLimit: 1, currentAccountID: "account-a")
+            try valid.result(requestedLimit: 49, currentAccountID: "account-a")
+        }
+        let overCapacity = ListFriendLinksResponse(
+            schemaVersion: 1,
+            friends: (0..<51).map { index in
+                FriendAuthorityEnvelope(
+                    pairID: String(format: "00000000-0000-4000-8000-%012d", index),
+                    accountID: "friend-\(index)",
+                    displayName: "Partner \(index)",
+                    linkedAt: 1_800_000_000
+                )
+            }
+        )
+        #expect(throws: SocialAuthorityError.invalidResponse) {
+            try overCapacity.result(requestedLimit: 50, currentAccountID: "account-a")
         }
         let selfIncluded = ListFriendLinksResponse(
             schemaVersion: 1,
@@ -157,18 +199,66 @@ struct FriendshipAuthorityClientTests {
         }
     }
 
-    @Test("Remove requires the exact expected account echo")
+    @Test("Confirmed removal cannot delete a replacement pair")
+    @MainActor
+    func removalIsPairBound() {
+        let sharedID = UUID()
+        let expected = NoumFriend(
+            id: sharedID,
+            displayName: "Expected",
+            addedAt: Date(),
+            addedVia: .invite,
+            accountID: "friend-b",
+            pairID: pairB.uuidString,
+            connectionSchemaVersion: 1
+        )
+        let replacement = NoumFriend(
+            id: sharedID,
+            displayName: "Replacement",
+            addedAt: Date(),
+            addedVia: .invite,
+            accountID: "friend-b",
+            pairID: pairC.uuidString,
+            connectionSchemaVersion: 1
+        )
+
+        let remaining = FriendsManager.removingConfirmedServerLink(
+            id: sharedID,
+            accountID: "friend-b",
+            pairID: pairB,
+            from: [expected, replacement]
+        )
+
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.pairID == pairC.uuidString)
+    }
+
+    @Test("Remove requires the exact expected pair and account echo")
     func removeEchoValidation() throws {
         let response = RemoveFriendLinkResponse(
             schemaVersion: 1,
+            pairID: pairB.uuidString,
             friendAccountID: "friend-b",
             removed: false
         )
-        let replay = try response.result(expectedFriendAccountID: "friend-b")
+        let replay = try response.result(
+            expectedPairID: pairB.uuidString,
+            expectedFriendAccountID: "friend-b"
+        )
+        #expect(replay.pairID == pairB)
         #expect(replay.friendAccountID == "friend-b")
         #expect(!replay.removedNow)
         #expect(throws: SocialAuthorityError.invalidResponse) {
-            try response.result(expectedFriendAccountID: "friend-c")
+            try response.result(
+                expectedPairID: pairB.uuidString,
+                expectedFriendAccountID: "friend-c"
+            )
+        }
+        #expect(throws: SocialAuthorityError.invalidResponse) {
+            try response.result(
+                expectedPairID: pairC.uuidString,
+                expectedFriendAccountID: "friend-b"
+            )
         }
     }
 
@@ -318,6 +408,10 @@ struct FriendshipAuthorityClientTests {
     }
 
     private var validInviteToken: String {
+        "0123456789abcdefghijklmnopqrstuvABCDEFGH_I8"
+    }
+
+    private var nonCanonicalInviteToken: String {
         "0123456789abcdefghijklmnopqrstuvABCDEFGH_I-"
     }
 

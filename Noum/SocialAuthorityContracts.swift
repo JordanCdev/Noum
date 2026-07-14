@@ -406,6 +406,13 @@ struct FriendAuthorityEnvelope: Codable, Equatable, Sendable {
     let displayName: String
     let linkedAt: Double
 
+    private enum CodingKeys: String, CodingKey {
+        case pairID
+        case accountID = "friendAccountID"
+        case displayName
+        case linkedAt
+    }
+
     func link(currentAccountID: String) throws -> FriendAuthorityLink {
         guard let pairID = UUID(uuidString: pairID) else {
             throw SocialAuthorityError.invalidResponse
@@ -519,7 +526,7 @@ struct ListFriendLinksRequest: Codable, Equatable, Sendable {
         self.limit = limit
     }
 
-    var isValid: Bool { (1...50).contains(limit) }
+    var isValid: Bool { limit == 50 }
 }
 
 struct ListFriendLinksResponse: Codable, Equatable, Sendable {
@@ -531,7 +538,7 @@ struct ListFriendLinksResponse: Codable, Equatable, Sendable {
         currentAccountID: String
     ) throws -> [FriendAuthorityLink] {
         guard schemaVersion == ListFriendLinksRequest.currentSchemaVersion,
-              (1...50).contains(requestedLimit),
+              requestedLimit == 50,
               friends.count <= requestedLimit else {
             throw SocialAuthorityError.invalidResponse
         }
@@ -548,28 +555,40 @@ struct RemoveFriendLinkRequest: Codable, Equatable, Sendable {
     static let currentSchemaVersion = 1
 
     let schemaVersion: Int
+    let pairID: String
     let friendAccountID: String
 
-    init(friendAccountID: String) {
+    init(pairID: UUID, friendAccountID: String) {
         schemaVersion = Self.currentSchemaVersion
+        self.pairID = pairID.uuidString
         self.friendAccountID = friendAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    var isValid: Bool { FriendAuthorityValidation.isValidAccountID(friendAccountID) }
+    var isValid: Bool {
+        UUID(uuidString: pairID)?.uuidString == pairID
+            && FriendAuthorityValidation.isValidAccountID(friendAccountID)
+    }
 }
 
 struct RemoveFriendLinkResponse: Codable, Equatable, Sendable {
     let schemaVersion: Int
+    let pairID: String
     let friendAccountID: String
     let removed: Bool
 
-    func result(expectedFriendAccountID: String) throws -> FriendRemovalAuthorityResult {
+    func result(
+        expectedPairID: String,
+        expectedFriendAccountID: String
+    ) throws -> FriendRemovalAuthorityResult {
         guard schemaVersion == RemoveFriendLinkRequest.currentSchemaVersion,
+              pairID == expectedPairID,
+              let pairUUID = UUID(uuidString: pairID),
               friendAccountID == expectedFriendAccountID,
               FriendAuthorityValidation.isValidAccountID(friendAccountID) else {
             throw SocialAuthorityError.invalidResponse
         }
         return FriendRemovalAuthorityResult(
+            pairID: pairUUID,
             friendAccountID: friendAccountID,
             removedNow: removed
         )
@@ -577,6 +596,7 @@ struct RemoveFriendLinkResponse: Codable, Equatable, Sendable {
 }
 
 struct FriendRemovalAuthorityResult: Equatable, Sendable {
+    let pairID: UUID
     let friendAccountID: String
     let removedNow: Bool
 }
@@ -590,14 +610,18 @@ private enum FriendAuthorityValidation {
     }
 
     static func isValidInviteToken(_ value: String) -> Bool {
-        value.utf8.count == 43
-            && value.utf8.allSatisfy { byte in
-                (65...90).contains(byte)
-                    || (97...122).contains(byte)
-                    || (48...57).contains(byte)
-                    || byte == 95
-                    || byte == 45
-            }
+        guard value.utf8.count == 43 else { return false }
+        let padded = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/") + "="
+        guard let decoded = Data(base64Encoded: padded), decoded.count == 32 else {
+            return false
+        }
+        let canonical = decoded.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return canonical == value
     }
 }
 

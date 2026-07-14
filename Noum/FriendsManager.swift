@@ -314,16 +314,25 @@ final class FriendsManager: ObservableObject {
         guard let friend = friends.first(where: { $0.id == id }),
               friend.isServerLinked,
               let friendAccountID = friend.accountID,
+              let persistedPairID = friend.pairID,
+              let pairID = UUID(uuidString: persistedPairID),
               let context = beginConnectionOperation(.removing(id)) else { return }
         defer { finishConnectionOperation(.removing(id), context: context) }
         do {
             let result = try await BackendSyncManager.shared.removeFriendLink(
+                pairID: pairID,
                 friendAccountID: friendAccountID,
                 accountID: context.accountID
             )
             guard isOperationContextCurrent(context),
+                  result.pairID == pairID,
                   result.friendAccountID == friendAccountID else { return }
-            friends.removeAll { $0.id == id && $0.accountID == friendAccountID }
+            friends = Self.removingConfirmedServerLink(
+                id: id,
+                accountID: friendAccountID,
+                pairID: pairID,
+                from: friends
+            )
             connectionErrorMessage = nil
             persist(context: context)
         } catch {
@@ -355,6 +364,19 @@ final class FriendsManager: ObservableObject {
             return serverFriend(from: link)
         }
         return linked + localContacts
+    }
+
+    static func removingConfirmedServerLink(
+        id: UUID,
+        accountID: String,
+        pairID: UUID,
+        from cached: [NoumFriend]
+    ) -> [NoumFriend] {
+        cached.filter {
+            !($0.id == id
+                && $0.accountID == accountID
+                && $0.pairID.flatMap(UUID.init(uuidString:)) == pairID)
+        }
     }
 
     static func mergingAcceptedLink(

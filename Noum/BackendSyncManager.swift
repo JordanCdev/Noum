@@ -963,6 +963,7 @@ actor BackendSyncManager {
     /// Removes one reciprocal relationship. A false `removed` value is a
     /// successful idempotent response: the link is already absent server-side.
     func removeFriendLink(
+        pairID: UUID,
         friendAccountID: String,
         accountID: String
     ) async throws -> FriendRemovalAuthorityResult {
@@ -972,7 +973,10 @@ actor BackendSyncManager {
         #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
         guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
         try requireFirebaseAccount(accountID)
-        let request = RemoveFriendLinkRequest(friendAccountID: friendAccountID)
+        let request = RemoveFriendLinkRequest(
+            pairID: pairID,
+            friendAccountID: friendAccountID
+        )
         guard request.isValid, request.friendAccountID != accountID else {
             throw SocialAuthorityError.invalidRequest
         }
@@ -980,7 +984,10 @@ actor BackendSyncManager {
             Self.removeFriendLinkFunctionName,
             request: request
         )
-        return try response.result(expectedFriendAccountID: request.friendAccountID)
+        return try response.result(
+            expectedPairID: request.pairID,
+            expectedFriendAccountID: request.friendAccountID
+        )
         #else
         throw SocialAuthorityError.notConfigured
         #endif
