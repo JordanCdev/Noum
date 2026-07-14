@@ -410,9 +410,10 @@ class AppPathBoundaryTests(unittest.TestCase):
         }
         trace["reasoning"]["qualityGateOutcome"] = "fallback:typedAssessment"
         reply = (
-            "Your last pressure rep had 6 fillers, mostly before the close, "
-            "so the pressure leak is the final sentence. Next rep, replace the "
-            "urge with one silent beat before the final sentence, then finish the ask."
+            "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). "
+            "That rate is one usable signal, not a pressure pattern, so hold one "
+            "silent beat before the final sentence, finish the ask, then compare "
+            "fillers per minute under the same demand."
         )
 
         result = arena.local_judge(fixture, reply, trace)
@@ -516,6 +517,23 @@ class AppPathBoundaryTests(unittest.TestCase):
 
         self.assertLessEqual(result["overall"], 50)
         self.assertIn("reportVoice", result["checkFailures"])
+
+    def test_qualified_filler_evidence_with_rate_and_move_is_not_report_voice(self):
+        fixture = gold_fixture("filler-pressure-007")
+        reply = (
+            "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). "
+            "That rate is one usable signal, not a pressure pattern, so hold one "
+            "silent beat before the final sentence, finish the ask, then compare "
+            "fillers per minute under the same demand."
+        )
+
+        result = arena.local_judge(
+            fixture,
+            reply,
+            complete_app_path_trace(),
+        )
+
+        self.assertNotIn("reportVoice", result["checkFailures"])
 
     def test_app_path_loader_preserves_source_readiness_fields(self):
         report = {

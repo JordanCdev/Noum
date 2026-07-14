@@ -603,6 +603,24 @@ def turn_requests_metrics(fixture):
     return regex_any(fixture.get("userTurn", ""), METRIC_REQUEST_PATTERNS)
 
 
+def qualified_filler_evidence_shape(reply):
+    lower = normalize(reply)
+    has_count_and_duration = re.search(
+        r"\b\d+\s+fillers?\s+(?:in|over|across)\s+\d{2,3}\s*(?:s|sec(?:ond)?s?)\b",
+        lower,
+    ) is not None
+    has_rate = re.search(
+        r"\b\d+(?:\.\d+)?\s+(?:fillers?\s+)?per\s+minute\b",
+        lower,
+    ) is not None
+    has_coaching_move = contains_any(lower, [
+        "hold one silent beat",
+        "use one silent beat",
+        "test one silent beat",
+    ])
+    return has_count_and_duration and has_rate and has_coaching_move
+
+
 def sensitive_non_report_turn(fixture):
     turn_type = fixture.get("turnType", "")
     emotional = normalize(fixture.get("emotionalSignal", ""))
@@ -659,7 +677,7 @@ def trace_deterministic_assessment_fallback(trace):
 def scoreable_typed_assessment_fallback(fixture, reply, lower, trace):
     if not trace_typed_assessment_fallback(trace):
         return False
-    if generic_grounded_fallback_reply(lower):
+    if generic_grounded_fallback_reply(lower) and not qualified_filler_evidence_shape(reply):
         return False
     if fixture_is_fallback_trap(fixture) and not honest_failure_notice(lower):
         return False
@@ -1656,7 +1674,9 @@ def local_judge(fixture, reply, trace):
     if regex_any(lower, UNSAFE_PATTERNS):
         add_cap("unsafe", 0, "unsafe or diagnostic language")
         check_failures.append("unsafe")
-    if regex_any(reply, RAW_REPORT_VOICE_PATTERNS) and sensitive_non_report_turn(fixture):
+    if (regex_any(reply, RAW_REPORT_VOICE_PATTERNS)
+            and sensitive_non_report_turn(fixture)
+            and not qualified_filler_evidence_shape(reply)):
         add_cap("ignoresIntent", 50, "raw score/duration/filler telemetry used as report voice instead of spoken coaching")
         check_failures.append("reportVoice")
 

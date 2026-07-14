@@ -89,12 +89,12 @@
     "userTurn": "How do I stop saying um under pressure?",
     "priorChatTurns": [],
     "goal": "Reduce fillers when pressure rises.",
-    "evidence": ["last pressure rep had 6 fillers", "fillers cluster before the close"],
+    "evidence": ["latest qualified rep had 6 fillers in 64 seconds (5.6 per minute)", "one rate is not a pressure pattern"],
     "memoryState": "Filler work should distinguish filler speech from semantic wording.",
     "emotionalSignal": "Wants tactical help.",
     "expectedCoachMove": "Use filler evidence, prescribe silent beat replacement, avoid shame.",
     "badAnswerExample": "Stop saying um by being more confident.",
-    "excellentAnswerExample": "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
+    "excellentAnswerExample": "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand.",
     "disqualifiers": ["shames fillers", "semantic words treated as fillers", "generic confidence"]
   },
   {
