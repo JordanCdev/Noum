@@ -817,7 +817,7 @@ enum CoachChatConversationCorpus {
             extraTurns: [
                 CoachChatConversationTurn(
                     userTurn: "I tried it and still filled before the proof.",
-                    coachReply: "Then the decision line is cleaner, but the proof handoff is leaking, so review the transcript from the first proof sentence and rewrite only that transition: decision, because, proof."
+                    coachReply: "The signal is now placement before the proof, so review the transcript from the first proof sentence and rewrite only that transition: decision, because, proof."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Do I change the whole answer?",
