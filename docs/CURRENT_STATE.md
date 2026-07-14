@@ -1,5 +1,40 @@
 # Noum — Current state
 
+## 2026-07-14 — Case status is grounded in accepted comparable reps
+
+Implementation commit `488f8040` closes the case-status attribution gap in
+the existing `PrimaryFocusMemory` owner. A same-mode history row can no longer
+make an unattempted prescription look followed or met. Case status and success
+criteria now admit only explicitly followed recommendation outcomes with a
+current comparable-baseline schema, an exact normalized focus and mode match,
+target-metric evidence, and an exact current-epoch `PracticeSession` ID. Rows
+before the prescription, future rows, missing sessions, duplicate IDs, legacy
+schemas, and target-metric-missing outcomes fail closed.
+
+Filler criteria and rep values now use fillers per minute rather than raw
+counts, so longer sessions are not penalized merely for duration. When current
+comparable evidence is deep enough, the existing persisted recommendation
+delta reconstructs the prior baseline and produces a stable target-aware
+criterion; weak evidence keeps the generic bar. Legacy raw-count criteria still
+decode for compatibility but are rebuilt before they can carry a met status.
+No new store, route, or parallel case system was introduced.
+
+At the detached clean `488f8040` boundary, all 54
+`CoachMemoryEngineTests` passed in one suite with zero failures or skips. The
+result bundle is `/private/tmp/NoumCoachMemory488f.xcresult`. This focused run
+does not replace the complete Swift regression and unsigned Release boundary
+at `47cbab5f`, and it is not rendered UI, population-effectiveness, physical-
+device, or TestFlight evidence.
+
+Exact demand remains incomplete because `PracticeSession` does not persist
+Timed/Sudden Death difficulty or Speech Project identity. Home/Train tap-time
+capability fallback can still miss a shown denominator. Whole-ledger cloud
+writes are not yet serialized or protected by backend compare-and-swap, so
+cross-device mixed-version overwrite risk remains. No live-provider,
+professional-calibration, longitudinal-user, physical-TestFlight, security-
+incident, or launch-operations evidence was collected. Production readiness
+remains NO-GO.
+
 ## 2026-07-14 — Recommendation response uses comparable evidence
 
 Implementation commit `f1d6ec72` closes the heterogeneous recommendation-
@@ -31,13 +66,14 @@ diagnostics card is outside the light Settings frame and is not claimed as
 direct visual proof. This focused run does not replace the complete Swift and
 unsigned Release boundary at `47cbab5f`.
 
-Exact demand is still incomplete because `PracticeSession` does not persist
-Timed/Sudden Death difficulty or Speech Project identity. Home/Train tap-time
-capability fallback can still miss a shown denominator, and
-`PrimaryFocusMemory.followedRepValues` has not yet adopted the accepted-
-prescription/normalized-filler contract. No live-provider, professional-
-calibration, longitudinal-user, physical-TestFlight, security-incident, or
-launch-operations evidence was collected. Production readiness remains NO-GO.
+At that boundary, exact demand was still incomplete because `PracticeSession`
+does not persist Timed/Sudden Death difficulty or Speech Project identity.
+Home/Train tap-time capability fallback can still miss a shown denominator, and
+`PrimaryFocusMemory.followedRepValues` had not yet adopted the accepted-
+prescription/normalized-filler contract; `488f8040` closes that latter gap. No
+live-provider, professional-calibration, longitudinal-user, physical-TestFlight,
+security-incident, or launch-operations evidence was collected. Production
+readiness remains NO-GO.
 
 ## 2026-07-14 — App-path evidence now requires a clean behavior source
 
