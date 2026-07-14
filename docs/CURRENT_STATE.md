@@ -1,5 +1,37 @@
 # Noum — Current state
 
+## 2026-07-14 — Recommended taps preserve the shown denominator
+
+Implementation commit `eb597589` closes the Home/Train tap-time prescription
+denominator gap in the existing recommendation owners. Both surfaces now pass
+their captured rendered exposure through one stateless
+`RecommendationTapAttribution` policy after resolving the live route. A tap
+records that exact prescription as shown before the capability decision is
+classified; acceptance is recorded only when the displayed mode is the mode
+that actually opens. A capability-loss fallback therefore contributes a
+truthful shown denominator without becoming accepted, followed, or Quick
+Start-armed. Train's Adjust and alternate-mode actions remain outside
+recommendation acceptance. The existing 150 ms selected-tab dwell remains the
+non-tap exposure path, and same-fingerprint shown writes remain idempotent.
+
+At the detached clean `eb597589` boundary, one signed iPhone 17 Pro simulator
+run passed 63/63 selected tests with zero failures or skips. The 61 unit tests
+cover shown-before-accepted ordering, Pressure and IM capability-loss fallback,
+availability, exact visible exposure identity, KPI pair math, and followed-rep
+gating. Both `RecommendationSurfaceRoutingUITests` then mounted the real Home
+and Train recommendations, reached the rendered Filler Control destination,
+and read back a 100% correlated shown/accepted pair. The source-bound result
+bundle is `/private/tmp/NoumRecommendationAttribution-eb597589.xcresult`.
+
+This is local simulator evidence, not population effectiveness or proof of
+every rendered recommendation/fallback destination. Distributed cloud safety
+still lacks backend compare-and-swap/versioning and a mixed-old-client policy.
+Exact Timed/Sudden Death difficulty and Speech Project demand also remain
+unpersisted. No live-provider, professional-calibration, longitudinal-user,
+physical-TestFlight, security-incident, or launch-operations evidence was
+collected. Production readiness remains NO-GO at 18/100 with zero of five
+external artifacts passing.
+
 ## 2026-07-14 — Recommendation state sync is ordered and retryable in-process
 
 Implementation commit `9378b6ef` closes the verified same-process whole-state
