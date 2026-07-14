@@ -38807,6 +38807,75 @@ struct SummaryLookingAheadRouterTests {
     }
 }
 
+// MARK: - Recommendation tap attribution
+
+/// Pins the analytics ordering shared by Home and Train. A tap always records
+/// the exact rendered prescription as shown before considering the live route;
+/// only an exact displayed/launched mode match counts as acceptance.
+struct RecommendationTapAttributionTests {
+    private enum Event: Equatable {
+        case shown
+        case accepted(PracticeMode)
+    }
+
+    private func events(
+        for launch: PracticeModeLaunchProjection
+    ) -> [Event] {
+        var events: [Event] = []
+        RecommendationTapAttribution.apply(
+            launch: launch,
+            recordShown: { events.append(.shown) },
+            recordAccepted: { events.append(.accepted($0)) }
+        )
+        return events
+    }
+
+    @Test func availablePressureRecordsShownBeforeAccepted() {
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: .suddenDeath,
+            imAvailable: true,
+            modeAvailability: .allAvailable
+        )
+
+        #expect(events(for: launch) == [.shown, .accepted(.suddenDeath)])
+    }
+
+    @Test func lostPressureCapabilityRecordsShownWithoutAcceptance() {
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: .suddenDeath,
+            imAvailable: true,
+            modeAvailability: NextActionModeAvailability(
+                suddenDeathAvailable: false,
+                imConversationAvailable: true
+            )
+        )
+
+        #expect(events(for: launch) == [.shown])
+    }
+
+    @Test func lostIMCapabilityRecordsShownWithoutAcceptance() {
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: .imConversation,
+            scenario: .difficultConversation,
+            tone: .calm,
+            imAvailable: false,
+            modeAvailability: .allAvailable
+        )
+
+        #expect(events(for: launch) == [.shown])
+    }
+
+    @Test func displayedTimedRecordsShownAndAcceptedWhenCapabilityReturns() {
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: .timed,
+            imAvailable: true,
+            modeAvailability: .allAvailable
+        )
+
+        #expect(events(for: launch) == [.shown, .accepted(.timed)])
+    }
+}
+
 // MARK: - LookingAheadCard launch CTA (round 19)
 //
 // The post-rep "Looking ahead" card uses the same router as Home's rendered

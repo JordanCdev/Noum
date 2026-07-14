@@ -1754,13 +1754,20 @@ struct PracticeModeSelectionView: View {
                 imConversationAvailable: imAvailable
             )
         )
+        if recordsRecommendationAcceptance {
+            RecommendationTapAttribution.apply(
+                launch: launch,
+                recordShown: {
+                    recordRecommendationShown(launchRecommendation)
+                },
+                recordAccepted: { mode in
+                    recommendationLearningStore.markTapped(mode: mode)
+                }
+            )
+        }
         if launch.acceptsDisplayedPrescription {
             if quickStart {
                 PracticeModeQuickStart.arm(for: launch.launchedMode)
-            }
-            if recordsRecommendationAcceptance {
-                recordRecommendationShown(launchRecommendation)
-                recommendationLearningStore.markTapped(mode: launch.launchedMode)
             }
         } else {
             // The capability changed after this mode rendered. Route safely,

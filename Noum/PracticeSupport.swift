@@ -202,6 +202,22 @@ struct PracticeModeLaunchProjection: Equatable {
     }
 }
 
+/// Applies recommendation analytics to a tap using the same route projection
+/// that decides what actually launches. A tap proves the rendered prescription
+/// was seen even when a live capability change forces a fallback; acceptance is
+/// recorded only when the displayed mode is the mode that opens.
+enum RecommendationTapAttribution {
+    static func apply(
+        launch: PracticeModeLaunchProjection,
+        recordShown: () -> Void,
+        recordAccepted: (PracticeMode) -> Void
+    ) {
+        recordShown()
+        guard launch.acceptsDisplayedPrescription else { return }
+        recordAccepted(launch.displayedMode)
+    }
+}
+
 struct SummaryPayload: Identifiable, Hashable {
     let id: UUID
     let mode: PracticeMode

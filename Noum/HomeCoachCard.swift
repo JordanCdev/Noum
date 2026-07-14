@@ -794,12 +794,17 @@ struct HomeCoachCard: View {
             imAvailable: IMModeAvailability.isAvailable,
             modeAvailability: liveAvailability
         )
-        if launch.acceptsDisplayedPrescription {
-            // Cover a very fast tap before SwiftUI's onAppear callback settles.
-            // `recordShown` is idempotent for this exact visible fingerprint.
-            recordRecommendationShown(exposure)
-            recommendationLearningStore.markTapped(mode: exposure.mode)
-        }
+        RecommendationTapAttribution.apply(
+            launch: launch,
+            recordShown: {
+                // Cover a very fast tap before SwiftUI's onAppear callback settles.
+                // `recordShown` is idempotent for this exact visible fingerprint.
+                recordRecommendationShown(exposure)
+            },
+            recordAccepted: { mode in
+                recommendationLearningStore.markTapped(mode: mode)
+            }
+        )
         if exposure.mode == .timed, launch.launchedMode == .timed {
             let theme = exposure.suggestedTheme
             if theme != .all {
