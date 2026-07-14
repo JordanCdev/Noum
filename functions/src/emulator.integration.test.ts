@@ -10,6 +10,7 @@ import {
 } from "firebase-admin/firestore";
 
 const projectID = process.env.GCLOUD_PROJECT ?? "noum-d0b6f";
+const productionProjectID = "noum-d0b6f";
 const functionsHost = process.env.FUNCTIONS_EMULATOR_HOST ?? "127.0.0.1:5001";
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9099";
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
@@ -394,7 +395,7 @@ async function seedSocialReferenceCutover(): Promise<void> {
     schemaVersion: 2,
     status: "complete",
     runID: "0713738e-d9ed-4337-986e-09205089d42e",
-    projectID,
+    projectID: productionProjectID,
     sourceGitCommit: "a".repeat(40),
     sourceImplementationSHA256: "b".repeat(64),
     backupDigest: "c".repeat(64),
@@ -621,7 +622,7 @@ test("social callables require the exact complete cutover marker", async () => {
     schemaVersion: 2,
     status: "complete",
     runID: "1713738e-d9ed-4337-986e-09205089d42e",
-    projectID,
+    projectID: productionProjectID,
     sourceGitCommit: "1".repeat(40),
     sourceImplementationSHA256: "2".repeat(64),
     backupDigest: "3".repeat(64),
@@ -633,7 +634,7 @@ test("social callables require the exact complete cutover marker", async () => {
     schemaVersion: 2,
     status: "in-progress",
     runID: completeMarker.runID,
-    projectID,
+    projectID: productionProjectID,
     sourceGitCommit: completeMarker.sourceGitCommit,
     sourceImplementationSHA256: completeMarker.sourceImplementationSHA256,
     backupDigest: completeMarker.backupDigest,
