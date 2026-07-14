@@ -65,9 +65,19 @@ Each row must also carry a coordinator-issued evidence-package access receipt
 ID and set `reviewerAttestsEvidenceWasReviewed` to `true`. A review based only
 on this repository packet is invalid.
 
+Every calibration case requires at least two distinct reviewers whose role is
+exactly `professional-communication-coach`. Each row must provide the complete
+rubric-dimension key set, using an integer from 0 through 100 or `null` when the
+dimension is unjudgeable. `overclaimRisk` is limited to `low`, `medium`, or
+`high`; notes are bounded to 2,000 characters; and one coordinator access
+receipt cannot be attributed to different reviewers.
+
 `GoalStyleCalibrationPacket.rejectionReasons(for:)` rejects an unbound evidence
-package, an evidence-package mismatch, missing evidence-review attestation,
-missing access receipt, or stale packet/formula fingerprints. A completed
-review packet remains calibration evidence, not authorization for user-facing
-numeric scoring; a separate product/privacy decision and longitudinal transfer
-evidence are still required.
+package, an evidence-package mismatch, empty or partial case coverage,
+insufficient reviewer independence, malformed review rows, missing evidence-
+review attestation, missing or shared access receipts, and stale packet/formula
+fingerprints. Negative professional judgments remain structurally valid
+calibration evidence: the validator does not turn disagreement into approval or
+discard it. A completed review packet remains calibration evidence, not
+authorization for user-facing numeric scoring; a separate product/privacy
+decision and longitudinal transfer evidence are still required.

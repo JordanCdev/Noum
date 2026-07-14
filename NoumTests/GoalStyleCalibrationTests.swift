@@ -271,27 +271,17 @@ struct GoalStyleCalibrationTests {
     @Test func reviewSubmissionCannotApplyToChangedFormulaFingerprint() throws {
         let packet = try GoalStyleCalibrationFixtures.boundPacket()
         let source = try #require(packet.rows.first)
-        let staleReview = GoalStyleCalibrationReviewRow(
-            calibrationCaseID: source.calibrationCaseID,
-            formulaFingerprint: "fnv1a64:0000000000000000",
+        var reviews = validReviews(for: packet)
+        reviews[0] = validReview(
+            for: source,
             reviewerID: "reviewer.001",
-            reviewerRole: "professional-communication-coach",
-            evidencePackageAccessReceiptID: "evidence-access-receipt.001",
-            reviewerAttestsEvidenceWasReviewed: true,
-            independentScore0To100: 68,
-            dimensionScores: [:],
-            evidenceCoverageAppropriate: true,
-            confidenceAppropriate: true,
-            missingEvidenceHandledSafely: true,
-            scoreWithinAcceptableTolerance: true,
-            overclaimRisk: "low",
-            notes: ""
+            formulaFingerprint: "fnv1a64:0000000000000000"
         )
         let submission = GoalStyleCalibrationReviewSubmission(
             schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
             sourcePacketFingerprint: packet.packetFingerprint,
             sourceEvidencePackageFingerprint: packet.evidencePackageRequirement.packageFingerprint,
-            rows: [staleReview]
+            rows: reviews
         )
 
         #expect(packet.rejectionReasons(for: submission) == [
@@ -361,27 +351,11 @@ struct GoalStyleCalibrationTests {
             sourceEvidencePackageFingerprint: boundPacket.evidencePackageRequirement.packageFingerprint,
             rows: [boundUnverifiedReview]
         )
-        let verifiedReview = GoalStyleCalibrationReviewRow(
-            calibrationCaseID: boundSource.calibrationCaseID,
-            formulaFingerprint: boundSource.candidate.formulaFingerprint,
-            reviewerID: "reviewer.001",
-            reviewerRole: "professional-communication-coach",
-            evidencePackageAccessReceiptID: "evidence-access-receipt.001",
-            reviewerAttestsEvidenceWasReviewed: true,
-            independentScore0To100: 68,
-            dimensionScores: [:],
-            evidenceCoverageAppropriate: true,
-            confidenceAppropriate: true,
-            missingEvidenceHandledSafely: true,
-            scoreWithinAcceptableTolerance: true,
-            overclaimRisk: "low",
-            notes: ""
-        )
         let verifiedSubmission = GoalStyleCalibrationReviewSubmission(
             schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
             sourcePacketFingerprint: boundPacket.packetFingerprint,
             sourceEvidencePackageFingerprint: boundPacket.evidencePackageRequirement.packageFingerprint,
-            rows: [verifiedReview]
+            rows: validReviews(for: boundPacket)
         )
 
         #expect(boundPacket.humanGateStatus == "pendingProfessionalReview")
@@ -392,5 +366,146 @@ struct GoalStyleCalibrationTests {
             "evidenceAccessReceipt:\(boundSource.calibrationCaseID)"
         ))
         #expect(boundPacket.rejectionReasons(for: verifiedSubmission).isEmpty)
+    }
+
+    @Test func emptyAndPartialReviewSubmissionsCannotPassCoverage() throws {
+        let packet = try GoalStyleCalibrationFixtures.boundPacket()
+        let firstCase = try #require(packet.rows.first)
+        let secondCase = try #require(packet.rows.dropFirst().first)
+        let empty = GoalStyleCalibrationReviewSubmission(
+            schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
+            sourcePacketFingerprint: packet.packetFingerprint,
+            sourceEvidencePackageFingerprint: packet.evidencePackageRequirement.packageFingerprint,
+            rows: []
+        )
+        let partial = GoalStyleCalibrationReviewSubmission(
+            schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
+            sourcePacketFingerprint: packet.packetFingerprint,
+            sourceEvidencePackageFingerprint: packet.evidencePackageRequirement.packageFingerprint,
+            rows: [validReview(for: firstCase, reviewerID: "reviewer.001")]
+        )
+
+        let emptyReasons = packet.rejectionReasons(for: empty)
+        #expect(emptyReasons.contains("missingCase:\(firstCase.calibrationCaseID)"))
+        #expect(emptyReasons.contains("insufficientReviews:\(firstCase.calibrationCaseID)"))
+        #expect(emptyReasons.contains("insufficientReviewerDiversity:\(firstCase.calibrationCaseID)"))
+
+        let partialReasons = packet.rejectionReasons(for: partial)
+        #expect(partialReasons.contains("insufficientReviews:\(firstCase.calibrationCaseID)"))
+        #expect(partialReasons.contains("insufficientReviewerDiversity:\(firstCase.calibrationCaseID)"))
+        #expect(partialReasons.contains("missingCase:\(secondCase.calibrationCaseID)"))
+    }
+
+    @Test func malformedReviewShapeAndSharedAccessReceiptAreRejected() throws {
+        let packet = try GoalStyleCalibrationFixtures.boundPacket()
+        let source = try #require(packet.rows.first)
+        var reviews = validReviews(for: packet)
+        reviews[0] = GoalStyleCalibrationReviewRow(
+            calibrationCaseID: source.calibrationCaseID,
+            formulaFingerprint: source.candidate.formulaFingerprint,
+            reviewerID: "reviewer.001",
+            reviewerRole: "general-reviewer",
+            evidencePackageAccessReceiptID: "evidence-access-receipt.001",
+            reviewerAttestsEvidenceWasReviewed: true,
+            independentScore0To100: 68,
+            dimensionScores: [source.rubric.dimensions[0].id: 101],
+            evidenceCoverageAppropriate: true,
+            confidenceAppropriate: true,
+            missingEvidenceHandledSafely: true,
+            scoreWithinAcceptableTolerance: true,
+            overclaimRisk: "unknown",
+            notes: String(
+                repeating: "x",
+                count: GoalStyleCalibrationPacket.maximumReviewNotesCharacters + 1
+            )
+        )
+        reviews[1] = validReview(
+            for: source,
+            reviewerID: "reviewer.002",
+            evidencePackageAccessReceiptID: "evidence-access-receipt.001"
+        )
+        let submission = GoalStyleCalibrationReviewSubmission(
+            schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
+            sourcePacketFingerprint: packet.packetFingerprint,
+            sourceEvidencePackageFingerprint: packet.evidencePackageRequirement.packageFingerprint,
+            rows: reviews
+        )
+
+        let reasons = packet.rejectionReasons(for: submission)
+        #expect(reasons.contains("reviewerRole:\(source.calibrationCaseID):reviewer.001"))
+        #expect(reasons.contains("dimensionScores:\(source.calibrationCaseID):reviewer.001"))
+        #expect(reasons.contains("overclaimRisk:\(source.calibrationCaseID):reviewer.001"))
+        #expect(reasons.contains("reviewNotes:\(source.calibrationCaseID):reviewer.001"))
+        #expect(reasons.contains("evidenceAccessReceiptReuse:evidence-access-receipt.001"))
+    }
+
+    @Test func completeIndependentNegativeReviewsRemainValidCalibrationEvidence() throws {
+        let packet = try GoalStyleCalibrationFixtures.boundPacket()
+        let submission = GoalStyleCalibrationReviewSubmission(
+            schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
+            sourcePacketFingerprint: packet.packetFingerprint,
+            sourceEvidencePackageFingerprint: packet.evidencePackageRequirement.packageFingerprint,
+            rows: packet.rows.flatMap { source in
+                [
+                    validReview(for: source, reviewerID: "reviewer.001"),
+                    validReview(
+                        for: source,
+                        reviewerID: "reviewer.002",
+                        evidenceCoverageAppropriate: false,
+                        confidenceAppropriate: false,
+                        missingEvidenceHandledSafely: false,
+                        scoreWithinAcceptableTolerance: false,
+                        overclaimRisk: "high",
+                        notes: "The candidate is structurally reviewable but not professionally approved."
+                    )
+                ]
+            }
+        )
+
+        #expect(packet.rejectionReasons(for: submission).isEmpty)
+    }
+
+    private func validReviews(
+        for packet: GoalStyleCalibrationPacket
+    ) -> [GoalStyleCalibrationReviewRow] {
+        packet.rows.flatMap { source in
+            [
+                validReview(for: source, reviewerID: "reviewer.001"),
+                validReview(for: source, reviewerID: "reviewer.002")
+            ]
+        }
+    }
+
+    private func validReview(
+        for source: GoalStyleCalibrationPacketRow,
+        reviewerID: String,
+        formulaFingerprint: String? = nil,
+        evidencePackageAccessReceiptID: String? = nil,
+        evidenceCoverageAppropriate: Bool = true,
+        confidenceAppropriate: Bool = true,
+        missingEvidenceHandledSafely: Bool = true,
+        scoreWithinAcceptableTolerance: Bool = true,
+        overclaimRisk: String = "low",
+        notes: String = ""
+    ) -> GoalStyleCalibrationReviewRow {
+        GoalStyleCalibrationReviewRow(
+            calibrationCaseID: source.calibrationCaseID,
+            formulaFingerprint: formulaFingerprint ?? source.candidate.formulaFingerprint,
+            reviewerID: reviewerID,
+            reviewerRole: GoalStyleCalibrationPacket.requiredReviewerRole,
+            evidencePackageAccessReceiptID: evidencePackageAccessReceiptID
+                ?? "evidence-access-receipt.\(reviewerID)",
+            reviewerAttestsEvidenceWasReviewed: true,
+            independentScore0To100: 68,
+            dimensionScores: Dictionary(uniqueKeysWithValues: source.rubric.dimensions.map {
+                ($0.id, Optional(68))
+            }),
+            evidenceCoverageAppropriate: evidenceCoverageAppropriate,
+            confidenceAppropriate: confidenceAppropriate,
+            missingEvidenceHandledSafely: missingEvidenceHandledSafely,
+            scoreWithinAcceptableTolerance: scoreWithinAcceptableTolerance,
+            overclaimRisk: overclaimRisk,
+            notes: notes
+        )
     }
 }

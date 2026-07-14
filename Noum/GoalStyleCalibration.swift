@@ -401,6 +401,10 @@ struct GoalStyleCalibrationPacket: Codable, Equatable {
     static let reviewResultsSchemaVersion = "goal-style-score-professional-calibration-results-v1"
     static let evidencePackageSchemaVersion = "goal-style-score-source-evidence-package-v1"
     static let artifactFileName = "goal-style-score-professional-calibration-v1.json"
+    static let requiredIndependentReviewsPerCase = 2
+    static let requiredReviewerRole = "professional-communication-coach"
+    static let maximumReviewNotesCharacters = 2_000
+    static let allowedOverclaimRisks: Set<String> = ["low", "medium", "high"]
 
     let schemaVersion: String
     let packetFingerprint: String
@@ -467,7 +471,8 @@ struct GoalStyleCalibrationPacket: Codable, Equatable {
             responseSchema: [
                 "Return one JSON row per reviewer per calibration case using schema \(reviewResultsSchemaVersion).",
                 "Echo packetFingerprint, evidencePackageFingerprint, calibrationCaseID, and formulaFingerprint exactly.",
-                "Include reviewerID, reviewerRole, evidencePackageAccessReceiptID, reviewerAttestsEvidenceWasReviewed=true, independentScore0To100 (0-100), dimensionScores keyed by dimension ID (0-100 or null when unjudgeable), evidenceCoverageAppropriate (boolean), confidenceAppropriate (boolean), missingEvidenceHandledSafely (boolean), scoreWithinAcceptableTolerance (boolean), overclaimRisk (low|medium|high), and notes."
+                "Every case requires at least \(requiredIndependentReviewsPerCase) distinct reviewers with reviewerRole=\(requiredReviewerRole).",
+                "Include reviewerID, reviewerRole, evidencePackageAccessReceiptID, reviewerAttestsEvidenceWasReviewed=true, independentScore0To100 (0-100), dimensionScores keyed exactly by every rubric dimension ID (0-100 or null when unjudgeable), evidenceCoverageAppropriate (boolean), confidenceAppropriate (boolean), missingEvidenceHandledSafely (boolean), scoreWithinAcceptableTolerance (boolean), overclaimRisk (low|medium|high), and notes up to \(maximumReviewNotesCharacters) characters."
             ].joined(separator: " "),
             caseCount: rows.count,
             rows: rows
@@ -498,24 +503,36 @@ struct GoalStyleCalibrationPacket: Codable, Equatable {
         }
         let rowsByID = Dictionary(uniqueKeysWithValues: rows.map { ($0.calibrationCaseID, $0) })
         var reviewSlots = Set<String>()
+        var reviewCountsByCase: [String: Int] = [:]
+        var reviewerIDsByCase: [String: Set<String>] = [:]
+        var receiptOwners: [String: String] = [:]
         for review in submission.rows {
             guard let source = rowsByID[review.calibrationCaseID] else {
                 reasons.append("unknownCase:\(review.calibrationCaseID)")
                 continue
             }
+            reviewCountsByCase[review.calibrationCaseID, default: 0] += 1
+            reviewerIDsByCase[review.calibrationCaseID, default: []].insert(review.reviewerID)
             if review.formulaFingerprint != source.candidate.formulaFingerprint {
                 reasons.append("formulaFingerprint:\(review.calibrationCaseID)")
             }
             if !GoalStyleCalibrationEngine.isOpaqueIdentifier(review.reviewerID) {
                 reasons.append("reviewerID:\(review.calibrationCaseID)")
             }
+            if review.reviewerRole != Self.requiredReviewerRole {
+                reasons.append("reviewerRole:\(review.calibrationCaseID):\(review.reviewerID)")
+            }
             if !review.reviewerAttestsEvidenceWasReviewed {
                 reasons.append("evidenceNotReviewed:\(review.calibrationCaseID)")
             }
-            if !GoalStyleCalibrationEngine.isOpaqueIdentifier(
-                review.evidencePackageAccessReceiptID ?? ""
-            ) {
+            let receiptID = review.evidencePackageAccessReceiptID ?? ""
+            if !GoalStyleCalibrationEngine.isOpaqueIdentifier(receiptID) {
                 reasons.append("evidenceAccessReceipt:\(review.calibrationCaseID)")
+            } else if let existingOwner = receiptOwners[receiptID],
+                      existingOwner != review.reviewerID {
+                reasons.append("evidenceAccessReceiptReuse:\(receiptID)")
+            } else {
+                receiptOwners[receiptID] = review.reviewerID
             }
             let slot = "\(review.calibrationCaseID)|\(review.reviewerID)"
             if !reviewSlots.insert(slot).inserted {
@@ -523,6 +540,33 @@ struct GoalStyleCalibrationPacket: Codable, Equatable {
             }
             if !(0...100).contains(review.independentScore0To100) {
                 reasons.append("independentScore:\(review.calibrationCaseID)")
+            }
+            let expectedDimensionIDs = Set(source.rubric.dimensions.map(\.id))
+            if Set(review.dimensionScores.keys) != expectedDimensionIDs ||
+                review.dimensionScores.values.contains(where: { score in
+                    guard let score else { return false }
+                    return !(0...100).contains(score)
+                }) {
+                reasons.append("dimensionScores:\(review.calibrationCaseID):\(review.reviewerID)")
+            }
+            if !Self.allowedOverclaimRisks.contains(review.overclaimRisk) {
+                reasons.append("overclaimRisk:\(review.calibrationCaseID):\(review.reviewerID)")
+            }
+            if review.notes.count > Self.maximumReviewNotesCharacters {
+                reasons.append("reviewNotes:\(review.calibrationCaseID):\(review.reviewerID)")
+            }
+        }
+        for row in rows {
+            let reviewCount = reviewCountsByCase[row.calibrationCaseID, default: 0]
+            let reviewerCount = reviewerIDsByCase[row.calibrationCaseID, default: []].count
+            if reviewCount == 0 {
+                reasons.append("missingCase:\(row.calibrationCaseID)")
+            }
+            if reviewCount < Self.requiredIndependentReviewsPerCase {
+                reasons.append("insufficientReviews:\(row.calibrationCaseID)")
+            }
+            if reviewerCount < Self.requiredIndependentReviewsPerCase {
+                reasons.append("insufficientReviewerDiversity:\(row.calibrationCaseID)")
             }
         }
         return Array(Set(reasons)).sorted()
