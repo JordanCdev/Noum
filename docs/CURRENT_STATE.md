@@ -1,5 +1,37 @@
 # Noum — Current state
 
+## 2026-07-14 — Supplemental speech surfaces require terminal capture
+
+Implementation commit `c44bd91c` closes a false-progress path in Mini-drills
+and Lesson Apply through the existing `SpeechRecognizerViewModel`,
+`RecordingStartGate`, and `RecordingCompletionGate` owners. Both surfaces now
+show a connecting state and begin consuming the response window only after the
+provider session and microphone tap are ready. Stop now awaits the provider's
+terminal receipt; silence, partial-only output, missing audio, transport loss,
+or finalization failure returns to a retryable state without producing a
+mini-drill outcome, XP/history write, lesson apply result, or lesson progress.
+The former fixed 0.6-second Lesson flush delay is removed. Successful
+cloud-to-local startup fallback is disclosed through the established
+content-free, reduced-motion-aware route notice on both surfaces.
+
+The focused `SpeechSessionIntegrityTests` selection passed 13/13 unique tests
+(26 reported executions under Xcode's duplicated Swift Testing listing) on the
+iPhone 17 iOS 26.3.1 simulator. The complete unit target then passed 4,066
+unique tests / 4,081 executions with zero failures or skips. The source contract
+pins awaited readiness, awaited finalization, both gates, both route notices,
+and the absence of the old fire-and-forget calls. A fresh light screenshot
+sweep rendered all five tab tops, but these microphone-dependent
+connecting/error states are not reachable through the light deterministic tour
+and still need focused device QA.
+
+This does not implement mid-stream audio replay to a second provider. Active
+stream loss still stops honestly and requires a new explicit attempt; switching
+under the same audio stream would otherwise create a deceptively incomplete or
+duplicated transcript. Real local-model availability, interruptions, route
+changes, and live cloud failure timing remain physical-device/TestFlight
+evidence. Production readiness remains **NO-GO at 18/100 with 0/5 external
+artifacts**.
+
 ## 2026-07-14 — Severe filler burden prescribes Filler Control
 
 Implementation commit `ec10990f` closes the literal PR-1 routing gap through
