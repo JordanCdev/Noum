@@ -1334,6 +1334,72 @@ struct NextActionEngineTests {
         #expect(drill.variation.skillArea == .paceControl)
     }
 
+    @Test func subFloorPaceDoesNotCreateAFirstRepPrescription() {
+        let input = NextActionInput(
+            fillerCount: 0, duration: 14, wordCount: 47, wpm: 201.4, score: 4,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        #expect(NextActionEngine.recommendAfterSession(input: input) == nil)
+    }
+
+    @Test func exactPaceQuantityFloorCanCreateAFirstRepPrescription() {
+        let input = NextActionInput(
+            fillerCount: 0, duration: 15, wordCount: 51, wpm: 204, score: 4,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        guard let result = NextActionEngine.recommendAfterSession(input: input),
+              case .drill(let drill) = result.primary else {
+            Issue.record("Expected qualifying severe pace evidence to prescribe one drill")
+            return
+        }
+        #expect(drill.variation.skillArea == .paceControl)
+    }
+
+    @Test func nonFinitePaceDoesNotCreateAFirstRepPrescription() {
+        let input = NextActionInput(
+            fillerCount: 0, duration: 30, wordCount: 100, wpm: .infinity, score: 4,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        #expect(NextActionEngine.recommendAfterSession(input: input) == nil)
+    }
+
+    @Test func subFloorPaceFallsThroughToEstablishedEvidence() {
+        let input = NextActionInput(
+            fillerCount: 0, duration: 14, wordCount: 47, wpm: 201.4, score: 4,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(blockers: ["Structure"]),
+            pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 15, streakDays: 3, styleGoal: nil
+        )
+
+        let result = NextActionEngine.recommend(input: input)
+
+        #expect(result.reasoning.contains("persistent"))
+        #expect(!result.reasoning.contains("clear constraint"))
+        guard case .confidenceRebuilding(let drill) = result.primary else {
+            Issue.record("Expected the established blocker to retain priority")
+            return
+        }
+        #expect(drill.variation.skillArea == .structure)
+    }
+
     @Test func persistentBlockerGetsConfidenceRebuilding() {
         let input = NextActionInput(
             fillerCount: 4, duration: 35, wordCount: 90, wpm: 154, score: 5,
@@ -6391,9 +6457,8 @@ struct ScoreCalibrationTests {
         #expect(real.headline != "Too short to score")
     }
 
-    /// Filler penalty must accelerate past 4 fillers — old cap of 3.0
-    /// meant 10 fillers looked the same as 4. New cap is 5.5 with
-    /// non-linear ramp.
+    /// Filler penalty must accelerate past 4 fillers per minute. The rate
+    /// policy keeps the old non-linear signal without punishing long reps.
     @Test func highFillerCountCostsMoreThanLowCount() {
         let lowFillerWords = Array(repeating: "word", count: 60).joined(separator: " ")
         let lowEval = PracticeEvaluator.evaluateTimedPractice(
@@ -6414,6 +6479,137 @@ struct ScoreCalibrationTests {
         )
         #expect(lowEval.score > highEval.score,
                 "10 fillers (\(highEval.score)) should score lower than 2 (\(lowEval.score))")
+    }
+
+    @Test func timedFillerPenaltyIsInvariantAcrossEquivalentRates() {
+        let short = PracticeEvaluator.evaluateTimedPractice(
+            transcript: Array(repeating: "word", count: 140).joined(separator: " "),
+            fillerCount: 1,
+            duration: 60,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil,
+            durationTarget: TimedPracticeDurationTarget(minimum: 60, target: 60)
+        )
+        let project = PracticeEvaluator.evaluateTimedPractice(
+            transcript: Array(repeating: "word", count: 1_400).joined(separator: " "),
+            fillerCount: 10,
+            duration: 600,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil,
+            durationTarget: TimedPracticeDurationTarget(minimum: 600, target: 600)
+        )
+
+        #expect(short.score == project.score)
+        #expect(short.xpEarned == project.xpEarned)
+        #expect(
+            short.segments.first(where: { $0.title == "Filler penalty" })?.value
+                == project.segments.first(where: { $0.title == "Filler penalty" })?.value
+        )
+        #expect(
+            short.categories.first(where: { $0.dimension == "Clarity" })?.rating
+                == project.categories.first(where: { $0.dimension == "Clarity" })?.rating
+        )
+    }
+
+    @Test func timedFillerPenaltyDistinguishesLowAndConcentratedRates() {
+        let longLowRate = PracticeEvaluator.evaluateTimedPractice(
+            transcript: Array(repeating: "word", count: 1_400).joined(separator: " "),
+            fillerCount: 10,
+            duration: 600,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil,
+            durationTarget: TimedPracticeDurationTarget(minimum: 600, target: 600)
+        )
+        let shortHighRate = PracticeEvaluator.evaluateTimedPractice(
+            transcript: Array(repeating: "word", count: 47).joined(separator: " "),
+            fillerCount: 3,
+            duration: 20,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil,
+            durationTarget: TimedPracticeDurationTarget(minimum: 20, target: 20)
+        )
+        let lowPenalty = longLowRate.segments.first { $0.title == "Filler penalty" }?.value
+        let highPenalty = shortHighRate.segments.first { $0.title == "Filler penalty" }?.value
+
+        #expect(lowPenalty == "-1")
+        #expect(highPenalty == "-6")
+        #expect(!longLowRate.feedback.localizedCaseInsensitiveContains("carried too much"))
+        #expect(shortHighRate.feedback.localizedCaseInsensitiveContains("carried too much"))
+    }
+
+    @Test func ahCounterUsesTheSameDurationNormalizedFillerRead() {
+        let short = PracticeEvaluator.evaluateAhCounterPractice(
+            transcript: Array(repeating: "word", count: 140).joined(separator: " "),
+            fillerCount: 1,
+            duration: 60,
+            recentSessions: [],
+            profile: nil
+        )
+        let long = PracticeEvaluator.evaluateAhCounterPractice(
+            transcript: Array(repeating: "word", count: 1_400).joined(separator: " "),
+            fillerCount: 10,
+            duration: 600,
+            recentSessions: [],
+            profile: nil
+        )
+
+        #expect(short.score == long.score)
+        #expect(short.xpEarned == long.xpEarned)
+        #expect(short.feedback == long.feedback)
+        #expect(
+            short.segments.first(where: { $0.title == "Filler penalty" })?.value
+                == long.segments.first(where: { $0.title == "Filler penalty" })?.value
+        )
+    }
+
+    @Test func subFloorAhCounterWithholdsFillerJudgment() {
+        let transcript = Array(repeating: "word", count: 35).joined(separator: " ")
+        let clean = PracticeEvaluator.evaluateAhCounterPractice(
+            transcript: transcript,
+            fillerCount: 0,
+            duration: 14,
+            recentSessions: [],
+            profile: nil
+        )
+        let noisy = PracticeEvaluator.evaluateAhCounterPractice(
+            transcript: transcript,
+            fillerCount: 10,
+            duration: 14,
+            recentSessions: [],
+            profile: nil
+        )
+
+        #expect(clean.score == noisy.score)
+        #expect(noisy.feedback.contains("at least 15 seconds"))
+        #expect(!noisy.feedback.localizedCaseInsensitiveContains("habit"))
+        #expect(noisy.segments.first(where: { $0.title == "Filler penalty" })?.value == "-0")
+    }
+
+    @Test func suddenDeathRetainsExactZeroTolerance() {
+        let transcript = Array(repeating: "word", count: 70).joined(separator: " ")
+        let clean = PracticeEvaluator.evaluateSuddenDeathPractice(
+            transcript: transcript,
+            fillerCount: 0,
+            duration: 30,
+            pressureEventsHandled: 2,
+            recentSessions: [],
+            profile: nil
+        )
+        let eliminated = PracticeEvaluator.evaluateSuddenDeathPractice(
+            transcript: transcript,
+            fillerCount: 1,
+            duration: 30,
+            pressureEventsHandled: 2,
+            recentSessions: [],
+            profile: nil
+        )
+
+        #expect(clean.score > eliminated.score)
+        #expect(eliminated.feedback.localizedCaseInsensitiveContains("filler"))
     }
 
     // MARK: - Typography Dynamic Type contract

@@ -7097,15 +7097,19 @@ enum PracticeEvaluator {
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
         let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0  // Reduce 40% when audio quality is poor
-        // Filler penalty: linear up to 4 fillers, then accelerates so 6+
-        // genuinely costs the score. Old cap of 3.0 meant 10 fillers
-        // looked the same as 4 — that hid bad reps.
+        let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
+        let fillerRate = fillerBurden.ratePerMinute
+        // Interpret the detector's raw count at a per-minute rate so a long
+        // Speech Project is not penalized merely for creating more speaking
+        // time. The established 15-second floor withholds this judgment when
+        // there is not enough speech to compare fairly.
         let fillerPenalty: Double = {
+            guard let fillerRate else { return 0 }
             let raw: Double
-            if fillerCount <= 4 {
-                raw = Double(fillerCount) * 0.8
+            if fillerRate <= 4 {
+                raw = fillerRate * 0.8
             } else {
-                raw = 3.2 + Double(fillerCount - 4) * 1.1
+                raw = 3.2 + (fillerRate - 4) * 1.1
             }
             return min(raw * fillerPenaltyMultiplier, 5.5)
         }()
@@ -7187,7 +7191,8 @@ enum PracticeEvaluator {
         let feedback: String
         if wordCount < 3 || duration < 3 {
             feedback = "This response ended before the answer could develop. Aim for a clear opening, one supporting point, and a brief close."
-        } else if durationAssessment == .tooShort && fillerCount <= 2 {
+        } else if durationAssessment == .tooShort
+                    && (fillerRate == nil || fillerBurden.isAtMost(.elevated)) {
             let range = resolvedTargetRange
             feedback = "Your answer was only \(Int(duration))s — the target range is \(Int(range.min))–\(Int(range.max))s. Give your answer more room to develop."
         } else if durationAssessment == .tooLong {
@@ -7195,10 +7200,10 @@ enum PracticeEvaluator {
             feedback = "At \(Int(duration))s you went well past the \(Int(range.max))s mark. Tighten the structure: opening, one strong point, then close."
         } else if fillerCount == 0 && durationProgress >= 0.8 {
             feedback = "Strong control. You kept the answer clean while giving it enough shape to sound complete."
-        } else if fillerCount <= 2 && durationProgress >= 0.6 {
+        } else if fillerBurden.isAtMost(.elevated) && durationProgress >= 0.6 {
             feedback = "A solid response overall. On the next round, give the middle section a little more development."
-        } else if fillerCount > 4 {
-            feedback = "The structure is there, but filler words are getting in the way. Slow the pace slightly and let pauses do the work."
+        } else if fillerBurden.meets(.urgent) {
+            feedback = "The structure is there, but fillers carried too much of this rep. Replace the next one with a pause."
         } else {
             feedback = "A worthwhile pass. Keep the answer moving and make each transition a little cleaner."
         }
@@ -7291,8 +7296,11 @@ enum PracticeEvaluator {
             transcript.lowercased().contains("overall") ||
             duration >= 40
         )
+        let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
 
-        let opening: FeedbackRating = hasStrongOpen && fillerCount <= 1 ? .good : (hasStrongOpen ? .ok : .couldImprove)
+        let opening: FeedbackRating = hasStrongOpen && (fillerCount == 0 || fillerBurden.isAtMost(.elevated))
+            ? .good
+            : (hasStrongOpen ? .ok : .couldImprove)
         let structure: FeedbackRating = sentenceCount >= 3 && duration >= 20 ? .good : (sentenceCount >= 2 ? .ok : .couldImprove)
         // Relevance now rates on the prompt-grounded read when available
         // (drop-in for the old contentProgress proxy), falling back to
@@ -7301,7 +7309,16 @@ enum PracticeEvaluator {
         let relevanceBasis = relevanceProgress ?? contentProgress
         let relevance: FeedbackRating = relevanceBasis >= 0.7 ? .good : (relevanceBasis >= 0.4 ? .ok : .couldImprove)
         let depth: FeedbackRating = durationProgress >= 0.7 && wordCount >= 40 ? .good : (durationProgress >= 0.4 ? .ok : .couldImprove)
-        let clarity: FeedbackRating = fillerCount <= 1 && wordsPerMinute <= 160 ? .good : (fillerCount <= 3 ? .ok : .couldImprove)
+        let clarity: FeedbackRating
+        if fillerBurden.ratePerMinute == nil {
+            clarity = .ok
+        } else if (fillerCount == 0 || fillerBurden.isAtMost(.elevated)) && wordsPerMinute <= 160 {
+            clarity = .good
+        } else if fillerBurden.isAtMost(.primaryFocus) {
+            clarity = .ok
+        } else {
+            clarity = .couldImprove
+        }
         let pace: FeedbackRating = paceProgress >= 0.7 ? .good : (paceProgress >= 0.4 ? .ok : .couldImprove)
         let close: FeedbackRating = hasClose && duration >= 25 ? .good : (hasClose || duration >= 20 ? .ok : .couldImprove)
 
@@ -7327,7 +7344,9 @@ enum PracticeEvaluator {
 
     private static func buildWeakMoments(score: Int, fillerCount: Int, duration: TimeInterval, wordsPerMinute: Double) -> [String] {
         var moments: [String] = []
-        if fillerCount >= 4 { moments.append("Filler words disrupted flow (\(fillerCount) counted)") }
+        if FillerBurden(fillerCount: fillerCount, duration: duration).meets(.urgent) {
+            moments.append("Fillers disrupted flow (\(fillerCount) counted across \(Int(duration)) seconds)")
+        }
         if duration < 15 { moments.append("Answer ended too quickly to develop") }
         if wordsPerMinute > 170 { moments.append("Pace was rushed — slow down") }
         if score <= 3 { moments.append("Structure needs work — try intro → point → close") }
@@ -7468,7 +7487,12 @@ enum PracticeEvaluator {
         let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
         let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
-        let fillerPenalty = min(Double(fillerCount) * 0.8 * fillerPenaltyMultiplier, 5.0)
+        let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
+        let fillerRate = fillerBurden.ratePerMinute
+        let fillerPenalty = min(
+            (fillerRate ?? 0) * 0.8 * fillerPenaltyMultiplier,
+            5.0
+        )
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
@@ -7497,16 +7521,28 @@ enum PracticeEvaluator {
         let feedback: String
         if wordCount < 4 || duration < 4 {
             feedback = "This was too short to expose the pattern properly. Give the next rep enough time for your habits to show up."
-        } else if fillerCount <= 1 {
+        } else if fillerRate == nil {
+            feedback = "Keep the next rep going for at least 15 seconds before Noum reads the filler pattern."
+        } else if fillerCount == 0 || fillerBurden.isAtMost(.elevated) {
             feedback = "Strong awareness. You kept the filler count low while letting the answer breathe."
-        } else if fillerCount <= 3 {
+        } else if fillerBurden.isAtMost(.primaryFocus) {
             feedback = "A useful awareness pass. You can feel where filler words creep in, so slow those moments down next time."
         } else {
-            feedback = "This drill surfaced a real filler habit. Repeat it and focus on replacing the first filler with silence."
+            feedback = "This rep showed a concentrated filler pattern. Repeat it and replace the first filler with silence."
         }
 
+        let awarenessValue: String
+        if fillerRate == nil {
+            awarenessValue = "Building signal"
+        } else if fillerCount == 0 || fillerBurden.isAtMost(.elevated) {
+            awarenessValue = "+3"
+        } else if fillerBurden.isAtMost(.primaryFocus) {
+            awarenessValue = "+2"
+        } else {
+            awarenessValue = "+1"
+        }
         var segments = [
-            PracticeScoreSegment(title: "Awareness", value: fillerCount <= 1 ? "+3" : "+\(max(1, 4 - fillerCount))", tintName: "green"),
+            PracticeScoreSegment(title: "Awareness", value: awarenessValue, tintName: "green"),
             PracticeScoreSegment(title: "Depth", value: "+\(Int(round(durationProgress * 2)))", tintName: "blue"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 2)))", tintName: "orange"),
             PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "purple")
@@ -7519,7 +7555,9 @@ enum PracticeEvaluator {
         )
 
         var insights = sharedTrendInsights(trends: trends)
-        if fillerCount <= 2 {
+        if fillerRate == nil {
+            insights.append("This rep was too short to support a filler-rate read. Keep the next one going for at least 15 seconds.")
+        } else if fillerCount == 0 || fillerBurden.isAtMost(.elevated) {
             insights.append("You kept filler words relatively low in a free-form rep. Now keep that same awareness on tougher prompts.")
         } else {
             insights.append("This rep surfaced where filler words appear under less structure, which is useful coaching data.")
@@ -8097,7 +8135,7 @@ enum PracticeEvaluator {
             insights.append("This answer still needs more development before it will sound complete in a real conversation.")
         }
         insights.append("Pace check: \(paceSnapshot.wordsPerMinute) WPM. \(paceSnapshot.coachNote)")
-        if fillerCount > 4 {
+        if FillerBurden(fillerCount: fillerCount, duration: duration).meets(.urgent) {
             insights.append("Too much processing is happening out loud. Replace the next filler with a short pause.")
         }
         // Argument-logic read — claim -> evidence -> implication scaffold. A
@@ -8632,10 +8670,10 @@ enum PracticeEvaluator {
     private static func sharedTrendInsights(trends: TrendSnapshot) -> [String] {
         var insights: [String] = []
         if trends.hasHistory {
-            if trends.fillerDelta < 0 {
-                insights.append("You used fewer filler words than your recent average of \(Int(round(trends.averageFillers))).")
-            } else if trends.fillerDelta > 0 {
-                insights.append("Filler words were above your recent average. Slow the opening and let the next point arrive cleanly.")
+            if trends.hasFillerHistory, trends.fillerDelta < 0 {
+                insights.append("Your filler rate was below your recent average of \(String(format: "%.1f", trends.averageFillerRate)) per minute.")
+            } else if trends.hasFillerHistory, trends.fillerDelta > 0 {
+                insights.append("Your filler rate was above your recent average. Slow the opening and let the next point arrive cleanly.")
             }
 
             if trends.durationDelta > 0 {
@@ -8655,18 +8693,29 @@ enum PracticeEvaluator {
         recentSessions: [PracticeSession]
     ) -> TrendSnapshot {
         let previousSessions = Array(recentSessions.dropFirst())
-        let averageFillers = previousSessions.isEmpty
-            ? Double(fillerCount)
-            : Double(previousSessions.map(\.fillerWordCount).reduce(0, +)) / Double(previousSessions.count)
+        let currentFillerRate = FillerBurden(
+            fillerCount: fillerCount,
+            duration: duration
+        ).ratePerMinute
+        let previousFillerRates = FillerBurden.qualifyingRatesPerMinute(
+            in: previousSessions
+        )
+        let hasFillerHistory = currentFillerRate != nil && !previousFillerRates.isEmpty
+        let averageFillerRate = previousFillerRates.isEmpty
+            ? (currentFillerRate ?? 0)
+            : previousFillerRates.reduce(0, +) / Double(previousFillerRates.count)
         let averageDuration = previousSessions.isEmpty
             ? duration
             : previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
 
         return TrendSnapshot(
             hasHistory: !previousSessions.isEmpty,
-            averageFillers: averageFillers,
+            hasFillerHistory: hasFillerHistory,
+            averageFillerRate: averageFillerRate,
             averageDuration: averageDuration,
-            fillerDelta: Double(fillerCount) - averageFillers,
+            fillerDelta: hasFillerHistory
+                ? (currentFillerRate ?? averageFillerRate) - averageFillerRate
+                : 0,
             durationDelta: duration - averageDuration
         )
     }
@@ -8674,7 +8723,8 @@ enum PracticeEvaluator {
 
 private struct TrendSnapshot {
     let hasHistory: Bool
-    let averageFillers: Double
+    let hasFillerHistory: Bool
+    let averageFillerRate: Double
     let averageDuration: TimeInterval
     let fillerDelta: Double
     let durationDelta: TimeInterval

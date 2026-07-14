@@ -399,7 +399,7 @@ struct NextActionInput {
 /// The unified decision engine. After every session, it produces ONE strategic recommendation.
 ///
 /// Decision priority (highest → lowest):
-/// 1. Severe session issue (qualifying filler burden ≥ 8/min, duration < 8s, WPM > 200)
+/// 1. Severe session issue (qualifying filler burden ≥ 8/min, duration < 8s, qualifying WPM > 200)
 /// 2. Persistent blocker (same issue for 10+ sessions)
 /// 3. Pressure gap (strong casually but untested under pressure)
 /// 4. Declining trend with high confidence
@@ -647,7 +647,10 @@ enum NextActionEngine {
                 return .drill(drill)
             }
         }
-        if input.wpm > 200 {
+        if SessionQualifier.meetsQuantityFloor(
+            duration: input.duration,
+            wordCount: input.wordCount
+        ), input.wpm.isFinite, input.wpm > 200 {
             if let drill = selectDrill(for: .paceControl, input: input) {
                 return .drill(drill)
             }

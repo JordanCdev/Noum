@@ -961,9 +961,20 @@ enum SessionQualifier {
     static let minimumWordCount: Int = 20
     static let minimumConfidence: Double = 0.5
 
+    static func meetsQuantityFloor(
+        duration: TimeInterval,
+        wordCount: Int
+    ) -> Bool {
+        duration.isFinite
+            && duration >= minimumDuration
+            && wordCount >= minimumWordCount
+    }
+
     static func qualifies(_ session: PracticeSession) -> Bool {
-        guard session.duration >= minimumDuration else { return false }
-        guard session.wordCount >= minimumWordCount else { return false }
+        guard meetsQuantityFloor(
+            duration: session.duration,
+            wordCount: session.wordCount
+        ) else { return false }
         if let confidence = session.transcriptConfidence, confidence < minimumConfidence {
             return false
         }
