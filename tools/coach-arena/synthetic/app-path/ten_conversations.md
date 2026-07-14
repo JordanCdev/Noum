@@ -2,24 +2,22 @@
 
 These are fixture-backed synthetic conversations for done-state review.
 
-> Evidence status: STALE APP-PATH SOURCE.
-> Do not treat these conversations as current-source proof until the Swift app-path dump is regenerated and rescored.
-> Source freshness passes: `False`.
+> Evidence status: CURRENT APP-PATH SOURCE.
+> These conversations are backed by the current scored Swift app-path report.
+> Source freshness passes: `True`.
 > Real-pipeline evidence passes: `True`.
 > Report-internal source freshness passes: `True`.
-> Sidecar source freshness passes: `False`.
-> Current git commit: `7ae1fe43`.
-> Report trace git commit(s): `7ae1fe43`.
+> Sidecar source freshness passes: `True`.
+> Current git commit: `70b0b380`.
+> Report trace git commit(s): `70b0b380`.
 > Current coach source fingerprint: `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
 > Report trace coach source fingerprint(s): `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
-> Sidecar git commit: `80fbf6d2`.
-> Sidecar coach source fingerprint: `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`.
-> Sidecar/report mismatch `sourceCoachFingerprint`: sidecar `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`, report `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
-> Sidecar/report mismatch `sourceGitCommit`: sidecar `80fbf6d2`, report `7ae1fe43`.
+> Sidecar git commit: `70b0b380`.
+> Sidecar coach source fingerprint: `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
 
 ## authoritative-distance-001
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Sound authoritative in high-stakes updates.
 
@@ -34,7 +32,7 @@ Arena score: 87/100
 
 ## not-informative-trust-repair-002
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Get useful coaching, not generic advice.
 
@@ -49,7 +47,7 @@ Arena score: 71/100
 
 ## polite-however-pushback-003
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Feel understood before being prescribed another drill.
 
@@ -64,7 +62,7 @@ Arena score: 77/100
 
 ## not-easy-empathy-004
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Practice disagreement without sounding defensive.
 
@@ -79,7 +77,7 @@ Arena score: 85/100
 
 ## repeating-yourself-005
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Avoid repetitive coaching loops.
 
@@ -95,7 +93,7 @@ Arena score: 80/100
 
 ## interview-prep-006
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Prepare for an interview.
 
@@ -110,7 +108,7 @@ Arena score: 87/100
 
 ## filler-pressure-007
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Reduce fillers when pressure rises.
 
@@ -125,7 +123,7 @@ Arena score: 83/100
 
 ## leadership-update-008
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Sound executive in leadership updates.
 
@@ -140,7 +138,7 @@ Arena score: 74/100
 
 ## confidence-ending-009
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: End answers with confidence.
 
@@ -155,7 +153,7 @@ Arena score: 72/100
 
 ## examples-from-sessions-010
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Understand own pattern with proof.
 

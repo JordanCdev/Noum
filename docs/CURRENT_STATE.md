@@ -1,5 +1,41 @@
 # Noum — Current state
 
+## 2026-07-14 — Simulator evidence refresh is source-bound and repeatable
+
+Implementation commit `70b0b38095d01471e9c814c291b285cddcfaa1ab`
+repairs the existing Coach Arena evidence workflow without changing shipping app
+behavior. Both app-path wrappers and the live-provider XCTest path now use one
+shared simulator-environment bridge. It resolves and pins the exact simulator,
+serializes cooperating evidence runs, installs the dump-directory and source
+provenance values into the simulator launch environment, and restores any prior
+values on success, failure, or signal.
+
+A clean detached run at that exact commit used the documented
+`evidence-refresh` command with the unique directory
+`/private/tmp/noum-coach-eval-70b0b380-20260714T1330Z-b`. It produced all five
+XCTest artifacts plus both source sidecars in that directory. Preflight passed
+all 109 traces at commit `70b0b380` with coach fingerprint
+`sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
+The regenerated 50-fixture canonical report scores 79.76/100 with zero
+failures or placeholder leaks. The default evidence directory retained its
+pre-run byte rollup, and the selected simulator had no remaining evidence
+variables or lock after the run.
+
+The repository-supported local Firebase gate was also executed at clean source
+commit `bbd040b5` with Node 22.23.1, Java 21.0.11, Firebase CLI 15.19.1, and the
+`demo-noum` project. All 22 Auth/Firestore/Functions emulator integration tests
+passed, including App Check/Auth enforcement, recommendation compare-and-swap,
+social privacy/cutover, retry-safe deletion, routing, and rate limiting. The
+emulators shut down and temporary local env/secret files were removed. This is
+local contract evidence only; it does not prove deployment, production IAM,
+App Check configuration, migration, or mixed-device behavior.
+
+Production readiness remains **NO-GO at 18/100**. Local target shape remains
+85/100, the external-evidence cap remains 20/100, and zero of five required
+external sidecars is present. No live-provider sweep, professional calibration,
+longitudinal-user study, physical-TestFlight sweep, attachment-backed release
+run, credential-incident closure, or launch-operations evidence was collected.
+
 ## 2026-07-14 — Durable local guests stay outside Firebase persistence
 
 Implementation commit `7ae1fe43153f76c682f8a2d909842632cdcb4410`
@@ -161,9 +197,9 @@ ordering/retry, hydration merge, and account export/deletion. The source-bound
 result bundle is `/private/tmp/NoumRecommendationCAS-00dd5975.xcresult`.
 Firebase emulator integration contracts now cover concurrent same-revision
 mutation, legacy migration, idempotent replay, stale conflict, deletion
-tombstone, and direct-write denial, but they were not executed locally because
-this machine has no Java runtime and its Node 26 runtime is outside the
-repository's supported Firebase toolchain.
+tombstone, and direct-write denial. They were later executed through the
+canonical local `demo-noum` gate: all 22 integration tests passed with Node 22,
+Java 21, and pinned Firebase CLI 15.19.1.
 
 This is not deployed cross-device evidence. The dedicated recommendation
 runtime service account has no verified existence or IAM grant, the callable
@@ -2341,12 +2377,13 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   contract so a future refactor that drops `relativeTo:` fails the test
   suite.
 - **Firebase tooling exists; the recorded authentication is no longer trusted** —
-  Node 22, npm, and Firebase CLI 15.23.0 are installed, but the two CLI sessions
+  Node 22, Java 21, npm, and Firebase CLI are installed, but the two CLI sessions
   exposed during the 2026-07-13 inspection must be revoked before any authenticated
   use. Functions lint, build, and the current local transport/schema suites pass.
-  The Auth/Firestore/Functions emulator integration command cannot start on
-  this Mac until a Java runtime is installed; deployment remains a deliberate,
-  newly authenticated release action rather than part of local UI verification.
+  The canonical `demo-noum` Auth/Firestore/Functions emulator gate passed all
+  22 integration tests with pinned Firebase CLI 15.19.1. Deployment remains a
+  deliberate, newly authenticated release action rather than part of local UI
+  verification.
 
 ## 2026-07-11 — cohesive UI, language, and journey pass
 
