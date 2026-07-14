@@ -342,11 +342,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "You're repeating yourself.",
-                    coachReply: "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare fillers per minute on the same prompt and mark whether one appears after the decision line."
+                    coachReply: "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: check whether a filler appears after the decision line, then compare fillers per minute on the same prompt."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So not the same drill again?",
-                    coachReply: "Right. Same target, different check: the last rep gives one qualified rate, not a proven pressure pattern. Hold the close pause, then compare fillers per minute under the same demand."
+                    coachReply: "Right. Same target, different check, because the last rep gives one qualified rate, not a proven pressure pattern. Hold the close pause, then compare fillers per minute under the same demand."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should change next time?",
@@ -1613,7 +1613,7 @@ enum CoachChatConversationCorpus {
                 return false
             }
             if user.contains("before every sentence") &&
-                !(reply.contains("no") && containsAny(reply, ["before the close", "where the pressure", "where the pressure leaks"])) {
+                !(reply.contains("no") && containsAny(reply, ["before the close", "final sentence", "where the pressure", "where the pressure leaks"])) {
                 return false
             }
             if user.contains("why after the decision line") && !reply.contains("decision") {

@@ -3162,10 +3162,10 @@ actor AICoachChatService {
             return nil
         }
         guard let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: systemContext) else {
-            return "I do not have a comparable filler sample yet. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
+            return "I do not have a comparable filler sample yet, so run one 60-second pressure rep on the same prompt. Hold one silent beat before the final sentence, finish the ask, then use its fillers-per-minute rate as the baseline."
         }
         guard let summary = fillerEvidence.summary else {
-            return "That pressure sample is too small or uncertain for a fair filler-rate read. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
+            return "That pressure sample is too small or uncertain for a fair filler-rate read, so run one 60-second pressure rep on the same prompt. Hold one silent beat before the final sentence, finish the ask, then use its fillers-per-minute rate as the baseline."
         }
         return "Your latest qualified rep had \(summary). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
     }
@@ -4520,7 +4520,7 @@ actor AICoachChatService {
            latest.contains("sounded stiff") {
             let carriesResult = containsAny(lower, [
                 "reduced fillers", "fillers dropped", "cost warmth",
-                "sounded stiff"
+                "sounded stiff", "reported fewer fillers", "stiffer close"
             ])
             let adaptsMove = containsAny(lower, [
                 "natural phrase", "only before the final", "keep the beat",
