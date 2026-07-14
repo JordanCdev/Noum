@@ -7122,7 +7122,13 @@ enum PracticeEvaluator {
             }
         }()
 
-        let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
+        let trends = trendSnapshot(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            transcriptConfidence: transcriptConfidence,
+            recentSessions: recentSessions
+        )
         let durationAssessment = durationTarget?.assessment(for: duration)
             ?? assessDuration(duration, difficulty: difficulty)
 
@@ -7376,7 +7382,13 @@ enum PracticeEvaluator {
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
         let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
         let fillerPenalty = min(Double(fillerCount) * 2.0 * fillerPenaltyMultiplier, 6.0)
-        let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
+        let trends = trendSnapshot(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            transcriptConfidence: transcriptConfidence,
+            recentSessions: recentSessions
+        )
 
         let score: Int
         if wordCount < 3 || duration < 3 {
@@ -7493,7 +7505,13 @@ enum PracticeEvaluator {
             (fillerRate ?? 0) * 0.8 * fillerPenaltyMultiplier,
             5.0
         )
-        let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
+        let trends = trendSnapshot(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            transcriptConfidence: transcriptConfidence,
+            recentSessions: recentSessions
+        )
 
         let score: Int
         if wordCount < 4 || duration < 4 {
@@ -8267,6 +8285,8 @@ enum PracticeEvaluator {
         let trends = trendSnapshot(
             fillerCount: fillerCount,
             duration: duration,
+            wordCount: wordCount,
+            transcriptConfidence: nil,
             recentSessions: recentSessions
         )
         let snapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
@@ -8690,32 +8710,37 @@ enum PracticeEvaluator {
     private static func trendSnapshot(
         fillerCount: Int,
         duration: TimeInterval,
+        wordCount: Int,
+        transcriptConfidence: Double?,
         recentSessions: [PracticeSession]
     ) -> TrendSnapshot {
         let previousSessions = Array(recentSessions.dropFirst())
-        let currentFillerRate = FillerBurden(
+        let currentFillerRate = FillerBurden.quantityQualified(
             fillerCount: fillerCount,
-            duration: duration
-        ).ratePerMinute
-        let previousFillerRates = FillerBurden.qualifyingRatesPerMinute(
+            duration: duration,
+            wordCount: wordCount,
+            transcriptConfidence: transcriptConfidence
+        )?.ratePerMinute
+        let previousFillerRates = FillerBurden.quantityQualifiedRatesPerMinute(
             in: previousSessions
         )
-        let hasFillerHistory = currentFillerRate != nil && !previousFillerRates.isEmpty
-        let averageFillerRate = previousFillerRates.isEmpty
-            ? (currentFillerRate ?? 0)
-            : previousFillerRates.reduce(0, +) / Double(previousFillerRates.count)
+        let fillerComparison = FillerRateComparison.make(
+            currentRatePerMinute: currentFillerRate,
+            previousRatesPerMinute: previousFillerRates
+        )
+        let averageFillerRate = fillerComparison?.priorAverageRatePerMinute
+            ?? currentFillerRate
+            ?? 0
         let averageDuration = previousSessions.isEmpty
             ? duration
             : previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
 
         return TrendSnapshot(
             hasHistory: !previousSessions.isEmpty,
-            hasFillerHistory: hasFillerHistory,
+            hasFillerHistory: fillerComparison != nil,
             averageFillerRate: averageFillerRate,
             averageDuration: averageDuration,
-            fillerDelta: hasFillerHistory
-                ? (currentFillerRate ?? averageFillerRate) - averageFillerRate
-                : 0,
+            fillerDelta: fillerComparison?.meaningfulDeltaRatePerMinute ?? 0,
             durationDelta: duration - averageDuration
         )
     }
@@ -11313,7 +11338,9 @@ struct CoachingPlan {
 }
 
 struct HiddenBaseline {
-    let averageFillers: Double
+    /// Average fillers per minute across quantity-qualified recent reps.
+    /// Nil while fewer than two comparable reps exist.
+    let averageFillersPerMinute: Double?
     let averageDuration: Double
     let averageWordsPerMinute: Double
     let currentIdentity: String
@@ -11323,9 +11350,15 @@ enum CoachingPlanner {
     static func plan(for sessions: [PracticeSession], profile: CoachingProfile?) -> CoachingPlan? {
         guard !sessions.isEmpty else { return nil }
         let recent = Array(sessions.prefix(8))
-        let averageFillers = Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
+        let recentFillerRates = FillerBurden.quantityQualifiedRatesPerMinute(in: recent)
+        let averageFillersPerMinute: Double? = recentFillerRates.count >= FillerRateComparison.minimumPriorSamples
+            ? recentFillerRates.reduce(0, +) / Double(recentFillerRates.count)
+            : nil
         let averageDuration = recent.map(\.duration).reduce(0, +) / Double(recent.count)
-        let averageWordsPerMinute = recent.map { Double($0.wordsPerMinute) }.reduce(0, +) / Double(recent.count)
+        let qualifyingRecent = recent.filter(SessionQualifier.qualifies)
+        let averageWordsPerMinute = qualifyingRecent.isEmpty
+            ? 0
+            : qualifyingRecent.map { Double($0.wordsPerMinute) }.reduce(0, +) / Double(qualifyingRecent.count)
         let strongestMode = Dictionary(grouping: recent, by: \.mode).max { lhs, rhs in
             averageScore(for: lhs.value) < averageScore(for: rhs.value)
         }?.key
@@ -11334,15 +11367,20 @@ enum CoachingPlanner {
             profile: profile
         )
         let latest = recent.first
-        let previousFillers = recent.dropFirst().map(\.fillerWordCount)
-        let previousAverageFillers = previousFillers.isEmpty ? averageFillers : Double(previousFillers.reduce(0, +)) / Double(previousFillers.count)
+        let latestComparison = FillerRateComparison.make(
+            currentRatePerMinute: latest.flatMap { FillerBurden.quantityQualified($0)?.ratePerMinute },
+            previousRatesPerMinute: FillerBurden.quantityQualifiedRatesPerMinute(in: Array(recent.dropFirst()))
+        )
         let encouragement: String
-        if let latest, Double(latest.fillerWordCount) < previousAverageFillers {
-            encouragement = "Your recent reps show cleaner control. Keep building that consistency."
-        } else if let latest, Double(latest.fillerWordCount) > previousAverageFillers {
+        switch latestComparison?.direction {
+        case .improving:
+            encouragement = "Your recent reps show cleaner filler control. Keep building that consistency."
+        case .worsening:
             encouragement = "Filler control was less steady in the latest rep. One focused reset will show whether it is a pattern."
-        } else {
+        case .steady:
             encouragement = "Your recent reps are holding steady. One focused rep will sharpen the next read."
+        case nil:
+            encouragement = "The filler read is still forming. One full rep will sharpen it."
         }
 
         let currentFocus: String
@@ -11357,7 +11395,8 @@ enum CoachingPlanner {
             case .rushing:
                 currentFocus = "Focus on steadier pacing so each point sounds more deliberate and confident."
             }
-        } else if averageFillers > 4 {
+        } else if let averageFillersPerMinute,
+                  averageFillersPerMinute >= FillerBurden.Threshold.urgent.rawValue {
             currentFocus = "Focus on reducing filler words by pausing before each new idea."
         } else if averageWordsPerMinute > 155 {
             currentFocus = "Focus on slowing the pace slightly so the message sounds more controlled."
@@ -11388,7 +11427,8 @@ enum CoachingPlanner {
                     suggestedDrill = "Start Filler Control and replace the first filler with a pause."
                 }
             }
-        } else if averageFillers > 4 {
+        } else if let averageFillersPerMinute,
+                  averageFillersPerMinute >= FillerBurden.Threshold.urgent.rawValue {
             suggestedDrill = "Run one Easy Timed rep and pause before each new point."
         } else if averageDuration < 20 {
             suggestedDrill = "Run one Easy Timed rep with a clear middle point."
@@ -11404,7 +11444,7 @@ enum CoachingPlanner {
             suggestedDrill: suggestedDrill,
             encouragement: encouragement,
             hiddenBaseline: HiddenBaseline(
-                averageFillers: averageFillers,
+                averageFillersPerMinute: averageFillersPerMinute,
                 averageDuration: averageDuration,
                 averageWordsPerMinute: averageWordsPerMinute,
                 currentIdentity: identitySnapshot.identity
@@ -11413,21 +11453,30 @@ enum CoachingPlanner {
     }
 
     static func sessionInsights(for session: PracticeSession, comparedTo sessions: [PracticeSession], profile: CoachingProfile?) -> [String] {
-        let previousSessions = sessions.filter { $0.id != session.id }
+        // Review rows compare only with evidence that existed at that point in
+        // time. A newer rep must never rewrite the interpretation of an older
+        // session.
+        let previousSessions = sessions.filter { $0.id != session.id && $0.date < session.date }
         guard !previousSessions.isEmpty else {
             return session.insights.isEmpty
                 ? ["This is the first saved session in your history, so it sets the initial baseline."]
                 : session.insights
         }
 
-        let averageFillers = Double(previousSessions.map(\.fillerWordCount).reduce(0, +)) / Double(previousSessions.count)
         let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
 
         var insights = session.insights
-        if Double(session.fillerWordCount) < averageFillers {
-            insights.append("This session had fewer filler words than your running average.")
-        } else if Double(session.fillerWordCount) > averageFillers {
-            insights.append("This session had more filler words than your running average.")
+        let fillerComparison = FillerRateComparison.make(
+            currentRatePerMinute: FillerBurden.quantityQualified(session)?.ratePerMinute,
+            previousRatesPerMinute: FillerBurden.quantityQualifiedRatesPerMinute(in: previousSessions)
+        )
+        switch fillerComparison?.direction {
+        case .improving:
+            insights.append("This session's filler rate was below your earlier qualified average.")
+        case .worsening:
+            insights.append("This session's filler rate was above your earlier qualified average.")
+        case .steady, nil:
+            break
         }
 
         if session.duration > averageDuration {
@@ -11436,8 +11485,10 @@ enum CoachingPlanner {
             insights.append("This answer ended sooner than your typical response length.")
         }
 
-        let sessionPace = PracticeEvaluator.paceSnapshot(forTranscript: session.transcript, duration: session.duration)
-        insights.append("Pace check: \(sessionPace.wordsPerMinute) WPM. \(sessionPace.coachNote)")
+        if SessionQualifier.meetsQuantityFloor(duration: session.duration, wordCount: session.wordCount) {
+            let sessionPace = PracticeEvaluator.paceSnapshot(forTranscript: session.transcript, duration: session.duration)
+            insights.append("Pace check: \(sessionPace.wordsPerMinute) WPM. \(sessionPace.coachNote)")
+        }
         let styleTrend = PracticeEvaluator.styleTrendSnapshot(
             transcript: session.transcript,
             recentSessions: [session] + previousSessions,

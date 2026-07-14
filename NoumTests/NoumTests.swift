@@ -8958,7 +8958,7 @@ struct ProfileCollapseContractTests {
             suggestedDrill: "Timed Practice on Medium will help you hold the opening line.",
             encouragement: "Your recent sessions are steady.",
             hiddenBaseline: HiddenBaseline(
-                averageFillers: 2,
+                averageFillersPerMinute: 2,
                 averageDuration: 45,
                 averageWordsPerMinute: 132,
                 currentIdentity: "Controlled"
@@ -50816,7 +50816,7 @@ struct HypothesisEvidenceDepthTests {
                 suggestedDrill: "Timed Practice on Medium.",
                 encouragement: "Your recent sessions are steady.",
                 hiddenBaseline: HiddenBaseline(
-                    averageFillers: 2,
+                    averageFillersPerMinute: 2,
                     averageDuration: 45,
                     averageWordsPerMinute: 132,
                     currentIdentity: "Controlled"

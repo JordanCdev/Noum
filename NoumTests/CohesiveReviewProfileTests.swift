@@ -155,7 +155,7 @@ struct CohesiveProfileCompositionTests {
             suggestedDrill: "Timed Practice: open with the answer, then add one concrete example.",
             encouragement: "Your recent reps are becoming more direct.",
             hiddenBaseline: HiddenBaseline(
-                averageFillers: 1,
+                averageFillersPerMinute: 1,
                 averageDuration: 45,
                 averageWordsPerMinute: 138,
                 currentIdentity: "Controlled"

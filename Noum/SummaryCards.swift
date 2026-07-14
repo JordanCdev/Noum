@@ -13,7 +13,11 @@ struct HeroScoreCard: View {
     let sessionPrompt: String?
     let effectiveFillerCount: Int
     let fillerTint: Color
-    let fillerDelta: Int?
+    let fillerDelta: Double?
+    /// VoiceOver names both the raw detector count and the normalized rate so
+    /// the visible compact pill never implies that counts from unequal reps
+    /// are directly comparable.
+    var fillerAccessibilityLabel: String? = nil
     let effectiveDuration: TimeInterval
     let durationAssessment: DurationAssessment
     let celebrationVisible: Bool
@@ -188,7 +192,8 @@ struct HeroScoreCard: View {
 
             // Quick stats — existing delta pills ride a frosted tray so
             // their tinted semantics stay legible on the gradient. The
-            // filler delta (a genuine comparison against the previous rep)
+            // filler-rate delta (a genuine comparison against repeated,
+            // quantity-qualified history)
             // gets its own beat ~0.3s after the ring settles.
             HStack(spacing: 20) {
                 StatPill(
@@ -197,6 +202,9 @@ struct HeroScoreCard: View {
                     delta: fillerDelta,
                     tint: fillerTint,
                     invertDelta: true,
+                    deltaPrecision: 1,
+                    deltaSuffix: "/min",
+                    accessibilityLabel: fillerAccessibilityLabel,
                     deltaRevealDelay: Animation.scoreRevealDuration
                 )
                 DurationAssessmentPill(effectiveDuration: effectiveDuration, durationAssessment: durationAssessment)
@@ -341,9 +349,12 @@ struct SuddenDeathReviewCard: View {
 struct StatPill: View {
     let label: String
     let value: String
-    let delta: Int?
+    let delta: Double?
     let tint: Color
     let invertDelta: Bool
+    var deltaPrecision: Int = 0
+    var deltaSuffix: String = ""
+    var accessibilityLabel: String? = nil
     /// Extra delay (on top of the `statDelta` token's built-in beat)
     /// before the delta badge pops in. The verdict hero passes the
     /// score-ring duration so the badge gets its own beat after the ring
@@ -367,7 +378,7 @@ struct StatPill: View {
                 HStack(spacing: 2) {
                     Image(systemName: improved ? "arrow.down" : "arrow.up")
                         .font(.system(size: 8, weight: .bold))
-                    Text("\(abs(delta))")
+                    Text("\(String(format: "%.*f", deltaPrecision, abs(delta)))\(deltaSuffix)")
                         .font(.caption2.weight(.bold))
                 }
                 .foregroundStyle(improved ? AppColor.positive : AppColor.caution)
@@ -386,6 +397,8 @@ struct StatPill: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel ?? "\(value) \(label)")
     }
 }
 

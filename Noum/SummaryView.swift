@@ -488,6 +488,20 @@ struct SummaryView: View {
         Array(sessionStore.sessions.prefix(5))
     }
 
+    /// One strict filler read owns every Summary comparison. The persisted
+    /// store remains the history owner; index zero is the just-finished rep,
+    /// matching the established recent-window contract.
+    private var summaryFillerPresentation: SummaryFillerPresentation {
+        SummaryFillerPresentation.make(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            transcriptConfidence: recentSessions.first?.transcriptConfidence
+                ?? sessionStore.sessions.first?.transcriptConfidence,
+            previousSessions: Array(recentWindow.dropFirst())
+        )
+    }
+
     private var strongestMode: PracticeMode? {
         CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode
     }
@@ -701,17 +715,14 @@ struct SummaryView: View {
             return ["First rep saved. Complete another rep to start comparing."]
         }
         let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
-        let averageFillers = previousSessions.map(\.fillerWordCount).reduce(0, +) / previousSessions.count
         var messages: [String] = []
-        if duration > averageDuration {
+        if effectiveDuration > averageDuration {
             messages.append("You stayed with this answer longer than your recent average.")
         } else {
             messages.append("This answer ended sooner than your recent average, so push the middle section further next time.")
         }
-        if fillerCount < averageFillers {
-            messages.append("Your filler count improved against your recent baseline.")
-        } else if fillerCount > averageFillers {
-            messages.append("Filler words rose above your recent baseline. Try a slower opening.")
+        if let fillerInsight = summaryFillerPresentation.derivedInsight {
+            messages.append(fillerInsight)
         }
         messages.append("You now have \(recentSessions.count) saved practice session\(recentSessions.count == 1 ? "" : "s") to compare against.")
         return Array(messages.prefix(3))
@@ -852,6 +863,7 @@ struct SummaryView: View {
                                     effectiveFillerCount: effectiveFillerCount,
                                     fillerTint: fillerTint,
                                     fillerDelta: fillerDelta,
+                                    fillerAccessibilityLabel: summaryFillerPresentation.accessibilityLabel,
                                     effectiveDuration: effectiveDuration,
                                     durationAssessment: durationAssessment,
                                     celebrationVisible: celebrationVisible,
@@ -1057,26 +1069,20 @@ struct SummaryView: View {
         }
 #endif
     }
-    /// Filler count tint: green if zero or better than average, orange if slightly above, red only if significantly worse.
-    /// Gray if no words were spoken — zero fillers isn't an achievement when you said nothing.
+    /// Filler tint comes from the same quantity-qualified rate projection as
+    /// the hero badge, fallback insight, and details comparison.
     private var fillerTint: Color {
-        if isMinimalEffort { return .secondary }
-        if effectiveFillerCount == 0 { return AppColor.positive }
-        let pastFillers = recentWindow.dropFirst().map(\.fillerWordCount)
-        guard !pastFillers.isEmpty else { return AppColor.caution }
-        let avg = Double(pastFillers.reduce(0, +)) / Double(pastFillers.count)
-        if Double(effectiveFillerCount) <= avg { return AppColor.positive }
-        if Double(effectiveFillerCount) <= avg + 2 { return AppColor.caution }
-        return AppColor.warning
+        switch summaryFillerPresentation.tone {
+        case .insufficient: return .secondary
+        case .positive: return AppColor.positive
+        case .caution: return AppColor.caution
+        case .warning: return AppColor.warning
+        }
     }
 
-    /// Delta vs recent average fillers (negative = improved)
-    private var fillerDelta: Int? {
-        let past = recentWindow.dropFirst().map(\.fillerWordCount)
-        guard !past.isEmpty else { return nil }
-        let avg = Double(past.reduce(0, +)) / Double(past.count)
-        let delta = effectiveFillerCount - Int(avg.rounded())
-        return delta
+    /// Fillers-per-minute delta vs repeated qualified history.
+    private var fillerDelta: Double? {
+        summaryFillerPresentation.meaningfulDeltaRatePerMinute
     }
 
     /// Delta vs recent average duration (positive = improved)
@@ -1450,10 +1456,10 @@ struct SummaryView: View {
                         .tracking(0.6)
                     HStack(spacing: 16) {
                         if let fd = fillerDelta {
-                            comparisonStat(label: "Fillers", delta: fd, inverted: true)
+                            comparisonStat(label: "Filler rate", delta: fd, inverted: true, unit: "/min", fractionDigits: 1)
                         }
                         if let dd = durationDelta {
-                            comparisonStat(label: "Duration", delta: dd, inverted: false)
+                            comparisonStat(label: "Duration", delta: Double(dd), inverted: false, unit: "s", fractionDigits: 0)
                         }
                     }
                 }
@@ -1461,12 +1467,19 @@ struct SummaryView: View {
         }
     }
 
-    private func comparisonStat(label: String, delta: Int, inverted: Bool) -> some View {
+    private func comparisonStat(
+        label: String,
+        delta: Double,
+        inverted: Bool,
+        unit: String,
+        fractionDigits: Int
+    ) -> some View {
         let improved = inverted ? delta < 0 : delta > 0
+        let value = String(format: "%.*f", fractionDigits, abs(delta))
         return HStack(spacing: 4) {
             Image(systemName: improved ? "arrow.down" : "arrow.up")
                 .font(.caption2.weight(.bold))
-            Text("\(abs(delta))")
+            Text("\(value)\(unit)")
                 .font(.caption.weight(.bold))
             Text(label)
                 .font(.caption2)

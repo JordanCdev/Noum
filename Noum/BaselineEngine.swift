@@ -1021,6 +1021,49 @@ struct FillerBurden {
         return ratePerMinute <= threshold.rawValue
     }
 
+    /// Builds a burden only when the current speech sample meets the shared
+    /// quantity floor. This is intentionally additive: `ratePerMinute` keeps
+    /// its duration-only contract for established scoring callers, while
+    /// comparison and coaching surfaces opt into the stricter evidence gate.
+    static func quantityQualified(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        transcriptConfidence: Double? = nil
+    ) -> FillerBurden? {
+        guard SessionQualifier.meetsQuantityFloor(
+            duration: duration,
+            wordCount: wordCount
+        ) else { return nil }
+        if let transcriptConfidence,
+           transcriptConfidence < SessionQualifier.minimumConfidence {
+            return nil
+        }
+        let burden = FillerBurden(fillerCount: fillerCount, duration: duration)
+        guard burden.ratePerMinute != nil else { return nil }
+        return burden
+    }
+
+    /// Historical comparisons use the complete session qualifier, including
+    /// the transcript-confidence floor when a provider supplied one.
+    static func quantityQualified(_ session: PracticeSession) -> FillerBurden? {
+        guard SessionQualifier.qualifies(session),
+              session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              !session.isEvaluationFixture else { return nil }
+        return quantityQualified(
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            transcriptConfidence: session.transcriptConfidence
+        )
+    }
+
+    static func quantityQualifiedRatesPerMinute(
+        in sessions: [PracticeSession]
+    ) -> [Double] {
+        sessions.compactMap { quantityQualified($0)?.ratePerMinute }
+    }
+
     static func qualifyingRatesPerMinute(
         in sessions: [PracticeSession]
     ) -> [Double] {
@@ -1038,6 +1081,64 @@ struct FillerBurden {
         let rates = qualifyingRatesPerMinute(in: sessions)
         guard !rates.isEmpty else { return nil }
         return rates.reduce(0, +) / Double(rates.count)
+    }
+}
+
+/// A non-persisted comparison between one quantity-qualified rep and repeated
+/// qualified history. The 0.5/min movement floor matches Ah Counter's public
+/// history read so tiny rate jitter never becomes progress or regression.
+struct FillerRateComparison: Equatable {
+    enum Direction: Equatable {
+        case improving
+        case steady
+        case worsening
+    }
+
+    static let minimumPriorSamples = 2
+    static let movementFloor = 0.5
+
+    let currentRatePerMinute: Double
+    let priorAverageRatePerMinute: Double
+    let deltaRatePerMinute: Double
+    let direction: Direction
+
+    var meaningfulDeltaRatePerMinute: Double? {
+        direction == .steady ? nil : deltaRatePerMinute
+    }
+
+    static func make(
+        currentRatePerMinute: Double?,
+        previousRatesPerMinute: [Double],
+        minimumPriorSamples: Int = minimumPriorSamples
+    ) -> FillerRateComparison? {
+        guard let currentRatePerMinute,
+              currentRatePerMinute.isFinite,
+              currentRatePerMinute >= 0,
+              minimumPriorSamples > 0 else { return nil }
+
+        let validPreviousRates = previousRatesPerMinute.filter {
+            $0.isFinite && $0 >= 0
+        }
+        guard validPreviousRates.count >= minimumPriorSamples else { return nil }
+
+        let priorAverage = validPreviousRates.reduce(0, +) / Double(validPreviousRates.count)
+        guard priorAverage.isFinite else { return nil }
+        let delta = currentRatePerMinute - priorAverage
+        let direction: Direction
+        if abs(delta) < movementFloor {
+            direction = .steady
+        } else if delta < 0 {
+            direction = .improving
+        } else {
+            direction = .worsening
+        }
+
+        return FillerRateComparison(
+            currentRatePerMinute: currentRatePerMinute,
+            priorAverageRatePerMinute: priorAverage,
+            deltaRatePerMinute: delta,
+            direction: direction
+        )
     }
 }
 
