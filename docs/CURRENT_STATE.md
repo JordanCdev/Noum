@@ -1,5 +1,37 @@
 # Noum — Current state
 
+## 2026-07-14 — Public filler comparisons now use qualified rate
+
+Implementation commit `dbafb01b` extends the existing `FillerBurden`,
+`PracticeEvaluator`, `CoachingPlanner`, Summary, Profile, and Review owners with
+one shared presentation boundary. Current and historical filler comparisons now
+require at least 15 seconds and 20 words, reject low-confidence current
+transcripts, exclude evaluation fixtures and stale comparison schemas, and use
+fillers per minute rather than raw count. Historical movement also requires two
+qualifying prior samples and suppresses changes below 0.5 fillers per minute.
+
+Summary now presents a rate delta with neutral insufficient-evidence copy and an
+explicit VoiceOver description of count, duration, and rate. Practice insights,
+planner guidance, and chronological Review/Profile comparisons consume the same
+policy; a thin latest rep cannot inherit a mechanics claim from mature history.
+The persisted baseline field is now named `averageFillersPerMinute`, preserving
+its optional, fail-closed semantics without adding a second state owner.
+
+The final focused selection passed 19 unique tests with zero failures or skips.
+The complete `NoumTests` target passed 4,102 unique tests / 4,117 executions with
+zero failures or skips on the iPhone 17 simulator. A fresh light screenshot
+sweep rendered all five tab tops without a blank, crash, or visible layout
+regression; it does not reach a seeded qualified-history Summary, so that exact
+rate-delta and accessibility state still needs focused visual evidence.
+`git diff --check` passes, and the user's unrelated localization catalog remains
+byte-for-byte unchanged.
+
+This closes the Summary and `CoachingPlanner` duration-fairness gap. The direct
+filler-question coach-context response remains corpus-bound and needs a separate
+normalization pass. Standalone Pace Training still lacks canonical persisted
+mode/demand and followed-rep attribution. No external evidence was collected.
+Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Goal evidence now respects speech quantity
 
 Implementation commit `ac393554` extends the existing `UserTrajectoryCache`,
@@ -29,13 +61,13 @@ standard drill, removing an order-dependent reread of shared trend state. Its
 tests / 4,098 executions with zero failures or skips. `git diff --check` passes,
 and the user's unrelated localization catalog remains byte-for-byte unchanged.
 
-This closes the qualitative goal/trajectory normalization slice, not every raw
-comparison. The Summary hero, `CoachingPlanner`, and filler-question coach copy
-still need duration-fair comparison work. Standalone Pace Training also lacks a
-canonical persisted mode/demand and followed-rep attribution; adding it safely
-requires a backend-schema and mixed-client decision rather than mislabelling it
-as Timed. No external evidence was collected. Production readiness remains
-**NO-GO at 18/100 with 0/5 external artifacts**.
+This closed the qualitative goal/trajectory normalization slice. The later
+`dbafb01b` entry above closes the Summary and `CoachingPlanner` comparisons;
+direct filler-question coach copy remains. Standalone Pace Training also lacks
+a canonical persisted mode/demand and followed-rep attribution; adding it
+safely requires a backend-schema and mixed-client decision rather than
+mislabeling it as Timed. No external evidence was collected. Production
+readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
 
 ## 2026-07-14 — Speech quantity no longer distorts coaching severity
 
