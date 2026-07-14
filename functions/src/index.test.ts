@@ -277,7 +277,7 @@ test(
   async () => {
     await assert.doesNotReject(
       () => assertSocialCallablesAvailable(async () => ({
-        schemaVersion: 2,
+        schemaVersion: 3,
         status: "complete",
         runID: "B713738E-D9ED-4337-986E-09205089D42E",
         projectID: "noum-d0b6f",

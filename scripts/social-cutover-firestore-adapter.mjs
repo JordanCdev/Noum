@@ -28,12 +28,57 @@ const documents = (snapshot) => snapshot.docs.map((snapshotDocument) => ({
   data: encodeFirestoreValue(snapshotDocument.data()),
 }));
 
+async function readChallengeDescendants(firestore) {
+  const descendants = [];
+  const roots = await firestore.collection("challenges").listDocuments();
+  if (roots.length >
+      SOCIAL_LIMITS.challenges + SOCIAL_LIMITS.challengeDescendants) {
+    throw new Error("Challenge roots exceed the reviewed inventory bound.");
+  }
+
+  const walk = async (documentReference, depth) => {
+    if (depth > 16) {
+      throw new Error("Challenge descendants exceed the reviewed depth bound.");
+    }
+    const collections = (await documentReference.listCollections())
+      .sort((left, right) => left.path.localeCompare(right.path));
+    for (const collection of collections) {
+      const children = (await collection.listDocuments())
+        .sort((left, right) => left.path.localeCompare(right.path));
+      for (const child of children) {
+        const snapshot = await child.get();
+        if (snapshot.exists) {
+          descendants.push({
+            path: child.path,
+            data: encodeFirestoreValue(snapshot.data()),
+          });
+          if (descendants.length > SOCIAL_LIMITS.challengeDescendants) {
+            throw new Error(
+              "Challenge descendants exceed the reviewed inventory bound."
+            );
+          }
+        }
+        // Firestore permits missing documents that own subcollections. Walk
+        // every reference so no orphaned challenge artifact escapes cutover.
+        await walk(child, depth + 1);
+      }
+    }
+  };
+
+  for (const root of roots.sort((left, right) =>
+    left.path.localeCompare(right.path))) {
+    await walk(root, 0);
+  }
+  return descendants.sort((left, right) => left.path.localeCompare(right.path));
+}
+
 export async function readRemoteSocialInventory(firestore) {
   const [
     profiles,
     memberships,
     privateProfiles,
     challenges,
+    challengeDescendants,
     friendLinks,
     manifests,
     cutover,
@@ -58,6 +103,7 @@ export async function readRemoteSocialInventory(firestore) {
       "challenges",
       SOCIAL_LIMITS.challenges
     ),
+    readChallengeDescendants(firestore),
     boundedSnapshot(
       firestore.collectionGroup("friends"),
       "friend links",
@@ -75,6 +121,7 @@ export async function readRemoteSocialInventory(firestore) {
     leagueMemberships: documents(memberships),
     privateProfiles: documents(privateProfiles),
     challenges: documents(challenges),
+    challengeDescendants,
     friendLinks: documents(friendLinks),
     existingManifests: documents(manifests),
     existingCutover: cutover.exists ? {

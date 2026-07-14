@@ -283,7 +283,7 @@ test("public profiles and legacy cutover proof validate strictly", () => {
     "firebase-user"
   ));
   const completeMarker = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "complete",
     runID: "B713738E-D9ED-4337-986E-09205089D42E",
     projectID: "noum-d0b6f",
@@ -302,7 +302,7 @@ test("public profiles and legacy cutover proof validate strictly", () => {
   const rejectedMarkers = [
     undefined,
     {},
-    {...completeMarker, schemaVersion: 1},
+    {...completeMarker, schemaVersion: 2},
     {...completeMarker, status: "preparing"},
     {...completeMarker, status: "failed"},
     {...completeMarker, status: "rollingBack"},
@@ -425,9 +425,21 @@ test("challenge envelope hides the opponent until combined materializes", () => 
   assert.equal(revealed.opponentScore, 6);
 });
 
+test("server challenge metadata rejects legacy or injected fields", () => {
+  assert.throws(() => challengeEnvelope({
+    ...challenge(),
+    clientAuthoredScore: 1_000,
+  }, "firebase-user"));
+  assert.throws(() => challengeEnvelope({
+    ...challenge(),
+    schemaVersion: 1,
+  }, "firebase-user"));
+});
+
 test("reciprocal server friend links fail closed on local-only claims", () => {
   const pairID = "C713738E-D9ED-4337-986E-09205089D42E";
   const creatorLink = {
+    schemaVersion: 1,
     status: "active",
     accountID: "firebase-user",
     friendAccountID: "firebase-opponent",
@@ -435,6 +447,7 @@ test("reciprocal server friend links fail closed on local-only claims", () => {
     linkedAt: timestamp(nowMs),
   };
   const opponentLink = {
+    schemaVersion: 1,
     status: "active",
     accountID: "firebase-opponent",
     friendAccountID: "firebase-user",
@@ -449,6 +462,18 @@ test("reciprocal server friend links fail closed on local-only claims", () => {
   ));
   assert.throws(() => validateReciprocalFriendLinks(
     {displayName: "Alex", accountID: "firebase-opponent"},
+    opponentLink,
+    "firebase-user",
+    "firebase-opponent"
+  ));
+  assert.throws(() => validateReciprocalFriendLinks(
+    {...creatorLink, clientAuthored: true},
+    opponentLink,
+    "firebase-user",
+    "firebase-opponent"
+  ));
+  assert.throws(() => validateReciprocalFriendLinks(
+    {...creatorLink, schemaVersion: 0},
     opponentLink,
     "firebase-user",
     "firebase-opponent"

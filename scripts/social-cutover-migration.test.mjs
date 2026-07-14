@@ -91,6 +91,17 @@ function inventory(overrides = {}) {
         opponentScore: 0,
       },
     }],
+    challengeDescendants: [
+      {
+        path: `challenges/${CHALLENGE_ID}/submissions/${ACCOUNT_A}`,
+        data: {clientAuthoredScore: 1_000},
+      },
+      {
+        path: `challenges/${CHALLENGE_ID}/submissions/${ACCOUNT_A}/` +
+          "audit/client-artifact",
+        data: {clientAuthoredResult: "never-trust-this"},
+      },
+    ],
     friendLinks: [
       {
         path: `_socialFriendLinks/${ACCOUNT_A}/friends/${ACCOUNT_B}`,
@@ -132,6 +143,7 @@ function documentsForStore(sourceInventory = inventory()) {
     ...sourceInventory.leagueMemberships,
     ...sourceInventory.privateProfiles,
     ...sourceInventory.challenges,
+    ...sourceInventory.challengeDescendants,
     ...sourceInventory.friendLinks,
     ...sourceInventory.existingManifests,
   ];
@@ -213,6 +225,15 @@ test("lowercase challenge document and manifest IDs fail closed", () => {
     }),
     /noncanonical challenge reference/
   );
+  assert.throws(
+    () => envelope({
+      challengeDescendants: [{
+        path: `challenges/${lowercaseID}/submissions/${ACCOUNT_A}`,
+        data: {score: 10},
+      }],
+    }),
+    /Invalid challenge descendant/
+  );
 });
 
 test("backup construction is local-only and performs zero remote writes", () => {
@@ -238,11 +259,24 @@ test("apply quarantines and deletes atomically without trusting client scores", 
     await store.get(`leagues/gold_2026-W29/members/${ACCOUNT_A}`),
     null
   );
+  assert.equal(await store.get(`challenges/${CHALLENGE_ID}`), null);
+  assert.equal(
+    await store.get(
+      `challenges/${CHALLENGE_ID}/submissions/${ACCOUNT_A}`
+    ),
+    null
+  );
+  assert.equal(
+    await store.get(
+      `_socialFriendLinks/${ACCOUNT_A}/friends/${ACCOUNT_B}`
+    ),
+    null
+  );
   const manifest = await store.get(`_socialReferences/${ACCOUNT_A}`);
   assert.deepEqual(manifest, {
     leagueMembershipPaths: [],
-    challengeIDs: [CHALLENGE_ID],
-    friendAccountIDs: [ACCOUNT_B],
+    challengeIDs: [],
+    friendAccountIDs: [],
   });
   assert.equal("rating" in manifest, false);
   assert.equal("clientAuthoredResult" in manifest, false);
@@ -251,6 +285,7 @@ test("apply quarantines and deletes atomically without trusting client scores", 
     assert.deepEqual(stored, quarantine.data);
   }
   const marker = await store.get(CUTOVER_JOURNAL_PATH);
+  assert.equal(marker.schemaVersion, 3);
   assert.equal(marker.status, "complete");
   assert.equal(marker.inventoryDigest, marker.verifiedInventoryDigest);
   assert.equal(marker.sourceGitCommit, SOURCE_BINDING.repositoryCommit);
@@ -392,6 +427,103 @@ test("source drift fails before the migration journal or any remote write", asyn
   );
   assert.equal(store.remoteWrites, writesBefore);
   assert.equal(await store.get(CUTOVER_JOURNAL_PATH), null);
+});
+
+test("challenge descendant drift fails before the migration journal", async () => {
+  const backup = envelope();
+  const store = new MemoryMigrationStore(documentsForStore());
+  const path = `challenges/${CHALLENGE_ID}/submissions/${ACCOUNT_A}`;
+  store.documents.set(path, {clientAuthoredScore: 7});
+  const writesBefore = store.remoteWrites;
+  await assert.rejects(
+    applyRecoverableCutover({store, envelope: backup, runID: RUN_ID}),
+    /challengeDescendants changed after the source-bound backup/
+  );
+  assert.equal(store.remoteWrites, writesBefore);
+  assert.equal(await store.get(CUTOVER_JOURNAL_PATH), null);
+});
+
+test("root-first challenge quarantine resumes after a committed transport fault", async () => {
+  const backup = envelope();
+  class PostCommitFaultStore extends MemoryMigrationStore {
+    constructor(documents) {
+      super(documents);
+      this.transactionCount = 0;
+      this.faultEnabled = true;
+    }
+
+    async transaction(operation) {
+      this.transactionCount += 1;
+      const result = await super.transaction(operation);
+      if (this.faultEnabled && this.transactionCount === 4) {
+        throw new Error("post-commit transport failure");
+      }
+      return result;
+    }
+  }
+  const store = new PostCommitFaultStore(documentsForStore());
+  await assert.rejects(
+    applyRecoverableCutover({store, envelope: backup, runID: RUN_ID}),
+    /post-commit transport failure/
+  );
+  const rootPath = `challenges/${CHALLENGE_ID}`;
+  const descendantPath =
+    `challenges/${CHALLENGE_ID}/submissions/${ACCOUNT_A}`;
+  assert.equal(await store.get(rootPath), null);
+  assert.notEqual(await store.get(descendantPath), null);
+  assert.equal(
+    [...store.documents.values()].some((value) =>
+      value?.sourcePath === rootPath
+    ),
+    true
+  );
+
+  store.faultEnabled = false;
+  const resumed = await applyRecoverableCutover({
+    store,
+    envelope: backup,
+    runID: RUN_ID,
+  });
+  assert.equal(resumed.resumed, true);
+  assert.equal(await store.get(descendantPath), null);
+});
+
+test("rollback restores challenge descendants before their root", async () => {
+  const backup = envelope();
+  class RestoreOrderStore extends MemoryMigrationStore {
+    constructor(documents) {
+      super(documents);
+      this.restoredChallengePaths = [];
+      this.recordRestores = false;
+    }
+
+    async transaction(operation) {
+      return super.transaction((transaction) => operation({
+        ...transaction,
+        set: (path, data) => {
+          if (this.recordRestores && path.startsWith("challenges/")) {
+            this.restoredChallengePaths.push(path);
+          }
+          transaction.set(path, data);
+        },
+      }));
+    }
+  }
+  const store = new RestoreOrderStore(documentsForStore());
+  await assert.rejects(applyRecoverableCutover({
+    store,
+    envelope: backup,
+    runID: RUN_ID,
+    faultAfterPhase: "verified",
+  }));
+  store.recordRestores = true;
+  await rollbackRecoverableCutover({store, envelope: backup, runID: RUN_ID});
+  const rootPath = `challenges/${CHALLENGE_ID}`;
+  const descendantPaths = store.restoredChallengePaths.filter(
+    (path) => path !== rootPath
+  );
+  assert.equal(descendantPaths.length, 2);
+  assert.equal(store.restoredChallengePaths.at(-1), rootPath);
 });
 
 test("a transaction failure cannot leave a deletion without quarantine", async () => {

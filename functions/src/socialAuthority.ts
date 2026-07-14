@@ -774,7 +774,7 @@ export function isSocialReferenceCutoverComplete(value: unknown): boolean {
     "inventoryDigest",
     "verifiedInventoryDigest",
     "completedAt",
-  ]) || value.schemaVersion !== 2 || value.status !== "complete" ||
+  ]) || value.schemaVersion !== 3 || value.status !== "complete" ||
       typeof value.runID !== "string" ||
       !SOCIAL_CUTOVER_RUN_ID_PATTERN.test(value.runID) ||
       value.projectID !== PRODUCTION_PROJECT_ID ||
@@ -829,7 +829,12 @@ export function validateStoredChallenge(
   value: unknown,
   challengeID: string
 ): Record<string, unknown> {
-  if (!isSocialRecord(value) ||
+  if (!isSocialRecord(value) || !hasExactKeys(value, [
+    "schemaVersion", "id", "prompt", "promptDigest", "createdAt",
+    "expiresAt", "creatorID", "creatorName", "creatorAccountID",
+    "opponentID", "opponentName", "opponentAccountID", "participantIDs",
+    "completedAt",
+  ]) ||
       value.schemaVersion !== CHALLENGE_DOCUMENT_SCHEMA_VERSION ||
       value.id !== challengeID || typeof value.prompt !== "string" ||
       value.prompt.length < 1 || value.prompt.length > MAX_PROMPT_CHARS ||
@@ -1056,6 +1061,16 @@ export function validateReciprocalFriendLinks(
 ): void {
   const valid = isSocialRecord(creatorLinkValue) &&
     isSocialRecord(opponentLinkValue) &&
+    hasExactKeys(creatorLinkValue, [
+      "schemaVersion", "status", "accountID", "friendAccountID", "pairID",
+      "linkedAt",
+    ]) &&
+    hasExactKeys(opponentLinkValue, [
+      "schemaVersion", "status", "accountID", "friendAccountID", "pairID",
+      "linkedAt",
+    ]) &&
+    creatorLinkValue.schemaVersion === 1 &&
+    opponentLinkValue.schemaVersion === 1 &&
     creatorLinkValue.status === "active" &&
     opponentLinkValue.status === "active" &&
     creatorLinkValue.accountID === creatorAccountID &&

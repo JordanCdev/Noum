@@ -67,9 +67,11 @@ Apply requires that reviewed backup, its canonical SHA-256 digest, a stable run
 ID, exact project confirmation, and the legacy-social purge approval. It writes
 a non-complete global journal before any mutation, copies each legacy public
 profile and league row into server-only quarantine in the same transaction that
-deletes the source, verifies the exact final inventory, and only then writes the
-complete marker. Reissuing the same run and digest resumes safely. A different
-run or digest is refused.
+deletes the source. It also quarantines every pre-cutover challenge, recursively
+inventoried challenge descendant, and friend-link row rather than promoting
+client-authorable social state. It verifies the exact final inventory and only
+then writes the complete marker. Reissuing the same run and digest resumes
+safely. A different run or digest is refused.
 
 Rollback is allowed only before completion. It restores exact source documents
 and manifests, verifies the restored inventory, removes quarantine, and deletes
@@ -195,6 +197,8 @@ if (!apply) {
       envelope.payload.inventory.leagueMemberships.length,
     privateProfileDocuments: envelope.payload.inventory.privateProfiles.length,
     challengeDocuments: envelope.payload.inventory.challenges.length,
+    challengeDescendantDocuments:
+      envelope.payload.inventory.challengeDescendants.length,
     friendLinkDocuments: envelope.payload.inventory.friendLinks.length,
     manifestDocuments: envelope.payload.inventory.existingManifests.length,
   }, null, 2)}\n`);
@@ -210,7 +214,10 @@ verifyBackupEnvelope(envelope, {
   binding,
 });
 const legacyCount = envelope.payload.inventory.profiles.length +
-  envelope.payload.inventory.leagueMemberships.length;
+  envelope.payload.inventory.leagueMemberships.length +
+  envelope.payload.inventory.challenges.length +
+  envelope.payload.inventory.challengeDescendants.length +
+  envelope.payload.inventory.friendLinks.length;
 if (!rollback && legacyCount > 0 && !purgeLegacySocial) {
   throw new Error(
     "Apply with legacy rows requires the explicit purge approval flags."

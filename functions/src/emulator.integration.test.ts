@@ -368,6 +368,7 @@ async function seedReciprocalFriendLink(
     adminFirestore.collection("_socialFriendLinks").doc(creator.localId)
       .collection("friends").doc(opponent.localId),
     {
+      schemaVersion: 1,
       status: "active",
       accountID: creator.localId,
       friendAccountID: opponent.localId,
@@ -379,6 +380,7 @@ async function seedReciprocalFriendLink(
     adminFirestore.collection("_socialFriendLinks").doc(opponent.localId)
       .collection("friends").doc(creator.localId),
     {
+      schemaVersion: 1,
       status: "active",
       accountID: opponent.localId,
       friendAccountID: creator.localId,
@@ -392,7 +394,7 @@ async function seedReciprocalFriendLink(
 /** Marks the one-time legacy social inventory as completely backfilled. */
 async function seedSocialReferenceCutover(): Promise<void> {
   await adminFirestore.collection("_socialReferenceCutover").doc("current").set({
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "complete",
     runID: "0713738e-d9ed-4337-986e-09205089d42e",
     projectID: productionProjectID,
@@ -619,7 +621,7 @@ test("social callables require the exact complete cutover marker", async () => {
   const markerRef = adminFirestore.collection("_socialReferenceCutover")
     .doc("current");
   const completeMarker = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "complete",
     runID: "1713738e-d9ed-4337-986e-09205089d42e",
     projectID: productionProjectID,
@@ -631,7 +633,7 @@ test("social callables require the exact complete cutover marker", async () => {
     completedAt: AdminTimestamp.now(),
   };
   const inProgressMarker = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "in-progress",
     runID: completeMarker.runID,
     projectID: productionProjectID,
@@ -1598,7 +1600,7 @@ test("social migration control data denies every client", async () => {
   const inventoryDigest = "b".repeat(64);
 
   await adminFirestore.doc(journalPath).set({
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "in-progress",
     runID,
     projectID,
@@ -1609,7 +1611,7 @@ test("social migration control data denies every client", async () => {
     inventoryDigest,
   });
   await adminFirestore.doc(quarantinePath).set({
-    schemaVersion: 2,
+    schemaVersion: 3,
     runID,
     backupDigest,
     sourcePath,
@@ -1707,7 +1709,7 @@ test("social migration control data denies every client", async () => {
   }
 
   await adminFirestore.doc(journalPath).set({
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "complete",
     runID,
     projectID,

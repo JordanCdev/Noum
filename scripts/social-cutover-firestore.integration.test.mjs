@@ -23,6 +23,9 @@ const CHALLENGE_ID = "783AB966-E91B-4CA4-8F7A-7E50113FA2C6";
 const MEMBERSHIP_PATH = `leagues/gold_2026-W29/members/${ACCOUNT_A}`;
 const PROFILE_PATH = `profiles_public/${ACCOUNT_A}`;
 const MANIFEST_PATH = `_socialReferences/${ACCOUNT_A}`;
+const SUBMISSION_PATH =
+  `challenges/${CHALLENGE_ID}/submissions/${ACCOUNT_A}`;
+const NESTED_CHALLENGE_PATH = `${SUBMISSION_PATH}/audit/client-artifact`;
 const JOURNAL_PATH = "_socialReferenceCutover/current";
 const CLI_PATH = fileURLToPath(
   new URL("./migrate-social-reference-cutover.mjs", import.meta.url)
@@ -128,6 +131,10 @@ function sourceDocuments(firestore) {
       opponentAccountID: ACCOUNT_B,
       creatorScore: 1_000,
       opponentScore: 0,
+    }],
+    [SUBMISSION_PATH, {clientAuthoredScore: 1_000}],
+    [NESTED_CHALLENGE_PATH, {
+      clientAuthoredResult: "never-trust-this",
     }],
     [`_socialFriendLinks/${ACCOUNT_A}/friends/${ACCOUNT_B}`, {
       createdAt: new Timestamp(1_720_000_000, 0),
@@ -245,6 +252,7 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
       assert.equal(summary.leagueMembershipDocuments, 1);
       assert.equal(summary.privateProfileDocuments, 2);
       assert.equal(summary.challengeDocuments, 1);
+      assert.equal(summary.challengeDescendantDocuments, 2);
       assert.equal(summary.friendLinkDocuments, 2);
       assert.equal(summary.manifestDocuments, 1);
       assert.deepEqual(await encodedDocuments(store, sourcePaths), before);
@@ -303,7 +311,7 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
       assert.equal(journal.phase, "quarantined");
       assert.equal(await store.get(PROFILE_PATH), null);
       assert.equal(await store.get(MEMBERSHIP_PATH), null);
-      assert.equal(await quarantineCount(firestore, runID), 2);
+      assert.equal(await quarantineCount(firestore, runID), 7);
 
       await expectCLIError(
         mutationArguments({summary, runID: "adapter-takeover"}),
@@ -332,7 +340,7 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
         "status",
         "verifiedInventoryDigest",
       ]);
-      assert.equal(marker.schemaVersion, 2);
+      assert.equal(marker.schemaVersion, 3);
       assert.equal(marker.status, "complete");
       assert.equal(marker.projectID, PROJECT_ID);
       assert.equal(marker.inventoryDigest, marker.verifiedInventoryDigest);
@@ -341,8 +349,8 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
       const manifest = await store.get(MANIFEST_PATH);
       assert.deepEqual(manifest, {
         leagueMembershipPaths: [],
-        challengeIDs: [CHALLENGE_ID],
-        friendAccountIDs: [ACCOUNT_B],
+        challengeIDs: [],
+        friendAccountIDs: [],
       });
       assert.equal("rating" in manifest, false);
       assert.equal("clientAuthoredResult" in manifest, false);
@@ -405,7 +413,7 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
         store.transaction(async (transaction) => {
           assert.deepEqual(await transaction.get(PROFILE_PATH), before);
           transaction.set(quarantinePath, {
-            schemaVersion: 2,
+            schemaVersion: 3,
             sourcePath: PROFILE_PATH,
           });
           transaction.delete(PROFILE_PATH);

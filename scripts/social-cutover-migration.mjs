@@ -1,6 +1,6 @@
 import {createHash} from "node:crypto";
 
-export const CUTOVER_SCHEMA_VERSION = 2;
+export const CUTOVER_SCHEMA_VERSION = 3;
 export const CUTOVER_JOURNAL_PATH = "_socialReferenceCutover/current";
 export const CUTOVER_PHASES = Object.freeze([
   "journaled",
@@ -15,6 +15,7 @@ export const SOCIAL_LIMITS = Object.freeze({
   memberships: 1_000,
   privateProfiles: 1_000,
   challenges: 1_000,
+  challengeDescendants: 3_000,
   friendLinks: 1_000,
   manifests: 1_000,
   totalMutationDocuments: 400,
@@ -221,6 +222,11 @@ function validateInventory(raw) {
     challenges: assertBoundedDocuments(
       raw.challenges ?? [], "challenges", SOCIAL_LIMITS.challenges
     ),
+    challengeDescendants: assertBoundedDocuments(
+      raw.challengeDescendants ?? [],
+      "challenge descendants",
+      SOCIAL_LIMITS.challengeDescendants
+    ),
     friendLinks: assertBoundedDocuments(
       raw.friendLinks ?? [], "friend links", SOCIAL_LIMITS.friendLinks
     ),
@@ -269,6 +275,18 @@ function validateInventory(raw) {
     assertAccountID(opponentAccountID, "challenge opponent account ID");
     if (creatorAccountID === opponentAccountID) {
       throw new Error(`Challenge participants match at ${challenge.path}.`);
+    }
+  }
+  for (const descendant of inventory.challengeDescendants) {
+    const segments = descendant.path.split("/");
+    if (segments.length < 4 || segments.length % 2 !== 0 ||
+        segments[0] !== "challenges" ||
+        !UUID_PATTERN.test(segments[1]) ||
+        segments[1] !== segments[1].toUpperCase() ||
+        !isPlainObject(descendant.data)) {
+      throw new Error(
+        `Invalid challenge descendant at ${descendant.path}.`
+      );
     }
   }
   for (const link of inventory.friendLinks) {
@@ -432,23 +450,16 @@ function buildPlan(envelope, runID) {
   }
   for (const existing of inventory.existingManifests) {
     const accountID = existing.path.split("/")[1];
-    const target = forAccount(accountID);
-    for (const id of existing.data.challengeIDs) {
-      target.challengeIDs.add(id.toUpperCase());
-    }
-    for (const id of existing.data.friendAccountIDs) {
-      target.friendAccountIDs.add(id);
-    }
+    forAccount(accountID);
   }
   for (const challenge of inventory.challenges) {
-    const challengeID = challenge.path.split("/")[1].toUpperCase();
-    forAccount(challenge.data.creatorAccountID).challengeIDs.add(challengeID);
-    forAccount(challenge.data.opponentAccountID).challengeIDs.add(challengeID);
+    forAccount(challenge.data.creatorAccountID);
+    forAccount(challenge.data.opponentAccountID);
   }
   for (const link of inventory.friendLinks) {
     const [, owner, , friend] = link.path.split("/");
-    forAccount(owner).friendAccountIDs.add(friend);
-    forAccount(friend).friendAccountIDs.add(owner);
+    forAccount(owner);
+    forAccount(friend);
   }
 
   const manifests = [...manifestByAccount.entries()].sort(([a], [b]) =>
@@ -466,7 +477,13 @@ function buildPlan(envelope, runID) {
     throw new Error("Planned manifests exceed the reviewed bound.");
   }
 
-  const legacy = [...inventory.profiles, ...inventory.leagueMemberships]
+  const legacy = [
+    ...inventory.profiles,
+    ...inventory.leagueMemberships,
+    ...inventory.challenges,
+    ...inventory.challengeDescendants,
+    ...inventory.friendLinks,
+  ]
     .sort((left, right) => left.path.localeCompare(right.path));
   if (legacy.length + manifests.length > SOCIAL_LIMITS.totalMutationDocuments) {
     throw new Error(
@@ -504,8 +521,9 @@ function expectedVerifiedInventory(plan) {
     profiles: [],
     leagueMemberships: [],
     privateProfiles: plan.inventory.privateProfiles,
-    challenges: plan.inventory.challenges,
-    friendLinks: plan.inventory.friendLinks,
+    challenges: [],
+    challengeDescendants: [],
+    friendLinks: [],
     manifests: plan.manifests,
     quarantine: plan.quarantine,
   };
@@ -566,14 +584,15 @@ function assertJournalBinding(journal, plan, {allowComplete = false} = {}) {
 
 async function assertInventoryMatchesBackup(store, plan, {resume = false} = {}) {
   const current = validateInventory(await store.readInventory());
-  for (const category of ["privateProfiles", "challenges", "friendLinks"]) {
+  for (const category of ["privateProfiles"]) {
     if (!matching(current[category], plan.inventory[category])) {
       throw new Error(`${category} changed after the source-bound backup.`);
     }
   }
   if (!resume) {
     for (const category of [
-      "profiles", "leagueMemberships", "existingManifests",
+      "profiles", "leagueMemberships", "challenges",
+      "challengeDescendants", "friendLinks", "existingManifests",
     ]) {
       if (!matching(current[category], plan.inventory[category])) {
         throw new Error(`${category} changed after the source-bound backup.`);
@@ -599,12 +618,14 @@ function maybeFault(faultAfterPhase, phase) {
 
 async function verifyApplied(store, plan, {allowComplete = false} = {}) {
   const current = validateInventory(await store.readInventory());
-  if (current.profiles.length !== 0 || current.leagueMemberships.length !== 0) {
+  if (current.profiles.length !== 0 ||
+      current.leagueMemberships.length !== 0 ||
+      current.challenges.length !== 0 ||
+      current.challengeDescendants.length !== 0 ||
+      current.friendLinks.length !== 0) {
     throw new Error("Legacy social source documents remain after quarantine.");
   }
   if (!matching(current.privateProfiles, plan.inventory.privateProfiles) ||
-      !matching(current.challenges, plan.inventory.challenges) ||
-      !matching(current.friendLinks, plan.inventory.friendLinks) ||
       !matching(current.existingManifests, plan.manifests)) {
     throw new Error("Post-migration inventory does not match the exact plan.");
   }
@@ -712,7 +733,7 @@ async function verifyRolledBack(store, plan, {journalExpected}) {
   const current = validateInventory(await store.readInventory());
   for (const category of [
     "profiles", "leagueMemberships", "privateProfiles", "challenges",
-    "friendLinks", "existingManifests",
+    "challengeDescendants", "friendLinks", "existingManifests",
   ]) {
     if (!matching(current[category], plan.inventory[category])) {
       throw new Error(`Rollback verification failed for ${category}.`);
@@ -744,7 +765,7 @@ export async function rollbackRecoverableCutover({
   }
   assertJournalBinding(journal, plan);
 
-  for (let index = 0; index < plan.legacy.length; index += 1) {
+  for (let index = plan.legacy.length - 1; index >= 0; index -= 1) {
     const source = plan.legacy[index];
     const quarantine = plan.quarantine[index];
     await store.transaction(async (transaction) => {
@@ -926,6 +947,11 @@ export class MemoryMigrationStore {
       leagueMemberships: match(/^leagues\/[^/]+\/members\/[^/]+$/),
       privateProfiles: match(/^users\/[^/]+\/profile\/main$/),
       challenges: match(/^challenges\/[^/]+$/),
+      challengeDescendants: entries.filter(({path}) => {
+        const segments = path.split("/");
+        return segments.length >= 4 && segments.length % 2 === 0 &&
+          segments[0] === "challenges";
+      }),
       friendLinks: match(/^_socialFriendLinks\/[^/]+\/friends\/[^/]+$/),
       existingManifests: match(/^_socialReferences\/[^/]+$/),
       existingCutover: this.documents.has(CUTOVER_JOURNAL_PATH) ? {
