@@ -1,5 +1,39 @@
 # Noum — Current state
 
+## 2026-07-14 — App-path evidence now requires a clean behavior source
+
+Implementation commit `24b5ad6a` closes the remaining uncommitted-source
+provenance gap. The readiness owner now inspects the complete non-ignored Git
+worktree with NUL-delimited status, including staged, unstaged, renamed, copied,
+and untracked paths. Both sides of a rename or copy are classified. Approved
+repository documentation and the eight exact canonical/diagnostic app-path
+files written by the scorer are excluded; Swift, tests, resources,
+localization, project files, scripts, evaluator inputs, and unknown paths fail
+closed by default.
+
+A matching manual coach fingerprint no longer excuses dirty behavior source.
+`app-path-source` refuses before creating or overwriting either source sidecar,
+app-path preflight returns `dirtyCoachSourceAfterDump`, final readiness returns
+`dirtyCoachSource`, and the release-evidence workflow consumes the same
+canonical detector. Release-evidence unit fixtures now mock their clean source
+binding explicitly instead of inheriting the developer checkout, while one
+dedicated contract proves the production workflow rejects dirty source.
+
+Coach Arena passes 119 Node contracts and 136 Python runner contracts. The
+release-evidence suite passes 29 tests and TestFlight preflight passes 31. A
+real sidecar command against the current worktree exited nonzero and created
+zero files. It correctly named the preserved `Localizable.xcstrings` edit and
+the implementation files while ignoring the two staged screenshot handoffs.
+The real readiness command remains NO-GO at 18/100 and now reports both the
+dirty source and the stale `80fbf6d2` commit boundary. No coach artifact was
+regenerated from the dirty checkout.
+
+This does not close the next product-accounting gap: Home/Train tap-time
+capability fallback can still undercount a shown prescription because the
+synchronous shown write sits inside the acceptance branch. It no longer risks
+false adaptation after `0da19af1`, but its denominator remains due for a narrow
+follow-up. Production evidence remains unearned.
+
 ## 2026-07-14 — Recommendation learning and coach evidence now fail closed
 
 Two independent trust gaps are closed at implementation commit `0da19af1`.
@@ -27,9 +61,9 @@ app-path preflight now correctly rejects the `80fbf6d2` dump at the current
 checkout with `sourceGitCommitSidecarStale` and `traceGitCommitStale`, naming
 the intervening behavior-bearing paths. That artifact remains valid historical
 evidence for `80fbf6d2`, but it is not current-source readiness evidence.
-Dirty-worktree detection still uses the manual coach-source path list, so a
-clean checkout remains required for the next refresh; broadening that detector
-without misclassifying regenerated evidence outputs is a separate local gap.
+At this implementation boundary, dirty-worktree detection still used the manual
+coach-source path list. The later `24b5ad6a` entry above closes that gap while
+preserving exact generated-output exclusions.
 
 The last complete Swift regression and unsigned optimized Release simulator
 build remain bound to `47cbab5f`; this focused run does not replace them. No

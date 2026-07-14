@@ -5,7 +5,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`0da19af1c0b0a0df8685918d73b6ed904050157a`
+`24b5ad6ac24c44fb6a22b008ef3ce739062b8dcd`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -15,7 +15,9 @@ selected-surface ownership for Home and Train prescription exposure, typed-ID
 Speech Project execution through the existing Timed route, and
 explicit quarantine of superseded privacy-audit documents. Followed-rep
 learning now also requires explicit recommendation acceptance plus the matching
-completed mode, and clean-ancestor evidence reuse is documentation-only. Their
+completed mode, clean-ancestor evidence reuse is documentation-only, and all
+uncommitted behavior source now blocks evidence binding even when the manual
+coach fingerprint matches. Their
 focused and full source/test results are recorded below with their exact source
 boundaries.
 
@@ -90,10 +92,10 @@ audio stream, and extension of existing owners rather than parallel stores.
   choices and duplicate state owners.
 - The committed canonical app-path baseline is local fixture/target-shape
   evidence only and can become stale if later integration changes coach source.
-- Clean-ancestor committed diffs now fail closed, but dirty-worktree detection
-  still follows the manual coach-source path list. Uncommitted behavior or
-  resource changes outside that list require a clean-checkout discipline until
-  the detector can distinguish source from regenerated evidence outputs.
+- Clean-ancestor and uncommitted-source checks now fail closed. The whole
+  non-ignored worktree is classified with exact documentation/generated-output
+  exclusions; ignored local configuration still belongs to separate build and
+  release-isolation checks rather than Git provenance diagnostics.
 - Apple signing, TestFlight, security-incident closure, protected social
   migration, and external studies cannot be completed by local code changes.
 
@@ -190,11 +192,11 @@ coach.
 
 | Report requirement or output | Classification | Current implementation and exact gap |
 |---|---|---|
-| Goal plus latest breakdown drives one best next rep | **Proved** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and style-goal alignment. Summary renders exactly the finalized primary action. A later outcome enters followed-rep learning only when the stored exposure has the existing explicit-acceptance timestamp and the completed mode matches; untapped or different-mode outcomes fail closed and cannot influence goal movement or adaptation. |
+| Goal plus latest breakdown drives one best next rep | **Proved** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and style-goal alignment. Summary renders exactly the finalized primary action. A later outcome enters followed-rep learning only when the stored exposure has the existing explicit-acceptance timestamp and the completed mode matches; untapped or different-mode outcomes fail closed and cannot influence goal movement or adaptation. The subsequent response baseline still averages heterogeneous historical modes/durations and raw filler counts, so comparable-attempt normalization remains a separate local coaching-trust gap. |
 | Up to two alternatives | **Incomplete** | `NextAction` can hold one optional secondary, but `SummaryPrescriptionProjection` deliberately renders only the primary. There is no two-alternative product card. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. Speech Projects are now independently executable: a stable catalog ID resolves into Timed with its curated prompts and project duration contract, but that does not make Projects an adaptive recommendation destination. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
-| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. On 2026-07-14, focused UI tests mounted the real Home and Train surfaces from the `plateauedAdvanced` profile, verified their exact Filler Control prescription and 44-point actions, followed both into `ahCounter.screen`, and read the existing account-local flow log back as one correlated `prescription.shown` / `prescription.accepted` pair at 100%. Exposure now waits for a settled selected-tab projection, so retained off-tab Home and Train's transient initial blueprint cannot create false denominators; a fast tap still writes the exact visible exposure synchronously. Home and Train continue to reuse `RecommendationLearningStore`, `FlowEventLog`, `NextActionModeAvailability`, and the established router. This row remains incomplete because Roleplay, Lessons, Projects, Path, pace, and the rest of the report's wider destination catalog still lack one rendered prescription contract. |
+| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. On 2026-07-14, focused UI tests mounted the real Home and Train surfaces from the `plateauedAdvanced` profile, verified their exact Filler Control prescription and 44-point actions, followed both into `ahCounter.screen`, and read the existing account-local flow log back as one correlated `prescription.shown` / `prescription.accepted` pair at 100%. Exposure waits for a settled selected-tab projection, so retained off-tab Home and Train's transient initial blueprint cannot create false denominators; an accepted fast tap writes the exact visible exposure synchronously. A tap-time capability fallback is safely excluded from acceptance but can still miss the synchronous shown write and rely on the appearance dwell, so its denominator is a narrow remaining local gap. Home and Train continue to reuse `RecommendationLearningStore`, `FlowEventLog`, `NextActionModeAvailability`, and the established router. This row also remains incomplete because Roleplay, Lessons, Projects, Path, pace, and the rest of the report's wider destination catalog lack one rendered prescription contract. |
 | Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, and no false acceptance. Prep-specific tests preserve the planned rehearsal identity, render honest Timed fallback copy/setup, withhold false readiness credit, prevent a fallback from upgrading at tap, and route unavailable pressure/audience shapes with a category-bounded prompt containing neither the moment title nor transcript. A focused iPhone 17 Pro simulator UI test now mounts the real Prep surface with both planned shapes locked, verifies the honest readiness labels and 44-point action, follows the Pressure fallback, and proves the exact category prompt reaches Timed. Other recommendation surfaces and the report's wider destination catalog remain outside this rendered proof. |
 
 ### 4. Fast-lane first session
@@ -289,7 +291,7 @@ substrate, but it is not a cohort analytics service.
 | Practice sessions per active user per week | **Proved** | **Missing** | Active days and sessions per active week are derived locally; no population aggregation exists. |
 | Goal-score improvement over 7/28 days | **Contradicted** | **Missing** | The public metric is qualitative goal follow-up/movement, not numeric goal-score improvement or a causal slope. |
 | Session-review open rate | **Proved** | **Missing** | Account-local eligible-session/review-open counts exist. |
-| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces, and the shared launch projection records acceptance only when the displayed mode is the mode actually launched. A tap-time operational fallback routes safely but is excluded from acceptance. The 2026-07-14 Home/Train UI run proves both real surfaces produce a content-free correlated shown/accepted pair without off-tab or unsettled-projection inflation. No population result exists. |
+| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces, and the shared launch projection records acceptance only when the displayed mode is the mode actually launched. A tap-time operational fallback routes safely and is excluded from acceptance, but Home/Train can undercount its shown denominator if navigation wins the 150 ms dwell because their synchronous shown call is still inside the acceptance branch. The 2026-07-14 Home/Train UI run proves the normal Filler Control accepted path produces a content-free correlated shown/accepted pair without off-tab or unsettled-projection inflation. No fallback-path or population result exists. |
 | Notification opt-in after first value | **Proved** | **Missing** | Decisions before value are excluded and the local conversion signal exists. |
 | D1/D7/D28 retention | **Proved** | **Missing** | Account-local active-day return anchors exist; there is no retention cohort. |
 | Cloud-to-local fallback rate | **Proved** | **Missing** | Only cloud-requested routes resolved locally enter the denominator; deliberate local sessions are excluded. |
@@ -314,7 +316,7 @@ substrate, but it is not a cohort analytics service.
 Source binding matters here. The `40d5e903` rows remain valid historical evidence
 for that named baseline. The canonical artifact is bound to clean source commit
 `80fbf6d2` and coach fingerprint `sha256:8087e26d…ca71`; the currently inspected
-implementation is `0da19af1`. It remains valid historical evidence for that
+implementation is `24b5ad6a`. It remains valid historical evidence for that
 source, but the current preflight rejects ancestor reuse because intervening
 app, test, script, evaluator, and generated-report paths are not
 documentation-only. Focused checks prove the narrowed current contracts; the
@@ -328,17 +330,17 @@ completed full regression proves only its recorded `47cbab5f` source boundary.
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. They prove the deletion entry point's rendered account-state branches, not remote deletion success. |
 | Rendered active-week phrase execution | **Proved** | On 2026-07-14, `testActiveWeekPhraseLaunchesExactPromptFromHome` passed on the iPhone 17 Pro simulator and retained an attachment of the exact saved line in Timed's thinking phase. The same 19-test focused run passed `ForwardPlanPhraseHandoffTests`, `PhrasePracticeIntentTests`, and `TimedPracticePromptHandoffTests`, including account binding and exact-once consumption. This is simulator/source evidence, not physical-device, TestFlight, or longitudinal outcome evidence. |
 | Rendered Prep availability fallback | **Proved** | On 2026-07-14, a combined 23-test focused run passed the real locked-shape Prep UI flow plus `PrepSessionAvailabilityTests`, `TimedPracticePromptHandoffTests`, and `ReleaseIdentityPrivacyTests`, with zero failures or skips. Retained attachments `prep-locked-shapes-timed-fallbacks` and `prep-pressure-fallback-exact-timed-prompt` were visually checked after the readiness-copy correction. They prove honest planned-shape status, Timed fallback actions, a 44-point target, and the exact category prompt at the destination on the iPhone 17 Pro simulator—not physical-device or TestFlight behavior. |
-| Rendered Home/Train recommendation ownership | **Proved** | At implementation commit `1e8e3e5e`, a combined iPhone 17 Pro simulator run passed 33/33 tests with zero failures or skips: both `RecommendationSurfaceRoutingUITests` plus `NextActionAvailabilityTests`, `HomeCoachCardVariantTests`, and `TransformationKPIReportTests`. Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a diagnostic attachment showing one 100% correlated shown/accepted pair. Six focused attachments and the light five-tab sweep in `.screenshots/2026-07-14_rendered-recommendation-ownership/` were visually checked. This proves the current four-mode Home/Train surface contract locally, not the wider destination catalog, population effectiveness, physical-device behavior, or TestFlight behavior. |
+| Rendered Home/Train recommendation ownership | **Proved** | At implementation commit `1e8e3e5e`, a combined iPhone 17 Pro simulator run passed 33/33 tests with zero failures or skips: both `RecommendationSurfaceRoutingUITests` plus `NextActionAvailabilityTests`, `HomeCoachCardVariantTests`, and `TransformationKPIReportTests`. Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a diagnostic attachment showing one 100% correlated shown/accepted pair. Six focused attachments and the light five-tab sweep in `.screenshots/2026-07-14_rendered-recommendation-ownership/` were visually checked. This proves the rendered normal Filler Control path on Home and Train. The four-mode availability matrix is pure/source coverage; it is not four rendered recommendation modes, fallback-tap proof, population effectiveness, physical-device behavior, or TestFlight behavior. |
 | Rendered Speech Project execution | **Proved** | At implementation commit `47cbab5f`, the focused routing and project-duration contracts passed together with `FocusedPracticeSetupUITests.testFocusedSetupIdentifiersSelectionTraitsAndTabBarHiding` on the iPhone 17 Pro simulator. The rendered `noum://projects/ice_breaker` route retained the catalog ID in Timed, exposed its project cue and begin control, hid the tab bar, and showed the aligned four-to-six-minute contract. The light five-tab sweep and project frame in `.screenshots/2026-07-14_speech-project-execution/` were visually checked. This proves local catalog-to-practice execution, not adaptive prescription, per-project longitudinal progress, physical-device behavior, or TestFlight behavior. |
 | Recommendation outcome attribution | **Proved** | At `0da19af1`, 46 focused iPhone 17 Pro simulator tests passed across `GoalOutcomeLoopTests`, `RecommendationResponseAnalyzerTests`, and `RecommendationAdaptationAnalyzerTests`. They prove explicit acceptance plus matching mode is required, legacy untapped exposure fails closed, and unfollowed outcomes stay outside response/adaptation reads. This is source/simulator accounting evidence, not population effectiveness. |
-| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and 129 Python runner contracts pass. The suite now proves default-deny clean-ancestor diff classification as well as existing score, trace, and readiness behavior. The canonical artifact remains bound to `80fbf6d2`; it is no longer current for `0da19af1`. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
-| Release-evidence workflow contracts | **Proved** | 28 tests passed. They prove fail-closed tooling, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate now revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
+| Coach-arena contracts at the evidence baseline | **Proved** | 119 Node contracts and 136 Python runner contracts pass. The suite proves default-deny committed and uncommitted source classification, NUL-safe rename/copy/untracked handling, exact generated-output exclusions, no-overwrite sidecar refusal, and existing score/trace/readiness behavior. The canonical artifact remains bound to `80fbf6d2`; it is no longer current for `24b5ad6a`. These are local tooling and evaluation contracts, not live-provider or human-outcome proof. |
+| Release-evidence workflow contracts | **Proved** | 29 tests passed. They prove fail-closed dirty-source binding, full-commit history-scan binding, the exact 14-surface/77-check TestFlight contract, and validator agreement—not that external evidence exists. The final readiness gate revalidates the selected attachment-backed run and requires exact promotion-receipt, source-binding, and four-artifact hash continuity with the active dump. |
 | Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
 | Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 31 signing/TestFlight preflight tests passed. The preflight forwards and independently requires the explicit attachment-backed run accepted by readiness. These results prove local tooling behavior only. |
-| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `80fbf6d2` and coach fingerprint `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`; 53 conversations/109 turns pass the app-path floor for that source. At `0da19af1`, the real preflight correctly returns nonzero with `sourceGitCommitSidecarStale` and `traceGitCommitStale`, reporting the intervening behavior-bearing paths. |
+| App-path dump preflight at the evidence baseline | **Proved** | The staged dump matches `80fbf6d2` and coach fingerprint `sha256:8087e26d0fdb43b51aad5aa59a79270f254c0b69162fe748b723b6bc8ff2ca71`; 53 conversations/109 turns pass the app-path floor for that source. At `0da19af1`, the real preflight correctly returned nonzero with `sourceGitCommitSidecarStale` and `traceGitCommitStale`, reporting the intervening behavior-bearing paths. At `24b5ad6a`, a real `app-path-source` attempt against the preserved dirty checkout exited nonzero, named the localization/tooling paths, and created zero sidecars; final readiness also reports `dirtyCoachSource` plus the stale commit. |
 | Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-13T10:20:06+00:00` embeds `80fbf6d2` / `sha256:8087e26d…ca71`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero local fixture failures for that named source. It is historical local real-pipeline/target-shape evidence, not current-source, external-provider, reviewer, longitudinal, or device proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
-| Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. At `0da19af1`, source freshness additionally blocks on `currentGitCommit` because the active dump is bound to `80fbf6d2`. No validated attachment-backed release run is available to the gate, and none of the external rows is earned. |
+| Production readiness | **Missing** | Gate result is NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. At `24b5ad6a`, source freshness blocks on `currentGitCommit` because the active dump is bound to `80fbf6d2`; the current primary checkout additionally blocks on `dirtyCoachSource` because the preserved localization edit is not part of a source-bound artifact. No validated attachment-backed release run is available to the gate, and none of the external rows is earned. |
 
 ## External proof gates
 
@@ -375,16 +377,21 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-The clean-ancestor provenance hardening is complete, but dirty-worktree coverage
-outside the manual coach path list and the safe local source/evidence refresh
-remain due. Keep `40d5e903` and `80fbf6d2` as named historical baselines;
-neither is the current `0da19af1` source boundary. Regenerate the local
+Committed-ancestor and dirty-worktree provenance hardening are complete. The
+safe local source/evidence refresh remains due. Keep `40d5e903` and `80fbf6d2`
+as named historical baselines; neither is the current `24b5ad6a` source
+boundary. Regenerate the local
 dump/report from a clean current checkout and preserve the
 provenance contract: explicitly styled rows pass only with typed assessment,
 declared-neutral rows remain truthfully `notEvaluated`, and unknown fixture IDs
 fail closed. The gate also requires the original validated release run and
 promotion receipt to remain available. Local reruns cannot raise production
-readiness past the external cap by themselves.
+readiness past the external cap by themselves. The current primary checkout is
+intentionally not eligible for refresh while the user's localization edit is
+uncommitted. The next narrow product-accounting repair is to record a displayed
+Home/Train prescription as shown before tap-time capability fallback decides
+whether it can be accepted; the next deeper coaching audit should normalize and
+bound heterogeneous recommendation-response comparisons.
 
 ### External or approval-gated
 
