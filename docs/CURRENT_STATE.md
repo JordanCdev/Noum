@@ -1,5 +1,52 @@
 # Noum — Current state
 
+## 2026-07-14 — Recommendation state has a local transactional CAS boundary
+
+Implementation commit `00dd5975` closes the verified source-level distributed
+overwrite seam without creating another recommendation owner. Firebase
+recommendation mutations now flow through the existing
+`RecommendationLearningStore` and `BackendSyncManager` into one authenticated,
+App Check-enforced callable transaction. The server treats absent and exact
+legacy documents as revision zero, validates the bounded evidence envelope,
+accepts only the expected remote revision, binds idempotent replay to both the
+mutation UUID and its original body, and returns typed committed, replay, or
+conflict state. Source rules retain owner reads and deny all direct client
+writes; the unversioned optional REST recommendation path fails closed.
+
+The client persists an account-scoped remote cursor and pending mutation UUID,
+uses Unix seconds on both callable wire directions, preserves an identical
+crash-replay identity across hydration, and merges authoritative conflicts
+through the existing outcome/exposure reducers. One immediate rebase is
+allowed; a repeated conflict or transport failure remains durably dirty instead
+of spinning or acknowledging an overwrite. Merged body and mutation state are
+persisted before the new remote cursor, so interruption can cause another safe
+conflict but cannot pair a new cursor with stale local evidence. The two new
+metadata keys remain inside the existing account export/deletion participant.
+
+At the detached clean `00dd5975` boundary, Functions lint and all 66 Node tests
+passed. A fresh iPhone 17 Pro simulator build then passed 28 focused tests with
+zero failures or skips across recommendation versioning/wire dates, lane
+ordering/retry, hydration merge, and account export/deletion. The source-bound
+result bundle is `/private/tmp/NoumRecommendationCAS-00dd5975.xcresult`.
+Firebase emulator integration contracts now cover concurrent same-revision
+mutation, legacy migration, idempotent replay, stale conflict, deletion
+tombstone, and direct-write denial, but they were not executed locally because
+this machine has no Java runtime and its Node 26 runtime is outside the
+repository's supported Firebase toolchain.
+
+This is not deployed cross-device evidence. The dedicated recommendation
+runtime service account has no verified existence or IAM grant, the callable
+and rules are undeployed, and the callable-only rule cutover remains coupled to
+the protected social migration. There is no active-client inventory,
+minimum-client decision, staged two-device/mixed-build smoke, production App
+Check proof, or backup/rollback evidence. Older clients retain read compatibility
+through the legacy fields but their direct writes will be rejected after
+cutover. Exact Timed/Sudden Death difficulty and Speech Project demand also
+remain unpersisted. No live-provider, professional-calibration,
+longitudinal-user, physical-TestFlight, security-incident, or launch-operations
+evidence was collected. Production readiness remains NO-GO at 18/100 with zero
+of five external artifacts passing.
+
 ## 2026-07-14 — Recommended taps preserve the shown denominator
 
 Implementation commit `eb597589` closes the Home/Train tap-time prescription
