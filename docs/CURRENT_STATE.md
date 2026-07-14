@@ -1,5 +1,47 @@
 # Noum — Current state
 
+## 2026-07-14 — Social cutover is recoverable locally and remains closed in production
+
+Implementation commits `afdcd37f`, `dd4a116a`, `03bf5c67`, and `0206eb4d`
+replace the destructive local social-cutover path with one provenance-bound
+workflow while preserving the existing Firestore, callable, and deletion state
+owners. A read-only inventory now includes exact private-profile validation and
+writes a canonical mode-0600 backup bound to the production project, clean Git
+commit, migration implementation hash, and SHA-256 digest. Apply requires that
+reviewed backup, its digest, a stable run ID, exact project confirmation, and
+the explicit legacy-data disposition flags.
+
+Before any source mutation, apply creates the schema-v2 non-complete global
+journal. Each legacy public profile or league row is copied into
+`_socialReferenceQuarantine/{runID}/documents/{sourcePathSHA256}` in the same
+Firestore transaction that deletes the source. Manifest writes remain bounded
+and never promote legacy rating, streak, or result values. The same run/digest
+can resume idempotently; a different run or digest cannot take over. Before
+completion, rollback restores the exact source documents and prior manifests,
+verifies them, removes quarantine, and deletes the journal last. Completion
+requires identical expected and observed post-inventory digests plus exact
+project/source/backup provenance.
+
+All six social callables now require that exact completed marker before request
+validation, rate-limit work, reads, or mutations. Missing, schema-v1,
+in-progress, malformed, wrong-project, extra-field, or digest-mismatched markers
+fail closed. `syncRecommendationState` remains independent so private coaching
+persistence is not disabled with social. Firestore rules deny every client read,
+list, create, update, or delete on journal, quarantine, and manifest state.
+
+Verification passed 25/25 migration and credential tests, including fault
+injection after every apply and rollback phase; 71/71 Functions unit tests;
+24/24 canonical `demo-noum` Auth/Firestore/Functions emulator tests with Node
+22.23.1, Java 21.0.11, and Firebase CLI 15.19.1; and all 19 static readiness
+checks. The CLI Firestore adapter was compiled and source-tested but was not run
+against production or claimed as deployed end-to-end evidence.
+
+Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+No authorized production inventory, backup, quarantine, client-version policy,
+writer suspension, migration, rules/functions deployment, rollback drill, or
+mixed-build/device verification was performed. Social capabilities remain
+disabled.
+
 ## 2026-07-14 — Release probes now fail closed on exact runtime and privacy contracts
 
 Implementation commits `4dd2182b378b07140bd451de640cab2c75ed5222`

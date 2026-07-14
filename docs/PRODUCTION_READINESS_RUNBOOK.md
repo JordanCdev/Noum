@@ -358,13 +358,14 @@ Before deploying the reviewed social rules and functions together:
 Until every step passes, keep league and challenge actions unavailable in the
 client. A disabled social surface is safer than accepting untrusted progress.
 
-The current `--apply --purge-legacy-social` implementation is **not** a
-recoverable quarantine workflow: independent writes can delete legacy rows
-before a completion marker exists, and there is no server quarantine, source-
-bound backup digest, private-profile inventory, resume, rollback, or migration
-fault-injection proof. Do not run it. Replace or harden the migration so each
-copy/delete is transactionally paired, non-complete states gate every social
-callable, and resume/rollback behavior is proved before any production apply.
+The local migration implementation is now recoverable by contract. It requires
+a clean committed source; inventories private profiles; binds the backup to the
+project, source commit, migration implementation, and canonical SHA-256; writes
+a non-complete marker before mutation; transactionally pairs quarantine copies
+with source deletion; and supports same-run resume and pre-completion rollback.
+All six social callables reject every state except the exact provenance-bearing
+schema-v2 complete marker. This is locally tested mechanics, not authorization
+or evidence that a production migration occurred.
 
 For the reviewed production inventory on an operator Mac that has an active
 gcloud user identity but no Application Default Credentials, use the explicit
@@ -380,6 +381,36 @@ and never includes it in console output or the ignored mode-0600 backup. The
 script rejects `--apply` and every purge option in this mode before contacting
 gcloud or Firestore. Application Default Credentials remain the only credential
 path eligible for the separately approved coordinated cutover.
+
+After independent review of that exact backup, record its printed digest and
+choose one stable run ID. Only after active-client inventory, minimum-client
+disposition, writer suspension, credential reauthentication, legacy-data
+approval, and rollback ownership are documented may an authorized operator run:
+
+```bash
+node scripts/migrate-social-reference-cutover.mjs --project=noum-d0b6f \
+  --apply --confirm-project=noum-d0b6f \
+  --purge-legacy-social --approve-purge=DELETE_LEGACY_SOCIAL \
+  --run-id='<approved-run-id>' \
+  --backup-file='<reviewed-mode-0600-backup>' \
+  --backup-digest='<printed-sha256>'
+```
+
+Reissuing that exact command resumes only the same run and digest. Before the
+complete marker exists, rollback uses the same source-bound backup:
+
+```bash
+node scripts/migrate-social-reference-cutover.mjs --project=noum-d0b6f \
+  --apply --rollback --confirm-project=noum-d0b6f \
+  --run-id='<approved-run-id>' \
+  --backup-file='<reviewed-mode-0600-backup>' \
+  --backup-digest='<printed-sha256>'
+```
+
+Rollback is deliberately refused after completion. Post-completion recovery is
+an operator incident procedure, not an automated reversal of trusted social
+state. Keep the local backup and server quarantine under the approved retention
+and access policy until independent verification authorizes disposal.
 
 ## Local Evidence Path
 
