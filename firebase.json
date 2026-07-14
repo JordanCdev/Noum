@@ -12,6 +12,7 @@
         "*.local"
       ],
       "predeploy": [
+        "node \"$PROJECT_DIR/scripts/release-backend-deploy.mjs\"",
         "npm --prefix \"$RESOURCE_DIR\" run lint",
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
@@ -19,7 +20,10 @@
   ],
   "firestore": {
     "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "indexes": "firestore.indexes.json",
+    "predeploy": [
+      "node \"$PROJECT_DIR/scripts/release-backend-deploy.mjs\""
+    ]
   },
   "emulators": {
     "auth": {

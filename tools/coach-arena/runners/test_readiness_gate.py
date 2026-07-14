@@ -91,7 +91,15 @@ def write_static_ops_repo(root):
     )
     (root / "firebase.json").write_text(
         json.dumps({
-            "firestore": {"rules": "firestore.rules"},
+            "functions": [{
+                "source": "functions",
+                "codebase": "default",
+                "predeploy": [gate.FIREBASE_BACKEND_DEPLOYMENT_BLOCKER],
+            }],
+            "firestore": {
+                "rules": "firestore.rules",
+                "predeploy": [gate.FIREBASE_BACKEND_DEPLOYMENT_BLOCKER],
+            },
             "hosting": {
                 "public": "public",
                 "rewrites": [
@@ -2681,6 +2689,55 @@ class ReadinessGateTests(unittest.TestCase):
 
         self.assertIn(
             "hostingPrivacyRewrite",
+            [item["key"] for item in preflight["failures"]],
+        )
+
+    def test_operational_static_preflight_requires_backend_deploy_locks_first(self):
+        mutations = {
+            "missingFunctionsLock": lambda config: config["functions"][0].pop("predeploy"),
+            "functionsLockAfterBuild": lambda config: config["functions"][0].update({
+                "predeploy": ["npm --prefix functions run build", gate.FIREBASE_BACKEND_DEPLOYMENT_BLOCKER],
+            }),
+            "missingFirestoreLock": lambda config: config["firestore"].pop("predeploy"),
+            "alteredFirestoreLock": lambda config: config["firestore"].update({
+                "predeploy": ["node scripts/release-backend-deploy.mjs"],
+            }),
+        }
+        expected_key = {
+            "missingFunctionsLock": "firebaseFunctionsDeployLock",
+            "functionsLockAfterBuild": "firebaseFunctionsDeployLock",
+            "missingFirestoreLock": "firebaseFirestoreDeployLock",
+            "alteredFirestoreLock": "firebaseFirestoreDeployLock",
+        }
+        for case, mutate in mutations.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                write_static_ops_repo(root)
+                config_path = root / "firebase.json"
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+                mutate(config)
+                config_path.write_text(json.dumps(config), encoding="utf-8")
+
+                preflight = gate.operational_static_preflight(root)
+
+                self.assertIn(
+                    expected_key[case],
+                    [item["key"] for item in preflight["failures"]],
+                )
+
+    def test_operational_static_preflight_keeps_hosting_outside_backend_lock(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            config_path = root / "firebase.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["hosting"]["predeploy"] = [gate.FIREBASE_BACKEND_DEPLOYMENT_BLOCKER]
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            preflight = gate.operational_static_preflight(root)
+
+        self.assertIn(
+            "firebaseHostingDeployIsolation",
             [item["key"] for item in preflight["failures"]],
         )
 

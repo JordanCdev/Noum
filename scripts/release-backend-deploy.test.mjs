@@ -26,6 +26,9 @@ const EXPECTED_BLOCKERS = [
     "verify it before deployment.",
 ];
 
+const FIREBASE_DEPLOYMENT_BLOCKER =
+  'node "$PROJECT_DIR/scripts/release-backend-deploy.mjs"';
+
 test("the exact actionable blocker roster is stable", () => {
   assert.deepEqual([...DEPLOYMENT_BLOCKERS], EXPECTED_BLOCKERS);
   const refusal = backendDeployRefusal();
@@ -104,4 +107,35 @@ test("functions deploy and CI test scripts route through the blocker", async () 
     /node --test \.\.\/scripts\/release-backend-deploy\.test\.mjs/
   );
   assert.doesNotMatch(packageJSON.scripts.deploy, /firebase|npx|--execute/);
+});
+
+test("every checked-in Firebase Functions and Firestore deploy stops at the blocker", async () => {
+  const firebaseJSON = JSON.parse(await readFile(
+    new URL("../firebase.json", import.meta.url),
+    "utf8"
+  ));
+  const functionsTargets = Array.isArray(firebaseJSON.functions)
+    ? firebaseJSON.functions
+    : [firebaseJSON.functions];
+  const firestoreTargets = Array.isArray(firebaseJSON.firestore)
+    ? firebaseJSON.firestore
+    : [firebaseJSON.firestore];
+  const hostingTargets = Array.isArray(firebaseJSON.hosting)
+    ? firebaseJSON.hosting
+    : [firebaseJSON.hosting];
+
+  assert.ok(functionsTargets.length > 0);
+  for (const target of functionsTargets) {
+    assert.equal(target.predeploy?.[0], FIREBASE_DEPLOYMENT_BLOCKER);
+  }
+  assert.ok(firestoreTargets.length > 0);
+  for (const target of firestoreTargets) {
+    assert.equal(target.predeploy?.[0], FIREBASE_DEPLOYMENT_BLOCKER);
+  }
+  for (const target of hostingTargets) {
+    assert.equal(
+      target.predeploy?.includes(FIREBASE_DEPLOYMENT_BLOCKER) ?? false,
+      false
+    );
+  }
 });

@@ -40,6 +40,9 @@ SOURCE_SIDECARS = [
     "source-git-commit.txt",
     "source-coach-fingerprint.txt",
 ]
+FIREBASE_BACKEND_DEPLOYMENT_BLOCKER = (
+    'node "$PROJECT_DIR/scripts/release-backend-deploy.mjs"'
+)
 
 RELEASE_EVIDENCE_MANAGED_ARTIFACTS = [
     "coach-chat-conversation-expert-calibration-results-v2.json",
@@ -3871,16 +3874,98 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "Restore a valid firebase.json with Firestore and Hosting config.",
     )
 
-    firestore_rules_pointer = (
-        (firebase_config or {}).get("firestore") or {}
-    ).get("rules")
+    firestore_config = (firebase_config or {}).get("firestore")
+    firestore_targets = (
+        firestore_config if isinstance(firestore_config, list)
+        else [firestore_config] if isinstance(firestore_config, dict)
+        else []
+    )
+    firestore_rule_pointers = [
+        target.get("rules") if isinstance(target, dict) else None
+        for target in firestore_targets
+    ]
+    firestore_rules_pointer_is_safe = (
+        bool(firestore_rule_pointers)
+        and all(pointer == "firestore.rules" for pointer in firestore_rule_pointers)
+    )
     add(
         "firestoreRulesPointer",
         "firestoreRulesPointer",
-        firestore_rules_pointer == "firestore.rules",
-        firestore_rules_pointer,
+        firestore_rules_pointer_is_safe,
+        firestore_rule_pointers,
         "firebase.json must point Firestore deploys at firestore.rules.",
         "Set firebase.json firestore.rules to `firestore.rules`.",
+    )
+
+    functions_config = (firebase_config or {}).get("functions")
+    functions_targets = (
+        functions_config if isinstance(functions_config, list)
+        else [functions_config] if isinstance(functions_config, dict)
+        else []
+    )
+    unlocked_function_codebases = []
+    for index, target in enumerate(functions_targets):
+        if not isinstance(target, dict):
+            unlocked_function_codebases.append(f"invalid-{index}")
+            continue
+        predeploy = target.get("predeploy")
+        if (
+            not isinstance(predeploy, list)
+            or not predeploy
+            or predeploy[0] != FIREBASE_BACKEND_DEPLOYMENT_BLOCKER
+        ):
+            unlocked_function_codebases.append(target.get("codebase") or "default")
+    functions_deploy_locked = bool(functions_targets) and not unlocked_function_codebases
+    add(
+        "firebaseFunctionsDeployLock",
+        "firebaseFunctionsDeployLock",
+        functions_deploy_locked,
+        (
+            "allCodebasesBlockedFirst"
+            if functions_deploy_locked
+            else "missingOrUnlocked:" + ",".join(unlocked_function_codebases or ["none"])
+        ),
+        (
+            "Every checked-in Firebase Functions codebase must refuse deployment "
+            "before lint, build, preparation, or network mutation while the social "
+            "release gate is open."
+        ),
+        (
+            "Make the first functions predeploy hook in firebase.json exactly "
+            f"`{FIREBASE_BACKEND_DEPLOYMENT_BLOCKER}`."
+        ),
+    )
+
+    unlocked_firestore_targets = []
+    for index, target in enumerate(firestore_targets):
+        if not isinstance(target, dict):
+            unlocked_firestore_targets.append(f"invalid-{index}")
+            continue
+        predeploy = target.get("predeploy")
+        if (
+            not isinstance(predeploy, list)
+            or not predeploy
+            or predeploy[0] != FIREBASE_BACKEND_DEPLOYMENT_BLOCKER
+        ):
+            unlocked_firestore_targets.append(target.get("database") or "default")
+    firestore_deploy_locked = bool(firestore_targets) and not unlocked_firestore_targets
+    add(
+        "firebaseFirestoreDeployLock",
+        "firebaseFirestoreDeployLock",
+        firestore_deploy_locked,
+        (
+            "allDatabasesBlockedFirst"
+            if firestore_deploy_locked
+            else "missingOrUnlocked:" + ",".join(unlocked_firestore_targets or ["none"])
+        ),
+        (
+            "Checked-in Firebase Firestore deployment must refuse before rules or "
+            "index mutation while the coordinated social release gate is open."
+        ),
+        (
+            "Make the first Firestore predeploy hook in firebase.json exactly "
+            f"`{FIREBASE_BACKEND_DEPLOYMENT_BLOCKER}`."
+        ),
     )
 
     hosting_config = (firebase_config or {}).get("hosting") or {}
@@ -3892,6 +3977,22 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         hosting_public,
         "Firebase Hosting must serve the checked-in public directory.",
         "Set firebase.json hosting.public to `public`.",
+    )
+    hosting_predeploy = hosting_config.get("predeploy")
+    hosting_is_independent = not (
+        isinstance(hosting_predeploy, list)
+        and FIREBASE_BACKEND_DEPLOYMENT_BLOCKER in hosting_predeploy
+    )
+    add(
+        "firebaseHostingDeployIsolation",
+        "firebaseHostingDeployIsolation",
+        hosting_is_independent,
+        "independent" if hosting_is_independent else "backendBlockerInherited",
+        (
+            "The disabled social-backend gate must not prevent an independently "
+            "authorized hosted privacy-policy correction."
+        ),
+        "Remove the backend deployment blocker from Firebase Hosting predeploy hooks.",
     )
 
     privacy_rewrite_present = any(
