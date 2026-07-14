@@ -298,6 +298,10 @@ test(
     assert.equal(completeEnd > completeStart, true);
     const begin = source.slice(beginStart, completeStart);
     const complete = source.slice(completeStart, completeEnd);
+    const rateStart = source.indexOf(
+      "async function enforceCompetitiveObservationRateLimit"
+    );
+    const rateOwner = source.slice(rateStart, beginStart);
     for (const callable of [begin, complete]) {
       assert.match(callable, /enforceAppCheck: true/);
       assert.match(callable, /TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT/);
@@ -314,6 +318,12 @@ test(
     assert.match(complete, /collection\("audioDigests"\)/);
     assert.match(complete, /collection\("observations"\)/);
     assert.match(complete, /competitiveEligible: false/);
+    assert.match(rateOwner, /COMPETITIVE_OBSERVATION_MINUTE_LIMIT/);
+    assert.match(rateOwner, /COMPETITIVE_OBSERVATION_HOUR_LIMIT/);
+    assert.match(complete, /status: "processing"/);
+    assert.match(complete, /processingStartedAt: Timestamp\.fromMillis/);
+    assert.match(complete, /intent\.status !== "processing"/);
+    assert.doesNotMatch(complete, /competitiveObservationRetryMatches/);
     assert.doesNotMatch(complete, /fillerWordCount|isRated|score:/);
     const workStart = complete.indexOf("completeCompetitiveObservationWork");
     const claimStart = complete.indexOf("claimAudio:", workStart);

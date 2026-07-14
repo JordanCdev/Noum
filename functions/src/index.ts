@@ -79,14 +79,13 @@ import {
   COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
   competitiveObservationDocument,
   competitiveObservationIntentMatches,
-  competitiveObservationRetryMatches,
+  competitiveObservationProcessingIntent,
   completeCompetitiveObservationWork,
   DeepgramObservationError,
   assertCompetitiveObservationIntentUsable,
   transcribeCompetitivePCM,
   validateBeginCompetitiveObservationRequest,
   validateStoredCompetitiveAudioDigestClaim,
-  validateStoredCompetitiveObservation,
   validateStoredCompetitiveObservationIntent,
   type CompetitiveObservationAudio,
   type CompetitiveObservationRateState,
@@ -953,6 +952,12 @@ export const beginCompetitiveObservation = onCall(
           input.sessionID,
           nowMs
         );
+        if (existing.status !== "pending") {
+          throw new HttpsError(
+            "already-exists",
+            "This observation has already started provider processing."
+          );
+        }
         return {expiresAtMs: existing.expiresAtMs, replayed: true};
       }
       const now = Timestamp.fromMillis(nowMs);
@@ -965,6 +970,7 @@ export const beginCompetitiveObservation = onCall(
         startedAt: now,
         expiresAt: Timestamp.fromMillis(expiresAtMs),
         updatedAt: now,
+        processingStartedAt: null,
         observationCompletedAt: null,
       });
       return {expiresAtMs, replayed: false};
@@ -1059,52 +1065,32 @@ export const completeCompetitiveObservation = onCall(
               input.sessionID,
               nowMs
             );
-            if (intent.audioSHA256 !== null &&
-                intent.audioSHA256 !== input.audio.sha256) {
+            const processingIntent = competitiveObservationProcessingIntent(
+              intent,
+              input.audio.sha256,
+              nowMs
+            );
+            if (digestSnapshot.exists) {
               throw new HttpsError(
                 "already-exists",
-                "This observation is already bound to different audio."
+                "This audio was already used for another observation."
               );
             }
-            if (digestSnapshot.exists) {
-              const digestData = digestSnapshot.data();
-              if (isRecord(digestData) &&
-                  digestData.sessionID !== input.sessionID) {
-                throw new HttpsError(
-                  "already-exists",
-                  "This audio was already used for another observation."
-                );
-              }
-              validateStoredCompetitiveAudioDigestClaim(
-                digestData,
-                uid,
-                input.sessionID,
-                input.audio.sha256,
-                socialDateMilliseconds
-              );
-              if (intent.audioSHA256 === null) {
-                throw new HttpsError(
-                  "data-loss",
-                  "Audio binding is incomplete."
-                );
-              }
-            } else if (intent.audioSHA256 !== null) {
-              throw new HttpsError("data-loss", "Audio binding is incomplete.");
-            } else {
-              transaction.create(digestRef, {
-                schemaVersion: 1,
-                uid,
-                sessionID: input.sessionID,
-                audioSHA256: input.audio.sha256,
-                claimedAt: Timestamp.fromMillis(nowMs),
-                expiresAt: Timestamp.fromMillis(intent.expiresAtMs),
-              });
-              transaction.update(intentRef, {
-                audioSHA256: input.audio.sha256,
-                updatedAt: Timestamp.fromMillis(nowMs),
-              });
-            }
-            return {...intent, audioSHA256: input.audio.sha256};
+            transaction.create(digestRef, {
+              schemaVersion: 1,
+              uid,
+              sessionID: input.sessionID,
+              audioSHA256: input.audio.sha256,
+              claimedAt: Timestamp.fromMillis(nowMs),
+              expiresAt: Timestamp.fromMillis(intent.expiresAtMs),
+            });
+            transaction.update(intentRef, {
+              status: "processing",
+              audioSHA256: input.audio.sha256,
+              processingStartedAt: Timestamp.fromMillis(nowMs),
+              updatedAt: Timestamp.fromMillis(nowMs),
+            });
+            return processingIntent;
           });
         },
         transcribe: async (intent, audio) => {
@@ -1130,7 +1116,7 @@ export const completeCompetitiveObservation = onCall(
       });
       logger.info("completeCompetitiveObservation completed", {
         operation: "completeCompetitiveObservation",
-        status: result.replayed ? "replayed" : "observed",
+        status: "observed",
         latencyMs: Date.now() - startedAt,
       });
       return {
@@ -1140,7 +1126,7 @@ export const completeCompetitiveObservation = onCall(
         durationSeconds: result.input.audio.durationSeconds,
         wordCount: result.provider.wordCount,
         competitiveEligible: false,
-        replayed: result.replayed,
+        replayed: false,
       };
     } catch (error) {
       const status = error instanceof DeepgramObservationError ?
@@ -1180,14 +1166,14 @@ export const completeCompetitiveObservation = onCall(
  * @param {StoredCompetitiveObservationIntent} claimedIntent Claimed intent.
  * @param {CompetitiveObservationAudio} audio Validated PCM facts.
  * @param {DeepgramCompetitiveObservation} provider Provider observation.
- * @return {Promise<{replayed: boolean}>} Commit or matching-retry result.
+ * @return {Promise<void>} Resolves after the first observation commit.
  */
 async function commitCompetitiveObservation(
   uid: string,
   claimedIntent: StoredCompetitiveObservationIntent,
   audio: CompetitiveObservationAudio,
   provider: DeepgramCompetitiveObservation
-): Promise<{replayed: boolean}> {
+): Promise<void> {
   const firestore = getFirestore();
   const intentRef = firestore.collection("_competitiveCaptureIntents")
     .doc(uid).collection("captureIntents").doc(claimedIntent.sessionID);
@@ -1225,31 +1211,23 @@ async function commitCompetitiveObservation(
       audio.sha256,
       socialDateMilliseconds
     );
+    if (observationSnapshot.exists) {
+      throw new HttpsError(
+        "already-exists",
+        "This observation was already completed."
+      );
+    }
+    if (intent.status !== "processing" ||
+        intent.processingStartedAtMs === null ||
+        intent.observationCompletedAtMs !== null) {
+      throw new HttpsError("data-loss", "Observation state is incomplete.");
+    }
     const candidate = competitiveObservationDocument(
       intent,
       audio,
       provider,
       nowMs
     );
-    if (observationSnapshot.exists) {
-      const existing = validateStoredCompetitiveObservation(
-        observationSnapshot.data(),
-        uid,
-        claimedIntent.sessionID,
-        socialDateMilliseconds
-      );
-      if (intent.status !== "observed" ||
-          !competitiveObservationRetryMatches(existing, candidate)) {
-        throw new HttpsError(
-          "data-loss",
-          "Repeated speech observation did not match the first result."
-        );
-      }
-      return {replayed: true};
-    }
-    if (intent.status !== "pending") {
-      throw new HttpsError("data-loss", "Observation state is incomplete.");
-    }
     transaction.create(
       observationRef,
       competitiveObservationFirestoreDocument(candidate)
@@ -1259,7 +1237,6 @@ async function commitCompetitiveObservation(
       updatedAt: Timestamp.fromMillis(nowMs),
       observationCompletedAt: Timestamp.fromMillis(nowMs),
     });
-    return {replayed: false};
   });
 }
 

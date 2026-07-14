@@ -5,14 +5,16 @@ import {createHash} from "node:crypto";
 import test from "node:test";
 import {
   COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS,
+  COMPETITIVE_OBSERVATION_HOUR_LIMIT,
   COMPETITIVE_OBSERVATION_MAX_AUDIO_BYTES,
   COMPETITIVE_OBSERVATION_MAX_PROVIDER_WORDS,
   COMPETITIVE_OBSERVATION_MAX_TRANSCRIPT_CHARS,
   COMPETITIVE_OBSERVATION_MIN_AUDIO_BYTES,
+  COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
   assertCompetitiveObservationIntentUsable,
   competitiveObservationDocument,
   competitiveObservationIntentMatches,
-  competitiveObservationRetryMatches,
+  competitiveObservationProcessingIntent,
   completeCompetitiveObservationWork,
   DeepgramObservationError,
   transcribeCompetitivePCM,
@@ -77,8 +79,9 @@ function completeRequest(bytes = pcm()): Record<string, unknown> {
 
 function intent(
   audioSHA256: string | null = null,
-  status: "pending" | "observed" = "pending"
+  status: "pending" | "processing" | "observed" = "pending"
 ): StoredCompetitiveObservationIntent {
+  const hasProviderWork = status !== "pending";
   return {
     ...validateBeginCompetitiveObservationRequest(validBeginRequest),
     uid,
@@ -87,6 +90,7 @@ function intent(
     audioSHA256,
     startedAtMs,
     expiresAtMs,
+    processingStartedAtMs: hasProviderWork ? startedAtMs + 10 : null,
     observationCompletedAtMs: status === "observed" ? startedAtMs + 20 : null,
   };
 }
@@ -104,6 +108,7 @@ function storedIntentDocument(
     startedAt: startedAtMs,
     expiresAt: expiresAtMs,
     updatedAt: startedAtMs,
+    processingStartedAt: null,
     observationCompletedAt: null,
     ...overrides,
   };
@@ -173,6 +178,11 @@ test("begin request validates exact mode, demand, and prompt provenance", () => 
     source: "curated",
     promptDigest: promptSHA,
   });
+});
+
+test("competitive request cost ceilings stay restrained", () => {
+  assert.equal(COMPETITIVE_OBSERVATION_MINUTE_LIMIT, 3);
+  assert.equal(COMPETITIVE_OBSERVATION_HOUR_LIMIT, 12);
 });
 
 test("begin accepts exact no-prompt and challenge bindings", () => {
@@ -340,6 +350,67 @@ test("stored intent requires exact schema and coherent timestamps", () => {
   }
 });
 
+test("stored intent enforces pending processing observed timestamp coupling", () => {
+  const sha = "e".repeat(64);
+  const processing = validateStoredCompetitiveObservationIntent(
+    storedIntentDocument({
+      status: "processing",
+      audioSHA256: sha,
+      processingStartedAt: startedAtMs + 10,
+      updatedAt: startedAtMs + 10,
+    }),
+    uid,
+    sessionID.toUpperCase(),
+    numericDate
+  );
+  assert.equal(processing.status, "processing");
+  const observed = validateStoredCompetitiveObservationIntent(
+    storedIntentDocument({
+      status: "observed",
+      audioSHA256: sha,
+      processingStartedAt: startedAtMs + 10,
+      observationCompletedAt: startedAtMs + 20,
+      updatedAt: startedAtMs + 20,
+    }),
+    uid,
+    sessionID.toUpperCase(),
+    numericDate
+  );
+  assert.equal(observed.status, "observed");
+  assert.throws(() => validateStoredCompetitiveObservationIntent(
+    storedIntentDocument({
+      status: "processing",
+      audioSHA256: sha,
+      processingStartedAt: null,
+    }),
+    uid,
+    sessionID.toUpperCase(),
+    numericDate
+  ));
+});
+
+test("only pending intent can enter provider processing", () => {
+  const sha = "e".repeat(64);
+  const processing = competitiveObservationProcessingIntent(
+    intent(),
+    sha,
+    startedAtMs + 10
+  );
+  assert.equal(processing.status, "processing");
+  assert.equal(processing.audioSHA256, sha);
+  assert.equal(processing.processingStartedAtMs, startedAtMs + 10);
+  assert.throws(() => competitiveObservationProcessingIntent(
+    processing,
+    sha,
+    startedAtMs + 11
+  ));
+  assert.throws(() => competitiveObservationProcessingIntent(
+    intent(sha, "observed"),
+    sha,
+    startedAtMs + 21
+  ));
+});
+
 test("intent usability rejects wrong owner, backdating, and expiry", () => {
   assert.doesNotThrow(() => assertCompetitiveObservationIntentUsable(
     intent(), uid, sessionID.toUpperCase(), startedAtMs
@@ -448,6 +519,7 @@ test("Deepgram adapter sends bounded private-model-improvement opt-out PCM", asy
   assert.notEqual(capturedURL, null);
   const sentURL = capturedURL as unknown as URL;
   assert.equal(sentURL.searchParams.get("mip_opt_out"), "true");
+  assert.equal(sentURL.searchParams.get("filler_words"), "true");
   assert.equal(sentURL.searchParams.get("encoding"), "linear16");
   assert.equal(sentURL.searchParams.get("sample_rate"), "16000");
   assert.equal(sentURL.searchParams.get("channels"), "1");
@@ -482,7 +554,7 @@ test("Deepgram adapter maps network, HTTP, and token failures safely", async () 
 
 test("complete orchestration orders claim, provider, and final commit", async () => {
   const audio = observationAudio();
-  const boundIntent = intent(audio.sha256);
+  const boundIntent = intent(audio.sha256, "processing");
   const provider = providerObservation(audio);
   const order: string[] = [];
   const result = await completeCompetitiveObservationWork(completeRequest(), {
@@ -496,12 +568,10 @@ test("complete orchestration orders claim, provider, and final commit", async ()
     },
     commitObservation: async () => {
       order.push("commit");
-      return {replayed: false};
     },
   });
   assert.deepEqual(order, ["claim", "provider", "commit"]);
   assert.equal(result.provider.transcript, "A clear answer.");
-  assert.equal(result.replayed, false);
 });
 
 test("complete orchestration never calls provider after a failed claim", async () => {
@@ -514,14 +584,81 @@ test("complete orchestration never calls provider after a failed claim", async (
       providerCalled = true;
       return providerObservation(observationAudio());
     },
-    commitObservation: async () => ({replayed: false}),
+    commitObservation: async () => undefined,
   }));
   assert.equal(providerCalled, false);
 });
 
+test("concurrent and repeated completion invoke provider at most once", async () => {
+  const audio = observationAudio();
+  let current = intent();
+  let providerCalls = 0;
+  const dependencies = {
+    claimAudio: async () => {
+      current = competitiveObservationProcessingIntent(
+        current,
+        audio.sha256,
+        startedAtMs + 10
+      );
+      return current;
+    },
+    transcribe: async () => {
+      providerCalls += 1;
+      return providerObservation(audio);
+    },
+    commitObservation: async () => {
+      current = {
+        ...current,
+        status: "observed" as const,
+        observationCompletedAtMs: startedAtMs + 20,
+      };
+    },
+  };
+  const results = await Promise.allSettled([
+    completeCompetitiveObservationWork(completeRequest(), dependencies),
+    completeCompetitiveObservationWork(completeRequest(), dependencies),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  assert.equal(providerCalls, 1);
+  await assert.rejects(
+    completeCompetitiveObservationWork(completeRequest(), dependencies)
+  );
+  assert.equal(providerCalls, 1);
+});
+
+test("provider failure strands processing intent until expiry", async () => {
+  const audio = observationAudio();
+  let current = intent();
+  let providerCalls = 0;
+  const dependencies = {
+    claimAudio: async () => {
+      current = competitiveObservationProcessingIntent(
+        current,
+        audio.sha256,
+        startedAtMs + 10
+      );
+      return current;
+    },
+    transcribe: async () => {
+      providerCalls += 1;
+      throw new DeepgramObservationError("network");
+    },
+    commitObservation: async () => undefined,
+  };
+  await assert.rejects(
+    completeCompetitiveObservationWork(completeRequest(), dependencies)
+  );
+  assert.equal(current.status, "processing");
+  await assert.rejects(
+    completeCompetitiveObservationWork(completeRequest(), dependencies)
+  );
+  assert.equal(providerCalls, 1);
+});
+
 test("observation document is transcript-free and permanently ineligible", () => {
   const audio = observationAudio();
-  const boundIntent = intent(audio.sha256);
+  const boundIntent = intent(audio.sha256, "processing");
   const provider = providerObservation(audio);
   const document = competitiveObservationDocument(
     boundIntent,
@@ -533,17 +670,12 @@ test("observation document is transcript-free and permanently ineligible", () =>
   assert.equal("transcript" in document, false);
   assert.equal("bytes" in document.audio, false);
   assert.equal(document.expiresAtMs, expiresAtMs);
-  assert.equal(competitiveObservationRetryMatches(document, document), true);
-  assert.equal(competitiveObservationRetryMatches(
-    document,
-    {...document, transcriptSHA256: "d".repeat(64)}
-  ), false);
 });
 
 test("stored observation validator rejects extra and eligible state", () => {
   const audio = observationAudio();
   const document = competitiveObservationDocument(
-    intent(audio.sha256),
+    intent(audio.sha256, "processing"),
     audio,
     providerObservation(audio),
     startedAtMs + 1_000

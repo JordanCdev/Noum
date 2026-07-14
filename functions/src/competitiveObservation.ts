@@ -12,8 +12,8 @@ export const COMPETITIVE_OBSERVATION_SAMPLE_WIDTH_BITS = 16;
 export const COMPETITIVE_OBSERVATION_MAX_SECONDS = 150;
 export const COMPETITIVE_OBSERVATION_MAX_AUDIO_BYTES = 4_800_000;
 export const COMPETITIVE_OBSERVATION_MIN_AUDIO_BYTES = 8_000;
-export const COMPETITIVE_OBSERVATION_MINUTE_LIMIT = 6;
-export const COMPETITIVE_OBSERVATION_HOUR_LIMIT = 60;
+export const COMPETITIVE_OBSERVATION_MINUTE_LIMIT = 3;
+export const COMPETITIVE_OBSERVATION_HOUR_LIMIT = 12;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -72,11 +72,12 @@ export interface CompleteCompetitiveObservationInput {
 export interface StoredCompetitiveObservationIntent
   extends BeginCompetitiveObservationInput {
   uid: string;
-  status: "pending" | "observed";
+  status: "pending" | "processing" | "observed";
   competitiveEligible: false;
   audioSHA256: string | null;
   startedAtMs: number;
   expiresAtMs: number;
+  processingStartedAtMs: number | null;
   observationCompletedAtMs: number | null;
 }
 
@@ -141,7 +142,6 @@ export interface CompleteCompetitiveObservationResult {
   input: CompleteCompetitiveObservationInput;
   intent: StoredCompetitiveObservationIntent;
   provider: DeepgramCompetitiveObservation;
-  replayed: boolean;
 }
 
 export interface CompleteCompetitiveObservationDependencies {
@@ -156,7 +156,7 @@ export interface CompleteCompetitiveObservationDependencies {
     intent: StoredCompetitiveObservationIntent,
     audio: CompetitiveObservationAudio,
     provider: DeepgramCompetitiveObservation
-  ) => Promise<{replayed: boolean}>;
+  ) => Promise<void>;
 }
 
 export type CompetitiveObservationRateState = Partial<WindowRateState>;
@@ -431,6 +431,38 @@ export function assertCompetitiveObservationIntentUsable(
   }
 }
 
+export function competitiveObservationProcessingIntent(
+  intent: StoredCompetitiveObservationIntent,
+  audioSHA256: string,
+  nowMs: number
+): StoredCompetitiveObservationIntent {
+  // Provider work is deliberately at-most-once. Once this transition lands,
+  // neither a concurrent request nor a retry may call Deepgram again. A crash
+  // can therefore strand this optional observation until expiresAt; private
+  // practice falls back locally and any later competitive attempt uses a new
+  // session/intent instead of manufacturing idempotency from stored speech.
+  assertCompetitiveObservationIntentUsable(
+    intent,
+    intent.uid,
+    intent.sessionID,
+    nowMs
+  );
+  if (!SHA256_PATTERN.test(audioSHA256) || intent.status !== "pending" ||
+      intent.audioSHA256 !== null || intent.processingStartedAtMs !== null ||
+      intent.observationCompletedAtMs !== null) {
+    throw new HttpsError(
+      "already-exists",
+      "This observation has already started provider processing."
+    );
+  }
+  return {
+    ...intent,
+    status: "processing",
+    audioSHA256,
+    processingStartedAtMs: nowMs,
+  };
+}
+
 export type CompetitiveObservationDateMilliseconds = (
   value: unknown
 ) => number | null;
@@ -477,10 +509,11 @@ export function validateStoredCompetitiveObservationIntent(
     "schemaVersion", "uid", "sessionID", "locale", "mode", "demand",
     "promptProvenance", "challengeID", "status", "competitiveEligible",
     "audioSHA256", "startedAt", "expiresAt", "updatedAt",
-    "observationCompletedAt",
+    "processingStartedAt", "observationCompletedAt",
   ]) || value.schemaVersion !== 1 || value.uid !== expectedUID ||
       value.competitiveEligible !== false ||
-      (value.status !== "pending" && value.status !== "observed") ||
+      (value.status !== "pending" && value.status !== "processing" &&
+        value.status !== "observed") ||
       !(value.audioSHA256 === null ||
         (typeof value.audioSHA256 === "string" &&
           SHA256_PATTERN.test(value.audioSHA256)))) {
@@ -507,15 +540,30 @@ export function validateStoredCompetitiveObservationIntent(
   const startedAtMs = dateMilliseconds(value.startedAt);
   const expiresAtMs = dateMilliseconds(value.expiresAt);
   const updatedAtMs = dateMilliseconds(value.updatedAt);
+  const processingStartedAtMs = value.processingStartedAt === null ?
+    null : dateMilliseconds(value.processingStartedAt);
   const observationCompletedAtMs = value.observationCompletedAt === null ?
     null : dateMilliseconds(value.observationCompletedAt);
   if (startedAtMs === null || expiresAtMs === null || updatedAtMs === null ||
       expiresAtMs - startedAtMs !==
         COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS ||
       updatedAtMs < startedAtMs || updatedAtMs > expiresAtMs ||
-      (value.status === "pending" && observationCompletedAtMs !== null) ||
+      (value.status === "pending" &&
+        (value.audioSHA256 !== null || processingStartedAtMs !== null ||
+          observationCompletedAtMs !== null)) ||
+      (value.status === "processing" &&
+        (value.audioSHA256 === null || processingStartedAtMs === null ||
+          observationCompletedAtMs !== null)) ||
       (value.status === "observed" &&
-        (observationCompletedAtMs === null || value.audioSHA256 === null))) {
+        (value.audioSHA256 === null || processingStartedAtMs === null ||
+          observationCompletedAtMs === null)) ||
+      (processingStartedAtMs !== null &&
+        (processingStartedAtMs < startedAtMs ||
+          processingStartedAtMs > updatedAtMs)) ||
+      (observationCompletedAtMs !== null &&
+        (processingStartedAtMs === null ||
+          observationCompletedAtMs < processingStartedAtMs ||
+          observationCompletedAtMs !== updatedAtMs))) {
     throw new HttpsError(
       "failed-precondition",
       "Observation intent unavailable."
@@ -529,6 +577,7 @@ export function validateStoredCompetitiveObservationIntent(
     audioSHA256: value.audioSHA256,
     startedAtMs,
     expiresAtMs,
+    processingStartedAtMs,
     observationCompletedAtMs,
   };
 }
@@ -545,7 +594,10 @@ export function competitiveObservationDocument(
     intent.sessionID,
     observedAtMs
   );
-  if (intent.audioSHA256 !== audio.sha256 ||
+  if (intent.status !== "processing" ||
+      intent.processingStartedAtMs === null ||
+      intent.observationCompletedAtMs !== null ||
+      intent.audioSHA256 !== audio.sha256 ||
       provider.providerAudioSHA256 !== audio.sha256 ||
       !Number.isFinite(observedAtMs)) {
     throw new HttpsError("failed-precondition", "Observation binding changed.");
@@ -585,24 +637,6 @@ export function competitiveObservationDocument(
     expiresAtMs: intent.expiresAtMs,
     observedAtMs,
   };
-}
-
-export function competitiveObservationRetryMatches(
-  stored: StoredCompetitiveObservation,
-  candidate: StoredCompetitiveObservation
-): boolean {
-  return stored.uid === candidate.uid &&
-    stored.sessionID === candidate.sessionID &&
-    stored.observationSource === candidate.observationSource &&
-    stored.competitiveEligible === false &&
-    stored.audio.sha256 === candidate.audio.sha256 &&
-    stored.audio.byteCount === candidate.audio.byteCount &&
-    stored.transcriptSHA256 === candidate.transcriptSHA256 &&
-    stored.wordCount === candidate.wordCount &&
-    stored.provider.audioSHA256 === candidate.provider.audioSHA256 &&
-    stored.provider.modelUUID === candidate.provider.modelUUID &&
-    stored.provider.modelName === candidate.provider.modelName &&
-    stored.provider.modelVersion === candidate.provider.modelVersion;
 }
 
 export function validateStoredCompetitiveObservation(
@@ -861,6 +895,7 @@ export async function transcribeCompetitivePCM(
   url.searchParams.set("smart_format", "true");
   url.searchParams.set("punctuate", "true");
   url.searchParams.set("mip_opt_out", "true");
+  url.searchParams.set("filler_words", "true");
   let response: Response;
   try {
     response = await (dependencies.fetchImpl ?? fetch)(url, {
@@ -891,10 +926,10 @@ export async function completeCompetitiveObservationWork(
   const input = validateCompleteCompetitiveObservationRequest(data);
   const intent = await dependencies.claimAudio(input);
   const provider = await dependencies.transcribe(intent, input.audio);
-  const committed = await dependencies.commitObservation(
+  await dependencies.commitObservation(
     intent,
     input.audio,
     provider
   );
-  return {input, intent, provider, replayed: committed.replayed};
+  return {input, intent, provider};
 }
