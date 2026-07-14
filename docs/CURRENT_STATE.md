@@ -1,5 +1,30 @@
 # Noum — Current state
 
+## 2026-07-14 — Professional goal-calibration review intake fails closed
+
+Implementation commit `a5d5c365` hardens the existing
+`GoalStyleCalibrationPacket` result gate without creating a second scoring or
+review owner. A submission now requires every packet case to have at least two
+distinct reviewers with the exact professional-communication-coach role,
+reviewer-specific evidence-access receipt ownership, the exact rubric dimension
+set, bounded scores and notes, and the declared overclaim-risk vocabulary.
+Empty, partial, duplicate-slot, malformed, wrong-role, and cross-reviewer
+receipt-reuse submissions are rejected. Negative professional judgments remain
+valid evidence rows rather than being rewritten into approval.
+
+The focused `GoalStyleCalibrationTests` suite passes 14/14 on the iPhone 17
+iOS 26.4 simulator. The artifact-dump XCTest also passes and emits a 12-case
+input packet whose response schema contains the strengthened review contract,
+contains no raw transcript field, and remains
+`blockedPendingAccessControlledEvidencePackage`.
+
+This proves only local acceptance integrity. No source-evidence package has been
+bound, no professional reviewers have returned results, and no longitudinal or
+product authorization exists for a public numeric style score. It does not
+close the separate competitive evaluator/eligible-producer gap or any external
+release gate. Production readiness therefore remains **NO-GO at 18/100 with
+0/5 external artifacts**.
+
 ## 2026-07-14 — Exact competitive PCM replay is bounded across accounts
 
 The disabled competitive-observation authority now uses one global seven-day

@@ -5,7 +5,16 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`81c17f4c`
+`a5d5c365`
+
+The existing goal-style professional-calibration owner now also fails closed on
+empty or partial case coverage, fewer than two distinct professional reviewers
+per case, wrong roles, duplicate reviewer slots, malformed dimension maps,
+invalid score/risk/note shapes, and evidence-access receipts attributed to
+different reviewers. At `a5d5c365`, its focused simulator suite passes 14/14;
+the artifact-dump XCTest emits all 12 cases with the strengthened response
+schema and no raw transcript field. This is local review-intake integrity, not
+a professional result or authorization to ship a numeric score.
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -196,7 +205,8 @@ coach.
 | Reuse onboarding/profile goal ownership | **Proved** | Optional `chosenStyleGoal` stays in `CoachingProfileStore`/draft and is the only style value projected into behavioral coaching. `speakingStyleGoal` remains compatibility storage; no parallel goal store was added. |
 | Preserve explicit choice provenance | **Proved** | Profiles that predate the `chosenStyleGoal` key decode with no chosen style instead of inferring consent from a historical default. Goal rubrics, scoring/copy enrichments, AI/cache inputs, plans, proofs, and post-rep notes fail closed or filter incompatible provenance. |
 | Support `authoritative`, `concise`, `humorous`, `warm`, and `calm` | **Incomplete** | Canonical goals are authoritative, warm, concise, persuasive, executive, and storytelling. Humorous and calm are deliberately absent; tests pin that absence. |
-| Compute a public 0–100 style score for every session | **Contradicted** | The product deliberately exposes `GoalOutcomeRead` as qualitative evidence/movement. `GoalStyleCalibrationCandidate` can produce a versioned 0–100 candidate only for access-controlled professional calibration and is explicitly disconnected from product views, stores, analytics, sessions, and export. |
+| Compute a public 0–100 style score for every session | **Contradicted** | The product deliberately exposes `GoalOutcomeRead` as qualitative evidence/movement. `GoalStyleCalibrationCandidate` can produce a versioned 0–100 candidate only for access-controlled professional calibration and is explicitly disconnected from product views, stores, analytics, sessions, and export. Its result gate requires complete two-reviewer professional coverage, exact rubric shape, and reviewer-bound evidence-access receipts; that integrity contract is not a calibration result. |
+| Professional goal-style review intake integrity | **Proved locally** | At `a5d5c365`, 14/14 focused simulator tests prove that empty, partial, non-independent, wrong-role, malformed, and cross-reviewer receipt-reuse submissions cannot pass; complete independent negative judgments remain structurally valid evidence. The artifact-dump XCTest emits a 12-case packet with the strengthened schema and no raw transcript field. No evidence package or reviewer result exists. |
 | Work from transcript text alone | **Missing** | No public score contract accepts a raw transcript as its complete input. The calibration engine accepts a `CoachAssessment` plus evidence references, and unsupported locales fail closed. |
 | Include total, dimensions, confidence, and next action in a `GoalStyleScore` model | **Incomplete** | The calibration candidate contains total, dimensions, confidence, missing evidence, and formula fingerprint. The public qualitative read and existing `NextAction` stay separate by design; there is no product `GoalStyleScore`. |
 | Persist the score with session insight state | **Missing** | Calibration candidates are intentionally not session state. Public goal outcome evidence is derived through established owners. |
@@ -377,14 +387,14 @@ Historical results are not treated as proof for later behavior.
 | Recoverable social cutover source and emulator contract | **Proved locally** | At `236d9719`, cutover schema v3 supersedes the unsafe v2 disposition: it recursively inventories challenge descendants (including missing-parent trees), quarantines/deletes all legacy challenges, descendants, and friend links, leaves legacy challenge/friend manifest arrays empty, removes challenge roots before descendants, and restores descendants before roots. Exact server challenge/friend schemas and a v3-only complete marker fail closed on legacy or injected rows. 36/36 migration/credential/backup tests, 72/72 Functions units, 6/6 deploy-blocker tests, 24/24 callable/rules emulator tests, and 6/6 actual CLI/Firestore-adapter tests pass. The current emulator host selected Node 26 despite the harness's Node-22 preflight; Java 21.0.11 and Firebase CLI 15.19.1 were pinned. No production adapter invocation or deployment occurred. |
 | Ineligible competitive observation substrate | **Proved locally** | Commits through `81c17f4c` add exact Auth/App-Check/cutover-gated begin/complete contracts, bounded canonical PCM, at-most-once provider work, transcript-free permanently ineligible receipts, direct-rule denial, account deletion, and a false-gated iOS Ah Counter route. At `5aa8e728`, the source replaces the per-UID raw-audio claim with one server-only seven-day domain-separated exact-PCM claim shared across accounts. Its exact body contains only schema, digest, claimed/expiry timestamps; no account/session identifier, raw audio, transcript, score, or eligibility field. The same transaction that begins provider work creates it, final commit revalidates its processing-time binding, account deletion leaves only this unlinkable tombstone, and checked-in field overrides declare TTL for intents, observations, and replay claims. Functions lint/build, 109/109 unit tests, 6/6 deploy-blocker tests, all 19 static readiness checks, the clean detached canonical gate (26/26 callable/rules/lifecycle plus 6/6 real adapter tests), and a clean unsigned arm64 Release simulator build pass. The first clean emulator attempt hit one existing rate-limit boundary miss before the unchanged rerun passed; it is not counted as extra evidence. The light screenshot sweep reached only the account-persistence recovery screen, so it does not prove tab or privacy-copy rendering. This proves bounded local exact-byte replay mechanics only. Replay after transformation or after the retention window, deployed TTL, live provider behavior, non-challenge provenance, evaluator calibration, and eligible evidence remain unproved. |
 | Supported backend deploy path | **Proved locally closed** | At `d96afc90`, `npm --prefix functions run deploy` is a non-executing blocker with 6/6 tests and no process, network, or file-read primitive. It lists the four missing requirements and rejects every mutation-looking argument. This proves that the supported repository path cannot deploy; it is not deployment authorization or production evidence. |
-| Production readiness | **Missing** | The clean detached `70b0b380` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Descendant commits through `5aa8e728` add local ineligible observation, friendship authority, and bounded cross-account exact-PCM replay substrate but earn no external readiness points. The current Functions source has a clean canonical local gate, not a new attachment-backed release capture. No validated attachment-backed release run is available, zero of five required external sidecars is present, and no current-source hosted privacy-body probe exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
+| Production readiness | **Missing** | The clean detached `70b0b380` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Descendant commits through `a5d5c365` add local ineligible observation, friendship authority, bounded cross-account exact-PCM replay substrate, and goal-calibration review-intake integrity but earn no external readiness points. The current Functions source has a clean canonical local gate, not a new attachment-backed release capture. No validated attachment-backed release run is available, zero of five required external sidecars is present, and no current-source hosted privacy-body probe exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
 
 ## External proof gates
 
 | Required artifact/gate | Classification | Current authoritative result |
 |---|---|---|
 | Current-source live-provider transcript sweep | **Missing** | No current-source live-provider artifact is staged in the clean `70b0b380` evidence directory. A historical artifact outside that directory is rejected for stale source/provenance and cannot count. |
-| Blinded professional-coach calibration | **Missing** | `coach-chat-conversation-expert-calibration-results-v2.json` is absent. The calibration-input packet is not a result. |
+| Blinded professional-coach calibration | **Missing** | `coach-chat-conversation-expert-calibration-results-v2.json` is absent. The conversation calibration-input packet is not a result. The separate goal-style packet now rejects incomplete or malformed review coverage, but it likewise has no bound evidence package or professional result and cannot close this gate. |
 | Longitudinal real-user transfer outcomes | **Missing** | `coach-real-user-transfer-outcomes-v3.json` is absent. Local fixtures cannot earn this row. |
 | Physical-device TestFlight QA | **Missing** | `coach-real-device-testflight-qa-v3.json` is absent. Its fail-closed contract requires exactly 14 named surfaces and 77 named checks from the same independently verified physical TestFlight build; simulator and direct development-device builds cannot count. |
 | Operational launch checklist | **Missing** | `coach-operational-launch-checklist-v2.json` is absent. |
@@ -432,12 +442,15 @@ fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
 
 The custom dump-directory wrapper, recoverable social migration state machine,
-actual Firestore adapter on the demo emulator, and an explicitly closed
-supported deploy path are now proved. The highest-impact remaining product work
-is to turn the now-present, disabled observation substrate into an independently
-calibrated deterministic evaluator and trusted eligible evidence producer while
-obtaining deployed retention proof and extending the bounded exact-PCM replay
-contract where the evaluator's freshness policy requires it. The reciprocal friendship
+actual Firestore adapter on the demo emulator, an explicitly closed supported
+deploy path, and fail-closed professional goal-calibration review intake are now
+proved locally. The goal-style packet still needs an access-controlled evidence
+package and real independent reviews; local validators cannot manufacture that
+evidence. The highest-impact remaining product work is to turn the now-present,
+disabled observation substrate into an independently calibrated deterministic
+evaluator and trusted eligible evidence producer while obtaining deployed
+retention proof and extending the bounded exact-PCM replay contract where the
+evaluator's freshness policy requires it. The reciprocal friendship
 lifecycle is now present locally, but its TTL/index/rules/functions deployment,
 authorized cutover, and two-device verification remain production evidence gaps.
 Neither authority boundary can be replaced honestly by copying client sessions, scores,
