@@ -12,7 +12,7 @@ struct CloudProcessorDisclosure: Identifiable, Equatable, Sendable {
 }
 
 enum CloudProcessorManifest {
-    static let version = 4
+    static let version = 5
     static let processors: [CloudProcessorDisclosure] = [
         CloudProcessorDisclosure(
             id: "deepgram",
@@ -57,8 +57,8 @@ enum CloudProcessorManifest {
         CloudProcessorDisclosure(
             id: "firebase",
             name: "Firebase (Google)",
-            data: "Bounded production coaching requests, Authentication and App Check proof, and bounded competitive-rep PCM held in invocation memory with server-derived observation metadata; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
-            purpose: "Protected callable transport and abuse protection for cloud coaching and competitive observation, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics",
+            data: "Bounded production coaching requests, Authentication and App Check proof, bounded competitive-rep PCM held in invocation memory with server-derived observation metadata, and short-lived mutual-connection invite secrets handled in invocation memory with digest-addressed account, display-name, pair, and timestamp records; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
+            purpose: "Protected callable transport and abuse protection for cloud coaching, competitive observation, and mutual account connections, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics",
             termsURL: URL(string: "https://firebase.google.com/terms")!,
             appearsInCloudProcessingDisclosure: true
         ),

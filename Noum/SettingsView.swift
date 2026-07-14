@@ -2507,7 +2507,7 @@ struct YourDataView: View {
             )
             dataRow(
                 label: "Friends",
-                detail: "\(friendsManager.friendCount) friends (names only — no phone numbers)"
+                detail: "\(friendsManager.friendCount) saved locally (names and connected-account IDs only — no phone numbers). Secure connection records may also be stored in Firebase when that feature is enabled."
             )
             dataRow(
                 label: "Recordings",

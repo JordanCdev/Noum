@@ -102,6 +102,7 @@ The app requests:
 | Nearby clubs and Path daylight | An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight |
 | Conversation weather context | A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API |
 | Practice reminders | Notification preferences, coaching context (not user-authored text) |
+| Mutual account connections | A short-lived bearer invite deliberately shared with the recipient you choose; Firebase account IDs, bounded display names, token digests, pair identifiers, connection status, and timestamps used to create and remove reciprocal links when secure connections are enabled |
 | Account management and sync reliability | Firebase UID or a generated local guest UUID, auth provider, and optional sync data; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, security, and analytics-purpose processing described below |
 
 We do **not** use your data for advertising, user profiling for marketing purposes, or sale to third parties.
@@ -118,7 +119,7 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 | **Apple Core Location / MapKit** | Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists | Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Google Vertex AI (Gemini)** | Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback | Production generated coaching and conversation responses | [Google Cloud Terms](https://cloud.google.com/terms) |
 | **Google Sign-In** | The SDK vendor declaration covers linked account and device data when Google Sign-In is used | Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking | [Google Privacy Policy](https://policies.google.com/privacy) |
-| **Firebase (Google)** | Bounded production coaching requests, Authentication and App Check proof, and bounded competitive-rep PCM held in invocation memory with server-derived observation metadata; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality | Protected callable transport and abuse protection for cloud coaching and competitive observation, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
+| **Firebase (Google)** | Bounded production coaching requests, Authentication and App Check proof, bounded competitive-rep PCM held in invocation memory with server-derived observation metadata, and short-lived mutual-connection invite secrets handled in invocation memory with digest-addressed account, display-name, pair, and timestamp records; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality | Protected callable transport and abuse protection for cloud coaching, competitive observation, and mutual account connections, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
 | **Open-Meteo** | A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself | Conversation weather context; Noum does not send a Core Location coordinate or account identifier | [Open-Meteo Terms](https://open-meteo.com/en/terms) |
 <!-- PROCESSOR-MANIFEST:END -->
 
@@ -140,6 +141,7 @@ If Firebase is configured, the following may be synced:
 - XP and progression data
 - Recommendation state
 - Expiry-stamped competitive capture intents and observation receipts when server observation is enabled; raw audio and full server transcripts are not stored
+- Expiry-stamped mutual-connection invite digests and reciprocal friend-link records when secure account connections are enabled. The raw invite is handled in memory and is not stored by Noum's server
 
 Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.
 
@@ -154,6 +156,7 @@ Production Deepgram transcription uses a short-lived provider credential obtaine
 - **Noum-controlled Firebase data** is retained while your account is active and is submitted for deletion when you delete your account. Shared records and operational backups may follow different deletion windows
 - **Streamed audio** is not retained by Noum as an audio file. Production Deepgram requests set `mip_opt_out=true`; Deepgram says opted-out data is retained only as needed to process the request. Apple handles any Speech Recognition fallback under its own terms
 - **Competitive observation metadata** contains hashes, counts, practice-mode and prompt-binding provenance, provider/model identifiers, status, server timestamps, and an expiry timestamp—not raw audio or the full server transcript. Automatic removal at that timestamp depends on the corresponding Firestore TTL policy being configured and verified; account deletion removes it independently
+- **Mutual connection records** contain account IDs, bounded display names, a token digest, pair identifier, status, and timestamps. Pending and terminal invite receipts carry an expiry timestamp; automatic removal depends on Firestore TTL being configured and verified. Disconnecting removes both active link directions, and account deletion removes or revokes invite/link state independently
 - **AI-provider inputs and outputs** are handled under Google and Firebase terms, privacy policies, service tier, and account settings. Retention and model-improvement practices may change; review the links above for current details
 
 ---
@@ -166,7 +169,7 @@ Go to **Settings > Your Data** in the app to see a summary of the principal data
 ### Export Your Data
 In **Settings > Your Data > Export account data**, Noum creates `Noum-export-YYYY-MM-DD.zip`. The archive contains a versioned manifest, one JSON snapshot for every registered local account-data participant, residual account-scoped records that are not yet owned by a named participant, and app-managed files under `Documents/Recordings` when present. Legacy records or recordings that were not stamped with an account ID are explicitly labelled as device-local and unattributed. Recordings saved to Photos, Keychain authentication material, provider credentials, and data retained by third-party processors are not included.
 
-Because competitive capture intents and observation receipts are server processing records rather than local account-data participants, they are not included in the device-built archive. Account deletion removes them. You may contact Noum to request access to any such receipt still within its retention window.
+Because competitive capture intents, observation receipts, and authoritative mutual-connection receipts are server processing records rather than local account-data participants, they are not included in the device-built archive. The local friend snapshot is included. Account deletion removes the server records Noum controls, and disconnecting removes an active reciprocal link. You may contact Noum to request access to any such server record still within its retention window.
 
 ### Delete Individual Sessions
 Long-press any session in your Session History to delete it.
@@ -174,6 +177,7 @@ Long-press any session in your Session History to delete it.
 ### Delete Your Account
 Go to **Settings > Delete Account**. This will:
 - Delete account-scoped data that Noum controls from our backend and Firebase
+- Remove or revoke mutual-connection invites and both directions of active friend links, including the counterpart's reference to your account
 - Remove identified per-account data from your device after remote deletion succeeds
 - Delete your Firebase Authentication account, if one exists
 - Sign you out
@@ -197,6 +201,7 @@ Noum is not directed at children under 13. We do not knowingly collect personal 
 
 - Apple and Google account sign-in is handled through Firebase Authentication using industry-standard OAuth flows; guest access uses anonymous Firebase Authentication when it completes during the bounded launch window or a Keychain-backed local identifier when Firebase is unconfigured, unavailable, or cannot complete during that window
 - Cloud-speech credentials intended for client use are short-lived and are not intentionally persisted; broader provider secrets are not intended to be distributed in the app
+- Mutual-connection invite codes are high-entropy bearer secrets shared only at your direction. Noum handles the raw code in memory and stores only a digest; do not post a code publicly
 - All network communication uses HTTPS/TLS
 - On-device credentials are stored in the iOS Keychain (hardware-encrypted)
 

@@ -21,13 +21,16 @@ authoritative score remains 18/100; 0/5 required external artifacts pass.**
 - A separate server-observation substrate exists locally but is release-disabled
   and permanently ineligible. It is not deployment, live-provider, evaluator-
   calibration, or trusted-evidence proof.
+- A reciprocal friendship create/accept/list/remove lifecycle also exists
+  locally and is release-disabled. Its clean emulator proof is not a production
+  cutover, deployed index/rules/functions proof, TTL proof, or two-device smoke.
 - The historical Deepgram/AWS credential incident in
   `docs/SECURITY_deepgram_key_endpoint.md` remains open. The replacement path
   does not revoke the exposed legacy credentials, disable every legacy route,
   or provide the missing usage and billing audit.
 - `https://noum-d0b6f.web.app/privacy` is reachable, but the last live exact-
   body probe targeted an older source body. Current `public/privacy.html` is
-  27,569 bytes / `9ee5fb73…4dc7e5`, and no `81c17f4c` live comparison exists.
+  29,237 bytes / `4cd0af64…599363c`, and no current-source live comparison exists.
   Treat hosted-policy equivalence as missing. After safe release authentication
   is restored, redeploy the current body and require the exact-body probe to pass.
   The custom `noum.app` domain is still parked at GoDaddy; it must not be
@@ -276,9 +279,9 @@ The probe is read-only. It verifies the production Firestore recovery settings
 and daily backup, required log metrics and routed alert policies, dedicated
 function identities, exclusive access to the Deepgram secret, removal of broad
 roles from the default compute identity, the hosted privacy page, and 401
-responses from all 13 reviewed callable exports when no Firebase Auth or App
+responses from all 17 reviewed callable exports when no Firebase Auth or App
 Check proof is supplied. The exact roster spans coach, transcription, account,
-recommendation, two disabled competitive-observation, and six social callables
+recommendation, two disabled competitive-observation, and ten social callables
 across five dedicated runtime identities; missing, unexpected, duplicate,
 wrongly located, wrongly assigned,
 or over-privileged identities fail the probe. It never reads the Deepgram
@@ -348,9 +351,10 @@ That command performs no deployment. It exits nonzero with four exact missing
 requirements. Eligible competitive evidence production is missing because the
 local server-observation substrate remains disabled and ineligible, has no
 calibrated deterministic evaluator, and lacks cross-account replay, retention,
-and live-provider evidence. Reciprocal friendship authority, independently
-trusted authorization evidence, and an immutable source-bound deployment
-artifact are also missing.
+and live-provider evidence. Local friendship authority is present but remains
+disabled and lacks production cutover, deployed index/rules/functions, TTL,
+and two-device evidence. Independently trusted authorization evidence and an
+immutable source-bound deployment artifact are also missing.
 `npm --prefix functions run deploy -- --help` explains the boundary. There is
 no `--execute` flag or authorization-file escape hatch. Do not bypass it with a
 raw Firebase command. Replace the blocker only after a separately reviewed
@@ -364,7 +368,7 @@ Before deploying the reviewed social rules and functions together:
    the client-authored public profiles, league rows, challenges (including all
    recursively inventoried descendants), and friend links. Do not promote
    their ratings, streaks, results, challenge IDs, or friend IDs into trusted
-   server state. Only a schema-v3 completed cutover is accepted.
+   server state. Only a schema-v4 completed cutover is accepted.
 3. Complete and verify the one-time social reference cutover. Account deletion
    must fail safely before cutover without leaving a deletion tombstone or
    discarding either the legacy or current cleanup worklist.
@@ -375,21 +379,27 @@ Before deploying the reviewed social rules and functions together:
    the deterministic evaluator and evidence floor, and authorize a reviewed
    producer to write `_verifiedSessionEvidence`. The current receipt is
    permanently ineligible and the consumer contract alone is not a producer.
-5. Run an authorized read-only inventory of `users/{uid}/profile/main` before
+5. Deploy and verify the reviewed friendship collection-group indexes and TTL
+   policies for global and per-account invite receipts, then prove create,
+   accept, complete-list, pair-bound removal, replay refusal, deletion, and
+   expiry on two TestFlight devices. Local emulator receipts are not retention
+   or cross-device evidence.
+6. Run an authorized read-only inventory of `users/{uid}/profile/main` before
    promoting the stricter private-profile schema. Every enum-backed value must
    match the current `CoachingProfile` Codable raw values and optional fields
    must meet the documented bounds. Migrate any unknown legacy value explicitly;
    do not silently relax the reviewed write contract.
-6. Rerun Functions lint/build/unit tests and Firestore emulator tests for forged
+7. Rerun Functions lint/build/unit tests and Firestore emulator tests for forged
    ratings, cross-user reads/writes, malformed challenges, replayed results,
    deletion retries, invalid private-profile values, and pre-cutover failure
    cleanup.
-7. Perform a dry-run inventory immediately before the coordinated deployment,
+8. Perform a dry-run inventory immediately before the coordinated deployment,
    deploy rules/functions, verify the cutover marker and callable-only reads,
    then complete a rollback-aware production smoke test.
 
-Until every step passes, keep league and challenge actions unavailable in the
-client. A disabled social surface is safer than accepting untrusted progress.
+Until every step passes, keep friendship, league, and challenge actions
+unavailable in the client. A disabled social surface is safer than accepting
+untrusted progress.
 
 The local migration implementation is now recoverable by contract. It requires
 a clean committed source; inventories private profiles and every legacy social
@@ -397,12 +407,12 @@ source, including recursive challenge descendants; binds the backup to the
 project, source commit, migration implementation, and canonical SHA-256; writes
 a non-complete marker before mutation; transactionally pairs quarantine copies
 with source deletion; and supports same-run resume and pre-completion rollback.
-All six social callables reject every state except the exact provenance-bearing
-schema-v3 complete marker. Both competitive-observation callables require that
+All ten social callables reject every state except the exact provenance-bearing
+schema-v4 complete marker. Both competitive-observation callables require that
 same marker, while their iOS capability remains disabled. This is locally tested
 mechanics, not authorization or evidence that a production migration occurred.
 
-The canonical local workflow now runs both the 24-test Auth/Functions/rules
+The canonical local workflow now runs both the 26-test Auth/Functions/rules
 matrix and six tests that invoke the actual migration CLI through the Firestore
 adapter against `demo-noum`. Those tests prove local zero-write inventory,
 drift refusal, resume/takeover rules, rollback, native-value preservation, and

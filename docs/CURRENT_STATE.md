@@ -1,5 +1,48 @@
 # Noum — Current state
 
+## 2026-07-14 — Reciprocal friendship lifecycle is proved locally and remains release-disabled
+
+Implementation commits `578ed2e1`, `10321f2a`, `2259b49b`, and `40e728f5`
+replace Admin-seeded friendship assumptions with one server-owned lifecycle.
+Four exact Auth/App-Check callables create, accept, list, and remove short-lived
+digest-addressed invitations. Acceptance atomically writes exact reciprocal
+schema-v2 links and both capped schema-v2 reference manifests; accepted retries
+must match the still-active pair, duplicate invites become terminal superseded
+receipts, and disconnects are bound to the expected pair generation. Raw
+43-character bearer tokens are canonical 32-byte base64url values handled only
+in memory and sharing UI; Firestore stores a domain-separated digest and bounded
+account, display-name, pair, status, and timestamp metadata.
+
+The existing `FriendsManager` remains the client state owner. A successful
+complete 50-link list replaces only the connected subset while preserving local
+practice contacts, pair-stable cached statistics, and account-generation
+fences. Accept and remove are server-first. Failed or stale operations preserve
+the prior local snapshot. The connection capability remains false, independent
+of the competitive-observation capability.
+
+Firestore rules deny every friendship root. Cutover schema v4 writes exact
+schema-v2 manifests and continues to quarantine rather than trust legacy friend
+rows. Account deletion discovers outgoing and incoming invite receipts plus
+both link directions, tolerates missing/corrupt manifest membership during
+security cleanup, removes counterpart references, and requires the reviewed
+collection-group indexes. The release inventory now covers exactly 17 callables,
+including the four friendship endpoints, across the existing five dedicated
+runtime identities.
+
+At clean detached source `40e728f5`, Node 22.23.1, Java 21, and Firebase CLI
+15.19.1 passed the canonical `demo-noum` gate: 26/26 callable/rules/lifecycle
+tests and 6/6 real Firestore-adapter tests. Functions lint/build, 108/108 unit
+tests, 6/6 deploy-blocker tests, and 18/18 migration tests also passed. The
+unsigned iOS simulator app build passed. The focused friendship XCTest command
+reached test-worker launch, but the worker did not materialize; the interrupted
+result bundle contains 0 tests and is not counted as a pass.
+
+This is local authority substrate, not production authority. No production
+cutover, deployed IAM/App Check/rules/index inspection, Firestore TTL/retention
+proof, hosted-policy equality check, or two-device TestFlight run exists. All
+shipping capabilities remain false, and production readiness remains **NO-GO
+at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Competitive reps have an ineligible server-observation substrate
 
 Implementation commits `32ef79a8`, `e2243e3d`, `76590f2d`, and `81c17f4c`
