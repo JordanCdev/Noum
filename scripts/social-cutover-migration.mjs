@@ -259,6 +259,11 @@ function validateInventory(raw) {
     if (!match || !UUID_PATTERN.test(match[1]) || !isPlainObject(challenge.data)) {
       throw new Error(`Invalid challenge at ${challenge.path}.`);
     }
+    if (match[1] !== match[1].toUpperCase()) {
+      throw new Error(
+        `Challenge document ID is not canonical uppercase at ${challenge.path}.`
+      );
+    }
     const {creatorAccountID, opponentAccountID} = challenge.data;
     assertAccountID(creatorAccountID, "challenge creator account ID");
     assertAccountID(opponentAccountID, "challenge opponent account ID");
@@ -304,6 +309,9 @@ function validateManifest(data, accountID, label) {
   for (const id of data.challengeIDs) {
     if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
       throw new Error(`${label} has an invalid challenge reference.`);
+    }
+    if (id !== id.toUpperCase()) {
+      throw new Error(`${label} has a noncanonical challenge reference.`);
     }
   }
   for (const id of data.friendAccountIDs) {

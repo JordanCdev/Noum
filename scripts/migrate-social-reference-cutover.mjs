@@ -9,7 +9,6 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import {createRequire} from "node:module";
 import {resolve} from "node:path";
 import {promisify} from "node:util";
 
@@ -17,17 +16,16 @@ import {
   applyRecoverableCutover,
   canonicalJSONStringify,
   createBackupEnvelope,
-  decodeFirestoreValue,
-  encodeFirestoreValue,
+  CUTOVER_PHASES,
   rollbackRecoverableCutover,
-  SOCIAL_LIMITS,
   verifyBackupEnvelope,
 } from "./social-cutover-migration.mjs";
 import {
-  createGcloudUserAuthClient,
   parseSocialCutoverOptions,
   SocialCutoverCredentialMode,
 } from "./social-cutover-credentials.mjs";
+import {createFirestoreMigrationAdapter} from
+  "./social-cutover-firestore-adapter.mjs";
 
 const rawArguments = process.argv.slice(2);
 const extraExactFlags = new Set(["--rollback"]);
@@ -35,6 +33,7 @@ const extraValuePrefixes = [
   "--backup-file=",
   "--backup-digest=",
   "--run-id=",
+  "--fault-after-phase=",
 ];
 const legacyArguments = rawArguments.filter((argument) =>
   !extraExactFlags.has(argument) &&
@@ -55,6 +54,9 @@ Usage:
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
     --apply --rollback --confirm-project=PROJECT_ID --run-id=RUN_ID \\
     --backup-file=PATH --backup-digest=SHA256
+  NOUM_SOCIAL_CUTOVER_EMULATOR=1 \\
+    node scripts/migrate-social-reference-cutover.mjs --project=demo-noum \\
+    --emulator-only [production-shaped options]
 
 Default mode is remote-read-only. It inventories bounded social data and every
 users/{uid}/profile/main document, validates the exact current private-profile
@@ -74,7 +76,9 @@ and manifests, verifies the restored inventory, removes quarantine, and deletes
 the non-complete journal last.
 
 --gcloud-user-credentials remains read-only. Application-default credentials
-are the only credentials eligible for apply or rollback.
+are the only production credentials eligible for apply or rollback. Emulator
+mode requires the exact demo-noum project, an explicit opt-in environment value,
+and a loopback Firestore emulator host. Ambient emulator routing is refused.
 `);
   process.exit(0);
 }
@@ -91,12 +95,32 @@ const rollback = rawArguments.includes("--rollback");
 const backupFile = optionValue("--backup-file");
 const backupDigest = optionValue("--backup-digest");
 const runID = optionValue("--run-id");
+const faultAfterPhase = optionValue("--fault-after-phase");
 if (rollback && !options.apply) throw new Error("Rollback requires --apply.");
-if (!options.apply && (rollback || backupFile || backupDigest || runID)) {
-  throw new Error("Backup, digest, run ID, and rollback flags are mutation-only.");
+if (!options.apply &&
+    (rollback || backupFile || backupDigest || runID || faultAfterPhase)) {
+  throw new Error(
+    "Backup, digest, run ID, rollback, and fault flags are mutation-only."
+  );
 }
 if (options.apply && (!backupFile || !backupDigest || !runID)) {
   throw new Error("Apply requires --backup-file, --backup-digest, and --run-id.");
+}
+if (faultAfterPhase &&
+    options.credentialMode !== SocialCutoverCredentialMode.emulatorOnly) {
+  throw new Error("Fault injection is restricted to explicit emulator mode.");
+}
+const rollbackFaultPhases = new Set([
+  "sources-restored",
+  "manifests-restored",
+  "rollback-verified",
+]);
+const acceptedFaultPhases = rollback ? rollbackFaultPhases :
+  new Set(CUTOVER_PHASES);
+if (faultAfterPhase && !acceptedFaultPhases.has(faultAfterPhase)) {
+  throw new Error(
+    `Invalid ${rollback ? "rollback" : "apply"} fault phase.`
+  );
 }
 
 const execFilePromise = promisify(execFile);
@@ -122,6 +146,7 @@ async function currentSourceBinding() {
     new URL("./migrate-social-reference-cutover.mjs", import.meta.url),
     new URL("./social-cutover-migration.mjs", import.meta.url),
     new URL("./social-cutover-credentials.mjs", import.meta.url),
+    new URL("./social-cutover-firestore-adapter.mjs", import.meta.url),
   ];
   const hash = createHash("sha256");
   for (const file of implementationFiles) {
@@ -137,143 +162,14 @@ async function currentSourceBinding() {
 }
 
 const {projectID, apply, purgeLegacySocial, credentialMode} = options;
-const requireFromFunctions = createRequire(
-  new URL("../functions/package.json", import.meta.url)
-);
-const {applicationDefault, initializeApp} = requireFromFunctions(
-  "firebase-admin/app"
-);
-const {
-  FieldValue,
-  Firestore,
-  GeoPoint,
-  Timestamp,
-  getFirestore,
-} = requireFromFunctions("firebase-admin/firestore");
-let firestore;
-if (credentialMode === SocialCutoverCredentialMode.gcloudUser) {
-  const authClient = createGcloudUserAuthClient({projectID});
-  firestore = new Firestore({authClient, preferRest: true, projectId: projectID});
-} else {
-  initializeApp({credential: applicationDefault(), projectId: projectID});
-  firestore = getFirestore();
-}
-
-async function boundedSnapshot(query, label, limit) {
-  const snapshot = await query.limit(limit + 1).get();
-  if (snapshot.size > limit) {
-    throw new Error(`${label} exceeds the reviewed bound of ${limit}.`);
-  }
-  return snapshot;
-}
-
-const documents = (snapshot) => snapshot.docs.map((snapshotDocument) => ({
-  path: snapshotDocument.ref.path,
-  data: encodeFirestoreValue(snapshotDocument.data()),
-}));
-
-async function readRemoteInventory() {
-  const [
-    profiles,
-    memberships,
-    privateProfiles,
-    challenges,
-    friendLinks,
-    manifests,
-    cutover,
-  ] = await Promise.all([
-    boundedSnapshot(
-      firestore.collection("profiles_public"),
-      "profiles_public",
-      SOCIAL_LIMITS.profiles
-    ),
-    boundedSnapshot(
-      firestore.collectionGroup("members"),
-      "league memberships",
-      SOCIAL_LIMITS.memberships
-    ),
-    boundedSnapshot(
-      firestore.collectionGroup("profile"),
-      "private profiles",
-      SOCIAL_LIMITS.privateProfiles
-    ),
-    boundedSnapshot(
-      firestore.collection("challenges"),
-      "challenges",
-      SOCIAL_LIMITS.challenges
-    ),
-    boundedSnapshot(
-      firestore.collectionGroup("friends"),
-      "friend links",
-      SOCIAL_LIMITS.friendLinks
-    ),
-    boundedSnapshot(
-      firestore.collection("_socialReferences"),
-      "existing social manifests",
-      SOCIAL_LIMITS.manifests
-    ),
-    firestore.collection("_socialReferenceCutover").doc("current").get(),
-  ]);
-  return {
-    profiles: documents(profiles),
-    leagueMemberships: documents(memberships),
-    privateProfiles: documents(privateProfiles),
-    challenges: documents(challenges),
-    friendLinks: documents(friendLinks),
-    existingManifests: documents(manifests),
-    existingCutover: cutover.exists ? {
-      path: cutover.ref.path,
-      data: encodeFirestoreValue(cutover.data()),
-    } : null,
-  };
-}
-
-const decodeAdapters = {
-  timestamp: (seconds, nanoseconds) => new Timestamp(seconds, nanoseconds),
-  geopoint: (latitude, longitude) => new GeoPoint(latitude, longitude),
-  reference: (path) => firestore.doc(path),
-  serverTimestamp: () => FieldValue.serverTimestamp(),
-};
-
-class FirestoreMigrationStore {
-  serverTimestampValue() {
-    return {$noumType: "server-timestamp"};
-  }
-
-  async get(path) {
-    const snapshot = await firestore.doc(path).get();
-    return snapshot.exists ? encodeFirestoreValue(snapshot.data()) : null;
-  }
-
-  async transaction(operation) {
-    await firestore.runTransaction(async (nativeTransaction) => {
-      const transaction = {
-        get: async (path) => {
-          const snapshot = await nativeTransaction.get(firestore.doc(path));
-          return snapshot.exists ? encodeFirestoreValue(snapshot.data()) : null;
-        },
-        set: (path, data) => nativeTransaction.set(
-          firestore.doc(path),
-          decodeFirestoreValue(data, decodeAdapters)
-        ),
-        delete: (path) => nativeTransaction.delete(firestore.doc(path)),
-      };
-      await operation(transaction);
-    });
-  }
-
-  readInventory() {
-    return readRemoteInventory();
-  }
-}
-
 const binding = await currentSourceBinding();
+const {store} = createFirestoreMigrationAdapter({projectID, credentialMode});
 if (!apply) {
   const envelope = createBackupEnvelope({
     projectID,
     capturedAt: new Date().toISOString(),
     binding,
-    inventory: await readRemoteInventory(),
+    inventory: await store.readInventory(),
   });
   const backupDirectory = resolve(process.cwd(), "backups");
   await mkdir(backupDirectory, {recursive: true, mode: 0o700});
@@ -329,12 +225,12 @@ if (!rollback && legacyCount > 0 && !purgeLegacySocial) {
   );
 }
 
-const store = new FirestoreMigrationStore();
 if (rollback) {
   const result = await rollbackRecoverableCutover({
     store,
     envelope,
     runID,
+    faultAfterPhase,
   });
   process.stdout.write(`${JSON.stringify({
     mode: "rollback",
@@ -346,7 +242,12 @@ if (rollback) {
   }, null, 2)}\n`);
   process.stdout.write("Rollback verified; the non-complete journal is removed.\n");
 } else {
-  const result = await applyRecoverableCutover({store, envelope, runID});
+  const result = await applyRecoverableCutover({
+    store,
+    envelope,
+    runID,
+    faultAfterPhase,
+  });
   process.stdout.write(`${JSON.stringify({
     mode: "apply",
     projectID,

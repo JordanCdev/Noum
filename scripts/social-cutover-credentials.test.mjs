@@ -6,6 +6,7 @@ import {
   createGcloudUserCredential,
   loadGcloudUserAccessToken,
   parseSocialCutoverOptions,
+  SOCIAL_CUTOVER_EMULATOR_OPT_IN,
   SocialCutoverCredentialMode,
 } from "./social-cutover-credentials.mjs";
 
@@ -31,6 +32,86 @@ test("gcloud user credentials are accepted for read-only inventory", () => {
   assert.equal(options.credentialMode, SocialCutoverCredentialMode.gcloudUser);
   assert.equal(options.apply, false);
   assert.equal(options.purgeLegacySocial, false);
+});
+
+test("explicit emulator mode pins demo-noum and loopback without ADC", () => {
+  for (const emulatorHost of [
+    "localhost:8080",
+    "127.0.0.1:8080",
+    "[::1]:8080",
+  ]) {
+    const options = parseSocialCutoverOptions([
+      "--project=demo-noum",
+      "--emulator-only",
+      "--apply",
+      "--confirm-project=demo-noum",
+    ], {
+      FIRESTORE_EMULATOR_HOST: emulatorHost,
+      [SOCIAL_CUTOVER_EMULATOR_OPT_IN]: "1",
+    });
+    assert.equal(
+      options.credentialMode,
+      SocialCutoverCredentialMode.emulatorOnly
+    );
+    assert.equal(options.projectID, "demo-noum");
+    assert.equal(options.apply, true);
+  }
+});
+
+test("emulator mode rejects production, non-loopback, and missing opt-in", () => {
+  const baseArguments = ["--project=demo-noum", "--emulator-only"];
+  assert.throws(
+    () => parseSocialCutoverOptions([
+      "--project=noum-d0b6f",
+      "--emulator-only",
+    ], {
+      FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+      [SOCIAL_CUTOVER_EMULATOR_OPT_IN]: "1",
+    }),
+    /requires --project=demo-noum/
+  );
+  assert.throws(
+    () => parseSocialCutoverOptions(baseArguments, {
+      FIRESTORE_EMULATOR_HOST: "0.0.0.0:8080",
+      [SOCIAL_CUTOVER_EMULATOR_OPT_IN]: "1",
+    }),
+    /loopback FIRESTORE_EMULATOR_HOST/
+  );
+  assert.throws(
+    () => parseSocialCutoverOptions(baseArguments, {
+      FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+    }),
+    new RegExp(`${SOCIAL_CUTOVER_EMULATOR_OPT_IN}=1`)
+  );
+});
+
+test("ambient emulator routing is refused without the explicit mode", () => {
+  assert.throws(
+    () => parseSocialCutoverOptions(["--project=noum-d0b6f"], {
+      FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+    }),
+    /requires the explicit --emulator-only mode/
+  );
+  assert.throws(
+    () => parseSocialCutoverOptions(["--project=noum-d0b6f"], {
+      [SOCIAL_CUTOVER_EMULATOR_OPT_IN]: "1",
+    }),
+    /requires --emulator-only/
+  );
+});
+
+test("emulator mode cannot acquire gcloud user credentials", () => {
+  assert.throws(
+    () => parseSocialCutoverOptions([
+      "--project=demo-noum",
+      "--emulator-only",
+      "--gcloud-user-credentials",
+    ], {
+      FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+      [SOCIAL_CUTOVER_EMULATOR_OPT_IN]: "1",
+    }),
+    /cannot be combined/
+  );
 });
 
 test("gcloud user credentials refuse apply before credential acquisition", () => {

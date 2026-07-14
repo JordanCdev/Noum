@@ -44,4 +44,6 @@ npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION:-15.19.1}" \
   emulators:exec \
   --project demo-noum \
   --only functions,auth,firestore \
-  "node --test functions/lib/emulator.integration.test.js"
+  "node --test functions/lib/emulator.integration.test.js && \
+NOUM_SOCIAL_CUTOVER_EMULATOR=1 node --test --test-concurrency=1 \
+scripts/social-cutover-firestore.integration.test.mjs"

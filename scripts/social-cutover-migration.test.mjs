@@ -186,6 +186,35 @@ test("private profile inventory accepts only current enums, fields, and bounds",
   }
 });
 
+test("lowercase challenge document and manifest IDs fail closed", () => {
+  const lowercaseID = CHALLENGE_ID.toLowerCase();
+  assert.throws(
+    () => envelope({
+      challenges: [{
+        path: `challenges/${lowercaseID}`,
+        data: {
+          creatorAccountID: ACCOUNT_A,
+          opponentAccountID: ACCOUNT_B,
+        },
+      }],
+    }),
+    /not canonical uppercase/
+  );
+  assert.throws(
+    () => envelope({
+      existingManifests: [{
+        path: `_socialReferences/${ACCOUNT_A}`,
+        data: {
+          leagueMembershipPaths: [],
+          challengeIDs: [lowercaseID],
+          friendAccountIDs: [],
+        },
+      }],
+    }),
+    /noncanonical challenge reference/
+  );
+});
+
 test("backup construction is local-only and performs zero remote writes", () => {
   const store = new MemoryMigrationStore(documentsForStore());
   const before = initialSnapshot(store);

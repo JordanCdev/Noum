@@ -3,13 +3,19 @@ import {execFile} from "node:child_process";
 export const SocialCutoverCredentialMode = Object.freeze({
   applicationDefault: "application-default",
   gcloudUser: "gcloud-user",
+  emulatorOnly: "emulator-only",
 });
+
+export const SOCIAL_CUTOVER_EMULATOR_PROJECT_ID = "demo-noum";
+export const SOCIAL_CUTOVER_EMULATOR_OPT_IN =
+  "NOUM_SOCIAL_CUTOVER_EMULATOR";
 
 const exactFlags = new Set([
   "--help",
   "--apply",
   "--purge-legacy-social",
   "--gcloud-user-credentials",
+  "--emulator-only",
 ]);
 const valueFlags = [
   "--project=",
@@ -25,6 +31,52 @@ function valueFor(args, name) {
   return args
     .find((argument) => argument.startsWith(`${name}=`))
     ?.slice(name.length + 1);
+}
+
+function isLoopbackFirestoreEmulatorHost(value) {
+  if (typeof value !== "string" || value !== value.trim()) return false;
+  const match = /^(localhost|127\.0\.0\.1|\[::1\]):([0-9]{1,5})$/i.exec(value);
+  if (!match) return false;
+  const port = Number(match[2]);
+  return Number.isInteger(port) && port >= 1 && port <= 65_535;
+}
+
+export function validateSocialCutoverRuntime({
+  credentialMode,
+  projectID,
+  env = process.env,
+}) {
+  const emulatorHost = env.FIRESTORE_EMULATOR_HOST;
+  const emulatorOptIn = env[SOCIAL_CUTOVER_EMULATOR_OPT_IN];
+  if (credentialMode === SocialCutoverCredentialMode.emulatorOnly) {
+    if (projectID !== SOCIAL_CUTOVER_EMULATOR_PROJECT_ID) {
+      throw new Error(
+        `--emulator-only requires --project=${SOCIAL_CUTOVER_EMULATOR_PROJECT_ID}.`
+      );
+    }
+    if (emulatorOptIn !== "1") {
+      throw new Error(
+        `--emulator-only requires ${SOCIAL_CUTOVER_EMULATOR_OPT_IN}=1.`
+      );
+    }
+    if (!isLoopbackFirestoreEmulatorHost(emulatorHost)) {
+      throw new Error(
+        "--emulator-only requires a loopback FIRESTORE_EMULATOR_HOST."
+      );
+    }
+    return;
+  }
+
+  if (emulatorHost !== undefined) {
+    throw new Error(
+      "FIRESTORE_EMULATOR_HOST requires the explicit --emulator-only mode."
+    );
+  }
+  if (emulatorOptIn !== undefined) {
+    throw new Error(
+      `${SOCIAL_CUTOVER_EMULATOR_OPT_IN} requires --emulator-only.`
+    );
+  }
 }
 
 export function parseSocialCutoverOptions(args, env = process.env) {
@@ -48,8 +100,15 @@ export function parseSocialCutoverOptions(args, env = process.env) {
     args,
     "--gcloud-user-credentials"
   );
+  const usesEmulatorOnly = hasFlag(args, "--emulator-only");
 
   if (!projectID) throw new Error("Pass --project=PROJECT_ID.");
+
+  if (usesGcloudUserCredentials && usesEmulatorOnly) {
+    throw new Error(
+      "--gcloud-user-credentials and --emulator-only cannot be combined."
+    );
+  }
 
   if (usesGcloudUserCredentials &&
       (apply || purgeLegacySocial || purgeApproval !== undefined)) {
@@ -71,6 +130,13 @@ export function parseSocialCutoverOptions(args, env = process.env) {
     );
   }
 
+  const credentialMode = usesEmulatorOnly ?
+    SocialCutoverCredentialMode.emulatorOnly :
+    usesGcloudUserCredentials ?
+      SocialCutoverCredentialMode.gcloudUser :
+      SocialCutoverCredentialMode.applicationDefault;
+  validateSocialCutoverRuntime({credentialMode, projectID, env});
+
   return {
     help: false,
     projectID,
@@ -78,9 +144,7 @@ export function parseSocialCutoverOptions(args, env = process.env) {
     purgeLegacySocial,
     confirmedProject,
     purgeApproval,
-    credentialMode: usesGcloudUserCredentials ?
-      SocialCutoverCredentialMode.gcloudUser :
-      SocialCutoverCredentialMode.applicationDefault,
+    credentialMode,
   };
 }
 
