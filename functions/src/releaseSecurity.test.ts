@@ -279,6 +279,10 @@ test("deletion plan finalizes references, Auth, then tombstone", async () => {
     "authUser",
     "deletionTombstone",
   ]);
+  assert.equal(
+    calls.indexOf("competitiveObservations") < calls.indexOf("authUser"),
+    true
+  );
 });
 
 test(

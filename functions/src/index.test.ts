@@ -498,13 +498,40 @@ test("account deletion uses exact server-owned social references", () => {
   assert.match(source, /references\.leagueMembershipPaths/);
   assert.match(source, /references\.challengeIDs/);
   assert.match(source, /references\.friendAccountIDs/);
+  const observationStart = source.indexOf("competitiveObservations: async");
   const rateStart = source.indexOf("rateLimits: async");
   const finalizerStart = source.indexOf("socialReferenceManifest: async");
-  assert.equal(rateStart >= 0 && finalizerStart > rateStart, true);
+  assert.equal(
+    observationStart >= 0 && rateStart > observationStart &&
+      finalizerStart > rateStart,
+    true
+  );
+  const observationCleanup = source.slice(observationStart, rateStart);
+  assert.match(observationCleanup, /_competitiveCaptureIntents/);
+  assert.match(observationCleanup, /_competitiveObservations/);
+  assert.match(observationCleanup, /recursiveDelete/);
   assert.equal(
     source.slice(rateStart, finalizerStart).includes("_socialReferences"),
     false
   );
+});
+
+test("competitive observation storage is callable-only", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  for (const collection of [
+    "_competitiveCaptureIntents",
+    "_competitiveObservations",
+  ]) {
+    const start = rules.indexOf(`match /${collection}/{document=**}`);
+    assert.notEqual(start, -1, collection);
+    assert.match(
+      rules.slice(start, start + 130),
+      /allow read, write: if false;/
+    );
+  }
 });
 
 test("only complete STOP generations are accepted", () => {

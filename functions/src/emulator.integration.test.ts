@@ -20,6 +20,10 @@ const preflightURL =
 const coachURL = `http://${functionsHost}/${projectID}/${region}/coachChat`;
 const transcriptionURL =
   `http://${functionsHost}/${projectID}/${region}/transcriptionToken`;
+const beginCompetitiveObservationURL =
+  `http://${functionsHost}/${projectID}/${region}/beginCompetitiveObservation`;
+const completeCompetitiveObservationURL =
+  `http://${functionsHost}/${projectID}/${region}/completeCompetitiveObservation`;
 const deletionURL =
   `http://${functionsHost}/${projectID}/${region}/deleteAccount`;
 const recommendationSyncURL =
@@ -473,11 +477,41 @@ test(
   async () => {
     const identity = await anonymousIdentity();
     await seedSocialReferenceCutover();
+    const competitiveBegin = {
+      schemaVersion: 1,
+      sessionID: "B713738E-D9ED-4337-986E-09205089D42E",
+      locale: "en-US",
+      mode: "ahCounter",
+      demand: null,
+      promptProvenance: {source: "none", promptDigest: null},
+      challengeID: null,
+    };
+    const competitiveComplete = {
+      schemaVersion: 1,
+      sessionID: competitiveBegin.sessionID,
+      audio: {
+        encoding: "linear16",
+        sampleRateHertz: 16_000,
+        channelCount: 1,
+        sampleWidthBits: 16,
+        dataBase64: Buffer.alloc(8_000).toString("base64"),
+      },
+    };
     const requests = [
       {
         url: transcriptionURL,
         validShape: {schemaVersion: 1},
         invalidShape: {schemaVersion: 1, accountID: identity.localId},
+      },
+      {
+        url: beginCompetitiveObservationURL,
+        validShape: competitiveBegin,
+        invalidShape: {...competitiveBegin, score: 10},
+      },
+      {
+        url: completeCompetitiveObservationURL,
+        validShape: competitiveComplete,
+        invalidShape: {...competitiveComplete, transcript: "client claim"},
       },
       {
         url: deletionURL,
@@ -644,6 +678,22 @@ test("social callables require the exact complete cutover marker", async () => {
     phase: "quarantining",
   };
   const socialRequests = [
+    {
+      url: beginCompetitiveObservationURL,
+      data: {
+        schemaVersion: 1,
+        sessionID: "0713738E-D9ED-4337-986E-09205089D42E",
+        locale: "en-US",
+        mode: "ahCounter",
+        demand: null,
+        promptProvenance: {source: "none", promptDigest: null},
+        challengeID: null,
+      },
+    },
+    {
+      url: completeCompetitiveObservationURL,
+      data: {},
+    },
     {
       url: recordPeerSessionURL,
       data: {
@@ -1180,6 +1230,51 @@ test("owner sessions cannot become competitive evidence", async () => {
     `_socialReferences/${identity.localId}`,
     identity
   )).status, 403);
+});
+
+test("competitive observation internals deny their authenticated owner", async () => {
+  const identity = await anonymousIdentity();
+  const sessionID = "B713738E-D9ED-4337-986E-09205089D42E";
+  const sha256 = "a".repeat(64);
+  const resources = [
+    {
+      path: `_competitiveCaptureIntents/${identity.localId}/` +
+        `captureIntents/${sessionID}`,
+      collection: `_competitiveCaptureIntents/${identity.localId}/` +
+        "captureIntents",
+    },
+    {
+      path: `_competitiveCaptureIntents/${identity.localId}/` +
+        `audioDigests/${sha256}`,
+      collection: `_competitiveCaptureIntents/${identity.localId}/` +
+        "audioDigests",
+    },
+    {
+      path: `_competitiveObservations/${identity.localId}/` +
+        `observations/${sessionID}`,
+      collection: `_competitiveObservations/${identity.localId}/observations`,
+    },
+  ];
+  for (const resource of resources) {
+    await adminFirestore.doc(resource.path).set({schemaVersion: 1});
+    assert.equal(
+      (await readFirestoreDocument(resource.path, identity)).status,
+      403
+    );
+    assert.equal(
+      (await listFirestoreCollection(resource.collection, identity)).status,
+      403
+    );
+    assert.equal(
+      (await mutateFirestoreDocument(resource.path, true, identity)).status,
+      403
+    );
+    assert.equal(
+      (await deleteFirestoreDocument(resource.path, identity)).status,
+      403
+    );
+    assert.equal((await adminFirestore.doc(resource.path).get()).exists, true);
+  }
 });
 
 test("challenge creation fails closed and is rate limited without friend proof", async () => {
@@ -1955,6 +2050,14 @@ test("anonymous deletion is complete and retry-safe", async () => {
       friendAccountIDs: [identity.localId],
       updatedAt: seededAt,
     });
+  const captureIntentRef = adminFirestore
+    .collection("_competitiveCaptureIntents").doc(identity.localId)
+    .collection("captureIntents").doc(challengeID);
+  const observationRef = adminFirestore
+    .collection("_competitiveObservations").doc(identity.localId)
+    .collection("observations").doc(challengeID);
+  await captureIntentRef.set({schemaVersion: 1, deletionFixture: true});
+  await observationRef.set({schemaVersion: 1, deletionFixture: true});
   const request = {
     schemaVersion: 1,
     requestID: "a713738e-d9ed-4337-986e-09205089d42e",
@@ -1979,6 +2082,8 @@ test("anonymous deletion is complete and retry-safe", async () => {
         .doc(identity.localId).get()).exists, false);
       assert.equal((await adminFirestore.collection("_accountDeletionState")
         .doc(identity.localId).get()).exists, false);
+      assert.equal((await captureIntentRef.get()).exists, false);
+      assert.equal((await observationRef.get()).exists, false);
       assert.equal((await adminFirestore.collection("_socialFriendLinks")
         .doc(opponent.localId).collection("friends")
         .doc(identity.localId).get()).exists, false);

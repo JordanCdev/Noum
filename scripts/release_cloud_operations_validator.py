@@ -26,6 +26,8 @@ EXPECTED_CALLABLES = {
     "coachChatAvailability": "COACH_RUNTIME_SERVICE_ACCOUNT",
     "coachChat": "COACH_RUNTIME_SERVICE_ACCOUNT",
     "transcriptionToken": "TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT",
+    "beginCompetitiveObservation": "TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT",
+    "completeCompetitiveObservation": "TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT",
     "getPeerProfile": "SOCIAL_RUNTIME_SERVICE_ACCOUNT",
     "listLeagueMembers": "SOCIAL_RUNTIME_SERVICE_ACCOUNT",
     "recordPeerSession": "SOCIAL_RUNTIME_SERVICE_ACCOUNT",

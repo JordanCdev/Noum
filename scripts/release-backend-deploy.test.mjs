@@ -12,8 +12,10 @@ import {
 } from "./release-backend-deploy.mjs";
 
 const EXPECTED_BLOCKERS = [
-  "Trusted server-observed competitive evidence producer and deterministic " +
-    "evaluator are missing; implement and verify them before deployment.",
+  "Eligible competitive evidence production is missing: the local " +
+    "server-observation substrate remains disabled and ineligible, has no " +
+    "calibrated deterministic evaluator, and lacks cross-account replay, " +
+    "retention, and live-provider evidence.",
   "Reciprocal friendship authority is missing; implement and verify it " +
     "before deployment.",
   "Independently trusted deployment authorization evidence is missing; " +

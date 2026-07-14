@@ -2224,6 +2224,16 @@ export const deleteAccount = onCall(
           });
         }
       },
+      competitiveObservations: async () => {
+        await Promise.all([
+          firestore.recursiveDelete(
+            firestore.collection("_competitiveCaptureIntents").doc(uid)
+          ),
+          firestore.recursiveDelete(
+            firestore.collection("_competitiveObservations").doc(uid)
+          ),
+        ]);
+      },
       rateLimits: async () => {
         await Promise.all([
           firestore.collection("_serverRateLimits").doc(uid).delete(),

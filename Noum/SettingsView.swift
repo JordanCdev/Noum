@@ -2186,7 +2186,7 @@ struct CloudProcessingConsentDisclosure: View {
                             disclosureRow(
                                 icon: "waveform",
                                 title: "Audio and transcripts",
-                                detail: "Production live audio goes to Deepgram for transcription. Noum sets Deepgram's model-improvement opt-out flag; Deepgram says opted-out data is retained only as needed to process the request. Transcripts may then be used for coaching you request."
+                                detail: "Production live audio goes to Deepgram for transcription. If server observation is enabled, one bounded competitive rep first passes in memory through a protected Firebase Function; Noum does not store that audio or its full server transcript. Noum sets Deepgram's model-improvement opt-out flag, and transcripts may then be used for coaching you request."
                             )
                             disclosureRow(
                                 icon: "person.text.rectangle.fill",

@@ -126,7 +126,7 @@
 
   <div class="card">
     <h1>Privacy Policy</h1>
-    <p class="muted"><strong>Last updated:</strong> July 13, 2026</p>
+    <p class="muted"><strong>Last updated:</strong> July 14, 2026</p>
     <p>Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.</p>
 
     <hr>
@@ -163,6 +163,7 @@
     </ul>
     <p>For short Ask Noum voice questions, the app first uses the configured cloud transcription provider and may fall back to Apple Speech Recognition. Apple determines whether that fallback is processed on-device or by Apple for the device, language, and system configuration.</p>
     <p>Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Production Deepgram requests set <code>mip_opt_out=true</code>; Deepgram says opted-out data is retained only as needed to process the request.</p>
+    <p>If you start a server-observed competitive rep after that capability is enabled, the app sends one bounded in-memory PCM recording through an authenticated Firebase Function. Noum's backend derives the byte count, audio hash, and duration, sends those same bytes to Deepgram with <code>mip_opt_out=true</code>, and releases the audio buffer after the request. Noum does not persist the recording or full server transcript. It keeps an account-bound observation receipt containing hashes, word count, practice-mode and prompt-binding provenance, provider/model identifiers, request status, server timestamps, and an expiry timestamp. An observation receipt is not a rated result; competitive eligibility remains disabled until the exact evaluator and provider version have independent calibration evidence.</p>
 
     <h3>Your Cloud Processing Choice</h3>
     <p>Before Noum sends microphone audio, a transcript, coaching-profile details, or session evidence to a non-Apple cloud speech or generative-AI provider, the app explains the categories of data involved, identifies the processing purpose, and asks for your permission. Microphone permission from iOS is separate and does not by itself permit Noum to share that data with a cloud AI provider.</p>
@@ -220,7 +221,7 @@
     <table>
       <thead><tr><th>Purpose</th><th>Data Used</th></tr></thead>
       <tbody>
-        <tr><td>Real-time speech-to-text</td><td>After cloud-processing permission, an audio stream sent to Deepgram with <code>mip_opt_out=true</code>; Ask Noum voice input may use Apple Speech Recognition as a fallback</td></tr>
+        <tr><td>Speech-to-text</td><td>After cloud-processing permission, real-time audio is sent to Deepgram with <code>mip_opt_out=true</code>; when server observation is enabled, one bounded competitive rep is relayed in memory through Firebase Functions to Deepgram; Ask Noum voice input may use Apple Speech Recognition as a fallback</td></tr>
         <tr><td>AI coaching feedback</td><td>After cloud-processing permission, a speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and selected video frames only when an explicitly requested production visual-feedback feature supports them. Production requests pass through Firebase Functions with Firebase Authentication and App Check before reaching Google Vertex AI</td></tr>
         <tr><td>Personalised coaching</td><td>Coaching profile, session history</td></tr>
         <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
@@ -241,12 +242,12 @@
     <table>
       <thead><tr><th>Service</th><th>Data Shared</th><th>Purpose</th></tr></thead>
       <tbody>
-        <tr><td><strong>Deepgram</strong></td><td>Real-time audio stream with mip_opt_out=true</td><td>Production speech-to-text transcription. <a href="https://deepgram.com/terms">Deepgram Terms</a>.</td></tr>
+        <tr><td><strong>Deepgram</strong></td><td>Real-time audio stream or bounded competitive-rep PCM with mip_opt_out=true</td><td>Production speech-to-text transcription; competitive PCM is relayed through protected Firebase Functions when server observation is enabled. <a href="https://deepgram.com/terms">Deepgram Terms</a>.</td></tr>
         <tr><td><strong>Apple Speech Recognition</strong></td><td>Short voice-question audio when the Apple fallback is used</td><td>Ask Noum voice transcription; processing location depends on Apple&#x27;s service and device availability. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
         <tr><td><strong>Apple Core Location / MapKit</strong></td><td>Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists</td><td>Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
         <tr><td><strong>Google Vertex AI (Gemini)</strong></td><td>Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback</td><td>Production generated coaching and conversation responses. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
         <tr><td><strong>Google Sign-In</strong></td><td>The SDK vendor declaration covers linked account and device data when Google Sign-In is used</td><td>Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking. <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.</td></tr>
-        <tr><td><strong>Firebase (Google)</strong></td><td>Bounded production coaching requests and Authentication and App Check proof; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality</td><td>Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
+        <tr><td><strong>Firebase (Google)</strong></td><td>Bounded production coaching requests, Authentication and App Check proof, and bounded competitive-rep PCM held in invocation memory with server-derived observation metadata; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality</td><td>Protected callable transport and abuse protection for cloud coaching and competitive observation, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
         <tr><td><strong>Open-Meteo</strong></td><td>A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself</td><td>Conversation weather context; Noum does not send a Core Location coordinate or account identifier. <a href="https://open-meteo.com/en/terms">Open-Meteo Terms</a>.</td></tr>
       </tbody>
     </table>
@@ -271,6 +272,7 @@
       <li>Practice session history</li>
       <li>XP and gamification data</li>
       <li>IM relationship profiles</li>
+      <li>Expiry-stamped competitive capture intents and observation receipts when server observation is enabled; raw audio and full server transcripts are not stored</li>
     </ul>
     <p>Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.</p>
 
@@ -284,6 +286,7 @@
       <li><strong>On-device data</strong> is retained until you delete it (via session deletion, account deletion, or app uninstall).</li>
       <li><strong>Noum-controlled Firebase data</strong> is retained while your account is active. A completed account-deletion request removes the active user tree, public profile, league memberships, challenges containing the account, server rate-limit state, and Firebase Authentication user. Operational backups may age out on a different schedule.</li>
       <li><strong>Streamed audio</strong> is not retained by Noum as an audio file. Production Deepgram requests set <code>mip_opt_out=true</code>; Deepgram says opted-out data is retained only as needed to process the request.</li>
+      <li><strong>Competitive observation metadata</strong> contains hashes, counts, practice-mode and prompt-binding provenance, provider/model identifiers, status, server timestamps, and an expiry timestamp—not raw audio or the full server transcript. Automatic removal at that timestamp depends on the corresponding Firestore TTL policy being configured and verified; account deletion removes it independently.</li>
       <li><strong>AI-provider inputs and outputs</strong> are handled under Google and Firebase terms, privacy policies, service tier, and account settings. Retention and model-improvement practices may change; review the links above for current details.</li>
     </ul>
 
@@ -296,6 +299,7 @@
 
     <h3>Export Your Data</h3>
     <p>In <strong>Settings → Your Data → Export account data</strong>, Noum creates <code>Noum-export-YYYY-MM-DD.zip</code>. The archive contains a versioned manifest, one JSON snapshot for every registered local account-data participant, residual account-scoped records that are not yet owned by a named participant, and app-managed files under <code>Documents/Recordings</code> when present. Legacy records or recordings that were not stamped with an account ID are explicitly labelled as device-local and unattributed. Recordings saved to Photos, Keychain authentication material, provider credentials, and data retained by third-party processors are not included.</p>
+    <p>Because competitive capture intents and observation receipts are server processing records rather than local account-data participants, they are not included in the device-built archive. Account deletion removes them. You may contact Noum to request access to any such receipt still within its retention window.</p>
 
     <h3>Delete Individual Sessions</h3>
     <p>Long-press any session in your Session History to delete it.</p>

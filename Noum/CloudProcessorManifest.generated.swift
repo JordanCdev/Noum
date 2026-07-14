@@ -12,13 +12,13 @@ struct CloudProcessorDisclosure: Identifiable, Equatable, Sendable {
 }
 
 enum CloudProcessorManifest {
-    static let version = 3
+    static let version = 4
     static let processors: [CloudProcessorDisclosure] = [
         CloudProcessorDisclosure(
             id: "deepgram",
             name: "Deepgram",
-            data: "Real-time audio stream with mip_opt_out=true",
-            purpose: "Production speech-to-text transcription",
+            data: "Real-time audio stream or bounded competitive-rep PCM with mip_opt_out=true",
+            purpose: "Production speech-to-text transcription; competitive PCM is relayed through protected Firebase Functions when server observation is enabled",
             termsURL: URL(string: "https://deepgram.com/terms")!,
             appearsInCloudProcessingDisclosure: true
         ),
@@ -57,8 +57,8 @@ enum CloudProcessorManifest {
         CloudProcessorDisclosure(
             id: "firebase",
             name: "Firebase (Google)",
-            data: "Bounded production coaching requests and Authentication and App Check proof; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
-            purpose: "Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics",
+            data: "Bounded production coaching requests, Authentication and App Check proof, and bounded competitive-rep PCM held in invocation memory with server-derived observation metadata; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
+            purpose: "Protected callable transport and abuse protection for cloud coaching and competitive observation, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics",
             termsURL: URL(string: "https://firebase.google.com/terms")!,
             appearsInCloudProcessingDisclosure: true
         ),

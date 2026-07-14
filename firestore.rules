@@ -286,6 +286,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /_competitiveCaptureIntents/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_competitiveObservations/{document=**} {
+      allow read, write: if false;
+    }
+
     match /_socialFriendLinks/{document=**} {
       allow read, write: if false;
     }

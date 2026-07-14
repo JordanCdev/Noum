@@ -74,6 +74,7 @@ const ACCOUNT_DELETION_DEPENDENT_STEPS = [
   "leagueMemberships",
   "challenges",
   "friendLinks",
+  "competitiveObservations",
   "rateLimits",
 ] as const;
 
