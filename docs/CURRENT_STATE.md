@@ -1,5 +1,37 @@
 # Noum — Current state
 
+## 2026-07-14 — Challenge capture preserves exact server prompt provenance
+
+Implementation commit `23fbfeee` extends the existing process-local
+`TimedPracticePromptHandoff` so a server-created challenge prompt and its
+content-free `CompetitiveObservationIntent` cross into Timed Practice as one
+opaque-token, account-bound, exactly-once payload. Ordinary seeded prompts keep
+their established whitespace normalization. Challenge prompts instead preserve
+their exact UTF-8 bytes, reject outer-whitespace or over-500-UTF-16-unit server
+shapes, and fail closed rather than trimming or truncating under an old digest.
+Timed rechecks the active account and exact displayed prompt before passing the
+intent to the existing speech owner; theme or new-prompt replacement drops the
+authority. The local armed-rep guard now also compares exact UTF-8 bytes rather
+than accepting case, whitespace, or canonically equivalent Unicode changes.
+
+The focused iPhone 17 / iOS 26.4 simulator selection passes 56/56 tests across
+the prompt handoff, competitive observation, social authority/lifecycle, and
+account-teardown owners. Functions build plus 109/109 authority tests and 6/6
+deploy-blocker tests pass. The first expanded clean test attempt exhausted the
+host disk while writing DerivedData; after removing only task-owned temporary
+build output, one compile attempt exposed and corrected a private initializer,
+and the unchanged final selection passed. No Functions, rules, or index source
+changed.
+
+This is a dormant integrity path, not a completed social flow. Both speak-off
+and competitive-observation capabilities remain false; receipts remain
+permanently ineligible; no `_verifiedSessionEvidence` writer exists. The only
+launch site is the post-create challenge sheet, and the challenge sheets still
+have no production call site, so hydrated/opponent challenge execution and
+two-device navigation remain missing. No evaluator calibration, deployed
+retention, live-provider, production, or external evidence was added.
+Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+
 ## 2026-07-14 — Professional goal-calibration review intake fails closed
 
 Implementation commit `a5d5c365` hardens the existing
@@ -125,11 +157,12 @@ counts, provenance, provider metadata, status, and expiry and is permanently
 
 The iOS client reuses the existing speech microphone tap, account/session
 fences, and private transcript fallback. It buffers only bounded memory audio,
-creates no recording file or second recorder, and is wired only to Ah Counter's
-exact no-prompt route. The release capability flag remains false, so shipping
-behavior does not change. Timed, challenge, and IM routes remain unwired because
-their current handoffs do not preserve the exact server-verifiable provenance
-required by this contract.
+creates no recording file or second recorder, and is wired to Ah Counter's
+exact no-prompt route. Commit `23fbfeee` later adds an exact prompt-and-intent
+handoff from the post-create challenge sheet into Timed, but both capabilities
+remain false and the challenge sheets have no production call site. Ordinary
+Timed and IM routes remain unwired because they do not have server-verifiable
+provenance.
 
 Firestore rules deny direct access to intent and observation state. Account
 deletion now removes both server-owned trees before rate-limit and Auth cleanup.
