@@ -190,11 +190,43 @@ function readFirestoreDocument(
 /** Performs an authenticated Firestore REST collection list. */
 function listFirestoreCollection(
   path: string,
-  identity: EmulatorIdentity
+  identity?: EmulatorIdentity
 ): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (identity) headers.authorization = `Bearer ${identity.idToken}`;
   return fetch(`${firestoreDocumentURL(path)}?pageSize=50`, {
-    headers: {authorization: `Bearer ${identity.idToken}`},
+    headers,
   });
+}
+
+/** Performs a client-scoped create or update with an existence precondition. */
+function mutateFirestoreDocument(
+  path: string,
+  exists: boolean,
+  identity?: EmulatorIdentity
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (identity) headers.authorization = `Bearer ${identity.idToken}`;
+  const condition = `currentDocument.exists=${String(exists)}`;
+  return fetch(`${firestoreDocumentURL(path)}?${condition}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({
+      fields: {clientMutation: {booleanValue: true}},
+    }),
+  });
+}
+
+/** Performs an optionally authenticated Firestore REST document delete. */
+function deleteFirestoreDocument(
+  path: string,
+  identity?: EmulatorIdentity
+): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (identity) headers.authorization = `Bearer ${identity.idToken}`;
+  return fetch(firestoreDocumentURL(path), {method: "DELETE", headers});
 }
 
 /** Builds the persisted fields for one complete non-fixture session. */
@@ -269,6 +301,7 @@ async function recordSocialSession(
   sessionID: string,
   displayName: string
 ): Promise<Record<string, unknown>> {
+  await seedSocialReferenceCutover();
   const response = await callable(
     recordPeerSessionURL,
     {schemaVersion: 1, sessionID, displayName},
@@ -358,8 +391,15 @@ async function seedReciprocalFriendLink(
 /** Marks the one-time legacy social inventory as completely backfilled. */
 async function seedSocialReferenceCutover(): Promise<void> {
   await adminFirestore.collection("_socialReferenceCutover").doc("current").set({
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "complete",
+    runID: "0713738e-d9ed-4337-986e-09205089d42e",
+    projectID,
+    sourceGitCommit: "a".repeat(40),
+    sourceImplementationSHA256: "b".repeat(64),
+    backupDigest: "c".repeat(64),
+    inventoryDigest: "d".repeat(64),
+    verifiedInventoryDigest: "d".repeat(64),
     completedAt: AdminTimestamp.now(),
   });
 }
@@ -429,6 +469,7 @@ test(
   "release callables enforce Auth, App Check, and strict input",
   async () => {
     const identity = await anonymousIdentity();
+    await seedSocialReferenceCutover();
     const requests = [
       {
         url: transcriptionURL,
@@ -571,6 +612,116 @@ test(
     }
   }
 );
+
+test("social callables require the exact complete cutover marker", async () => {
+  const identity = await anonymousIdentity();
+  const markerRef = adminFirestore.collection("_socialReferenceCutover")
+    .doc("current");
+  const completeMarker = {
+    schemaVersion: 2,
+    status: "complete",
+    runID: "1713738e-d9ed-4337-986e-09205089d42e",
+    projectID,
+    sourceGitCommit: "1".repeat(40),
+    sourceImplementationSHA256: "2".repeat(64),
+    backupDigest: "3".repeat(64),
+    inventoryDigest: "4".repeat(64),
+    verifiedInventoryDigest: "4".repeat(64),
+    completedAt: AdminTimestamp.now(),
+  };
+  const inProgressMarker = {
+    schemaVersion: 2,
+    status: "in-progress",
+    runID: completeMarker.runID,
+    projectID,
+    sourceGitCommit: completeMarker.sourceGitCommit,
+    sourceImplementationSHA256: completeMarker.sourceImplementationSHA256,
+    backupDigest: completeMarker.backupDigest,
+    inventoryDigest: completeMarker.inventoryDigest,
+    phase: "quarantining",
+  };
+  const socialRequests = [
+    {
+      url: recordPeerSessionURL,
+      data: {
+        schemaVersion: 1,
+        sessionID: "2713738E-D9ED-4337-986E-09205089D42E",
+        displayName: "Jordan",
+      },
+    },
+    {
+      url: createChallengeURL,
+      data: {
+        schemaVersion: 1,
+        challengeID: "3713738E-D9ED-4337-986E-09205089D42E",
+        opponentAccountID: "opponent",
+        prompt: "Give a concise update.",
+      },
+    },
+    {
+      url: submitChallengeResultURL,
+      data: {
+        schemaVersion: 1,
+        challengeID: "3713738E-D9ED-4337-986E-09205089D42E",
+        sessionID: "4713738E-D9ED-4337-986E-09205089D42E",
+      },
+    },
+    {
+      url: setChallengeReactionURL,
+      data: {
+        schemaVersion: 1,
+        challengeID: "3713738E-D9ED-4337-986E-09205089D42E",
+        reaction: "👏",
+      },
+    },
+    {
+      url: getPeerProfileURL,
+      data: {schemaVersion: 1, accountID: "opponent"},
+    },
+    {
+      url: listLeagueMembersURL,
+      data: {schemaVersion: 1, limit: 20},
+    },
+  ];
+  const unavailableMarkers: Array<Record<string, unknown> | undefined> = [
+    undefined,
+    inProgressMarker,
+    {...completeMarker, verifiedInventoryDigest: "5".repeat(64)},
+  ];
+
+  for (const marker of unavailableMarkers) {
+    if (marker) await markerRef.set(marker);
+    else await markerRef.delete();
+    for (const request of socialRequests) {
+      const response = await callable(
+        request.url,
+        request.data,
+        identity,
+        true
+      );
+      assert.equal(response.status, 400);
+      assert.equal(
+        await callableFailureReason(response),
+        "social-reference-cutover-incomplete"
+      );
+    }
+  }
+
+  await markerRef.delete();
+  const recommendation = await callable(
+    recommendationSyncURL,
+    {
+      schemaVersion: 1,
+      mutationID: "5713738E-D9ED-4337-986E-09205089D42E",
+      expectedRemoteRevision: 0,
+      pendingExposure: null,
+      outcomes: [],
+    },
+    identity,
+    true
+  );
+  assert.equal(recommendation.status, 200);
+});
 
 test("private account sync is limited to registered bounded paths", async () => {
   const identity = await anonymousIdentity();
@@ -895,6 +1046,7 @@ test("private session demand is mode-coupled and bounded", async () => {
 test("owner sessions cannot become competitive evidence", async () => {
   const identity = await anonymousIdentity();
   const other = await anonymousIdentity();
+  await seedSocialReferenceCutover();
   const peerSessionID = "A713738E-D9ED-4337-986E-09205089D42E";
   await seedSocialSession(identity, peerSessionID, Date.now() / 1_000, 10);
 
@@ -1030,6 +1182,7 @@ test("owner sessions cannot become competitive evidence", async () => {
 test("challenge creation fails closed and is rate limited without friend proof", async () => {
   const creator = await anonymousIdentity();
   const opponent = await anonymousIdentity();
+  await seedSocialReferenceCutover();
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const prefix = String(attempt + 1).repeat(8);
     const challengeID = `${prefix}-${String(attempt + 1).repeat(4)}-4` +
@@ -1423,6 +1576,169 @@ test("challenge result rejects prompt mismatch and expiry", async () => {
   );
   assert.equal(expired.status, 400);
   assert.equal(await callableFailureReason(expired), "challenge-expired");
+});
+
+test("social migration control data denies every client", async () => {
+  const owner = await anonymousIdentity();
+  const nonOwner = await anonymousIdentity();
+  const runID = "b713738e-d9ed-4337-986e-09205089d42e";
+  const sourcePath = `profiles_public/${owner.localId}`;
+  const sourceData = {accountID: owner.localId, displayName: "Legacy"};
+  const sourcePathSHA256 = createHash("sha256")
+    .update(JSON.stringify(sourcePath))
+    .digest("hex");
+  const alternateSourcePathSHA256 = "e".repeat(64);
+  const journalPath = "_socialReferenceCutover/current";
+  const quarantineCollection =
+    `_socialReferenceQuarantine/${runID}/documents`;
+  const quarantinePath = `${quarantineCollection}/${sourcePathSHA256}`;
+  const manifestPath = `_socialReferences/${owner.localId}`;
+  const backupDigest = "a".repeat(64);
+  const inventoryDigest = "b".repeat(64);
+
+  await adminFirestore.doc(journalPath).set({
+    schemaVersion: 2,
+    status: "in-progress",
+    runID,
+    projectID,
+    sourceGitCommit: "c".repeat(40),
+    sourceImplementationSHA256: "d".repeat(64),
+    backupDigest,
+    phase: "journaled",
+    inventoryDigest,
+  });
+  await adminFirestore.doc(quarantinePath).set({
+    schemaVersion: 2,
+    runID,
+    backupDigest,
+    sourcePath,
+    sourceData,
+    sourceSHA256: createHash("sha256")
+      .update(JSON.stringify(sourceData))
+      .digest("hex"),
+  });
+  await adminFirestore.doc(manifestPath).set({
+    leagueMembershipPaths: [],
+    challengeIDs: [],
+    friendAccountIDs: [],
+    updatedAt: AdminTimestamp.now(),
+  });
+
+  const resources = [
+    {
+      name: "run journal",
+      documentPath: journalPath,
+      collectionPath: "_socialReferenceCutover",
+      createPath: "_socialReferenceCutover/client-forged-journal",
+    },
+    {
+      name: "quarantine record",
+      documentPath: quarantinePath,
+      collectionPath: quarantineCollection,
+      createPath: `${quarantineCollection}/${alternateSourcePathSHA256}`,
+    },
+    {
+      name: "social-reference manifest",
+      documentPath: manifestPath,
+      collectionPath: "_socialReferences",
+      createPath: "_socialReferences/client-forged",
+    },
+  ];
+  const callers: Array<{
+    name: string;
+    identity?: EmulatorIdentity;
+  }> = [
+    {name: "unauthenticated"},
+    {name: "owner", identity: owner},
+    {name: "non-owner", identity: nonOwner},
+  ];
+  const assertDenied = async (
+    resource: (typeof resources)[number],
+    caller: (typeof callers)[number]
+  ): Promise<void> => {
+    const context = `${caller.name} ${resource.name}`;
+    assert.equal(
+      (await readFirestoreDocument(
+        resource.documentPath,
+        caller.identity
+      )).status,
+      403,
+      `${context} read must be denied`
+    );
+    assert.equal(
+      (await listFirestoreCollection(
+        resource.collectionPath,
+        caller.identity
+      )).status,
+      403,
+      `${context} list must be denied`
+    );
+    assert.equal(
+      (await mutateFirestoreDocument(
+        resource.createPath,
+        false,
+        caller.identity
+      )).status,
+      403,
+      `${context} create must be denied`
+    );
+    assert.equal(
+      (await mutateFirestoreDocument(
+        resource.documentPath,
+        true,
+        caller.identity
+      )).status,
+      403,
+      `${context} update must be denied`
+    );
+    assert.equal(
+      (await deleteFirestoreDocument(
+        resource.documentPath,
+        caller.identity
+      )).status,
+      403,
+      `${context} delete must be denied`
+    );
+  };
+
+  for (const caller of callers) {
+    for (const resource of resources) await assertDenied(resource, caller);
+  }
+
+  await adminFirestore.doc(journalPath).set({
+    schemaVersion: 2,
+    status: "complete",
+    runID,
+    projectID,
+    sourceGitCommit: "c".repeat(40),
+    sourceImplementationSHA256: "d".repeat(64),
+    backupDigest,
+    inventoryDigest,
+    verifiedInventoryDigest: inventoryDigest,
+    completedAt: AdminTimestamp.now(),
+  });
+  const markerResource = {
+    name: "global cutover marker",
+    documentPath: journalPath,
+    collectionPath: "_socialReferenceCutover",
+    createPath: "_socialReferenceCutover/client-forged-marker",
+  };
+  for (const caller of callers) await assertDenied(markerResource, caller);
+
+  for (const resource of resources) {
+    assert.equal(
+      (await adminFirestore.doc(resource.documentPath).get()).exists,
+      true
+    );
+    assert.equal(
+      (await adminFirestore.doc(resource.createPath).get()).exists,
+      false
+    );
+  }
+  assert.equal(
+    (await adminFirestore.doc(markerResource.createPath).get()).exists,
+    false
+  );
 });
 
 test("legacy social data fails closed until exact cutover is backfilled", async () => {

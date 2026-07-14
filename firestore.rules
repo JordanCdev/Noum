@@ -270,6 +270,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Recoverable legacy source records are stored beneath
+    // _socialReferenceQuarantine/{runID}/documents/{sourcePathSHA256}.
+    // The run journal itself is the denied _socialReferenceCutover/current
+    // document above until the server atomically replaces it with the marker.
+    match /_socialReferenceQuarantine/{document=**} {
+      allow read, write: if false;
+    }
+
     match /_accountDeletionState/{document=**} {
       allow read, write: if false;
     }
