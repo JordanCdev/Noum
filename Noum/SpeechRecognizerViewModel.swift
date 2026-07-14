@@ -1146,6 +1146,11 @@ private struct UITestUnavailableTranscriptionProvider: TranscriptionProvider {
 #endif
 
 struct PracticeSession: Identifiable, Codable {
+    /// Metric-production epoch for score, filler, duration, and pace fields.
+    /// Persisting the epoch on each rep lets comparison consumers fail closed
+    /// after an evaluator change instead of averaging unlike measurements.
+    static let currentComparisonMetricSchemaVersion = 1
+
     var id: UUID = UUID()
     let transcript: String
     let fillerWordCount: Int
@@ -1166,6 +1171,8 @@ struct PracticeSession: Identifiable, Codable {
     var transcriptionProvider: String? = nil
     var pressureLevel: PressureLevel = .standard
     var isRated: Bool = false
+    /// Nil for sessions persisted before comparison provenance existed.
+    var comparisonMetricSchemaVersion: Int? = currentComparisonMetricSchemaVersion
     /// Pause statistics for this session. Optional because (a) older
     /// persisted sessions decode without it, and (b) some transcription
     /// providers may not emit word-level timings on certain reps.
@@ -1236,6 +1243,7 @@ struct PracticeSession: Identifiable, Codable {
         case transcriptionProvider
         case pressureLevel
         case isRated
+        case comparisonMetricSchemaVersion
         case pauseMetrics
         case pitchMetrics
         case grammarFindings
@@ -1268,6 +1276,7 @@ struct PracticeSession: Identifiable, Codable {
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
+        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
         pauseMetrics: PauseMetrics? = nil,
         pitchMetrics: PitchMetrics? = nil,
         grammarFindings: [GrammarFinding]? = nil,
@@ -1298,6 +1307,7 @@ struct PracticeSession: Identifiable, Codable {
         self.transcriptionProvider = transcriptionProvider
         self.pressureLevel = pressureLevel
         self.isRated = isRated
+        self.comparisonMetricSchemaVersion = comparisonMetricSchemaVersion
         self.pauseMetrics = pauseMetrics
         self.pitchMetrics = pitchMetrics
         self.grammarFindings = grammarFindings
@@ -1331,6 +1341,7 @@ struct PracticeSession: Identifiable, Codable {
         transcriptionProvider = try container.decodeIfPresent(String.self, forKey: .transcriptionProvider)
         pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
+        comparisonMetricSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .comparisonMetricSchemaVersion)
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
         pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
         grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)

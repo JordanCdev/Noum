@@ -1406,7 +1406,8 @@ struct NextActionEngineTests {
                 id: UUID(), fingerprint: "\(mode.rawValue)|", title: "t",
                 focus: nil, target: nil, mode: mode, sessionID: UUID(),
                 followed: true, completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
-                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0,
+                comparisonSessionCount: 3
             )
         }
     }
@@ -1435,7 +1436,8 @@ struct NextActionEngineTests {
                 id: UUID(), fingerprint: "timed|", title: "t", focus: nil, target: nil,
                 mode: .timed, sessionID: UUID(), followed: true,
                 completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
-                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0,
+                comparisonSessionCount: 3
             )
         }
         let result = NextActionEngine.recommend(input: improvingTrendInput(mode: .timed, outcomes: thin))
@@ -1459,7 +1461,8 @@ struct NextActionEngineTests {
                     id: UUID(), fingerprint: "\(mode.rawValue)|", title: "t",
                     focus: nil, target: nil, mode: mode, sessionID: UUID(),
                     followed: true, completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
-                    scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+                    scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0,
+                    comparisonSessionCount: 3
                 )
             }
         }
@@ -1611,7 +1614,8 @@ struct NextActionEngineTests {
                 id: UUID(), fingerprint: "sd|", title: "t", focus: nil, target: nil,
                 mode: .suddenDeath, sessionID: UUID(), followed: true,
                 completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
-                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0,
+                comparisonSessionCount: 3
             )
         }
         let p3 = NextActionEngine.recommend(input: pressureGapInput(outcomes: thin))
@@ -11855,7 +11859,9 @@ struct CoachContextBuilderTests {
             scoreDelta: 1.0,
             hasComparableScore: true,
             fillerDelta: -1.0,
-            durationDelta: 0
+            durationDelta: 0,
+            fillerRateDelta: -1.0,
+            comparisonSessionCount: 3
         )
 
         let ctx = CoachContextBuilder.userContext(
@@ -14237,7 +14243,8 @@ struct RecommendationBiasContextBuilderTests {
                 scoreDelta: -0.9,
                 hasComparableScore: true,
                 fillerDelta: 0,
-                durationDelta: 0
+                durationDelta: 0,
+                comparisonSessionCount: 3
             )
         }
     }
@@ -19030,7 +19037,7 @@ struct RecommendationResponseAnalyzerTests {
         #expect(lines.count == 1)
         #expect(lines[0].contains("Timed Practice for clearer close"))
         #expect(!lines[0].contains("score"))
-        #expect(lines[0].contains("fillers -2.0"))
+        #expect(lines[0].contains("filler rate -2.0/min"))
         #expect(lines[0].contains("one observation only; treat it as tentative"))
     }
 
@@ -19041,8 +19048,8 @@ struct RecommendationResponseAnalyzerTests {
         ])
 
         #expect(summaries.first?.assessment == .promising)
-        #expect(summaries.first?.averageScoreDelta == 0.75)
-        #expect(summaries.first?.averageFillerDelta == -1.5)
+        #expect(summaries.first?.averageScoreDelta == nil)
+        #expect(summaries.first?.averageFillerRateDelta == -1.5)
     }
 
     @Test func repeatedRegressionAsksCoachToAdapt() {
@@ -19052,8 +19059,30 @@ struct RecommendationResponseAnalyzerTests {
         ])
 
         #expect(lines[0].contains("score -1.5"))
-        #expect(lines[0].contains("fillers +1.5"))
+        #expect(lines[0].contains("filler rate +1.5/min"))
         #expect(lines[0].contains("adapt before repeating it"))
+    }
+
+    @Test func legacyOutcomeMetricsFailClosedWithoutComparisonProvenance() {
+        let legacy = RecommendationOutcome(
+            id: UUID(), fingerprint: "legacy", title: "Old prescription",
+            focus: "clearer close", target: nil, mode: .timed,
+            sessionID: UUID(), followed: true, completedAt: Date(),
+            scoreDelta: 3, hasComparableScore: true, fillerDelta: -4,
+            durationDelta: 20, wordsPerMinute: 150, paceDelta: -30,
+            goal: .concise, targetDimensionID: "clean_close",
+            goalFollowUpResult: .earlyImprovement
+        )
+
+        let summary = RecommendationResponseAnalyzer.summarize(outcomes: [legacy]).first
+        #expect(summary?.measuredCount == 0)
+        #expect(summary?.averageScoreDelta == nil)
+        #expect(summary?.averageFillerRateDelta == nil)
+        #expect(summary?.assessment == .forming)
+        let lines = RecommendationResponseAnalyzer.promptLines(from: [legacy])
+        #expect(lines.count == 1)
+        #expect(lines[0].contains("no comparable metric yet"))
+        #expect(!lines[0].contains("Goal follow-up"))
     }
 
     @Test func newOptionalEvidenceFieldsDecodeOlderOutcomeRecords() throws {
@@ -19089,6 +19118,8 @@ struct RecommendationResponseAnalyzerTests {
         #expect(decoded.focus == nil)
         #expect(decoded.target == nil)
         #expect(decoded.hasComparableScore == nil)
+        #expect(decoded.fillerRateDelta == nil)
+        #expect(decoded.comparisonSessionCount == nil)
     }
 
     private func outcome(
@@ -19112,7 +19143,9 @@ struct RecommendationResponseAnalyzerTests {
             scoreDelta: scoreDelta,
             hasComparableScore: hasComparableScore,
             fillerDelta: fillerDelta,
-            durationDelta: 0
+            durationDelta: 0,
+            fillerRateDelta: fillerDelta,
+            comparisonSessionCount: 3
         )
     }
 }
@@ -19259,6 +19292,45 @@ struct RecommendationAdaptationAnalyzerTests {
         #expect(verdict?.movementReps == 3)      // only the filler-moving reps count; +2.0 score on nil-flag reps ignored
     }
 
+    @Test func legacyMetricsWithoutComparisonSchemaCannotDriveAdaptation() {
+        let legacy = (0..<6).map { index in
+            RecommendationOutcome(
+                id: UUID(), fingerprint: "legacy", title: "Old prescription",
+                focus: "close", target: nil, mode: .timed,
+                sessionID: UUID(), followed: true,
+                completedAt: Date(timeIntervalSince1970: Double(index)),
+                scoreDelta: -3, hasComparableScore: true, fillerDelta: 5,
+                durationDelta: -30, wordsPerMinute: 210, paceDelta: 40
+            )
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(
+            mode: .timed,
+            focus: "close",
+            in: legacy
+        )
+        #expect(verdict == nil)
+    }
+
+    @Test func fillerPrescriptionIsJudgedOnFillerRateNotCompositeScore() {
+        let outcomes = (0..<6).map { index in
+            adOutcome(
+                mode: .ahCounter,
+                focus: "filler control",
+                at: 100 + Double(index),
+                score: 2,
+                hasScoreOptional: true,
+                filler: 1.2
+            )
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(
+            mode: .ahCounter,
+            focus: "filler control",
+            in: outcomes
+        )
+        #expect(verdict?.action == .replace)
+        #expect(verdict?.unfavorableRate == 1)
+    }
+
     // MARK: Keying
 
     @Test func verdictScopedPerModeFocusGroup_notGlobal() {
@@ -19327,11 +19399,11 @@ struct RecommendationAdaptationAnalyzerTests {
     @Test func associationLanguage_noCausalClaim_everyEmittingBranch() {
         let reinforce = (0..<3).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: 0.9, hasScore: true) }
         let vary = (0..<3).map { adOutcome(mode: .suddenDeath, focus: "open", at: 100 + Double($0), score: -0.9, hasScore: true) }
-        let replace = (0..<6).map { adOutcome(mode: .ahCounter, focus: "lean", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        let replace = (0..<6).map { adOutcome(mode: .timed, focus: "lean", at: 100 + Double($0), score: -0.9, hasScore: true) }
         let lines = [
             RecommendationAdaptationAnalyzer.adaptationRationale(mode: .timed, focus: "close", in: reinforce),
             RecommendationAdaptationAnalyzer.adaptationRationale(mode: .suddenDeath, focus: "open", in: vary),
-            RecommendationAdaptationAnalyzer.adaptationRationale(mode: .ahCounter, focus: "lean", in: replace),
+            RecommendationAdaptationAnalyzer.adaptationRationale(mode: .timed, focus: "lean", in: replace),
         ]
         for line in lines {
             #expect(line != nil)
@@ -19386,6 +19458,8 @@ struct RecommendationAdaptationAnalyzerTests {
             hasComparableScore: hasScoreOptional,
             fillerDelta: filler,
             durationDelta: 0,
+            fillerRateDelta: filler,
+            comparisonSessionCount: 3,
             wordsPerMinute: wordsPerMinute,
             paceDelta: paceDelta
         )
@@ -19435,17 +19509,21 @@ struct RecommendationAdaptationAnalyzerTests {
         #expect((verdict?.unfavorableRate ?? 0) >= 0.6)
     }
 
-    @Test func outcomesWithoutPaceFieldsKeepTheScoreReadByteExactly() {
-        // Pace-focused prescription but the ledger predates the pace fields
-        // (nil) — the verdict must be EXACTLY what the score read gives today
-        // (mirror of exactlyThreeUnfavorable_varyTentative).
+    @Test func paceFocusedOutcomesWithoutPaceFieldsStayUnmeasured() {
+        // A pace prescription is judged only on pace. Comparable score data
+        // must not become substitute evidence for the intervention's target.
         let outcomes = (0..<3).map { i in
             adOutcome(mode: .timed, focus: "controlled pacing", at: 100 + Double(i), score: -0.7, hasScoreOptional: true)
         }
         let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "controlled pacing", in: outcomes)
-        #expect(verdict?.action == .vary)
-        #expect(verdict?.confidence == .tentative)
-        #expect(verdict?.movementReps == 3)
+        #expect(verdict == nil)
+        #expect(RecommendationAdaptationAnalyzer.adaptationRationale(
+            mode: .timed, focus: "controlled pacing", in: outcomes
+        ) == nil)
+        let prompt = RecommendationResponseAnalyzer.promptLines(from: outcomes).joined(separator: "\n")
+        #expect(prompt.contains("no comparable metric yet"))
+        #expect(!prompt.contains("score -"))
+        #expect(!prompt.contains("filler rate"))
     }
 
     @Test func nonPaceFocusIgnoresPaceEvidence() {
@@ -20857,7 +20935,9 @@ struct CoachMemoryEngineTests {
             scoreDelta: scoreDelta,
             hasComparableScore: true,
             fillerDelta: fillerDelta,
-            durationDelta: 0
+            durationDelta: 0,
+            fillerRateDelta: fillerDelta,
+            comparisonSessionCount: 3
         )
     }
 

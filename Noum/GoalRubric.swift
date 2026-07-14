@@ -98,7 +98,11 @@ struct GoalOutcomeRead: Equatable {
         }
 
         let goalOutcomes = outcomes
-            .filter { $0.goal == style && $0.followed }
+            .filter {
+                $0.goal == style
+                    && $0.followed
+                    && $0.hasComparableBaseline
+            }
             .sorted { $0.completedAt > $1.completedAt }
         let latestTargetID = goalOutcomes.first?.targetDimensionID
         let comparableTargetOutcomes = goalOutcomes.filter {

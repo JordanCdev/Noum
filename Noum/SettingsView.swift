@@ -1892,7 +1892,7 @@ struct SettingsView: View {
 
             HStack(spacing: Spacing.xs) {
                 compactStat(title: "Score Δ", value: averageScoreDelta.map { signedValue($0) } ?? "—")
-                compactStat(title: "Filler Δ", value: averageFillerDelta.map { signedValue($0) } ?? "—")
+                compactStat(title: "Filler rate Δ", value: averageFillerRateDelta.map { "\(signedValue($0))/min" } ?? "—")
                 compactStat(title: "Duration Δ", value: averageDurationDelta.map { signedSeconds($0) } ?? "—")
             }
 
@@ -2001,14 +2001,21 @@ struct SettingsView: View {
 
     private var averageScoreDelta: Double? {
         let measured = followedOutcomes
-            .filter { $0.hasComparableScore == true }
+            .filter {
+                $0.hasComparableBaseline
+                    && $0.hasComparableScore == true
+            }
             .map(\.scoreDelta)
         guard !measured.isEmpty else { return nil }
         return measured.reduce(0, +) / Double(measured.count)
     }
 
-    private var averageFillerDelta: Double? {
-        averageMetric(for: \.fillerDelta)
+    private var averageFillerRateDelta: Double? {
+        let measured = followedOutcomes
+            .filter(\.hasComparableBaseline)
+            .compactMap(\.fillerRateDelta)
+        guard !measured.isEmpty else { return nil }
+        return measured.reduce(0, +) / Double(measured.count)
     }
 
     private var averageDurationDelta: Double? {
@@ -2016,8 +2023,10 @@ struct SettingsView: View {
     }
 
     private func averageMetric(for keyPath: KeyPath<RecommendationOutcome, Double>) -> Double? {
-        guard !followedOutcomes.isEmpty else { return nil }
-        let values = followedOutcomes.map { $0[keyPath: keyPath] }
+        let values = followedOutcomes
+            .filter(\.hasComparableBaseline)
+            .map { $0[keyPath: keyPath] }
+        guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
     }
 
@@ -2026,8 +2035,7 @@ struct SettingsView: View {
     }
 
     private func signedValue(_ value: Double) -> String {
-        let rounded = Int((value * 10).rounded() / 10)
-        return rounded > 0 ? "+\(rounded)" : "\(rounded)"
+        String(format: "%+.1f", value)
     }
 
     private func signedSeconds(_ value: Double) -> String {

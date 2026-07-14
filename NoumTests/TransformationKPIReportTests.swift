@@ -33,9 +33,10 @@ struct TransformationKPIReportTests {
         )
         let outcome = RecommendationOutcome(
             id: UUID(), fingerprint: "one", title: "Practice", focus: nil,
-            target: nil, mode: .timed, sessionID: session.id, followed: false,
+            target: nil, mode: .timed, sessionID: session.id, followed: true,
             completedAt: start.addingTimeInterval(45), scoreDelta: 0,
             hasComparableScore: false, fillerDelta: 0, durationDelta: 0,
+            fillerRateDelta: 0, comparisonSessionCount: 3,
             goal: .concise, targetDimensionID: "clean_close",
             goalFollowUpResult: .earlyImprovement
         )

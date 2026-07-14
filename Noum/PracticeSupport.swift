@@ -8884,14 +8884,28 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
     /// True only when both this rep and earlier reps supplied scores.
     /// Older outcomes decode as nil and are excluded from score claims.
     let hasComparableScore: Bool?
+    /// Change in fillers per minute against a bounded, same-demand baseline.
+    /// Nil for legacy outcomes and whenever either side lacks reliable speech
+    /// duration. Raw `fillerDelta` remains decode-compatible diagnostic data;
+    /// coaching reducers use this normalized value exclusively.
+    let fillerRateDelta: Double?
     let fillerDelta: Double
     let durationDelta: Double
+    /// Number of recent sessions admitted by the persisted-demand proxy
+    /// (mode, pressure, rated state, duration, and IM setup). Difficulty and
+    /// Speech Project identity are not yet persisted on PracticeSession.
+    let comparisonSessionCount: Int?
+    /// Version of the comparison recipe that produced the normalized
+    /// evidence. Missing or unknown versions fail closed. Metric-evaluator
+    /// compatibility is enforced separately on each PracticeSession input.
+    let comparisonSchemaVersion: Int?
     /// Focus-matched pace evidence: this rep's words-per-minute and its delta
     /// vs the prior-rep average, present only when BOTH sides carried a
     /// reliable reading (≥15s reps with a positive wpm). Outcomes persisted
-    /// before these fields existed decode as nil and keep the score/filler
-    /// read byte-exactly — the adaptation analyzer only judges a pace-focused
-    /// prescription on pace when the evidence is actually recorded.
+    /// before these fields existed decode as nil. The adaptation analyzer only
+    /// judges a pace-focused prescription on pace when the evidence is actually
+    /// recorded. Legacy outcomes without comparable-baseline provenance fail
+    /// closed across score, filler-rate, and pace interpretation.
     let wordsPerMinute: Double?
     let paceDelta: Double?
     let goal: SpeakingStyleGoal?
@@ -8913,6 +8927,9 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
         hasComparableScore: Bool?,
         fillerDelta: Double,
         durationDelta: Double,
+        fillerRateDelta: Double? = nil,
+        comparisonSessionCount: Int? = nil,
+        comparisonSchemaVersion: Int? = nil,
         wordsPerMinute: Double? = nil,
         paceDelta: Double? = nil,
         goal: SpeakingStyleGoal? = nil,
@@ -8931,14 +8948,159 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
         self.completedAt = completedAt
         self.scoreDelta = scoreDelta
         self.hasComparableScore = hasComparableScore
+        self.fillerRateDelta = fillerRateDelta
         self.fillerDelta = fillerDelta
         self.durationDelta = durationDelta
+        self.comparisonSessionCount = comparisonSessionCount
+        self.comparisonSchemaVersion = comparisonSchemaVersion
+            ?? (comparisonSessionCount == nil ? nil : RecommendationComparisonEngine.schemaVersion)
         self.wordsPerMinute = wordsPerMinute
         self.paceDelta = paceDelta
         self.goal = goal
         self.targetDimensionID = targetDimensionID
         self.sourceSessionID = sourceSessionID
         self.goalFollowUpResult = goalFollowUpResult
+    }
+
+    var hasComparableBaseline: Bool {
+        comparisonSchemaVersion == RecommendationComparisonEngine.schemaVersion
+            && (comparisonSessionCount ?? 0) >= RecommendationComparisonEngine.minimumComparisonSamples
+    }
+}
+
+struct RecommendationComparisonBaseline: Equatable {
+    let sessionIDs: [UUID]
+    let scoreDelta: Double?
+    let fillerRateDelta: Double?
+    let rawFillerDelta: Double?
+    let durationDelta: Double?
+    let wordsPerMinute: Double?
+    let paceDelta: Double?
+
+    var sessionCount: Int { sessionIDs.count }
+}
+
+/// Builds the evidence attached to one recommendation outcome. Comparison is
+/// intentionally strict within what PracticeSession persists: recent attempts
+/// must share mode, pressure, rated state, approximate duration, and (for IM)
+/// scenario/tone setup. Sparse history stays unmeasured. Timed/Pressure
+/// difficulty and Speech Project identity remain outside this v1 proxy.
+enum RecommendationComparisonEngine {
+    static let schemaVersion = 1
+    static let recentSessionCap = 5
+    static let minimumComparisonSamples = 2
+    static let recencyWindow: TimeInterval = 28 * 86_400
+    static let minimumReliableDuration: TimeInterval = 15
+    static let minimumDurationRatio = 0.5
+    static let maximumDurationRatio = 2.0
+
+    static func baseline(
+        for session: PracticeSession,
+        previousSessions: [PracticeSession]
+    ) -> RecommendationComparisonBaseline {
+        guard SessionQualifier.qualifies(session),
+              session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion else {
+            return RecommendationComparisonBaseline(
+                sessionIDs: [],
+                scoreDelta: nil,
+                fillerRateDelta: nil,
+                rawFillerDelta: nil,
+                durationDelta: nil,
+                wordsPerMinute: nil,
+                paceDelta: nil
+            )
+        }
+
+        var admittedSessionIDs = Set<UUID>()
+        let comparable = previousSessions
+            .filter { candidate in
+                isComparable(candidate, to: session)
+            }
+            .sorted { lhs, rhs in
+                if lhs.date != rhs.date { return lhs.date > rhs.date }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .filter { admittedSessionIDs.insert($0.id).inserted }
+            .prefix(recentSessionCap)
+
+        let sessions = Array(comparable)
+        let priorScores = sessions.compactMap(\.score).map(Double.init)
+        let scoreDelta = session.score.flatMap { score in
+            priorScores.count < minimumComparisonSamples ? nil : Double(score) - mean(priorScores)
+        }
+
+        let currentFillerRate = fillerRate(for: session)
+        let priorFillerRates = sessions.compactMap(fillerRate)
+        let fillerRateDelta: Double? = {
+            guard let currentFillerRate,
+                  priorFillerRates.count >= minimumComparisonSamples else { return nil }
+            return currentFillerRate - mean(priorFillerRates)
+        }()
+
+        let rawFillerDelta = sessions.count < minimumComparisonSamples
+            ? nil
+            : Double(session.fillerWordCount) - mean(sessions.map { Double($0.fillerWordCount) })
+        let durationDelta = sessions.count < minimumComparisonSamples
+            ? nil
+            : session.duration - mean(sessions.map(\.duration))
+
+        let currentPace = reliableWordsPerMinute(for: session)
+        let priorPaces = sessions.compactMap(reliableWordsPerMinute)
+        let paceDelta: Double? = {
+            guard let currentPace,
+                  priorPaces.count >= minimumComparisonSamples else { return nil }
+            return currentPace - mean(priorPaces)
+        }()
+
+        return RecommendationComparisonBaseline(
+            sessionIDs: sessions.map(\.id),
+            scoreDelta: scoreDelta,
+            fillerRateDelta: fillerRateDelta,
+            rawFillerDelta: rawFillerDelta,
+            durationDelta: durationDelta,
+            wordsPerMinute: paceDelta == nil ? nil : currentPace,
+            paceDelta: paceDelta
+        )
+    }
+
+    private static func isComparable(
+        _ candidate: PracticeSession,
+        to session: PracticeSession
+    ) -> Bool {
+        guard candidate.id != session.id,
+              candidate.comparisonMetricSchemaVersion == session.comparisonMetricSchemaVersion,
+              candidate.mode == session.mode,
+              candidate.pressureLevel == session.pressureLevel,
+              candidate.isRated == session.isRated,
+              candidate.isEvaluationFixture == session.isEvaluationFixture,
+              SessionQualifier.qualifies(candidate) else { return false }
+
+        let age = session.date.timeIntervalSince(candidate.date)
+        guard age >= 0, age <= recencyWindow else { return false }
+
+        let durationRatio = candidate.duration / session.duration
+        guard durationRatio >= minimumDurationRatio,
+              durationRatio <= maximumDurationRatio else { return false }
+
+        guard session.mode == .imConversation else { return true }
+        guard let currentSetup = session.imConversationDetails?.setup,
+              let candidateSetup = candidate.imConversationDetails?.setup else { return false }
+        return currentSetup == candidateSetup
+    }
+
+    private static func fillerRate(for session: PracticeSession) -> Double? {
+        guard session.duration >= minimumReliableDuration else { return nil }
+        return Double(session.fillerWordCount) / session.duration * 60
+    }
+
+    private static func reliableWordsPerMinute(for session: PracticeSession) -> Double? {
+        guard session.duration >= minimumReliableDuration,
+              session.wordsPerMinute > 0 else { return nil }
+        return Double(session.wordsPerMinute)
+    }
+
+    private static func mean(_ values: [Double]) -> Double {
+        values.reduce(0, +) / Double(values.count)
     }
 }
 
@@ -9177,7 +9339,9 @@ enum EvaluationCorpus {
                 scoreDelta: -0.9,
                 hasComparableScore: true,
                 fillerDelta: 0,
-                durationDelta: 0
+                durationDelta: 0,
+                fillerRateDelta: 0,
+                comparisonSessionCount: 3
             )
         }
     }
@@ -9208,12 +9372,41 @@ enum RecommendationResponseAssessment: Equatable {
     }
 }
 
+enum RecommendationMetricFocus {
+    enum Kind: Equatable { case pace, filler, general }
+
+    static func kind(mode: PracticeMode, focus: String?, title: String) -> Kind {
+        if PaceCoaching.isPaceFocused(mode: mode, focus: focus, title: title) {
+            return .pace
+        }
+        let text = "\(focus ?? "") \(title)".lowercased()
+        if mode == .ahCounter
+            || text.contains("filler")
+            || text.contains("crutch") {
+            return .filler
+        }
+        return .general
+    }
+
+    static func paceBandDistanceImprovement(_ outcome: RecommendationOutcome) -> Double? {
+        guard outcome.hasComparableBaseline,
+              kind(mode: outcome.mode, focus: outcome.focus, title: outcome.title) == .pace,
+              let wordsPerMinute = outcome.wordsPerMinute,
+              let paceDelta = outcome.paceDelta else { return nil }
+        let priorAverage = wordsPerMinute - paceDelta
+        return PaceCoaching.distanceFromBand(priorAverage)
+            - PaceCoaching.distanceFromBand(wordsPerMinute)
+    }
+}
+
 struct RecommendationResponseSummary: Equatable {
     let mode: PracticeMode
     let focus: String?
     let followedCount: Int
+    let measuredCount: Int
     let averageScoreDelta: Double?
-    let averageFillerDelta: Double
+    let averageFillerRateDelta: Double?
+    let averagePaceBandImprovement: Double?
     let assessment: RecommendationResponseAssessment
 }
 
@@ -9243,21 +9436,52 @@ enum RecommendationResponseAnalyzer {
         }
 
         return grouped.map { key, groupedOutcomes in
-            let averageFillerDelta = average(groupedOutcomes.map(\.fillerDelta))
-            let comparableScores = groupedOutcomes
+            let kind = RecommendationMetricFocus.kind(
+                mode: key.mode,
+                focus: key.focus,
+                title: groupedOutcomes.first?.title ?? ""
+            )
+            let provenanceOutcomes = groupedOutcomes.filter(\.hasComparableBaseline)
+            let measuredOutcomes = provenanceOutcomes.filter { outcome in
+                switch kind {
+                case .pace:
+                    return RecommendationMetricFocus.paceBandDistanceImprovement(outcome) != nil
+                case .filler:
+                    return outcome.fillerRateDelta != nil
+                case .general:
+                    return outcome.hasComparableScore == true || outcome.fillerRateDelta != nil
+                }
+            }
+            let comparableFillerRates = kind == .pace
+                ? []
+                : measuredOutcomes.compactMap(\.fillerRateDelta)
+            let averageFillerRateDelta = comparableFillerRates.isEmpty
+                ? nil
+                : average(comparableFillerRates)
+            let comparableScores = kind == .general ? measuredOutcomes
                 .filter { $0.hasComparableScore == true }
-                .map(\.scoreDelta)
+                .map(\.scoreDelta) : []
             let averageScoreDelta = comparableScores.isEmpty ? nil : average(comparableScores)
+            let paceImprovements = measuredOutcomes.compactMap(
+                RecommendationMetricFocus.paceBandDistanceImprovement
+            )
+            let averagePaceBandImprovement = paceImprovements.isEmpty
+                ? nil
+                : average(paceImprovements)
             return RecommendationResponseSummary(
                 mode: key.mode,
                 focus: key.focus,
                 followedCount: groupedOutcomes.count,
+                measuredCount: measuredOutcomes.count,
                 averageScoreDelta: averageScoreDelta,
-                averageFillerDelta: averageFillerDelta,
+                averageFillerRateDelta: averageFillerRateDelta,
+                averagePaceBandImprovement: averagePaceBandImprovement,
                 assessment: assessment(
-                    count: groupedOutcomes.count,
+                    kind: kind,
+                    count: measuredOutcomes.count,
                     averageScoreDelta: averageScoreDelta,
-                    averageFillerDelta: averageFillerDelta
+                    averageFillerRateDelta: averageFillerRateDelta,
+                    averagePaceBandImprovement: averagePaceBandImprovement
                 )
             )
         }
@@ -9273,7 +9497,12 @@ enum RecommendationResponseAnalyzer {
 
     static func promptLines(from outcomes: [RecommendationOutcome]) -> [String] {
         let goalLines = outcomes
-            .filter { $0.followed && $0.goal != nil && $0.goalFollowUpResult != nil }
+            .filter {
+                $0.followed
+                    && $0.hasComparableBaseline
+                    && $0.goal != nil
+                    && $0.goalFollowUpResult != nil
+            }
             .sorted { $0.completedAt > $1.completedAt }
             .prefix(2)
             .map { outcome in
@@ -9292,27 +9521,59 @@ enum RecommendationResponseAnalyzer {
 
         let responseLines = summarize(outcomes: outcomes).map { summary in
             let repNoun = summary.followedCount == 1 ? "rep" : "reps"
+            let evidenceClause = summary.measuredCount == summary.followedCount
+                ? ""
+                : " (\(summary.measuredCount) with a comparable baseline)"
             let focusClause = summary.focus.map { " for \($0)" } ?? ""
             var metrics: [String] = []
             if let scoreDelta = summary.averageScoreDelta {
                 metrics.append("score \(signed(scoreDelta))")
             }
-            metrics.append("fillers \(signed(summary.averageFillerDelta))")
-            return "- \(summary.mode.displayLabel)\(focusClause), followed for \(summary.followedCount) \(repNoun): \(metrics.joined(separator: ", ")) vs preceding reps; \(summary.assessment.coachingGuidance)."
+            if let fillerRateDelta = summary.averageFillerRateDelta {
+                metrics.append("filler rate \(signed(fillerRateDelta))/min")
+            }
+            if let paceImprovement = summary.averagePaceBandImprovement {
+                metrics = ["pace-to-band \(signed(paceImprovement)) WPM"]
+            }
+            if metrics.isEmpty {
+                metrics.append("no comparable metric yet")
+            }
+            return "- \(summary.mode.displayLabel)\(focusClause), followed for \(summary.followedCount) \(repNoun)\(evidenceClause): \(metrics.joined(separator: ", ")) vs comparable recent reps; \(summary.assessment.coachingGuidance)."
         }
         return Array(goalLines) + responseLines
     }
 
     private static func assessment(
+        kind: RecommendationMetricFocus.Kind,
         count: Int,
         averageScoreDelta: Double?,
-        averageFillerDelta: Double
+        averageFillerRateDelta: Double?,
+        averagePaceBandImprovement: Double?
     ) -> RecommendationResponseAssessment {
         guard count >= 2 else { return .forming }
         let scoreImproved = averageScoreDelta.map { $0 >= 0.5 } ?? false
         let scoreWorsened = averageScoreDelta.map { $0 <= -0.5 } ?? false
-        let fillersImproved = averageFillerDelta <= -0.75
-        let fillersWorsened = averageFillerDelta >= 0.75
+        let fillersImproved = averageFillerRateDelta.map { $0 <= -0.75 } ?? false
+        let fillersWorsened = averageFillerRateDelta.map { $0 >= 0.75 } ?? false
+
+        switch kind {
+        case .pace:
+            guard let averagePaceBandImprovement else { return .forming }
+            if averagePaceBandImprovement >= RecommendationAdaptationAnalyzer.paceSwing {
+                return .promising
+            }
+            if averagePaceBandImprovement <= -RecommendationAdaptationAnalyzer.paceSwing {
+                return .needsAdjustment
+            }
+            return .mixed
+        case .filler:
+            guard averageFillerRateDelta != nil else { return .forming }
+            if fillersImproved { return .promising }
+            if fillersWorsened { return .needsAdjustment }
+            return .mixed
+        case .general:
+            break
+        }
 
         if (scoreImproved || fillersImproved), !scoreWorsened, !fillersWorsened {
             return .promising
@@ -9457,6 +9718,7 @@ enum RecommendationAdaptationAnalyzer {
             .sorted { $0.completedAt > $1.completedAt }
             .prefix(recentWindowCap)
         let followedReps = window.count
+        guard window.contains(where: hasTargetMetric) else { return nil }
 
         // Movement gate — only reps that recorded MEANINGFUL movement count toward
         // the floor (the evaluatedCount discipline), so trivial filler jitter can
@@ -9539,40 +9801,67 @@ enum RecommendationAdaptationAnalyzer {
         return Resolved(verdict: make(.vary, .tentative), belowFloor: false)
     }
 
-    /// Focus-matched pace read (initiative: judge the intervention on the
-    /// metric it prescribed). Non-nil ONLY when the prescription is genuinely
-    /// about pace AND this outcome recorded reliable pace evidence — outcomes
-    /// persisted before the pace fields existed (nil) fall through to the
-    /// score/filler read byte-exactly. The band-distance delta (prior distance
-    /// minus current distance from 105–175) is polarity-correct for fast and
-    /// slow talkers: shrinking the distance is favorable.
-    private static func paceBandDistanceImprovement(_ outcome: RecommendationOutcome) -> Double? {
-        guard PaceCoaching.isPaceFocused(mode: outcome.mode, focus: outcome.focus, title: outcome.title),
-              let wordsPerMinute = outcome.wordsPerMinute,
-              let paceDelta = outcome.paceDelta else { return nil }
-        let priorAverage = wordsPerMinute - paceDelta
-        return PaceCoaching.distanceFromBand(priorAverage) - PaceCoaching.distanceFromBand(wordsPerMinute)
+    private static func hasMovement(_ outcome: RecommendationOutcome) -> Bool {
+        guard hasTargetMetric(outcome) else { return false }
+        let kind = RecommendationMetricFocus.kind(
+            mode: outcome.mode,
+            focus: outcome.focus,
+            title: outcome.title
+        )
+        switch kind {
+        case .pace:
+            return RecommendationMetricFocus.paceBandDistanceImprovement(outcome)
+                .map { abs($0) >= paceMovementFloor } == true
+        case .filler:
+            return outcome.fillerRateDelta.map { abs($0) >= fillerMovementFloor } == true
+        case .general:
+            return outcome.hasComparableScore == true
+                || outcome.fillerRateDelta.map { abs($0) >= fillerMovementFloor } == true
+        }
     }
 
-    private static func hasMovement(_ outcome: RecommendationOutcome) -> Bool {
-        if let improvement = paceBandDistanceImprovement(outcome) {
-            return abs(improvement) >= paceMovementFloor
+    private static func hasTargetMetric(_ outcome: RecommendationOutcome) -> Bool {
+        guard outcome.hasComparableBaseline else { return false }
+        switch RecommendationMetricFocus.kind(
+            mode: outcome.mode,
+            focus: outcome.focus,
+            title: outcome.title
+        ) {
+        case .pace:
+            return RecommendationMetricFocus.paceBandDistanceImprovement(outcome) != nil
+        case .filler:
+            return outcome.fillerRateDelta != nil
+        case .general:
+            return outcome.hasComparableScore == true || outcome.fillerRateDelta != nil
         }
-        return outcome.hasComparableScore == true || abs(outcome.fillerDelta) >= fillerMovementFloor
     }
 
     private static func read(of outcome: RecommendationOutcome) -> Read {
         // A pace-focused prescription with recorded pace evidence is judged on
         // pace — the metric it prescribed — never on the composite score.
-        if let improvement = paceBandDistanceImprovement(outcome) {
+        let kind = RecommendationMetricFocus.kind(
+            mode: outcome.mode,
+            focus: outcome.focus,
+            title: outcome.title
+        )
+        if kind == .pace {
+            guard let improvement = RecommendationMetricFocus.paceBandDistanceImprovement(outcome) else {
+                return .neutral
+            }
             if improvement >= paceSwing { return .favorable }
             if improvement <= -paceSwing { return .unfavorable }
             return .neutral
         }
+        if kind == .filler {
+            guard let fillerRateDelta = outcome.fillerRateDelta else { return .neutral }
+            if fillerRateDelta <= -fillerSwing { return .favorable }
+            if fillerRateDelta >= fillerSwing { return .unfavorable }
+            return .neutral
+        }
         let scoreFavorable = outcome.hasComparableScore == true && outcome.scoreDelta >= scoreSwing
         let scoreUnfavorable = outcome.hasComparableScore == true && outcome.scoreDelta <= -scoreSwing
-        let fillerFavorable = outcome.fillerDelta <= -fillerSwing   // negative filler delta = improvement
-        let fillerUnfavorable = outcome.fillerDelta >= fillerSwing
+        let fillerFavorable = outcome.fillerRateDelta.map { $0 <= -fillerSwing } ?? false
+        let fillerUnfavorable = outcome.fillerRateDelta.map { $0 >= fillerSwing } ?? false
         let favorable = scoreFavorable || fillerFavorable
         let unfavorable = scoreUnfavorable || fillerUnfavorable
         if favorable && !unfavorable { return .favorable }
@@ -9703,32 +9992,13 @@ final class RecommendationLearningStore: ObservableObject {
             completedMode: session.mode
         )
 
-        let relevantHistory = previousSessions.isEmpty ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id } : previousSessions
-        let priorScores = relevantHistory.compactMap(\.score)
-        let comparableScoreDelta: Double? = {
-            guard let score = session.score, !priorScores.isEmpty else { return nil }
-            let averageScore = Double(priorScores.reduce(0, +)) / Double(priorScores.count)
-            return Double(score) - averageScore
-        }()
-        let averageFillers = relevantHistory.isEmpty
-            ? Double(session.fillerWordCount)
-            : Double(relevantHistory.map(\.fillerWordCount).reduce(0, +)) / Double(relevantHistory.count)
-        let averageDuration = relevantHistory.isEmpty
-            ? session.duration
-            : relevantHistory.map(\.duration).reduce(0, +) / Double(relevantHistory.count)
-        // Pace evidence, mirroring comparableScoreDelta's honesty: recorded
-        // only when this rep AND the prior history both carry a reliable
-        // reading (sub-15s fragments read as wild wpm and are excluded).
-        let reliableWordsPerMinute: (PracticeSession) -> Double? = { rep in
-            guard rep.duration >= 15, rep.wordsPerMinute > 0 else { return nil }
-            return Double(rep.wordsPerMinute)
-        }
-        let priorPaces = relevantHistory.compactMap(reliableWordsPerMinute)
-        let sessionPace = reliableWordsPerMinute(session)
-        let comparablePaceDelta: Double? = {
-            guard let sessionPace, !priorPaces.isEmpty else { return nil }
-            return sessionPace - priorPaces.reduce(0, +) / Double(priorPaces.count)
-        }()
+        let history = previousSessions.isEmpty
+            ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id }
+            : previousSessions
+        let comparison = RecommendationComparisonEngine.baseline(
+            for: session,
+            previousSessions: history
+        )
 
         let outcome = RecommendationOutcome(
             id: UUID(),
@@ -9740,20 +10010,27 @@ final class RecommendationLearningStore: ObservableObject {
             sessionID: session.id,
             followed: followed,
             completedAt: Date(),
-            scoreDelta: comparableScoreDelta ?? 0,
-            hasComparableScore: comparableScoreDelta != nil,
-            fillerDelta: Double(session.fillerWordCount) - averageFillers,
-            durationDelta: session.duration - averageDuration,
-            wordsPerMinute: comparablePaceDelta != nil ? sessionPace : nil,
-            paceDelta: comparablePaceDelta,
+            scoreDelta: comparison.scoreDelta ?? 0,
+            hasComparableScore: comparison.scoreDelta != nil,
+            fillerDelta: comparison.rawFillerDelta ?? 0,
+            durationDelta: comparison.durationDelta ?? 0,
+            fillerRateDelta: comparison.fillerRateDelta,
+            comparisonSessionCount: comparison.sessionCount,
+            wordsPerMinute: comparison.wordsPerMinute,
+            paceDelta: comparison.paceDelta,
             goal: pendingExposure.goal,
             targetDimensionID: pendingExposure.targetDimensionID,
             sourceSessionID: pendingExposure.sourceSessionID,
             goalFollowUpResult: Self.goalFollowUpResult(
                 followed: followed,
-                comparableScoreDelta: comparableScoreDelta,
-                fillerDelta: Double(session.fillerWordCount) - averageFillers,
-                comparablePaceDelta: comparablePaceDelta
+                comparableScoreDelta: comparison.scoreDelta,
+                fillerRateDelta: comparison.fillerRateDelta,
+                comparablePaceDelta: comparison.paceDelta,
+                comparisonSessionCount: comparison.sessionCount,
+                mode: pendingExposure.mode,
+                title: pendingExposure.title,
+                focus: pendingExposure.focus,
+                wordsPerMinute: comparison.wordsPerMinute
             )
         )
 
@@ -9775,19 +10052,47 @@ final class RecommendationLearningStore: ObservableObject {
     nonisolated static func goalFollowUpResult(
         followed: Bool,
         comparableScoreDelta: Double?,
-        fillerDelta: Double,
-        comparablePaceDelta: Double?
+        fillerRateDelta: Double?,
+        comparablePaceDelta: Double?,
+        comparisonSessionCount: Int,
+        mode: PracticeMode? = nil,
+        title: String = "",
+        focus: String? = nil,
+        wordsPerMinute: Double? = nil
     ) -> GoalFollowUpResult? {
-        guard followed else { return nil }
-        // Pace is deliberately excluded here: a raw positive/negative WPM
-        // delta has no stable polarity without the prescription's target band.
-        // RecommendationAdaptationAnalyzer remains the owner of that
-        // focus-aware comparison.
-        _ = comparablePaceDelta
-        let movements = [
-            comparableScoreDelta.map { $0 >= 0.5 ? 1 : ($0 <= -0.5 ? -1 : 0) },
-            abs(fillerDelta) >= 0.75 ? (fillerDelta < 0 ? 1 : -1) : nil
-        ].compactMap { $0 }
+        guard followed,
+              comparisonSessionCount >= RecommendationComparisonEngine.minimumComparisonSamples else { return nil }
+        let movements: [Int]
+        let metricKind = mode.map {
+            RecommendationMetricFocus.kind(mode: $0, focus: focus, title: title)
+        } ?? .general
+        if metricKind == .pace {
+            guard let wordsPerMinute, let comparablePaceDelta else {
+                return .needsMoreEvidence
+            }
+            let priorAverage = wordsPerMinute - comparablePaceDelta
+            let improvement = PaceCoaching.distanceFromBand(priorAverage)
+                - PaceCoaching.distanceFromBand(wordsPerMinute)
+            movements = [
+                improvement >= RecommendationAdaptationAnalyzer.paceSwing
+                    ? 1
+                    : (improvement <= -RecommendationAdaptationAnalyzer.paceSwing ? -1 : 0)
+            ]
+        } else if metricKind == .filler {
+            guard let fillerRateDelta else { return .needsMoreEvidence }
+            movements = [
+                abs(fillerRateDelta) >= 0.75
+                    ? (fillerRateDelta < 0 ? 1 : -1)
+                    : 0
+            ]
+        } else {
+            movements = [
+                comparableScoreDelta.map { $0 >= 0.5 ? 1 : ($0 <= -0.5 ? -1 : 0) },
+                fillerRateDelta.flatMap { delta in
+                    abs(delta) >= 0.75 ? (delta < 0 ? 1 : -1) : nil
+                }
+            ].compactMap { $0 }
+        }
         guard !movements.isEmpty else { return .needsMoreEvidence }
         let positive = movements.contains(1)
         let negative = movements.contains(-1)

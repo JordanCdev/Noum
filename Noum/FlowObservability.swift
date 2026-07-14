@@ -589,7 +589,12 @@ struct TransformationKPIReport: Equatable {
         func improvementRate(days: Int) -> Double? {
             guard let cutoff = calendar.date(byAdding: .day, value: -days, to: now) else { return nil }
             let reads = outcomes
-                .filter { $0.completedAt >= cutoff }
+                .filter {
+                    $0.completedAt >= cutoff
+                        && $0.hasComparableBaseline
+                        && $0.followed
+                        && $0.goal != nil
+                }
                 .compactMap(\.goalFollowUpResult)
                 .filter { $0 != .needsMoreEvidence }
             guard !reads.isEmpty else { return nil }

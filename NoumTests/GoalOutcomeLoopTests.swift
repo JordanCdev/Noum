@@ -71,7 +71,8 @@ struct GoalOutcomeLoopTests {
                 sessionID: UUID(), followed: true,
                 completedAt: Date(timeIntervalSince1970: TimeInterval(index)),
                 scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
-                durationDelta: 0, goal: .concise, targetDimensionID: "clean_close",
+                durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
+                goal: .concise, targetDimensionID: "clean_close",
                 goalFollowUpResult: .earlyImprovement
             )
         }
@@ -118,7 +119,8 @@ struct GoalOutcomeLoopTests {
                     focus: "Clean close", target: "End with the ask", mode: .timed,
                     sessionID: UUID(), followed: true, completedAt: Date(),
                     scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
-                    durationDelta: 0, goal: .concise, targetDimensionID: "clean_close",
+                    durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
+                    goal: .concise, targetDimensionID: "clean_close",
                     goalFollowUpResult: .earlyImprovement
                 ),
                 RecommendationOutcome(
@@ -126,7 +128,8 @@ struct GoalOutcomeLoopTests {
                     focus: "Clean close", target: "End with the ask", mode: .timed,
                     sessionID: UUID(), followed: true, completedAt: Date(timeIntervalSince1970: 1),
                     scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
-                    durationDelta: 0, goal: .concise, targetDimensionID: "clean_close",
+                    durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
+                    goal: .concise, targetDimensionID: "clean_close",
                     goalFollowUpResult: .earlyImprovement
                 ),
             ]
@@ -155,7 +158,8 @@ struct GoalOutcomeLoopTests {
                     focus: "Clean close", target: "End with the ask", mode: .timed,
                     sessionID: UUID(), followed: true, completedAt: Date(),
                     scoreDelta: 1, hasComparableScore: true, fillerDelta: 1,
-                    durationDelta: 0, goal: .concise, targetDimensionID: "clean_close",
+                    durationDelta: 0, fillerRateDelta: 1, comparisonSessionCount: 3,
+                    goal: .concise, targetDimensionID: "clean_close",
                     goalFollowUpResult: .mixed
                 ),
             ]
@@ -165,14 +169,32 @@ struct GoalOutcomeLoopTests {
 
     @Test func followUpClassificationStaysSoftOnThinOrConflictingEvidence() {
         #expect(RecommendationLearningStore.goalFollowUpResult(
-            followed: true, comparableScoreDelta: nil, fillerDelta: 0, comparablePaceDelta: nil
+            followed: true, comparableScoreDelta: nil, fillerRateDelta: 0,
+            comparablePaceDelta: nil, comparisonSessionCount: 3
         ) == .needsMoreEvidence)
         #expect(RecommendationLearningStore.goalFollowUpResult(
-            followed: true, comparableScoreDelta: 1, fillerDelta: 1, comparablePaceDelta: nil
+            followed: true, comparableScoreDelta: 1, fillerRateDelta: 1,
+            comparablePaceDelta: nil, comparisonSessionCount: 3
         ) == .mixed)
         #expect(RecommendationLearningStore.goalFollowUpResult(
-            followed: false, comparableScoreDelta: 1, fillerDelta: -2, comparablePaceDelta: nil
+            followed: false, comparableScoreDelta: 1, fillerRateDelta: -2,
+            comparablePaceDelta: nil, comparisonSessionCount: 3
         ) == nil)
+        #expect(RecommendationLearningStore.goalFollowUpResult(
+            followed: true, comparableScoreDelta: 1, fillerRateDelta: -2,
+            comparablePaceDelta: nil, comparisonSessionCount: 1
+        ) == nil)
+        #expect(RecommendationLearningStore.goalFollowUpResult(
+            followed: true, comparableScoreDelta: 2, fillerRateDelta: 1.2,
+            comparablePaceDelta: nil, comparisonSessionCount: 3,
+            mode: .ahCounter, title: "Filler control", focus: "filler control"
+        ) == .mixed)
+        #expect(RecommendationLearningStore.goalFollowUpResult(
+            followed: true, comparableScoreDelta: -2, fillerRateDelta: nil,
+            comparablePaceDelta: -15, comparisonSessionCount: 3,
+            mode: .timed, title: "Calm the pace", focus: "controlled pacing",
+            wordsPerMinute: 180
+        ) == .earlyImprovement)
     }
 
     @Test func recommendationOutcomeRequiresExplicitAcceptanceAndMatchingMode() {
@@ -218,6 +240,211 @@ struct GoalOutcomeLoopTests {
         #expect(decoded.goal == nil)
         #expect(decoded.targetDimensionID == nil)
         #expect(decoded.goalFollowUpResult == nil)
+        #expect(decoded.fillerRateDelta == nil)
+        #expect(decoded.comparisonSessionCount == nil)
+        #expect(decoded.comparisonSchemaVersion == nil)
+        #expect(!decoded.hasComparableBaseline)
+    }
+
+    @Test func legacyGoalFollowUpsCannotPromoteMovementWithoutComparableProvenance() {
+        let legacy = (0..<2).map { index in
+            RecommendationOutcome(
+                id: UUID(), fingerprint: "legacy-\(index)", title: "Old prescription",
+                focus: "Clean close", target: nil, mode: .timed,
+                sessionID: UUID(), followed: true,
+                completedAt: Date(timeIntervalSince1970: Double(index)),
+                scoreDelta: 2, hasComparableScore: true, fillerDelta: -3,
+                durationDelta: 10, goal: .concise,
+                targetDimensionID: "clean_close",
+                goalFollowUpResult: .earlyImprovement
+            )
+        }
+        let read = GoalOutcomeRead.make(
+            style: .concise,
+            assessment: makeAssessment(
+                confidence: 0.82,
+                evidence: ["The close landed.", "The ask was explicit."]
+            ),
+            outcomes: legacy
+        )
+
+        #expect(read.movement != .improving)
+        #expect(read.latestFollowUpResult == nil)
+    }
+
+    @Test func comparisonSchemaVersionFailsClosedForMissingOrUnknownPayloads() throws {
+        func decode(versionField: String) throws -> RecommendationOutcome {
+            let json = """
+            {
+              "id":"00000000-0000-0000-0000-000000000101",
+              "fingerprint":"schema",
+              "title":"Schema test",
+              "mode":"timed",
+              "sessionID":"00000000-0000-0000-0000-000000000102",
+              "followed":true,
+              "completedAt":0,
+              "scoreDelta":1,
+              "hasComparableScore":true,
+              "fillerDelta":-1,
+              "fillerRateDelta":-1,
+              "durationDelta":0,
+              "comparisonSessionCount":3
+              \(versionField)
+            }
+            """.data(using: .utf8)!
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .secondsSince1970
+            return try decoder.decode(RecommendationOutcome.self, from: json)
+        }
+
+        #expect(!(try decode(versionField: "")).hasComparableBaseline)
+        #expect(!(try decode(versionField: ", \"comparisonSchemaVersion\":999")).hasComparableBaseline)
+        #expect((try decode(versionField: ", \"comparisonSchemaVersion\":1")).hasComparableBaseline)
+    }
+
+    @Test func comparableBaselineNormalizesFillerExposureInsteadOfRawCounts() {
+        let current = comparisonSession(fillers: 2, duration: 60)
+        let history = [
+            comparisonSession(dayOffset: -1, fillers: 3, duration: 120),
+            comparisonSession(dayOffset: -2, fillers: 3, duration: 120),
+        ]
+
+        let result = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: history
+        )
+
+        #expect(result.sessionCount == 2)
+        #expect(result.rawFillerDelta == -1)
+        #expect(result.fillerRateDelta == 0.5)
+    }
+
+    @Test func comparableBaselineCanReverseRawRegressionIntoRateImprovement() {
+        let current = comparisonSession(fillers: 3, duration: 120)
+        let history = [
+            comparisonSession(dayOffset: -1, fillers: 2, duration: 60),
+            comparisonSession(dayOffset: -2, fillers: 2, duration: 60),
+        ]
+        let result = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: history
+        )
+
+        #expect(result.rawFillerDelta == 1)
+        #expect(result.fillerRateDelta == -0.5)
+    }
+
+    @Test func comparableBaselineExcludesDifferentDemandAndLowQualitySessions() {
+        let current = comparisonSession(fillers: 2, duration: 60)
+        let validOne = comparisonSession(dayOffset: -1, fillers: 1, duration: 60)
+        let validTwo = comparisonSession(dayOffset: -2, fillers: 1, duration: 60)
+        let differentMode = comparisonSession(dayOffset: -3, fillers: 9, duration: 60, mode: .ahCounter)
+        let differentPressure = comparisonSession(dayOffset: -4, fillers: 9, duration: 60, pressure: .high)
+        let differentRatedState = comparisonSession(dayOffset: -5, fillers: 9, duration: 60, isRated: true)
+        let tooLong = comparisonSession(dayOffset: -6, fillers: 9, duration: 180)
+        let lowConfidence = comparisonSession(dayOffset: -7, fillers: 9, duration: 60, confidence: 0.2)
+
+        let result = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [
+                validOne, validTwo, differentMode, differentPressure,
+                differentRatedState, tooLong, lowConfidence,
+            ]
+        )
+
+        #expect(result.sessionIDs == [validOne.id, validTwo.id])
+        #expect(result.fillerRateDelta == 1)
+    }
+
+    @Test func comparableBaselineRequiresTwoPriorsPerMetric() {
+        let current = comparisonSession(fillers: 2, duration: 60, score: 8)
+        let first = comparisonSession(dayOffset: -1, fillers: 1, duration: 60, score: 7)
+        let thin = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [first]
+        )
+        #expect(thin.sessionCount == 1)
+        #expect(thin.scoreDelta == nil)
+        #expect(thin.fillerRateDelta == nil)
+        #expect(thin.paceDelta == nil)
+
+        let second = comparisonSession(dayOffset: -2, fillers: 1, duration: 60, score: 7)
+        let measured = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [first, second]
+        )
+        #expect(measured.scoreDelta == 1)
+        #expect(measured.fillerRateDelta == 1)
+        #expect(measured.paceDelta != nil)
+    }
+
+    @Test func comparableBaselineRejectsDuplicateIDsAndMismatchedMetricEpochs() {
+        let current = comparisonSession(fillers: 2, duration: 60)
+        let first = comparisonSession(dayOffset: -1, fillers: 1, duration: 60)
+        let second = comparisonSession(dayOffset: -2, fillers: 1, duration: 60)
+        let legacy = comparisonSession(
+            dayOffset: -3, fillers: 99, duration: 60,
+            comparisonMetricSchemaVersion: nil
+        )
+
+        let measured = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [first, first, legacy, second]
+        )
+        #expect(measured.sessionIDs == [first.id, second.id])
+
+        let inflated = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [first, first]
+        )
+        #expect(inflated.sessionCount == 1)
+        #expect(inflated.scoreDelta == nil)
+        #expect(inflated.fillerRateDelta == nil)
+
+        let legacyCurrent = comparisonSession(
+            fillers: 2, duration: 60, comparisonMetricSchemaVersion: nil
+        )
+        #expect(RecommendationComparisonEngine.baseline(
+            for: legacyCurrent, previousSessions: [first, second]
+        ).sessionCount == 0)
+    }
+
+    @Test func comparableBaselineUsesFiveRecentSessionsInsideTwentyEightDays() {
+        let current = comparisonSession(fillers: 2, duration: 60)
+        let recent = (1...7).map { day in
+            comparisonSession(dayOffset: -day, fillers: day, duration: 60)
+        }
+        let stale = comparisonSession(dayOffset: -29, fillers: 99, duration: 60)
+        let result = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: Array(recent.reversed()) + [stale]
+        )
+
+        #expect(result.sessionIDs == Array(recent.prefix(5).map(\.id)))
+        #expect(!result.sessionIDs.contains(stale.id))
+    }
+
+    @Test func comparableIMBaselineRequiresMatchingScenarioAndTone() {
+        let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .concise)
+        let current = comparisonSession(
+            fillers: 2, duration: 120, mode: .imConversation, imSetup: setup
+        )
+        let matchOne = comparisonSession(
+            dayOffset: -1, fillers: 1, duration: 120, mode: .imConversation, imSetup: setup
+        )
+        let matchTwo = comparisonSession(
+            dayOffset: -2, fillers: 1, duration: 120, mode: .imConversation, imSetup: setup
+        )
+        let mismatch = comparisonSession(
+            dayOffset: -3, fillers: 8, duration: 120, mode: .imConversation,
+            imSetup: IMConversationSetup(scenario: .networking, targetTone: .warm)
+        )
+        let result = RecommendationComparisonEngine.baseline(
+            for: current,
+            previousSessions: [mismatch, matchTwo, matchOne]
+        )
+
+        #expect(result.sessionIDs == [matchOne.id, matchTwo.id])
     }
 
     @Test func rewriteEligibilitySuppressesWeakOrSensitiveEvidence() {
@@ -296,7 +523,8 @@ struct GoalOutcomeLoopTests {
             focus: "Clean close", target: "End with the ask", mode: .timed,
             sessionID: UUID(), followed: true, completedAt: Date(),
             scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
-            durationDelta: 0, goal: .executive, targetDimensionID: "clean_close",
+            durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
+            goal: .executive, targetDimensionID: "clean_close",
             goalFollowUpResult: .earlyImprovement
         )
         let lines = RecommendationResponseAnalyzer.promptLines(from: [outcome])
@@ -319,6 +547,42 @@ struct GoalOutcomeLoopTests {
             missingEvidence: [],
             nextProofTest: "Repeat the answer and finish with the ask.",
             responseMode: .expandable
+        )
+    }
+
+    private func comparisonSession(
+        dayOffset: Int = 0,
+        fillers: Int,
+        duration: TimeInterval,
+        mode: PracticeMode = .timed,
+        pressure: PressureLevel = .standard,
+        isRated: Bool = false,
+        score: Int? = 7,
+        confidence: Double? = 0.9,
+        imSetup: IMConversationSetup? = nil,
+        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion
+    ) -> PracticeSession {
+        let details = imSetup.map {
+            IMConversationDetails(
+                setup: $0,
+                turns: [],
+                actualTone: nil,
+                finalState: nil,
+                outcome: nil
+            )
+        }
+        return PracticeSession(
+            transcript: "The recommendation is clear and the supporting evidence gives the listener one practical decision before the explanation moves into the next useful point.",
+            fillerWordCount: fillers,
+            duration: duration,
+            date: Date(timeIntervalSince1970: 2_000_000 + Double(dayOffset) * 86_400),
+            mode: mode,
+            imConversationDetails: details,
+            score: score,
+            transcriptConfidence: confidence,
+            pressureLevel: pressure,
+            isRated: isRated,
+            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion
         )
     }
 

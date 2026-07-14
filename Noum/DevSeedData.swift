@@ -738,6 +738,9 @@ enum DevSeedData {
 
         let scopedSessions = newest.filter { $0.mode == mode }
         let fallbackSessions = scopedSessions.isEmpty ? newest : scopedSessions
+        let paceEvidence: [(wordsPerMinute: Double, delta: Double)] = profile == .pressureVulnerable
+            ? [(190, 12), (188, 10), (183, 7), (176, -2)]
+            : []
         return Array(fallbackSessions.prefix(scoreDeltas.count)).enumerated().map { index, session in
             RecommendationOutcome(
                 id: UUID(),
@@ -753,13 +756,22 @@ enum DevSeedData {
                 hasComparableScore: true,
                 fillerDelta: fillerDeltas[index],
                 durationDelta: 4,
+                fillerRateDelta: fillerDeltas[index],
+                comparisonSessionCount: 3,
+                wordsPerMinute: paceEvidence.indices.contains(index) ? paceEvidence[index].wordsPerMinute : nil,
+                paceDelta: paceEvidence.indices.contains(index) ? paceEvidence[index].delta : nil,
                 goal: goal,
                 targetDimensionID: targetDimensionID,
                 goalFollowUpResult: RecommendationLearningStore.goalFollowUpResult(
                     followed: session.mode == mode,
                     comparableScoreDelta: scoreDeltas[index],
-                    fillerDelta: fillerDeltas[index],
-                    comparablePaceDelta: nil
+                    fillerRateDelta: fillerDeltas[index],
+                    comparablePaceDelta: paceEvidence.indices.contains(index) ? paceEvidence[index].delta : nil,
+                    comparisonSessionCount: 3,
+                    mode: mode,
+                    title: title,
+                    focus: focus,
+                    wordsPerMinute: paceEvidence.indices.contains(index) ? paceEvidence[index].wordsPerMinute : nil
                 )
             )
         }

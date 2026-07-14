@@ -83,6 +83,7 @@ The app does **not** use Firebase Analytics, Crashlytics, or any third-party ana
 | Practice Mode | "timed" / "suddenDeath" / "imConversation" | Mode selection | Categorize sessions | Automatic | Same as transcript | Synced with session | Indefinite | With session | None |
 | Practice Prompt | "Tell me about a time you failed" | Topic selection | Context for evaluation | Automatic | Same | AI providers (for evaluation) | Indefinite | With session | Low |
 | Score (1-10) | 7 | PracticeEvaluator (on-device) | Coaching metric | Automatic | Same | Synced with session | Indefinite | With session | Low |
+| Comparison Metric Schema Version | 1 | Practice-session finalization | Prevent unlike evaluator epochs from being compared | Automatic | Same | Synced with session | Indefinite | With session | None |
 | AI Coach Feedback | {strengths, keyImprovement, suggestedDrill, revisedOpening} | AI providers | Deeper coaching | Optional (user-initiated) | Same | AI providers generate, stored locally + synced | Indefinite | With session | Medium |
 | Session Headline | "Strong opening, watch the filler words" | On-device evaluation | Quick summary | Automatic | Same | Local + synced | Indefinite | With session | Low |
 | XP Earned | 35 | Gamification system | Progress tracking | Automatic | UserDefaults (`profileXP.{accountID}`) + synced | Backend/Firebase | Indefinite | On account deletion | None |
@@ -151,7 +152,7 @@ The app does **not** use Firebase Analytics, Crashlytics, or any third-party ana
 | XP (Experience Points) | 2450 | Post-session award | Progress/rank tracking | Automatic | UserDefaults (`profileXP.{accountID}`) + synced | Backend/Firebase | Indefinite | On account deletion | None |
 | Challenges | [{title, goal, current, completed}] | ChallengesManager | Engagement | Automatic | UserDefaults (`NoumChallenges`) | Local only | Indefinite | Manual/auto-cycle | None |
 | Recommendation Exposures | {fingerprint, title, tappedAt} | ContentView | Improve recommendations | Automatic | UserDefaults (`recommendation.pending.{accountID}`) + synced | Backend/Firebase | Indefinite | On account deletion | Low |
-| Recommendation Outcomes | {followed, scoreDelta, fillerDelta} | Post-session | Learn from user behavior | Automatic | UserDefaults (`recommendation.outcomes.{accountID}`) + synced | Backend/Firebase | Indefinite | On account deletion | Low |
+| Recommendation Outcomes | {followed, scoreDelta, fillerDelta, fillerRateDelta, durationDelta, paceDelta, comparisonSessionCount, comparisonSchemaVersion} | Post-session | Learn from accepted practice while retaining bounded comparison provenance | Automatic | UserDefaults (`recommendation.outcomes.{accountID}`) + synced | Backend/Firebase | Indefinite | On account deletion | Low |
 
 ### 2.12 Clubs Data
 
