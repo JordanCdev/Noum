@@ -1,26 +1,46 @@
 #!/usr/bin/env node
 
-import {mkdir, writeFile} from "node:fs/promises";
+import {createHash} from "node:crypto";
+import {execFile} from "node:child_process";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import {createRequire} from "node:module";
 import {resolve} from "node:path";
+import {promisify} from "node:util";
 
+import {
+  applyRecoverableCutover,
+  canonicalJSONStringify,
+  createBackupEnvelope,
+  decodeFirestoreValue,
+  encodeFirestoreValue,
+  rollbackRecoverableCutover,
+  SOCIAL_LIMITS,
+  verifyBackupEnvelope,
+} from "./social-cutover-migration.mjs";
 import {
   createGcloudUserAuthClient,
   parseSocialCutoverOptions,
   SocialCutoverCredentialMode,
 } from "./social-cutover-credentials.mjs";
 
-const requireFromFunctions = createRequire(
-  new URL("../functions/package.json", import.meta.url)
+const rawArguments = process.argv.slice(2);
+const extraExactFlags = new Set(["--rollback"]);
+const extraValuePrefixes = [
+  "--backup-file=",
+  "--backup-digest=",
+  "--run-id=",
+];
+const legacyArguments = rawArguments.filter((argument) =>
+  !extraExactFlags.has(argument) &&
+  !extraValuePrefixes.some((prefix) => argument.startsWith(prefix))
 );
-const {applicationDefault, initializeApp} = requireFromFunctions(
-  "firebase-admin/app"
-);
-const {FieldValue, Firestore, getFirestore} = requireFromFunctions(
-  "firebase-admin/firestore"
-);
-
-const options = parseSocialCutoverOptions(process.argv.slice(2));
+const options = parseSocialCutoverOptions(legacyArguments);
 
 if (options.help) {
   process.stdout.write(`
@@ -29,41 +49,107 @@ Usage:
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
     --gcloud-user-credentials
   node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
-    --apply --confirm-project=PROJECT_ID
-  node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
     --apply --confirm-project=PROJECT_ID --purge-legacy-social \\
-    --approve-purge=DELETE_LEGACY_SOCIAL
+    --approve-purge=DELETE_LEGACY_SOCIAL --run-id=RUN_ID \\
+    --backup-file=PATH --backup-digest=SHA256
+  node scripts/migrate-social-reference-cutover.mjs --project=PROJECT_ID \\
+    --apply --rollback --confirm-project=PROJECT_ID --run-id=RUN_ID \\
+    --backup-file=PATH --backup-digest=SHA256
 
-Default mode is remote-read-only. Every run writes an ignored local JSON
-backup. --apply backfills exact manifests and writes the global cutover marker
-only after all writes succeed. Existing client-authored profiles or league rows
-make apply fail closed unless both explicit legacy-social purge flags are given.
---gcloud-user-credentials is an opt-in, noninteractive read-only inventory mode.
-It refuses --apply and every purge option. Application-default credentials are
-the only credentials eligible for remote mutation.
+Default mode is remote-read-only. It inventories bounded social data and every
+users/{uid}/profile/main document, validates the exact current private-profile
+contract, and writes a mode-0600 project/source-bound backup. It performs zero
+remote writes.
+
+Apply requires that reviewed backup, its canonical SHA-256 digest, a stable run
+ID, exact project confirmation, and the legacy-social purge approval. It writes
+a non-complete global journal before any mutation, copies each legacy public
+profile and league row into server-only quarantine in the same transaction that
+deletes the source, verifies the exact final inventory, and only then writes the
+complete marker. Reissuing the same run and digest resumes safely. A different
+run or digest is refused.
+
+Rollback is allowed only before completion. It restores exact source documents
+and manifests, verifies the restored inventory, removes quarantine, and deletes
+the non-complete journal last.
+
+--gcloud-user-credentials remains read-only. Application-default credentials
+are the only credentials eligible for apply or rollback.
 `);
   process.exit(0);
 }
 
+function optionValue(prefix) {
+  const matches = rawArguments.filter((argument) =>
+    argument.startsWith(`${prefix}=`)
+  );
+  if (matches.length > 1) throw new Error(`${prefix} may be passed only once.`);
+  return matches[0]?.slice(prefix.length + 1);
+}
+
+const rollback = rawArguments.includes("--rollback");
+const backupFile = optionValue("--backup-file");
+const backupDigest = optionValue("--backup-digest");
+const runID = optionValue("--run-id");
+if (rollback && !options.apply) throw new Error("Rollback requires --apply.");
+if (!options.apply && (rollback || backupFile || backupDigest || runID)) {
+  throw new Error("Backup, digest, run ID, and rollback flags are mutation-only.");
+}
+if (options.apply && (!backupFile || !backupDigest || !runID)) {
+  throw new Error("Apply requires --backup-file, --backup-digest, and --run-id.");
+}
+
+const execFilePromise = promisify(execFile);
+async function currentSourceBinding() {
+  const {stdout: trackedStatus} = await execFilePromise(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=no"],
+    {cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 10_000}
+  );
+  if (trackedStatus.trim().length > 0) {
+    throw new Error("Social cutover requires a clean tracked source checkout.");
+  }
+  const {stdout} = await execFilePromise(
+    "git",
+    ["rev-parse", "HEAD"],
+    {cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 10_000}
+  );
+  const repositoryCommit = stdout.trim();
+  if (!/^[a-f0-9]{40}$/.test(repositoryCommit)) {
+    throw new Error("Unable to bind the backup to a Git commit.");
+  }
+  const implementationFiles = [
+    new URL("./migrate-social-reference-cutover.mjs", import.meta.url),
+    new URL("./social-cutover-migration.mjs", import.meta.url),
+    new URL("./social-cutover-credentials.mjs", import.meta.url),
+  ];
+  const hash = createHash("sha256");
+  for (const file of implementationFiles) {
+    hash.update(file.pathname.split("/").at(-1));
+    hash.update("\0");
+    hash.update(await readFile(file));
+    hash.update("\0");
+  }
+  return {
+    repositoryCommit,
+    implementationSHA256: hash.digest("hex"),
+  };
+}
+
 const {projectID, apply, purgeLegacySocial, credentialMode} = options;
-
-const GLOBAL_LIMITS = {
-  profiles: 1_000,
-  memberships: 1_000,
-  challenges: 1_000,
-  friendLinks: 1_000,
-  manifests: 1_000,
-};
-const ACCOUNT_LIMITS = {
-  leagueMembershipPaths: 16,
-  challengeIDs: 100,
-  friendAccountIDs: 200,
-};
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const LEAGUE_PATH_PATTERN =
-  /^leagues\/(bronze|silver|gold|platinum|diamond)_\d{4}-W\d{2}\/members\/[^/]+$/;
-
+const requireFromFunctions = createRequire(
+  new URL("../functions/package.json", import.meta.url)
+);
+const {applicationDefault, initializeApp} = requireFromFunctions(
+  "firebase-admin/app"
+);
+const {
+  FieldValue,
+  Firestore,
+  GeoPoint,
+  Timestamp,
+  getFirestore,
+} = requireFromFunctions("firebase-admin/firestore");
 let firestore;
 if (credentialMode === SocialCutoverCredentialMode.gcloudUser) {
   const authClient = createGcloudUserAuthClient({projectID});
@@ -81,258 +167,195 @@ async function boundedSnapshot(query, label, limit) {
   return snapshot;
 }
 
-const [profiles, memberships, challenges, friendLinks, existingManifests,
-  existingCutover] =
-  await Promise.all([
+const documents = (snapshot) => snapshot.docs.map((snapshotDocument) => ({
+  path: snapshotDocument.ref.path,
+  data: encodeFirestoreValue(snapshotDocument.data()),
+}));
+
+async function readRemoteInventory() {
+  const [
+    profiles,
+    memberships,
+    privateProfiles,
+    challenges,
+    friendLinks,
+    manifests,
+    cutover,
+  ] = await Promise.all([
     boundedSnapshot(
       firestore.collection("profiles_public"),
       "profiles_public",
-      GLOBAL_LIMITS.profiles
+      SOCIAL_LIMITS.profiles
     ),
     boundedSnapshot(
       firestore.collectionGroup("members"),
       "league memberships",
-      GLOBAL_LIMITS.memberships
+      SOCIAL_LIMITS.memberships
+    ),
+    boundedSnapshot(
+      firestore.collectionGroup("profile"),
+      "private profiles",
+      SOCIAL_LIMITS.privateProfiles
     ),
     boundedSnapshot(
       firestore.collection("challenges"),
       "challenges",
-      GLOBAL_LIMITS.challenges
+      SOCIAL_LIMITS.challenges
     ),
     boundedSnapshot(
       firestore.collectionGroup("friends"),
       "friend links",
-      GLOBAL_LIMITS.friendLinks
+      SOCIAL_LIMITS.friendLinks
     ),
     boundedSnapshot(
       firestore.collection("_socialReferences"),
       "existing social manifests",
-      GLOBAL_LIMITS.manifests
+      SOCIAL_LIMITS.manifests
     ),
     firestore.collection("_socialReferenceCutover").doc("current").get(),
   ]);
-
-if (apply && existingCutover.exists) {
-  throw new Error(
-    "Apply refused: the social reference cutover already exists. " +
-    "This migration is one-time only."
-  );
+  return {
+    profiles: documents(profiles),
+    leagueMemberships: documents(memberships),
+    privateProfiles: documents(privateProfiles),
+    challenges: documents(challenges),
+    friendLinks: documents(friendLinks),
+    existingManifests: documents(manifests),
+    existingCutover: cutover.exists ? {
+      path: cutover.ref.path,
+      data: encodeFirestoreValue(cutover.data()),
+    } : null,
+  };
 }
 
-const manifests = new Map();
-function manifestFor(accountID) {
-  if (typeof accountID !== "string" || accountID.length < 1 ||
-      accountID.length > 128 || accountID.includes("/")) {
-    throw new Error("Inventory contains an invalid account ID.");
-  }
-  let manifest = manifests.get(accountID);
-  if (!manifest) {
-    manifest = {
-      leagueMembershipPaths: new Set(),
-      challengeIDs: new Set(),
-      friendAccountIDs: new Set(),
-    };
-    manifests.set(accountID, manifest);
-  }
-  return manifest;
-}
-
-for (const profile of profiles.docs) manifestFor(profile.id);
-
-if (apply && !purgeLegacySocial &&
-    (profiles.size > 0 || memberships.size > 0)) {
-  throw new Error(
-    "Apply refused: legacy client-authored profiles or league rows exist. " +
-    "Review the backup, obtain explicit approval, and use " +
-    "--purge-legacy-social with its confirmation token."
-  );
-}
-
-for (const document of existingManifests.docs) {
-  const accountID = document.id;
-  const data = document.data();
-  const manifest = manifestFor(accountID);
-  for (const field of Object.keys(ACCOUNT_LIMITS)) {
-    if (!Array.isArray(data[field])) {
-      throw new Error(`Existing manifest ${accountID} has invalid ${field}.`);
-    }
-  }
-  if (!purgeLegacySocial) {
-    for (const path of data.leagueMembershipPaths) {
-      manifest.leagueMembershipPaths.add(path);
-    }
-  }
-  for (const id of data.challengeIDs) {
-    if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
-      throw new Error(`Existing manifest ${accountID} has an invalid challenge.`);
-    }
-    manifest.challengeIDs.add(id.toUpperCase());
-  }
-  for (const id of data.friendAccountIDs ?? []) manifest.friendAccountIDs.add(id);
-}
-
-const leagueDocuments = memberships.docs.filter((document) => {
-  const parts = document.ref.path.split("/");
-  return parts.length === 4 && parts[0] === "leagues" &&
-    parts[2] === "members";
-});
-if (leagueDocuments.length !== memberships.size) {
-  throw new Error("A non-league collectionGroup('members') document was found.");
-}
-for (const document of leagueDocuments) {
-  const accountID = document.id;
-  const dataAccountID = document.get("accountID");
-  if (dataAccountID !== accountID) {
-    throw new Error(`Membership account mismatch at ${document.ref.path}.`);
-  }
-  if (!LEAGUE_PATH_PATTERN.test(document.ref.path)) {
-    throw new Error(`Membership path is invalid at ${document.ref.path}.`);
-  }
-  if (!purgeLegacySocial) {
-    manifestFor(accountID).leagueMembershipPaths.add(document.ref.path);
-  } else {
-    manifestFor(accountID);
-  }
-}
-
-for (const document of challenges.docs) {
-  const data = document.data();
-  const creator = data.creatorAccountID;
-  const opponent = data.opponentAccountID;
-  if (typeof creator !== "string" || typeof opponent !== "string" ||
-      creator === opponent || !UUID_PATTERN.test(document.id)) {
-    throw new Error(`Challenge participants are invalid at ${document.ref.path}.`);
-  }
-  manifestFor(creator).challengeIDs.add(document.id.toUpperCase());
-  manifestFor(opponent).challengeIDs.add(document.id.toUpperCase());
-}
-
-for (const document of friendLinks.docs) {
-  const parts = document.ref.path.split("/");
-  if (parts.length !== 4 || parts[0] !== "_socialFriendLinks" ||
-      parts[2] !== "friends") {
-    throw new Error(`Friend-link path is invalid at ${document.ref.path}.`);
-  }
-  const owner = parts[1];
-  const friend = parts[3];
-  if (owner === friend) throw new Error("Self friend-link found.");
-  manifestFor(owner).friendAccountIDs.add(friend);
-  manifestFor(friend).friendAccountIDs.add(owner);
-}
-
-const referencedFriendAccountIDs = new Set();
-for (const manifest of manifests.values()) {
-  for (const friendAccountID of manifest.friendAccountIDs) {
-    referencedFriendAccountIDs.add(friendAccountID);
-  }
-}
-for (const friendAccountID of referencedFriendAccountIDs) {
-  manifestFor(friendAccountID);
-}
-
-for (const [accountID, manifest] of manifests) {
-  for (const [field, maximum] of Object.entries(ACCOUNT_LIMITS)) {
-    if (manifest[field].size > maximum) {
-      throw new Error(`${accountID} exceeds ${field} bound ${maximum}.`);
-    }
-  }
-  for (const path of manifest.leagueMembershipPaths) {
-    if (typeof path !== "string" || !LEAGUE_PATH_PATTERN.test(path) ||
-        !path.endsWith(`/members/${accountID}`)) {
-      throw new Error(`${accountID} has an invalid league reference.`);
-    }
-  }
-  for (const challengeID of manifest.challengeIDs) {
-    if (typeof challengeID !== "string" || !UUID_PATTERN.test(challengeID)) {
-      throw new Error(`${accountID} has an invalid challenge reference.`);
-    }
-  }
-  for (const friendAccountID of manifest.friendAccountIDs) {
-    if (typeof friendAccountID !== "string" ||
-        friendAccountID === accountID) {
-      throw new Error(`${accountID} has an invalid friend reference.`);
-    }
-  }
-}
-
-const serializable = (snapshot) => snapshot.docs.map((document) => ({
-  path: document.ref.path,
-  data: document.data(),
-}));
-const backup = {
-  schemaVersion: 1,
-  projectID,
-  capturedAt: new Date().toISOString(),
-  profiles: serializable(profiles),
-  leagueMemberships: serializable(memberships),
-  challenges: serializable(challenges),
-  friendLinks: serializable(friendLinks),
-  existingManifests: serializable(existingManifests),
-  existingCutover: existingCutover.exists ? {
-    path: existingCutover.ref.path,
-    data: existingCutover.data(),
-  } : null,
+const decodeAdapters = {
+  timestamp: (seconds, nanoseconds) => new Timestamp(seconds, nanoseconds),
+  geopoint: (latitude, longitude) => new GeoPoint(latitude, longitude),
+  reference: (path) => firestore.doc(path),
+  serverTimestamp: () => FieldValue.serverTimestamp(),
 };
-const backupDirectory = resolve(process.cwd(), "backups");
-await mkdir(backupDirectory, {recursive: true});
-const backupName = `social-cutover-${backup.capturedAt.replaceAll(":", "-")}.json`;
-const backupPath = resolve(backupDirectory, backupName);
-await writeFile(backupPath, `${JSON.stringify(backup, null, 2)}\n`, {
-  mode: 0o600,
-});
 
-const summary = {
-  mode: apply ? "apply" : "dry-run",
-  credentialMode,
-  projectID,
-  backupPath,
-  profileDocuments: profiles.size,
-  leagueMembershipDocuments: leagueDocuments.length,
-  challengeDocuments: challenges.size,
-  friendLinkDocuments: friendLinks.size,
-  manifestAccounts: manifests.size,
-  purgeLegacySocial,
-  cutoverAlreadyExists: existingCutover.exists,
-};
-process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+class FirestoreMigrationStore {
+  serverTimestampValue() {
+    return {$noumType: "server-timestamp"};
+  }
 
+  async get(path) {
+    const snapshot = await firestore.doc(path).get();
+    return snapshot.exists ? encodeFirestoreValue(snapshot.data()) : null;
+  }
+
+  async transaction(operation) {
+    await firestore.runTransaction(async (nativeTransaction) => {
+      const transaction = {
+        get: async (path) => {
+          const snapshot = await nativeTransaction.get(firestore.doc(path));
+          return snapshot.exists ? encodeFirestoreValue(snapshot.data()) : null;
+        },
+        set: (path, data) => nativeTransaction.set(
+          firestore.doc(path),
+          decodeFirestoreValue(data, decodeAdapters)
+        ),
+        delete: (path) => nativeTransaction.delete(firestore.doc(path)),
+      };
+      await operation(transaction);
+    });
+  }
+
+  readInventory() {
+    return readRemoteInventory();
+  }
+}
+
+const binding = await currentSourceBinding();
 if (!apply) {
+  const envelope = createBackupEnvelope({
+    projectID,
+    capturedAt: new Date().toISOString(),
+    binding,
+    inventory: await readRemoteInventory(),
+  });
+  const backupDirectory = resolve(process.cwd(), "backups");
+  await mkdir(backupDirectory, {recursive: true, mode: 0o700});
+  const backupName = `social-cutover-${envelope.payload.capturedAt
+    .replaceAll(":", "-")}.json`;
+  const backupPath = resolve(backupDirectory, backupName);
+  await writeFile(
+    backupPath,
+    `${canonicalJSONStringify(envelope)}\n`,
+    {flag: "wx", mode: 0o600}
+  );
+  await chmod(backupPath, 0o600);
+  process.stdout.write(`${JSON.stringify({
+    mode: "dry-run",
+    credentialMode,
+    projectID,
+    backupPath,
+    backupDigest: envelope.digest.value,
+    sourceBinding: binding,
+    profileDocuments: envelope.payload.inventory.profiles.length,
+    leagueMembershipDocuments:
+      envelope.payload.inventory.leagueMemberships.length,
+    privateProfileDocuments: envelope.payload.inventory.privateProfiles.length,
+    challengeDocuments: envelope.payload.inventory.challenges.length,
+    friendLinkDocuments: envelope.payload.inventory.friendLinks.length,
+    manifestDocuments: envelope.payload.inventory.existingManifests.length,
+  }, null, 2)}\n`);
   process.stdout.write("Dry run complete. No remote writes were performed.\n");
   process.exit(0);
 }
 
-const writer = firestore.bulkWriter();
-const writes = [];
-for (const [accountID, manifest] of manifests) {
-  writes.push(writer.set(firestore.collection("_socialReferences").doc(accountID), {
-    leagueMembershipPaths: [...manifest.leagueMembershipPaths].sort(),
-    challengeIDs: [...manifest.challengeIDs].sort(),
-    friendAccountIDs: [...manifest.friendAccountIDs].sort(),
-    updatedAt: FieldValue.serverTimestamp(),
-  }));
+const backupPath = resolve(process.cwd(), backupFile);
+const backupStat = await stat(backupPath);
+if (!backupStat.isFile() || (backupStat.mode & 0o777) !== 0o600) {
+  throw new Error("Apply requires a regular backup file with mode 0600.");
 }
-if (purgeLegacySocial) {
-  for (const document of profiles.docs) writes.push(writer.delete(document.ref));
-  for (const document of leagueDocuments) writes.push(writer.delete(document.ref));
-}
+let envelope;
 try {
-  await Promise.all(writes);
-} finally {
-  await writer.close();
+  envelope = JSON.parse(await readFile(backupPath, "utf8"));
+} catch {
+  throw new Error("Unable to parse the reviewed backup file.");
+}
+verifyBackupEnvelope(envelope, {
+  projectID,
+  expectedDigest: backupDigest,
+  binding,
+});
+const legacyCount = envelope.payload.inventory.profiles.length +
+  envelope.payload.inventory.leagueMemberships.length;
+if (!rollback && legacyCount > 0 && !purgeLegacySocial) {
+  throw new Error(
+    "Apply with legacy rows requires the explicit purge approval flags."
+  );
 }
 
-await firestore.collection("_socialReferenceCutover").doc("current").set({
-  schemaVersion: 1,
-  status: "complete",
-  completedAt: FieldValue.serverTimestamp(),
-  inventory: {
-    profileDocuments: profiles.size,
-    leagueMembershipDocuments: leagueDocuments.length,
-    challengeDocuments: challenges.size,
-    friendLinkDocuments: friendLinks.size,
-    manifestAccounts: manifests.size,
-    purgedLegacyProfiles: purgeLegacySocial,
-    purgedLegacyLeagues: purgeLegacySocial,
-  },
-});
-process.stdout.write("Backfill committed; global cutover is now complete.\n");
+const store = new FirestoreMigrationStore();
+if (rollback) {
+  const result = await rollbackRecoverableCutover({
+    store,
+    envelope,
+    runID,
+  });
+  process.stdout.write(`${JSON.stringify({
+    mode: "rollback",
+    projectID,
+    runID,
+    backupDigest,
+    status: result.status,
+    resumed: result.resumed,
+  }, null, 2)}\n`);
+  process.stdout.write("Rollback verified; the non-complete journal is removed.\n");
+} else {
+  const result = await applyRecoverableCutover({store, envelope, runID});
+  process.stdout.write(`${JSON.stringify({
+    mode: "apply",
+    projectID,
+    runID,
+    backupDigest,
+    status: result.status,
+    resumed: result.resumed,
+    quarantinedDocuments: result.plan.legacy.length,
+    manifestDocuments: result.plan.manifests.length,
+  }, null, 2)}\n`);
+  process.stdout.write("Exact inventory verified; global cutover is complete.\n");
+}
