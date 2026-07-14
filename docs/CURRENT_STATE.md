@@ -23,12 +23,18 @@ shipping capability remains false, receipts remain permanently
 
 Functions lint/build, 109/109 unit tests, 6/6 deploy-blocker tests, processor
 generation, 14 privacy-body tests, 16 cloud-operations contracts, and all 19
-static readiness checks pass. The Node-22/Java-21 `demo-noum` emulator passed
+static readiness checks pass. At clean detached source `5aa8e728`, Node 22.23.1,
+Java 21.0.11, and Firebase CLI 15.19.1 passed the canonical `demo-noum` gate:
 26/26 callable/rules/lifecycle tests, including direct denial and preservation
-of the unlinkable replay tombstone through account deletion. The combined main-
-checkout wrapper then correctly refused 4/5 adapter cases because its migration
-owner requires a clean tracked source; that dirty-checkout refusal is not a
-product failure and is not counted as adapter proof.
+of the unlinkable replay tombstone through account deletion, plus 6/6 real
+Firestore-adapter tests. The first clean emulator attempt passed 25/26 and
+missed an existing profile-read rate-limit assertion by one request; the
+unchanged rerun passed it. That intermittent test-boundary observation remains
+recorded rather than being treated as additional product proof. A clean
+unsigned arm64 Release simulator build also passes and compiles the generated
+privacy manifest. The required light screenshot sweep is not visual proof: all
+five deep links were intercepted by the existing account-persistence recovery
+screen, so the tab surfaces and in-app privacy copy remain visually unverified.
 
 This closes only bounded exact-byte replay inside seven days. Resampled,
 transformed, or post-window audio remains outside the local contract. Deployed
