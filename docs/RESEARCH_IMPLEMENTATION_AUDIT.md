@@ -5,7 +5,7 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-14
 
 Committed implementation inspected through:
-`70b0b38095d01471e9c814c291b285cddcfaa1ab`
+`518b3103`
 
 The integrated implementation includes unified four-mode
 availability, Train's atomic recommendation projection, Prep's stable-shape
@@ -54,9 +54,12 @@ Last complete source-bound evidence checkout:
 
 The last complete clean-source regression passed 4,061 tests with zero failures
 or skips at `7ae1fe43`; the same detached source passed the optimized Release
-simulator build and bundle scan. The current canonical coach artifact passes
+simulator build and bundle scan. The latest canonical coach artifact passes
 app-path, real-pipeline, production-evidence, and trace-quality gates at the
-later evidence-tooling boundary `70b0b380`. The
+later evidence-tooling boundary `70b0b380`. Subsequent release-verifier commits
+do not change coach output, but they make that artifact a named historical
+source boundary rather than current-HEAD evidence. A future current-source
+refresh must use the hardened verifiers. The
 current four-mode availability contract is **Proved** at its pure/source
 boundary. Prep's
 locked-shape fallback and the current Home/Train Filler Control prescription are
@@ -160,7 +163,7 @@ coach.
 | KPI instrumentation | **Incomplete** | Account-local event derivation is strong. Population rates, medians, cohorts, experiment inference, and a numeric goal-score slope are not implemented. |
 | Experiment infrastructure | **Incomplete** | Assignment, eligibility, exposure, and bounded attribution contracts exist. There is no approved allocation or population result, and Test B's shipping treatment is qualitative rather than numeric. |
 | Production effectiveness and coach parity | **Missing** | No valid professional calibration, longitudinal real-user outcome artifact, or experiment result exists. |
-| Launch evidence | **Missing** | The gate is NO-GO at 18/100. None of five required external artifacts currently passes. |
+| Launch evidence | **Missing** | The last source-bound gate is NO-GO at 18/100. None of five required external artifacts currently passes, and the live hosted privacy body now fails exact-source verification. |
 
 ## Report observations that changed underneath the recommendations
 
@@ -367,9 +370,11 @@ Historical results are not treated as proof for later behavior.
 | Final external-evidence provenance linkage | **Proved** | Focused readiness/live-evidence tests prove complete external-looking JSON without a release run is rejected, a validated promotion-bound run can pass the linkage, and changed managed-artifact bytes fail closed. The release-workflow integration also proves that changing a registered attachment after promotion invalidates the final linkage. Missing/altered live capture provenance and non-live provider identities are rejected. The embedded live block is an operator provenance assertion, not independently signed cryptographic proof. This proves enforcement behavior only; no external evidence was collected. |
 | Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 31 signing/TestFlight preflight tests passed. The preflight forwards and independently requires the explicit attachment-backed run accepted by readiness. These results prove local tooling behavior only. |
 | Current app-path dump preflight | **Proved** | The documented source-bound evidence-refresh wrapper produced 53 conversations/109 turns from detached clean commit `70b0b380` in a unique custom dump directory. Fail-closed preflight passed with zero blockers, zero missing trace commits/fingerprints, and exact coach fingerprint `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`. The harness explicitly supplies no prior case memory rather than reading an arbitrary signed-in simulator account. No manual simulator-environment fallback was required. |
-| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-14T12:22:36+00:00` embeds `70b0b380` / `sha256:7f99e3f…e689e380`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero fixture failures or placeholder leaks. It is current clean local real-pipeline/target-shape evidence, not live-provider, reviewer, longitudinal, physical-device, or launch proof. |
+| Committed canonical app-path baseline | **Proved** | The refreshed canonical report generated `2026-07-14T12:22:36+00:00` embeds `70b0b380` / `sha256:7f99e3f…e689e380`, scores all 50 required fixtures at 79.76, and passes local score/coverage, real-pipeline, production-evidence, and trace-quality gates with zero fixture failures or placeholder leaks. It is clean named local real-pipeline/target-shape evidence at that exact source boundary, not current-HEAD, live-provider, reviewer, longitudinal, physical-device, or launch proof. |
 | Operational static repository wiring | **Proved** | Readiness reports 19/19 static checks, including fail-closed processor-manifest generation freshness. It explicitly does not prove deployment, hosted content, App Store review, TestFlight upload, or bug triage. |
-| Production readiness | **Missing** | The clean detached `70b0b380` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Source freshness passes and static operational wiring passes 19/19, but no validated attachment-backed release run is available and zero of five required external sidecars is present. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
+| Full callable runtime-security inventory | **Proved locally** | At `4dd2182b`, the verifier requires the exact 11 exported callables, their five reviewed dedicated identities, exact production project/region, App Check and trusted-caller source contracts, least-privilege role boundaries, and unauthenticated `401` probes for the same roster. Its 16 local contract tests and three source-contract checks pass. No trusted authenticated production inspection was run, so deployed IAM, App Check, function inventory, and endpoint behavior remain externally unproved. |
+| Source-exact hosted privacy enforcement | **Proved locally** | At `518b3103`, shell and Python readiness paths share bounded decompression and require the approved origin, 2xx HTML, and exact `public/privacy.html` bytes without logging body content. Fourteen focused privacy tests and the full 149-test Python runner suite pass. The 2026-07-14 live probe correctly failed on a digest/size mismatch, so hosted equivalence remains Missing. |
+| Production readiness | **Missing** | The clean detached `70b0b380` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Later verifier commits do not increase that score and require a new current-source capture before any current-HEAD claim. No validated attachment-backed release run is available, zero of five required external sidecars is present, and the hosted privacy body differs from source. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
 
 ## External proof gates
 
@@ -393,7 +398,9 @@ credential revocation, or production traffic.
 | Replacement transcription boundary in source | **Proved** | Release construction uses the authenticated Firebase/Deepgram route with local fallback. This is product substrate, not a signed-device or live-service proof. |
 | Historical Deepgram/AWS incident closed | **Missing** | The runbook still requires legacy credential revocation, disabling/authenticating every legacy endpoint, and provider usage/billing audit. |
 | Protected social cutover | **Missing** | Production backup/quarantine, explicit disposition, trusted server-authored evidence, migration dry run, and coordinated rules/functions deployment remain approval-gated. |
-| Hosted Firebase privacy page | **Proved** | The readiness live probe passes 3/3 checks for `https://noum-d0b6f.web.app/privacy`. This proves that a Noum policy endpoint is publicly reachable; it does not prove the manifest-v3 generated body was redeployed after the latest processor change, App Store disclosure review, or the custom domain. |
+| Recoverable social migration/quarantine | **Missing** | The current apply path writes manifests and deletes legacy public/league rows through independent `BulkWriter` operations before creating the complete marker. It has no server-side quarantine, source-bound backup digest, private-profile inventory, resume, rollback, or migration fault-injection tests. Do not run apply until this path is replaced or hardened. |
+| Hosted Firebase privacy endpoint reachability | **Proved** | The public Firebase Hosting endpoint responded on 2026-07-14. Reachability alone is not policy equivalence or deployment proof. |
+| Hosted Firebase privacy body matches source | **Missing** | The exact-body probe expected 25,462 bytes / `2b5c1f71…fee44d67` but received 24,274 bytes / `34eee13a…7908607`. An authorized deploy and a fresh passing exact-body probe are required. |
 | `noum.app` custom privacy domain | **Missing** | The runbook records it as parked at GoDaddy pending DNS, TLS, and policy verification. |
 | Sign in with Apple entitlement in the app | **Proved** | `Noum.entitlements` contains the capability. |
 | Sign in with Apple Firebase/provider configuration | **Missing** | External Apple/Firebase configuration remains unchecked in `docs/TESTFLIGHT_QA.md`. |
@@ -406,7 +413,8 @@ credential revocation, or production traffic.
 
 ### Safe local
 
-Committed-ancestor and dirty-worktree provenance hardening are complete. Keep
+Committed-ancestor, dirty-worktree, exact privacy-body, and full callable-roster
+verifier hardening are complete. Keep
 `40d5e903`, `47cbab5f`, and `80fbf6d2` as named historical baselines; the
 current complete signed regression and optimized Release scan are bound to
 `7ae1fe43`, while the repaired evidence workflow and canonical app-path report
@@ -418,10 +426,13 @@ fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
 
 The custom dump-directory wrapper and the canonical local Firebase emulator
-matrix are now proved. The highest-leverage remaining work is operational:
-provision and verify the dedicated runtime identity; inventory active clients;
-approve a minimum-client policy; and stage the callable before the coordinated
-social/rules cutover. A
+matrix are now proved. The highest-leverage remaining local engineering gap is
+to replace the destructive social apply path with a source-bound migration
+state machine that transactionally quarantines, supports idempotent resume and
+pre-completion rollback, inventories private profiles, and passes fault
+injection. Production identity inspection, active-client inventory, minimum-
+client approval, privacy deployment, and the coordinated social/rules cutover
+remain external or approval-gated. A
 two-device mixed-build conflict/replay/deletion smoke, plus backup and rollback
 evidence, must accompany that deployment. The user's localization edit and
 staged screenshot handoffs remain deliberately outside these commits.

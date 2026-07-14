@@ -1,5 +1,41 @@
 # Noum — Current state
 
+## 2026-07-14 — Release probes now fail closed on exact runtime and privacy contracts
+
+Implementation commits `4dd2182b378b07140bd451de640cab2c75ed5222`
+and `518b3103` close two local evidence-integrity gaps without changing shipping
+app behavior. The cloud-operations probe now derives one exact reviewed roster
+of all 11 callable exports and requires every deployed callable to match its
+project, region, dedicated runtime identity, App Check/trusted-caller source
+contract, and unauthenticated `401` behavior. The local validator also rejects
+missing, unexpected, duplicate, over-privileged, or wrongly assigned runtime
+identities. This is a local production-contract verifier; the authenticated
+read-only production probe has not been run with a trusted operator session.
+
+The hosted privacy probe now accepts only the approved Firebase Hosting origin,
+the expected 2xx HTML response, and the exact bounded, decompressed bytes of
+`public/privacy.html`. It reports only byte counts and SHA-256 digests on
+failure. On 2026-07-14 the public probe failed closed: the checked-in policy was
+25,462 bytes with digest
+`2b5c1f715f565082b5b0a9a4d082a0d2fffc09cdeaa46f36cb42a069fee44d67`,
+while the hosted response was 24,274 bytes with digest
+`34eee13abd8e7d9aa6dbe98c6f38f3d1162f9732476346906fc3190aa7908607`.
+The Firebase endpoint is reachable, but current hosted-policy equivalence is
+**Missing** until an authorized deployment and a fresh exact-body probe pass.
+
+Local verification passed 119 Coach Arena Node tests, 149 Coach Arena Python
+tests, 16 cloud-operations production-contract tests, 14 focused privacy-body
+tests, and all 19 static readiness checks. The social cutover audit also found
+that the present apply path is destructive and non-resumable: it deletes legacy
+documents through independent writes before recording completion, with no
+server quarantine, source-bound backup digest, private-profile inventory,
+resume, rollback, or migration fault-injection coverage. Do not run that apply
+path until it is replaced or hardened.
+
+Production readiness remains **NO-GO at 18/100 with 0/5 external artifacts**.
+No production IAM/App Check inspection, privacy deployment, social migration,
+physical-device run, or other external evidence was performed.
+
 ## 2026-07-14 — Simulator evidence refresh is source-bound and repeatable
 
 Implementation commit `70b0b38095d01471e9c814c291b285cddcfaa1ab`

@@ -8,7 +8,7 @@ TestFlight, and proof that Chat with Noum is ready for production use. A green
 local eval or smoke flow is evidence, but it is not enough to claim production
 readiness.
 
-## Current Recovery Status (2026-07-13)
+## Current Recovery Status (2026-07-14)
 
 **Release verdict: NO-GO for external TestFlight or App Store release.**
 
@@ -21,11 +21,11 @@ readiness.
   `docs/SECURITY_deepgram_key_endpoint.md` remains open. The replacement path
   does not revoke the exposed legacy credentials, disable every legacy route,
   or provide the missing usage and billing audit.
-- `https://noum-d0b6f.web.app/privacy` is live and serves a Noum policy. That
-  proves the hosting endpoint exists, not that manifest-v3 generated content has
-  been redeployed since the latest processor change. Compare the live body with
-  the exact generated policy after safe release authentication is restored, and
-  redeploy if they differ.
+- `https://noum-d0b6f.web.app/privacy` is reachable, but the 2026-07-14 exact-
+  body probe failed: source was 25,462 bytes / `2b5c1f71…fee44d67`, while the
+  hosted response was 24,274 bytes / `34eee13a…7908607`. Treat hosted-policy
+  equivalence as missing. After safe release authentication is restored,
+  redeploy `public/privacy.html` and require the exact-body probe to pass.
   The custom `noum.app` domain is still parked at GoDaddy; it must not be
   described as connected to Firebase Hosting until DNS, TLS, and policy content
   are verified.
@@ -88,8 +88,12 @@ and the selected repo root passes static operational preflight:
 - `docs/TESTFLIGHT_QA.md` covers deploy, privacy, and high-risk hardware surfaces
 
 When `--probe-live` is enabled, `readiness` also exits nonzero unless the
-configured hosted privacy URL is publicly reachable and serves Noum privacy
-policy content. Keep this opt-in for offline CI; use it before any launch claim.
+configured hosted privacy URL resolves to the explicitly approved Firebase
+origin, returns a 2xx HTML response, and its bounded decompressed bytes exactly
+match `public/privacy.html`. The verifier logs only sizes and SHA-256 digests,
+not policy bodies. Keep this opt-in for offline CI; use it before any launch
+claim. A future custom domain must be explicitly added to the approved-origin
+contract before it can pass.
 
 Use `./tools/coach-arena/run.sh readiness --no-fail` when you only want the
 human-readable report during an in-progress launch pass.
@@ -122,11 +126,11 @@ The operational live probe is narrower: it checks the public privacy URL only.
 It does not prove Firestore rule deployment, TestFlight upload, App Store privacy
 review, or release-blocking bug triage.
 
-At present, a successful privacy probe applies to the Firebase Hosting
-`web.app` URL. It does not prove that `noum.app` is serving Noum content while
-the registrar DNS remains parked, or that the hosted body exactly matches the
-latest generated manifest-v3 disclosure unless that content comparison is part
-of the captured operational evidence.
+At present, a successful privacy probe applies only to the approved Firebase
+Hosting `web.app` URL and proves exact equality with the checked-in generated
+policy at probe time. It does not prove processor runtime behavior, App Store
+privacy review, or that `noum.app` is serving Noum content while registrar DNS
+remains parked.
 
 ## Apple signing and TestFlight preflight
 
@@ -264,8 +268,12 @@ The probe is read-only. It verifies the production Firestore recovery settings
 and daily backup, required log metrics and routed alert policies, dedicated
 function identities, exclusive access to the Deepgram secret, removal of broad
 roles from the default compute identity, the hosted privacy page, and 401
-responses from the sensitive callables when no Firebase Auth or App Check proof
-is supplied. It never reads the Deepgram secret value.
+responses from all 11 reviewed callable exports when no Firebase Auth or App
+Check proof is supplied. The exact roster spans coach, transcription, account,
+recommendation, and six social callables across five dedicated runtime
+identities; missing, unexpected, duplicate, wrongly located, wrongly assigned,
+or over-privileged identities fail the probe. It never reads the Deepgram
+secret value.
 
 The command is pinned to Firebase project `noum-d0b6f`, Functions region
 `europe-west2`, and the documented production operations channel. Environment
@@ -349,6 +357,14 @@ Before deploying the reviewed social rules and functions together:
 
 Until every step passes, keep league and challenge actions unavailable in the
 client. A disabled social surface is safer than accepting untrusted progress.
+
+The current `--apply --purge-legacy-social` implementation is **not** a
+recoverable quarantine workflow: independent writes can delete legacy rows
+before a completion marker exists, and there is no server quarantine, source-
+bound backup digest, private-profile inventory, resume, rollback, or migration
+fault-injection proof. Do not run it. Replace or harden the migration so each
+copy/delete is transactionally paired, non-complete states gate every social
+callable, and resume/rollback behavior is proved before any production apply.
 
 For the reviewed production inventory on an operator Mac that has an active
 gcloud user identity but no Application Default Credentials, use the explicit
