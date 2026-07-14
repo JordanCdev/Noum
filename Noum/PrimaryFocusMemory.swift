@@ -127,7 +127,11 @@ enum CoachInterventionReviewStatus: String, Codable, Equatable {
 /// Restricted to fields every `PracticeSession` carries so status can always
 /// be computed without a provider call or transcript re-analysis.
 enum CoachCaseMetric: String, Codable, Equatable {
+    /// Legacy raw-count metric retained only so persisted criteria decode.
+    /// New filler criteria use `fillersPerMinute`; raw counts are duration-
+    /// biased and must never be used for a newly built success measure.
     case fillersPerRep
+    case fillersPerMinute
     case sessionScore
     case durationSeconds
     /// Focus-matched pace bar (transcript word count / duration — a field
@@ -213,6 +217,10 @@ struct CoachSuccessCriterion: Codable, Equatable {
     /// Bounded evidence behind the success bar. nil means "thin sample; use
     /// generic copy." Optional for decode safety with older memories.
     var baselineSnapshot: BaselineSnapshot? = nil
+    /// Provenance recipe used to select followed reps and evaluate this bar.
+    /// Nil identifies criteria persisted before exact recommendation-outcome
+    /// joins; those criteria are rebuilt rather than carrying a false status.
+    var evidenceSchemaVersion: Int? = nil
 
     /// Pure judgement: given the metric values from the most-recent
     /// followed reps (newest first), decide met / not-yet-met / pending.
@@ -1938,6 +1946,7 @@ enum CoachMemoryEngine {
 
     private static let caseReviewCadenceDays = 3
     private static let caseEvaluationWindow = 2
+    private static let criterionEvidenceSchemaVersion = 1
 
     private static func activeIntervention(
         pending: RecommendationExposure?,
@@ -1950,7 +1959,14 @@ enum CoachMemoryEngine {
         guard var intervention = baseIntervention(pending: pending, outcomes: outcomes) else {
             return nil
         }
-        enrichWithCase(&intervention, sessions: sessions, previous: previous, now: now, calendar: calendar)
+        enrichWithCase(
+            &intervention,
+            outcomes: outcomes,
+            sessions: sessions,
+            previous: previous,
+            now: now,
+            calendar: calendar
+        )
         return intervention
     }
 
@@ -1960,6 +1976,7 @@ enum CoachMemoryEngine {
     /// from followed reps, and an explicit review date.
     private static func enrichWithCase(
         _ intervention: inout CoachIntervention,
+        outcomes: [RecommendationOutcome],
         sessions: [PracticeSession],
         previous: CoachIntervention?,
         now: Date,
@@ -1969,13 +1986,16 @@ enum CoachMemoryEngine {
             && boundedText(previous?.focus) == boundedText(intervention.focus)
 
         let criterion: CoachSuccessCriterion
-        if isSamePrescription, let carried = previous?.successCriterion {
+        if isSamePrescription,
+           let carried = previous?.successCriterion,
+           carried.evidenceSchemaVersion == criterionEvidenceSchemaVersion {
             criterion = carried
         } else {
             criterion = buildSuccessCriterion(
                 mode: intervention.mode,
                 focus: intervention.focus,
                 title: intervention.title,
+                outcomes: outcomes,
                 sessions: sessions,
                 now: now
             )
@@ -1985,6 +2005,10 @@ enum CoachMemoryEngine {
         let values = followedRepValues(
             metric: criterion.metric,
             mode: intervention.mode,
+            focus: intervention.focus,
+            title: intervention.title,
+            prescribedAt: intervention.prescribedAt,
+            outcomes: outcomes,
             sessions: sessions,
             now: now
         )
@@ -2004,7 +2028,7 @@ enum CoachMemoryEngine {
     ) -> (metric: CoachCaseMetric, comparator: CoachCaseComparator) {
         let haystack = "\(focus ?? "") \(title)".lowercased()
         if mode == .ahCounter || haystack.contains("filler") {
-            return (.fillersPerRep, .atMost)
+            return (.fillersPerMinute, .atMost)
         }
         return (.sessionScore, .atLeast)
     }
@@ -2015,6 +2039,11 @@ enum CoachMemoryEngine {
     ) -> Double? {
         switch metric {
         case .fillersPerRep: return Double(session.fillerWordCount)
+        case .fillersPerMinute:
+            guard session.duration >= RecommendationComparisonEngine.minimumReliableDuration else {
+                return nil
+            }
+            return Double(session.fillerWordCount) / session.duration * 60
         case .sessionScore: return session.score.map(Double.init)
         case .durationSeconds: return session.duration
         case .wordsPerMinute:
@@ -2029,21 +2058,79 @@ enum CoachMemoryEngine {
     private static func followedRepValues(
         metric: CoachCaseMetric,
         mode: PracticeMode,
+        focus: String?,
+        title: String,
+        prescribedAt: Date?,
+        outcomes: [RecommendationOutcome],
         sessions: [PracticeSession],
         now: Date,
         limit: Int = 8
     ) -> [Double] {
-        sessions
-            .filter { $0.mode == mode && $0.date <= now }
-            .sorted { $0.date > $1.date }
+        let normalizedFocus = boundedText(focus, maximumLength: 80)
+        let sessionsByID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+        var admittedSessionIDs = Set<UUID>()
+
+        return outcomes
+            .filter { outcome in
+                outcome.followed
+                    && outcome.hasComparableBaseline
+                    && outcome.mode == mode
+                    && boundedText(outcome.focus, maximumLength: 80) == normalizedFocus
+                    && outcomeSupportsCriterion(
+                        outcome,
+                        metric: metric,
+                        mode: mode,
+                        focus: focus,
+                        title: title
+                    )
+                    && outcome.completedAt <= now
+                    && prescribedAt.map { outcome.completedAt >= $0 } ?? true
+            }
+            .sorted { lhs, rhs in
+                if lhs.completedAt != rhs.completedAt { return lhs.completedAt > rhs.completedAt }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .filter { admittedSessionIDs.insert($0.sessionID).inserted }
+            .compactMap { outcome -> (RecommendationOutcome, PracticeSession)? in
+                guard let session = sessionsByID[outcome.sessionID],
+                      session.mode == mode,
+                      session.date <= now,
+                      session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion else {
+                    return nil
+                }
+                return (outcome, session)
+            }
             .prefix(limit)
-            .compactMap { metricValue(metric, from: $0) }
+            .compactMap { metricValue(metric, from: $0.1) }
+    }
+
+    private static func outcomeSupportsCriterion(
+        _ outcome: RecommendationOutcome,
+        metric: CoachCaseMetric,
+        mode: PracticeMode,
+        focus: String?,
+        title: String
+    ) -> Bool {
+        switch metric {
+        case .fillersPerRep:
+            return false
+        case .fillersPerMinute:
+            return outcome.fillerRateDelta != nil
+        case .sessionScore:
+            return RecommendationMetricFocus.kind(mode: mode, focus: focus, title: title) == .general
+                && outcome.hasComparableScore == true
+        case .durationSeconds:
+            return true
+        case .wordsPerMinute:
+            return outcome.wordsPerMinute != nil && outcome.paceDelta != nil
+        }
     }
 
     private static func buildSuccessCriterion(
         mode: PracticeMode,
         focus: String?,
         title: String,
+        outcomes: [RecommendationOutcome],
         sessions: [PracticeSession],
         now: Date
     ) -> CoachSuccessCriterion {
@@ -2054,6 +2141,7 @@ enum CoachMemoryEngine {
             mode: mode,
             focus: focus,
             title: title,
+            outcomes: outcomes,
             sessions: sessions,
             now: now
         ) {
@@ -2061,20 +2149,23 @@ enum CoachMemoryEngine {
         }
         let (metric, comparator) = caseMetric(mode: mode, focus: focus, title: title)
         let window = caseEvaluationWindow
-        let values = followedRepValues(metric: metric, mode: mode, sessions: sessions, now: now)
-        // The pre-prescription baseline is everything older than the reps the
-        // criterion is judged against, so the bar is "beat where you were",
-        // not "beat the very reps being scored". Falls back to a sane default
-        // when history is too thin to anchor a number.
-        let priorValues = Array(values.dropFirst(window))
-        let priorAverage = priorValues.isEmpty
-            ? nil
-            : priorValues.reduce(0, +) / Double(priorValues.count)
+        let baseline = comparisonBaseline(
+            metric: metric,
+            mode: mode,
+            focus: focus,
+            outcomes: outcomes,
+            sessions: sessions,
+            now: now
+        )
+        let priorAverage = baseline?.average
 
         let threshold: Double
         switch metric {
         case .fillersPerRep:
             threshold = max(0, ((priorAverage ?? 3) - 1).rounded())
+        case .fillersPerMinute:
+            let target = max(0, (priorAverage ?? 2.75) - RecommendationAdaptationAnalyzer.fillerSwing)
+            threshold = (target * 10).rounded() / 10
         case .sessionScore:
             threshold = min(10, ((priorAverage ?? 6) + 1).rounded())
         case .durationSeconds:
@@ -2086,14 +2177,13 @@ enum CoachMemoryEngine {
             threshold = healthyPaceBand.upperBound
         }
 
-        let baselineSnapshot: CoachSuccessCriterion.BaselineSnapshot? =
-            priorAverage.flatMap { average in
-                guard priorValues.count >= minPriorRepsForGroundedCriterion else { return nil }
+        let baselineSnapshot: CoachSuccessCriterion.BaselineSnapshot? = baseline.flatMap { baseline in
+                guard baseline.sampleDepth >= minPriorRepsForGroundedCriterion else { return nil }
                 return CoachSuccessCriterion.BaselineSnapshot(
-                    priorAverage: clampedAverage(average, for: metric),
-                    sampleDepth: priorValues.count
+                    priorAverage: clampedAverage(baseline.average, for: metric),
+                    sampleDepth: baseline.sampleDepth
                 )
-            }
+        }
 
         return CoachSuccessCriterion(
             metric: metric,
@@ -2106,7 +2196,60 @@ enum CoachMemoryEngine {
                 window: window,
                 baseline: baselineSnapshot
             ),
-            baselineSnapshot: baselineSnapshot
+            baselineSnapshot: baselineSnapshot,
+            evidenceSchemaVersion: criterionEvidenceSchemaVersion
+        )
+    }
+
+    private struct CriterionComparisonBaseline {
+        let average: Double
+        let sampleDepth: Int
+    }
+
+    /// Recovers the persisted same-demand baseline behind the latest accepted
+    /// outcome. This keeps the success bar on the same evidence recipe as the
+    /// adaptation ledger without storing a second copy of session history.
+    private static func comparisonBaseline(
+        metric: CoachCaseMetric,
+        mode: PracticeMode,
+        focus: String?,
+        outcomes: [RecommendationOutcome],
+        sessions: [PracticeSession],
+        now: Date
+    ) -> CriterionComparisonBaseline? {
+        let normalizedFocus = boundedText(focus, maximumLength: 80)
+        let sessionsByID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+        guard let outcome = outcomes
+            .filter({
+                $0.followed
+                    && $0.hasComparableBaseline
+                    && $0.mode == mode
+                    && boundedText($0.focus, maximumLength: 80) == normalizedFocus
+                    && $0.completedAt <= now
+            })
+            .sorted(by: { $0.completedAt > $1.completedAt })
+            .first,
+              let session = sessionsByID[outcome.sessionID],
+              session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              let current = metricValue(metric, from: session) else { return nil }
+
+        let average: Double?
+        switch metric {
+        case .fillersPerRep:
+            average = nil
+        case .fillersPerMinute:
+            average = outcome.fillerRateDelta.map { current - $0 }
+        case .sessionScore:
+            average = outcome.hasComparableScore == true ? current - outcome.scoreDelta : nil
+        case .durationSeconds:
+            average = current - outcome.durationDelta
+        case .wordsPerMinute:
+            average = outcome.paceDelta.map { current - $0 }
+        }
+        guard let average else { return nil }
+        return CriterionComparisonBaseline(
+            average: average,
+            sampleDepth: outcome.comparisonSessionCount ?? 0
         )
     }
 
@@ -2142,21 +2285,22 @@ enum CoachMemoryEngine {
         mode: PracticeMode,
         focus: String?,
         title: String,
+        outcomes: [RecommendationOutcome],
         sessions: [PracticeSession],
         now: Date
     ) -> CoachSuccessCriterion? {
         guard PaceCoaching.isPaceFocused(mode: mode, focus: focus, title: title) else { return nil }
 
         let window = caseEvaluationWindow
-        let values = followedRepValues(
+        guard let prior = comparisonBaseline(
             metric: .wordsPerMinute,
             mode: mode,
+            focus: focus,
+            outcomes: outcomes,
             sessions: sessions,
             now: now
-        )
-        let priorValues = Array(values.dropFirst(window))
-        guard priorValues.count >= minPriorRepsForGroundedCriterion else { return nil }
-        let priorAverage = priorValues.reduce(0, +) / Double(priorValues.count)
+        ), prior.sampleDepth >= minPriorRepsForGroundedCriterion else { return nil }
+        let priorAverage = prior.average
         guard !healthyPaceBand.contains(priorAverage) else { return nil }
 
         let comparator: CoachCaseComparator = priorAverage > healthyPaceBand.upperBound
@@ -2167,7 +2311,7 @@ enum CoachMemoryEngine {
             : healthyPaceBand.lowerBound
         let baseline = CoachSuccessCriterion.BaselineSnapshot(
             priorAverage: clampedAverage(priorAverage, for: .wordsPerMinute),
-            sampleDepth: priorValues.count
+            sampleDepth: prior.sampleDepth
         )
         return CoachSuccessCriterion(
             metric: .wordsPerMinute,
@@ -2181,13 +2325,14 @@ enum CoachMemoryEngine {
                 baseline: baseline,
                 comparator: comparator
             ),
-            baselineSnapshot: baseline
+            baselineSnapshot: baseline,
+            evidenceSchemaVersion: criterionEvidenceSchemaVersion
         )
     }
 
     private static func clampedAverage(_ value: Double, for metric: CoachCaseMetric) -> Double {
         switch metric {
-        case .fillersPerRep, .durationSeconds, .wordsPerMinute:
+        case .fillersPerRep, .fillersPerMinute, .durationSeconds, .wordsPerMinute:
             return max(0, value)
         case .sessionScore:
             return min(10, max(0, value))
@@ -2235,6 +2380,8 @@ enum CoachMemoryEngine {
             case .fillersPerRep:
                 let fillers = count == 1 ? "filler" : "fillers"
                 return "your last \(baseline.sampleDepth) reps averaged \(avg) \(fillers) — hold at \(count) or fewer per rep across \(reps)"
+            case .fillersPerMinute:
+                return "your last \(baseline.sampleDepth) comparable reps averaged \(avg) fillers/min — hold at \(formattedAverage(threshold)) or fewer/min across \(reps)"
             case .sessionScore:
                 return "your last \(baseline.sampleDepth) reps averaged \(avg) — hold a \(count) or higher across \(reps)"
             case .durationSeconds:
@@ -2249,6 +2396,8 @@ enum CoachMemoryEngine {
         case .fillersPerRep:
             let fillers = count == 1 ? "filler" : "fillers"
             return "\(count) or fewer \(fillers) per rep across \(reps)"
+        case .fillersPerMinute:
+            return "\(formattedAverage(threshold)) or fewer fillers/min across \(reps)"
         case .sessionScore:
             return "score of \(count) or higher across \(reps)"
         case .durationSeconds:

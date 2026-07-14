@@ -20074,7 +20074,7 @@ struct CoachMemoryEngineTests {
         #expect(rebuilt?.activeIntervention?.reviewStatus == .awaitingAttempt)
     }
 
-    @Test func buildAttachesFillerSuccessCriterionWithStatusFromFollowedReps() {
+    @Test func unrelatedSameModeHistoryCannotMeetFillerCriterion() {
         let now = Date(timeIntervalSince1970: 1_000)
         let ahSessions = [
             ahCounterSession(fillers: 1, at: 1_000),
@@ -20092,19 +20092,219 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+                interventionOutcome(
+                    mode: .ahCounter,
+                    sessionID: ahSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 0,
+                    fillerDelta: -1,
+                    focus: "a decisive close",
+                    fillerRateDelta: -1
+                )
             ],
             now: now
         )
 
         let criterion = memory?.activeIntervention?.successCriterion
-        #expect(criterion?.metric == .fillersPerRep)
+        #expect(criterion?.metric == .fillersPerMinute)
         #expect(criterion?.comparator == .atMost)
-        // Prior reps (5, 5) average 5; the bar is one better, so 4.
-        #expect(criterion?.threshold == 4)
-        // Recent reps (1, 2) average 1.5, within the bar.
-        #expect(memory?.activeIntervention?.criterionStatus == .met)
+        #expect(criterion?.threshold == 1.3)
+        // Only the exact accepted outcome is a followed rep. The other three
+        // same-mode sessions cannot satisfy the two-rep evaluation window.
+        #expect(memory?.activeIntervention?.criterionStatus == .pending)
         #expect(memory?.activeIntervention?.reviewDueAt != nil)
+    }
+
+    @Test func pendingPrescriptionStaysPendingDespiteStrongSameModeHistory() {
+        let pending = RecommendationExposure(
+            fingerprint: "ah-counter-cut-fillers",
+            title: "Cut the crutch",
+            focus: "cut filler words",
+            target: "Hold a clean answer",
+            mode: .ahCounter,
+            isAIBacked: true,
+            shownAt: Date(timeIntervalSince1970: 950),
+            tappedAt: nil
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [
+                ahCounterSession(fillers: 0, at: 900),
+                ahCounterSession(fillers: 0, at: 800),
+                ahCounterSession(fillers: 0, at: 700),
+            ],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            pendingIntervention: pending,
+            recommendationOutcomes: [],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.activeIntervention?.followedRepCount == 0)
+        #expect(memory?.activeIntervention?.criterionStatus == .pending)
+        #expect(memory?.caseFile?.successMeasure?.contains("already meeting") == false)
+    }
+
+    @Test func criterionStatusUsesOnlyUniqueComparableAcceptedSessionIDs() {
+        let acceptedNewest = ahCounterSession(fillers: 5, duration: 300, at: 1_200) // 1/min
+        let acceptedOlder = ahCounterSession(fillers: 1, duration: 60, at: 1_100)   // 1/min
+        let unrelated = ahCounterSession(fillers: 20, duration: 60, at: 1_250)
+        let differentFocus = ahCounterSession(fillers: 20, duration: 60, at: 1_050)
+        let unfollowed = ahCounterSession(fillers: 20, duration: 60, at: 1_000)
+        let legacy = ahCounterSession(fillers: 20, duration: 60, at: 950)
+        let focus = "cut filler words"
+
+        let outcomes = [
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: acceptedNewest.id,
+                completedAt: 1_200,
+                scoreDelta: 0,
+                fillerDelta: 3,
+                focus: focus,
+                fillerRateDelta: -1
+            ),
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: acceptedOlder.id,
+                completedAt: 1_100,
+                scoreDelta: 0,
+                fillerDelta: -1,
+                focus: focus,
+                fillerRateDelta: -1
+            ),
+            // Duplicate attribution for the newest session must not create a
+            // third followed value.
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: acceptedNewest.id,
+                completedAt: 1_150,
+                scoreDelta: 0,
+                fillerDelta: 3,
+                focus: focus,
+                fillerRateDelta: -1
+            ),
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: differentFocus.id,
+                completedAt: 1_050,
+                scoreDelta: 0,
+                fillerDelta: 18,
+                focus: "a decisive close",
+                fillerRateDelta: 18
+            ),
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: unfollowed.id,
+                followed: false,
+                completedAt: 1_000,
+                scoreDelta: 0,
+                fillerDelta: 18,
+                focus: focus,
+                fillerRateDelta: 18
+            ),
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: legacy.id,
+                completedAt: 950,
+                scoreDelta: 0,
+                fillerDelta: 18,
+                focus: focus,
+                comparisonSessionCount: nil
+            ),
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: UUID(),
+                completedAt: 900,
+                scoreDelta: 0,
+                fillerDelta: 18,
+                focus: focus,
+                fillerRateDelta: 18
+            ),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [acceptedNewest, acceptedOlder, unrelated, differentFocus, unfollowed, legacy],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: outcomes,
+            now: Date(timeIntervalSince1970: 1_300)
+        )
+
+        #expect(memory?.activeIntervention?.successCriterion?.metric == .fillersPerMinute)
+        #expect(memory?.activeIntervention?.successCriterion?.summary.contains("fillers/min") == true)
+        #expect(memory?.activeIntervention?.criterionStatus == .met)
+    }
+
+    @Test func legacyRawCountCriterionRebuildsAndCannotCarryMetStatus() {
+        let legacyCriterion = CoachSuccessCriterion(
+            metric: .fillersPerRep,
+            comparator: .atMost,
+            threshold: 1,
+            evaluationWindow: 2,
+            summary: "1 or fewer filler per rep across 2 reps"
+        )
+        let previous = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 4,
+            evidenceConfidence: .tentative,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            activeIntervention: CoachIntervention(
+                title: "Cut the crutch",
+                focus: "cut filler words",
+                target: "Hold a clean answer",
+                mode: .ahCounter,
+                prescribedAt: Date(timeIntervalSince1970: 800),
+                lastObservedAt: nil,
+                followedRepCount: 0,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .awaitingAttempt,
+                reviewBasis: "Awaiting a followed rep.",
+                successCriterion: legacyCriterion,
+                criterionStatus: .met
+            )
+        )
+        let pending = RecommendationExposure(
+            fingerprint: "ah-counter-cut-fillers",
+            title: "Cut the crutch",
+            focus: "cut filler words",
+            target: "Hold a clean answer",
+            mode: .ahCounter,
+            isAIBacked: true,
+            shownAt: Date(timeIntervalSince1970: 950),
+            tappedAt: nil
+        )
+
+        let rebuilt = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [
+                ahCounterSession(fillers: 0, at: 900),
+                ahCounterSession(fillers: 0, at: 800),
+            ],
+            trends: [],
+            forwardPlan: nil,
+            previous: previous,
+            lastSessionID: nil,
+            pendingIntervention: pending,
+            recommendationOutcomes: [],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(legacyCriterion.evidenceSchemaVersion == nil)
+        #expect(rebuilt?.activeIntervention?.successCriterion?.metric == .fillersPerMinute)
+        #expect(rebuilt?.activeIntervention?.successCriterion?.evidenceSchemaVersion == 1)
+        #expect(rebuilt?.activeIntervention?.criterionStatus == .pending)
     }
 
     @Test func buildAppendsAdaptationLogEntryOnFocusShift() {
@@ -20860,11 +21060,17 @@ struct CoachMemoryEngineTests {
                 "engine-only shifts never get the second-cycle tag, regardless of prior log")
     }
 
-    private func ahCounterSession(fillers: Int, at time: TimeInterval) -> PracticeSession {
+    private func ahCounterSession(
+        id: UUID = UUID(),
+        fillers: Int,
+        duration: TimeInterval = 60,
+        at time: TimeInterval
+    ) -> PracticeSession {
         PracticeSession(
+            id: id,
             transcript: "rep",
             fillerWordCount: fillers,
-            duration: 60,
+            duration: duration,
             date: Date(timeIntervalSince1970: time),
             mode: .ahCounter,
             score: 6
@@ -20916,11 +21122,17 @@ struct CoachMemoryEngineTests {
 
     private func interventionOutcome(
         mode: PracticeMode,
+        sessionID: UUID = UUID(),
         followed: Bool = true,
         completedAt: TimeInterval,
         scoreDelta: Double,
         fillerDelta: Double,
-        focus: String = "a decisive close"
+        focus: String = "a decisive close",
+        hasComparableScore: Bool? = true,
+        fillerRateDelta: Double? = nil,
+        comparisonSessionCount: Int? = 3,
+        wordsPerMinute: Double? = nil,
+        paceDelta: Double? = nil
     ) -> RecommendationOutcome {
         RecommendationOutcome(
             id: UUID(),
@@ -20929,27 +21141,25 @@ struct CoachMemoryEngineTests {
             focus: focus,
             target: "One clean final sentence",
             mode: mode,
-            sessionID: UUID(),
+            sessionID: sessionID,
             followed: followed,
             completedAt: Date(timeIntervalSince1970: completedAt),
             scoreDelta: scoreDelta,
-            hasComparableScore: true,
+            hasComparableScore: hasComparableScore,
             fillerDelta: fillerDelta,
             durationDelta: 0,
-            fillerRateDelta: fillerDelta,
-            comparisonSessionCount: 3
+            fillerRateDelta: fillerRateDelta ?? fillerDelta,
+            comparisonSessionCount: comparisonSessionCount,
+            wordsPerMinute: wordsPerMinute,
+            paceDelta: paceDelta
         )
     }
 
     // MARK: - B1 #5 — Grounded success-bar criterion copy
     //
-    // The success measure quotes the user's OWN pre-window average once they
-    // have >= 3 reps OLDER than the 2-rep evaluation window; below that floor
-    // the copy is byte-identical to the generic phrasing so no fabricated
-    // number is ever shown. `fillersPerRep` is a COUNT (never a %), the window
-    // is always `caseEvaluationWindow` (2). Fixtures hand-traced against the
-    // real constants:
-    //   followedRepValues newest-first → priorValues = dropFirst(2) → average.
+    // The success measure recovers the same-demand baseline persisted on an
+    // accepted outcome. Absolute status is then judged only from exact joined
+    // outcome/session IDs; arbitrary same-mode history is not followed proof.
 
     @Test func buildGroundsFillerCriterionInPriorAverageAboveFloor() {
         // fillers newest→oldest: 1, 1, 7, 6, 6.
@@ -20972,18 +21182,25 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+                interventionOutcome(
+                    mode: .ahCounter,
+                    sessionID: ahSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 0,
+                    fillerDelta: -1,
+                    fillerRateDelta: -1
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
 
         let criterion = memory?.activeIntervention?.successCriterion
-        #expect(criterion?.metric == .fillersPerRep)
-        #expect(criterion?.threshold == 5)
+        #expect(criterion?.metric == .fillersPerMinute)
+        #expect(criterion?.threshold == 1.3)
         #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
-        #expect(criterion?.baselineSnapshot?.priorAverage == 6.333333333333333)
-        // Grounded copy — the user's own number, COUNT unit, window = 2.
-        #expect(criterion?.summary == "your last 3 reps averaged 6.3 fillers — hold at 5 or fewer per rep across 2 reps")
+        #expect(criterion?.baselineSnapshot?.priorAverage == 2)
+        #expect(criterion?.summary == "your last 3 comparable reps averaged 2 fillers/min — hold at 1.3 or fewer/min across 2 reps")
     }
 
     @Test func buildGroundsScoreCriterionInPriorAverageAboveFloor() {
@@ -21007,7 +21224,22 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0)
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: timedSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 3,
+                    fillerDelta: 0
+                ),
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: timedSessions[1].id,
+                    followed: true,
+                    completedAt: 900,
+                    scoreDelta: 3,
+                    fillerDelta: 0
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
@@ -21018,6 +21250,7 @@ struct CoachMemoryEngineTests {
         #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
         #expect(criterion?.baselineSnapshot?.priorAverage == 5)
         #expect(criterion?.summary == "your last 3 reps averaged 5 — hold a 6 or higher across 2 reps")
+        #expect(memory?.activeIntervention?.criterionStatus == .met)
     }
 
     /// A pacing session with a controlled word count: duration 60s means
@@ -21054,7 +21287,28 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0, focus: "controlled pacing under pressure")
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: sessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 1,
+                    fillerDelta: 0,
+                    focus: "controlled pacing under pressure",
+                    wordsPerMinute: 150,
+                    paceDelta: -40
+                ),
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: sessions[1].id,
+                    followed: true,
+                    completedAt: 900,
+                    scoreDelta: 1,
+                    fillerDelta: 0,
+                    focus: "controlled pacing under pressure",
+                    wordsPerMinute: 150,
+                    paceDelta: -40
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
@@ -21065,6 +21319,7 @@ struct CoachMemoryEngineTests {
         #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
         #expect(criterion?.baselineSnapshot?.priorAverage == 190)
         #expect(criterion?.summary == "your last 3 reps averaged 190 words/min — bring it to 175 or slower across 2 reps")
+        #expect(memory?.activeIntervention?.criterionStatus == .met)
     }
 
     @Test func paceFocusInsideHealthyBandFallsBackToGenericScoreCriterion() {
@@ -21088,7 +21343,17 @@ struct CoachMemoryEngineTests {
                 previous: nil,
                 lastSessionID: nil,
                 recommendationOutcomes: [
-                    interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0, focus: focus)
+                    interventionOutcome(
+                        mode: .timed,
+                        sessionID: sessions[0].id,
+                        followed: true,
+                        completedAt: 1_000,
+                        scoreDelta: 1,
+                        fillerDelta: 0,
+                        focus: focus,
+                        wordsPerMinute: 150,
+                        paceDelta: 0
+                    )
                 ],
                 now: Date(timeIntervalSince1970: 1_000)
             )?.activeIntervention?.successCriterion
@@ -21120,12 +21385,62 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0, focus: "your pace keeps rushing")
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: sessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 1,
+                    fillerDelta: 0,
+                    focus: "your pace keeps rushing",
+                    comparisonSessionCount: 2,
+                    wordsPerMinute: 150,
+                    paceDelta: -40
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
         let criterion = memory?.activeIntervention?.successCriterion
         #expect(criterion?.metric == .sessionScore, "thin wpm history must never ground a pace bar")
+    }
+
+    @Test func paceCriterionFallbackDoesNotJudgeScoreWithoutPaceEvidence() {
+        let sessions = [
+            pacedSession(words: 190, at: 1_000),
+            pacedSession(words: 190, at: 900),
+        ]
+        let focus = "controlled pacing under pressure"
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: sessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: sessions[0].id,
+                    completedAt: 1_000,
+                    scoreDelta: 2,
+                    fillerDelta: 0,
+                    focus: focus
+                ),
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: sessions[1].id,
+                    completedAt: 900,
+                    scoreDelta: 2,
+                    fillerDelta: 0,
+                    focus: focus
+                ),
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.activeIntervention?.successCriterion?.metric == .sessionScore)
+        #expect(memory?.activeIntervention?.criterionStatus == .pending)
     }
 
     @Test func fillerPrescriptionKeepsFillerPrecedenceOverPaceKeywords() {
@@ -21147,11 +21462,20 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1, focus: "cut fillers by slowing your pace")
+                interventionOutcome(
+                    mode: .ahCounter,
+                    sessionID: ahSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 0,
+                    fillerDelta: -1,
+                    focus: "cut fillers by slowing your pace",
+                    fillerRateDelta: -1
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
-        #expect(memory?.activeIntervention?.successCriterion?.metric == .fillersPerRep)
+        #expect(memory?.activeIntervention?.successCriterion?.metric == .fillersPerMinute)
     }
 
     @Test func criterionStaysGenericBelowPriorRepFloor() {
@@ -21173,13 +21497,22 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+                interventionOutcome(
+                    mode: .ahCounter,
+                    sessionID: ahSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 0,
+                    fillerDelta: -1,
+                    fillerRateDelta: -1,
+                    comparisonSessionCount: 2
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
-        #expect(fillerMemory?.activeIntervention?.successCriterion?.threshold == 4)
+        #expect(fillerMemory?.activeIntervention?.successCriterion?.threshold == 1.3)
         #expect(fillerMemory?.activeIntervention?.successCriterion?.baselineSnapshot == nil)
-        #expect(fillerMemory?.activeIntervention?.successCriterion?.summary == "4 or fewer fillers per rep across 2 reps")
+        #expect(fillerMemory?.activeIntervention?.successCriterion?.summary == "1.3 or fewer fillers/min across 2 reps")
 
         // Score metric, same thin-evidence shape. scores 8, 8, 5, 5 →
         // priors [5, 5] (count 2, below floor) → threshold 6, generic copy.
@@ -21198,7 +21531,15 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0)
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: timedSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: 3,
+                    fillerDelta: 0,
+                    comparisonSessionCount: 2
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
@@ -21216,7 +21557,15 @@ struct CoachMemoryEngineTests {
             ahCounterSession(fillers: 6, at: 600),
         ]
         let outcomes = [
-            interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+            interventionOutcome(
+                mode: .ahCounter,
+                sessionID: olderSessions[0].id,
+                followed: true,
+                completedAt: 1_000,
+                scoreDelta: 0,
+                fillerDelta: -1,
+                fillerRateDelta: -1
+            )
         ]
         let first = CoachMemoryEngine.build(
             profile: profile(voice: .concise),
@@ -21249,7 +21598,7 @@ struct CoachMemoryEngineTests {
             now: Date(timeIntervalSince1970: 1_100)
         )
 
-        #expect(first?.activeIntervention?.successCriterion?.summary == "your last 3 reps averaged 6.3 fillers — hold at 5 or fewer per rep across 2 reps")
+        #expect(first?.activeIntervention?.successCriterion?.summary == "your last 3 comparable reps averaged 2 fillers/min — hold at 1.3 or fewer/min across 2 reps")
         #expect(rebuilt?.activeIntervention?.successCriterion?.summary == first?.activeIntervention?.successCriterion?.summary)
         #expect(rebuilt?.activeIntervention?.successCriterion?.baselineSnapshot == first?.activeIntervention?.successCriterion?.baselineSnapshot)
     }
@@ -21272,7 +21621,14 @@ struct CoachMemoryEngineTests {
             previous: nil,
             lastSessionID: nil,
             recommendationOutcomes: [
-                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0)
+                interventionOutcome(
+                    mode: .timed,
+                    sessionID: timedSessions[0].id,
+                    followed: true,
+                    completedAt: 1_000,
+                    scoreDelta: -6,
+                    fillerDelta: 0
+                )
             ],
             now: Date(timeIntervalSince1970: 1_000)
         )
