@@ -343,14 +343,22 @@ Do not run a blanket Firestore-rules or Functions deployment from the current
 repository while this gate is open. The social contract is a coordinated data
 migration and server-authority change, not an independent rules update.
 
-The repository-supported deployment entry point is deliberately closed:
+The repository-supported npm entry point and every checked-in Firebase
+Functions/Firestore target are deliberately closed:
 
 ```bash
 npm --prefix functions run deploy
+firebase deploy --only functions
+firebase deploy --only firestore
+firebase deploy --only functions,firestore
 ```
 
-That command performs no deployment. It exits nonzero with four exact missing
-requirements. Eligible competitive evidence production is missing because the
+The npm command performs no deployment. The exact blocker is also the first
+`predeploy` hook on every Functions codebase and Firestore database in
+`firebase.json`, so scoped or unscoped deployment through that checked-in
+configuration refuses before lint, build, target preparation, or network
+mutation. It exits nonzero with four exact missing requirements. Eligible
+competitive evidence production is missing because the
 local server-observation substrate remains disabled and ineligible, has no
 calibrated deterministic evaluator, and its bounded exact-audio replay and
 retention contracts lack deployed TTL and live-provider evidence. Local
@@ -359,9 +367,13 @@ disabled and lacks production cutover, deployed index/rules/functions, TTL,
 and two-device evidence. Independently trusted authorization evidence and an
 immutable source-bound deployment artifact are also missing.
 `npm --prefix functions run deploy -- --help` explains the boundary. There is
-no `--execute` flag or authorization-file escape hatch. Do not bypass it with a
-raw Firebase command. Replace the blocker only after a separately reviewed
-implementation proves all four requirements against the same immutable source.
+no `--execute` flag or authorization-file escape hatch. Hosting intentionally
+does not inherit this social-backend lock so an independently authorized privacy
+body correction remains possible. Direct gcloud/Cloud Console mutation or a
+different Firebase config file remains outside repository enforcement and is
+prohibited by this runbook. Replace both checked-in backend hooks atomically
+only after a separately reviewed implementation proves all four requirements
+against the same immutable source.
 
 Before deploying the reviewed social rules and functions together:
 

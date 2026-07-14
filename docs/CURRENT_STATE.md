@@ -1,5 +1,34 @@
 # Noum — Current state
 
+## 2026-07-14 — Checked-in Firebase backend deployment paths fail closed
+
+Implementation commit `77352b03` closes a production-mutation bypass in the
+existing backend deployment gate. The non-executing npm deploy command already
+listed the four missing release requirements, but `firebase deploy --only
+functions`, `--only firestore`, combined, and unscoped deploys using the
+checked-in `firebase.json` did not pass through it.
+
+The exact blocker is now the first `predeploy` hook for every checked-in
+Functions codebase and Firestore database. Firebase CLI therefore stops before
+lint, build, target preparation, or network mutation. Hosting deliberately does
+not inherit the social-backend lock, so an independently authorized deployment
+of the checked-in privacy correction remains possible. Readiness validation
+fails when either backend hook is missing, altered, or follows another command,
+and when Hosting accidentally inherits it.
+
+Verification passed 7/7 deploy-blocker tests, 86/86 readiness-gate tests,
+Functions lint/build and 109/109 authority tests, 16/16 cloud-operations
+contracts, and 22/22 operational static checks. No Firebase deploy command,
+credential, production service, or network mutation was used.
+
+This protects only repository-configured Firebase CLI deployments. Direct
+gcloud/Cloud Console mutation and alternate Firebase config files remain an
+operator prohibition, not a locally enforceable guarantee. Eligible competitive
+evidence, independently trusted deployment authorization, an immutable
+source-bound deployment artifact, protected cutover, and every required
+external sidecar remain missing. Production readiness stays **NO-GO at 18/100
+with 0/5 external artifacts**.
+
 ## 2026-07-14 — Challenge capture preserves exact server prompt provenance
 
 Implementation commit `23fbfeee` extends the existing process-local
