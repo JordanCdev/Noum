@@ -915,7 +915,14 @@ struct AhCounterView: View {
 
     private func startRecording() {
         guard !speechVM.recordingLifecycle.isBusy else { return }
-        speechVM.prepareSession(mode: .ahCounter)
+        // Ah Counter has no prompt or difficulty demand, so it is the one
+        // current route that can prepare observation provenance without
+        // guessing. The independent release capability remains false; private
+        // practice therefore constructs no capture or backend request today.
+        speechVM.prepareSession(
+            mode: .ahCounter,
+            competitiveObservationIntent: .noPrompt
+        )
         Task { @MainActor in
             _ = await speechVM.startRecordingAwaitingReadiness()
         }

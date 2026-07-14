@@ -156,6 +156,20 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var transcriptListenerTask: Task<Void, Never>?
     private var audioSendPump: TranscriptionAudioPump?
 
+    private struct ActiveCompetitiveObservation {
+        let binding: CompetitiveObservationBinding
+        let accountID: String
+        let accountLifecycleGeneration: UInt64
+        let recordingGeneration: Int
+        var audioCapture: CompetitiveObservationAudioCapture?
+    }
+
+    /// Route-owned provenance prepared alongside mode/demand. It is consumed
+    /// once at start and never inferred from prompt text inside this owner.
+    private var preparedCompetitiveObservationIntent: CompetitiveObservationIntent?
+    private var activeCompetitiveObservation: ActiveCompetitiveObservation?
+    private var currentSessionPersistenceID: UUID?
+
     /// Monotonic session token. A terminal provider callback can race a discard
     /// or the next rep; stale callbacks must never persist or annotate the new
     /// buffers. Bumped when a session commits or is invalidated.
@@ -165,6 +179,25 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// audio stack): finalize only when no newer session has started since.
     nonisolated static func shouldFinalize(captured: Int, current: Int) -> Bool {
         captured == current
+    }
+
+    /// One fence shared by begin and complete responses. Account switches,
+    /// recording restarts, and expired server bindings all make an async tail
+    /// ineligible to touch transcript or persistence state.
+    nonisolated static func shouldAcceptCompetitiveObservation(
+        capturedGeneration: Int,
+        currentGeneration: Int,
+        capturedAccountID: String,
+        currentAccountID: String?,
+        capturedAccountLifecycleGeneration: UInt64,
+        currentAccountLifecycleGeneration: UInt64,
+        expiresAt: Date,
+        now: Date = Date()
+    ) -> Bool {
+        capturedGeneration == currentGeneration
+            && capturedAccountID == currentAccountID
+            && capturedAccountLifecycleGeneration == currentAccountLifecycleGeneration
+            && expiresAt > now
     }
 
     private var audioEngine: AVAudioEngine?
@@ -360,12 +393,14 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func prepareSession(
         mode: PracticeMode,
-        practiceDemand: PracticeSessionDemand? = nil
+        practiceDemand: PracticeSessionDemand? = nil,
+        competitiveObservationIntent: CompetitiveObservationIntent? = nil
     ) {
         currentSessionMode = mode
         currentSessionDemand = practiceDemand?.isValid(for: mode) == true
             ? practiceDemand
             : nil
+        preparedCompetitiveObservationIntent = competitiveObservationIntent
     }
 
     func prepareForInteractiveUse() {
@@ -462,6 +497,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func startRecordingWithProvider() async -> Bool {
+        discardCompetitiveObservation()
         // A new session is committing — invalidate any pending delayed finalize
         // from a prior stop (its transcript buffers are about to be reset).
         sessionGeneration &+= 1
@@ -509,6 +545,16 @@ class SpeechRecognizerViewModel: ObservableObject {
             encoding: .pcmSigned16Bit,
             enableFillerWordDetection: true
         )
+
+        await beginCompetitiveObservationIfAvailable(
+            generation: generation,
+            locale: practiceLocale
+        )
+        guard Self.shouldFinalize(captured: generation, current: sessionGeneration),
+              recordingLifecycle == .connecting else {
+            discardCompetitiveObservation()
+            return false
+        }
 
         do {
             let requestedCloud = provider.identifier != TranscriptionProviderID.local.rawValue
@@ -586,6 +632,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcriptListenerTask = nil
         sessionStart = nil
         lastSavedSessionID = nil
+        currentSessionPersistenceID = nil
+        discardCompetitiveObservation()
         if let session { Task { _ = try? await session.finish() } }
         transition(to: .idle)
     }
@@ -625,13 +673,27 @@ class SpeechRecognizerViewModel: ObservableObject {
             // an interim fragment merely because an earlier segment happened
             // to be final; CloseStream/finish must explicitly finalize the
             // trailing words before they can be scored or persisted.
-            finalTranscript = providerResult.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let observationResult = await completeCompetitiveObservationIfAvailable(
+                generation: gen
+            )
+            guard Self.shouldFinalize(captured: gen, current: sessionGeneration) else { return nil }
+            let providerTranscript = providerResult.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            finalTranscript = observationResult?.transcript ?? providerTranscript
+            if observationResult != nil, finalTranscript != providerTranscript {
+                // Provider word timings/confidence describe a different text
+                // stream. Drop them rather than attaching precise-looking
+                // pause/confidence evidence to the server transcript.
+                sessionWordTimings = []
+                confidenceValues = []
+                activeProviderIdentifier = "noum-server-observation-v1"
+            }
             partialTranscript = ""
             transcribedText = finalTranscript
             highlightAndCountFillerWords(in: finalTranscript)
             let completion = FinalizedTranscript(
                 text: finalTranscript,
-                receivedFinalResult: providerResult.receivedFinalResult,
+                receivedFinalResult: observationResult != nil
+                    || providerResult.receivedFinalResult,
                 audioByteCount: providerResult.audioByteCount
             )
             recordQualityMetrics()
@@ -749,6 +811,15 @@ class SpeechRecognizerViewModel: ObservableObject {
         let analyzer = PitchAnalyzer()
         pitchAnalyzer = analyzer
         let captureSampleRate = inputFormat.sampleRate
+        var observationCapture: CompetitiveObservationAudioCapture?
+        if var observation = activeCompetitiveObservation,
+           observation.recordingGeneration == generation,
+           observation.binding.expiresAt > Date(),
+           let capture = CompetitiveObservationAudioCapture(inputFormat: inputFormat) {
+            observation.audioCapture = capture
+            activeCompetitiveObservation = observation
+            observationCapture = capture
+        }
         let pump = TranscriptionAudioPump(session: session) { [weak self] error in
             Task { @MainActor [weak self] in
                 self?.failActiveRecording(with: error, generation: generation)
@@ -756,7 +827,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         audioSendPump = pump
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, analyzer, pump] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, analyzer, pump, observationCapture] buffer, _ in
             // Capture samples for pitch analysis (cheap append, no DSP here).
             analyzer.appendBuffer(buffer, sampleRate: captureSampleRate)
             guard let self else { return }
@@ -775,6 +846,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 self.audioLevel = min(max(blended, 0), 1)
             }
             let data = Self.pcm16Data(from: buffer)
+            _ = observationCapture?.append(buffer)
             if !pump.enqueue(data) {
                 Task { @MainActor [weak self] in
                     self?.failActiveRecording(
@@ -836,6 +908,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         if let session { Task { _ = try? await session.finish() } }
         sessionStart = nil
         lastSavedSessionID = nil
+        currentSessionPersistenceID = nil
+        discardCompetitiveObservation()
         transition(to: .failed(message))
     }
 
@@ -854,6 +928,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcriptListenerTask = nil
         sessionStart = nil
         lastSavedSessionID = nil
+        currentSessionPersistenceID = nil
+        discardCompetitiveObservation()
         if let session { Task { _ = try? await session.finish() } }
         transition(to: .failed(message))
     }
@@ -886,6 +962,122 @@ class SpeechRecognizerViewModel: ObservableObject {
     private func transition(to state: RecordingLifecycleState) {
         recordingLifecycle = state
         isRecording = state.isRecording
+    }
+
+    private func beginCompetitiveObservationIfAvailable(
+        generation: Int,
+        locale: PracticeLocale
+    ) async {
+        let intent = preparedCompetitiveObservationIntent
+        preparedCompetitiveObservationIntent = nil
+        guard SocialReleaseCapabilities.competitiveObservation.isAvailable,
+              AISettingsManager.shared.isCloudProcessingAllowed,
+              let intent,
+              intent.matches(exactPrompt: sessionPrompt),
+              let accountID = AuthManager.shared.currentAccountID,
+              AuthManager.shouldSyncBackend(accountID: accountID) else {
+            return
+        }
+
+        let sessionID = UUID()
+        let accountLifecycleGeneration = AuthManager.shared.accountLifecycleGeneration
+        guard let request = BeginCompetitiveObservationRequest(
+            sessionID: sessionID,
+            locale: locale,
+            mode: currentSessionMode,
+            demand: currentSessionDemand,
+            promptProvenance: intent.promptProvenance,
+            challengeID: intent.challengeID
+        ) else { return }
+
+        do {
+            let binding = try await BackendSyncManager.shared.beginCompetitiveObservation(
+                request,
+                accountID: accountID
+            )
+            guard Self.shouldAcceptCompetitiveObservation(
+                capturedGeneration: generation,
+                currentGeneration: sessionGeneration,
+                capturedAccountID: accountID,
+                currentAccountID: AuthManager.shared.currentAccountID,
+                capturedAccountLifecycleGeneration: accountLifecycleGeneration,
+                currentAccountLifecycleGeneration: AuthManager.shared.accountLifecycleGeneration,
+                expiresAt: binding.expiresAt
+            ), recordingLifecycle == .connecting else {
+                return
+            }
+            activeCompetitiveObservation = ActiveCompetitiveObservation(
+                binding: binding,
+                accountID: accountID,
+                accountLifecycleGeneration: accountLifecycleGeneration,
+                recordingGeneration: generation,
+                audioCapture: nil
+            )
+            currentSessionPersistenceID = sessionID
+        } catch {
+            // Observation is an additive release-gated authority path. A
+            // failure never converts private practice into a failed rep and
+            // never promotes client-derived evaluation as verified evidence.
+            activeCompetitiveObservation = nil
+            currentSessionPersistenceID = nil
+        }
+    }
+
+    private func completeCompetitiveObservationIfAvailable(
+        generation: Int
+    ) async -> CompetitiveObservationResult? {
+        guard let observation = activeCompetitiveObservation else { return nil }
+        activeCompetitiveObservation = nil
+        guard Self.shouldAcceptCompetitiveObservation(
+            capturedGeneration: observation.recordingGeneration,
+            currentGeneration: sessionGeneration,
+            capturedAccountID: observation.accountID,
+            currentAccountID: AuthManager.shared.currentAccountID,
+            capturedAccountLifecycleGeneration: observation.accountLifecycleGeneration,
+            currentAccountLifecycleGeneration: AuthManager.shared.accountLifecycleGeneration,
+            expiresAt: observation.binding.expiresAt
+        ), AISettingsManager.shared.isCloudProcessingAllowed,
+           let payload = observation.audioCapture?.consume() else {
+            observation.audioCapture?.discard()
+            currentSessionPersistenceID = nil
+            return nil
+        }
+
+        guard let request = CompleteCompetitiveObservationRequest(
+            sessionID: observation.binding.sessionID,
+            audio: payload
+        ) else {
+            currentSessionPersistenceID = nil
+            return nil
+        }
+        do {
+            let result = try await BackendSyncManager.shared.completeCompetitiveObservation(
+                request,
+                accountID: observation.accountID
+            )
+            guard Self.shouldAcceptCompetitiveObservation(
+                capturedGeneration: observation.recordingGeneration,
+                currentGeneration: sessionGeneration,
+                capturedAccountID: observation.accountID,
+                currentAccountID: AuthManager.shared.currentAccountID,
+                capturedAccountLifecycleGeneration: observation.accountLifecycleGeneration,
+                currentAccountLifecycleGeneration: AuthManager.shared.accountLifecycleGeneration,
+                expiresAt: observation.binding.expiresAt
+            ) else {
+                currentSessionPersistenceID = nil
+                return nil
+            }
+            return result
+        } catch {
+            currentSessionPersistenceID = nil
+            return nil
+        }
+    }
+
+    private func discardCompetitiveObservation() {
+        activeCompetitiveObservation?.audioCapture?.discard()
+        activeCompetitiveObservation = nil
+        currentSessionPersistenceID = nil
     }
 
     private func installAudioSessionObservers() {
@@ -1032,7 +1224,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func saveCurrentSession() {
-        defer { currentSessionDemand = nil }
+        defer {
+            currentSessionDemand = nil
+            currentSessionPersistenceID = nil
+        }
         let duration = Date().timeIntervalSince(sessionStart ?? Date())
         lastSessionDuration = duration
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1083,6 +1278,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         let finalizedSession = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
+                id: currentSessionPersistenceID,
                 transcript: transcribedText,
                 fillerWordCount: fillerWordCount,
                 duration: duration,

@@ -8748,6 +8748,10 @@ extension PracticeSession {
 }
 
 struct PracticeSessionDraft {
+    /// Preallocated only when an external authority must bind the rep before
+    /// capture starts. Ordinary private reps leave this nil and preserve the
+    /// store's existing UUID-at-append behavior.
+    let id: UUID?
     let transcript: String
     let fillerWordCount: Int
     let duration: TimeInterval
@@ -8781,6 +8785,7 @@ struct PracticeSessionDraft {
     let repEventLocations: RepEventLocations?
 
     init(
+        id: UUID? = nil,
         transcript: String,
         fillerWordCount: Int,
         duration: TimeInterval,
@@ -8799,6 +8804,7 @@ struct PracticeSessionDraft {
         vocalEnergyMetrics: VocalEnergyMetrics? = nil,
         repEventLocations: RepEventLocations? = nil
     ) {
+        self.id = id
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
         self.duration = duration
@@ -8876,6 +8882,7 @@ final class PracticeSessionStore: ObservableObject {
         // Live ingestion builds sessions from drafts, which have no fixture
         // fields. Evaluation fixtures must stay in the test harness only.
         let session = PracticeSession(
+            id: draft.id ?? UUID(),
             transcript: draft.transcript,
             fillerWordCount: draft.fillerWordCount,
             duration: draft.duration,
@@ -10902,6 +10909,7 @@ enum PracticeSessionFinalizer {
         if draft.intentFocus != nil { return draft }
         guard let intent else { return draft }
         return PracticeSessionDraft(
+            id: draft.id,
             transcript: draft.transcript,
             fillerWordCount: draft.fillerWordCount,
             duration: draft.duration,

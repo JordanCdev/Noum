@@ -240,6 +240,11 @@ class AuthManager: ObservableObject {
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
     private var activeInitialRemoteProfileHydrationRace: InitialRemoteProfileHydrationRace?
+    /// Monotonic process-local identity epoch. Async consumers that handle
+    /// sensitive transient data capture this value and reject completions
+    /// after teardown or hydration, including a rapid sign-out/sign-in to the
+    /// same Firebase UID.
+    private(set) var accountLifecycleGeneration: UInt64 = 0
     private nonisolated static let localGuestPrefix = "local-guest-"
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
     private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
@@ -1240,6 +1245,7 @@ class AuthManager: ObservableObject {
     }
 
     private func reloadAccountScopedStores() {
+        accountLifecycleGeneration &+= 1
         NotificationPrePromptManager.shared.pendingPrompt = false
         DeferredProfileCaptureManager.shared.pendingPrompt = nil
         GoalRefreshManager.shared.shouldPresent = false
@@ -1478,6 +1484,7 @@ class AuthManager: ObservableObject {
     }
 
     private func clearStoredSession() {
+        accountLifecycleGeneration &+= 1
         KeychainHelper.delete(key: accountKey)
         KeychainHelper.delete(key: accountNameKey)
         KeychainHelper.delete(key: accountProviderKey)

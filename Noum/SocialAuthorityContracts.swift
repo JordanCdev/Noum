@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Stable callable routing for every server-authored peer surface.
 ///
@@ -7,12 +8,343 @@ import Foundation
 /// Firestore writes.
 enum SocialAuthorityCallable {
     static let region = "europe-west2"
+    static let beginCompetitiveObservation = "beginCompetitiveObservation"
+    static let completeCompetitiveObservation = "completeCompetitiveObservation"
     static let recordPeerSession = "recordPeerSession"
     static let getPeerProfile = "getPeerProfile"
     static let listLeagueMembers = "listLeagueMembers"
     static let createChallenge = "createChallenge"
     static let submitChallengeResult = "submitChallengeResult"
     static let setChallengeReaction = "setChallengeReaction"
+}
+
+// MARK: - Competitive observation authority
+
+enum CompetitiveObservationPromptSource: String, Codable, Equatable, Sendable {
+    case none
+    case curated
+    case aiGenerated = "ai-generated"
+    case userAuthored = "user-authored"
+    case speechProject = "speech-project"
+    case challenge
+}
+
+/// Content-free provenance bound before microphone capture starts. Prompt text
+/// never crosses this contract; only the server-comparable SHA-256 digest does.
+struct CompetitiveObservationPromptProvenance: Codable, Equatable, Sendable {
+    let source: CompetitiveObservationPromptSource
+    let promptDigest: String?
+
+    static let none = CompetitiveObservationPromptProvenance(
+        source: .none,
+        promptDigest: nil
+    )
+
+    /// The backend uses SHA-256 over the prompt's exact UTF-8 bytes. Do not
+    /// trim, normalize, fold case, or collapse whitespace here: changing even
+    /// one byte must break a challenge/prompt binding rather than silently
+    /// authorize a different exercise.
+    static func bound(
+        source: CompetitiveObservationPromptSource,
+        exactPrompt: String
+    ) -> CompetitiveObservationPromptProvenance? {
+        guard source != .none, !exactPrompt.isEmpty else { return nil }
+        let digest = SHA256.hash(data: Data(exactPrompt.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return CompetitiveObservationPromptProvenance(
+            source: source,
+            promptDigest: digest
+        )
+    }
+
+    init(source: CompetitiveObservationPromptSource, promptDigest: String?) {
+        self.source = source
+        self.promptDigest = promptDigest?.lowercased()
+    }
+
+    var isValid: Bool {
+        switch source {
+        case .none:
+            return promptDigest == nil
+        case .curated, .aiGenerated, .userAuthored, .speechProject, .challenge:
+            guard let promptDigest, promptDigest.count == 64 else { return false }
+            return promptDigest.unicodeScalars.allSatisfy {
+                CharacterSet(charactersIn: "0123456789abcdef").contains($0)
+            }
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case source, promptDigest }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(source, forKey: .source)
+        if let promptDigest {
+            try container.encode(promptDigest, forKey: .promptDigest)
+        } else {
+            try container.encodeNil(forKey: .promptDigest)
+        }
+    }
+}
+
+/// Prepared by the route that owns the exact prompt provenance. The speech
+/// view model accepts this value rather than guessing whether visible text was
+/// curated, generated, user-authored, project-owned, or challenge-owned.
+struct CompetitiveObservationIntent: Equatable, Sendable {
+    let promptProvenance: CompetitiveObservationPromptProvenance
+    let challengeID: UUID?
+
+    static let noPrompt = CompetitiveObservationIntent(
+        promptProvenance: .none,
+        challengeID: nil
+    )
+
+    static func bound(
+        source: CompetitiveObservationPromptSource,
+        exactPrompt: String,
+        challengeID: UUID? = nil
+    ) -> CompetitiveObservationIntent? {
+        guard let provenance = CompetitiveObservationPromptProvenance.bound(
+            source: source,
+            exactPrompt: exactPrompt
+        ) else { return nil }
+        guard (source == .challenge) == (challengeID != nil) else { return nil }
+        return CompetitiveObservationIntent(
+            promptProvenance: provenance,
+            challengeID: challengeID
+        )
+    }
+
+    func matches(exactPrompt: String?) -> Bool {
+        switch promptProvenance.source {
+        case .none:
+            return exactPrompt == nil && challengeID == nil
+        case .curated, .aiGenerated, .userAuthored, .speechProject, .challenge:
+            guard let exactPrompt,
+                  let expected = CompetitiveObservationPromptProvenance.bound(
+                    source: promptProvenance.source,
+                    exactPrompt: exactPrompt
+                  ) else { return false }
+            return expected == promptProvenance
+                && ((promptProvenance.source == .challenge) == (challengeID != nil))
+        }
+    }
+}
+
+/// Exact wire projection of `PracticeSessionDemand`. Custom encoding retains
+/// explicit nulls because the callable rejects ambiguous/partial demand maps.
+struct CompetitiveObservationDemand: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let timedDifficulty: TimedPracticeDifficulty?
+    let suddenDeathDifficulty: SuddenDeathDifficulty?
+    let speechProjectID: String?
+
+    init?(_ demand: PracticeSessionDemand, mode: PracticeMode) {
+        guard demand.isValid(for: mode) else { return nil }
+        schemaVersion = PracticeSessionDemand.currentSchemaVersion
+        timedDifficulty = demand.timedDifficulty
+        suddenDeathDifficulty = demand.suddenDeathDifficulty
+        speechProjectID = demand.speechProjectID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, timedDifficulty, suddenDeathDifficulty, speechProjectID
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        if let timedDifficulty {
+            try container.encode(timedDifficulty, forKey: .timedDifficulty)
+        } else {
+            try container.encodeNil(forKey: .timedDifficulty)
+        }
+        if let suddenDeathDifficulty {
+            try container.encode(suddenDeathDifficulty, forKey: .suddenDeathDifficulty)
+        } else {
+            try container.encodeNil(forKey: .suddenDeathDifficulty)
+        }
+        if let speechProjectID {
+            try container.encode(speechProjectID, forKey: .speechProjectID)
+        } else {
+            try container.encodeNil(forKey: .speechProjectID)
+        }
+    }
+}
+
+struct BeginCompetitiveObservationRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let sessionID: String
+    let locale: String
+    let mode: PracticeMode
+    let demand: CompetitiveObservationDemand?
+    let promptProvenance: CompetitiveObservationPromptProvenance
+    let challengeID: String?
+
+    init?(
+        sessionID: UUID,
+        locale: PracticeLocale,
+        mode: PracticeMode,
+        demand: PracticeSessionDemand?,
+        promptProvenance: CompetitiveObservationPromptProvenance,
+        challengeID: UUID?
+    ) {
+        let wireDemand = demand.flatMap { CompetitiveObservationDemand($0, mode: mode) }
+        switch mode {
+        case .timed, .suddenDeath:
+            guard wireDemand != nil else { return nil }
+        case .ahCounter, .imConversation:
+            guard demand == nil else { return nil }
+        }
+        guard promptProvenance.isValid else { return nil }
+        switch promptProvenance.source {
+        case .none:
+            guard challengeID == nil else { return nil }
+        case .challenge:
+            guard challengeID != nil else { return nil }
+        case .speechProject:
+            guard challengeID == nil,
+                  wireDemand?.speechProjectID != nil else { return nil }
+        case .curated, .aiGenerated, .userAuthored:
+            guard challengeID == nil else { return nil }
+        }
+
+        schemaVersion = Self.currentSchemaVersion
+        self.sessionID = sessionID.uuidString
+        self.locale = locale.code
+        self.mode = mode
+        self.demand = wireDemand
+        self.promptProvenance = promptProvenance
+        self.challengeID = challengeID?.uuidString
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, sessionID, locale, mode, demand, promptProvenance, challengeID
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(locale, forKey: .locale)
+        try container.encode(mode, forKey: .mode)
+        if let demand {
+            try container.encode(demand, forKey: .demand)
+        } else {
+            try container.encodeNil(forKey: .demand)
+        }
+        try container.encode(promptProvenance, forKey: .promptProvenance)
+        if let challengeID {
+            try container.encode(challengeID, forKey: .challengeID)
+        } else {
+            try container.encodeNil(forKey: .challengeID)
+        }
+    }
+}
+
+struct BeginCompetitiveObservationResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let sessionID: String
+    let expiresAt: String
+    let replayed: Bool
+
+    func binding(expectedSessionID: UUID, now: Date = Date()) throws -> CompetitiveObservationBinding {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard schemaVersion == BeginCompetitiveObservationRequest.currentSchemaVersion,
+              sessionID == expectedSessionID.uuidString,
+              let expiry = fractional.date(from: expiresAt)
+                ?? ISO8601DateFormatter().date(from: expiresAt),
+              expiry > now else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return CompetitiveObservationBinding(
+            sessionID: expectedSessionID,
+            expiresAt: expiry,
+            replayed: replayed
+        )
+    }
+}
+
+struct CompetitiveObservationBinding: Equatable, Sendable {
+    let sessionID: UUID
+    let expiresAt: Date
+    let replayed: Bool
+}
+
+struct CompetitiveObservationAudioEnvelope: Codable, Equatable, Sendable {
+    let encoding: String
+    let sampleRateHertz: Int
+    let channelCount: Int
+    let sampleWidthBits: Int
+    let dataBase64: String
+
+    init(_ payload: CompetitiveObservationAudioPayload) {
+        encoding = "linear16"
+        sampleRateHertz = CompetitiveObservationAudioPayload.sampleRate
+        channelCount = CompetitiveObservationAudioPayload.channelCount
+        sampleWidthBits = CompetitiveObservationAudioPayload.bytesPerSample * 8
+        dataBase64 = payload.pcm16Mono.base64EncodedString()
+    }
+}
+
+struct CompleteCompetitiveObservationRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let sessionID: String
+    let audio: CompetitiveObservationAudioEnvelope
+
+    init?(sessionID: UUID, audio: CompetitiveObservationAudioPayload) {
+        guard audio.isCanonical else { return nil }
+        schemaVersion = Self.currentSchemaVersion
+        self.sessionID = sessionID.uuidString
+        self.audio = CompetitiveObservationAudioEnvelope(audio)
+    }
+}
+
+struct CompleteCompetitiveObservationResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let sessionID: String
+    let transcript: String
+    let durationSeconds: Double
+    let wordCount: Int
+    let competitiveEligible: Bool
+    let replayed: Bool
+
+    func result(expectedSessionID: UUID) throws -> CompetitiveObservationResult {
+        let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard schemaVersion == CompleteCompetitiveObservationRequest.currentSchemaVersion,
+              sessionID == expectedSessionID.uuidString,
+              !cleanTranscript.isEmpty,
+              cleanTranscript.count <= 12_000,
+              durationSeconds.isFinite,
+              durationSeconds > 0,
+              durationSeconds <= CompetitiveObservationAudioPayload.maximumDuration,
+              wordCount > 0,
+              wordCount <= 3_000,
+              competitiveEligible == false else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return CompetitiveObservationResult(
+            sessionID: expectedSessionID,
+            transcript: cleanTranscript,
+            duration: durationSeconds,
+            wordCount: wordCount,
+            replayed: replayed
+        )
+    }
+}
+
+struct CompetitiveObservationResult: Equatable, Sendable {
+    let sessionID: UUID
+    let transcript: String
+    let duration: TimeInterval
+    let wordCount: Int
+    let replayed: Bool
 }
 
 struct SocialCapabilityAvailability: Equatable, Sendable {
@@ -25,6 +357,16 @@ struct SocialCapabilityAvailability: Equatable, Sendable {
 /// producers do not exist yet. Keeping these gates false prevents every rep or
 /// tap from generating a predictable failed callable and one-off error card.
 enum SocialReleaseCapabilities {
+    /// Server-observed competitive reps remain dark until the capture,
+    /// evaluator calibration, deployment, and privacy evidence all pass the
+    /// release gate. This flag is intentionally independent from peer UI:
+    /// enabling a social surface must never silently authorize microphone
+    /// bytes to leave the established transcription path.
+    static let competitiveObservation = SocialCapabilityAvailability(
+        isAvailable: false,
+        message: "Verified competitive reps are unavailable while Noum finishes secure observation and evaluator calibration. Private practice is unaffected."
+    )
+
     static let peerProgress = SocialCapabilityAvailability(
         isAvailable: false,
         message: "Peer comparisons are unavailable while Noum finishes secure evidence verification. Your private coaching progress is unaffected."

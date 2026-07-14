@@ -311,6 +311,8 @@ actor BackendSyncManager {
     static let functionsRegion = SocialAuthorityCallable.region
     static let deleteAccountFunctionName = "deleteAccount"
     static let syncRecommendationStateFunctionName = "syncRecommendationState"
+    static let beginCompetitiveObservationFunctionName = SocialAuthorityCallable.beginCompetitiveObservation
+    static let completeCompetitiveObservationFunctionName = SocialAuthorityCallable.completeCompetitiveObservation
     static let recordPeerSessionFunctionName = SocialAuthorityCallable.recordPeerSession
     static let getPeerProfileFunctionName = SocialAuthorityCallable.getPeerProfile
     static let listLeagueMembersFunctionName = SocialAuthorityCallable.listLeagueMembers
@@ -762,6 +764,61 @@ actor BackendSyncManager {
     #endif
 
     // MARK: - Peer (M2: Peer Pull v1)
+
+    /// Opens the server-owned observation window before the microphone starts.
+    /// The request contains exercise provenance but no transcript, score,
+    /// duration, filler count, or rated result.
+    func beginCompetitiveObservation(
+        _ request: BeginCompetitiveObservationRequest,
+        accountID: String
+    ) async throws -> CompetitiveObservationBinding {
+        guard SocialReleaseCapabilities.competitiveObservation.isAvailable else {
+            throw SocialAuthorityError.verifiedEvidenceUnavailable
+        }
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        guard UUID(uuidString: request.sessionID) != nil else {
+            throw SocialAuthorityError.invalidRequest
+        }
+        let response: BeginCompetitiveObservationResponse = try await callSocialAuthority(
+            Self.beginCompetitiveObservationFunctionName,
+            request: request
+        )
+        guard let sessionID = UUID(uuidString: request.sessionID) else {
+            throw SocialAuthorityError.invalidRequest
+        }
+        return try response.binding(expectedSessionID: sessionID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    /// Sends only the bounded microphone bytes captured after a successful
+    /// begin response. The server transcript is returned as an observation;
+    /// no client-authored evaluation field exists in this request.
+    func completeCompetitiveObservation(
+        _ request: CompleteCompetitiveObservationRequest,
+        accountID: String
+    ) async throws -> CompetitiveObservationResult {
+        guard SocialReleaseCapabilities.competitiveObservation.isAvailable else {
+            throw SocialAuthorityError.verifiedEvidenceUnavailable
+        }
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        guard let sessionID = UUID(uuidString: request.sessionID) else {
+            throw SocialAuthorityError.invalidRequest
+        }
+        let response: CompleteCompetitiveObservationResponse = try await callSocialAuthority(
+            Self.completeCompetitiveObservationFunctionName,
+            request: request
+        )
+        return try response.result(expectedSessionID: sessionID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
 
     /// Upload a fully annotated session, wait for the Firestore commit, then
     /// ask the server to derive every public statistic from that stored rep.
