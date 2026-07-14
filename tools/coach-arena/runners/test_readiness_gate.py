@@ -2136,6 +2136,157 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertFalse(invalid["passes"])
         self.assertEqual(invalid["error"], "notAncestor")
 
+    def test_dirty_source_path_policy_excludes_only_docs_and_exact_generated_outputs(self):
+        allowed = [
+            "README.md",
+            "docs/CURRENT_STATE.md",
+            ".screenshots/2026-07-14_check/HANDOFF.md",
+            "tools/coach-arena/reports/app-path/latest.json",
+            "tools/coach-arena/reports/app-path/latest.md",
+            "tools/coach-arena/reports/app-path/failures.md",
+            "tools/coach-arena/synthetic/app-path/ten_conversations.md",
+        ]
+        blocked = [
+            "Noum/PracticeSupport.swift",
+            "Noum/Resources/Localizable.xcstrings",
+            "Noum.xcodeproj/project.pbxproj",
+            "tools/coach-arena/reports/gate-audit-corpus.json",
+            "tools/coach-arena/reports/app-path/unexpected.json",
+            "tools/coach-arena/judges/rubric.json",
+            "tools/coach-arena/runners/readiness_gate.py",
+            "scripts/release-xcode-ci.sh",
+            "unknown/new-file",
+        ]
+
+        self.assertTrue(all(not gate.dirty_behavior_source_path(path) for path in allowed))
+        self.assertTrue(all(gate.dirty_behavior_source_path(path) for path in blocked))
+
+    def test_dirty_source_audit_handles_renames_untracked_and_output_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            subprocess.run(
+                ["git", "-C", root, "config", "user.email", "tests@noum.local"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", root, "config", "user.name", "Noum Tests"],
+                check=True,
+            )
+            files = {
+                "docs/CURRENT_STATE.md": "state\n",
+                "tools/coach-arena/reports/app-path/latest.json": "{}\n",
+                "tools/coach-arena/synthetic/app-path/ten_conversations.md": "report\n",
+                "Noum/Resources/Localizable.xcstrings": "{}\n",
+                "Noum/Old.swift": "struct Old {}\n",
+            }
+            for relative, contents in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents, encoding="utf-8")
+            subprocess.run(["git", "-C", root, "add", "."], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-qm", "baseline"], check=True)
+
+            (root / "docs/CURRENT_STATE.md").write_text("updated docs\n", encoding="utf-8")
+            (root / "tools/coach-arena/reports/app-path/latest.json").write_text(
+                "{\"fresh\":true}\n",
+                encoding="utf-8",
+            )
+            (root / "tools/coach-arena/synthetic/app-path/ten_conversations.md").write_text(
+                "fresh report\n",
+                encoding="utf-8",
+            )
+            (root / "Noum/Resources/Localizable.xcstrings").write_text(
+                "{\"changed\":true}\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "-C", root, "mv", "Noum/Old.swift", "Noum/Renamed.swift"],
+                check=True,
+            )
+            (root / "Noum/Untracked.swift").write_text(
+                "struct Untracked {}\n",
+                encoding="utf-8",
+            )
+
+            dirty = gate.current_dirty_coach_source_files(root)
+
+        self.assertEqual(
+            dirty,
+            [
+                "Noum/Old.swift",
+                "Noum/Renamed.swift",
+                "Noum/Resources/Localizable.xcstrings",
+                "Noum/Untracked.swift",
+            ],
+        )
+
+    def test_git_status_parser_preserves_unusual_and_both_rename_paths(self):
+        output = (
+            b" M path with spaces\0"
+            b"?? literal -> arrow\0"
+            b"?? line\nfeed.swift\0"
+            b"R  renamed destination.swift\0rename source.swift\0"
+            b"C  copied destination.swift\0copy source.swift\0"
+        )
+
+        self.assertEqual(
+            gate.parse_git_status_porcelain_z(output),
+            [
+                "copied destination.swift",
+                "copy source.swift",
+                "line\nfeed.swift",
+                "literal -> arrow",
+                "path with spaces",
+                "rename source.swift",
+                "renamed destination.swift",
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, "malformedGitStatusRename"):
+            gate.parse_git_status_porcelain_z(b"R  destination-only\0")
+
+    def test_source_freshness_rejects_dirty_source_at_matching_commit_and_fingerprint(self):
+        report = {
+            "results": [{
+                "trace": {
+                    "sourceFingerprint": "sha256:fresh",
+                    "gitCommit": "abc123",
+                }
+            }]
+        }
+        artifact_audit = {
+            "sourceSidecars": [
+                {
+                    "fileName": "source-coach-fingerprint.txt",
+                    "present": True,
+                    "valuePreview": "sha256:fresh",
+                },
+                {
+                    "fileName": "source-git-commit.txt",
+                    "present": True,
+                    "valuePreview": "abc123",
+                },
+            ]
+        }
+        with (
+            mock.patch.object(gate, "coach_source_fingerprint", return_value="sha256:fresh"),
+            mock.patch.object(gate, "current_git_commit", return_value="abc123"),
+            mock.patch.object(
+                gate,
+                "current_dirty_coach_source_files",
+                return_value=["Noum/Resources/Localizable.xcstrings"],
+            ),
+        ):
+            audit = gate.source_freshness_audit(report, artifact_audit, Path("/repo"))
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(
+            audit["unfingerprintedDirtyCoachSourceFiles"],
+            ["Noum/Resources/Localizable.xcstrings"],
+        )
+        failures = gate.source_freshness_gate_failures(audit)
+        self.assertEqual([failure["label"] for failure in failures], ["dirtyCoachSource"])
+
     def test_source_freshness_rejects_unrelated_matching_commit(self):
         readiness = {
             "score": 85,

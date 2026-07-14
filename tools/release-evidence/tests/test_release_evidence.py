@@ -8,6 +8,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
@@ -475,6 +476,12 @@ def fill_complete_fixture(run_dir):
 
 class ReleaseEvidenceWorkflowTests(unittest.TestCase):
     def setUp(self):
+        self.clean_source_patcher = mock.patch.object(
+            release.GATE,
+            "current_dirty_coach_source_files",
+            return_value=[],
+        )
+        self.clean_source_patcher.start()
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.source_dump = self.root / "source-dump"
@@ -484,6 +491,18 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+        self.clean_source_patcher.stop()
+
+    def test_source_binding_rejects_dirty_behavior_source(self):
+        with (
+            mock.patch.object(
+                release.GATE,
+                "current_dirty_coach_source_files",
+                return_value=["Noum/Resources/Localizable.xcstrings"],
+            ),
+            self.assertRaisesRegex(release.WorkflowError, "coach source is dirty"),
+        ):
+            release.current_source_binding(REPO_ROOT)
 
     def test_full_source_commit_expands_only_valid_git_commit_references(self):
         abbreviated = release.current_source_binding(REPO_ROOT)["sourceGitCommit"]

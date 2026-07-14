@@ -997,29 +997,8 @@ def source_app_path_trace_fingerprints(report):
     return sorted(set(fingerprints)), missing_count, trace_count
 
 
-def parse_git_status_porcelain(output):
-    paths = []
-    for line in output.splitlines():
-        if len(line) < 4:
-            continue
-        path = line[3:].strip()
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1].strip()
-        if path:
-            paths.append(path)
-    return sorted(set(paths))
-
-
 def current_dirty_coach_source_files():
-    proc = subprocess.run(
-        ["git", "status", "--porcelain", "--", *COACH_SOURCE_STATUS_PATHS],
-        cwd=str(ROOT),
-        text=True,
-        capture_output=True
-    )
-    if proc.returncode != 0:
-        return ["<git-status-unavailable>"]
-    return parse_git_status_porcelain(proc.stdout)
+    return readiness_gate.current_dirty_coach_source_files(ROOT)
 
 
 def current_git_commit(short=True):
@@ -1050,6 +1029,12 @@ def coach_source_fingerprint(paths=COACH_SOURCE_STATUS_PATHS):
 
 
 def write_app_path_source_sidecars(dump_dir):
+    dirty_source_files = current_dirty_coach_source_files()
+    if dirty_source_files:
+        raise RuntimeError(
+            "refusing to bind app-path evidence to a dirty behavior source: " +
+            ",".join(dirty_source_files[:8])
+        )
     dump_path = Path(dump_dir)
     dump_path.mkdir(parents=True, exist_ok=True)
     commit = current_git_commit(short=True)
@@ -1085,6 +1070,12 @@ def app_path_regeneration_preflight(
     dirty_source_files = (
         dirty_source_files if dirty_source_files is not None
         else current_dirty_coach_source_files()
+    )
+    unfingerprinted_dirty_source_files = (
+        readiness_gate.unfingerprinted_dirty_coach_source_files(
+            dirty_source_files,
+            COACH_SOURCE_STATUS_PATHS,
+        )
     )
     current_source_fingerprint = (
         current_source_fingerprint if current_source_fingerprint is not None
@@ -1173,11 +1164,10 @@ def app_path_regeneration_preflight(
         any(fingerprint != current_source_fingerprint for fingerprint in source_fingerprints)
     ):
         blockers.append("traceCoachFingerprintStale")
-    if dirty_source_files and (
-        not source_fingerprints or
-        any(fingerprint != current_source_fingerprint for fingerprint in source_fingerprints)
-    ):
+    if dirty_source_files:
         blockers.append("dirtyCoachSourceAfterDump")
+    if unfingerprinted_dirty_source_files:
+        blockers.append("dirtySourceOutsideCoachFingerprint")
 
     if blockers and report_path.is_file():
         next_steps.append("./tools/coach-arena/run.sh app-path-source")
@@ -1198,6 +1188,7 @@ def app_path_regeneration_preflight(
         "currentGitCommit": current_commit,
         "currentCoachSourceFingerprint": current_source_fingerprint,
         "dirtyCoachSourceFiles": dirty_source_files,
+        "unfingerprintedDirtyCoachSourceFiles": unfingerprinted_dirty_source_files,
         "cleanAncestorChangedPaths": sorted(set(
             path for audit in clean_ancestor_audits.values()
             for path in audit["changedPaths"]
@@ -1234,6 +1225,12 @@ def app_path_source_freshness_fields(
     source_fingerprints = coverage.get("sourceTraceCoachSourceFingerprints") or []
     missing_fingerprint_count = coverage.get("sourceTraceMissingCoachSourceFingerprintCount") or 0
     current_source_fingerprint = current_source_fingerprint or coach_source_fingerprint()
+    unfingerprinted_dirty_source_files = (
+        readiness_gate.unfingerprinted_dirty_coach_source_files(
+            dirty_source_files,
+            COACH_SOURCE_STATUS_PATHS,
+        )
+    )
     fingerprint_matches = (
         bool(source_fingerprints) and
         bool(current_source_fingerprint) and
@@ -1273,7 +1270,7 @@ def app_path_source_freshness_fields(
             "source app-path git commit(s) do not match current HEAD: " +
             ",".join(source_commits)
         )
-    if dirty_source_files and not fingerprint_matches:
+    if dirty_source_files:
         shown = dirty_source_files[:8]
         suffix = "" if len(dirty_source_files) <= len(shown) else f",+{len(dirty_source_files) - len(shown)} more"
         failures.append(
@@ -1281,10 +1278,22 @@ def app_path_source_freshness_fields(
             ",".join(shown) +
             suffix
         )
+    if unfingerprinted_dirty_source_files:
+        shown = unfingerprinted_dirty_source_files[:8]
+        suffix = (
+            "" if len(unfingerprinted_dirty_source_files) <= len(shown)
+            else f",+{len(unfingerprinted_dirty_source_files) - len(shown)} more"
+        )
+        failures.append(
+            "unfingerprinted dirty behavior source: " +
+            ",".join(shown) +
+            suffix
+        )
     return {
         "currentGitCommit": current_git_commit,
         "currentCoachSourceFingerprint": current_source_fingerprint,
         "currentDirtyCoachSourceFiles": dirty_source_files,
+        "unfingerprintedDirtyCoachSourceFiles": unfingerprinted_dirty_source_files,
         "cleanAncestorChangedPaths": sorted(set(
             path for audit in ancestor_audits for path in audit["changedPaths"]
         )),
@@ -3136,7 +3145,11 @@ def main():
     args = parser.parse_args()
 
     if args.write_app_path_source_sidecars:
-        payload = write_app_path_source_sidecars(args.write_app_path_source_sidecars)
+        try:
+            payload = write_app_path_source_sidecars(args.write_app_path_source_sidecars)
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 1
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     if args.app_path_preflight:

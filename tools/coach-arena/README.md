@@ -118,6 +118,16 @@ script, evaluator, prompt/rubric, generated-report, resource, and unknown paths
 fail closed even when the manually scoped coach fingerprint is unchanged. This
 keeps a stale but internally consistent report blocked until the Swift dump and
 app-path report are regenerated from the relevant current source.
+The uncommitted-source boundary is repository-wide and NUL-safe: staged,
+unstaged, renamed, copied, and untracked non-ignored paths are inspected, and
+both sides of a rename or copy are classified. Approved repository
+documentation and the eight exact files emitted by canonical/diagnostic
+app-path scoring are excluded; resources, localization, project files, tests,
+scripts, evaluator inputs, and unknown paths fail closed. Fingerprint equality
+does not excuse a dirty behavior source. `app-path-source` refuses to create or
+overwrite its sidecars until that source boundary is clean. Intentionally
+gitignored local configuration and build/evidence caches remain outside this
+status contract and must be controlled by their separate build/release checks.
 The same source sidecars now gate `coach-live-eval-v1.json`: a live-provider
 sweep only clears `.noLiveProviderTranscriptSweep` when its `sourceGitCommit`
 and `sourceCoachFingerprint` match the sidecars in the dump directory, and the

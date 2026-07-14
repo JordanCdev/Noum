@@ -877,7 +877,7 @@ class AppPathBoundaryTests(unittest.TestCase):
             fields["sourceFreshnessFailures"],
         )
 
-    def test_source_fingerprint_allows_dirty_tree_app_path_trace_to_prove_fresh_source(self):
+    def test_source_fingerprint_does_not_excuse_dirty_tree(self):
         coverage = {
             "source": "appPathReport",
             "sourceTraceGitCommits": ["current"],
@@ -893,10 +893,40 @@ class AppPathBoundaryTests(unittest.TestCase):
             current_source_fingerprint="sha256:fresh",
         )
 
-        self.assertTrue(fields["sourceFreshnessPasses"])
+        self.assertFalse(fields["sourceFreshnessPasses"])
         self.assertTrue(fields["sourceFingerprintMatchesCurrent"])
         self.assertEqual(fields["currentCoachSourceFingerprint"], "sha256:fresh")
-        self.assertEqual(fields["sourceFreshnessFailures"], [])
+        self.assertEqual(
+            fields["sourceFreshnessFailures"],
+            ["dirty coach source files after app-path dump: Noum/AICoachChatService.swift"],
+        )
+
+    def test_source_freshness_names_dirty_source_outside_fingerprint(self):
+        coverage = {
+            "source": "appPathReport",
+            "sourceTraceGitCommits": ["current"],
+            "sourceTraceMissingGitCommitCount": 0,
+            "sourceTraceCoachSourceFingerprints": ["sha256:fresh"],
+            "sourceTraceMissingCoachSourceFingerprintCount": 0,
+        }
+
+        fields = arena.app_path_source_freshness_fields(
+            coverage,
+            "current",
+            ["Noum/Resources/Localizable.xcstrings"],
+            current_source_fingerprint="sha256:fresh",
+        )
+
+        self.assertFalse(fields["sourceFreshnessPasses"])
+        self.assertTrue(fields["sourceFingerprintMatchesCurrent"])
+        self.assertEqual(
+            fields["unfingerprintedDirtyCoachSourceFiles"],
+            ["Noum/Resources/Localizable.xcstrings"],
+        )
+        self.assertIn(
+            "unfingerprinted dirty behavior source: Noum/Resources/Localizable.xcstrings",
+            fields["sourceFreshnessFailures"],
+        )
 
     def test_app_path_regeneration_preflight_blocks_missing_dump(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -973,6 +1003,38 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertEqual(result["blockers"], [])
         self.assertEqual(result["traceCount"], 1)
         self.assertEqual(result["traceGitCommits"], ["abc1234"])
+
+    def test_app_path_regeneration_preflight_rejects_matching_dirty_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / arena.SOURCE_GIT_COMMIT_SIDECAR).write_text("abc1234\n", encoding="utf-8")
+            (root / arena.SOURCE_FINGERPRINT_SIDECAR).write_text("sha256:fresh\n", encoding="utf-8")
+            (root / arena.APP_PATH_DUMP_NAME).write_text(json.dumps({
+                "passesAppPathFloor": True,
+                "rows": [{
+                    "turns": [{
+                        "arenaTrace": {
+                            "gitCommit": "abc1234",
+                            "sourceFingerprint": "sha256:fresh",
+                        }
+                    }]
+                }]
+            }), encoding="utf-8")
+
+            result = arena.app_path_regeneration_preflight(
+                temp_dir,
+                current_commit="abc1234",
+                dirty_source_files=["Noum/Resources/Localizable.xcstrings"],
+                current_source_fingerprint="sha256:fresh",
+            )
+
+        self.assertFalse(result["passes"])
+        self.assertIn("dirtyCoachSourceAfterDump", result["blockers"])
+        self.assertIn("dirtySourceOutsideCoachFingerprint", result["blockers"])
+        self.assertEqual(
+            result["unfingerprintedDirtyCoachSourceFiles"],
+            ["Noum/Resources/Localizable.xcstrings"],
+        )
 
     def test_app_path_regeneration_preflight_passes_clean_report_only_descendant(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1095,7 +1157,8 @@ class AppPathBoundaryTests(unittest.TestCase):
 
     def test_write_app_path_source_sidecars_stamps_commit_and_fingerprint(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            payload = arena.write_app_path_source_sidecars(temp_dir)
+            with mock.patch.object(arena, "current_dirty_coach_source_files", return_value=[]):
+                payload = arena.write_app_path_source_sidecars(temp_dir)
             commit_path = Path(payload["gitCommitSidecar"])
             fingerprint_path = Path(payload["coachSourceFingerprintSidecar"])
 
@@ -1107,6 +1170,29 @@ class AppPathBoundaryTests(unittest.TestCase):
                 payload["coachSourceFingerprint"],
             )
             self.assertTrue(payload["coachSourceFingerprint"].startswith("sha256:"))
+
+    def test_write_app_path_source_sidecars_refuses_dirty_source_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            commit_path = Path(temp_dir) / arena.SOURCE_GIT_COMMIT_SIDECAR
+            fingerprint_path = Path(temp_dir) / arena.SOURCE_FINGERPRINT_SIDECAR
+            commit_path.write_text("preserve-commit\n", encoding="utf-8")
+            fingerprint_path.write_text("preserve-fingerprint\n", encoding="utf-8")
+
+            with (
+                mock.patch.object(
+                    arena,
+                    "current_dirty_coach_source_files",
+                    return_value=["Noum/Resources/Localizable.xcstrings"],
+                ),
+                self.assertRaisesRegex(RuntimeError, "dirty behavior source"),
+            ):
+                arena.write_app_path_source_sidecars(temp_dir)
+
+            self.assertEqual(commit_path.read_text(encoding="utf-8"), "preserve-commit\n")
+            self.assertEqual(
+                fingerprint_path.read_text(encoding="utf-8"),
+                "preserve-fingerprint\n",
+            )
 
     def test_coach_source_fingerprint_covers_typed_brain_owners(self):
         expected = {

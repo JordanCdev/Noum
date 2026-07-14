@@ -98,6 +98,20 @@ CLEAN_ANCESTOR_DOCUMENTATION_FILES = {
     "README.md",
 }
 
+# These paths are written by the evidence workflows themselves. Their bytes are
+# validated as evidence inputs elsewhere; treating them as app source would make
+# every successful refresh invalidate the dump it just produced.
+GENERATED_EVIDENCE_OUTPUT_FILES = {
+    "tools/coach-arena/reports/app-path/failures.md",
+    "tools/coach-arena/reports/app-path/latest.json",
+    "tools/coach-arena/reports/app-path/latest.md",
+    "tools/coach-arena/reports/app-path-diagnostic/failures.md",
+    "tools/coach-arena/reports/app-path-diagnostic/latest.json",
+    "tools/coach-arena/reports/app-path-diagnostic/latest.md",
+    "tools/coach-arena/synthetic/app-path/ten_conversations.md",
+    "tools/coach-arena/synthetic/app-path-diagnostic/ten_conversations.md",
+}
+
 
 LOCAL_GATE_REQUIREMENTS = [
     {
@@ -878,24 +892,74 @@ def current_git_commit(repo_root):
     return proc.stdout.strip() or None
 
 
+def generated_evidence_output_path(path):
+    normalized = str(path).replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized in GENERATED_EVIDENCE_OUTPUT_FILES
+
+
+def dirty_behavior_source_path(path):
+    return not (
+        clean_ancestor_documentation_path(path) or
+        generated_evidence_output_path(path)
+    )
+
+
+def parse_git_status_porcelain_z(output):
+    tokens = output.split(b"\0")
+    if tokens and tokens[-1] == b"":
+        tokens.pop()
+    paths = []
+    index = 0
+    while index < len(tokens):
+        record = tokens[index]
+        index += 1
+        if len(record) < 4 or record[2:3] != b" ":
+            raise ValueError("malformedGitStatus")
+        status = record[:2].decode("ascii")
+        path_tokens = [record[3:]]
+        if "R" in status or "C" in status:
+            if index >= len(tokens):
+                raise ValueError("malformedGitStatusRename")
+            path_tokens.append(tokens[index])
+            index += 1
+        for raw_path in path_tokens:
+            path = raw_path.decode("utf-8")
+            if not path:
+                raise ValueError("emptyGitStatusPath")
+            paths.append(path)
+    return sorted(set(paths))
+
+
 def current_dirty_coach_source_files(repo_root):
     proc = subprocess.run(
-        ["git", "-C", str(Path(repo_root)), "status", "--porcelain", "--", *COACH_SOURCE_STATUS_PATHS],
-        text=True,
+        [
+            "git", "-C", str(Path(repo_root)), "status", "--porcelain=v1",
+            "-z", "--untracked-files=all", "--ignore-submodules=none",
+            "--renames", "--",
+        ],
+        text=False,
         capture_output=True,
     )
     if proc.returncode != 0:
         return ["<git-status-unavailable>"]
-    paths = []
-    for line in proc.stdout.splitlines():
-        if len(line) < 4:
-            continue
-        path = line[3:].strip()
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1].strip()
-        if path:
-            paths.append(path)
-    return sorted(set(paths))
+    try:
+        paths = parse_git_status_porcelain_z(proc.stdout)
+    except (UnicodeDecodeError, ValueError):
+        return ["<git-status-unavailable>"]
+    return [path for path in paths if dirty_behavior_source_path(path)]
+
+
+def unfingerprinted_dirty_coach_source_files(
+    dirty_source_files,
+    fingerprint_paths=COACH_SOURCE_STATUS_PATHS,
+):
+    fingerprint_path_set = set(fingerprint_paths)
+    return sorted(set(
+        path for path in dirty_source_files
+        if not path.startswith("<") and path not in fingerprint_path_set
+    ))
 
 
 def git_commit_is_ancestor(repo_root, ancestor, descendant):
@@ -1043,6 +1107,15 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
     current_fingerprint = coach_source_fingerprint(repo_root) if repo_root else None
     current_commit = current_git_commit(repo_root) if repo_root else None
     dirty_source_files = current_dirty_coach_source_files(repo_root) if repo_root else []
+    git_status_unavailable = "<git-status-unavailable>" in dirty_source_files
+    binding_dirty_source_files = [
+        path for path in dirty_source_files
+        if not path.startswith("<")
+    ]
+    unfingerprinted_dirty_source_files = (
+        unfingerprinted_dirty_coach_source_files(dirty_source_files)
+        if repo_root else []
+    )
 
     mismatches = []
     if sidecar_fingerprint and report_fingerprints and sidecar_fingerprint not in report_fingerprints:
@@ -1122,6 +1195,8 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
         "currentCoachFingerprint": current_fingerprint,
         "currentGitCommit": current_commit,
         "dirtyCoachSourceFiles": dirty_source_files,
+        "gitStatusUnavailable": git_status_unavailable,
+        "unfingerprintedDirtyCoachSourceFiles": unfingerprinted_dirty_source_files,
         "cleanAncestorCommitsAccepted": clean_ancestor_commits_accepted,
         "cleanAncestorChangedPaths": clean_ancestor_changed_paths,
         "cleanAncestorBehaviorSourcePaths": clean_ancestor_behavior_source_paths,
@@ -1132,12 +1207,51 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
         "reportGitCommits": report_commits,
         "mismatches": mismatches,
         "currentMismatches": current_mismatches,
-        "passes": not mismatches and not current_mismatches,
+        "passes": (
+            not mismatches and
+            not current_mismatches and
+            not binding_dirty_source_files and
+            not (git_status_unavailable and current_commit)
+        ),
     }
 
 
 def source_freshness_gate_failures(source_audit):
     failures = []
+    dirty_source_files = [
+        path for path in (source_audit.get("dirtyCoachSourceFiles") or [])
+        if not path.startswith("<")
+    ]
+    if dirty_source_files:
+        failures.append({
+            "key": "dirtyCoachSource",
+            "label": "dirtyCoachSource",
+            "observed": dirty_source_files,
+            "gate": (
+                "Uncommitted behavior, resource, project, test, script, "
+                "evaluator, or unknown paths cannot be bound to a Git commit "
+                "for launch evidence."
+            ),
+            "nextStep": (
+                "Move the evidence refresh to a clean source checkout, or "
+                "commit the behavior change and regenerate the complete "
+                "app-path evidence chain from that commit."
+            ),
+        })
+    if source_audit.get("gitStatusUnavailable") and source_audit.get("currentGitCommit"):
+        failures.append({
+            "key": "gitStatusUnavailable",
+            "label": "gitStatusUnavailable",
+            "observed": "gitStatusUnavailable",
+            "gate": (
+                "The current Git commit was resolved, but worktree status could "
+                "not be inspected for uncommitted source."
+            ),
+            "nextStep": (
+                "Restore Git worktree access and rerun the source-bound "
+                "readiness command."
+            ),
+        })
     for mismatch in source_audit.get("mismatches") or []:
         failures.append({
             "key": mismatch["label"],
