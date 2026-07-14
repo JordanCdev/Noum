@@ -39,6 +39,7 @@ struct LessonView: View {
     @State private var applyEvaluation: LessonApplyEvaluation?
     @State private var applyElapsed: TimeInterval = 0
     @State private var applyTimer: Timer?
+    @State private var applyLifecycleTask: Task<Void, Never>?
     @State private var applyStart: Date?
     @State private var didShowSummary: Bool = false
     @State private var progressUpdate: LessonProgressUpdate?
@@ -76,6 +77,14 @@ struct LessonView: View {
                         .padding(.bottom, 120)
                     }
                 }
+            }
+        }
+        .transcriptionRouteNotice(speech.transcriptionRouteNotice)
+        .onDisappear {
+            applyTimer?.invalidate()
+            applyLifecycleTask?.cancel()
+            if speech.recordingLifecycle.isBusy {
+                speech.cancelRecording()
             }
         }
         .navigationTitle("")
@@ -385,7 +394,7 @@ struct LessonView: View {
 
     // MARK: - Apply
 
-    enum ApplyPhase { case ready, recording, evaluating, done }
+    enum ApplyPhase { case ready, connecting, recording, evaluating, done }
 
     private func applyCard(prompt: String, durationTarget: TimeInterval) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -413,6 +422,14 @@ struct LessonView: View {
 
             if applyPhase == .recording {
                 liveMicBlock
+            }
+
+            if applyPhase == .ready, let error = speech.connectionError {
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("lesson.apply.captureError")
             }
 
             if applyPhase == .done {
@@ -471,6 +488,13 @@ struct LessonView: View {
     @ViewBuilder
     private var phaseTrailingIndicator: some View {
         switch applyPhase {
+        case .connecting:
+            HStack(spacing: 6) {
+                ProgressView().scaleEffect(0.7)
+                Text("Connecting")
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .foregroundStyle(AppColor.brandBlue)
         case .recording:
             HStack(spacing: 4) {
                 Circle()
@@ -509,6 +533,8 @@ struct LessonView: View {
         switch applyPhase {
         case .ready:
             return "Target: \(Int(target))s"
+        case .connecting:
+            return "Waiting for transcription"
         case .recording:
             let remaining = max(0, Int(target - applyElapsed))
             return remaining > 0 ? "\(remaining)s left" : "Over target"
@@ -586,6 +612,8 @@ struct LessonView: View {
             switch applyPhase {
             case .ready:
                 ctaButton(title: "Speak now", action: startApply)
+            case .connecting:
+                ctaButton(title: "Connecting…", enabled: false, action: {})
             case .recording:
                 ctaButton(title: "Stop", action: stopApply)
             case .evaluating:
@@ -635,29 +663,47 @@ struct LessonView: View {
     /// session history — they're teaching, not practice — so we set
     /// `shouldRecordPracticeSession = false` before kicking off.
     private func startApply() {
-        applyPhase = .recording
+        guard applyPhase == .ready else { return }
+        applyPhase = .connecting
         applyTranscript = ""
         applyFindings = []
         applyEvaluation = nil
         applyElapsed = 0
+        applyStart = nil
+        speech.connectionError = nil
+
+        speech.shouldRecordPracticeSession = false
+        speech.sessionPrompt = applyPrompt
+        speech.prepareSession(mode: .timed)
+
+        applyLifecycleTask?.cancel()
+        applyLifecycleTask = Task { @MainActor in
+            let captureReady = await speech.startRecordingAwaitingReadiness()
+            guard !Task.isCancelled,
+                  applyPhase == .connecting,
+                  RecordingStartGate.allowsTimerStart(captureReady: captureReady) else {
+                if applyPhase == .connecting {
+                    applyPhase = .ready
+                }
+                return
+            }
+            beginApplyTimer()
+        }
+    }
+
+    private func beginApplyTimer() {
+        applyPhase = .recording
         applyStart = Date()
 
         // Auto-stop once the user hits 1.5× the target duration so a
         // forgotten Stop tap doesn't leave the mic open indefinitely.
         let durationCap = applyDurationTarget * 1.5
-
-        speech.shouldRecordPracticeSession = false
-        speech.sessionPrompt = applyPrompt
-        speech.startRecording()
-
         applyTimer?.invalidate()
         applyTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
             Task { @MainActor in
                 guard let start = applyStart else { return }
                 applyElapsed = Date().timeIntervalSince(start)
-                if applyElapsed >= durationCap {
-                    stopApply()
-                }
+                if applyElapsed >= durationCap { stopApply() }
             }
         }
     }
@@ -667,16 +713,26 @@ struct LessonView: View {
     /// the speech model instead of waiting for the persisted session
     /// (which the lesson explicitly skips).
     private func stopApply() {
+        guard applyPhase == .recording else { return }
         applyTimer?.invalidate()
         applyTimer = nil
         applyPhase = .evaluating
+        if let start = applyStart {
+            applyElapsed = Date().timeIntervalSince(start)
+        }
 
-        speech.stopRecording()
+        applyLifecycleTask?.cancel()
+        applyLifecycleTask = Task { @MainActor in
+            let completion = await speech.stopRecordingAwaitingFinalization()
+            guard !Task.isCancelled,
+                  RecordingCompletionGate.allowsScoringAndProgress(completion),
+                  let completion else {
+                applyStart = nil
+                applyPhase = .ready
+                return
+            }
 
-        // Give the provider a beat to flush the final partial. Then
-        // analyse the captured transcript.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            let transcript = speech.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let transcript = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
             applyTranscript = transcript
             applyFindings = EloquenceEngine.analyse(transcript: transcript)
             applyEvaluation = LessonApplyEvaluator.evaluate(
@@ -702,6 +758,7 @@ struct LessonView: View {
         applyFindings = []
         applyEvaluation = nil
         applyElapsed = 0
+        applyStart = nil
         stepResults.removeAll(where: { $0.kind == .apply })
         CoachHaptic.selectionTap()
     }

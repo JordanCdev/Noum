@@ -22,6 +22,7 @@ struct MiniDrillView: View {
     @State private var progressRingFill: Double = 0
     @State private var showPulse = false
     @State private var timerTask: Task<Void, Never>?
+    @State private var lifecycleTask: Task<Void, Never>?
     @State private var recordingStartDate: Date?
 
     private let drillDuration: Int = 45
@@ -29,6 +30,7 @@ struct MiniDrillView: View {
     enum DrillPhase {
         case ready
         case countdown
+        case connecting
         case speaking
         case finishing
     }
@@ -89,6 +91,15 @@ struct MiniDrillView: View {
                             .font(.system(size: 56, weight: .bold, design: .rounded))
                             .foregroundStyle(drill.tint)
                             .transition(.scale.combined(with: .opacity))
+                    case .connecting:
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .tint(drill.tint)
+                            Text("Connecting")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .textCase(.uppercase)
+                        }
                     case .speaking:
                         VStack(spacing: 4) {
                             Text("\(elapsedSeconds)s")
@@ -141,6 +152,12 @@ struct MiniDrillView: View {
                             .padding(.horizontal, 32)
                     }
 
+                    if phase == .ready, let error = speechVM.connectionError {
+                        FocusedPracticeErrorStatus(message: error)
+                            .padding(.horizontal, Spacing.sm)
+                            .accessibilityIdentifier("miniDrill.captureError")
+                    }
+
                     // Action button
                     switch phase {
                     case .ready:
@@ -159,7 +176,7 @@ struct MiniDrillView: View {
                             .background(drill.tint, in: Capsule())
                         }
                         .buttonStyle(.pressable)
-                    case .countdown:
+                    case .countdown, .connecting:
                         EmptyView()
                     case .speaking:
                         Button {
@@ -205,7 +222,15 @@ struct MiniDrillView: View {
                 Spacer()
             }
         }
-        .interactiveDismissDisabled(phase == .speaking)
+        .interactiveDismissDisabled(phase == .connecting || phase == .speaking || phase == .finishing)
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
+        .onDisappear {
+            timerTask?.cancel()
+            lifecycleTask?.cancel()
+            if speechVM.recordingLifecycle.isBusy {
+                speechVM.cancelRecording()
+            }
+        }
     }
 
     // MARK: - Constraint Banner
@@ -241,29 +266,55 @@ struct MiniDrillView: View {
         withAnimation(.snappySpring) { phase = .countdown }
         CoachHaptic.drillStart()
 
-        Task {
+        lifecycleTask?.cancel()
+        lifecycleTask = Task {
             for i in stride(from: 3, through: 1, by: -1) {
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     withAnimation(.snappySpring) { countdownValue = i }
                 }
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
-            await MainActor.run { startSpeaking() }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { connectRecorderAndStartSpeaking() }
         }
     }
 
-    private func startSpeaking() {
+    private func connectRecorderAndStartSpeaking() {
+        guard phase == .countdown else { return }
+        withAnimation(.standardSpring) {
+            phase = .connecting
+        }
+
+        speechVM.connectionError = nil
+        speechVM.sessionPrompt = prompt
+        speechVM.shouldRecordPracticeSession = false
+        speechVM.prepareSession(mode: .timed)
+
+        lifecycleTask?.cancel()
+        lifecycleTask = Task { @MainActor in
+            let captureReady = await speechVM.startRecordingAwaitingReadiness()
+            guard !Task.isCancelled,
+                  phase == .connecting,
+                  RecordingStartGate.allowsTimerStart(captureReady: captureReady) else {
+                if phase == .connecting {
+                    withAnimation(.standardSpring) { phase = .ready }
+                }
+                return
+            }
+            beginSpeakingTimer()
+        }
+    }
+
+    private func beginSpeakingTimer() {
         withAnimation(.standardSpring) {
             phase = .speaking
             showPulse = true
         }
-
-        speechVM.sessionPrompt = prompt
-        speechVM.shouldRecordPracticeSession = false
-        speechVM.prepareSession(mode: .timed)
+        elapsedSeconds = 0
+        progressRingFill = 0
         recordingStartDate = Date()
-        speechVM.startRecording()
 
         // Timer task
         timerTask = Task {
@@ -293,19 +344,36 @@ struct MiniDrillView: View {
     private func finishDrill() {
         guard phase == .speaking else { return }
         timerTask?.cancel()
-        speechVM.stopRecording()
 
         withAnimation(.standardSpring) {
             phase = .finishing
             progressRingFill = 1.0
         }
 
-        // Evaluate success
+        lifecycleTask?.cancel()
+        lifecycleTask = Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
+            guard !Task.isCancelled,
+                  RecordingCompletionGate.allowsScoringAndProgress(completion),
+                  let completion else {
+                recordingStartDate = nil
+                progressRingFill = 0
+                withAnimation(.standardSpring) { phase = .ready }
+                return
+            }
+            let outcome = completedOutcome(from: completion)
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled, phase == .finishing else { return }
+            onComplete(outcome)
+        }
+    }
+
+    private func completedOutcome(from completion: FinalizedTranscript) -> MiniDrillOutcome {
         let fillerCount = speechVM.fillerWordCount
         let measuredDuration = recordingStartDate.map { Date().timeIntervalSince($0) } ?? TimeInterval(elapsedSeconds)
         let duration = max(speechVM.lastSessionDuration, measuredDuration, TimeInterval(elapsedSeconds))
-        let transcript = speechVM.transcribedText
-        let wordCount = transcript.split(separator: " ").count
+        let transcript = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wordCount = transcript.split(whereSeparator: \.isWhitespace).count
 
         let succeeded = evaluateSuccess(
             skillArea: drill.skillArea,
@@ -335,7 +403,7 @@ struct MiniDrillView: View {
             duration: duration
         )
 
-        let outcome = MiniDrillOutcome(
+        return MiniDrillOutcome(
             drill: drill,
             drillType: drillType,
             transcript: transcript,
@@ -346,17 +414,12 @@ struct MiniDrillView: View {
             framework: framework,
             frameworkVerdict: frameworkVerdict
         )
-
-        // Brief pause before showing result
-        Task {
-            try? await Task.sleep(for: .milliseconds(800))
-            await MainActor.run { onComplete(outcome) }
-        }
     }
 
     private func cancelDrill() {
         timerTask?.cancel()
-        if speechVM.isRecording { speechVM.stopRecording() }
+        lifecycleTask?.cancel()
+        if speechVM.recordingLifecycle.isBusy { speechVM.cancelRecording() }
         onCancel()
     }
 

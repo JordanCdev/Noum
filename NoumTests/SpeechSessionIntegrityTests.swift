@@ -175,12 +175,49 @@ struct SpeechSessionIntegrityTests {
         let ownedModes = [
             "Timed", "Pressure", "Filler Control", "Conversation",
             "Cut the Crutch", "Pace Training", "Roleplay",
+            "Mini-drill", "Lesson Apply",
         ]
 
         for mode in ownedModes {
             #expect(!RecordingCompletionGate.allowsScoringAndProgress(failedReceipt), Comment(rawValue: mode))
             #expect(!RecordingCompletionGate.allowsScoringAndProgress(emptyReceipt), Comment(rawValue: mode))
         }
+    }
+
+    @Test("Mini-drill and Lesson Apply await capture before timing or progress")
+    func supplementalSpeechSurfacesUseLifecycleGates() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let miniDrill = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/MiniDrillView.swift"),
+            encoding: .utf8
+        )
+        let lesson = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/LessonView.swift"),
+            encoding: .utf8
+        )
+
+        let miniStart = try #require(miniDrill.range(of: "await speechVM.startRecordingAwaitingReadiness()"))
+        let miniTimer = try #require(miniDrill.range(of: "beginSpeakingTimer()"))
+        let miniStop = try #require(miniDrill.range(of: "await speechVM.stopRecordingAwaitingFinalization()"))
+        let miniCompletionGate = try #require(miniDrill.range(of: "RecordingCompletionGate.allowsScoringAndProgress(completion)"))
+        #expect(miniStart.lowerBound < miniTimer.lowerBound)
+        #expect(miniStop.lowerBound < miniCompletionGate.lowerBound)
+        #expect(miniDrill.contains("RecordingStartGate.allowsTimerStart(captureReady: captureReady)"))
+        #expect(miniDrill.contains(".transcriptionRouteNotice(speechVM.transcriptionRouteNotice)"))
+        #expect(!miniDrill.contains("speechVM.startRecording()"))
+
+        let lessonStart = try #require(lesson.range(of: "await speech.startRecordingAwaitingReadiness()"))
+        let lessonTimer = try #require(lesson.range(of: "beginApplyTimer()"))
+        let lessonStop = try #require(lesson.range(of: "await speech.stopRecordingAwaitingFinalization()"))
+        let lessonCompletionGate = try #require(lesson.range(of: "RecordingCompletionGate.allowsScoringAndProgress(completion)"))
+        #expect(lessonStart.lowerBound < lessonTimer.lowerBound)
+        #expect(lessonStop.lowerBound < lessonCompletionGate.lowerBound)
+        #expect(lesson.contains("RecordingStartGate.allowsTimerStart(captureReady: captureReady)"))
+        #expect(lesson.contains(".transcriptionRouteNotice(speech.transcriptionRouteNotice)"))
+        #expect(!lesson.contains("speech.startRecording()"))
+        #expect(!lesson.contains("asyncAfter(deadline: .now() + 0.6)"))
     }
 
     @Test("Lifecycle exposes one truthful readiness and finalization sequence")
