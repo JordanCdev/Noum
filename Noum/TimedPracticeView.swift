@@ -1188,6 +1188,7 @@ struct TimedPracticeView: View {
         .padding(Spacing.md)
         .focusedGlassSurface()
         .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("timedPractice.prescribedDifficulty")
         .accessibilityLabel(impromptuSetupCueAccessibilityLabel)
     }
 

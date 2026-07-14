@@ -85,6 +85,40 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
     }
 
     @MainActor
+    func testTrainTimedRecommendationShowsExactDifficultyAndLaunchesTimed() throws {
+        let app = launchRecommendationSurface(
+            at: "noum://practice",
+            profile: "beginner"
+        )
+
+        let hero = app.descendants(matching: .any)["practiceModes.recommendedHero"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 15))
+        let recommendationSettled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@", "Timed Practice"),
+            object: hero
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [recommendationSettled], timeout: 8), .completed)
+
+        let difficulty = app.descendants(matching: .any)
+            .matching(identifier: "practiceModes.recommendedHero.timedDifficulty")
+            .firstMatch
+        XCTAssertTrue(difficulty.waitForExistence(timeout: 5))
+        XCTAssertEqual(difficulty.label, "Recommended difficulty, Medium")
+
+        let begin = app.buttons["practiceModes.recommendedHero.begin"]
+        scrollUntilHittable(begin, in: app, attempts: 5)
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        begin.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.prompt"]
+                .waitForExistence(timeout: 12),
+            "The recommended Begin action must enter the existing Timed rep flow."
+        )
+        addScreenshot(named: "train-timed-recommendation-destination")
+    }
+
+    @MainActor
     private func launchRecommendationSurface(
         at deepLink: String,
         profile: String
