@@ -1009,6 +1009,25 @@ struct FillerBurden {
         guard let ratePerMinute else { return false }
         return ratePerMinute <= threshold.rawValue
     }
+
+    static func qualifyingRatesPerMinute(
+        in sessions: [PracticeSession]
+    ) -> [Double] {
+        sessions.compactMap {
+            FillerBurden(
+                fillerCount: $0.fillerWordCount,
+                duration: $0.duration
+            ).ratePerMinute
+        }
+    }
+
+    static func averageQualifyingRatePerMinute(
+        in sessions: [PracticeSession]
+    ) -> Double? {
+        let rates = qualifyingRatesPerMinute(in: sessions)
+        guard !rates.isEmpty else { return nil }
+        return rates.reduce(0, +) / Double(rates.count)
+    }
 }
 
 // MARK: - Baseline Engine

@@ -11522,10 +11522,10 @@ protocol AICoachServicing {
 
 struct AIHomeRecommendationInput {
     let recentSessionSummary: String
-    let averageFillers: Double
+    let averageFillersPerMinute: Double
     let averageDuration: Double
     let averageWordsPerMinute: Double
-    let fillerTrendDelta: Double
+    let fillerRateTrendDelta: Double
     let durationTrendDelta: Double
     let paceTrendDelta: Double
     let averageWordCount: Double
@@ -11681,6 +11681,8 @@ enum RecommendationBiasContextBuilder {
     ) -> AIHomeRecommendationInput {
         let recent = Array(sessions.prefix(5))
         let previous = Array(sessions.dropFirst(5).prefix(5))
+        let recentFillerRates = FillerBurden.qualifyingRatesPerMinute(in: recent)
+        let previousFillerRates = FillerBurden.qualifyingRatesPerMinute(in: previous)
         let identity = PracticeEvaluator.speakingIdentity(
             for: recent.first?.transcript ?? "",
             profile: profile
@@ -11691,12 +11693,12 @@ enum RecommendationBiasContextBuilder {
                 profile: profile,
                 style: summaryStyle
             ),
-            averageFillers: average(recent.map { Double($0.fillerWordCount) }),
+            averageFillersPerMinute: average(recentFillerRates),
             averageDuration: average(recent.map(\.duration)),
             averageWordsPerMinute: average(recent.map { Double($0.wordsPerMinute) }),
-            fillerTrendDelta: trendDelta(
-                current: recent.map { Double($0.fillerWordCount) },
-                previous: previous.map { Double($0.fillerWordCount) }
+            fillerRateTrendDelta: trendDelta(
+                current: recentFillerRates,
+                previous: previousFillerRates
             ),
             durationTrendDelta: trendDelta(
                 current: recent.map(\.duration),
@@ -11909,7 +11911,9 @@ enum RecommendationBiasEngine {
         }
 
         guard let profile else {
-            let defaultMode: PracticeMode = input.averageFillers >= 4 ? .ahCounter : (input.averageDuration < 20 ? .timed : .suddenDeath)
+            let defaultMode: PracticeMode = input.averageFillersPerMinute >= FillerBurden.Threshold.urgent.rawValue
+                ? .ahCounter
+                : (input.averageDuration < 20 ? .timed : .suddenDeath)
             let modeRead = adaptedMode(
                 from: [defaultMode, .timed, .ahCounter, .suddenDeath, .imConversation],
                 recommendationOutcomes: recommendationOutcomes
@@ -12254,7 +12258,9 @@ enum RecommendationBiasEngine {
         case .suddenDeath:
             return profile.primaryGoal == .thinkFaster ? "Fast clear reply" : "Zero panic fillers"
         case .ahCounter:
-            return input.averageFillers >= 5 ? "Cut fillers by 2" : "Zero filler start"
+            return input.averageFillersPerMinute >= FillerBurden.Threshold.urgent.rawValue
+                ? "Bring the filler rate below 5 per minute"
+                : "Start with a clean opening"
         case .imConversation:
             let scenario = recommendedScenario(for: profile)
             guard let tone = recommendedTone(for: profile) else { return scenario.title }

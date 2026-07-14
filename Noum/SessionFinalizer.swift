@@ -340,7 +340,6 @@ enum SessionFinalizer {
 
         // NextAction recommendation
         let nextAction: NextAction? = {
-            guard baseline.qualifyingSessionCount >= 2 else { return nil }
             let input = NextActionInput(
                 fillerCount: effectiveFillerCount,
                 duration: effectiveDuration,
@@ -363,7 +362,7 @@ enum SessionFinalizer {
                 ),
                 recommendationOutcomes: RecommendationLearningStore.shared.outcomes
             )
-            return NextActionEngine.recommend(input: input)
+            return NextActionEngine.recommendAfterSession(input: input)
         }()
 
         // Enhanced coach note with baseline + style

@@ -416,18 +416,29 @@ enum NextActionEngine {
         )
     }
 
+    /// Finalization entry point. Thin baseline evidence still suppresses the
+    /// adaptive cascade, but a directly observed severe issue can prescribe
+    /// one immediate corrective rep without pretending a trend exists.
+    static func recommendAfterSession(input: NextActionInput) -> NextAction? {
+        if input.baseline.qualifyingSessionCount >= 2 {
+            return recommend(input: input)
+        }
+        guard let immediate = severeRecommendation(input: input) else {
+            return nil
+        }
+        return applyingModeAvailability(
+            to: immediate,
+            availability: input.modeAvailability
+        )
+    }
+
     private static func recommendWithoutModeAvailability(input: NextActionInput) -> NextAction {
         let confidence = input.baseline.overallConfidence
         let style = SpeakingStyleGoal.resolve(input.styleGoal)
 
         // --- Priority 1: Severe session issue ---
-        if let severe = checkSevereIssue(input: input) {
-            return NextAction(
-                primary: severe,
-                secondary: fallbackDrill(input: input),
-                reasoning: "This rep showed one clear constraint, so the next rep should isolate it.",
-                confidenceLevel: .stable // Severe issues don't need baseline confidence
-            )
+        if let immediate = severeRecommendation(input: input) {
+            return immediate
         }
 
         // --- Priority 2: Persistent blocker ---
@@ -607,6 +618,18 @@ enum NextActionEngine {
 
     // MARK: - Priority Checks
 
+    private static func severeRecommendation(input: NextActionInput) -> NextAction? {
+        guard let severe = checkSevereIssue(input: input) else { return nil }
+        return NextAction(
+            primary: severe,
+            secondary: severe.recommendedMode == .ahCounter
+                ? nil
+                : fallbackDrill(input: input),
+            reasoning: "This rep showed one clear constraint, so the next rep should isolate it.",
+            confidenceLevel: .stable
+        )
+    }
+
     /// Priority 1: Severe session issues that need immediate correction.
     private static func checkSevereIssue(input: NextActionInput) -> ActionRecommendation? {
         let fillerBurden = FillerBurden(
@@ -614,9 +637,10 @@ enum NextActionEngine {
             duration: input.duration
         )
         if fillerBurden.meets(.severe) {
-            if let drill = selectDrill(for: .fillerReduction, input: input) {
-                return .drill(drill)
-            }
+            return .practiceMode(
+                .ahCounter,
+                reason: "Fillers carried too much of this rep. Use Filler Control to replace the next one with a pause."
+            )
         }
         if input.duration < 8 && input.wordCount > 0 {
             if let drill = selectDrill(for: .answerDevelopment, input: input) {

@@ -493,28 +493,25 @@ struct SummaryView: View {
     }
 
     private var summaryRecommendation: RecommendationBiasBlueprint {
+        let plan = CoachingPlanner.plan(
+            for: sessionStore.sessions,
+            profile: coachingProfileStore.profile
+        )
         let resolved = RecommendationBiasEngine.blueprint(
             profile: coachingProfileStore.profile,
-            input: AIHomeRecommendationInput(
-                recentSessionSummary: recentWindowSummary,
-                averageFillers: averageFillers,
-                averageDuration: averageDuration,
-                averageWordsPerMinute: averagePace,
-                fillerTrendDelta: 0,
-                durationTrendDelta: 0,
-                paceTrendDelta: 0,
-                averageWordCount: averageWordCount,
-                strongestMode: strongestMode,
-                currentIdentity: currentIdentity.identity,
-                currentIdentityEvidence: currentIdentity.evidence,
+            input: RecommendationBiasContextBuilder.input(
+                profile: coachingProfileStore.profile,
+                sessions: sessionStore.sessions,
+                plan: plan,
                 sessionStreak: sessionStreak,
                 daysSinceLastSession: daysSinceLastSession,
+                summaryStyle: .compact,
                 preferredModeBias: "",
                 preferredToneBias: "",
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
+            plan: plan,
             imToneSignal: imToneDrillSignal,
             coachMemory: coachMemoryStore.currentMemory,
             recommendationOutcomes: recommendationLearningStore.outcomes
@@ -658,11 +655,6 @@ struct SummaryView: View {
             label = session.mode.displayLabel
             return "\(label): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
         }.joined(separator: " • ")
-    }
-
-    private var averageFillers: Double {
-        guard !recentWindow.isEmpty else { return 0 }
-        return Double(recentWindow.map(\.fillerWordCount).reduce(0, +)) / Double(recentWindow.count)
     }
 
     private var averageDuration: Double {

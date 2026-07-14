@@ -1188,8 +1188,13 @@ struct NextActionEngineTests {
             sessionCount: 10, streakDays: 3, styleGoal: "authoritative"
         )
         let result = NextActionEngine.recommend(input: input)
-        // A directly measured constraint should produce one calm corrective drill.
         #expect(result.reasoning.contains("clear constraint"), "Severe session should name the measured constraint calmly. Got: \(result.reasoning)")
+        guard case .practiceMode(let mode, _) = result.primary else {
+            Issue.record("Expected severe filler evidence to prescribe a full Filler Control rep")
+            return
+        }
+        #expect(mode == .ahCounter)
+        #expect(result.secondary == nil)
     }
 
     @Test func longLowRateFillerCountDoesNotTriggerSevereAction() {
@@ -1225,11 +1230,11 @@ struct NextActionEngineTests {
         let result = NextActionEngine.recommend(input: input)
 
         #expect(result.reasoning.contains("clear constraint"))
-        guard case .drill(let drill) = result.primary else {
-            Issue.record("Expected a filler drill for severe rate evidence")
+        guard case .practiceMode(let mode, _) = result.primary else {
+            Issue.record("Expected Filler Control for severe rate evidence")
             return
         }
-        #expect(drill.variation.skillArea == .fillerReduction)
+        #expect(mode == .ahCounter)
     }
 
     @Test func severeFillerActionRequiresCountAndDurationEvidenceFloors() {
@@ -1270,11 +1275,44 @@ struct NextActionEngineTests {
 
         let result = NextActionEngine.recommend(input: input)
 
-        guard case .drill(let drill) = result.primary else {
-            Issue.record("Expected a severe-issue drill")
+        guard case .practiceMode(let mode, _) = result.primary else {
+            Issue.record("Expected severe filler evidence to retain route priority")
             return
         }
-        #expect(drill.variation.skillArea == .fillerReduction)
+        #expect(mode == .ahCounter)
+    }
+
+    @Test func firstQualifyingSevereRepCanPrescribeFillerControl() {
+        let input = NextActionInput(
+            fillerCount: 3, duration: 20, wordCount: 47, wpm: 141, score: 5,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        let result = NextActionEngine.recommendAfterSession(input: input)
+
+        guard let result,
+              case .practiceMode(let mode, _) = result.primary else {
+            Issue.record("Expected an immediate first-rep prescription")
+            return
+        }
+        #expect(mode == .ahCounter)
+    }
+
+    @Test func firstNonSevereRepStillWaitsForMoreEvidence() {
+        let input = NextActionInput(
+            fillerCount: 1, duration: 45, wordCount: 90, wpm: 120, score: 6,
+            categoryRatings: [:],
+            mode: .timed, pressureLevel: .standard,
+            baseline: .empty, pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 1, streakDays: 1, styleGoal: nil
+        )
+
+        #expect(NextActionEngine.recommendAfterSession(input: input) == nil)
     }
 
     @Test func belowCountFillerEvidenceDoesNotMaskSeverePace() {
@@ -1676,7 +1714,7 @@ struct NextActionEngineTests {
     }
 
     @Test func hardSignalsWinRegardlessOfReplaceVerdict() {
-        // P1 severe (qualifying filler burden ≥ 8/min) must return its corrective drill even with a
+        // P1 severe (qualifying filler burden ≥ 8/min) must return its corrective mode even with a
         // confident-replace ledger spanning every mode — the tie-breaker never
         // touches P1/P2/P4/P5.
         let everyMode = replaceLedger(for: [.timed, .suddenDeath, .imConversation, .ahCounter])
@@ -1691,8 +1729,10 @@ struct NextActionEngineTests {
         )
         let result = NextActionEngine.recommend(input: severe)
         #expect(result.reasoning.contains("clear constraint"), "P1 severe must win over any verdict. Got: \(result.reasoning)")
-        if case .drill = result.primary {} else {
-            Issue.record("P1 severe should return a drill regardless of the ledger. Got: \(result.primary)")
+        if case .practiceMode(let mode, _) = result.primary {
+            #expect(mode == .ahCounter)
+        } else {
+            Issue.record("P1 severe should return Filler Control regardless of the ledger. Got: \(result.primary)")
         }
 
         // P2 persistent blocker likewise unaffected.
@@ -3138,6 +3178,35 @@ struct FillerBurdenTests {
         #expect(burden.meets(.urgent))
         #expect(!burden.meets(.severe))
     }
+
+    @Test func aggregateRatesNormalizeDurationAndExcludeShortSamples() {
+        let sessions = [
+            PracticeSession(
+                transcript: "long",
+                fillerWordCount: 10,
+                duration: 600,
+                date: Date()
+            ),
+            PracticeSession(
+                transcript: "short high",
+                fillerWordCount: 3,
+                duration: 20,
+                date: Date()
+            ),
+            PracticeSession(
+                transcript: "below floor",
+                fillerWordCount: 8,
+                duration: 14,
+                date: Date()
+            ),
+        ]
+
+        let rates = FillerBurden.qualifyingRatesPerMinute(in: sessions)
+        #expect(rates.count == 2)
+        #expect(rates.contains(1))
+        #expect(rates.contains(9))
+        #expect(FillerBurden.averageQualifyingRatePerMinute(in: sessions) == 5)
+    }
 }
 
 struct DrillTargetAreaTests {
@@ -3576,10 +3645,10 @@ struct RecommendationBiasCopyContractTests {
     private func input(daysSinceLastSession: Int = 0) -> AIHomeRecommendationInput {
         AIHomeRecommendationInput(
             recentSessionSummary: "",
-            averageFillers: 2,
+            averageFillersPerMinute: 2,
             averageDuration: 35,
             averageWordsPerMinute: 140,
-            fillerTrendDelta: 0,
+            fillerRateTrendDelta: 0,
             durationTrendDelta: 0,
             paceTrendDelta: 0,
             averageWordCount: 80,
@@ -14339,6 +14408,58 @@ struct RecommendationBiasContextBuilderTests {
         #expect(home.blueprint.suggestedTimedDifficulty == picker.blueprint.suggestedTimedDifficulty)
         #expect(home.input.recentSessionSummary.contains("Session 1"))
         #expect(picker.input.recentSessionSummary.contains(PracticeMode.timed.displayLabel))
+    }
+
+    @Test func contextUsesQualifyingFillerRateInsteadOfRawCount() {
+        let longLowRate = session(
+            mode: .timed,
+            fillers: 10,
+            duration: 600,
+            score: 6,
+            transcript: "A long complete answer"
+        )
+        let shortHighRate = session(
+            mode: .timed,
+            fillers: 3,
+            duration: 20,
+            score: 6,
+            transcript: "A short pressured answer"
+        )
+        let belowFloor = session(
+            mode: .timed,
+            fillers: 8,
+            duration: 14,
+            score: 4,
+            transcript: "Too short"
+        )
+
+        let longInput = RecommendationBiasContextBuilder.input(
+            profile: nil,
+            sessions: [longLowRate, belowFloor],
+            plan: nil,
+            sessionStreak: 1,
+            daysSinceLastSession: 0
+        )
+        let shortInput = RecommendationBiasContextBuilder.input(
+            profile: nil,
+            sessions: [shortHighRate],
+            plan: nil,
+            sessionStreak: 1,
+            daysSinceLastSession: 0
+        )
+
+        #expect(longInput.averageFillersPerMinute == 1)
+        #expect(shortInput.averageFillersPerMinute == 9)
+        #expect(RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: longInput,
+            plan: nil
+        ).recommendedMode != .ahCounter)
+        #expect(RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: shortInput,
+            plan: nil
+        ).recommendedMode == .ahCounter)
     }
 
     @Test func aiPromptBiasesCanReuseTheDeterministicBlueprint() {
@@ -32954,10 +33075,10 @@ struct IMToneDrillSignalTests {
     private func input() -> AIHomeRecommendationInput {
         AIHomeRecommendationInput(
             recentSessionSummary: "",
-            averageFillers: 0,
+            averageFillersPerMinute: 0,
             averageDuration: 0,
             averageWordsPerMinute: 0,
-            fillerTrendDelta: 0,
+            fillerRateTrendDelta: 0,
             durationTrendDelta: 0,
             paceTrendDelta: 0,
             averageWordCount: 0,
