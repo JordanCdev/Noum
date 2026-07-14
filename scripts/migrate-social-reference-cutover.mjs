@@ -6,7 +6,6 @@ import {
   chmod,
   mkdir,
   readFile,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import {resolve} from "node:path";
@@ -26,6 +25,7 @@ import {
 } from "./social-cutover-credentials.mjs";
 import {createFirestoreMigrationAdapter} from
   "./social-cutover-firestore-adapter.mjs";
+import {readReviewedBackupFile} from "./social-cutover-backup-file.mjs";
 
 const rawArguments = process.argv.slice(2);
 const extraExactFlags = new Set(["--rollback"]);
@@ -147,6 +147,7 @@ async function currentSourceBinding() {
     new URL("./social-cutover-migration.mjs", import.meta.url),
     new URL("./social-cutover-credentials.mjs", import.meta.url),
     new URL("./social-cutover-firestore-adapter.mjs", import.meta.url),
+    new URL("./social-cutover-backup-file.mjs", import.meta.url),
   ];
   const hash = createHash("sha256");
   for (const file of implementationFiles) {
@@ -202,16 +203,7 @@ if (!apply) {
 }
 
 const backupPath = resolve(process.cwd(), backupFile);
-const backupStat = await stat(backupPath);
-if (!backupStat.isFile() || (backupStat.mode & 0o777) !== 0o600) {
-  throw new Error("Apply requires a regular backup file with mode 0600.");
-}
-let envelope;
-try {
-  envelope = JSON.parse(await readFile(backupPath, "utf8"));
-} catch {
-  throw new Error("Unable to parse the reviewed backup file.");
-}
+const envelope = await readReviewedBackupFile(backupPath);
 verifyBackupEnvelope(envelope, {
   projectID,
   expectedDigest: backupDigest,

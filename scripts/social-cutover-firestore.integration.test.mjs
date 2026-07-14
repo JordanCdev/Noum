@@ -220,7 +220,6 @@ test("real Firestore adapter closes the recoverable CLI contract", async (t) => 
   const {app, firestore, store} = createFirestoreMigrationAdapter({
     projectID: PROJECT_ID,
     credentialMode: SocialCutoverCredentialMode.emulatorOnly,
-    env: emulatorEnvironment(),
   });
   const temporaryDirectory = async () => {
     const directory = await mkdtemp(join(tmpdir(), "noum-social-cutover-"));

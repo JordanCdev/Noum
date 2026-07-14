@@ -130,9 +130,12 @@ export class FirestoreMigrationStore {
 export function createFirestoreMigrationAdapter({
   projectID,
   credentialMode,
-  env = process.env,
 }) {
-  validateSocialCutoverRuntime({credentialMode, projectID, env});
+  validateSocialCutoverRuntime({
+    credentialMode,
+    projectID,
+    env: process.env,
+  });
   const adminApp = requireFromFunctions("firebase-admin/app");
   const {
     FieldValue,
