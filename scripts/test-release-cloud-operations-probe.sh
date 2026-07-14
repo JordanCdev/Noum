@@ -3,16 +3,24 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 probe="$repo_root/scripts/release-cloud-operations-probe.sh"
+validator="$repo_root/scripts/release_cloud_operations_validator.py"
 stub_directory="$(mktemp -d "${TMPDIR:-/tmp}/noum-cloud-probe-test.XXXXXX")"
 trap 'rm -rf "$stub_directory"' EXIT INT TERM
+
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s "$repo_root/scripts/tests" \
+  -p 'test_release_cloud_operations_validator.py'
+PYTHONDONTWRITEBYTECODE=1 python3 "$validator" \
+  --source-contract "$repo_root/functions/src/index.ts"
 
 false_binary="/usr/bin/false"
 if [[ ! -x "$false_binary" ]]; then
   false_binary="/bin/false"
 fi
-for command in gcloud python3 curl; do
+for command in gcloud curl; do
   ln -s "$false_binary" "$stub_directory/$command"
 done
+ln -s "$(command -v python3)" "$stub_directory/python3"
 
 run_probe() {
   env -i \

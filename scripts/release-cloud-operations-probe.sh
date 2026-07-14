@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+runtime_validator="$repo_root/scripts/release_cloud_operations_validator.py"
 readonly production_project="noum-d0b6f"
 readonly production_region="europe-west2"
 readonly production_operations_email="noumsupport@gmail.com"
@@ -30,6 +32,9 @@ for command in gcloud python3 curl; do
     exit 2
   fi
 done
+
+python3 "$runtime_validator" \
+  --source-contract "$repo_root/functions/src/index.ts"
 
 echo "Production Firebase contract: project=$project region=$region operations=$operations_email"
 if [[ -z "$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null)" ]]; then
@@ -69,7 +74,7 @@ gcloud secrets get-iam-policy DEEPGRAM_MANAGEMENT_KEY \
 gcloud projects get-iam-policy "$project" \
   --format=json > "$work/project-iam.json"
 
-python3 - "$work" "$project" "$operations_email" "$project_number" <<'PY'
+python3 - "$work" "$project" "$operations_email" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -77,7 +82,6 @@ from pathlib import Path
 root = Path(sys.argv[1])
 project = sys.argv[2]
 operations_email = sys.argv[3]
-project_number = sys.argv[4]
 failures: list[str] = []
 passes: list[str] = []
 
@@ -157,69 +161,6 @@ check(
     "The monitored operations email channel is enabled",
 )
 
-expected_functions = {
-    "coachChat": f"noum-coach-runtime@{project}.iam.gserviceaccount.com",
-    "coachChatAvailability":
-        f"noum-coach-runtime@{project}.iam.gserviceaccount.com",
-    "transcriptionToken":
-        f"noum-transcription-runtime@{project}.iam.gserviceaccount.com",
-    "deleteAccount":
-        f"noum-account-runtime@{project}.iam.gserviceaccount.com",
-}
-functions = {}
-for item in load("functions.json"):
-    name = (item.get("name") or "").rsplit("/", 1)[-1]
-    functions[name] = item
-for name, identity in expected_functions.items():
-    item = functions.get(name) or {}
-    check(
-        item.get("state") == "ACTIVE"
-        and (item.get("serviceConfig") or {}).get("serviceAccountEmail")
-        == identity,
-        f"{name} is active under its dedicated runtime identity",
-    )
-
-secret_policy = load("deepgram-secret-iam.json")
-secret_accessors = {
-    member
-    for binding in secret_policy.get("bindings", [])
-    if binding.get("role") == "roles/secretmanager.secretAccessor"
-    for member in binding.get("members", [])
-}
-check(
-    secret_accessors
-    == {
-        "serviceAccount:"
-        f"noum-transcription-runtime@{project}.iam.gserviceaccount.com"
-    },
-    "Only the transcription runtime can read the Deepgram secret",
-)
-
-project_policy = load("project-iam.json")
-default_compute = (
-    f"serviceAccount:{project_number}-compute@developer.gserviceaccount.com"
-)
-dangerous_default_roles = {
-    binding.get("role")
-    for binding in project_policy.get("bindings", [])
-    if default_compute in binding.get("members", [])
-    and binding.get("role") in {"roles/editor", "roles/aiplatform.user"}
-}
-check(
-    not dangerous_default_roles,
-    "The default compute identity has no Editor or Vertex AI role",
-)
-appspot = f"serviceAccount:{project}@appspot.gserviceaccount.com"
-appspot_editor = any(
-    binding.get("role") == "roles/editor"
-    and appspot in binding.get("members", [])
-    for binding in project_policy.get("bindings", [])
-)
-check(
-    not appspot_editor,
-    "The default App Engine identity has no Editor role",
-)
-
 for label in passes:
     print(f"PASS: {label}")
 for label in failures:
@@ -230,9 +171,16 @@ if failures:
     raise SystemExit(1)
 PY
 
+python3 "$runtime_validator" \
+  --snapshot-dir "$work" \
+  --project "$project" \
+  --region "$region" \
+  --project-number "$project_number"
+
 "$(cd "$(dirname "$0")" && pwd)/release-live-privacy-probe.sh"
 
-for function_name in transcriptionToken deleteAccount; do
+callable_names="$(python3 "$runtime_validator" --print-callable-names)"
+for function_name in $callable_names; do
   uri="$(gcloud functions describe "$function_name" \
     --v2 \
     --project="$project" \
