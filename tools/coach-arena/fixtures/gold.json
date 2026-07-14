@@ -472,7 +472,7 @@
     "emotionalSignal": "Vulnerable self-diagnosis.",
     "expectedCoachMove": "Do not diagnose fear; keep to observable delay and ask fit.",
     "badAnswerExample": "Yes, fear of disagreement is blocking you.",
-    "excellentAnswerExample": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
+    "excellentAnswerExample": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement, so test disagreement in sentence one and tell me whether that feels accurate.",
     "disqualifiers": ["psychological diagnosis", "single-rep certainty", "no user confirmation"]
   },
   {

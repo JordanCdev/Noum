@@ -350,7 +350,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should change next time?",
-                    coachReply: "Mark whether a filler appears after the decision line, then compare fillers per minute on the same prompt. That tests the pause without turning one placement observation into a pressure pattern."
+                    coachReply: "Your latest qualified rep gives one rate, not a pressure pattern. On the same prompt, check whether a filler appears after the decision line, then compare fillers per minute."
                 )
             ]
         ),
@@ -667,7 +667,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "fear-disagreement-034",
             userTurn: "Am I afraid to disagree?",
-            coachReply: "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate."
+            coachReply: "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement, so test disagreement in sentence one and tell me whether that feels accurate."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "lack-conviction-035",
