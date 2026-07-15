@@ -5,7 +5,21 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-15
 
 Committed implementation inspected through:
-`cb5f0327`
+`5987636f`
+
+At `5987636f`, terminal Roleplay guidance is bound to the continuation the app
+can actually deliver. The view computes one `RoleplayEngine.nextTurn` result at
+submission, caches it, and consumes that same transition for copy and
+advancement. Existing pre-terminal retry modes retain their exact “Next
+attempt” language. At the four-attempt cap, the retry evidence becomes a future
+“Practice focus”; when no transition can be produced before the cap, guidance
+fails closed without promising a rung or objection. Completion still reads the
+last attempted `RoleplayTurnResult` pressure. Four pure tests pass inside the
+focused 38/38 selection, three deterministic UI flows pass including the
+fourth-attempt Accessibility XXXL feedback/completion states, and the complete
+target passes 4,188 unique tests / 4,205 device executions with zero failures
+or skips. This is local deterministic and rendered simulator evidence only; it
+earns no external readiness point.
 
 At `cb5f0327`, Review's progress-bearing projections no longer treat every
 saved row as measured evidence. `ReviewStoryPresentation` filters evidence
@@ -654,7 +668,8 @@ Historical results are not treated as proof for later behavior.
 | Path unlock delivery and evidence provenance | **Proved locally** | At `b5747542`, `PracticeSessionFinalizer` captures synchronized unlock state before append and `PathProgressManager` compares it after dependent state lands, so a reactive recompute cannot consume the celebration event. The event carries the exact finalized session ID; stat copy and proof resolve that ID rather than `.last`. General criteria reject sub-floor and evaluation-only rows, stricter filler milestones remain unchanged, and persisted unlock IDs remain grandfathered. Focused 23-test, related 55-test, and complete 4,145-unique-test / 4,162-execution simulator gates pass. The light sweep does not force the overlay, and no signed-device, accessibility, retention, or transfer result exists. |
 | Progress-bearing session provenance | **Proved locally** | At `eaf2f31c`, one three-word/three-finite-second/non-fixture policy separates Review history from every earned, coaching, recommendation, rehearsal, and KPI projection. IM, Pressure Drill, Summary, reactive managers, longitudinal reads, and proof/archive paths fail closed. At `8ec313c9`, Profile's coaching plan, Coach Read depth, Coach Parity diagnosis, transformation prompt, goal/forward-plan inputs, retention/rank counts, and filler-pattern evidence explicitly consume that eligible projection while All Reps remains raw. At `cb5f0327`, Review story depth/latest navigation, highlight selection, and the shared parent/child development-chart gate join the same boundary. The focused Review selection passes 48/48 and the complete simulator target passes 4,184 unique tests / 4,201 executions. Existing monotonic ledgers are not reconciled, the light sweep does not prove mixed invalid history, and no device, live-provider, professional, longitudinal, or launch result exists. |
 | Roleplay completion pressure provenance | **Proved locally** | At `c4376973`, the fourth attempt and an unavailable-next-objection path complete without applying a prospective pressure rung. The chip and “Final attempted pressure” summary therefore remain bound to `RoleplayTurnResult.pressureLevel`; pre-terminal level and objection transitions remain atomic. Focused 55-test and complete 4,175-unique-test / 4,192-execution simulator gates pass. No deterministic rendered microphone-completion fixture, physical-device result, or effectiveness evidence exists. |
-| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, retry continuity, attempted-pressure truthfulness, speech-notice wiring, Path integrity, duration provenance, and progress-eligibility/Profile/Review evidence tests pass through implementation commit `cb5f0327`, but they earn no external readiness points; the readiness artifact predates current source and is not current-source evidence for these later closures. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
+| Roleplay terminal continuation guidance | **Proved locally** | At `5987636f`, feedback and completion share one cached engine transition. A real next turn retains its exact adaptive promise; the fourth attempt becomes future-practice guidance; and a missing transition fails closed without claiming a rung or objection. Four pure tests pass inside a focused 38/38 selection, 3/3 deterministic UI flows pass including Accessibility XXXL terminal feedback/completion, and the complete target passes 4,188 unique tests / 4,205 device executions. The UI fixture bypasses microphone capture and is not physical-device, effectiveness, or launch evidence. |
+| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, retry continuity, attempted-pressure and continuation truthfulness, speech-notice wiring, Path integrity, duration provenance, and progress-eligibility/Profile/Review evidence tests pass through implementation commit `5987636f`, but they earn no external readiness points; the readiness artifact predates current source and is not current-source evidence for these later closures. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
 
 ## External proof gates
 
@@ -714,10 +729,15 @@ latest-rep navigation, enter highlights, unlock the development chart, or make
 the parent choose a chart that renders empty. Focused verification passes 48/48
 and the complete target passes 4,184 unique tests / 4,201 device executions.
 The light sweep shows the ordinary valid-evidence Review shell, not a forced
-mixed invalid-history branch. The next bounded local candidate is terminal
-Roleplay guidance that can promise another attempt after the fourth turn. It
-requires fresh implementation and rendered-state verification and would earn
-no external readiness point.
+mixed invalid-history branch. At `5987636f`, the adjacent bounded Roleplay
+candidate is also closed: visible guidance and advancement consume one cached
+transition, terminal feedback becomes a future practice focus, and an
+unavailable transition fails closed. Focused verification passes 38/38, the
+rendered fixture lane passes 3/3 including Accessibility XXXL, and the complete
+target passes 4,188 unique tests / 4,205 device executions. This still earns no
+external readiness point. The next safe local gap must be freshly re-ranked;
+wider Roleplay prescription routing needs product/router/measurement decisions,
+and duration-based Roleplay mechanics need a persisted turn-duration contract.
 
 At `af923c00`, Roleplay's floor-level retry preserves the exact objection
 already attempted when the engine returns `.sameObjectionSlower`, deliberately

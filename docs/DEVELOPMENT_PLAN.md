@@ -7,6 +7,18 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Terminal Roleplay guidance at `5987636f` now binds visible continuation copy to
+the exact cached engine transition. Pre-terminal turns preserve their adaptive
+promise, the fourth response converts its recommendation into a future
+practice focus, and an unavailable transition completes without claiming a
+specific next rung or objection. The focused Roleplay selection passes 38/38,
+the deterministic rendered lane passes 3/3 including Accessibility XXXL, and
+the complete target passes 4,188 unique tests / 4,205 device executions. This
+closes the previously named bounded local candidate but earns no external
+readiness point. Wider Roleplay prescription routing and durable turn-duration
+evidence remain product/schema decisions; all five required external artifacts
+remain missing, so production readiness remains NO-GO at 18/100.
+
 Review progress-evidence hardening at `cb5f0327` completes the visible Review
 side of the saved-history boundary. Story evidence depth and latest-rep routing,
 highlight selection, and the development-chart gate now consume only the
@@ -15,9 +27,9 @@ keeps the page and chart card on the same threshold, while All Reps, exact
 detail routing, export, and deletion remain raw. The focused selection passes
 48/48, and the complete target passes 4,184 unique tests / 4,201 device
 executions. The light sweep proves the ordinary valid-evidence shell, not the
-mixed invalid-history branch. Terminal Roleplay next-attempt guidance is the
-next verified local candidate; all five required external artifacts remain
-missing, so production readiness remains NO-GO at 18/100.
+mixed invalid-history branch. The later terminal Roleplay closure is recorded
+above; all five required external artifacts remain missing, so production
+readiness remains NO-GO at 18/100.
 
 Profile progress-evidence hardening at `8ec313c9` completes the visible Profile
 side of the Review-only boundary without hiding saved history. The established
@@ -27,10 +39,9 @@ question, goal/forward-plan inputs, retention/rank counts, and filler-pattern
 evidence; the All Reps subtitle deliberately retains raw saved-row ownership.
 The focused selection passes 44/44, and the complete target passes 4,177 unique
 tests / 4,194 device executions. This is local coaching-trust evidence only.
-The later Review projection closure is recorded above. Terminal Roleplay next-
-attempt copy remains the next verified local candidate; all five required
-external artifacts remain missing, so production readiness remains NO-GO at
-18/100.
+The later Review projection and terminal Roleplay closures are recorded above.
+All five required external artifacts remain missing, so production readiness
+remains NO-GO at 18/100.
 
 Roleplay completion truthfulness at `c4376973` makes terminal state describe
 the pressure rung actually attempted. The existing engine now returns the next

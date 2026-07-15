@@ -1,5 +1,28 @@
 # Noum — Current state
 
+## 2026-07-15 — Terminal Roleplay guidance no longer promises a nonexistent turn
+
+Implementation commit `5987636f` closes the remaining split between
+Roleplay's adaptive recommendation and the continuation the view can actually
+deliver. `RoleplayView` now resolves and caches one `RoleplayEngine` transition
+when a response is submitted, then uses that same value for both visible copy
+and advancement. A real pre-terminal transition retains the exact “Next
+attempt” promise; the fourth response reframes the retry mode as a future
+“Practice focus”; and an unavailable transition fails closed without promising
+a pressure rung or objection. Completion continues to cite the final
+`RoleplayTurnResult` pressure rather than prospective view state.
+
+Four pure presentation/source-contract tests pass inside the focused **38/38**
+Roleplay selection. Three deterministic UI tests pass on the NoumCleanTest /
+iOS 26.5 simulator, covering pre-terminal advancement, unavailable-transition
+completion, and fourth-attempt feedback plus completion at Accessibility XXXL.
+The complete `NoumTests` target passes **4,188 unique tests / 4,205 device
+executions** with zero failures or skips. The retained Roleplay frames show the
+new terminal copy and the light five-tab sweep checks the ordinary app shell;
+neither is physical-device or microphone evidence. No required external
+artifact was collected, so production readiness remains **NO-GO at 18/100
+with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Review progress evidence excludes Review-only captures
 
 Implementation commit `cb5f0327` closes the remaining Review-side split
@@ -19,7 +42,8 @@ recovered from one transient parallel-clone launch denial and the authoritative
 result bundle is Passed. A fresh light five-tab sweep renders the ordinary
 valid-evidence Review shell cleanly, but does not force or prove the mixed
 invalid-history state. Terminal Roleplay next-attempt guidance remains the next
-verified local candidate. No required external artifact was collected, so
+verified local candidate at that boundary; its later closure is recorded above.
+No required external artifact was collected, so
 production readiness remains **NO-GO at 18/100 with 0/5 required external
 artifacts**.
 
@@ -40,8 +64,8 @@ unique tests / 4,194 device executions** with zero failures or skips on the
 NoumCleanTest / iOS 26.5 simulator; Xcode recovered from one transient
 parallel-clone launch denial and the authoritative result bundle is Passed.
 This proves local evidence-boundary behavior only. The later Review projection
-closure is recorded above; terminal Roleplay next-attempt copy remains the
-verified follow-up, and no physical-device, live-provider, professional,
+closure is recorded above; the later terminal Roleplay guidance closure is also
+recorded above, and no physical-device, live-provider, professional,
 longitudinal, or launch artifact was collected. Production readiness remains
 **NO-GO at 18/100 with 0/5 required external artifacts**.
 
