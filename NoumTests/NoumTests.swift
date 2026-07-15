@@ -13842,7 +13842,7 @@ struct ProofMomentServiceTests {
             of: "guard PracticeProgressEligibility.qualifies(input.session)"
         ))
         let cache = try #require(source.range(
-            of: "let cacheKey = Self.cacheIdentity(for: input)"
+            of: "let cacheKey = saveToken.cacheIdentity"
         ))
         #expect(gate.lowerBound < cache.lowerBound)
     }

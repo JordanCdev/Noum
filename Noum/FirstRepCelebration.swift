@@ -425,12 +425,18 @@ struct FirstRepCelebration: View {
                 baselinePace: baseline.pace.confidence != .insufficient
                     ? baseline.pace.value : nil
             )
+            guard let request = ProofMomentStore.shared.generationRequest(for: input) else {
+                return
+            }
             // First try the canonical archive-bound service. On rep 1 the
             // session frequently sits at the boundary (≤8s, very short
             // transcript) so this can legitimately return nil.
-            let serviceProof = await ProofMomentService.shared.proof(for: input)
+            let serviceResult = await ProofMomentService.shared.proof(for: request)
             if Task.isCancelled { return }
-            let resolved: ProofMoment? = serviceProof ?? Self.celebrationLocalProof(for: session)
+            let currentToken = serviceResult?.saveToken ?? request.saveToken
+            guard ProofMomentStore.shared.tokenIsCurrent(currentToken) else { return }
+            let resolved: ProofMoment? = serviceResult?.proof
+                ?? Self.celebrationLocalProof(for: session)
             if Task.isCancelled { return }
             guard let resolved = resolved else { return }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.45)) {

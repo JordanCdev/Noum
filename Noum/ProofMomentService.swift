@@ -84,6 +84,23 @@ struct ProofMomentInput {
     let baselinePace: Double?
 }
 
+/// Input and account/source lease captured together on the main actor before
+/// the service actor can suspend. Keeping them inseparable prevents an input
+/// built under one account from being leased after another account hydrates.
+struct ProofMomentGenerationRequest {
+    let input: ProofMomentInput
+    let saveToken: ProofMomentSaveToken
+}
+
+/// A generated proof plus the account/source lease that authorized it. UI
+/// consumers revalidate the lease synchronously on the main actor immediately
+/// before assigning the proof to view state, closing the final suspend-to-
+/// render gap after the service's archive compare-and-save succeeds.
+struct ProofMomentGenerationResult: Equatable {
+    let proof: ProofMoment
+    let saveToken: ProofMomentSaveToken
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 actor ProofMomentService {
 
@@ -91,14 +108,18 @@ actor ProofMomentService {
 
     /// In-memory cache keyed by session plus explicit goal identity. The quote
     /// remains immutable, but technique/claim copy is voice-shaped.
-    private var cache: [String: ProofMoment] = [:]
+    private var cache: [String: ProofMomentGenerationResult] = [:]
 
     private init() {}
 
     /// Extract (or return cached) proof for a session. Returns nil if
     /// the session has no transcript or its duration is too short to
     /// produce a meaningful proof (≤8 seconds — likely a misfire rep).
-    func proof(for input: ProofMomentInput) async -> ProofMoment? {
+    func proof(
+        for request: ProofMomentGenerationRequest
+    ) async -> ProofMomentGenerationResult? {
+        let input = request.input
+        let saveToken = request.saveToken
         func record(
             _ outcome: AICallDiagnosticOutcome,
             _ reason: String,
@@ -123,8 +144,27 @@ actor ProofMomentService {
             return nil
         }
 
-        let cacheKey = Self.cacheIdentity(for: input)
+        guard !Task.isCancelled else {
+            record(.skipped, "Proof request cancelled before generation")
+            return nil
+        }
+
+        guard saveToken.source == input.session.coachReadSourceSnapshot,
+              saveToken.generationIdentity == Self.generationIdentity(for: input),
+              await ProofMomentStore.shared.tokenIsCurrent(saveToken) else {
+            record(.skipped, "Proof source is no longer current")
+            return nil
+        }
+
+        let cacheKey = saveToken.cacheIdentity
         if let cached = cache[cacheKey] {
+            guard !Task.isCancelled,
+                  cached.saveToken == saveToken,
+                  await ProofMomentStore.shared.tokenIsCurrent(saveToken) else {
+                cache.removeValue(forKey: cacheKey)
+                record(.skipped, "Cached proof source is no longer current")
+                return nil
+            }
             return cached
         }
 
@@ -136,11 +176,11 @@ actor ProofMomentService {
         // the deterministic proof, no model call.
         guard await activeLocaleSupportsAI() else {
             record(.skipped, fallback == nil ? "Locale not AI-supported; no deterministic proof" : "Locale not AI-supported")
-            if let fallback = fallback {
-                cache[cacheKey] = fallback
-                await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
-            }
-            return fallback
+            return await commit(
+                fallback,
+                input: input,
+                expected: saveToken
+            )
         }
 
         let configuredProvider = await currentProvider()
@@ -149,11 +189,11 @@ actor ProofMomentService {
               let key = apiKey(for: provider)
         else {
             record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
-            if let fallback = fallback {
-                cache[cacheKey] = fallback
-                await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
-            }
-            return fallback
+            return await commit(
+                fallback,
+                input: input,
+                expected: saveToken
+            )
         }
 
         do {
@@ -173,11 +213,11 @@ actor ProofMomentService {
                 request.setGoogleAPIKey(key)
             case .none:
                 record(.skipped, "Provider set to off", provider: provider)
-                if let fallback = fallback {
-                    cache[cacheKey] = fallback
-                    await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
-                }
-                return fallback
+                return await commit(
+                    fallback,
+                    input: input,
+                    expected: saveToken
+                )
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -192,46 +232,63 @@ actor ProofMomentService {
                     statusCode: statusCode,
                     startedAt: startedAt
                 )
-                if let fallback = fallback {
-                    cache[cacheKey] = fallback
-                    await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
-                }
-                return fallback
+                return await commit(
+                    fallback,
+                    input: input,
+                    expected: saveToken
+                )
             }
             guard let parsed = Self.parse(data: data, provider: provider, input: input) else {
                 record(.fallback, fallback == nil ? "Proof response failed grounding; no fallback proof" : "Proof response failed grounding", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
-                if let fallback = fallback {
-                    cache[cacheKey] = fallback
-                    await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
-                }
-                return fallback
+                return await commit(
+                    fallback,
+                    input: input,
+                    expected: saveToken
+                )
             }
             record(.success, "Proof moment accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
-            cache[cacheKey] = parsed
-            await persistToArchive(parsed, sessionID: input.session.id, voice: input.voice)
-            return parsed
+            return await commit(
+                parsed,
+                input: input,
+                expected: saveToken
+            )
         } catch {
-            record(.failure, "Transport or decode error", provider: provider)
-            if let fallback = fallback {
-                cache[cacheKey] = fallback
-                await persistToArchive(fallback, sessionID: input.session.id, voice: input.voice)
+            guard !Task.isCancelled else {
+                record(.skipped, "Proof request cancelled during generation", provider: provider)
+                return nil
             }
-            return fallback
+            record(.failure, "Transport or decode error", provider: provider)
+            return await commit(
+                fallback,
+                input: input,
+                expected: saveToken
+            )
         }
     }
 
-    /// Persist a generated proof to the per-account archive so the Ask
-    /// Noum coach can quote the user's actual past words on later turns.
-    /// Hops to MainActor — the archive is `@MainActor` to stay SwiftUI-
-    /// safe for the upcoming Profile library card. Best-effort: a save
-    /// failure never blocks the proof from reaching the calling UI.
-    @MainActor
-    private func persistToArchive(
-        _ proof: ProofMoment,
-        sessionID: UUID,
-        voice: SpeakingStyleGoal?
-    ) {
-        ProofMomentStore.shared.record(proof, for: sessionID, voiceAtGeneration: voice)
+    /// One commit path for provider and deterministic outcomes. The archive is
+    /// the authoritative compare-and-save boundary; a failed commit means the
+    /// proof is neither cached nor returned for rendering.
+    private func commit(
+        _ proof: ProofMoment?,
+        input: ProofMomentInput,
+        expected token: ProofMomentSaveToken
+    ) async -> ProofMomentGenerationResult? {
+        guard let proof, !Task.isCancelled else { return nil }
+        guard await ProofMomentStore.shared.record(
+            proof,
+            expected: token,
+            voiceAtGeneration: input.voice
+        ) != nil else {
+            return nil
+        }
+        guard !Task.isCancelled,
+              await ProofMomentStore.shared.tokenIsCurrent(token) else {
+            return nil
+        }
+        let result = ProofMomentGenerationResult(proof: proof, saveToken: token)
+        cache[token.cacheIdentity] = result
+        return result
     }
 
     /// Invalidate the cached proof for a session — call when a user
@@ -243,16 +300,64 @@ actor ProofMomentService {
             .forEach { cache.removeValue(forKey: $0) }
     }
 
+    /// Account lifecycle hook. Cache entries from prior identity epochs are
+    /// discarded. Hooks are unstructured tasks, so a delayed older hook is
+    /// ignored once any newer-epoch cache entry exists.
+    func invalidateForAccountLifecycle(currentGeneration: UInt64) {
+        guard Self.shouldApplyLifecycleInvalidation(
+            currentGeneration: currentGeneration,
+            cachedGenerations: cache.values.map {
+                $0.saveToken.accountLifecycleGeneration
+            }
+        ) else { return }
+        cache = cache.filter {
+            $0.value.saveToken.accountLifecycleGeneration == currentGeneration
+        }
+    }
+
+    nonisolated static func shouldApplyLifecycleInvalidation(
+        currentGeneration: UInt64,
+        cachedGenerations: [UInt64]
+    ) -> Bool {
+        !cachedGenerations.contains { $0 > currentGeneration }
+    }
+
     /// Testable cache identity. Goal wording is included because it is fed into
     /// the claim prompt even when the enum voice itself is unchanged.
-    nonisolated static func cacheIdentity(for input: ProofMomentInput) -> String {
+    nonisolated static func generationIdentity(for input: ProofMomentInput) -> String {
         let goal = input.goalParaphrase?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return [
-            input.session.id.uuidString,
             input.voice?.rawValue ?? "no-style",
             goal,
+            input.baselineFillerRate.map { String($0.bitPattern) } ?? "no-filler-baseline",
+            input.baselinePace.map { String($0.bitPattern) } ?? "no-pace-baseline",
         ].joined(separator: "|")
+    }
+
+    /// Pure cache identity helper retained for focused namespace tests. Live
+    /// requests use the account/lifecycle overload below via their save token.
+    nonisolated static func cacheIdentity(for input: ProofMomentInput) -> String {
+        [input.session.id.uuidString, generationIdentity(for: input)]
+            .joined(separator: "|")
+    }
+
+    nonisolated static func cacheIdentity(
+        for input: ProofMomentInput,
+        accountScope: String,
+        accountLifecycleGeneration: UInt64,
+        sessionStoreGeneration: UInt64 = 0
+    ) -> String {
+        ProofMomentSaveToken(
+            accountScope: accountScope,
+            accountLifecycleGeneration: accountLifecycleGeneration,
+            sessionStoreEpoch: PracticeSessionStoreEpoch(
+                accountScope: accountScope,
+                generation: sessionStoreGeneration
+            ),
+            source: input.session.coachReadSourceSnapshot,
+            generationIdentity: generationIdentity(for: input)
+        ).cacheIdentity
     }
 
     /// Shared by invalidation and focused tests. One session can have several

@@ -7,9 +7,51 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
-The current working tree implements the next bounded P1 trust slice across the
-existing Summary, session-store, baseline, and coaching owners. Summary
-mechanics and lifecycle effects remain bound to `finalizedSessionID`. Premium
+## Current production-closure slice — Proof Moment account/source CAS
+
+The current source developed above baseline `8fbdbab6e` closes the
+verified P0 asynchronous ownership gap in Proof Moment generation through the
+existing authentication, `PracticeSessionStore`, `ProofMomentStore`, and
+`ProofMomentService` owners. A request is captured synchronously only for a
+signed-in, fully hydrated, nonempty account whose loaded session-store epoch
+owns the exact source row. Account lifecycle, store generation, full source
+snapshot/revision, and voice/goal/baseline generation identity scope the token
+and cache. Cache hits, the single archive compare-and-save path, and all four
+render assignments revalidate the token; a failed archive save is neither
+cached nor returned. Weekly Insight also clears lifecycle-stale rendered state,
+and lifecycle cache cleanup is order-safe.
+
+Focused verification passes **39/39** and the related regression selection
+passes **130/130**. The complete unsigned target passes **4,331 unique tests /
+4,350 device-configuration executions** with zero failures or skips; its result
+bundle is
+`.build-roleplay-terminal/Full-NoumTests-ProofCAS-20260715-final-r2.xcresult`.
+The current-source unsigned Release simulator build succeeds. A light
+current-source simulator sweep renders the expected five tab tops and is
+recorded in
+`.screenshots/2026-07-15-proof-moment-account-cas/HANDOFF.md`; it does not
+exercise the Proof Moment account-transition path. No new external evidence was
+collected.
+
+The next Proof Moment work is bounded P1/P2 hardening, not another store:
+
+- live-revalidate same-account voice, goal wording, and baseline context before
+  archive commit and render, and preserve enough provenance for replay;
+- remove or suppress an archived proof when its source session changes or is
+  deleted, including Growth Library and Ask Noum consumers;
+- retain/revalidate the token for already-rendered proof state rather than
+  discarding it after assignment; and
+- close the cancellation-during-save side effect and retire or constrain the
+  unused unchecked archive writer.
+
+This local P0 closure does not establish provider quality, Proof-Moment-specific
+rendered/device behavior, professional calibration, longitudinal transfer,
+operations, or any required external artifact. Production remains **NO-GO at
+18/100 with 0/5 required external artifacts**.
+
+The preceding bounded P1 trust slice uses the existing Summary, session-store,
+baseline, and coaching owners. Summary mechanics and lifecycle effects remain
+bound to `finalizedSessionID`. Premium
 Coach Read generation now resolves that exact persisted row, carries only
 transcript, prompt, mode, score, duration, and score-only continuity, and
 withholds filler/WPM/pace mechanics from both provider and deterministic
@@ -40,9 +82,10 @@ account-save failure before tab content rendered.
 
 This remains partial product-wide closure. The qualitative Summary delivery
 line, durable CoachMemory/derived delivery reads, IM baseline comparison, Ask
-Noum session opener, share/request-feedback WPM, Proof Moment generation,
-Forward Plan inputs, and other durable narrative/reward consumers remain P1
-audit targets. Legacy trend continuity remains intentionally absent until
+Noum session opener, share/request-feedback WPM, Proof Moment metric
+qualification and remaining lifecycle/replay gaps, Forward Plan inputs, and
+other durable narrative/reward consumers remain P1 audit targets. Legacy trend
+continuity remains intentionally absent until
 qualified snapshots accrue. Standalone Pace attribution and wider Roleplay
 prescription routing remain product/schema decisions. Production remains
 **NO-GO at 18/100 with 0/5 required external artifacts**.

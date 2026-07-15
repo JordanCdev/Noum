@@ -1,5 +1,58 @@
 # Noum — Current state
 
+## 2026-07-15 — Proof Moment writes are account/source leased end to end
+
+The current source, developed above baseline `8fbdbab6e`, closes the
+verified P0 cross-account and stale-source race in asynchronous Proof Moment
+generation without creating another account, session, archive, or routing
+owner. `PracticeSessionStore` now exposes each saved row together with the
+nonempty account scope and store generation that loaded it. A Proof Moment
+request can be created only while authentication is signed in and fully
+hydrated, the loaded store scope matches the current account, and every source
+field matches the caller's session snapshot. The request captures that row,
+the account lifecycle, session-store epoch, source revision, and the exact
+voice/goal/baseline generation identity synchronously before provider work can
+suspend.
+
+`ProofMomentService` namespaces its cache by account, lifecycle, session-store
+epoch, exact source revision, and generation identity. Cache hits revalidate
+the lease. Provider and deterministic outcomes share one compare-and-save
+path: the archive rechecks the live account, lifecycle, store epoch, full
+source snapshot, transcript quote, and session date before it mutates memory or
+disk; a failed save is neither cached nor returned. Weekly Insight, Path
+Celebration, First Rep, and Summary capture the request before their Proof
+Moment suspension and synchronously revalidate the returned token immediately
+before assigning view state. Weekly Insight additionally rejects and clears
+account-lifecycle-stale state, and delayed lifecycle cache hooks cannot erase a
+newer epoch.
+
+Focused Proof Moment account/source verification passes **39/39**. The related
+regression selection passes **130/130**. These runs cover signed-out and
+hydrating transitions, identity-before-store reload, an identical destination
+row, rapid return to the same account, same-account store reload, source
+mutation/deletion before commit, archive grounding, cache scoping, and delayed
+lifecycle invalidation. The complete unsigned `NoumTests` target passes
+**4,331 unique tests / 4,350 device-configuration
+executions** with zero failures or skips; its result bundle is
+`.build-roleplay-terminal/Full-NoumTests-ProofCAS-20260715-final-r2.xcresult`.
+The current-source unsigned Release simulator build succeeds. A light
+current-source simulator sweep renders the expected
+Home, Train, Review, Profile, and Settings tab tops; it does not exercise the
+Proof Moment account-transition path.
+
+This closes the identified P0 only. Same-account voice, goal wording, or
+baseline changes during provider work are not yet live-revalidated, and replay
+persists voice provenance but not goal/baseline provenance. A source changed or
+deleted after commit does not currently remove its archived proof, and rendered
+consumers retain the proof rather than its token, so later same-account drift
+can leave stale copy visible or replayable. Cancellation during the MainActor
+archive hop can still leave a durable write even when the service returns nil;
+the older unchecked archive writer also remains a latent internal bypass,
+although no production caller uses it. No Proof-Moment-specific rendered,
+physical-device, live-provider, professional-calibration, longitudinal,
+operational, or required external artifact was collected. Production readiness
+remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Persisted Coach Read fails closed on free-form mechanics
 
 The current working tree extends the exact-session Summary boundary through
@@ -36,8 +89,9 @@ launch denial. The current-source unsigned Release simulator build also
 succeeds. This is still a
 bounded trust closure: the qualitative Summary delivery line, durable
 CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum session
-opener, share/request-feedback WPM, Proof Moment generation, Forward Plan
-inputs, other durable narrative/reward consumers, rendered/device behavior,
+opener, share/request-feedback WPM, Proof Moment metric qualification and
+remaining lifecycle/replay gaps, Forward Plan inputs, other durable
+narrative/reward consumers, rendered/device behavior,
 live-provider quality, and all external evidence gates remain open. Production
 readiness therefore remains **NO-GO at 18/100 with 0/5 required external
 artifacts**.
@@ -69,8 +123,9 @@ recorded in `.screenshots/2026-07-15_summary-verdict-evidence/HANDOFF.md`. This
 remains partial product-wide coverage: the qualitative Summary delivery line,
 durable CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum
 session opener, share/request-feedback WPM,
-Proof Moment generation, Forward Plan inputs, and other durable narrative or
-reward consumers still need the same provenance boundary. Manual/device
+Proof Moment metric qualification and remaining lifecycle/replay gaps, Forward
+Plan inputs, and other durable narrative or reward consumers still need the
+same provenance boundary. Manual/device
 evidence, professional calibration, longitudinal transfer, operations, and all
 five required external artifacts remain unproved. Production readiness
 therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**.
@@ -109,9 +164,10 @@ simulator `NoumTests` target passes **4,289 unique tests / 4,308 device
 executions** with zero failures or skips, and an unsigned current-source
 Release simulator build succeeds. At that boundary active Summary Coach Read
 remained open; the newest section above now quarantines its free-form mechanic
-claims. Proof Moment generation, Forward Plan inputs, durable
+claims. Proof Moment metric qualification, Forward Plan inputs, durable
 CoachMemory/derived delivery reads, and other narrative/reward consumers still
-need the same metric audit.
+need the same metric audit; the newest Proof Moment section separately closes
+the asynchronous account/source P0.
 Legacy trend archives intentionally contribute no mechanic continuity until
 new qualified snapshots accrue. Manual/device evidence, professional
 calibration, longitudinal transfer, operations, and all five required external

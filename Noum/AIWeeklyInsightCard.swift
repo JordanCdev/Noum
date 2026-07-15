@@ -38,6 +38,7 @@ struct AIWeeklyInsightCard: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
+    @StateObject private var authManager = AuthManager.shared
 
     @State private var insight: AIInsight?
     @State private var proof: ProofMoment?
@@ -67,20 +68,37 @@ struct AIWeeklyInsightCard: View {
         return sessionStore.progressEligibleSessions.filter { $0.date >= cutoff }.count
     }
 
+    private var accountRenderIdentity: String {
+        [
+            authManager.currentAccountID ?? "<signed-out>",
+            String(authManager.accountLifecycleGeneration),
+        ].joined(separator: "|")
+    }
+
     var body: some View {
         let shouldRequest = AIWeeklyInsightPresentation.shouldRequestInsight(
             weeklyReps: weeklyReps,
             totalSessions: sessionStore.progressEligibleSessionCount
         )
-        if !shouldRequest {
-            EmptyView()
-        } else if let insight {
-            cardShell(insight: insight)
-        } else {
-            Color.clear
-                .frame(height: 0)
-                .accessibilityHidden(true)
-                .task { await requestInitialInsightIfNeeded() }
+        Group {
+            if !shouldRequest {
+                EmptyView()
+            } else if let insight {
+                cardShell(insight: insight)
+            } else {
+                Color.clear
+                    .frame(height: 0)
+                    .accessibilityHidden(true)
+                    .task { await requestInitialInsightIfNeeded() }
+            }
+        }
+        .onChange(of: accountRenderIdentity) { _, _ in
+            insight = nil
+            proof = nil
+            focusShift = nil
+            isRefreshing = false
+            hasAppeared = false
+            didRequestInitialInsight = false
         }
     }
 
@@ -290,6 +308,8 @@ struct AIWeeklyInsightCard: View {
     }
 
     private func refresh(force: Bool = false) async {
+        let requestedAccountScope = authManager.currentAccountID
+        let requestedAccountLifecycle = authManager.accountLifecycleGeneration
         let calendar = Calendar.current
         let cutoff = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let weekly = sessionStore.progressEligibleSessions.filter { $0.date >= cutoff }
@@ -317,6 +337,13 @@ struct AIWeeklyInsightCard: View {
             await AIInsightsService.shared.invalidate(for: input)
         }
         let next = await AIInsightsService.shared.insight(for: input)
+        guard !Task.isCancelled,
+              authManager.currentAccountID == requestedAccountScope,
+              authManager.accountLifecycleGeneration == requestedAccountLifecycle,
+              authManager.initialAccountHydrationState == .ready else {
+            isRefreshing = false
+            return
+        }
 
         // Proof of the week — pick the highest-scoring rated session
         // from the weekly window and extract a transcript-anchored
@@ -325,24 +352,39 @@ struct AIWeeklyInsightCard: View {
         // than the most recent) makes the proof feel like a victory
         // lap, not a random sample. Skips entirely if no session has
         // a score (cold start or all-skipped reps).
-        var nextProof: ProofMoment? = nil
-        let bestSession = weekly
+        var nextProofResult: ProofMomentGenerationResult? = nil
+        let proofWeekly = sessionStore.progressEligibleSessions.filter {
+            $0.date >= cutoff
+        }
+        let proofProfile = coachingProfileStore.profile
+        let proofBaseline = baselineStore.baseline
+        let bestSession = proofWeekly
             .filter { $0.score != nil && !$0.transcript.isEmpty }
             .max(by: { ($0.score ?? 0) < ($1.score ?? 0) })
         if let session = bestSession {
             let proofInput = ProofMomentInput(
                 session: session,
-                voice: profile?.chosenStyleGoal,
-                goalParaphrase: goalParaphrase,
-                baselineFillerRate: baselineStore.baseline.fillerRate.confidence != .insufficient
-                    ? baselineStore.baseline.fillerRate.value : nil,
-                baselinePace: baselineStore.baseline.pace.confidence != .insufficient
-                    ? baselineStore.baseline.pace.value : nil
+                voice: proofProfile?.chosenStyleGoal,
+                goalParaphrase: proofProfile?.displayableGoal,
+                baselineFillerRate: proofBaseline.fillerRate.confidence != .insufficient
+                    ? proofBaseline.fillerRate.value : nil,
+                baselinePace: proofBaseline.pace.confidence != .insufficient
+                    ? proofBaseline.pace.value : nil
             )
-            if force {
-                await ProofMomentService.shared.invalidate(sessionID: session.id)
+            if let request = ProofMomentStore.shared.generationRequest(for: proofInput) {
+                if force {
+                    await ProofMomentService.shared.invalidate(sessionID: session.id)
+                }
+                nextProofResult = await ProofMomentService.shared.proof(for: request)
             }
-            nextProof = await ProofMomentService.shared.proof(for: proofInput)
+        }
+
+        guard !Task.isCancelled,
+              authManager.currentAccountID == requestedAccountScope,
+              authManager.accountLifecycleGeneration == requestedAccountLifecycle,
+              authManager.initialAccountHydrationState == .ready else {
+            isRefreshing = false
+            return
         }
 
         // Focus shift detection — detect when the primary focus area has
@@ -357,12 +399,24 @@ struct AIWeeklyInsightCard: View {
                 trends: trends,
                 currentSessionSnapshot: snapshots.first,
                 recentDrills: recentDrills,
-                styleGoal: profile?.chosenStyleGoal
+                styleGoal: coachingProfileStore.profile?.chosenStyleGoal
             )
             nextFocusShift = PrimaryFocusMemory.detectShift(current: currentFocus, accountID: accountID)
         }
 
         await MainActor.run {
+            guard !Task.isCancelled,
+                  authManager.currentAccountID == requestedAccountScope,
+                  authManager.accountLifecycleGeneration == requestedAccountLifecycle,
+                  authManager.initialAccountHydrationState == .ready else {
+                self.isRefreshing = false
+                return
+            }
+            let nextProof = nextProofResult.flatMap { result in
+                ProofMomentStore.shared.tokenIsCurrent(result.saveToken)
+                    ? result.proof
+                    : nil
+            }
             let apply = {
                 self.insight = next
                 self.proof = nextProof

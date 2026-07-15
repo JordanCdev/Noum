@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import Foundation
 import Combine
+import CryptoKit
 #if canImport(Security)
 import Security
 #endif
@@ -106,6 +107,49 @@ struct ProofMomentRecord: Codable, Identifiable, Equatable {
     }
 }
 
+/// Account-, lifecycle-, and session-store-scoped lease for one exact saved
+/// session used by an asynchronous Proof Moment request. The source snapshot
+/// reuses the same inspectable value contract as generated Coach Read
+/// persistence: a provider result can commit only while the identity epoch,
+/// loaded session-store epoch, and every source field still match.
+struct ProofMomentSaveToken: Equatable {
+    let accountScope: String
+    let accountLifecycleGeneration: UInt64
+    let sessionStoreEpoch: PracticeSessionStoreEpoch
+    let source: CoachReadSourceSnapshot
+    let generationIdentity: String
+
+    var sourceRevision: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: "+infinity",
+            negativeInfinity: "-infinity",
+            nan: "nan"
+        )
+        let data = (try? encoder.encode(source))
+            ?? Data(source.sessionID.uuidString.utf8)
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    /// Process-local cache namespace. Session ID stays first so invalidating a
+    /// session removes every account/epoch/voice variant without parsing user
+    /// text. Account and lifecycle scope prevent a cache hit after hydration,
+    /// sign-out, or a rapid return to the same account ID.
+    var cacheIdentity: String {
+        [
+            source.sessionID.uuidString,
+            accountScope,
+            String(accountLifecycleGeneration),
+            String(sessionStoreEpoch.generation),
+            sourceRevision,
+            generationIdentity,
+        ].joined(separator: "|")
+    }
+}
+
 /// Per-account observable archive of proof moments. Reads / writes are
 /// `@MainActor` so the published `records` array stays SwiftUI-safe;
 /// writers from `ProofMomentService` (an actor) hop here via the usual
@@ -129,10 +173,16 @@ final class ProofMomentStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
+    private let accountLifecycleGenerationProvider: () -> UInt64
+    private let accountIsReadyProvider: () -> Bool
+    private let sourceProvider: (UUID) -> AccountScopedPracticeSession?
 
     init(
         defaults: UserDefaults = .standard,
-        accountIDProvider: (() -> String?)? = nil
+        accountIDProvider: (() -> String?)? = nil,
+        accountLifecycleGenerationProvider: (() -> UInt64)? = nil,
+        accountIsReadyProvider: (() -> Bool)? = nil,
+        sourceProvider: ((UUID) -> AccountScopedPracticeSession?)? = nil
     ) {
         self.defaults = defaults
         if let provider = accountIDProvider {
@@ -140,7 +190,71 @@ final class ProofMomentStore: ObservableObject {
         } else {
             self.accountIDProvider = { Self.defaultAccountIDProvider() }
         }
+        if let provider = accountLifecycleGenerationProvider {
+            self.accountLifecycleGenerationProvider = provider
+        } else {
+            self.accountLifecycleGenerationProvider = {
+                AuthManager.shared.accountLifecycleGeneration
+            }
+        }
+        if let provider = accountIsReadyProvider {
+            self.accountIsReadyProvider = provider
+        } else {
+            self.accountIsReadyProvider = {
+                AuthManager.shared.isSignedIn
+                    && AuthManager.shared.initialAccountHydrationState == .ready
+            }
+        }
+        if let provider = sourceProvider {
+            self.sourceProvider = provider
+        } else {
+            self.sourceProvider = { sessionID in
+                PracticeSessionStore.shared.accountScopedSession(id: sessionID)
+            }
+        }
         loadFromDisk()
+    }
+
+    /// Captures the input and its lease synchronously on the main actor before
+    /// provider work can suspend. A detached input, signed-out transition, or
+    /// row still loaded from another account cannot be relabelled later.
+    func generationRequest(
+        for input: ProofMomentInput
+    ) -> ProofMomentGenerationRequest? {
+        guard accountIsReadyProvider(),
+              let accountScope = accountIDProvider(),
+              !accountScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let ownedSource = sourceProvider(input.session.id),
+              ownedSource.epoch.accountScope == accountScope,
+              ownedSource.session.coachReadSourceSnapshot
+                == input.session.coachReadSourceSnapshot else {
+            return nil
+        }
+        let token = ProofMomentSaveToken(
+            accountScope: accountScope,
+            accountLifecycleGeneration: accountLifecycleGenerationProvider(),
+            sessionStoreEpoch: ownedSource.epoch,
+            source: ownedSource.session.coachReadSourceSnapshot,
+            generationIdentity: ProofMomentService.generationIdentity(for: input)
+        )
+        return ProofMomentGenerationRequest(
+            input: input,
+            saveToken: token
+        )
+    }
+
+    /// Revalidates the account epoch and exact source synchronously on the main
+    /// actor. Callers use this both at the archive boundary and immediately
+    /// before assigning an async result to a rendered surface.
+    func tokenIsCurrent(_ token: ProofMomentSaveToken) -> Bool {
+        guard accountIsReadyProvider(),
+              token.accountScope == accountIDProvider(),
+              token.accountLifecycleGeneration == accountLifecycleGenerationProvider(),
+              let ownedSource = sourceProvider(token.source.sessionID),
+              ownedSource.epoch == token.sessionStoreEpoch else {
+            return false
+        }
+        return token.source == ownedSource.session.coachReadSourceSnapshot
     }
 
     /// Persist a proof for the given session. Idempotent on `sessionID`
@@ -159,6 +273,40 @@ final class ProofMomentStore: ObservableObject {
             addedAt: date,
             voiceAtGeneration: voiceAtGeneration
         )
+        upsert(entry)
+    }
+
+    /// Compare-and-save boundary for asynchronous generation. Account or
+    /// source drift returns nil without touching in-memory state or disk. The
+    /// quote/date checks keep the archive tied to the exact token source even
+    /// if a future service caller skips its own response validation.
+    @discardableResult
+    func record(
+        _ proof: ProofMoment,
+        expected token: ProofMomentSaveToken,
+        voiceAtGeneration: SpeakingStyleGoal? = nil,
+        at date: Date = Date()
+    ) -> ProofMomentRecord? {
+        guard tokenIsCurrent(token),
+              proof.sessionDate == token.source.date,
+              ProofMomentService.transcriptContains(
+                proof.quote,
+                in: token.source.transcript
+              ) else {
+            return nil
+        }
+        let entry = ProofMomentRecord(
+            sessionID: token.source.sessionID,
+            proof: proof,
+            addedAt: date,
+            voiceAtGeneration: voiceAtGeneration
+        )
+        upsert(entry)
+        return entry
+    }
+
+    private func upsert(_ entry: ProofMomentRecord) {
+        let sessionID = entry.sessionID
         if let existing = records.firstIndex(where: { $0.sessionID == sessionID }) {
             records[existing] = entry
         } else {

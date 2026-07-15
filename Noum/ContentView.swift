@@ -1659,15 +1659,23 @@ struct ContentView: View {
             baselinePace: baseline.pace.confidence != .insufficient
                 ? baseline.pace.value : nil
         )
-        let proof = await ProofMomentService.shared.proof(for: input)
+        guard let request = ProofMomentStore.shared.generationRequest(for: input) else {
+            return
+        }
+        let result = await ProofMomentService.shared.proof(for: request)
         await MainActor.run {
-            guard pathProgress.pendingCelebrationSessionID == sessionID else { return }
+            guard !Task.isCancelled,
+                  pathProgress.pendingCelebrationSessionID == sessionID,
+                  let result,
+                  ProofMomentStore.shared.tokenIsCurrent(result.saveToken) else {
+                return
+            }
             if Self.shouldAnimatePathCelebrationProof(reduceMotion: reduceMotion) {
                 withAnimation(.standardSpring) {
-                    pathCelebrationProof = proof
+                    pathCelebrationProof = result.proof
                 }
             } else {
-                pathCelebrationProof = proof
+                pathCelebrationProof = result.proof
             }
         }
     }

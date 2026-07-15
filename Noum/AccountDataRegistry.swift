@@ -399,7 +399,28 @@ extension AccountDataRegistry {
             participant("coach-letters", [.accountKey(prefix: "coachLetter.archive.")], reload: { CoachLetterStore.shared.reloadForCurrentAccount() }, end: { CoachLetterStore.shared.endSession() }),
             participant("post-rep-notes", [.accountKey(prefix: "postRepCoachNote.")], reload: { PostRepCoachNoteStore.shared.reloadForCurrentAccount() }, end: { PostRepCoachNoteStore.shared.endSession() }),
             participant("coach-memory", [.accountKey(prefix: "coachMemory.")], reload: { CoachMemoryStore.shared.reloadForCurrentAccount() }, end: { CoachMemoryStore.shared.endSession() }),
-            participant("proof-moments", [.accountKey(prefix: "proofMoment.archive.")], reload: { ProofMomentStore.shared.reloadForCurrentAccount() }, end: { ProofMomentStore.shared.endSession() }),
+            participant(
+                "proof-moments",
+                [.accountKey(prefix: "proofMoment.archive.")],
+                reload: {
+                    ProofMomentStore.shared.reloadForCurrentAccount()
+                    let generation = AuthManager.shared.accountLifecycleGeneration
+                    Task {
+                        await ProofMomentService.shared.invalidateForAccountLifecycle(
+                            currentGeneration: generation
+                        )
+                    }
+                },
+                end: {
+                    ProofMomentStore.shared.endSession()
+                    let generation = AuthManager.shared.accountLifecycleGeneration
+                    Task {
+                        await ProofMomentService.shared.invalidateForAccountLifecycle(
+                            currentGeneration: generation
+                        )
+                    }
+                }
+            ),
             participant("phrase-bank", [.accountKey(prefix: PhraseBankStore.storageKeyPrefix + ".")], reload: { PhraseBankStore.shared.reloadForCurrentAccount() }, end: { PhraseBankStore.shared.endSession() }),
             participant("ask-noum", [.accountKey(prefix: "askNoum.thread.")], reload: { AskNoumStore.shared.reloadForCurrentAccount() }, end: { AskNoumStore.shared.endSession() }),
             participant("pressure-history", [.accountKey(prefix: "suddenDeath.runHistory.")], reload: { SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount() }, end: { SuddenDeathRunHistoryStore.shared.endSession() }),

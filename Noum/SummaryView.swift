@@ -2085,14 +2085,12 @@ struct SummaryView: View {
 
     /// The proof-extraction input for the just-finished session, or nil
     /// when no qualifying session exists (empty transcript or a ≤8s misfire
-    /// rep). The most recent session in the store is the one we just
-    /// finalized. Shared by the synchronous first-frame proof and the async
-    /// upgrade so both read identical state.
+    /// rep). Resolve through the same exact finalized row every other Summary
+    /// projection uses; a newer sync/imported row must never replace the rep
+    /// currently on screen. Shared by the synchronous first-frame proof and
+    /// the async upgrade so both read identical state.
     private var proofInput: ProofMomentInput? {
-        let recent = PracticeSessionStore.shared.sessions
-            .sorted { $0.date > $1.date }
-            .first
-        guard let session = recent,
+        guard let session = currentStoredSession,
               !session.transcript.isEmpty,
               PracticeProgressEligibility.qualifies(session),
               session.duration > 8 else {
@@ -2136,10 +2134,21 @@ struct SummaryView: View {
             personalBestProof = nil
             return
         }
-        let proof = await ProofMomentService.shared.proof(for: input)
+        guard let request = ProofMomentStore.shared.generationRequest(for: input) else {
+            personalBestProof = nil
+            return
+        }
+        let result = await ProofMomentService.shared.proof(for: request)
         await MainActor.run {
+            guard !Task.isCancelled,
+                  let result,
+                  result.saveToken.source.sessionID == input.session.id,
+                  ProofMomentStore.shared.tokenIsCurrent(result.saveToken) else {
+                personalBestProof = nil
+                return
+            }
             withAnimation(reduceMotion ? nil : .standardSpring) {
-                personalBestProof = proof
+                personalBestProof = result.proof
             }
         }
     }

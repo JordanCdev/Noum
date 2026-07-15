@@ -2,12 +2,43 @@
 
 ## Current production-closure continuation — 2026-07-15
 
-Current work is on `ux-overhaul`, based on committed HEAD `70922d8a2`, with a
-deliberately dirty shared worktree containing this bounded production-closure
-slice. The May M15 brief below remains historical context; do not use its
-branch, merge, or completion claims as current instructions.
+This handoff covers the bounded production-closure source developed on
+`ux-overhaul` above baseline `8fbdbab6e`. The May M15 brief below remains
+historical context; do not use its branch, merge, or completion claims as
+current instructions.
 
-The latest bounded slice extends exact-session Summary integrity through the
+The current source closes the verified P0 account/source race behind
+M15 Proof Moments through existing owners. `PracticeSessionStore` supplies an
+account-scoped loaded-store epoch with the exact saved row;
+`ProofMomentStore` issues a request only for a signed-in, fully hydrated account
+whose live row matches every captured source field. The token and cache carry
+account lifecycle, store generation, source revision, and the exact
+voice/goal/baseline generation identity. Cache hits revalidate, every provider
+or deterministic outcome passes through one archive compare-and-save boundary,
+and a failed save is neither cached nor returned.
+
+Weekly Insight, Path Celebration, First Rep, and Summary capture that request
+synchronously before Proof Moment work can suspend and revalidate the result
+immediately before assigning it. Weekly Insight also rejects and clears stale
+account-lifecycle state. Focused verification passes **39/39** and the related
+regression selection passes **130/130**. The complete unsigned target passes
+**4,331 unique tests / 4,350 device-configuration executions** with zero
+failures or skips; the result bundle is
+`.build-roleplay-terminal/Full-NoumTests-ProofCAS-20260715-final-r2.xcresult`.
+The current-source unsigned Release simulator build succeeds for this source.
+The light current-source five-tab simulator sweep renders
+the expected tab tops and is recorded in
+`.screenshots/2026-07-15-proof-moment-account-cas/HANDOFF.md`; it does not
+exercise the Proof Moment account-transition path.
+
+Do not broaden this P0 closure into a full Proof Moment completion claim.
+Same-account voice/goal/baseline drift is not live-revalidated; source mutation
+or deletion after commit does not remove the archived proof; rendered surfaces
+discard the token after assignment; and cancellation during the archive hop can
+still leave a durable write. The unused unchecked archive writer is also a
+latent internal bypass. These are P1/P2 follow-ups through the same owners.
+
+The preceding bounded slice extends exact-session Summary integrity through the
 premium persisted Coach Read using the existing session, baseline, and coaching
 owners. Generation resolves the identified saved row and exposes transcript,
 prompt, mode, score, duration, and score-only continuity while deliberately
@@ -27,21 +58,24 @@ the output, persists, and returns the saved value. Summary and both Review
 replay paths selectively hide unsupported legacy mechanic prose without
 deleting grounded nonmetric coaching.
 
-Focused verification passes 56 unique tests / 58 device executions. The
-complete unsigned simulator unit target passes 4,320 unique tests / 4,339
-device executions with zero failures or skips, and the current-source unsigned
-Release simulator build succeeds. The light five-tab sweep is
-still blocked before tab content by the normal guest account-save failure; see
-`.screenshots/2026-07-15_summary-verdict-evidence/HANDOFF.md` and do not count
-those captures as visual proof.
+For that preceding Coach Read slice, focused verification passes 56 unique
+tests / 58 device executions. Its complete unsigned simulator unit target
+passes 4,320 unique tests / 4,339 device executions with zero failures or
+skips, and its unsigned Release simulator build succeeds. The light five-tab
+sweep is still blocked before tab content by the normal guest account-save
+failure; see `.screenshots/2026-07-15_summary-verdict-evidence/HANDOFF.md` and
+do not count those captures as visual proof.
 
 This is not product-wide metric or Coach Read closure. Next audit the
 qualitative Summary delivery line, durable CoachMemory/derived delivery reads,
 IM baseline comparison, Ask Noum session opener, share/request-feedback WPM,
-Proof Moment generation, Forward Plan inputs, and remaining durable
-narrative/reward consumers. Standalone Pace attribution and wider Roleplay
-routing remain product/schema decisions. Do not claim production readiness:
-the authoritative gate remains **NO-GO at 18/100, with 0/5 required external
+Proof Moment metric qualification plus the P1/P2 lifecycle/replay gaps above,
+Forward Plan inputs, and remaining durable narrative/reward consumers.
+Standalone Pace attribution and wider Roleplay routing remain product/schema
+decisions. No Proof-Moment-specific rendered, physical-device, provider,
+professional, longitudinal, operational, or required external evidence was
+added by the current slice. Do not claim production readiness: the
+authoritative gate remains **NO-GO at 18/100, with 0/5 required external
 artifacts**.
 
 _Last updated: 2026-05-21 · branch `Redesign` · base HEAD `60a9afe`_

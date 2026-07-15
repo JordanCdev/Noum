@@ -1921,9 +1921,10 @@ struct AICoachFeedback: Codable, Equatable {
 /// over. This is deliberately a value snapshot rather than a hash: equality is
 /// exact, inspectable, and collision-free. A save token also carries account
 /// scope so an async provider result cannot cross an account hydration.
-struct CoachReadSourceSnapshot: Equatable {
+struct CoachReadSourceSnapshot: Codable, Equatable {
     let sessionID: UUID
     let transcript: String
+    let date: Date
     let mode: PracticeMode
     let score: Int?
     let prompt: String?
@@ -1936,6 +1937,7 @@ struct CoachReadSourceSnapshot: Equatable {
     init(session: PracticeSession) {
         sessionID = session.id
         transcript = session.transcript
+        date = session.date
         mode = session.mode
         score = session.score
         prompt = session.prompt
@@ -9011,11 +9013,23 @@ struct PracticeSessionAnnotation: Equatable {
 }
 
 #if canImport(SwiftUI)
+struct PracticeSessionStoreEpoch: Equatable {
+    let accountScope: String
+    let generation: UInt64
+}
+
+struct AccountScopedPracticeSession {
+    let epoch: PracticeSessionStoreEpoch
+    let session: PracticeSession
+}
+
 @MainActor
 final class PracticeSessionStore: ObservableObject {
     static let shared = PracticeSessionStore()
 
     @Published private(set) var sessions: [PracticeSession]
+    private(set) var loadedAccountEpoch: PracticeSessionStoreEpoch?
+    private var loadedAccountGeneration: UInt64 = 0
 
     /// History rows that may drive earned progress and coaching. Raw
     /// `sessions` remains the Review/persistence source and can include a
@@ -9037,10 +9051,23 @@ final class PracticeSessionStore: ObservableObject {
         // avoiding synchronous Keychain + UserDefaults + JSON decode during
         // @StateObject creation.
         sessions = []
+        loadedAccountEpoch = nil
     }
 
     func reload() {
-        sessions = Self.loadSessions(forKey: Self.storageKey(for: currentAccountID))
+        let accountScope = currentAccountID
+        let nextSessions = Self.loadSessions(
+            forKey: Self.storageKey(for: accountScope)
+        )
+        loadedAccountEpoch = nil
+        sessions = nextSessions
+        loadedAccountGeneration &+= 1
+        if let accountScope, !accountScope.isEmpty {
+            loadedAccountEpoch = PracticeSessionStoreEpoch(
+                accountScope: accountScope,
+                generation: loadedAccountGeneration
+            )
+        }
         UserTrajectoryCache.shared.invalidate()
     }
 
@@ -9049,10 +9076,23 @@ final class PracticeSessionStore: ObservableObject {
     }
 
     func endSession() {
+        loadedAccountEpoch = nil
+        loadedAccountGeneration &+= 1
         sessions = []
         // Also clear persisted data so old sessions don't reappear on reload
         UserDefaults.standard.removeObject(forKey: Self.storageKey(for: currentAccountID))
         UserTrajectoryCache.shared.invalidate()
+    }
+
+    /// Returns a row only together with the account epoch that loaded it.
+    /// The epoch is cleared before reload/end publishes any session mutation,
+    /// so an observer cannot lease an old row during an identity transition.
+    func accountScopedSession(id: UUID) -> AccountScopedPracticeSession? {
+        guard let epoch = loadedAccountEpoch,
+              let session = sessions.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return AccountScopedPracticeSession(epoch: epoch, session: session)
     }
 
     @discardableResult
