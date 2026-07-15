@@ -59,6 +59,21 @@ struct PathProgressInput {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? now
         return sessions.filter { $0.date >= cutoff }
     }
+
+    var hasQuantityQualifiedZeroFillerSession: Bool {
+        sessions.contains {
+            FillerBurden.quantityQualified($0)?.fillerCount == 0
+        }
+    }
+
+    func quantityQualifiedZeroFillerCountLast7Days(
+        minimumScore: Int
+    ) -> Int {
+        sessionsLast7Days.filter {
+            FillerBurden.quantityQualified($0)?.fillerCount == 0
+                && ($0.score ?? 0) >= minimumScore
+        }.count
+    }
 }
 
 // MARK: - Node criteria
@@ -98,10 +113,7 @@ enum PathNodeCriterion {
             let best = input.sessions.compactMap(\.score).max() ?? 0
             return clamp(best, target)
         case .zeroFillerSession:
-            let any = input.sessions.contains {
-                $0.fillerWordCount == 0 && $0.duration >= 15 && $0.wordCount >= 20
-            }
-            return any ? 1.0 : 0.0
+            return input.hasQuantityQualifiedZeroFillerSession ? 1.0 : 0.0
         case .streakAtLeast(let n):
             return clamp(input.currentStreak, n)
         case .ratingAtLeast(let target):
@@ -122,9 +134,9 @@ enum PathNodeCriterion {
         case .distinctPracticeDays(let n):
             return clamp(input.distinctPracticeDayCount, n)
         case .cleanRunsInWindow(let count, let minScore):
-            let qualifying = input.sessionsLast7Days.filter {
-                $0.fillerWordCount == 0 && ($0.score ?? 0) >= minScore
-            }.count
+            let qualifying = input.quantityQualifiedZeroFillerCountLast7Days(
+                minimumScore: minScore
+            )
             return clamp(qualifying, count)
         case .totalLessonPasses(let target):
             return clamp(input.totalLessonPasses, target)
@@ -243,8 +255,8 @@ enum PathNodeRegistry {
                 order: 5,
                 tier: .silver,
                 title: "Clean rep",
-                detail: "Complete a session with zero fillers.",
-                coachLine: "A clean rep shows the pause-instead-of-filler move once. Repeat it to see whether it holds.",
+                detail: "Complete a zero-filler rep of at least \(SessionQualifier.minimumWordCount) words and \(Int(SessionQualifier.minimumDuration)) seconds.",
+                coachLine: "One full clean rep is useful evidence. Repeat it to see whether the control holds.",
                 actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "checkmark.seal.fill"
@@ -369,8 +381,8 @@ enum PathNodeRegistry {
                 order: 14,
                 tier: .platinum,
                 title: "Filler-free week",
-                detail: "Complete five zero-filler reps within seven days.",
-                coachLine: "Five clean reps in a week means it's now the way you talk under pressure.",
+                detail: "Within seven days, complete five zero-filler reps of \(SessionQualifier.minimumWordCount)+ words, \(Int(SessionQualifier.minimumDuration))+ seconds, and 5/10+.",
+                coachLine: "Five full clean reps in one week show repeatable control in practice.",
                 actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "sparkles"

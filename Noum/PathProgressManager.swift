@@ -16,6 +16,33 @@ struct PathNodeStatus: Identifiable, Equatable {
     var id: String { node.id }
 }
 
+/// Persisted unlocks are durable compatibility state. A corrected live
+/// criterion may tighten future evidence without silently revoking a node the
+/// user already earned under an earlier app version.
+enum PathUnlockPolicy {
+    static func isComplete(
+        nodeID: String,
+        liveProgress: Double,
+        unlockedNodeIDs: Set<String>
+    ) -> Bool {
+        unlockedNodeIDs.contains(nodeID) || liveProgress >= 1.0
+    }
+}
+
+enum PathUnlockCodec {
+    static func decode(_ data: Data?) -> Set<String> {
+        guard let data,
+              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return Set(decoded)
+    }
+
+    static func encode(_ nodeIDs: Set<String>) -> Data? {
+        try? JSONEncoder().encode(nodeIDs.sorted())
+    }
+}
+
 // MARK: - Path Progress Manager
 
 #if canImport(SwiftUI)
@@ -116,7 +143,11 @@ final class PathProgressManager: ObservableObject {
         for (node, criterion) in registry {
             let isPersistedUnlock = unlockedNodeIDs.contains(node.id)
             let liveProgress = criterion.progress(for: input)
-            let isComplete = isPersistedUnlock || criterion.isComplete(for: input)
+            let isComplete = PathUnlockPolicy.isComplete(
+                nodeID: node.id,
+                liveProgress: liveProgress,
+                unlockedNodeIDs: unlockedNodeIDs
+            )
 
             if isComplete && !isPersistedUnlock {
                 newlyDiscovered.append(node.id)
@@ -229,18 +260,14 @@ final class PathProgressManager: ObservableObject {
     }
 
     private func loadUnlocked() {
-        if let data = UserDefaults.standard.data(forKey: unlockedKey),
-           let decoded = try? JSONDecoder().decode([String].self, from: data) {
-            unlockedNodeIDs = Set(decoded)
-        } else {
-            unlockedNodeIDs = []
-        }
+        unlockedNodeIDs = PathUnlockCodec.decode(
+            UserDefaults.standard.data(forKey: unlockedKey)
+        )
         hasCompletedInitialBackfill = UserDefaults.standard.bool(forKey: hasInitializedKey)
     }
 
     private func persistUnlocked() {
-        let array = Array(unlockedNodeIDs)
-        guard let data = try? JSONEncoder().encode(array) else { return }
+        guard let data = PathUnlockCodec.encode(unlockedNodeIDs) else { return }
         UserDefaults.standard.set(data, forKey: unlockedKey)
     }
 }
@@ -276,7 +303,7 @@ enum GatingPhrase {
             }
             return "Best so far is \(best)/10. \(target)/10 unlocks it."
         case .zeroFillerSession:
-            return "One zero-filler rep (14+ words, 15s+) from unlocked."
+            return "One zero-filler rep (\(quantityFloorLabel)) from unlocked."
         case .streakAtLeast(let n):
             let remaining = max(0, n - input.currentStreak)
             return remaining == 0 ? readyLine : "\(daysRemaining(remaining)) of streak from unlocked."
@@ -298,13 +325,13 @@ enum GatingPhrase {
             let remaining = max(0, n - input.distinctPracticeDayCount)
             return remaining == 0 ? readyLine : "\(daysRemaining(remaining)) of practice from unlocked."
         case .cleanRunsInWindow(let count, let minScore):
-            let qualifying = input.sessionsLast7Days.filter {
-                $0.fillerWordCount == 0 && ($0.score ?? 0) >= minScore
-            }.count
+            let qualifying = input.quantityQualifiedZeroFillerCountLast7Days(
+                minimumScore: minScore
+            )
             let remaining = max(0, count - qualifying)
             if remaining == 0 { return readyLine }
             let unit = remaining == 1 ? "clean rep" : "clean reps"
-            return "\(remaining) more \(unit) (\(minScore)/10+) in seven days from unlocked."
+            return "\(remaining) more full \(unit) (\(quantityFloorLabel), \(minScore)/10+) in seven days from unlocked."
         case .totalLessonPasses(let target):
             let remaining = max(0, target - input.totalLessonPasses)
             if remaining == 0 { return readyLine }
@@ -341,6 +368,10 @@ enum GatingPhrase {
     // MARK: - Helpers
 
     private static let readyLine = "Ready to mark complete."
+
+    private static var quantityFloorLabel: String {
+        "\(SessionQualifier.minimumWordCount)+ words, \(secondsLabel(SessionQualifier.minimumDuration))+"
+    }
 
     private static func repsRemaining(_ n: Int) -> String {
         n == 1 ? "One rep" : "\(n) reps"
