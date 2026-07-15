@@ -77,7 +77,10 @@ enum SessionFinalizer {
         // neutral "too short" state instead. Threshold matches the evaluator's
         // own score-floor boundary (PracticeEvaluator, wordCount/duration < 3)
         // so no rep that already scored normally is affected.
-        if transcriptWordCount < 3 || effectiveDuration < 3 {
+        if !PracticeProgressEligibility.qualifies(
+            wordCount: transcriptWordCount,
+            duration: effectiveDuration
+        ) {
             FlowLog.log(
                 correlationId: latestSessionID ?? UUID(),
                 flow: .practiceRep,
@@ -231,9 +234,6 @@ enum SessionFinalizer {
         // (friends + league) can see updated rating, streak, and weekly reps.
         // Best-effort: any failure is silent. The local UI is unaffected.
         syncPeerSurfaces(latestSessionID: latestSessionID)
-
-        // M3: surface the path node celebration if this session unlocked one.
-        PathProgressManager.shared.evaluateAfterSession()
 
         // First-rep magic — a once-only celebration when the user finishes
         // their very first session. Driven by `FirstRepCelebrationManager`

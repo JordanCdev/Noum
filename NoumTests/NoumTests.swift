@@ -4040,7 +4040,9 @@ struct PauseMetricsTests {
 
 private func sessionWithPauseMetrics(_ metrics: PauseMetrics, duration: TimeInterval = 60) -> PracticeSession {
     PracticeSession(
-        transcript: "test",
+        // Path progress only accepts reps that crossed the shared evaluator
+        // floor; keep these fixtures representative of finalized speech.
+        transcript: "test phrase delivered",
         fillerWordCount: 0,
         duration: duration,
         date: Date(),

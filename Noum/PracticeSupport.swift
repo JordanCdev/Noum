@@ -11015,6 +11015,7 @@ enum PracticeSessionFinalizer {
         // Mutating the draft inline keeps every call site (Timed, Sudden
         // Death, Ah-Counter, drill mini-runs) untouched; the intent
         // landing is a single-source decision here.
+        let pathUnlockSnapshot = PathProgressManager.shared.captureUnlockSnapshot()
         let intent = SessionIntentStore.shared.pendingIntent
         let intentAwareDraft = applying(pendingIntent: intent, to: draft)
         let session = store.append(intentAwareDraft)
@@ -11085,6 +11086,15 @@ enum PracticeSessionFinalizer {
 
         // Evaluate achievements
         AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
+
+        // Path unlock delivery belongs to the same durable finalization
+        // boundary as the session that earned it. The pre-append snapshot
+        // prevents passive Combine recomputation from consuming the event,
+        // and the session ID gives every celebration an exact proof source.
+        PathProgressManager.shared.evaluateAfterSession(
+            triggeringSessionID: finalized.id,
+            from: pathUnlockSnapshot
+        )
 
         // M24 Track 1 — drop a deterministic post-rep coach note in
         // the store immediately so the Summary surface can render the

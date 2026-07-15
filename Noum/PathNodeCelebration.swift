@@ -48,6 +48,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct PathNodeCelebration: View {
     let node: PathNode
+    let triggeringSessionID: UUID
     let onDismiss: () -> Void
     /// Optional secondary CTA. When non-nil the "Open the Path" link
     /// renders under "Continue"; when nil it's hidden so the call site
@@ -431,27 +432,34 @@ struct PathNodeCelebration: View {
     private var statCopy: String {
         let entry = PathNodeRegistry.all.first(where: { $0.0.id == node.id })
         let criterion = entry?.1
-        let lastSession = sessionStore.sessions.last
-        let totalReps = sessionStore.sessions.count
+        let triggeringSession = sessionStore.sessions.first(where: { $0.id == triggeringSessionID })
+        let eligibleSessions = sessionStore.sessions.filter(PracticeProgressEligibility.qualifies)
+        let totalReps = eligibleSessions.count
 
         // Specific reads per criterion family. When we can't pull a
         // crisp evidence line, we fall through to the generic line.
         switch criterion {
         case .zeroFillerSession:
-            if let s = lastSession, s.fillerWordCount == 0 {
+            if let s = triggeringSession,
+               FillerBurden.quantityQualified(s)?.fillerCount == 0 {
                 let dur = max(1, Int(s.duration.rounded()))
                 return "\(dur) seconds, zero fillers. You earned this."
             }
-        case .cleanRunsInWindow:
-            let clean = sessionStore.sessions.suffix(50)
-                .filter { $0.fillerWordCount == 0 && ($0.score ?? 0) >= 5 }
+        case .cleanRunsInWindow(_, let minScore):
+            let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            let clean = eligibleSessions
+                .filter {
+                    $0.date >= cutoff
+                        && FillerBurden.quantityQualified($0)?.fillerCount == 0
+                        && ($0.score ?? 0) >= minScore
+                }
                 .count
             if clean > 0 {
                 let unit = clean == 1 ? "clean rep" : "clean reps"
                 return "\(clean) \(unit) banked. You earned this."
             }
         case .scoreAtLeast(let target):
-            if let s = lastSession, let score = s.score, score >= target {
+            if let s = triggeringSession, let score = s.score, score >= target {
                 return "\(score) out of 10. You earned this."
             }
         case .ratingAtLeast:
@@ -471,7 +479,7 @@ struct PathNodeCelebration: View {
             let unit = shown == 1 ? "rep" : "reps"
             return "\(shown) \(unit) in. You earned this."
         case .modeSessionAtLeast(let mode, _):
-            let count = sessionStore.sessions.filter { $0.mode == mode }.count
+            let count = eligibleSessions.filter { $0.mode == mode }.count
             let unit = count == 1 ? "rep" : "reps"
             return "\(count) \(unit) in \(modeName(mode)). You earned this."
         case .pressureSurvived(let rounds):
@@ -487,11 +495,11 @@ struct PathNodeCelebration: View {
         case .anyLessonMastered:
             return "A lesson taken through five practice passes. You earned this."
         case .heldSilentPause:
-            if let m = lastSession?.pauseMetrics, m.longestSeconds > 0 {
+            if let m = triggeringSession?.pauseMetrics, m.longestSeconds > 0 {
                 return "\(secondsLabel(m.longestSeconds)) silent pause. You earned this."
             }
         case .cleanPauseSession:
-            if let m = lastSession?.pauseMetrics, m.count > 0 {
+            if let m = triggeringSession?.pauseMetrics, m.count > 0 {
                 let pct = Int((m.filledRatio * 100).rounded())
                 let unit = m.count == 1 ? "pause" : "pauses"
                 return "\(m.count) \(unit), \(pct)% filled. You earned this."
@@ -550,6 +558,7 @@ struct PathNodeCelebration: View {
 #Preview("Landmark Reached — Clean rep") {
     PathNodeCelebration(
         node: PathNodeRegistry.all.first(where: { $0.0.id == "clean_rep" })!.0,
+        triggeringSessionID: UUID(),
         onDismiss: {},
         onOpenPath: {}
     )
@@ -559,6 +568,7 @@ struct PathNodeCelebration: View {
 #Preview("Landmark Reached — First rep") {
     PathNodeCelebration(
         node: PathNodeRegistry.all.first(where: { $0.0.id == "first_rep" })!.0,
+        triggeringSessionID: UUID(),
         onDismiss: {}
     )
 }
@@ -567,6 +577,7 @@ struct PathNodeCelebration: View {
 #Preview("Landmark Reached — Composed pauses") {
     PathNodeCelebration(
         node: PathNodeRegistry.all.first(where: { $0.0.id == "clean_pause_session" })!.0,
+        triggeringSessionID: UUID(),
         onDismiss: {},
         onOpenPath: {}
     )

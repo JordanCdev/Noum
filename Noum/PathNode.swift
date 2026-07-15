@@ -28,6 +28,33 @@ struct PathNode: Identifiable, Equatable {
     static func == (lhs: PathNode, rhs: PathNode) -> Bool { lhs.id == rhs.id }
 }
 
+/// Shared minimum for progress-bearing practice. Session persistence accepts a
+/// shorter transport-valid capture so Review can explain it, but XP, Path, and
+/// other earned progress must wait for enough speech to evaluate honestly.
+enum PracticeProgressEligibility {
+    static let minimumWordCount = 3
+    static let minimumDuration: TimeInterval = 3
+
+    static func qualifies(
+        wordCount: Int,
+        duration: TimeInterval,
+        isEvaluationFixture: Bool = false
+    ) -> Bool {
+        !isEvaluationFixture
+            && wordCount >= minimumWordCount
+            && duration.isFinite
+            && duration >= minimumDuration
+    }
+
+    static func qualifies(_ session: PracticeSession) -> Bool {
+        qualifies(
+            wordCount: session.wordCount,
+            duration: session.duration,
+            isEvaluationFixture: session.isEvaluationFixture
+        )
+    }
+}
+
 // MARK: - Inputs evaluated by node criteria
 
 /// Snapshot of every signal a node criterion can read. Built once per
@@ -48,20 +75,24 @@ struct PathProgressInput {
     let maxLessonPassCount: Int
     let now: Date
 
-    var sessionCount: Int { sessions.count }
+    var progressEligibleSessions: [PracticeSession] {
+        sessions.filter(PracticeProgressEligibility.qualifies)
+    }
+
+    var sessionCount: Int { progressEligibleSessions.count }
 
     var distinctPracticeDayCount: Int {
         let calendar = Calendar.current
-        return Set(sessions.map { calendar.startOfDay(for: $0.date) }).count
+        return Set(progressEligibleSessions.map { calendar.startOfDay(for: $0.date) }).count
     }
 
     var sessionsLast7Days: [PracticeSession] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? now
-        return sessions.filter { $0.date >= cutoff }
+        return progressEligibleSessions.filter { $0.date >= cutoff }
     }
 
     var hasQuantityQualifiedZeroFillerSession: Bool {
-        sessions.contains {
+        progressEligibleSessions.contains {
             FillerBurden.quantityQualified($0)?.fillerCount == 0
         }
     }
@@ -107,10 +138,10 @@ enum PathNodeCriterion {
         case .sessionCountAtLeast(let n):
             return clamp(input.sessionCount, n)
         case .modeSessionAtLeast(let mode, let n):
-            let count = input.sessions.filter { $0.mode == mode }.count
+            let count = input.progressEligibleSessions.filter { $0.mode == mode }.count
             return clamp(count, n)
         case .scoreAtLeast(let target):
-            let best = input.sessions.compactMap(\.score).max() ?? 0
+            let best = input.progressEligibleSessions.compactMap(\.score).max() ?? 0
             return clamp(best, target)
         case .zeroFillerSession:
             return input.hasQuantityQualifiedZeroFillerSession ? 1.0 : 0.0
@@ -119,7 +150,7 @@ enum PathNodeCriterion {
         case .ratingAtLeast(let target):
             return clamp(input.rating.peakRating, target)
         case .pressureSurvived(let rounds):
-            let any = input.sessions.contains {
+            let any = input.progressEligibleSessions.contains {
                 $0.mode == .suddenDeath
                     && $0.pressureLevel >= .elevated
                     && $0.duration >= Double(rounds) * 12
@@ -147,7 +178,7 @@ enum PathNodeCriterion {
             // unfilled (filledRatio == 0). Sessions whose longest pause
             // happened to be filled don't contribute even if the duration
             // hits the bar — the goal is silent composure.
-            let bestSilent = input.sessions
+            let bestSilent = input.progressEligibleSessions
                 .compactMap { s -> Double? in
                     guard let m = s.pauseMetrics, m.count > 0, m.filledRatio == 0 else { return nil }
                     return m.longestSeconds
@@ -155,7 +186,7 @@ enum PathNodeCriterion {
                 .max() ?? 0
             return min(1.0, bestSilent / target)
         case .cleanPauseSession(let maxRatio, let minPauses):
-            let any = input.sessions.contains { s in
+            let any = input.progressEligibleSessions.contains { s in
                 guard let m = s.pauseMetrics, m.count >= minPauses else { return false }
                 return m.filledRatio <= maxRatio
             }

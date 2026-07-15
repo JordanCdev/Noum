@@ -566,9 +566,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private var pathCelebrationOverlay: some View {
-        if navigationPath.isEmpty, let unlockedNode = pendingPathCelebration {
+        if navigationPath.isEmpty, let celebration = pendingPathCelebration {
             PathNodeCelebration(
-                node: unlockedNode,
+                node: celebration.node,
+                triggeringSessionID: celebration.triggeringSessionID,
                 onDismiss: { pathProgress.consumeCelebration() },
                 onOpenPath: {
                     pathProgress.consumeCelebration()
@@ -1626,25 +1627,26 @@ struct ContentView: View {
 
     /// The node that was just newly-unlocked, if any. Drives the path
     /// celebration overlay. Cleared by `pathProgress.consumeCelebration()`.
-    private var pendingPathCelebration: PathNode? {
-        guard let id = pathProgress.pendingCelebrationNodeID else { return nil }
-        return PathNodeRegistry.all.first(where: { $0.0.id == id })?.0
+    private var pendingPathCelebration: (node: PathNode, triggeringSessionID: UUID)? {
+        guard let celebration = pathProgress.pendingCelebration,
+              let node = PathNodeRegistry.all.first(where: { $0.0.id == celebration.nodeID })?.0 else {
+            return nil
+        }
+        return (node, celebration.triggeringSessionID)
     }
 
-    /// Load the proof moment for the active path celebration. Picks
-    /// the most recent session (the one that triggered the unlock)
+    /// Load the proof moment for the active path celebration. Resolves
+    /// the exact session that triggered the unlock
     /// and asks `ProofMomentService` for a transcript-anchored quote
     /// + technique label tied to the user's voice. Hydrates
     /// `pathCelebrationProof` on success; leaves it nil on miss so
     /// the celebration renders without a proof line.
     private func loadPathCelebrationProof() async {
-        let recent = sessionStore.sessions
-            .sorted { $0.date > $1.date }
-            .first
-        guard let session = recent,
+        pathCelebrationProof = nil
+        guard let sessionID = pathProgress.pendingCelebrationSessionID,
+              let session = sessionStore.sessions.first(where: { $0.id == sessionID }),
               !session.transcript.isEmpty,
               session.duration > 8 else {
-            pathCelebrationProof = nil
             return
         }
         let baseline = BaselineStore.shared.baseline
@@ -1659,6 +1661,7 @@ struct ContentView: View {
         )
         let proof = await ProofMomentService.shared.proof(for: input)
         await MainActor.run {
+            guard pathProgress.pendingCelebrationSessionID == sessionID else { return }
             if Self.shouldAnimatePathCelebrationProof(reduceMotion: reduceMotion) {
                 withAnimation(.standardSpring) {
                     pathCelebrationProof = proof

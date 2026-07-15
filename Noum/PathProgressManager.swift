@@ -16,6 +16,33 @@ struct PathNodeStatus: Identifiable, Equatable {
     var id: String { node.id }
 }
 
+struct PathUnlockSnapshot: Equatable {
+    let unlockedNodeIDs: Set<String>
+}
+
+struct PathUnlockCelebration: Equatable {
+    let nodeID: String
+    let triggeringSessionID: UUID
+}
+
+enum PathUnlockCelebrationResolver {
+    static func resolve(
+        snapshot: PathUnlockSnapshot,
+        currentUnlockedNodeIDs: Set<String>,
+        triggeringSessionID: UUID,
+        orderedNodeIDs: [String]
+    ) -> PathUnlockCelebration? {
+        let newlyUnlocked = currentUnlockedNodeIDs.subtracting(snapshot.unlockedNodeIDs)
+        guard let nodeID = orderedNodeIDs.first(where: newlyUnlocked.contains) else {
+            return nil
+        }
+        return PathUnlockCelebration(
+            nodeID: nodeID,
+            triggeringSessionID: triggeringSessionID
+        )
+    }
+}
+
 /// Persisted unlocks are durable compatibility state. A corrected live
 /// criterion may tighten future evidence without silently revoking a node the
 /// user already earned under an earlier app version.
@@ -61,7 +88,10 @@ final class PathProgressManager: ObservableObject {
     static let shared = PathProgressManager()
 
     @Published private(set) var statuses: [PathNodeStatus] = []
-    @Published private(set) var pendingCelebrationNodeID: String?
+    @Published private(set) var pendingCelebration: PathUnlockCelebration?
+
+    var pendingCelebrationNodeID: String? { pendingCelebration?.nodeID }
+    var pendingCelebrationSessionID: UUID? { pendingCelebration?.triggeringSessionID }
 
     private let unlockedKeyPrefix = "noum.pathProgress.unlocked."
     private let hasInitializedKeyPrefix = "noum.pathProgress.initialized."
@@ -129,8 +159,8 @@ final class PathProgressManager: ObservableObject {
     /// Force a recompute. Called automatically when sessions, rating, streak,
     /// or mode mastery change. Updates `statuses` and silently absorbs any
     /// newly-completed nodes into `unlockedNodeIDs` so the persisted set stays
-    /// in sync — but it never fires `pendingCelebrationNodeID`. Celebration
-    /// is reserved for `evaluateAfterSession()` so async store ticks don't
+    /// in sync — but it never creates `pendingCelebration`. Celebration
+    /// is reserved for the explicit post-session evaluation so async store ticks don't
     /// trigger a chain of overlays at launch.
     func recompute() {
         let input = makeInput()
@@ -179,32 +209,39 @@ final class PathProgressManager: ObservableObject {
         }
     }
 
-    /// Called by `SessionFinalizer` immediately after a session lands. This
-    /// is the *only* path that fires a celebration overlay — async store
-    /// updates use `recompute()` which is silent.
-    func evaluateAfterSession() {
-        let beforeSet = unlockedNodeIDs
+    /// Synchronizes pre-existing live progress before a new session mutates
+    /// any store. The returned value remains stable even if a Combine sink
+    /// silently recomputes before explicit finalization reaches the manager.
+    func captureUnlockSnapshot() -> PathUnlockSnapshot {
         recompute()
-        let afterSet = unlockedNodeIDs
-        let newlyUnlocked = afterSet.subtracting(beforeSet)
-        guard !newlyUnlocked.isEmpty else { return }
+        return PathUnlockSnapshot(unlockedNodeIDs: unlockedNodeIDs)
+    }
 
-        // Surface the lowest-order newly-unlocked node — if a session crossed
-        // multiple thresholds, the next-node home card walks the user through
-        // the rest after this one dismisses.
-        let firstByOrder = PathNodeRegistry.all
-            .map(\.0)
-            .first { newlyUnlocked.contains($0.id) }
-        pendingCelebrationNodeID = firstByOrder?.id
+    /// Called by the common practice finalizer after the exact session and its
+    /// dependent rating/baseline state land. Comparing against the pre-append
+    /// snapshot makes celebration delivery independent of run-loop ordering.
+    func evaluateAfterSession(
+        triggeringSessionID: UUID,
+        from snapshot: PathUnlockSnapshot
+    ) {
+        recompute()
+        guard pendingCelebration == nil else { return }
+        pendingCelebration = PathUnlockCelebrationResolver.resolve(
+            snapshot: snapshot,
+            currentUnlockedNodeIDs: unlockedNodeIDs,
+            triggeringSessionID: triggeringSessionID,
+            orderedNodeIDs: PathNodeRegistry.all.map(\.0.id)
+        )
     }
 
     /// Mark the celebration as seen so the overlay dismisses. The unlock
     /// itself remains persisted.
     func consumeCelebration() {
-        pendingCelebrationNodeID = nil
+        pendingCelebration = nil
     }
 
     func reloadForCurrentAccount() {
+        pendingCelebration = nil
         loadUnlocked()
         recompute()
     }
@@ -291,11 +328,11 @@ enum GatingPhrase {
             let remaining = max(0, n - input.sessionCount)
             return remaining == 0 ? readyLine : "\(repsRemaining(remaining)) from unlocked."
         case .modeSessionAtLeast(let mode, let n):
-            let count = input.sessions.filter { $0.mode == mode }.count
+            let count = input.progressEligibleSessions.filter { $0.mode == mode }.count
             let remaining = max(0, n - count)
             return remaining == 0 ? readyLine : "\(repsRemaining(remaining)) in \(modeName(mode)) from unlocked."
         case .scoreAtLeast(let target):
-            let scored = input.sessions.compactMap(\.score)
+            let scored = input.progressEligibleSessions.compactMap(\.score)
             let best = scored.max() ?? 0
             if best >= target { return readyLine }
             if scored.isEmpty {
@@ -344,7 +381,7 @@ enum GatingPhrase {
             let unit = remaining == 1 ? "practice pass" : "practice passes"
             return "Your highest lesson is at \(passCount)/\(LessonProgressPresentation.masteryPassCap) passes. \(remaining) more \(unit) on it unlocks mastery."
         case .heldSilentPause(let target):
-            let bestSilent = input.sessions
+            let bestSilent = input.progressEligibleSessions
                 .compactMap { s -> Double? in
                     guard let m = s.pauseMetrics, m.count > 0, m.filledRatio == 0 else { return nil }
                     return m.longestSeconds
