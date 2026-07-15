@@ -5,7 +5,26 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-15
 
 Committed implementation inspected through:
-`a2502c04`
+`ab5b6aaa`
+
+At `ab5b6aaa`, the established qualitative goal breakdown now enters the
+existing `SessionFinalizer` → `NextActionEngine` owner instead of a parallel
+prescription system. `GoalOutcomeRead` selects the largest goal-weighted deficit
+only among style-compatible actionable dimensions, so warm/storytelling speech
+cannot be redirected toward verdict-first or hedge stripping and semantic
+hedges are not relabelled as filler speech. A goal rep requires an explicit
+matching style, an established read, a qualifying latest session, an
+evidence-backed target below 0.70 or still missing proof, a recognized mapping,
+non-mixed movement, and an
+exact proof test. Severe current evidence, a persistent blocker, and a
+continuing durable case remain ahead of it. Goal winners carry exact goal,
+dimension, source-session, and proof provenance into Summary and the existing
+followed-rep ledger; non-goal winners carry none, legacy goal-only outcomes fail
+closed, and a capability fallback clears incompatible goal credit. The focused
+goal suites pass 38/38, the related action selection passes 78/78, and the
+complete `NoumTests` target passes 4,114 tests across 421 suites with zero
+failures or skips. This is local routing/attribution evidence, not calibrated
+effectiveness or production evidence.
 
 At `a2502c04`, the Clean rep and Filler-free week Path milestones consume the
 same shared quantity-qualified zero-filler evidence as the rest of the coaching
@@ -317,7 +336,7 @@ coach.
 |---|---|---|
 | Choose communication goal → baseline rep | **Proved** | Explicit canonical style selection persists as `chosenStyleGoal` through the established profile owner and is available to spoken session finalization. Legacy profiles without that key remain readable but neutral. |
 | Baseline rep → goal scorecard | **Contradicted** | Noum shows an evidence-bounded qualitative goal read, not the proposed numeric identity scorecard. |
-| Goal read → auto-prescribed drill | **Incomplete** | `NextActionEngine` owns the action, but it does not consume `GoalOutcomeRead.nextDimension`, movement, or its qualitative proof test. The explicitly chosen style currently affects rationale copy and a late/default drill tie-breaker; Summary computes the outcome read separately after the finalized action exists. At `ac393554`, the goal/trajectory evidence became quantity-qualified and duration-normalized; at `dbafb01b`, Summary and `CoachingPlanner` joined that boundary; at `ac664112`, direct coach context and provisional Coach Read joined it as well. Routing remains intentionally deferred until goal weighting can be added without displacing blocker, severe, or case evidence. |
+| Goal read → auto-prescribed drill | **Proved locally** | At `ab5b6aaa`, the safer supported-domain contract is a full comparable proof rep rather than a mini-drill that cannot enter the existing outcome ledger. `GoalOutcomeRead` selects one style-compatible goal-weighted deficit and its exact rubric proof test. `SessionFinalizer` supplies that read to `NextActionEngine`, where severe evidence, persistent blocker, and a continuing durable case retain priority. Eligible targets route to Timed or Pressure Drill; locked pressure safely falls back without goal credit. Summary attributes only a goal-winning action with exact goal, dimension, proof, and source session. This does not implement the report's public numeric score or wider destination inventory. |
 | Prescribed drill → rep review → rewritten example | **Proved** | Existing routing, Review, evidence-gated rewrite, comparison, and Phrase Bank create this local loop for supported goals and evidence. |
 | Rewrite → next micro-goal → weekly progress | **Proved** | A saved phrase can seed Timed immediately or be explicitly attached by ID to the active week of the existing four-week `ForwardPlan`, which remains the focus/mode/target/rationale/progress owner. The write is plan-ID bound, deleted/unsafe links fail closed, and Home resolves the current-week phrase into the existing transient Timed handoff. The focused iPhone 17 Pro simulator test now renders the assigned Home action, launches Timed, and asserts the exact saved line. Account binding and exact-once consumption remain separately proved by pure handoff contracts; physical-device persistence remains QA. No second weekly or phrase-text owner was added. |
 
@@ -355,7 +374,7 @@ coach.
 
 | Report requirement or output | Classification | Current implementation and exact gap |
 |---|---|---|
-| Goal plus latest breakdown drives one best next rep | **Incomplete** | `SessionFinalizer` calls the established `NextActionEngine` using current evidence, baseline/trends, history, pressure profile, and chosen-style alignment, and Summary renders exactly the finalized primary action. However, the latest qualitative `GoalOutcomeRead` breakdown is computed separately and never enters the engine; its dimension, movement, and proof test cannot currently select or attribute that rep. At `ac393554`, its `UserTrajectoryCache` / `CoachReasoningPass` input is quantity-qualified and duration-normalized; tiny or missing latest-rep mechanics fail closed. At `dbafb01b`, Summary presentation, Practice insights, `CoachingPlanner`, and chronological Review/Profile comparisons share the same qualified filler-rate boundary. At `ac664112`, direct coach context, provisional Coach Read, and deterministic follow-through share it too, closing that prerequisite without changing action ownership. At `c3d1ff65`, immediate filler selection and cross-session filler trends use one qualifying fillers-per-minute policy rather than raw counts; short/low-count evidence fails closed, explicit drill targets stay authoritative, and filler retains priority over pace when both are severe. At `4da56e3e`, Timed/Ah score, XP, feedback, categories, moments, insights, and practice trends use the same duration-normalized read, and immediate severe pace requires 15 seconds, 20 words, and finite WPM. A later outcome enters followed-rep learning only when the stored exposure has the existing explicit-acceptance timestamp and the completed mode matches. At `f1d6ec72`, its response baseline admits at most five unique recent sessions inside 28 days, requires two metric-bearing priors, matches mode/pressure/rated state/duration/evaluator epoch and exact IM setup, normalizes fillers per minute, and judges pace/filler/general prescriptions on their target metric. At `488f8040`, durable case status and success bars consume only those followed comparable outcomes through exact current-epoch session IDs, normalized focus/mode matching, prescription-time bounds, and target-specific metrics; legacy criteria rebuild instead of carrying a met state. At `9378b6ef`, one revisioned lane per account serializes and burst-coalesces process-local whole-state writes, transport failure stays durably retryable, bootstrap queues and merges mutations behind a bounded hydration token, and deletion closes the lane before remote teardown. At `00dd5975`, the local Firebase path adds transactional compare-and-swap, body-bound mutation replay, revision-zero legacy migration, bounded conflict merge, server-authority-only source rules, export/deletion ownership for cursor metadata, and fail-closed unversioned REST writes. At `ea7a3845`, current sessions also persist the exact executed Timed difficulty, Pressure Drill difficulty, and stable Speech Project catalog ID through the existing account-scoped session owner. Comparison schema v2 admits only exact matching current demand; legacy unknown-demand rows remain readable but are excluded rather than inferred. At `d1d25ca6`, current Timed recommendations also persist the prescribed demand, launch that exact difficulty through Home/Train and blueprint-backed routes, compare it with the completed session, and admit the outcome only under current adherence schema. Manual, Adjust, Practice Again, free-form Ask, and capability-fallback launches remain generic and cannot be misclassified as exact adherence. The named local tests prove reducer, codec, persistence, lane, demand comparison, account export/deletion, and source-rule behavior, not production enforcement. The canonical local emulator gate now passes 22/22, but Functions/rules remain undeployed behind the protected social cutover; runtime IAM/App Check, active legacy-client inventory/minimum-client policy, and a real two-device mixed-build smoke are absent. Distributed conflict safety and deployed session persistence therefore remain operationally unproved. |
+| Goal plus latest breakdown drives one best next rep | **Proved locally** | At `ab5b6aaa`, the latest quantity-qualified `GoalOutcomeRead` enters the existing finalizer-owned action cascade. One deterministic, style-compatible, goal-weighted deficit and its exact rubric proof select a full comparable Timed or Pressure rep only when the explicit style matches, the overall and dimension evidence are established, the latest session qualifies, the target is recognized and still below its proof bar, and movement is not mixed. Severe evidence, persistent blockers, and continuing durable cases win first; diagnose/adapt case states do not repeat. The finalized action alone carries goal/dimension/source/proof provenance into Summary. Non-goal actions write no goal attribution, historical goal-only rows cannot create movement, and unavailable pressure proof falls back without false credit. Focused 38/38, related 78/78, and full 4,114-test regression pass. This proves local selection and attribution for the existing supported domain, not outcome benefit, wider destinations, deployed persistence, or production effectiveness. |
 | Up to two alternatives | **Contradicted** | Noum deliberately renders exactly one best next rep. `NextAction` retains one optional internal secondary for older decision paths, but `SummaryPrescriptionProjection` does not expose an alternatives menu. Because “up to two” permits zero, this does not block the one-action research outcome; it records an intentional product-contract choice against simultaneous alternatives rather than an implementation gap. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. Speech Projects are now independently executable: a stable catalog ID resolves into Timed with its curated prompts and project duration contract, but that does not make Projects an adaptive recommendation destination. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
@@ -568,6 +587,14 @@ assessment, declared-neutral rows remain truthfully `notEvaluated`, unknown
 fixture IDs fail closed, and all 109 traces carry the current commit and coach
 fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
+
+At `ab5b6aaa`, the highest-impact locally executable goal-action gap is closed:
+an established, qualified, style-compatible goal target can select and
+attribute one existing full proof rep without displacing severe, blocker, or
+durable-case evidence. Standalone Pace Training attribution now requires an
+explicit backend-schema and mixed-client compatibility decision; wider
+Roleplay/Lessons/Projects/Path routing requires a product/router/measurement
+decision. Neither is a safe mechanical follow-up to this closure.
 
 The custom dump-directory wrapper, recoverable social migration state machine,
 actual Firestore adapter on the demo emulator, an explicitly closed supported

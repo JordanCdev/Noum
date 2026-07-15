@@ -131,9 +131,8 @@ adequate transcript confidence; historical comparisons require current schema,
 exclude evaluation fixtures, use at least two prior samples, and suppress
 movement below 0.5 fillers per minute. The focused 19-test selection and full
 4,102-unique-test / 4,117-execution unit target pass with zero failures or
-skips. Connecting the qualitative goal read to the action owner remains
-deferred until goal weighting can be added without displacing blocker, severe,
-or case evidence.
+skips. This established the evidence boundary required before the qualitative
+goal read could influence an action.
 
 At commits `3eaea4da` through `ac664112`, direct Ask Noum filler questions,
 trajectory context, provisional Coach Read, deterministic fallbacks, and proof
@@ -150,9 +149,21 @@ must satisfy the corrected rule. Path copy now discloses the 20-word / 15-second
 floor and weekly 5/10 score without claiming generic clean practice proves
 pressure transfer. The 17-test focused suite, 49-test related selection, and
 complete 4,126-unique-test / 4,143-execution unit target pass with zero failures
-or skips. The next local correctness slice is evidence-qualified goal weighting
-inside the existing action owner, subordinate to blocker, severe, and durable
-case evidence.
+or skips.
+
+At `ab5b6aaa`, evidence-qualified goal weighting enters the existing
+`SessionFinalizer` / `NextActionEngine` action owner. The qualitative read ranks
+only style-compatible actionable dimensions by weighted deficit, binds the
+selected dimension to its exact rubric proof, and routes a full comparable
+Timed or Pressure rep only from an established matching read and qualified
+latest session. Severe evidence, persistent blockers, and continuing durable
+cases retain priority. Goal/dimension/source/proof attribution is carried only
+by a goal-winning action; non-goal actions and capability fallbacks cannot
+create goal movement. The focused goal suites pass 38/38, related action suites
+pass 78/78, and the complete target passes 4,114 tests across 421 suites with
+zero failures or skips. This closes the highest-impact local action-loop gap;
+standalone Pace Training attribution remains decision-gated by backend schema
+and mixed-client compatibility.
 
 The current clean local Coach Arena artifact is bound to `ac664112` /
 `sha256:adfcd7bc…cbae2f4`: 53 conversations / 109 turns and all 50 required
@@ -160,7 +171,7 @@ fixtures pass, average 79.78, with real-pipeline and trace-quality gates green.
 It remains local target-shape evidence. External evidence and release authority
 remain required regardless of this refresh.
 
-## Current execution status — 2026-07-14
+## Current execution status — 2026-07-15
 
 The research plan is no longer a greenfield specification. Noum already reuses
 the established goal, session, coach, recommendation, privacy, transcription,
@@ -171,8 +182,8 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 |---|---|---|
 | Baseline and contracts | Implemented as account-local, content-free diagnostics | Keep cohort claims honest; population analytics still requires a privacy decision |
 | Fast-lane activation | Implemented locally as a permissionless, structure-only written rehearsal owned by the existing profile store and root router; launch-to-result is asserted under 60 seconds in UI automation | Validate the elapsed distribution and completed structured-to-spoken conversion on signed devices |
-| Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration, unsupported locales fail closed, and its review intake now requires complete two-reviewer professional coverage with exact evidence/rubric integrity. Latest goal mechanics and direct coach filler reads now require the shared quantity floor and use duration-normalized filler evidence; mature history cannot promote a sub-floor latest rep. The qualitative outcome read is not yet an input to `NextActionEngine`; chosen style currently affects rationale and late/default tie-breaking only. | Bind a deidentified source-evidence package, obtain actual independent professional results, complete longitudinal calibration, and make a separate product/privacy decision before any numeric UI; connect an evidence-qualified, goal-weighted target to the existing action owner without displacing severe/blocker/case evidence; humorous/calm remain unimplemented product goals |
-| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented; severe qualifying filler burden selects Filler Control, including from a first severe rep, while non-severe thin evidence stays suppressed; Home, Train, Summary, direct Ask Noum/Coach Read, Timed/Ah evaluation and insights, planner guidance, trajectory/goal reads, chronological Review/Profile comparisons, qualifying weekly trends, and persistent Path filler milestones use the shared quantity-qualified filler policy rather than raw comparisons; existing Path unlock IDs are grandfathered without weakening future evidence; immediate severe pace requires the shared 15-second / 20-word quantity floor and finite WPM; followed-rep learning requires explicit acceptance plus matching mode, comparable bounded history, normalized metrics, serialized persistence, and exact prescribed/executed Timed demand; Speech Projects retain stable catalog identity through the real Timed route but remain outside adaptive prescriptions; the exact-token experiment contract exists but is inactive | Connect an evidence-qualified, goal-weighted target to the existing action owner without displacing blocker, severe, or durable case evidence; make a backend-schema and mixed-client decision before adding durable Pace Training attribution; obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, professional calibration, longitudinal transfer evidence, and physical-device proof before expanding the prescription domain |
+| Goal-style outcome | Implemented publicly as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections; a separate deterministic 0–100 candidate exists only for professional calibration, unsupported locales fail closed, and its review intake requires complete two-reviewer professional coverage with exact evidence/rubric integrity. Latest goal mechanics and direct coach filler reads require the shared quantity floor and duration-normalized filler evidence. At `ab5b6aaa`, the qualitative read selects one style-compatible goal-weighted deficit and supplies its exact proof to `NextActionEngine` only from established matching evidence and a qualified latest rep. | Bind a deidentified source-evidence package, obtain actual independent professional results, complete longitudinal calibration, and make a separate product/privacy decision before any numeric UI; humorous/calm remain unimplemented product goals; obtain longitudinal evidence that the routed proof reps improve real outcomes |
+| Actionable coaching | Rewrite, semantic-preservation guard, a Phrase Bank→active-week→Timed loop, one finalizer-owned Summary prescription, rendered-surface-owned Home exposure/tap measurement, Train's coherent presentation snapshot, and one fail-closed four-mode availability projection across Summary, Home, Train, Ask Noum, and Prep are implemented. Severe qualifying filler burden selects Filler Control while non-severe thin evidence stays suppressed. At `ab5b6aaa`, severe evidence, persistent blockers, and a continuing durable case precede an established actionable goal target; the goal winner alone carries exact goal/dimension/source/proof provenance into followed-rep learning, and non-goal or capability-fallback reps cannot create goal movement. Shared quantity-qualified filler policy, exact acceptance/mode/demand matching, serialized persistence, and existing Path grandfathering remain intact. Speech Projects retain stable catalog identity through Timed but remain outside adaptive prescriptions; the exact-token experiment contract remains inactive. | Make a backend-schema and mixed-client decision before adding durable Pace Training attribution; obtain product/privacy approval, configured allocation, population analysis, live-provider acceptance, professional calibration, longitudinal transfer evidence, and physical-device proof before expanding the prescription domain |
 | Trust and reliability | Local speech, consent routing, startup-fallback transparency, terminal-receipt gating for the principal modes plus Mini-drills and Lesson Apply, privacy, export/deletion, exact processor-manifest generation, private-profile validation, atomic evidence, default-deny source binding, legacy-route containment, source-bound Apple preflight, the 14-surface/77-check TestFlight contract, exact 17-callable runtime-security inventory, exact hosted-policy-body verification, a disabled transcript-free competitive observation substrate with a shared account-unlinked seven-day exact-PCM replay claim, source-declared TTL fields, and an exact account/token/prompt-bound post-create challenge→Timed handoff whose prompt-bearing arm is process-local, authoritatively validated, exact-session-bound, expiry-bounded, and omitted from reload/export/migration, a disabled server-owned reciprocal friendship lifecycle, and a source-bound recoverable social quarantine/resume/rollback state machine are implemented locally. Ten social plus two competitive-observation callables share fail-closed cutover enforcement. Cutover schema v4 recursively quarantines client-authorable challenges and friend links instead of promoting them and writes exact schema-v2 manifests. The actual migration CLI/Firestore adapter and friendship lifecycle are proved against the demo emulator. At `77352b03`, both the npm deploy entry and every checked-in Firebase Functions/Firestore target refuse before preparation or network mutation; Hosting stays independent for authorized privacy corrections | Obtain and verify all four backend release prerequisites, then atomically replace both checked-in deployment hooks; deploy and live-verify both disabled authority paths; give hydrated/opponent challenges a coherent production launch route only after the capability gate can be earned; independently approve and prove observation/invite retention and TTL; address transformed or post-window competitive replay as required by the future evaluator's freshness policy; externally calibrate and authorize that deterministic evaluator before eligibility; deploy and verify friendship indexes/rules/functions plus a two-device lifecycle; add independently trusted deployment authorization bound to an immutable source artifact; revoke the leaked legacy Deepgram credential and both exposed Firebase CLI sessions; deploy the checked-in privacy body; verify production IAM/App Check; inventory active clients and private-profile values; approve a minimum-client policy and writer-suspension plan; protect every legacy route; audit provider usage/billing; execute and independently verify the guarded social cutover; install paid-team distribution authority; and complete physical-device and release-policy verification |
 | Retention and expansion | Local KPI, persisted `ForwardPlan`, weekly check-in, explicit-style-aware weekly digest, goal-movement substrate, and an ID-only Phrase Bank handoff into the active week are implemented; both research experiment contracts default to unassigned | Obtain product approval and real cohort analysis, protected social cutover, calibrated language expansion, and signed-device verification of the weekly phrase loop |
 
@@ -390,6 +401,13 @@ authoritative, warm, concise, persuasive, executive, and storytelling goals.
   `GoalPrescriptionEngine`.
 - Output exactly one best next rep with a short rationale. Historical Review
   may replay a recorded setup but does not record adaptive acceptance.
+- Admit a goal-derived rep only from an explicit matching style, established
+  overall and dimension evidence, a qualifying latest session, a recognized
+  style-compatible target below 0.70 or still missing proof, non-mixed movement,
+  and the exact rubric
+  proof. Preserve severe → persistent blocker → continuing durable case → goal
+  priority. Carry goal/dimension/source/proof provenance only when the goal
+  branch wins; clear it when availability fallback cannot execute that proof.
 - Treat the report's “up to two alternatives” as zero alternatives in the
   shipping card. Do not add an action menu unless product research shows that
   one prescribed rep is less clear or less trustworthy.

@@ -1,5 +1,43 @@
 # Noum — Current state
 
+## 2026-07-15 — Established goal evidence can select and attribute the next rep
+
+Implementation commit `ab5b6aaa` closes the highest-impact local
+goal-prescription gap without creating a second action engine or store.
+`GoalOutcomeRead` now chooses the largest goal-weighted deficit only among
+dimensions with a semantically safe mapping for the chosen voice. Warm and
+storytelling goals cannot be pushed toward verdict-first or hedge stripping,
+and semantic hedges are never treated as filler speech. The selected dimension
+also owns the exact rubric proof shown to the action loop.
+
+After Coach Memory refresh, `SessionFinalizer` passes the current qualitative
+read and durable case snapshot into `NextActionEngine`. Goal routing requires an
+explicit matching style, established overall and dimension evidence, a
+qualified latest session, a recognized target still below the proof bar,
+non-mixed movement, and a nonempty proof. The cascade is severe current evidence
+→ persistent blocker → continuing durable case → actionable goal → existing
+pressure/trend/default behavior. Diagnose/adapt case states do not repeat.
+
+Eligible goal proofs use a full comparable Timed rep, or Pressure Drill for
+pressure stability, so the existing recommendation ledger can observe a real
+followed outcome. Only a goal-winning finalized action carries exact
+goal/dimension/source-session/proof provenance into Summary. Generic, severe,
+blocker, and case actions carry none; legacy goal-only outcomes cannot create
+target movement; unavailable pressure safely falls back to Timed without false
+goal credit. The shared case-continuation rule is now reused across Summary,
+Home, and Train, and the generic current-focus projection cannot overwrite an
+active case blueprint.
+
+Focused goal verification passes **38/38**, the related goal/action/
+availability selection passes **78/78**, and the complete `NoumTests` target
+passes **4,114 tests across 421 suites** with zero failures or skips on the
+iPhone 17 / iOS 26.4 simulator. This is local deterministic routing and
+attribution evidence only. Wider destinations, standalone Pace Training
+attribution, professional calibration, longitudinal effect, population
+experiments, deployed backend authority, and physical-device proof remain open.
+Production readiness remains **NO-GO at 18/100 with 0/5 required external
+artifacts**.
+
 ## 2026-07-15 — Path filler milestones now require qualified evidence
 
 Implementation commit `a2502c04` extends the existing `FillerBurden`,
