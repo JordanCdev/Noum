@@ -1,5 +1,88 @@
 import SwiftUI
 
+enum RoleplayPostTurnContinuation: Equatable {
+    case nextTurnAvailable
+    case attemptLimitReached
+    case transitionUnavailable
+}
+
+/// Visible guidance after a Roleplay turn. The engine's retry mode remains
+/// useful coaching evidence after a run ends, but terminal copy must not
+/// present that recommendation as an already-scheduled in-run transition.
+struct RoleplayPostTurnPresentation: Equatable {
+    let guidanceLabel: String
+    let guidanceBody: String
+    let continueTitle: String
+
+    static func make(
+        retryMode: RoleplayRetryMode,
+        continuation: RoleplayPostTurnContinuation
+    ) -> Self {
+        switch continuation {
+        case .nextTurnAvailable:
+            return Self(
+                guidanceLabel: "Next attempt",
+                guidanceBody: nextAttemptCopy(retryMode),
+                continueTitle: "Next attempt"
+            )
+        case .attemptLimitReached:
+            return Self(
+                guidanceLabel: "Practice focus",
+                guidanceBody: nextRunCopy(retryMode),
+                continueTitle: "See results"
+            )
+        case .transitionUnavailable:
+            return Self(
+                guidanceLabel: "Practice focus",
+                guidanceBody: "Take the gap above into your next roleplay. Choose an available starting pressure and build the response deliberately.",
+                continueTitle: "See results"
+            )
+        }
+    }
+
+    private static func nextAttemptCopy(_ mode: RoleplayRetryMode) -> String {
+        switch mode {
+        case .sameObjectionSlower:
+            return "Run this same objection again, slower this time."
+        case .sameLevelNewObjection:
+            return "Stay at this pressure level with a fresh objection next."
+        case .levelUp:
+            return "You're ready to raise the pressure next attempt."
+        case .levelDown:
+            return "Drop one rung and rebuild before pushing harder again."
+        }
+    }
+
+    private static func nextRunCopy(_ mode: RoleplayRetryMode) -> String {
+        switch mode {
+        case .sameObjectionSlower:
+            return "When you return to this scenario, slow the opening and give the answer more room."
+        case .sameLevelNewObjection:
+            return "Use this pressure level again and focus on adapting your answer rather than rehearsing one line."
+        case .levelUp:
+            return "Choose a higher starting pressure next time and keep the same clarity under stronger pushback."
+        case .levelDown:
+            return "Choose a lower starting pressure next time and rebuild the response before pushing harder."
+        }
+    }
+}
+
+#if DEBUG
+enum RoleplayDebugFixtureKind: String {
+    case terminalFeedback
+    case unavailableFeedback
+    case preterminalFeedback
+
+    static func requested(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self? {
+        guard let index = arguments.firstIndex(of: "UI_TESTING_ROLEPLAY_FIXTURE"),
+              index + 1 < arguments.count else {
+            return nil
+        }
+        return Self(rawValue: arguments[index + 1])
+    }
+}
+#endif
+
 /// Live turn loop for the pressure-ladder roleplay: persona objection ->
 /// spoken response -> one strength / one gap / one next attempt -> repeat,
 /// escalating or stepping back per `RoleplayEngine.retryMode`.
@@ -28,6 +111,7 @@ struct RoleplayView: View {
     @State private var currentObjection: RoleplayObjection?
     @State private var turnResults: [RoleplayTurnResult] = []
     @State private var lastFeedback: (strength: String, gap: String)?
+    @State private var pendingNextTurn: RoleplayNextTurn?
     @State private var sessionID = UUID()
     @State private var submissionTask: Task<Void, Never>?
 
@@ -36,12 +120,123 @@ struct RoleplayView: View {
         return false
     }
 
+    private var postTurnPresentation: RoleplayPostTurnPresentation? {
+        guard let result = turnResults.last else { return nil }
+        let continuation: RoleplayPostTurnContinuation
+        if pendingNextTurn != nil {
+            continuation = .nextTurnAvailable
+        } else if turnResults.count >= Self.maxTurns {
+            continuation = .attemptLimitReached
+        } else {
+            continuation = .transitionUnavailable
+        }
+        return RoleplayPostTurnPresentation.make(
+            retryMode: result.recommendedRetryMode,
+            continuation: continuation
+        )
+    }
+
     init(scenario: RoleplayScenario, startingLevel: RoleplayPressureLevel, navigationPath: Binding<NavigationPath>) {
         self.scenario = scenario
         self.startingLevel = startingLevel
         self._navigationPath = navigationPath
         self._currentLevel = State(initialValue: startingLevel)
     }
+
+    #if DEBUG
+    static func debugFixture(_ kind: RoleplayDebugFixtureKind) -> Self {
+        Self(debugFixture: kind)
+    }
+
+    private init(debugFixture kind: RoleplayDebugFixtureKind) {
+        let fixture = Self.debugFixtureState(kind)
+        self.scenario = fixture.scenario
+        self.startingLevel = fixture.currentLevel
+        self._navigationPath = .constant(NavigationPath())
+        self._phase = State(initialValue: .feedback)
+        self._currentLevel = State(initialValue: fixture.currentLevel)
+        self._currentObjection = State(initialValue: fixture.currentObjection)
+        self._turnResults = State(initialValue: fixture.turnResults)
+        self._lastFeedback = State(initialValue: fixture.feedback)
+        self._pendingNextTurn = State(initialValue: fixture.pendingNextTurn)
+    }
+
+    private static func debugFixtureState(_ kind: RoleplayDebugFixtureKind) -> (
+        scenario: RoleplayScenario,
+        currentLevel: RoleplayPressureLevel,
+        currentObjection: RoleplayObjection,
+        turnResults: [RoleplayTurnResult],
+        feedback: (strength: String, gap: String),
+        pendingNextTurn: RoleplayNextTurn?
+    ) {
+        let feedback = (
+            strength: "You answered the actual question in the first sentence.",
+            gap: "Name one concrete outcome before adding more context."
+        )
+
+        switch kind {
+        case .terminalFeedback:
+            let scenario = RoleplayCatalog.interview
+            let objection = scenario.objections(at: .easy)[0]
+            let result = RoleplayTurnResult(
+                scenarioId: scenario.scenarioId,
+                pressureLevel: .easy,
+                objectionType: objection.type,
+                objectionId: objection.id,
+                responseQuality: 0.3,
+                recommendedRetryMode: .sameObjectionSlower
+            )
+            return (scenario, .easy, objection, Array(repeating: result, count: 4), feedback, nil)
+
+        case .unavailableFeedback:
+            let objection = RoleplayObjection(
+                id: "fixture.realistic.0",
+                pressureLevel: .realistic,
+                type: .skepticalPushback,
+                text: "Why should I believe that?"
+            )
+            let scenario = RoleplayScenario(
+                scenarioId: "fixture",
+                title: "Stakeholder pushback",
+                personaName: "Alex",
+                personaRole: "Stakeholder",
+                objective: "Respond directly.",
+                objectionSet: [objection],
+                rubric: []
+            )
+            let result = RoleplayTurnResult(
+                scenarioId: scenario.scenarioId,
+                pressureLevel: .realistic,
+                objectionType: objection.type,
+                objectionId: objection.id,
+                responseQuality: 0.9,
+                recommendedRetryMode: .levelUp
+            )
+            return (scenario, .realistic, objection, Array(repeating: result, count: 3), feedback, nil)
+
+        case .preterminalFeedback:
+            let scenario = RoleplayCatalog.interview
+            let current = scenario.objections(at: .easy)[0]
+            let next = scenario.objections(at: .realistic)[0]
+            let result = RoleplayTurnResult(
+                scenarioId: scenario.scenarioId,
+                pressureLevel: .easy,
+                objectionType: current.type,
+                objectionId: current.id,
+                responseQuality: 0.9,
+                recommendedRetryMode: .levelUp
+            )
+            return (
+                scenario,
+                .easy,
+                current,
+                [result],
+                feedback,
+                RoleplayNextTurn(pressureLevel: .realistic, objection: next)
+            )
+        }
+    }
+    #endif
 
     var body: some View {
         ZStack {
@@ -233,6 +428,14 @@ struct RoleplayView: View {
         RoleplayStore.shared.record(sessionID: sessionID, result: result, date: Date())
         turnResults.append(result)
         lastFeedback = feedback
+        pendingNextTurn = RoleplayEngine.nextTurn(
+            after: result,
+            currentObjection: objection,
+            for: scenario,
+            completedAttemptCount: turnResults.count,
+            maximumAttemptCount: Self.maxTurns,
+            excluding: RoleplayStore.shared.usedObjectionIDs
+        )
         phase = .feedback
     }
 
@@ -244,8 +447,10 @@ struct RoleplayView: View {
                 feedbackRow(label: "Strength", text: feedback.strength, systemImage: "checkmark.circle.fill", tint: AppColor.modeAhCounter)
                 feedbackRow(label: "Gap", text: feedback.gap, systemImage: "arrow.up.right.circle.fill", tint: AppColor.modeSuddenDeath)
             }
-            if let result = turnResults.last {
-                feedbackRow(label: "Next attempt", text: retryModeCopy(result.recommendedRetryMode), systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
+            if let presentation = postTurnPresentation {
+                feedbackRow(label: presentation.guidanceLabel, text: presentation.guidanceBody, systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("roleplay.feedback.guidance")
             }
             continueButton
         }
@@ -280,24 +485,11 @@ struct RoleplayView: View {
         }
     }
 
-    private func retryModeCopy(_ mode: RoleplayRetryMode) -> String {
-        switch mode {
-        case .sameObjectionSlower:
-            return "Run this same objection again, slower this time."
-        case .sameLevelNewObjection:
-            return "Stay at this pressure level with a fresh objection next."
-        case .levelUp:
-            return "You're ready to raise the pressure next attempt."
-        case .levelDown:
-            return "Drop one rung and rebuild before pushing harder again."
-        }
-    }
-
     private var continueButton: some View {
         Button {
             advanceAfterFeedback()
         } label: {
-            Text(turnResults.count >= Self.maxTurns ? "See results" : "Next attempt")
+            Text(postTurnPresentation?.continueTitle ?? "See results")
                 .font(Typography.headline)
                 .foregroundStyle(AppColor.modeIM)
                 .frame(maxWidth: .infinity)
@@ -309,22 +501,11 @@ struct RoleplayView: View {
     }
 
     private func advanceAfterFeedback() {
-        guard let last = turnResults.last,
-              let objection = currentObjection else {
+        guard let nextTurn = pendingNextTurn else {
             phase = .complete
             return
         }
-        guard let nextTurn = RoleplayEngine.nextTurn(
-            after: last,
-            currentObjection: objection,
-            for: scenario,
-            completedAttemptCount: turnResults.count,
-            maximumAttemptCount: Self.maxTurns,
-            excluding: RoleplayStore.shared.usedObjectionIDs
-        ) else {
-            phase = .complete
-            return
-        }
+        pendingNextTurn = nil
         currentLevel = nextTurn.pressureLevel
         currentObjection = nextTurn.objection
         speechVM.transcribedText = ""
@@ -338,15 +519,19 @@ struct RoleplayView: View {
             Text("Roleplay complete")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
-            Text("\(turnResults.count) response attempts with \(scenario.personaName). Final attempted pressure: \(currentLevel.title).")
+                .accessibilityIdentifier("roleplay.complete.screen")
+            Text("\(turnResults.count) response attempts with \(scenario.personaName). Final attempted pressure: \(turnResults.last?.pressureLevel.title ?? currentLevel.title).")
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier("roleplay.complete.summary")
             if let feedback = lastFeedback {
                 feedbackRow(label: "Strength", text: feedback.strength, systemImage: "checkmark.circle.fill", tint: AppColor.modeAhCounter)
                 feedbackRow(label: "Gap", text: feedback.gap, systemImage: "arrow.up.right.circle.fill", tint: AppColor.modeSuddenDeath)
             }
-            if let result = turnResults.last {
-                feedbackRow(label: "Next attempt", text: retryModeCopy(result.recommendedRetryMode), systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
+            if let presentation = postTurnPresentation {
+                feedbackRow(label: presentation.guidanceLabel, text: presentation.guidanceBody, systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("roleplay.complete.guidance")
             }
             Button {
                 if !navigationPath.isEmpty { navigationPath.removeLast() }

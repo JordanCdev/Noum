@@ -52158,6 +52158,92 @@ struct RoleplayEngineTests {
         #expect(next == nil)
     }
 
+    // MARK: Post-turn presentation
+
+    @Test func preterminalGuidancePreservesEveryAdaptivePromise() {
+        let cases: [(RoleplayRetryMode, String)] = [
+            (.sameObjectionSlower, "Run this same objection again, slower this time."),
+            (.sameLevelNewObjection, "Stay at this pressure level with a fresh objection next."),
+            (.levelUp, "You're ready to raise the pressure next attempt."),
+            (.levelDown, "Drop one rung and rebuild before pushing harder again.")
+        ]
+
+        for (mode, expectedBody) in cases {
+            let presentation = RoleplayPostTurnPresentation.make(
+                retryMode: mode,
+                continuation: .nextTurnAvailable
+            )
+
+            #expect(presentation.guidanceLabel == "Next attempt")
+            #expect(presentation.guidanceBody == expectedBody)
+            #expect(presentation.continueTitle == "Next attempt")
+        }
+    }
+
+    @Test func terminalGuidanceReframesEveryRetryModeAsFuturePractice() {
+        let modes: [RoleplayRetryMode] = [
+            .sameObjectionSlower,
+            .sameLevelNewObjection,
+            .levelUp,
+            .levelDown
+        ]
+
+        for mode in modes {
+            let presentation = RoleplayPostTurnPresentation.make(
+                retryMode: mode,
+                continuation: .attemptLimitReached
+            )
+            let normalized = presentation.guidanceBody.lowercased()
+
+            #expect(presentation.guidanceLabel == "Practice focus")
+            #expect(presentation.continueTitle == "See results")
+            #expect(!normalized.contains("next attempt"))
+            #expect(!normalized.contains("same objection"))
+            #expect(!normalized.contains("fresh objection next"))
+            #expect(!presentation.guidanceBody.contains("!"))
+        }
+    }
+
+    @Test func unavailableTransitionFailsClosedWithoutPromisingARungOrObjection() {
+        for mode in [
+            RoleplayRetryMode.sameObjectionSlower,
+            .sameLevelNewObjection,
+            .levelUp,
+            .levelDown
+        ] {
+            let presentation = RoleplayPostTurnPresentation.make(
+                retryMode: mode,
+                continuation: .transitionUnavailable
+            )
+            let normalized = presentation.guidanceBody.lowercased()
+
+            #expect(presentation.guidanceLabel == "Practice focus")
+            #expect(presentation.continueTitle == "See results")
+            #expect(normalized.contains("available starting pressure"))
+            #expect(!normalized.contains("higher"))
+            #expect(!normalized.contains("lower"))
+            #expect(!normalized.contains("objection"))
+            #expect(!normalized.contains("next attempt"))
+        }
+    }
+
+    @Test func roleplayViewUsesOnePendingTransitionForCopyAndAdvancement() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/RoleplayView.swift"),
+            encoding: .utf8
+        )
+
+        #expect(source.contains("@State private var pendingNextTurn: RoleplayNextTurn?"))
+        #expect(source.contains("pendingNextTurn = RoleplayEngine.nextTurn("))
+        #expect(source.contains("guard let nextTurn = pendingNextTurn else"))
+        #expect(source.contains("Text(postTurnPresentation?.continueTitle ?? \"See results\")"))
+        #expect(source.contains("turnResults.last?.pressureLevel.title ?? currentLevel.title"))
+        #expect(!source.contains("feedbackRow(label: \"Next attempt\", text: retryModeCopy"))
+    }
+
     // MARK: Response scoring
 
     @Test func directEvidencedResponseScoresHigherThanRamblingHedgedResponse() {

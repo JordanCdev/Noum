@@ -312,7 +312,11 @@ struct NoumApp: App {
     @ViewBuilder
     private var rootContent: some View {
         #if DEBUG
-        if let overlayHarness = OverlayScreenshotHarnessKind.requested() {
+        if let roleplayFixture = RoleplayDebugFixtureKind.requested() {
+            NavigationStack {
+                RoleplayView.debugFixture(roleplayFixture)
+            }
+        } else if let overlayHarness = OverlayScreenshotHarnessKind.requested() {
             OverlayScreenshotHarnessView(kind: overlayHarness)
         } else {
             hydratedRootContent
