@@ -1,5 +1,39 @@
 # Noum — Current state
 
+## 2026-07-15 — Path filler milestones now require qualified evidence
+
+Implementation commit `a2502c04` extends the existing `FillerBurden`,
+`PathProgressInput`, `PathNodeCriterion`, and `PathProgressManager` owners rather
+than adding another progress system. The Clean rep and Filler-free week nodes
+now admit only zero-filler sessions that meet the shared 15-second / 20-word
+quantity floor, adequate transcript confidence, the current comparison schema,
+and the non-evaluation-fixture boundary. The weekly node retains its existing
+5/10 score floor and seven-day window.
+
+The stricter rule applies prospectively. Existing persisted node IDs remain
+unlocked through the established JSON array ledger, so an app update does not
+silently revoke progress earned under the previous policy. Unlock encoding is
+now deterministic without changing that stored shape. Gating and registry copy
+reuse the shared floor, correct the stale 14-word message to 20 words, disclose
+the weekly score requirement, and describe repeated practice evidence without
+claiming that it proves pressure transfer.
+
+The focused boundary suite passes **17/17**. The related Path/account regression
+selection passes **49/49**, and the complete serial `NoumTests` target passes
+**4,126 unique tests / 4,143 executions** with zero failures or skips on the
+iPhone 17 simulator. A seeded light capture verifies that the Path surface
+launches and renders; the lower milestone wording was not visible in-frame, and
+the ordinary five-tab sweep was blocked by the unsigned build's account/keychain
+recovery state. This is therefore local policy and regression evidence, not
+complete visual, physical-device, or production proof.
+
+Production readiness remains **NO-GO at 18/100 with 0/5 required external
+artifacts**. The next verified local recommendation gap is to let an
+evidence-qualified `GoalOutcomeRead` influence `NextActionEngine` only after
+blocker, severe, and durable case evidence. Standalone Pace Training attribution
+still requires an explicit backend-schema and mixed-client compatibility
+decision.
+
 ## 2026-07-14 — Ask Noum now qualifies filler evidence end to end
 
 Implementation commits `3eaea4da` through `ac664112` extend the existing
@@ -31,8 +65,8 @@ placeholder leaks.
 This is local target-shape and real-pipeline evidence only. Production readiness
 remains **NO-GO at 18/100**: one historical live artifact is present but invalid,
 zero of five required external artifacts passes, and there is no validated
-attachment-backed release run. The next verified local integrity gap is Path
-filler-milestone qualification; `GoalOutcomeRead` weighting and durable Pace
+attachment-backed release run. The later `a2502c04` entry above closes Path
+filler-milestone qualification. `GoalOutcomeRead` weighting and durable Pace
 Training attribution remain separate follow-on decisions.
 
 ## 2026-07-14 — Public filler comparisons now use qualified rate
