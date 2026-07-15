@@ -7,6 +7,22 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Cut the Crutch completion integrity at `bb155866` now places the established
+terminal recording receipt and shared three-word / three-finite-second progress
+floor in front of every result, XP, and Daily Goal/streak effect. The live
+engine remains authoritative for avoided-word violations and the candidate
+result; terminal text owns only speech quantity, and recorder time owns the
+duration floor. Thin usable speech returns to setup with a calm retry message,
+unusable capture keeps the recognizer error path, and eligible completion
+preserves and commits the exact candidate once. Focused integrity verification
+passes 36 parameterized executions across three suites, both rendered branches
+pass with Reduce Motion enabled including Accessibility XXXL, and the complete
+unit target passes 4,200 unique tests / 4,219 device executions. Terminal text
+cannot reconstruct live avoided-word timing, and standalone Cut the Crutch
+still lacks durable session/recommendation attribution. All five required
+external artifacts remain missing and production readiness remains NO-GO at
+18/100.
+
 Pace completion integrity at `8e7af9d9` now requires the established terminal
 recording receipt plus the shared three-word / three-finite-second progress
 floor before a standalone Pace run may show a result or award XP. The live

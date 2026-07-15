@@ -1,5 +1,32 @@
 # Noum — Current state
 
+## 2026-07-15 — Cut the Crutch progress now requires terminal speech quantity
+
+Implementation commit `bb155866` closes a believable-progress defect in the
+standalone Cut the Crutch flow. The live engine still owns avoided-word
+violations, survival, composure, and the candidate result, but that candidate
+cannot become a visible score, Daily Goal/streak completion, or XP until the
+provider returns a usable terminal receipt and the recorder-owned capture spans
+at least three spoken words across three finite seconds. Thin usable speech
+returns to the existing setup with a calm retry explanation; unusable capture
+retains the recognizer's established error path. Eligible completion preserves
+the exact live candidate and commits its effects once.
+
+Focused Cut the Crutch, Pace, and shared speech-integrity verification passes
+**36 parameterized executions across three suites**. Both deterministic Cut the
+Crutch UI branches pass with Reduce Motion enabled: the eligible fixture renders
+the exact 10/10 and +150 XP candidate, while the Accessibility XXXL thin-speech
+fixture withholds result/XP and keeps retry accessible. The complete `NoumTests`
+target passes **4,200 unique tests / 4,219 device executions** with zero failures
+or skips on the iPhone 17 Pro / iOS 26.5 simulator. A fresh light five-tab sweep
+and both Cut the Crutch states were visually inspected on the iPhone 17
+simulator. These fixtures bypass microphone/provider timing, and the terminal
+transcript cannot reconstruct or independently reconcile live avoided-word
+timing. No durable Cut the Crutch session/recommendation attribution,
+physical-device proof, effectiveness result, or required external artifact was
+collected. Production readiness remains **NO-GO at 18/100 with 0/5 required
+external artifacts**.
+
 ## 2026-07-15 — Pace results now require terminal speech evidence
 
 Implementation commit `8e7af9d9` closes a believable-progress defect in the
