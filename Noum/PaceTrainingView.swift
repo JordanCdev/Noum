@@ -13,7 +13,11 @@ struct PaceTrainingView: View {
 
     @State private var didAwardXP = false
     @State private var hasValidatedResult = false
+    @State private var completionIssue: String?
     @State private var showAdjustments = false
+    #if DEBUG
+    @State private var isPresentingCompletionFixture = false
+    #endif
 
     private let tint = AppColor.modePace
 
@@ -65,9 +69,13 @@ struct PaceTrainingView: View {
         .onChange(of: speechVM.recordingLifecycle) { _, lifecycle in
             guard case .failed = lifecycle,
                   engine.phase != .setup else { return }
+            completionIssue = nil
             engine.reset()
         }
         .onAppear {
+            #if DEBUG
+            if presentRequestedCompletionFixtureIfNeeded() { return }
+            #endif
             engine.prompt = PaceTrainingEngine.randomPrompt()
             engine.passage = PaceTrainingEngine.passages.randomElement() ?? PaceTrainingEngine.passages[0]
         }
@@ -125,18 +133,33 @@ struct PaceTrainingView: View {
                 return
             }
         case .ended(let result):
+            #if DEBUG
+            guard !isPresentingCompletionFixture else { return }
+            #endif
             Task { @MainActor in
                 let completion = await speechVM.stopRecordingAwaitingFinalization()
-                guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                let disposition = PaceTrainingCompletionDisposition.resolve(
+                    candidate: result,
+                    completion: completion,
+                    captureDuration: speechVM.lastSessionDuration
+                )
+                switch disposition {
+                case .eligible:
+                    completionIssue = nil
+                    if !didAwardXP {
+                        profileManager.addXP(disposition.awardedXP)
+                        didAwardXP = true
+                    }
+                    hasValidatedResult = true
+                case .insufficientSpeech:
                     engine.reset()
                     hasValidatedResult = false
-                    return
+                    completionIssue = Self.insufficientSpeechMessage
+                case .unusableRecording:
+                    engine.reset()
+                    hasValidatedResult = false
+                    completionIssue = nil
                 }
-                if !didAwardXP {
-                    profileManager.addXP(result.xpEarned)
-                    didAwardXP = true
-                }
-                hasValidatedResult = true
             }
         default:
             break
@@ -147,6 +170,7 @@ struct PaceTrainingView: View {
         guard engine.phase == .setup else { return }
         hasValidatedResult = false
         didAwardXP = false
+        completionIssue = nil
         speechVM.connectionError = nil
         engine.beginCountdown()
     }
@@ -161,6 +185,34 @@ struct PaceTrainingView: View {
             engine.confirmCaptureReady(captureReady: true)
         }
     }
+
+    #if DEBUG
+    private func presentRequestedCompletionFixtureIfNeeded() -> Bool {
+        guard !isPresentingCompletionFixture,
+              let fixture = PaceTrainingCompletionFixture.requested() else { return false }
+        isPresentingCompletionFixture = true
+        let disposition = PaceTrainingCompletionDisposition.resolve(
+            candidate: fixture.candidate,
+            completion: fixture.completion,
+            captureDuration: fixture.captureDuration
+        )
+        switch disposition {
+        case .eligible(let result):
+            didAwardXP = true
+            hasValidatedResult = true
+            completionIssue = nil
+            engine.presentResultForUITesting(result)
+        case .insufficientSpeech:
+            didAwardXP = false
+            hasValidatedResult = false
+            completionIssue = Self.insufficientSpeechMessage
+            engine.reset()
+        case .unusableRecording:
+            assertionFailure("Pace completion UI fixture must provide a usable terminal receipt")
+        }
+        return true
+    }
+    #endif
 
     private var connectingSurface: some View {
         VStack(spacing: Spacing.md) {
@@ -212,7 +264,10 @@ struct PaceTrainingView: View {
         } content: {
             VStack(spacing: Spacing.md) {
                 paceSetupCue
-                if let error = speechVM.connectionError {
+                if let completionIssue {
+                    FocusedPracticeErrorStatus(message: completionIssue)
+                        .accessibilityIdentifier("paceTraining.insufficientSpeech")
+                } else if let error = speechVM.connectionError {
                     FocusedPracticeErrorStatus(message: error)
                 }
             }
@@ -499,6 +554,7 @@ struct PaceTrainingView: View {
         .safeAreaInset(edge: .bottom) {
             resultCTA(result)
         }
+        .accessibilityIdentifier("paceTraining.result")
     }
 
     private func resultHero(_ result: PaceTrainingResult) -> some View {
@@ -543,6 +599,7 @@ struct PaceTrainingView: View {
             Button {
                 CoachHaptic.selectionTap()
                 didAwardXP = false
+                completionIssue = nil
                 engine.reset()
             } label: {
                 Text("Go Again")
@@ -553,6 +610,7 @@ struct PaceTrainingView: View {
                     .background(tint, in: Capsule())
             }
             .buttonStyle(.pressable)
+            .accessibilityIdentifier("paceTraining.result.goAgain")
 
             Button("Done") {
                 dismiss()
@@ -561,6 +619,7 @@ struct PaceTrainingView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
             .frame(minHeight: 44)
+            .accessibilityIdentifier("paceTraining.result.done")
         }
         .padding(.horizontal, Spacing.screenH)
         .padding(.bottom, Spacing.sm)
@@ -580,6 +639,9 @@ struct PaceTrainingView: View {
         let remaining = max(0, Int(PaceTrainingEngine.drillDuration - engine.elapsed))
         return "\(remaining)s"
     }
+
+    private static let insufficientSpeechMessage =
+        "We didn’t catch enough speech to score that pace run. Speak a little longer and try again."
 
     private var zoneColor: Color {
         if engine.isInZone { return AppColor.positive }
@@ -612,6 +674,49 @@ struct PaceTrainingView: View {
         }
     }
 }
+
+#if DEBUG
+/// Deterministic terminal receipts for rendered completion-integrity tests.
+/// They enter the same pure disposition used by the live stop path and never
+/// construct a transcription provider or mutate persisted progress.
+private enum PaceTrainingCompletionFixture: String {
+    case insufficient
+    case eligible
+
+    static func requested(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self? {
+        guard let index = arguments.firstIndex(of: "UI_TESTING_PACE_COMPLETION_FIXTURE"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return Self(rawValue: arguments[index + 1])
+    }
+
+    var candidate: PaceTrainingResult {
+        PaceTrainingResult(
+            subMode: .freestyle,
+            targetWPM: 130,
+            averageWPM: 132,
+            zonePercentage: 0.65,
+            peakWPM: 155,
+            lowestWPM: 105,
+            totalWords: self == .eligible ? 103 : 2,
+            fillerCount: 0,
+            totalDuration: 75,
+            wpmSamples: [118, 126, 134, 142, 131]
+        )
+    }
+
+    var completion: FinalizedTranscript {
+        FinalizedTranscript(
+            text: self == .eligible
+                ? "This terminal pace response contains enough evidence"
+                : "Too short",
+            receivedFinalResult: true,
+            audioByteCount: 4_096
+        )
+    }
+
+    var captureDuration: TimeInterval { 75 }
+}
+#endif
 
 // MARK: - Wrapping HStack for Read-Along text
 

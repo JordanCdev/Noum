@@ -50,6 +50,68 @@ final class HomePracticePathPolishUITests: XCTestCase {
     }
 
     @MainActor
+    func testPaceInsufficientSpeechWithholdsResultAndXPAtAccessibilityXXXL() {
+        let app = launchPaceCompletionFixture(
+            "insufficient",
+            extraArguments: [
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            ]
+        )
+        defer { app.terminate() }
+
+        let issue = app.descendants(matching: .any)["paceTraining.insufficientSpeech"]
+        XCTAssertTrue(issue.waitForExistence(timeout: 10))
+        XCTAssertTrue(issue.label.contains("enough speech"))
+        XCTAssertFalse(app.descendants(matching: .any)["paceTraining.result"].exists)
+        XCTAssertFalse(app.staticTexts["XP Earned"].exists)
+
+        let start = app.buttons["paceTraining.start"]
+        for _ in 0..<6 where !start.isHittable {
+            app.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertTrue(start.isHittable)
+        attachScreenshot(named: "pace-insufficient-speech-axxxl", app: app)
+    }
+
+    @MainActor
+    func testPaceEligibleTerminalEvidenceRendersExistingResult() {
+        let app = launchPaceCompletionFixture("eligible")
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["paceTraining.result"].waitForExistence(timeout: 10)
+        )
+        XCTAssertTrue(app.staticTexts["XP Earned"].exists)
+        XCTAssertTrue(app.staticTexts["+40"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["paceTraining.insufficientSpeech"].exists)
+
+        let goAgain = app.buttons["Go Again"]
+        XCTAssertTrue(goAgain.waitForExistence(timeout: 5))
+        XCTAssertTrue(goAgain.isHittable)
+        XCTAssertTrue(app.buttons["Done"].isHittable)
+        attachScreenshot(named: "pace-eligible-result", app: app)
+    }
+
+    @MainActor
+    private func launchPaceCompletionFixture(
+        _ fixture: String,
+        extraArguments: [String] = []
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_PACE_COMPLETION_FIXTURE", fixture,
+            "-DeepLink", "noum://practice/pace"
+        ]
+        app.launchArguments += extraArguments
+        app.launch()
+        return app
+    }
+
+    @MainActor
     private func attachScreenshot(named name: String, app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

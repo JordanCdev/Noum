@@ -128,6 +128,54 @@ struct PaceTrainingResult: Equatable {
     }
 }
 
+// MARK: - Completion Integrity
+
+/// Resolves whether a finished Pace run may become an earned result.
+///
+/// The engine's samples describe the live pace trace, while the provider's
+/// terminal receipt owns the final spoken text and the recorder owns duration.
+/// Keeping those responsibilities separate prevents late provider finalization
+/// from turning a one- or two-word fragment into a scored result without
+/// pretending the final transcript can reconstruct per-second WPM samples.
+enum PaceTrainingCompletionDisposition: Equatable {
+    case eligible(PaceTrainingResult)
+    case insufficientSpeech
+    case unusableRecording
+
+    static func resolve(
+        candidate: PaceTrainingResult,
+        completion: FinalizedTranscript?,
+        captureDuration: TimeInterval
+    ) -> Self {
+        guard RecordingCompletionGate.allowsScoringAndProgress(completion),
+              let completion else {
+            return .unusableRecording
+        }
+
+        let terminalWordCount = completion.text.split {
+            !$0.isLetter && !$0.isNumber
+        }.count
+        guard PracticeProgressEligibility.qualifies(
+            wordCount: terminalWordCount,
+            duration: captureDuration
+        ) else {
+            return .insufficientSpeech
+        }
+
+        return .eligible(candidate)
+    }
+
+    var awardedXP: Int {
+        guard case .eligible(let result) = self else { return 0 }
+        return result.xpEarned
+    }
+
+    var result: PaceTrainingResult? {
+        guard case .eligible(let result) = self else { return nil }
+        return result
+    }
+}
+
 // MARK: - Read-Along Passages
 
 struct PacePassage: Identifiable, Equatable {
@@ -251,6 +299,16 @@ final class PaceTrainingEngine: ObservableObject {
         tickTask?.cancel()
         tickTask = nil
     }
+
+    #if DEBUG
+    /// Deterministic route into the production result surface for UI tests.
+    /// The fixture is resolved by `PaceTrainingCompletionDisposition` before
+    /// this method is called, so an insufficient receipt never reaches it.
+    func presentResultForUITesting(_ result: PaceTrainingResult) {
+        cancel()
+        phase = .ended(result)
+    }
+    #endif
 
     // MARK: Transcript Ingestion
 
