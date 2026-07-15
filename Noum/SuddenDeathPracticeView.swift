@@ -987,7 +987,7 @@ struct SuddenDeathPracticeView: View {
                 }
                 engine.currentFillerCount = speechVM.pressureDrillFillerCount
                 runHadUsableCapture = true
-                engine.userEndedTurn()
+                engine.userEndedTurn(captureDuration: speechVM.lastSessionDuration)
             }
         } label: {
             Text("Done")
@@ -1241,7 +1241,9 @@ struct SuddenDeathPracticeView: View {
             }
             engine.currentFillerCount = speechVM.pressureDrillFillerCount
             runHadUsableCapture = true
-            engine.confirmPendingCaptureEnd()
+            engine.confirmPendingCaptureEnd(
+                captureDuration: speechVM.lastSessionDuration
+            )
         }
     }
 

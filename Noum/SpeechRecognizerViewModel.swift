@@ -82,6 +82,54 @@ enum RecordingLifecycleState: Equatable, Sendable {
     }
 }
 
+/// Monotonic timing receipt for one microphone capture. Provider drain and
+/// terminal-transcript latency happen after `stop(at:)` and therefore cannot
+/// become speaking time. The value type keeps the boundary independently
+/// testable without constructing the audio stack.
+struct SpeechCaptureClock: Equatable, Sendable {
+    private(set) var startedAtUptime: TimeInterval?
+    private(set) var stoppedDuration: TimeInterval?
+
+    mutating func start(at uptime: TimeInterval) {
+        startedAtUptime = uptime.isFinite ? uptime : nil
+        stoppedDuration = nil
+    }
+
+    mutating func stop(at uptime: TimeInterval) {
+        stoppedDuration = Self.elapsed(
+            startedAtUptime: startedAtUptime,
+            stoppedAtUptime: uptime
+        )
+    }
+
+    mutating func reset() {
+        startedAtUptime = nil
+        stoppedDuration = nil
+    }
+
+    func duration(at uptime: TimeInterval) -> TimeInterval {
+        if let stoppedDuration { return stoppedDuration }
+        return Self.elapsed(
+            startedAtUptime: startedAtUptime,
+            stoppedAtUptime: uptime
+        ) ?? 0
+    }
+
+    static func elapsed(
+        startedAtUptime: TimeInterval?,
+        stoppedAtUptime: TimeInterval?
+    ) -> TimeInterval? {
+        guard let startedAtUptime,
+              let stoppedAtUptime,
+              startedAtUptime.isFinite,
+              stoppedAtUptime.isFinite,
+              stoppedAtUptime >= startedAtUptime else {
+            return nil
+        }
+        return stoppedAtUptime - startedAtUptime
+    }
+}
+
 @MainActor
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
@@ -207,6 +255,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// reset whenever a new session starts.
     private var pitchAnalyzer: PitchAnalyzer?
     private var sessionStart: Date?
+    /// Monotonic owner for the exact microphone-open interval. `sessionStart`
+    /// remains the persisted wall-clock date; duration evidence never derives
+    /// from wall time or from the provider's eventual completion time.
+    private var captureClock = SpeechCaptureClock()
     /// Identity of the session THIS rep actually persisted, so the delayed
     /// `annotateLatestSession` writes back to the rep it measured — never
     /// blindly to `sessions[0]`. Nil when the current rep produced no usable
@@ -290,7 +342,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     func currentSessionPitchMetrics() -> PitchMetrics? {
         guard let analyzer = pitchAnalyzer else { return nil }
         let words = finalTranscript.split { !$0.isLetter && !$0.isNumber }.count
-        let duration = sessionStart.map { Date().timeIntervalSince($0) } ?? 0
+        let duration = captureClock.duration(at: ProcessInfo.processInfo.systemUptime)
         guard words >= 8, duration >= 4 else { return nil }
         let metrics = analyzer.analyze()
         return metrics.windowCount > 0 ? metrics : nil
@@ -507,6 +559,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         let shouldRestorePressureMode = _pressureDrillMode
         let promptBeforeReset = sessionPrompt
         resetCurrentSession()
+        captureClock.reset()
         if shouldRestorePressureMode {
             _pressureDrillMode = true
             sessionPrompt = promptBeforeReset
@@ -605,6 +658,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             // Start audio capture and feed into the session
             try startAudioStream(sendingTo: session, generation: generation)
             sessionStart = Date()
+            captureClock.start(at: ProcessInfo.processInfo.systemUptime)
             transition(to: .recording)
             return true
         } catch {
@@ -633,6 +687,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcriptListenerTask?.cancel()
         transcriptListenerTask = nil
         sessionStart = nil
+        captureClock.reset()
         lastSavedSessionID = nil
         currentSessionPersistenceID = nil
         discardCompetitiveObservation()
@@ -646,6 +701,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     @discardableResult
     func stopRecordingAwaitingFinalization() async -> FinalizedTranscript? {
         guard isRecording else { return nil }
+        // Freeze speaking time at the user-visible stop boundary. Everything
+        // below this point is teardown/provider work, not microphone capture.
+        captureClock.stop(at: ProcessInfo.processInfo.systemUptime)
         transition(to: .finalizing)
         let audioPump = audioSendPump
         audioSendPump = nil
@@ -704,6 +762,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 connectionError = nil
             } else {
                 sessionStart = nil
+                captureClock.reset()
                 lastSavedSessionID = nil
                 connectionError = "Noum didn’t hear enough speech to complete that rep. Try again when you’re ready."
             }
@@ -909,6 +968,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcriptListenerTask = nil
         if let session { Task { _ = try? await session.finish() } }
         sessionStart = nil
+        captureClock.reset()
         lastSavedSessionID = nil
         currentSessionPersistenceID = nil
         discardCompetitiveObservation()
@@ -929,6 +989,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcriptListenerTask?.cancel()
         transcriptListenerTask = nil
         sessionStart = nil
+        captureClock.reset()
         lastSavedSessionID = nil
         currentSessionPersistenceID = nil
         discardCompetitiveObservation()
@@ -1229,8 +1290,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         defer {
             currentSessionDemand = nil
             currentSessionPersistenceID = nil
+            sessionStart = nil
+            captureClock.reset()
         }
-        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        let duration = captureClock.duration(at: ProcessInfo.processInfo.systemUptime)
         lastSessionDuration = duration
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, duration >= 1 else {
@@ -1242,12 +1305,10 @@ class SpeechRecognizerViewModel: ObservableObject {
                 reason: "empty or under 1s — not saved, not scored, no progress",
                 numerics: ["durationMs": Int(duration * 1000), "words": trimmed.split(separator: " ").count]
             )
-            sessionStart = nil
             lastSavedSessionID = nil
             return
         }
         guard shouldRecordPracticeSession, currentSessionMode != .imConversation else {
-            sessionStart = nil
             lastSavedSessionID = nil
             pastSessions = sessionStore.sessions
             return
@@ -1310,7 +1371,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             ]
         )
         pastSessions = sessionStore.sessions
-        sessionStart = nil
     }
 
     private func loadSessions() {
@@ -1321,7 +1381,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     // MARK: - Quality Metrics
 
     private func recordQualityMetrics() {
-        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        let duration = captureClock.duration(at: ProcessInfo.processInfo.systemUptime)
         let avgLatency = sessionUpdateCount > 0 ? totalLatencyMs / sessionUpdateCount : 0
         let avgConfidence = confidenceValues.isEmpty ? nil : confidenceValues.reduce(0, +) / Double(confidenceValues.count)
         let wordCount = transcribedText.split { !$0.isLetter && !$0.isNumber }.count
@@ -1359,8 +1419,9 @@ private struct UITestUnavailableTranscriptionProvider: TranscriptionProvider {
 struct PracticeSession: Identifiable, Codable {
     /// Metric-production epoch for score, filler, duration, and pace fields.
     /// Persisting the epoch on each rep lets comparison consumers fail closed
-    /// after an evaluator change instead of averaging unlike measurements.
-    static let currentComparisonMetricSchemaVersion = 1
+    /// after an evaluator or capture-boundary change instead of averaging
+    /// unlike measurements. Version 2 begins exact microphone-stop duration.
+    static let currentComparisonMetricSchemaVersion = 2
 
     var id: UUID = UUID()
     let transcript: String

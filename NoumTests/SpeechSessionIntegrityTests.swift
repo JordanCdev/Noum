@@ -19,6 +19,212 @@ struct SpeechSessionIntegrityTests {
         )
     }
 
+    @Test("Capture duration freezes at microphone stop, not provider completion")
+    func captureDurationFreezesAtStop() throws {
+        var clock = SpeechCaptureClock()
+        clock.start(at: 100)
+        clock.stop(at: 130)
+
+        #expect(clock.duration(at: 135) == 30)
+        #expect(clock.duration(at: 9_000) == 30)
+        #expect(clock.stoppedDuration == 30)
+    }
+
+    @Test("Capture duration fails closed for invalid clock evidence")
+    func captureDurationRejectsInvalidEvidence() {
+        #expect(SpeechCaptureClock.elapsed(startedAtUptime: nil, stoppedAtUptime: 10) == nil)
+        #expect(SpeechCaptureClock.elapsed(startedAtUptime: 10, stoppedAtUptime: nil) == nil)
+        #expect(SpeechCaptureClock.elapsed(startedAtUptime: 10, stoppedAtUptime: 9) == nil)
+        #expect(SpeechCaptureClock.elapsed(startedAtUptime: .infinity, stoppedAtUptime: 10) == nil)
+        #expect(SpeechCaptureClock.elapsed(startedAtUptime: 10, stoppedAtUptime: .nan) == nil)
+    }
+
+    @Test("Capture duration reset prevents reuse by the next rep")
+    func captureDurationResetPreventsReuse() {
+        var clock = SpeechCaptureClock()
+        clock.start(at: 10)
+        clock.stop(at: 40)
+        #expect(clock.duration(at: 100) == 30)
+
+        clock.reset()
+        #expect(clock.duration(at: 100) == 0)
+
+        clock.start(at: 200)
+        #expect(clock.duration(at: 212) == 12)
+        clock.stop(at: 215)
+        #expect(clock.duration(at: 999) == 15)
+    }
+
+    @Test("Corrected capture duration advances the comparison epoch")
+    func captureDurationAdvancesComparisonEpoch() {
+        #expect(PracticeSession.currentComparisonMetricSchemaVersion == 2)
+
+        let historicalLatencyMixedRow = PracticeSession(
+            transcript: "This historical answer has enough words to meet the normal comparison evidence floor safely.",
+            fillerWordCount: 1,
+            duration: 30,
+            date: Date(),
+            mode: .timed,
+            transcriptConfidence: 0.9,
+            comparisonMetricSchemaVersion: 1
+        )
+        #expect(FillerBurden.quantityQualified(historicalLatencyMixedRow) == nil)
+    }
+
+    @Test("Persistence and quality metrics share the pre-finalization capture boundary")
+    func speechOwnerUsesOneCaptureBoundary() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/SpeechRecognizerViewModel.swift"),
+            encoding: .utf8
+        )
+
+        let stopSnapshot = try #require(source.range(
+            of: "captureClock.stop(at: ProcessInfo.processInfo.systemUptime)"
+        ))
+        let providerFinish = try #require(source.range(
+            of: "let providerResult = try await sessionToEnd.finish()"
+        ))
+        #expect(stopSnapshot.lowerBound < providerFinish.lowerBound)
+
+        let sharedRead = "let duration = captureClock.duration(at: ProcessInfo.processInfo.systemUptime)"
+        #expect(source.components(separatedBy: sharedRead).count - 1 == 3)
+        #expect(!source.contains("Date().timeIntervalSince(sessionStart"))
+    }
+
+    @Test("Mini-drill trusts the shared capture receipt instead of a post-finalization clock")
+    func miniDrillUsesSharedCaptureReceipt() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/MiniDrillView.swift"),
+            encoding: .utf8
+        )
+
+        let outcomeStart = try #require(source.range(of: "private func completedOutcome"))
+        let outcomeTail = source[outcomeStart.lowerBound...]
+        let nextFunction = outcomeTail.range(of: "\n    private func", options: [], range: outcomeTail.index(after: outcomeTail.startIndex)..<outcomeTail.endIndex)
+        let outcomeBody = nextFunction.map { outcomeTail[..<$0.lowerBound] } ?? outcomeTail[...]
+
+        #expect(outcomeBody.contains("let duration = speechVM.lastSessionDuration"))
+        #expect(!outcomeBody.contains("Date().timeIntervalSince"))
+        #expect(!outcomeBody.contains("max(speechVM.lastSessionDuration"))
+    }
+
+    @Test("Pressure rounds commit the same capture receipt after terminal reconciliation")
+    func pressureRoundsUseSharedCaptureReceipt() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let view = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/SuddenDeathPracticeView.swift"),
+            encoding: .utf8
+        )
+        let engine = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/PressureTimerEngine.swift"),
+            encoding: .utf8
+        )
+
+        #expect(view.contains("engine.userEndedTurn(captureDuration: speechVM.lastSessionDuration)"))
+        #expect(view.contains("captureDuration: speechVM.lastSessionDuration"))
+        #expect(engine.contains("duration: captureDuration"))
+        #expect(!engine.contains("timeIntervalSince(roundStartDate"))
+    }
+
+    @Test("Baseline recompute and incremental updates reject the prior duration epoch")
+    func baselineRejectsPriorDurationEpoch() {
+        let transcript = "This complete practice answer contains more than twenty spoken words so it can qualify for a trustworthy current baseline measurement without relying on thin evidence."
+        let current = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 1,
+            duration: 30,
+            date: Date(timeIntervalSince1970: 200),
+            mode: .timed,
+            transcriptConfidence: 0.9
+        )
+        let historical = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 9,
+            duration: 90,
+            date: Date(timeIntervalSince1970: 100),
+            mode: .timed,
+            transcriptConfidence: 0.9,
+            comparisonMetricSchemaVersion: 1
+        )
+
+        let rebuilt = BaselineEngine.compute(from: [current, historical])
+        #expect(rebuilt.usesCurrentComparisonMetrics)
+        #expect(rebuilt.sessionCount == 2)
+        #expect(rebuilt.qualifyingSessionCount == 1)
+        #expect(rebuilt.durationTendency.value == 30)
+        #expect(rebuilt.fillerRate.value == 2)
+
+        let updated = BaselineEngine.update(rebuilt, with: historical)
+        #expect(updated.sessionCount == 3)
+        #expect(updated.qualifyingSessionCount == 1)
+        #expect(updated.durationTendency == rebuilt.durationTendency)
+        #expect(updated.fillerRate == rebuilt.fillerRate)
+        #expect(BaselineEngine.updatePressureProfile(.empty, session: historical, pressure: .high) == .empty)
+    }
+
+    @Test("Legacy persisted baselines decode as requiring a recipe rebuild")
+    func legacyBaselineRequiresRecipeRebuild() throws {
+        let encoded = try JSONEncoder().encode(CommunicationBaseline.empty)
+        var object = try #require(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        object.removeValue(forKey: "comparisonMetricSchemaVersion")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        let legacy = try JSONDecoder().decode(CommunicationBaseline.self, from: legacyData)
+        #expect(legacy.comparisonMetricSchemaVersion == nil)
+        #expect(!legacy.usesCurrentComparisonMetrics)
+    }
+
+    @Test("Pressure migration replays oldest to newest regardless of store order")
+    func pressureMigrationUsesChronologicalReplay() {
+        func session(id: String, date: TimeInterval, fillers: Int) -> PracticeSession {
+            PracticeSession(
+                id: UUID(uuidString: id)!,
+                transcript: "This complete pressure answer contains more than twenty spoken words and provides enough evidence for a stable chronological profile replay test.",
+                fillerWordCount: fillers,
+                duration: 60,
+                date: Date(timeIntervalSince1970: date),
+                mode: .suddenDeath,
+                transcriptConfidence: 0.9,
+                pressureLevel: .high
+            )
+        }
+        let oldest = session(
+            id: "00000000-0000-4000-8000-000000000001",
+            date: 100,
+            fillers: 8
+        )
+        let middle = session(
+            id: "00000000-0000-4000-8000-000000000002",
+            date: 200,
+            fillers: 4
+        )
+        let newest = session(
+            id: "00000000-0000-4000-8000-000000000003",
+            date: 300,
+            fillers: 0
+        )
+
+        let fromStoreOrder = BaselineEngine.computePressureProfile(
+            from: [newest, middle, oldest]
+        )
+        let fromChronologicalOrder = BaselineEngine.computePressureProfile(
+            from: [oldest, middle, newest]
+        )
+
+        #expect(fromStoreOrder == fromChronologicalOrder)
+        #expect(abs((fromStoreOrder.highFillerRate?.value ?? 0) - 5.76) < 0.000_001)
+    }
+
     private final class PumpSession: TranscriptionSession, @unchecked Sendable {
         private let lock = NSLock()
         private var sentValues: [UInt8] = []

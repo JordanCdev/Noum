@@ -370,8 +370,10 @@ struct MiniDrillView: View {
 
     private func completedOutcome(from completion: FinalizedTranscript) -> MiniDrillOutcome {
         let fillerCount = speechVM.fillerWordCount
-        let measuredDuration = recordingStartDate.map { Date().timeIntervalSince($0) } ?? TimeInterval(elapsedSeconds)
-        let duration = max(speechVM.lastSessionDuration, measuredDuration, TimeInterval(elapsedSeconds))
+        // The speech owner freezes this at the microphone stop boundary.
+        // Local clocks have already crossed provider finalization and would
+        // reintroduce network latency into duration-gated drill outcomes.
+        let duration = speechVM.lastSessionDuration
         let transcript = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = transcript.split(whereSeparator: \.isWhitespace).count
 

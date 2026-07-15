@@ -537,7 +537,6 @@ final class PressureTimerEngine: ObservableObject {
     var followUpProvider: PressureFollowUpProviding?
     private var openingPrompt: String = ""
     private var sessionStartDate: Date?
-    private var roundStartDate: Date?
     private var timerTask: Task<Void, Never>?
     private var responseLimitTask: Task<Void, Never>?
     private var transitionTask: Task<Void, Never>?
@@ -593,7 +592,6 @@ final class PressureTimerEngine: ObservableObject {
         isGeneratingFollowUp = false
         lastUserTranscript = ""
         sessionStartDate = nil
-        roundStartDate = nil
         totals = PressureSessionTotals()
         transcriptLog = PressureSessionTranscriptLog()
         roundWordCounts = []
@@ -641,11 +639,11 @@ final class PressureTimerEngine: ObservableObject {
     }
 
     /// Called when the user manually ends their turn.
-    func userEndedTurn() {
+    func userEndedTurn(captureDuration: TimeInterval) {
         guard case .userTurnActive(let round) = phase else { return }
         timerTask?.cancel()
         responseLimitTask?.cancel()
-        evaluateRound(round: round)
+        evaluateRound(round: round, captureDuration: captureDuration)
     }
 
     /// Freezes the active response while the provider flushes its terminal
@@ -659,22 +657,26 @@ final class PressureTimerEngine: ObservableObject {
         responseLimitTask = nil
     }
 
-    func confirmPendingCaptureEnd() {
+    func confirmPendingCaptureEnd(captureDuration: TimeInterval) {
         guard let pendingCaptureEnd,
               case .userTurnActive(let round) = phase,
               round == pendingCaptureEnd.round else { return }
         self.pendingCaptureEnd = nil
         switch pendingCaptureEnd.reason {
         case .responseCap:
-            evaluateRound(round: round)
+            evaluateRound(round: round, captureDuration: captureDuration)
         case .fillerThreshold:
             if currentFillerCount > roundConfig.fillerTolerance {
-                endRound(round: round, outcome: .fillerOverload)
+                endRound(
+                    round: round,
+                    outcome: .fillerOverload,
+                    captureDuration: captureDuration
+                )
             } else {
                 // Interim recognition can revise an apparent filler. Once the
                 // terminal transcript clears it, evaluate the actual words
                 // instead of preserving a false sudden-death failure.
-                evaluateRound(round: round)
+                evaluateRound(round: round, captureDuration: captureDuration)
             }
         }
     }
@@ -812,7 +814,6 @@ final class PressureTimerEngine: ObservableObject {
     // MARK: - User Turn Waiting (Start Timer — the core pressure mechanic)
 
     private func beginUserWaiting(round: Int) {
-        roundStartDate = Date()
         // The previous response has already been consumed by follow-up
         // generation. Clear it so a start-timeout never duplicates it.
         lastUserTranscript = ""
@@ -901,20 +902,24 @@ final class PressureTimerEngine: ObservableObject {
         endRound(round: round, outcome: .timeoutBeforeStart)
     }
 
-    private func evaluateRound(round: Int) {
+    private func evaluateRound(round: Int, captureDuration: TimeInterval) {
         timerTask?.cancel()
         responseLimitTask?.cancel()
 
         if currentWordCount < roundConfig.minimumWords {
-            endRound(round: round, outcome: .tooShort)
+            endRound(round: round, outcome: .tooShort, captureDuration: captureDuration)
         } else if currentFillerCount > roundConfig.fillerTolerance {
-            endRound(round: round, outcome: .fillerOverload)
+            endRound(round: round, outcome: .fillerOverload, captureDuration: captureDuration)
         } else {
-            endRound(round: round, outcome: .survived)
+            endRound(round: round, outcome: .survived, captureDuration: captureDuration)
         }
     }
 
-    private func endRound(round: Int, outcome: RoundOutcome) {
+    private func endRound(
+        round: Int,
+        outcome: RoundOutcome,
+        captureDuration: TimeInterval = 0
+    ) {
         timerTask?.cancel()
         responseLimitTask?.cancel()
         roundOutcomes.append(outcome)
@@ -928,7 +933,7 @@ final class PressureTimerEngine: ObservableObject {
         roundMinimumWords.append(roundConfig.minimumWords)
 
         totals.recordRound(
-            duration: Date().timeIntervalSince(roundStartDate ?? Date()),
+            duration: captureDuration,
             fillers: currentFillerCount,
             words: currentWordCount
         )

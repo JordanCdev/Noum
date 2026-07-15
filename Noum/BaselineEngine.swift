@@ -168,6 +168,9 @@ struct CommunicationBaseline: Codable, Equatable {
     var lastUpdated: Date
     var sessionCount: Int
     var qualifyingSessionCount: Int
+    /// Metric recipe used to build this aggregate. Nil identifies a baseline
+    /// persisted before recipe provenance existed and forces a history rebuild.
+    var comparisonMetricSchemaVersion: Int?
 
     // Layer 1: Fundamentals
     var fillerRate: BaselineStat         // Fillers per minute
@@ -210,6 +213,10 @@ struct CommunicationBaseline: Codable, Equatable {
 
     var overallConfidence: BaselineConfidence {
         BaselineConfidence.from(sessionCount: qualifyingSessionCount)
+    }
+
+    var usesCurrentComparisonMetrics: Bool {
+        comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion
     }
 
     /// Normalized 0.0–1.0 distance from the user's stated coaching goal.
@@ -309,6 +316,7 @@ struct CommunicationBaseline: Codable, Equatable {
         lastUpdated: Date(),
         sessionCount: 0,
         qualifyingSessionCount: 0,
+        comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion,
         fillerRate: .empty,
         pace: .empty,
         paceVariance: .empty,
@@ -336,7 +344,7 @@ struct CommunicationBaseline: Codable, Equatable {
     // `.empty` for those fields rather than failing the whole decode.
 
     enum CodingKeys: String, CodingKey {
-        case lastUpdated, sessionCount, qualifyingSessionCount
+        case lastUpdated, sessionCount, qualifyingSessionCount, comparisonMetricSchemaVersion
         case fillerRate, pace, paceVariance, durationTendency
         case pauseRate, pauseFilledRatio
         case openingStrength, closingStrength, structureQuality, answerDepth, clarity
@@ -349,6 +357,10 @@ struct CommunicationBaseline: Codable, Equatable {
         lastUpdated = try c.decode(Date.self, forKey: .lastUpdated)
         sessionCount = try c.decode(Int.self, forKey: .sessionCount)
         qualifyingSessionCount = try c.decode(Int.self, forKey: .qualifyingSessionCount)
+        comparisonMetricSchemaVersion = try c.decodeIfPresent(
+            Int.self,
+            forKey: .comparisonMetricSchemaVersion
+        )
         fillerRate = try c.decode(BaselineStat.self, forKey: .fillerRate)
         pace = try c.decode(BaselineStat.self, forKey: .pace)
         paceVariance = try c.decode(BaselineStat.self, forKey: .paceVariance)
@@ -373,6 +385,7 @@ struct CommunicationBaseline: Codable, Equatable {
         lastUpdated: Date,
         sessionCount: Int,
         qualifyingSessionCount: Int,
+        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
         fillerRate: BaselineStat,
         pace: BaselineStat,
         paceVariance: BaselineStat,
@@ -395,6 +408,7 @@ struct CommunicationBaseline: Codable, Equatable {
         self.lastUpdated = lastUpdated
         self.sessionCount = sessionCount
         self.qualifyingSessionCount = qualifyingSessionCount
+        self.comparisonMetricSchemaVersion = comparisonMetricSchemaVersion
         self.fillerRate = fillerRate
         self.pace = pace
         self.paceVariance = paceVariance
@@ -1276,12 +1290,21 @@ struct FillerRateComparison: Equatable {
 /// Uses exponential moving averages with a recency bias.
 enum BaselineEngine {
 
+    /// One admission boundary for every duration-derived baseline and pressure
+    /// read. Historical metric epochs remain readable in Review but cannot be
+    /// averaged with the current microphone-stop recipe.
+    static func acceptsCurrentComparisonMetrics(_ session: PracticeSession) -> Bool {
+        SessionQualifier.qualifies(session)
+            && session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion
+            && !session.isEvaluationFixture
+    }
+
     // MARK: - Full Recompute
 
     /// Recomputes the entire baseline from session history.
     /// Called on app launch and after account switch.
     static func compute(from sessions: [PracticeSession]) -> CommunicationBaseline {
-        let qualifying = sessions.filter { SessionQualifier.qualifies($0) }
+        let qualifying = sessions.filter(acceptsCurrentComparisonMetrics)
         guard !qualifying.isEmpty else { return .empty }
 
         // Sort most recent first
@@ -1406,12 +1429,31 @@ enum BaselineEngine {
         return baseline
     }
 
+    /// Deterministic pressure-profile rebuild. Stores expose newest-first
+    /// history, but EMA replay must run oldest-to-newest so newer evidence has
+    /// the intended final weight after a recipe migration.
+    static func computePressureProfile(from sessions: [PracticeSession]) -> PressureProfile {
+        let chronological = sessions
+            .filter(acceptsCurrentComparisonMetrics)
+            .sorted { lhs, rhs in
+                if lhs.date != rhs.date { return lhs.date < rhs.date }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+        return chronological.reduce(into: PressureProfile.empty) { profile, session in
+            profile = updatePressureProfile(
+                profile,
+                session: session,
+                pressure: session.pressureLevel
+            )
+        }
+    }
+
     // MARK: - Incremental Update
 
     /// Updates an existing baseline with a new session.
     /// Uses EMA with recency bias: α = 0.5 for early sessions (< 5), 0.15 for established.
     static func update(_ baseline: CommunicationBaseline, with session: PracticeSession) -> CommunicationBaseline {
-        guard SessionQualifier.qualifies(session) else {
+        guard acceptsCurrentComparisonMetrics(session) else {
             var updated = baseline
             updated.sessionCount += 1
             updated.lastUpdated = Date()
@@ -1578,7 +1620,7 @@ enum BaselineEngine {
 
     /// Updates the pressure profile with a new session's data at its pressure level.
     static func updatePressureProfile(_ profile: PressureProfile, session: PracticeSession, pressure: PressureLevel) -> PressureProfile {
-        guard SessionQualifier.qualifies(session) else { return profile }
+        guard acceptsCurrentComparisonMetrics(session) else { return profile }
 
         let fillerRate = session.duration > 0 ? Double(session.fillerWordCount) / (session.duration / 60.0) : 0
         let wpm = Double(session.wordsPerMinute)
@@ -1951,20 +1993,18 @@ final class BaselineStore: ObservableObject {
 
     /// Rebuild baseline from full session history. Call on launch and account switch.
     func rebuild(from sessions: [PracticeSession]) {
-        baseline = BaselineEngine.compute(from: sessions)
-        // Rebuild pressure profile from scratch
-        var profile = PressureProfile.empty
-        for session in sessions {
-            let pressure = session.pressureLevel
-            profile = BaselineEngine.updatePressureProfile(profile, session: session, pressure: pressure)
-        }
-        pressureProfile = profile
+        baseline = BaselineEngine.computeWithClutchWords(from: sessions)
+        pressureProfile = BaselineEngine.computePressureProfile(from: sessions)
         save()
         UserTrajectoryCache.shared.invalidate()
     }
 
     /// Incrementally update with a new session.
     func recordSession(_ session: PracticeSession, pressure: PressureLevel) {
+        guard baseline.usesCurrentComparisonMetrics else {
+            rebuild(from: PracticeSessionStore.shared.sessions)
+            return
+        }
         baseline = BaselineEngine.updateWithClutchWords(baseline, with: session)
         pressureProfile = BaselineEngine.updatePressureProfile(pressureProfile, session: session, pressure: pressure)
         save()
@@ -1972,6 +2012,9 @@ final class BaselineStore: ObservableObject {
     }
 
     func recordMiniDrillOutcome(_ outcome: MiniDrillOutcome, prompt: String?) {
+        if !baseline.usesCurrentComparisonMetrics {
+            rebuild(from: PracticeSessionStore.shared.sessions)
+        }
         ClutchWordStore.shared.analyzeSession(transcript: outcome.transcript, prompt: prompt)
         baseline = BaselineEngine.updateWithMiniDrill(baseline, outcome: outcome)
         save()
@@ -1979,7 +2022,7 @@ final class BaselineStore: ObservableObject {
     }
 
     func reloadForCurrentAccount() {
-        load()
+        load(rebuildOnRecipeMismatch: true)
         UserTrajectoryCache.shared.invalidate()
     }
 
@@ -2001,13 +2044,23 @@ final class BaselineStore: ObservableObject {
         }
     }
 
-    private func load() {
+    private func load(rebuildOnRecipeMismatch: Bool = false) {
         let accountID = accountStorageKey()
         if let data = UserDefaults.standard.data(forKey: "\(baselineKey).\(accountID)"),
-           let decoded = try? JSONDecoder().decode(CommunicationBaseline.self, from: data) {
+           let decoded = try? JSONDecoder().decode(CommunicationBaseline.self, from: data),
+           decoded.usesCurrentComparisonMetrics {
             baseline = decoded
         } else {
-            baseline = .empty
+            guard rebuildOnRecipeMismatch else {
+                baseline = .empty
+                pressureProfile = .empty
+                return
+            }
+            // Practice sessions hydrate before BaselineStore in the account
+            // registry. Rebuild both aggregates from current-epoch rows rather
+            // than blending a legacy persisted recipe into the first new rep.
+            rebuild(from: PracticeSessionStore.shared.sessions)
+            return
         }
         if let data = UserDefaults.standard.data(forKey: "\(pressureKey).\(accountID)"),
            let decoded = try? JSONDecoder().decode(PressureProfile.self, from: data) {
