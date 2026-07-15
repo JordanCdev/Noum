@@ -80,6 +80,43 @@ struct PathUnlockCelebrationIntegrityTests {
         #expect(projected.map(\.id) == [eligible.id])
     }
 
+    @Test("Profile evidence remains cold when saved rows are Review-only")
+    func profileEvidenceUsesProgressProjection() {
+        let reviewOnly = [
+            session(words: 2, duration: 30),
+            session(words: 20, duration: 2.99),
+            session(words: 20, duration: .infinity),
+            session(words: 20, duration: 30, isEvaluationFixture: true),
+        ]
+        let progressSessions = PracticeProgressEligibility.eligibleSessions(in: reviewOnly)
+
+        #expect(reviewOnly.count == 4)
+        #expect(progressSessions.isEmpty)
+        #expect(ProfileCompositionPlan.make(
+            sessionCount: progressSessions.count,
+            hasProgressEvidence: false
+        ).stage == .zero)
+        #expect(CoachParityReadiness.build(
+            memory: nil,
+            sessionCount: progressSessions.count,
+            recommendationOutcomeCount: 0,
+            transferReportCount: 0,
+            checkInCount: 0
+        ).status(for: .diagnosis) == .thin)
+        #expect(!TransformationQuestionEligibility.shouldShow(
+            sessionCount: progressSessions.count,
+            events: []
+        ))
+
+        let brief = ProfileCoachBriefPresentation.make(
+            sessionCount: progressSessions.count,
+            plan: nil,
+            memory: nil
+        )
+        #expect(brief.evidenceCaption == nil)
+        #expect(brief.observation == "One short rep gives Noum something real to read.")
+    }
+
     @Test("Raw streak and league activity ignore Review-only captures")
     func progressDerivedCounts() {
         let calendar = Calendar.current
@@ -275,6 +312,28 @@ struct PathUnlockCelebrationIntegrityTests {
         #expect(recognizer.contains("PracticeProgressEligibility.qualifies(latest)"))
         #expect(practiceSupport.contains("func recordOutcome(for session: PracticeSession"))
         #expect(practiceSupport.contains("guard PracticeProgressEligibility.qualifies(session) else { return }"))
+    }
+
+    @Test("Profile separates raw saved history from progress-bearing evidence")
+    func profileProgressProjectionSourceContract() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let profile = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("ProfileView.swift"),
+            encoding: .utf8
+        )
+
+        #expect(profile.contains("private var progressEligibleSessions: [PracticeSession]"))
+        #expect(profile.contains("sessionStore.progressEligibleSessions.sorted"))
+        #expect(!profile.contains("sessionCount: sessions.count"))
+        #expect(!profile.contains("CoachingPlanner.plan(for: sessions"))
+        #expect(profile.contains("for session in progressEligibleSessions"))
+        #expect(profile.contains("sessions: progressEligibleSessions"))
+
+        // Saved-rep navigation remains an exact raw-history surface.
+        #expect(profile.contains("if sessions.isEmpty { return \"Saved reps appear here\" }"))
+        #expect(profile.contains("return \"\\(sessions.count) \\(noun) · trends over time\""))
     }
 
     @Test("Mode-specific completion cannot cross the shared progress boundary")

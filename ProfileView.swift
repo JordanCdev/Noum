@@ -1398,9 +1398,16 @@ struct ProfileView: View {
         sessionStore.sessions.sorted { $0.date > $1.date }
     }
 
+    /// Sessions allowed to strengthen coaching and visible progress. Raw
+    /// `sessions` remains the saved-rep/Review source so a transport-valid
+    /// capture that is too thin to reward can still be inspected or deleted.
+    private var progressEligibleSessions: [PracticeSession] {
+        sessionStore.progressEligibleSessions.sorted { $0.date > $1.date }
+    }
+
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
-            sessions: sessions,
+            sessions: progressEligibleSessions,
             profile: coachingProfileStore.profile,
             displayedStreak: streakFreeze.currentStreak
         )
@@ -1410,7 +1417,7 @@ struct ProfileView: View {
         retentionSnapshot.achievements.filter(\.isUnlocked)
     }
 
-    private var totalSessions: Int { sessions.count }
+    private var totalProgressSessions: Int { progressEligibleSessions.count }
 
     /// The displayed streak — always the freeze-aware number from
     /// StreakFreezeManager (the single displayed-streak owner), so the
@@ -1486,7 +1493,7 @@ struct ProfileView: View {
         // The generic read (unchanged) — kept verbatim so a never-chosen
         // profile still reads neutral.
         let genericRead: String
-        if let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile) {
+        if let plan = CoachingPlanner.plan(for: progressEligibleSessions, profile: coachingProfileStore.profile) {
             genericRead = plan.encouragement
         } else {
             genericRead = "A few more sessions will turn this into a sharper read on how you speak under pressure."
@@ -1509,7 +1516,7 @@ struct ProfileView: View {
 
     private var defaultSurfacePlan: ProfileCompositionPlan {
         ProfileCompositionPlan.make(
-            sessionCount: sessions.count,
+            sessionCount: progressEligibleSessions.count,
             hasProgressEvidence: hasProgressEvidence
         )
     }
@@ -1521,7 +1528,7 @@ struct ProfileView: View {
     private var coachLoopReadiness: CoachParityReadiness {
         CoachParityReadiness.build(
             memory: coachMemoryStore.currentMemory,
-            sessionCount: sessions.count,
+            sessionCount: progressEligibleSessions.count,
             recommendationOutcomeCount: recommendationLearningStore.outcomes.count,
             transferReportCount: bigMomentStore.recentOutcomeReports(limit: BigMomentStore.outcomeReportCap).count,
             checkInCount: coachCheckInStore.checkIns.count
@@ -1599,7 +1606,7 @@ struct ProfileView: View {
 
     private var shouldAskTransformationQuestion: Bool {
         TransformationQuestionEligibility.shouldShow(
-            sessionCount: sessions.count,
+            sessionCount: progressEligibleSessions.count,
             events: flowEvents.events
         )
     }
@@ -1648,8 +1655,8 @@ struct ProfileView: View {
 
     private var profileCoachReadCard: some View {
         let presentation = ProfileCoachBriefPresentation.make(
-            sessionCount: sessions.count,
-            plan: CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile),
+            sessionCount: progressEligibleSessions.count,
+            plan: CoachingPlanner.plan(for: progressEligibleSessions, profile: coachingProfileStore.profile),
             memory: coachMemoryStore.currentMemory,
             trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots),
             proof: proofStore.recent(
@@ -3091,7 +3098,7 @@ struct ProfileView: View {
                         profile: profile,
                         baseline: baselineStore.baseline,
                         rating: ratingStore.rating,
-                        sessions: sessionStore.sessions,
+                        sessions: progressEligibleSessions,
                         coachMemory: coachMemoryStore.currentMemory,
                         outcomes: recommendationLearningStore.outcomes
                     ) {
@@ -3282,7 +3289,7 @@ struct ProfileView: View {
         let state = CoachingPlanCardVisibility.resolve(
             plan: forwardPlanStore.activePlan,
             profile: coachingProfileStore.profile,
-            sessions: sessionStore.sessions,
+            sessions: progressEligibleSessions,
             activeBigMomentID: bigMomentStore.activeMoment?.id
         )
         return CoachingPlanCard(
@@ -3642,10 +3649,11 @@ struct ProfileView: View {
         }
     }
 
-    /// Aggregate filler word profile across all sessions.
+    /// Aggregate filler evidence only across sessions allowed to strengthen
+    /// coaching; Review-only captures remain visible in saved history.
     private var fillerProfile: [(word: String, count: Int)] {
         var aggregate: [String: Int] = [:]
-        for session in sessions {
+        for session in progressEligibleSessions {
             let bd = FillerWordDetector.breakdown(
                 in: session.transcript,
                 customWords: clutchWordStore.customFillerWords
@@ -3777,7 +3785,7 @@ struct ProfileView: View {
 
     private var statsRow: some View {
         HStack(spacing: Spacing.sm) {
-            statCard(title: "Sessions", value: "\(totalSessions)", icon: "mic.fill", tint: AppColor.brandBlue)
+            statCard(title: "Sessions", value: "\(totalProgressSessions)", icon: "mic.fill", tint: AppColor.brandBlue)
             statCard(title: "Streak", value: "\(currentStreak)d", icon: "flame.fill", tint: .orange)
             statCard(title: "Friends", value: "\(friends.friendCount)", icon: "person.2.fill", tint: AppColor.positive)
         }
