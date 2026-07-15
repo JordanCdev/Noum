@@ -7,6 +7,18 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Daily Challenge retirement at `9bc93a23` resolves the next verified lifecycle
+gap without restoring a disconnected reward surface. Home and the developer
+override already kept the tile off; production now also has no manager
+subscription, appearance/finalizer trigger, account-hydration activation, or
+expiry scheduler. Legacy account blobs remain governed by export/deletion, and
+pending plus delivered copies of the exact old notification identifier are
+removed on launch/refresh. Focused coverage passes 30 tests and the complete
+target passes 4,169 unique tests / 4,186 device executions. This is local
+product-coherence evidence only. Upgrade cleanup still needs physical-device
+proof, all five external artifacts remain missing, and Roleplay same-objection
+retry continuity is now the next bounded local adaptation gap.
+
 Progress-eligibility hardening at `eaf2f31c` closes the split boundary between
 Review persistence and earned effects. Raw transport-valid captures remain in
 history, while every explicit finalizer, reactive manager, coaching/recommendation
@@ -15,10 +27,7 @@ Prep readiness read, and retention KPI requires at least three words and three
 finite seconds and rejects evaluation fixtures. Focused selections pass 25 and
 30 tests, and the complete target passes 4,166 unique tests / 4,183 device
 executions. This is local progress/coaching integrity, not external product
-evidence. The next verified local lifecycle gap is the retired Daily Challenge:
-its UI is unreachable, but its manager and notification paths still operate and
-can revoke earlier unclaimed readiness. Roleplay same-objection retry continuity
-remains the next bounded coaching-adaptation gap after that.
+evidence. Daily Challenge's later operational retirement is recorded above.
 
 Microphone-stop duration provenance at `9088fdc3` gives Timed, Ah Counter,
 Impromptu, Mini-drill, Pressure Drill, persisted practice evidence, pitch

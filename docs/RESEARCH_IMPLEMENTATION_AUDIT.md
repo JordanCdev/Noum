@@ -5,7 +5,20 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-15
 
 Committed implementation inspected through:
-`eaf2f31c`
+`9bc93a23`
+
+At `9bc93a23`, the retired Daily Challenge surface can no longer produce
+invisible rewards, mutate readiness after a rep, or advertise unreachable work.
+Production has no tile construction site, manager session subscription,
+appearance/finalizer trigger, account-lifecycle activation, or expiry scheduler.
+The compatibility manager initializes without side effects. Legacy
+`noum.dailyChallenges.*` data remains covered by account export and deletion,
+and historical XP/League awards are preserved. Launch and passive notification
+refresh remove pending and delivered requests for only the exact retired
+identifier. Focused retirement/Home/account coverage passes 30 tests; the full
+target passes 4,169 unique tests / 4,186 device executions with zero failures or
+skips. This is local lifecycle integrity, not physical upgrade proof or an
+external artifact, and it earns no readiness point.
 
 At `eaf2f31c`, raw Review persistence and earned progress have one explicit
 boundary. Non-empty transport-valid captures remain inspectable, but sub-three-
@@ -652,13 +665,12 @@ fixture IDs fail closed, and all 109 traces carry the current commit and coach
 fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
 
-At `eaf2f31c`, the highest-impact progress-provenance gap is closed without
-hiding raw Review history. The next verified local lifecycle gap is the retired
-Daily Challenge system: the tile has no production construction site, while its
-manager and notification scheduling remain operational and a later miss can
-replace earlier unclaimed readiness. After that, Roleplay's “same objection,
-slower” retry copy still needs to retain the actual objection rather than select
-a fresh one. Neither local correction would earn an external readiness point.
+At `9bc93a23`, the retired Daily Challenge lifecycle is operationally closed
+without revoking historical progress or weakening account-data governance. The
+next verified local gap is Roleplay's “same objection, slower” retry: current
+feedback promises continuity while the advance path excludes used objections
+and selects a fresh one. Fixing that bounded local adaptation defect would not
+earn an external readiness point.
 
 At `ab5b6aaa`, the highest-impact locally executable goal-action gap is closed:
 an established, qualified, style-compatible goal target can select and

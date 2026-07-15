@@ -1,5 +1,34 @@
 # Noum — Current state
 
+## 2026-07-15 — Retired Daily Challenge lifecycle is operationally closed
+
+Implementation commit `9bc93a23` closes the split between Home's explicit
+Daily Challenge retirement and the feature's remaining background behavior.
+No production surface constructs `DailyChallengeTile`, and app appearance,
+session finalization, and account hydration no longer generate, recompute, or
+subscribe to challenge state. `DailyChallengesManager` now initializes without
+side effects. The dormant model, generator, and tile remain compatibility
+scaffolding only; they are not a shipping reward path.
+
+The `noum.dailyChallenges.*` account-data rule remains registered so legacy
+blobs are still included in account export and deletion without instantiating
+the manager. Previously awarded XP and League activity are not revoked. The
+expiry scheduler and its misleading claim/copy paths are removed. On launch and
+every passive notification refresh, Noum removes pending and delivered requests
+for the exact legacy `noum.daily.challengeExpiry` identifier while leaving every
+unrelated notification untouched.
+
+Focused retirement, Home-gate, and account-data verification passes **30/30**.
+The complete `NoumTests` target passes **4,169 unique tests / 4,186 device
+executions** with zero failures or skips on the iPhone 17 Pro / iOS 26.5
+simulator. Xcode recovered from one transient simulator-clone launch denial;
+the authoritative result bundle is Passed. This was a logic-only retirement,
+so no screenshot sweep was created. Upgrade cleanup of a real previously armed
+notification remains physical-device/TestFlight evidence. Production readiness
+remains **NO-GO at 18/100 with 0/5 required external artifacts**. The next
+verified local gap is Roleplay's “same objection, slower” branch, which promises
+continuity but selects a fresh objection.
+
 ## 2026-07-15 — Review-only captures no longer manufacture progress
 
 Implementation commit `eaf2f31c` makes `PracticeProgressEligibility` the
@@ -2494,6 +2523,9 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   when status is authorized/provisional/ephemeral. The hard system
   prompt is reserved for the explicit `set*Enabled(true)` toggles
   fired from the pre-prompt sheet.
+- The retired `noum.daily.challengeExpiry` request is never re-armed.
+  Launch and passive refresh remove pending and delivered copies of that exact
+  identifier as one-way upgrade cleanup; unrelated requests are preserved.
 - `Noum/Noum/NotificationCopy.swift` — lock-screen-safe streak-aware
   copy. Title/body adapts to streak length, freezes available, and
   reps today.
@@ -2740,21 +2772,14 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   `AppDestination.timedPracticePrompt(token:)`. `SessionFinalizer` triggers
   evaluation after each session. Catalog covers ~142 days; needs growth
   to ~365 to satisfy the "no repeats inside a year" target.
-- **Daily challenges (M8)** — `DailyChallenge.swift` defines 8 strict
-  challenge kinds keyed to real `PracticeSession` fields (held pause
-  ≥ 3s unfilled, zero-filler rep ≥ 14 words, score ≥ 8/10, etc.).
-  `DailyChallengeGenerator` returns a deterministic 3-of-8 trio per
-  ISO date via Splitmix64 — same day produces same trio across launches.
-  `DailyChallengesManager` (per-account, `@MainActor`) auto-rolls at
-  midnight, re-evaluates after each session via the SessionStore
-  subscription, and exposes `readyToClaim` for tile state. Claim is
-  user-tap-only; XP awarded via `ProfileManager.shared.addXP`. 9pm
-  local soft-expiry switches the tile to a faded treatment (no shame)
-  but stays claimable until midnight. `DailyChallengeTile` is the
-  third card on populated home, between `DailyGoalCard` and
-  `streakCard`. `SessionFinalizer` triggers `ensureForToday()` +
-  `recomputeReady()` after every finalize. Per-device claim state —
-  not synced across devices yet.
+- **Daily challenges (M8, retired)** — the historical model, deterministic
+  generator, manager API, and tile source remain as dormant compatibility
+  scaffolding. Home hard-disables the card even for developer override;
+  production has no tile construction site, manager subscription, finalizer or
+  appearance trigger, account-lifecycle activation, or expiry scheduler.
+  Legacy account blobs remain exportable/deletable and historical awarded XP
+  and League activity remain intact. Reintroduction would require a separate
+  goal-linkage and evidence-fairness decision; it is not M14 work.
 - **First-rep celebration** — full-screen overlay + share sheet on
   the user's first finished rep. Persists per-account.
 - **XP / levels / ranks** — XP persistent per-account, levels derived
@@ -3114,11 +3139,11 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   prose. The picker no longer renders this verbatim, but the underlying
   input quality means goal text shouldn't be embedded into UI without
   a paraphrase pass.
-- **Daily challenge — resolved (2026-05-21, commit `faa84e6`)** —
-  M16 daily-rhythm v1 replaced the single tile with 3 rotating
-  challenges, deterministic daily reset (FNV-1a hash fixing M8's
-  silent randomised-Hasher bug), and an 8:30 PM expiry warning
-  notification. Pool grew 8 → 30 challenges.
+- **Daily challenge — retired (2026-07-15, commit `9bc93a23`)** —
+  the rotating pool remains readable as compatibility source, but Home,
+  finalization, account hydration, reactive session observation, and expiry
+  notification scheduling are operationally closed. Exact legacy notification
+  cleanup runs on upgrade without touching unrelated requests.
 - **`AISettingsManager` is referenced but lives inside
   `PracticeSupport.swift`** — that file is 7,800+ lines and a
   long-term refactor target.
