@@ -51921,7 +51921,7 @@ struct RoleplayEngineTests {
 
     // MARK: Response scoring
 
-    @Test func directEvidencedResponseScoresHigherThanRamblingFillerResponse() {
+    @Test func directEvidencedResponseScoresHigherThanRamblingHedgedResponse() {
         let rubric = RoleplayCatalog.interview.rubric
         let strong = "We shipped it two weeks late because the vendor missed a component deadline, specifically the sensor batch."
         let weak = "Um, I guess, like, maybe it was kind of, sort of, actually late, I think, not sure why."

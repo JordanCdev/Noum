@@ -94,6 +94,7 @@ struct RoleplayView: View {
                 .accessibilityIdentifier("roleplay.end")
             }
         }
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
     }
 
     // MARK: Persona header

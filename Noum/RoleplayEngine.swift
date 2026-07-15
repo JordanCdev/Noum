@@ -67,9 +67,12 @@ enum RoleplayEngine {
 
     // MARK: Response scoring
 
+    // Roleplay turns do not retain finalized duration, so they cannot apply
+    // the shared quantity-qualified fillers-per-minute contract honestly.
+    // Keep filler evidence out of pressure-ladder scoring until that durable
+    // measurement contract exists.
     struct ResponseSignals: Equatable {
         var wordCount: Int
-        var fillerRatio: Double
         var hedgeCount: Int
         var hasEarlyDirectAnswer: Bool
         var evidenceMarkerCount: Int
@@ -79,7 +82,6 @@ enum RoleplayEngine {
         var questionSignalCount: Int
     }
 
-    static let fillerWords: Set<String> = ["um", "uh", "like", "basically", "actually", "literally", "sort", "kind"]
     static let hedgePhrases: [String] = ["i think", "i guess", "maybe", "not sure", "kind of", "sort of", "probably"]
     static let evidenceMarkers: [String] = ["because", "for example", "specifically", "last quarter", "last month", "the data", "%"]
     static let acknowledgementMarkers: [String] = [
@@ -106,7 +108,6 @@ enum RoleplayEngine {
         guard !words.isEmpty else {
             return ResponseSignals(
                 wordCount: 0,
-                fillerRatio: 0,
                 hedgeCount: 0,
                 hasEarlyDirectAnswer: false,
                 evidenceMarkerCount: 0,
@@ -116,9 +117,6 @@ enum RoleplayEngine {
                 questionSignalCount: 0
             )
         }
-
-        let fillerCount = words.filter { fillerWords.contains($0) }.count
-        let fillerRatio = Double(fillerCount) / Double(words.count)
 
         let hedgeCount = hedgePhrases.reduce(into: 0) { count, phrase in
             if normalized.contains(phrase) { count += 1 }
@@ -150,7 +148,6 @@ enum RoleplayEngine {
 
         return ResponseSignals(
             wordCount: words.count,
-            fillerRatio: fillerRatio,
             hedgeCount: hedgeCount,
             hasEarlyDirectAnswer: hasEarlyDirectAnswer,
             evidenceMarkerCount: evidenceMarkerCount,
@@ -186,7 +183,6 @@ enum RoleplayEngine {
 
         var directness = signals.hasEarlyDirectAnswer ? 0.75 : 0.35
         if signals.wordCount < 5 { directness -= 0.25 }
-        directness -= min(0.3, signals.fillerRatio * 2)
         directness = clamp(directness)
 
         var evidence = Double(signals.evidenceMarkerCount) * 0.3
@@ -195,7 +191,6 @@ enum RoleplayEngine {
 
         var composure = 1.0
         composure -= min(0.5, Double(signals.hedgeCount) * 0.2)
-        composure -= min(0.3, signals.fillerRatio * 1.5)
         composure = clamp(composure)
 
         var listening = Double(signals.acknowledgementMarkerCount) * 0.4

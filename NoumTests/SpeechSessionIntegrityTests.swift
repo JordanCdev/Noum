@@ -220,6 +220,35 @@ struct SpeechSessionIntegrityTests {
         #expect(!lesson.contains("asyncAfter(deadline: .now() + 0.6)"))
     }
 
+    @Test("Every speech surface explains a cloud-to-device startup fallback")
+    func everySpeechSurfacePresentsStartupFallbackNotice() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let surfaces = [
+            ("Timed Practice", "Noum/TimedPracticeView.swift", "speechVM"),
+            ("Pressure Drill", "Noum/SuddenDeathPracticeView.swift", "speechVM"),
+            ("Filler Control", "Noum/AhCounterView.swift", "speechVM"),
+            ("Conversation", "Noum/IMPracticeView.swift", "speechVM"),
+            ("Cut the Crutch", "Noum/CutTheCrutchView.swift", "speechVM"),
+            ("Pace Training", "Noum/PaceTrainingView.swift", "speechVM"),
+            ("Roleplay", "Noum/RoleplayView.swift", "speechVM"),
+            ("Mini-drill", "Noum/MiniDrillView.swift", "speechVM"),
+            ("Lesson Apply", "Noum/LessonView.swift", "speech"),
+        ]
+
+        for (name, path, recognizer) in surfaces {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(path),
+                encoding: .utf8
+            )
+            #expect(
+                source.contains(".transcriptionRouteNotice(\(recognizer).transcriptionRouteNotice)"),
+                Comment(rawValue: name)
+            )
+        }
+    }
+
     @Test("Lifecycle exposes one truthful readiness and finalization sequence")
     func recordingLifecycleContract() {
         let completed = FinalizedTranscript(

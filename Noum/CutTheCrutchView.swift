@@ -114,6 +114,7 @@ struct CutTheCrutchView: View {
         .sheet(isPresented: $showAdjustments) {
             crutchAdjustSheet
         }
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
     }
 
     private func handlePhase(_ phase: CutTheCrutchPhase) {

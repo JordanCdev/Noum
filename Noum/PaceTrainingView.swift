@@ -78,6 +78,7 @@ struct PaceTrainingView: View {
         .sheet(isPresented: $showAdjustments) {
             paceAdjustSheet
         }
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
     }
 
     // MARK: - Content Router
