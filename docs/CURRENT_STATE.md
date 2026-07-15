@@ -1,5 +1,28 @@
 # Noum — Current state
 
+## 2026-07-15 — Review progress evidence excludes Review-only captures
+
+Implementation commit `cb5f0327` closes the remaining Review-side split
+between inspectable saved history and progress-bearing evidence. Review story
+depth and latest-rep navigation, every highlight selector, and the 30-day
+development-chart gate now reuse the established progress-eligibility policy.
+The parent page and chart card share one pure scored-session projection, so two
+measured reps plus a thin saved capture can no longer select a chart branch
+that renders empty. Raw All Reps history, exact detail routing, export, and
+deletion remain unchanged.
+
+The deterministic too-few-word, sub-three-second, non-finite, and evaluation-
+fixture matrix passes inside a focused **48/48** selection. The complete
+`NoumTests` target passes **4,184 unique tests / 4,201 device executions** with
+zero failures or skips on the NoumCleanTest / iOS 26.5 simulator; Xcode
+recovered from one transient parallel-clone launch denial and the authoritative
+result bundle is Passed. A fresh light five-tab sweep renders the ordinary
+valid-evidence Review shell cleanly, but does not force or prove the mixed
+invalid-history state. Terminal Roleplay next-attempt guidance remains the next
+verified local candidate. No required external artifact was collected, so
+production readiness remains **NO-GO at 18/100 with 0/5 required external
+artifacts**.
+
 ## 2026-07-15 — Profile coaching evidence excludes Review-only captures
 
 Implementation commit `8ec313c9` closes the remaining Profile-side split
@@ -16,9 +39,9 @@ focused **44/44** selection. The complete `NoumTests` target passes **4,177
 unique tests / 4,194 device executions** with zero failures or skips on the
 NoumCleanTest / iOS 26.5 simulator; Xcode recovered from one transient
 parallel-clone launch denial and the authoritative result bundle is Passed.
-This proves local evidence-boundary behavior only. The narrower Review
-story/chart projection leak and terminal Roleplay next-attempt copy remain
-verified follow-ups, and no physical-device, live-provider, professional,
+This proves local evidence-boundary behavior only. The later Review projection
+closure is recorded above; terminal Roleplay next-attempt copy remains the
+verified follow-up, and no physical-device, live-provider, professional,
 longitudinal, or launch artifact was collected. Production readiness remains
 **NO-GO at 18/100 with 0/5 required external artifacts**.
 
