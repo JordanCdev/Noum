@@ -7,6 +7,17 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Roleplay completion truthfulness at `c4376973` makes terminal state describe
+the pressure rung actually attempted. The existing engine now returns the next
+pressure level and objection as one atomic transition; the fourth attempt and
+missing-objection paths complete before either prospective value can become UI
+state. Pre-terminal retry, novelty, and ladder behavior are unchanged, and the
+summary now says “Final attempted pressure.” Focused verification passes 55
+tests and the complete target passes 4,175 unique tests / 4,192 device
+executions. This is local deterministic integrity only; microphone-driven
+rendering and all five required external artifacts remain unproved, so
+production readiness remains NO-GO at 18/100.
+
 Roleplay retry continuity at `af923c00` makes the pressure ladder honor its
 own adaptive promise. A weak easy-level attempt now repeats the exact objection
 already heard, deliberately bypassing the account-wide novelty filter only for

@@ -1,5 +1,25 @@
 # Noum — Current state
 
+## 2026-07-15 — Roleplay completion preserves the pressure actually attempted
+
+Implementation commit `c4376973` closes a terminal-state truthfulness gap in
+Roleplay's existing adaptive ladder. `RoleplayEngine` now resolves the next
+pressure rung and objection as one atomic transition. The fourth and final
+attempt, or a transition with no available next objection, enters completion
+without mutating `currentLevel`, so the pressure chip and “Final attempted
+pressure” summary remain bound to the rung the learner actually faced rather
+than a recommendation for a future retry. Pre-terminal level-up, level-down,
+fresh-objection, and exact-objection retry behavior remains unchanged.
+
+Focused Roleplay, interpersonal-axis, filler-fairness, and shared first-session
+verification passes **55/55**. The complete `NoumTests` target passes **4,175
+unique tests / 4,192 device executions** with zero failures or skips on the
+iPhone 17 Pro / iOS 26.5 simulator. This proves deterministic local transition
+and completion-state integrity only. The microphone-driven rendered completion,
+physical-device behavior, coaching effectiveness, and every required external
+artifact remain unproved. Production readiness remains **NO-GO at 18/100 with
+0/5 required external artifacts**.
+
 ## 2026-07-15 — Roleplay retry now preserves the promised objection
 
 Implementation commit `af923c00` closes the split between Roleplay's adaptive
