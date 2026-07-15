@@ -1972,7 +1972,7 @@ extension PracticeSession {
                 aiCoachFeedback,
                 transcript: transcript
               ),
-              !AICoachService.containsUnverifiedAttributedQuote(
+              AICoachService.hasQuoteIntegrity(
                 aiCoachFeedback,
                 transcript: transcript
               ) else { return nil }
@@ -9156,7 +9156,7 @@ final class PracticeSessionStore: ObservableObject {
                 feedback,
                 transcript: liveSession.transcript
               ),
-              !AICoachService.containsUnverifiedAttributedQuote(
+              AICoachService.hasQuoteIntegrity(
                 feedback,
                 transcript: liveSession.transcript
               ) else { return nil }
@@ -13890,7 +13890,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
 @MainActor
 struct AICoachService: AICoachServicing {
-    static let minimumTranscriptWordCount = 10
+    nonisolated static let minimumTranscriptWordCount = 10
 
     private let settings = AISettingsManager.shared
 
@@ -14071,11 +14071,11 @@ struct AICoachService: AICoachServicing {
             // shared transcript guard cannot verify. This includes proposed
             // drill/opening prose without mistaking an unattributed example for
             // words the speaker actually used.
-            guard !Self.containsUnverifiedAttributedQuote(
+            guard Self.hasQuoteIntegrity(
                 feedback,
                 transcript: input.transcript
             ) else {
-                record(.fallback, "Coach Read failed attributed-quote gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                record(.fallback, "Coach Read failed quote-integrity gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return fallback
             }
             // Transcript-grounding gate (mirrors PostRepCoachNoteService
@@ -14387,21 +14387,39 @@ struct AICoachService: AICoachServicing {
 
     /// The first sentence-like span of the transcript, trimmed, when it is
     /// long enough to quote (>= 10 chars, the `openerAnchoredSentence` floor).
-    /// Returns nil otherwise so the fallback never fabricates a quote.
+    /// When a full eligible rep starts with a short acknowledgement ("Yes."),
+    /// the leading ten-word window becomes the source quote instead. Truly
+    /// short transcripts still return nil, so the fallback never fabricates.
     private nonisolated static func openerAnchor(in transcript: String) -> String? {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        // First sentence: split on . ! ? — fall back to a leading word window.
+        // Prefer the first sentence so the quote keeps its natural boundary.
         let firstSentence = trimmed
             .split(whereSeparator: { $0 == "." || $0 == "!" || $0 == "?" })
             .first
             .map(String.init)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? trimmed
-        // Cap to a short opener span (first ~10 words) so the quote stays tight.
-        let words = firstSentence.split(whereSeparator: \.isWhitespace).prefix(10)
-        let opener = words.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard opener.count >= 10 else { return nil }
-        return opener
+        let sentenceOpener = firstSentence
+            .split(whereSeparator: \.isWhitespace)
+            .prefix(10)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if sentenceOpener.count >= 10 {
+            return sentenceOpener
+        }
+
+        // A short first sentence is not evidence that the whole eligible rep
+        // lacks a quote. Fall back only when the complete transcript clears the
+        // same ten-word provider floor; this preserves nil for short overall
+        // captures while allowing "Yes. I'm …" to save deterministically.
+        let fullWords = trimmed.split(whereSeparator: \.isWhitespace)
+        guard fullWords.count >= minimumTranscriptWordCount else { return nil }
+        let leadingWindow = fullWords
+            .prefix(10)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard leadingWindow.count >= 10 else { return nil }
+        return leadingWindow
     }
 
     /// Per-voice quoted-opener strength (mirrors
@@ -14536,16 +14554,49 @@ struct AICoachService: AICoachServicing {
         }
     }
 
+    /// Integrity half of the quote boundary. Observational fields may only use
+    /// exact transcript quotes, even when the model omits an explicit "you
+    /// said" attribution. Proposed drill/opening language may contain new
+    /// examples, but the shared attribution-aware guard still rejects any field
+    /// that presents an unverified quote as the speaker's actual words.
+    nonisolated static func hasQuoteIntegrity(
+        _ feedback: AICoachFeedback,
+        transcript: String
+    ) -> Bool {
+        let context = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let observationalQuotes = (feedback.strengths + [feedback.keyImprovement])
+            .flatMap { AICoachChatService.quotedFragments(in: $0) }
+        return observationalQuotes.allSatisfy(context.verifies)
+            && !containsUnverifiedAttributedQuote(
+                feedback,
+                transcript: transcript
+            )
+    }
+
     private nonisolated static func removingVerifiedQuotes(
         from text: String,
         transcript: String
     ) -> String {
         let context = CoachChatQuoteGuardContext(transcripts: [transcript])
-        return AICoachChatService.quotedFragments(in: text)
+        let verifiedFragments = AICoachChatService.quotedFragments(in: text)
             .filter(context.verifies)
-            .reduce(text) { partial, quote in
-                partial.replacingOccurrences(of: quote, with: "")
+        let delimiters = [
+            (open: "\"", close: "\""),
+            (open: "'", close: "'"),
+            (open: "“", close: "”"),
+            (open: "‘", close: "’"),
+        ]
+        return verifiedFragments.reduce(text) { partial, quote in
+            delimiters.reduce(partial) { masked, delimiter in
+                // Remove only the verified delimited occurrence. Replacing the
+                // bare fragment globally can also erase the same words outside
+                // the quote, allowing an unsupported mechanic claim to survive.
+                masked.replacingOccurrences(
+                    of: "\(delimiter.open)\(quote)\(delimiter.close)",
+                    with: ""
+                )
             }
+        }
     }
 
     private nonisolated static func containsUnownedMechanicObservation(_ text: String) -> Bool {
@@ -14581,11 +14632,23 @@ struct AICoachService: AICoachServicing {
             }
         }
 
-        let paceTerm = #"(?:pace|pacing|wpm|words?\s+per\s+minute|tempo|cadence|speed|fast(?:er|est)?|slow(?:er|est|ly)?|quick(?:er|est|ly)?|brisk(?:er|est|ly)?|rapidly|rushed|rushing|hurried|drag(?:ged|ging|s)?|sped\s+up|slowed\s+down)"#
-        let paceMention = containsRegex(
-            #"\b\#(paceTerm)\b"#,
+        let explicitPaceTerm = #"(?:pace|pacing|wpm|words?\s+per\s+minute|tempo|cadence)"#
+        let ambiguousSpeedTerm = #"(?:fast(?:er|est)?|slow(?:er|est|ly)?|quick(?:er|est|ly)?|brisk(?:er|est|ly)?|rapid(?:er|est|ly)?|rushed|rushing|hurried|drag(?:ged|ging|s)?|sped\s+up|slowed\s+down)"#
+        let speechSubject = #"(?:delivery|answer|rep|opening|opener|close|closing|ending)"#
+        let historyComparison = containsRegex(
+            #"\b(?:than\s+(?:before|(?:(?:your|the)\s+)?(?:usual|last|prior|previous|recent)(?:\s+rep)?)|compared\s+(?:with|to)|relative\s+to\s+(?:(?:your|the)\s+)?(?:usual|last|prior|previous|recent)(?:\s+rep)?|since\s+(?:(?:your|the)\s+)?(?:last|prior|previous)(?:\s+rep)?)\b"#,
             in: normalized
         )
+        let paceMention = containsRegex(
+            #"\b\#(explicitPaceTerm)\b"#,
+            in: normalized
+        ) || containsRegex(
+            #"\b(?:\#(speechSubject)\s+(?:(?:was|were|felt|sounded|seemed|became|got|ran|moved)\s+)?\#(ambiguousSpeedTerm)|\#(ambiguousSpeedTerm)\s+\#(speechSubject)|you\s+(?:spoke|talked|moved)\s+\#(ambiguousSpeedTerm)|you\s+were\s+\#(ambiguousSpeedTerm)\s+(?:through|during|across))\b"#,
+            in: normalized
+        ) || (historyComparison && containsRegex(
+            #"\byou\s+(?:were|felt|sounded|moved)\s+\#(ambiguousSpeedTerm)\b"#,
+            in: normalized
+        ))
         if paceMention {
             let prescription = containsRegex(
                 #"\b(?:drill|practice|try|use|add|pause|slow\s+down|speed\s+up|next\s+rep|next\s+time|aim|target|make|keep|choose|deliver|open|finish|repeat|rehearse|should|could)\b"#,
@@ -14595,11 +14658,7 @@ struct AICoachService: AICoachServicing {
                 #"\b(?:was|were|felt|sounded|measured|average|spoke|talked|accelerated|slowed|quickened|stayed|held|ran|improved|worsened|dragged|became|seemed)\b"#,
                 in: normalized
             )
-            let comparison = containsRegex(
-                #"\b\#(paceTerm)\b[^.!?]{0,48}\b(?:than\s+(?:usual|before|last|prior|previous|recent)|compared\s+(?:with|to)|since\s+(?:the\s+)?(?:last|prior|previous)|improved|worsened)\b"#,
-                in: normalized
-            )
-            if comparison || !prescription || observation { return true }
+            if historyComparison || !prescription || observation { return true }
         }
 
         return false

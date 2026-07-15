@@ -2,7 +2,7 @@
 
 ## Current production-closure continuation — 2026-07-15
 
-Current work is on `ux-overhaul`, based on committed HEAD `7e6c430d`, with a
+Current work is on `ux-overhaul`, based on committed HEAD `70922d8a2`, with a
 deliberately dirty shared worktree containing this bounded production-closure
 slice. The May M15 brief below remains historical context; do not use its
 branch, merge, or completion claims as current instructions.
@@ -12,17 +12,23 @@ premium persisted Coach Read using the existing session, baseline, and coaching
 owners. Generation resolves the identified saved row and exposes transcript,
 prompt, mode, score, duration, and score-only continuity while deliberately
 withholding filler/WPM/pace mechanics from free-form provider and fallback
-prose. Qualified mechanics remain in deterministic Summary components.
+prose. Derivative strengths/blockers, clutch-word history, and filler/pace
+pressure reads are withheld too; qualified mechanics remain in deterministic
+Summary components.
 
-Provider output fails closed for invented current or historical mechanics and
-fabricated transcript quotes. An account-scoped full-source token is captured
+Provider output fails closed for invented current or historical mechanics,
+common filler/speed aliases, and fabricated transcript quotes. Required quote
+presence and quote integrity are separate: every observational quote and every
+attributed quote in any field is checked, while legacy safe nonquoted reads
+remain available. Contraction-safe deterministic quotes keep the offline save
+path viable. An account-scoped full-source token is captured
 before the asynchronous request; the store atomically rechecks it, revalidates
 the output, persists, and returns the saved value. Summary and both Review
 replay paths selectively hide unsupported legacy mechanic prose without
 deleting grounded nonmetric coaching.
 
-Focused verification passes 47 unique tests / 49 device executions. The
-complete unsigned simulator unit target passes 4,311 unique tests / 4,330
+Focused verification passes 56 unique tests / 58 device executions. The
+complete unsigned simulator unit target passes 4,320 unique tests / 4,339
 device executions with zero failures or skips, and the current-source unsigned
 Release simulator build succeeds. The light five-tab sweep is
 still blocked before tab content by the normal guest account-save failure; see

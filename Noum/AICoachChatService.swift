@@ -6582,7 +6582,10 @@ actor AICoachChatService {
         "you put it", "your line", "you opened with", "your opening line",
         "you closed with", "your closing line", "you mentioned",
         "you talked about", "you described", "you argued",
-        "your exact words", "your phrasing", "your wording"
+        "your exact words", "your phrasing", "your wording",
+        "from your answer", "from your rep", "from your transcript",
+        "line you used", "phrase you used", "words you used",
+        "wording you used"
     ]
 
     /// VERBATIM-claim subset, used by Gate 1 (the no-quote presence check). A

@@ -165,6 +165,7 @@ struct GeneratedCoachReadMetricEvidenceTests {
         baseline.durationTendency = stat(48)
         baseline.averageScore = stat(7.2)
         baseline.structureQuality = stat(2.6)
+        baseline.clutchWordFrequencies = ["um": stat(2.4)]
         baseline.topStrengths = ["Filler control", "Pace control", "Cadence stability", "Structure"]
         baseline.persistentBlockers = ["Filler words", "Tempo control", "Opening strength"]
 
@@ -198,6 +199,9 @@ struct GeneratedCoachReadMetricEvidenceTests {
         #expect(coachReadContext.contains("answers are 20s shorter"))
         #expect(coachReadContext.contains("score drops by 3.0 points"))
         #expect(!coachReadContext.contains("Pressure resilience:"))
+        #expect(!coachReadContext.contains("Verbal habits"))
+        #expect(!coachReadContext.contains("\"um\""))
+        #expect(!coachReadContext.contains("~2.4x/session"))
         for forbidden in ["filler", "pace", "pacing", "wpm", "tempo", "cadence"] {
             #expect(!mechanicFree.contains(forbidden))
         }
@@ -211,6 +215,7 @@ struct GeneratedCoachReadMetricEvidenceTests {
         #expect(generalContext.contains("Pace: 132 WPM"))
         #expect(generalContext.contains("Consistent strengths: Filler control, Pace control, Cadence stability, Structure"))
         #expect(generalContext.contains("Persistent blockers: Filler words, Tempo control, Opening strength"))
+        #expect(generalContext.contains("Verbal habits (clutch words): \"um\" (~2.4x/session)"))
         #expect(generalContext.contains("Pressure resilience:"))
         #expect(generalContext.contains("Most affected under pressure: Speaking pace"))
         #expect(generalContext.contains("Your filler rate jumps"))

@@ -14,18 +14,25 @@ Coach Read generation now resolves that exact persisted row, carries only
 transcript, prompt, mode, score, duration, and score-only continuity, and
 withholds filler/WPM/pace mechanics from both provider and deterministic
 free-form prose. Deterministic Summary components remain the owner of qualified
-mechanic facts.
+mechanic facts. Mechanic-free baseline context also excludes derivative
+strengths/blockers, clutch-word history, pressure resilience, and filler/pace
+pressure reads while retaining independent score, duration, and structure.
 
 Provider output must contain a transcript-verifiable quote and is rejected for
-invented current or historical mechanics. An account-scoped, full-source
+invented current or historical mechanics, including common filler aliases and
+speech-scoped speed comparisons. Observational quotes must all verify, while
+attributed quotes in suggested drills and revised openings are checked through
+the same shared quote owner. Legacy replay applies quote integrity without
+requiring a historical read to contain a quote; the deterministic fallback now
+uses contraction-safe delimiters. An account-scoped, full-source
 compare-and-swap token closes the asynchronous save race; the store revalidates
 the response before persistence and Summary renders only the returned saved
 value. Summary and Review selectively hide unsafe legacy mechanic prose while
 retaining grounded nonmetric coaching.
 
-Focused verification passes 47 unique tests / 49 device executions across the
+Focused verification passes 56 unique tests / 58 device executions across the
 new boundary and shared regressions. The complete unsigned simulator
-`NoumTests` target passes 4,311 unique tests / 4,330 device executions with zero
+`NoumTests` target passes 4,320 unique tests / 4,339 device executions with zero
 failures or skips, and the current-source unsigned Release simulator build
 succeeds. The earlier light five-tab sweep remains blocker evidence,
 not visual proof: normal guest bootstrap stopped every deep link at the

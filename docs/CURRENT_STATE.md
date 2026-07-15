@@ -8,22 +8,32 @@ store. Generation resolves the identified persisted row and carries only its
 transcript, prompt, mode, score, and duration; recent continuity is score-only,
 and baseline context deliberately omits filler, WPM, pace, tempo, and cadence
 mechanics from this free-form surface. The deterministic fallback follows the
-same boundary.
+same boundary. The omission includes derivative strengths/blockers, clutch-word
+occurrence history, filler/pace pressure reads, and mixed pressure resilience;
+independent score, duration, and structure context remains available.
 
 Provider output is rejected if it invents current or historical mechanics,
 turns filler evidence into a pace claim, or quotes words absent from the exact
-transcript. Generic prescriptions remain available. The store issues an
+transcript. The quarantine covers common filler aliases and speech-scoped speed
+comparisons without treating semantic content or prospective drills as measured
+pace. Required quote presence is separate from quote integrity: observational
+quotes must verify, and an attributed quote in any field must match the exact
+transcript. Legacy replay applies integrity without requiring old safe reads to
+contain a quote. Contraction-safe deterministic quotes keep the offline path
+persistable. Generic prescriptions remain available. The store issues an
 account-scoped source revision before the asynchronous request, atomically
 rechecks every source field before persistence, revalidates the output, and
 returns only the value that was actually saved. Summary and Review replay the
 same safe projection: unsupported legacy mechanic prose is hidden while
 grounded nonmetric coaching remains available.
 
-Focused verification passes **47 unique tests / 49 device executions** across
+Focused verification passes **56 unique tests / 58 device executions** across
 generated Coach Read, shared post-rep evidence, filler fairness, and Coach Read
-parity. The complete unsigned simulator `NoumTests` target passes **4,311
-unique tests / 4,330 device executions** with zero failures or skips. The
-current-source unsigned Release simulator build also succeeds. This is still a
+parity. The complete unsigned simulator `NoumTests` target passes **4,320
+unique tests / 4,339 device executions** with zero failures or skips. The
+result bundle is Passed after Xcode recovered from a transient second-clone
+launch denial. The current-source unsigned Release simulator build also
+succeeds. This is still a
 bounded trust closure: the qualitative Summary delivery line, durable
 CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum session
 opener, share/request-feedback WPM, Proof Moment generation, Forward Plan

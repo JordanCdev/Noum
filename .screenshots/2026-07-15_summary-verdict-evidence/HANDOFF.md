@@ -1,4 +1,4 @@
-# Run: 2026-07-15 · branch:ux-overhaul · base HEAD 7e6c430d · exact-session Summary and Coach Read evidence
+# Run: 2026-07-15 · branch:ux-overhaul · base HEAD 70922d8a2 · exact-session Summary and Coach Read evidence
 
 ## Mode
 
@@ -32,6 +32,7 @@ All five final PNGs were visually inspected. Each normal `-DeepLink` launch rend
 ## VISION gap
 
 Summary can no longer borrow another rep's filler/WPM mechanics or begin lifecycle effects without the identified eligible saved row. Premium Coach Read can no longer invent free-form filler/pace observations, attach an asynchronous response to a changed source, or persist a fabricated transcript quote. Product-wide closure remains incomplete: the qualitative Summary delivery line, durable CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum session opener, share/request-feedback WPM, Proof Moment generation, Forward Plan inputs, and other durable narrative/reward consumers still need the same provenance boundary. The normal unsigned-simulator bootstrap also prevented any truthful tab-level visual proof in this run.
+Its prompt now withholds derivative baseline/clutch-word/pressure mechanics, and provider, save, and replay boundaries distinguish required quote presence from all-field quote integrity. These are local deterministic protections, not visual or live-provider proof.
 
 ## Next steps to reach desired state
 
@@ -43,8 +44,8 @@ Summary can no longer borrow another rep's filler/WPM mechanics or begin lifecyc
 ## Regressions checked
 
 - Summary evidence selection — 58/58 passes in `.build-roleplay-terminal/Focused-SummaryEvidence-final-all-retry.xcresult`.
-- Generated Coach Read/shared evidence selection — 47 unique tests / 49 device executions, zero failures and zero skips, in `.build-roleplay-terminal/Focused-GeneratedCoachRead-Commit-final-20260715.xcresult`.
-- Complete unsigned unit target — 4,311 unique tests / 4,330 device executions, zero failures and zero skips, in `.build-roleplay-terminal/Full-NoumTests-Commit-20260715.xcresult`.
+- Generated Coach Read/shared evidence selection — 56 unique tests / 58 device executions, zero failures and zero skips, in `.build-roleplay-terminal/Focused-GeneratedCoachRead-Commit-final2-20260715.xcresult`.
+- Complete unsigned unit target — 4,320 unique tests / 4,339 device executions, zero failures and zero skips, in `.build-roleplay-terminal/Full-NoumTests-Commit-final2-20260715.xcresult`.
 - Release — current-source unsigned Release simulator build succeeds.
 - Light five-tab navigation — attempted from the fresh Debug app; all routes were blocked before tab content by the account-bootstrap error, so no tab regression is claimed.
 - Large-file hygiene — no tracked or unignored commit candidate exceeds 95 MB; `.build-roleplay-terminal*` is ignored.

@@ -1908,14 +1908,20 @@ enum BaselineEngine {
             lines.append("Persistent blockers: \(promptBlockers.joined(separator: ", "))")
         }
 
-        // Verbal habits (clutch words)
-        let significantClutch = baseline.clutchWordFrequencies.filter { $0.value.isReliable && $0.value.value >= 1.5 }
-        if !significantClutch.isEmpty {
-            let descriptions = significantClutch
-                .sorted { $0.value.value > $1.value.value }
-                .prefix(3)
-                .map { "\"\($0.key)\" (~\(String(format: "%.1f", $0.value.value))x/session)" }
-            lines.append("Verbal habits (clutch words): \(descriptions.joined(separator: ", "))")
+        // Verbal habits are historical occurrence evidence. A custom clutch
+        // word can itself be a filler, so the whole block follows the same
+        // comparison-mechanic boundary rather than filtering by label.
+        if includeComparisonMechanics {
+            let significantClutch = baseline.clutchWordFrequencies.filter {
+                $0.value.isReliable && $0.value.value >= 1.5
+            }
+            if !significantClutch.isEmpty {
+                let descriptions = significantClutch
+                    .sorted { $0.value.value > $1.value.value }
+                    .prefix(3)
+                    .map { "\"\($0.key)\" (~\(String(format: "%.1f", $0.value.value))x/session)" }
+                lines.append("Verbal habits (clutch words): \(descriptions.joined(separator: ", "))")
+            }
         }
 
         // Pressure context
