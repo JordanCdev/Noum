@@ -1,5 +1,28 @@
 # Noum — Current state
 
+## 2026-07-15 — Roleplay retry now preserves the promised objection
+
+Implementation commit `af923c00` closes the split between Roleplay's adaptive
+feedback and its next-turn transition. When a weak easy-level response produces
+`.sameObjectionSlower`, `RoleplayEngine` now returns the exact in-memory
+objection the learner just attempted even though its stable ID is already in
+the account-wide used set. Adequate, level-up, and level-down branches continue
+to use the established fresh-selection policy at their resolved pressure rung.
+`RoleplayStore` remains the only history owner, so a retry is still recorded as
+a distinct turn without consuming another fresh objection.
+
+The correction does not claim that Noum measured slower delivery: Roleplay
+still lacks finalized duration evidence, so “slower” remains an instructional
+cue only. Focused Roleplay, interpersonal-axis, filler-fairness, and shared
+first-session verification passes **52/52**. The complete `NoumTests` target
+passes **4,172 unique tests / 4,189 device executions** with zero failures or
+skips on the iPhone 17 Pro / iOS 26.5 simulator. Xcode recovered from one
+transient simulator-clone launch denial; the authoritative result bundle is
+Passed. This proves deterministic local transition continuity only. Physical
+microphone behavior, coaching effectiveness, and every required external
+artifact remain unproved. Production readiness remains **NO-GO at 18/100 with
+0/5 required external artifacts**.
+
 ## 2026-07-15 — Retired Daily Challenge lifecycle is operationally closed
 
 Implementation commit `9bc93a23` closes the split between Home's explicit
@@ -25,9 +48,8 @@ simulator. Xcode recovered from one transient simulator-clone launch denial;
 the authoritative result bundle is Passed. This was a logic-only retirement,
 so no screenshot sweep was created. Upgrade cleanup of a real previously armed
 notification remains physical-device/TestFlight evidence. Production readiness
-remains **NO-GO at 18/100 with 0/5 required external artifacts**. The next
-verified local gap is Roleplay's “same objection, slower” branch, which promises
-continuity but selects a fresh objection.
+remains **NO-GO at 18/100 with 0/5 required external artifacts**. The later
+Roleplay retry-continuity closure is recorded above.
 
 ## 2026-07-15 — Review-only captures no longer manufacture progress
 

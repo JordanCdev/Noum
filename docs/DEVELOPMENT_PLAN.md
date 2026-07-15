@@ -7,6 +7,17 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Roleplay retry continuity at `af923c00` makes the pressure ladder honor its
+own adaptive promise. A weak easy-level attempt now repeats the exact objection
+already heard, deliberately bypassing the account-wide novelty filter only for
+`.sameObjectionSlower`; fresh, level-up, and level-down branches retain the
+existing selection policy. No new store, router, or persisted schema was added.
+Focused verification passes 52 tests and the complete target passes 4,172
+unique tests / 4,189 device executions. “Slower” remains an instructional cue,
+not measured pace evidence. This is local coaching-integrity evidence only;
+production readiness remains NO-GO at 18/100 with 0/5 required external
+artifacts.
+
 Daily Challenge retirement at `9bc93a23` resolves the next verified lifecycle
 gap without restoring a disconnected reward surface. Home and the developer
 override already kept the tile off; production now also has no manager
@@ -16,8 +27,8 @@ pending plus delivered copies of the exact old notification identifier are
 removed on launch/refresh. Focused coverage passes 30 tests and the complete
 target passes 4,169 unique tests / 4,186 device executions. This is local
 product-coherence evidence only. Upgrade cleanup still needs physical-device
-proof, all five external artifacts remain missing, and Roleplay same-objection
-retry continuity is now the next bounded local adaptation gap.
+proof, and all five external artifacts remain missing. Roleplay retry
+continuity is recorded above.
 
 Progress-eligibility hardening at `eaf2f31c` closes the split boundary between
 Review persistence and earned effects. Raw transport-valid captures remain in
