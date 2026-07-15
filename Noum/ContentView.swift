@@ -460,8 +460,6 @@ struct ContentView: View {
         .onAppear {
             bigMomentStore.archiveExpiredIfNeeded()
             dailyGoal.recompute()
-            DailyChallengesManager.shared.ensureForToday()
-            DailyChallengesManager.shared.recomputeReady()
             WordOfTheDayManager.shared.ensureForToday()
             refreshHourBucket()
             if !isEmbeddedInTabShell, let url = deepLinkRouter.pending {

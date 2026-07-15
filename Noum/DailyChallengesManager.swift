@@ -1,7 +1,6 @@
 #if canImport(SwiftUI)
 import Foundation
 import SwiftUI
-import Combine
 
 // MARK: - Daily Challenges Manager (M8)
 //
@@ -47,12 +46,11 @@ final class DailyChallengesManager: ObservableObject {
     @Published var pendingClaim: DailyChallengeKind?
 
     private let storageKeyPrefix = "noum.dailyChallenges."
-    private var sessionsSubscription: AnyCancellable?
-
-    private init() {
-        ensureForToday()
-        observeSessionStore()
-    }
+    /// Compatibility-only owner for the retired Daily Challenge surface.
+    /// Production code does not construct the tile or call this manager. Keep
+    /// initialization side-effect free so an accidental reference cannot
+    /// generate rewards, persist a new trio, or subscribe to session history.
+    private init() {}
 
     // MARK: - Public API
 
@@ -240,16 +238,6 @@ final class DailyChallengesManager: ObservableObject {
         DailyChallengeSet(dayKey: Self.todayKey(), kinds: todays, claimedKinds: claimedKinds)
     }
 
-    // MARK: - Session subscription
-
-    private func observeSessionStore() {
-        sessionsSubscription = PracticeSessionStore.shared.$sessions
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.ensureForToday()  // also rolls over date if needed
-                self?.recomputeReady()
-            }
-    }
 }
 
 #endif

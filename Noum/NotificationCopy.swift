@@ -115,42 +115,6 @@ enum NotificationCopy {
         }
     }
 
-    // MARK: - Daily challenge expiry (informational, never punish-shame)
-    //
-    // Fired at 8:30 PM local when at least one of today's three daily
-    // challenges is still unclaimed. Tone is informational — naming
-    // what's open, never threatening loss. Anti-goal-aligned with the
-    // "we never punish-shame a miss" rule from VISION: no loss-framed
-    // streak copy, no urgency language, no exclamation marks.
-    //
-    // Schedule guard: caller MUST check `unclaimedCount > 0` before
-    // arming. Firing this with zero unclaimed would be a lie — the
-    // user has already done the work.
-    static func dailyChallengeExpiry(unclaimedCount: Int) -> NotificationLine {
-        switch unclaimedCount {
-        case 1:
-            return NotificationLine(
-                title: "One quick challenge open",
-                body: "One of today's three is still claimable. A short rep before midnight unlocks it."
-            )
-        case 2:
-            return NotificationLine(
-                title: "Two quick challenges open",
-                body: "Two of today's three are still claimable. One focused rep usually clears at least one."
-            )
-        case 3:
-            return NotificationLine(
-                title: "Today's three are open",
-                body: "All three of today's challenges are still claimable. A short rep is enough to start."
-            )
-        default:
-            return NotificationLine(
-                title: "Today's challenges are open",
-                body: "Still claimable until midnight. A short rep moves them forward."
-            )
-        }
-    }
-
     // MARK: - Big Moment day-after check-in (neutral invite, never guilt)
     //
     // Fired the morning after a dated Big Moment passes. Closes the
@@ -169,18 +133,6 @@ enum NotificationCopy {
         NotificationLine(
             title: "How did your \(category.displayName) go?",
             body: "When you're ready, a short check-in tells your coach how the room felt. No rush."
-        )
-    }
-
-    /// Brief acknowledgement line when a claim lands. The home tile
-    /// already plays a celebration toast — this copy is reserved for
-    /// any future surface (notification action, watch glance) that
-    /// wants a one-line read of "you just claimed X". Living here so
-    /// the voice rules apply uniformly.
-    static func dailyChallengeClaimed(title: String, xp: Int) -> NotificationLine {
-        return NotificationLine(
-            title: "Claimed — \(title.lowercased())",
-            body: "Logged. +\(xp) XP banked."
         )
     }
 

@@ -408,7 +408,11 @@ extension AccountDataRegistry {
             participant("path-progress", [.accountKey(prefix: "noum.pathProgress.unlocked."), .accountKey(prefix: "noum.pathProgress.initialized."), .accountKey(prefix: "noum.journey.lastSeenPracticedDays.")], reload: { PathProgressManager.shared.reloadForCurrentAccount() }, end: { PathProgressManager.shared.reloadForCurrentAccount() }),
             participant("lessons", [.accountKey(prefix: "noum.lessons.progress.")], reload: { LessonStore.shared.reloadForCurrentAccount() }, end: { LessonStore.shared.reloadForCurrentAccount() }),
             participant("skill-progression", [.accountKey(prefix: "noum.skillProgression.")], reload: { SkillProgressionStore.shared.reloadForCurrentAccount() }, end: { SkillProgressionStore.shared.reloadForCurrentAccount() }),
-            participant("daily-challenges", [.accountKey(prefix: "noum.dailyChallenges.")], reload: { DailyChallengesManager.shared.reloadForCurrentAccount() }, end: { DailyChallengesManager.shared.reloadForCurrentAccount() }),
+            // Daily Challenge is retired from the production experience. Keep
+            // its key registered so legacy blobs remain exportable/deletable,
+            // but never instantiate the old reactive manager during account
+            // hydration or teardown.
+            participant("daily-challenges", [.accountKey(prefix: "noum.dailyChallenges.")], reload: {}, end: {}),
             participant("word-of-day", [.accountKey(prefix: "noum.wordOfTheDay.usedDays.")], reload: { WordOfTheDayManager.shared.reloadForCurrentAccount() }, end: { WordOfTheDayManager.shared.reloadForCurrentAccount() }),
             participant("practice-locale", [.accountKey(prefix: "noum.practiceLocale.")], reload: { LocaleSettingsManager.shared.reloadForCurrentAccount() }, end: { LocaleSettingsManager.shared.reloadForCurrentAccount() }),
             participant("roleplay", [.accountKey(prefix: "roleplayTurns.")], reload: { RoleplayStore.shared.reloadForCurrentAccount() }, end: { RoleplayStore.shared.endSession() }),

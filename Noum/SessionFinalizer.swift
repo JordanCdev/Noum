@@ -263,13 +263,6 @@ enum SessionFinalizer {
             profile: coachingProfileStore.profile
         )
 
-        // Daily challenges (M8) — re-evaluate the day's three challenges
-        // against the latest session so any newly-satisfied ones flip to
-        // "ready to claim" on the home tile. Manager also auto-rolls the
-        // day at midnight, so this doubles as the daily refresh trigger.
-        DailyChallengesManager.shared.ensureForToday()
-        DailyChallengesManager.shared.recomputeReady()
-
         // Word of the day (M9) — scan the latest transcript for today's
         // word and flip the home tile to "Used" if the user worked it
         // into their rep naturally.
