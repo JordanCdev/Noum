@@ -17,6 +17,43 @@ import SwiftUI
 struct ProgressionChartsPresentationTests {
     typealias Series = ProgressionChartsCard.ChartSeries
     typealias Model = ProgressionChartsCard.ChartPresentationModel
+    private let now = Date(timeIntervalSince1970: 2_100_000_000)
+
+    @Test func reviewOnlyRowsCannotUnlockChartGate() {
+        let eligible = [
+            makeEvidenceSession(words: 20, duration: 30, dayOffset: -2),
+            makeEvidenceSession(words: 20, duration: 30, dayOffset: -1),
+        ]
+        let reviewOnly = [
+            makeEvidenceSession(words: 2, duration: 30),
+            makeEvidenceSession(words: 20, duration: 2.99),
+            makeEvidenceSession(words: 20, duration: .infinity),
+            makeEvidenceSession(words: 20, duration: 30, isEvaluationFixture: true),
+        ]
+
+        let projected = ReviewDevelopmentChartEvidence.recentScoredSessions(
+            in: eligible + reviewOnly,
+            now: now
+        )
+
+        #expect(projected.map(\.id) == eligible.map(\.id))
+        #expect(!ReviewDevelopmentChartEvidence.hasEnoughData(in: eligible + reviewOnly, now: now))
+    }
+
+    @Test func threeEligibleRowsUnlockChartWithReviewOnlyHistoryPresent() {
+        let eligible = (-3 ... -1).map {
+            makeEvidenceSession(words: 20, duration: 30, dayOffset: $0)
+        }
+        let reviewOnly = makeEvidenceSession(words: 2, duration: 30)
+
+        let projected = ReviewDevelopmentChartEvidence.recentScoredSessions(
+            in: eligible + [reviewOnly],
+            now: now
+        )
+
+        #expect(projected.map(\.id) == eligible.map(\.id))
+        #expect(ReviewDevelopmentChartEvidence.hasEnoughData(in: eligible + [reviewOnly], now: now))
+    }
 
     @Test func scoreDomainStaysBoundedAndReadableForFlatData() {
         let domain = Model.paddedDomain(for: [7.0, 7.0, 7.0], series: .score)
@@ -202,6 +239,23 @@ struct ProgressionChartsPresentationTests {
             )
             return ProgressionChartsCard.ChartPoint(session: session)
         }
+    }
+
+    private func makeEvidenceSession(
+        words: Int,
+        duration: TimeInterval,
+        dayOffset: Int = 0,
+        isEvaluationFixture: Bool = false
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: Array(repeating: "word", count: words).joined(separator: " "),
+            fillerWordCount: 0,
+            duration: duration,
+            date: Calendar.current.date(byAdding: .day, value: dayOffset, to: now) ?? now,
+            mode: .timed,
+            score: 8,
+            isEvaluationFixture: isEvaluationFixture
+        )
     }
 
     private func makePacePoints(_ values: [Int]) -> [ProgressionChartsCard.ChartPoint] {

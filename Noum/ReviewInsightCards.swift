@@ -186,7 +186,8 @@ struct ReviewStoryPresentation: Equatable {
         trends: [SkillTrend],
         sessions: [PracticeSession]
     ) -> ReviewStoryPresentation? {
-        guard let latest = sessions.max(by: { $0.date < $1.date }) else {
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        guard let latest = eligibleSessions.max(by: { $0.date < $1.date }) else {
             return nil
         }
 
@@ -199,8 +200,8 @@ struct ReviewStoryPresentation: Equatable {
         // independently in UI tests). Never claim more visible evidence than
         // the user can actually open from Review.
         let evidenceCount = min(
-            sessions.count,
-            min(supportedWindows.max() ?? sessions.count, 12)
+            eligibleSessions.count,
+            min(supportedWindows.max() ?? eligibleSessions.count, 12)
         )
 
         let movement: String

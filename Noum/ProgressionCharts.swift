@@ -16,6 +16,30 @@ import Charts
 // - Hides itself when fewer than 3 data points exist (a 1-point line is
 //   noise, not signal).
 
+enum ReviewDevelopmentChartEvidence {
+    static let minimumVisibleSessionCount = 3
+    static let lookbackDays = 30
+
+    static func recentScoredSessions(
+        in sessions: [PracticeSession],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [PracticeSession] {
+        let cutoff = calendar.date(byAdding: .day, value: -lookbackDays, to: now) ?? now
+        return PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { $0.date >= cutoff && $0.score != nil }
+            .sorted { $0.date < $1.date }
+    }
+
+    static func hasEnoughData(
+        in sessions: [PracticeSession],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        recentScoredSessions(in: sessions, now: now, calendar: calendar).count >= minimumVisibleSessionCount
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct ProgressionChartsCard: View {
     @ObservedObject var sessionStore: PracticeSessionStore
@@ -30,16 +54,12 @@ struct ProgressionChartsCard: View {
     }
 
     private var dataPoints: [ChartPoint] {
-        let calendar = Calendar.current
-        let cutoff = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        return sessionStore.sessions
-            .filter { $0.date >= cutoff }
-            .sorted { $0.date < $1.date }
+        ReviewDevelopmentChartEvidence.recentScoredSessions(in: sessionStore.progressEligibleSessions)
             .compactMap(ChartPoint.init)
     }
 
     var body: some View {
-        if dataPoints.count < 3 {
+        if dataPoints.count < ReviewDevelopmentChartEvidence.minimumVisibleSessionCount {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 14) {

@@ -54,9 +54,7 @@ enum ReviewHighlightsEngine {
         profile: CoachingProfile?,
         now: Date = Date()
     ) -> [Highlight] {
-        let scored = sessions
-            .filter { $0.score != nil }
-            .sorted { $0.date > $1.date }
+        let scored = eligibleScoredSessions(in: sessions)
         guard scored.count >= minimumScoredSessions else { return [] }
 
         var picks: [Highlight] = []
@@ -86,9 +84,10 @@ enum ReviewHighlightsEngine {
     /// Compared against the up-to-5 scored reps immediately before it;
     /// needs at least 3 priors so the average means something.
     static func breakthrough(in scoredNewestFirst: [PracticeSession]) -> Highlight? {
-        for (index, session) in scoredNewestFirst.enumerated() {
+        let eligible = eligibleScoredSessions(in: scoredNewestFirst)
+        for (index, session) in eligible.enumerated() {
             guard let score = session.score, score >= 7 else { continue }
-            let priors = scoredNewestFirst.dropFirst(index + 1).prefix(5).compactMap(\.score)
+            let priors = eligible.dropFirst(index + 1).prefix(5).compactMap(\.score)
             guard priors.count >= 3 else { continue }
             let priorAverage = Double(priors.reduce(0, +)) / Double(priors.count)
             guard Double(score) - priorAverage >= breakthroughJump else { continue }
@@ -110,7 +109,7 @@ enum ReviewHighlightsEngine {
     static func goalExample(in scoredNewestFirst: [PracticeSession], profile: CoachingProfile?) -> Highlight? {
         guard let profile, profile.hasChosenVoice, let voice = profile.chosenStyleGoal else { return nil }
 
-        let ranked: [(session: PracticeSession, fit: Double)] = scoredNewestFirst
+        let ranked: [(session: PracticeSession, fit: Double)] = eligibleScoredSessions(in: scoredNewestFirst)
             .compactMap { session in
                 guard let score = session.score, score >= 7,
                       session.imConversationDetails == nil else { return nil }
@@ -143,7 +142,8 @@ enum ReviewHighlightsEngine {
     /// motivating rather than nostalgic.
     static func recentBest(in scoredNewestFirst: [PracticeSession], now: Date = Date()) -> Highlight? {
         let cutoff = now.addingTimeInterval(-14 * 86_400)
-        let candidates = scoredNewestFirst.filter { $0.date >= cutoff && ($0.score ?? 0) >= 8 }
+        let candidates = eligibleScoredSessions(in: scoredNewestFirst)
+            .filter { $0.date >= cutoff && ($0.score ?? 0) >= 8 }
         let best = candidates.max { lhs, rhs in
             let l = lhs.score ?? 0
             let r = rhs.score ?? 0
@@ -159,5 +159,11 @@ enum ReviewHighlightsEngine {
             title: "Best rep this fortnight",
             line: "\(best.headline ?? "Strong rep") · \(score)/10 · \(day)"
         )
+    }
+
+    private static func eligibleScoredSessions(in sessions: [PracticeSession]) -> [PracticeSession] {
+        PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { $0.score != nil }
+            .sorted { $0.date > $1.date }
     }
 }

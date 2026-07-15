@@ -161,14 +161,16 @@ struct SessionHistoryView: View {
         sessionStore.sessions.sorted { $0.date > $1.date }
     }
 
+    private var progressEligibleSessions: [PracticeSession] {
+        sessionStore.progressEligibleSessions.sorted { $0.date > $1.date }
+    }
+
     private var totalSessions: Int { sessions.count }
 
-    /// Mirrors ProgressionChartsCard's render gate (3+ scored reps in the
-    /// last 30 days) so the page knows whether the chart will draw before
-    /// asking it to — and can show the honest "forming" card instead.
+    /// Uses the chart's shared evidence projection so the page and child
+    /// card cannot disagree about whether a measured chart will draw.
     private var developmentChartHasData: Bool {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        return sessions.filter { $0.date >= cutoff && $0.score != nil }.count >= 3
+        ReviewDevelopmentChartEvidence.hasEnoughData(in: progressEligibleSessions)
     }
 
     private var skillTrends: [SkillTrend] {
@@ -177,7 +179,7 @@ struct SessionHistoryView: View {
 
     private var highlights: [ReviewHighlightsEngine.Highlight] {
         ReviewHighlightsEngine.highlights(
-            sessions: sessions,
+            sessions: progressEligibleSessions,
             profile: coachingProfileStore.profile
         )
     }
@@ -187,7 +189,7 @@ struct SessionHistoryView: View {
     }
 
     private var reviewStory: ReviewStoryPresentation? {
-        ReviewStoryPresentation.make(trends: skillTrends, sessions: sessions)
+        ReviewStoryPresentation.make(trends: skillTrends, sessions: progressEligibleSessions)
     }
 
     private var reviewSurface: SessionHistoryReviewSurface {

@@ -4,14 +4,23 @@ import Testing
 
 @Suite("Cohesive Review story")
 struct CohesiveReviewStoryTests {
-    private func session(daysAgo: Double = 0, score: Int = 7) -> PracticeSession {
+    private let now = Date(timeIntervalSince1970: 2_100_000_000)
+
+    private func session(
+        daysAgo: Double = 0,
+        score: Int = 7,
+        transcript: String = "A clear answer with one concrete example.",
+        duration: TimeInterval = 42,
+        isEvaluationFixture: Bool = false
+    ) -> PracticeSession {
         PracticeSession(
-            transcript: "A clear answer with one concrete example.",
+            transcript: transcript,
             fillerWordCount: 0,
-            duration: 42,
-            date: Date().addingTimeInterval(-daysAgo * 86_400),
+            duration: duration,
+            date: now.addingTimeInterval(-daysAgo * 86_400),
             mode: .timed,
-            score: score
+            score: score,
+            isEvaluationFixture: isEvaluationFixture
         )
     }
 
@@ -102,6 +111,37 @@ struct CohesiveReviewStoryTests {
         #expect(story.meaning == "There is not enough evidence to call a pattern yet.")
         #expect(story.evidenceCaption == "Based on your latest two reps.")
         #expect(!story.movement.localizedCaseInsensitiveContains("trend"))
+    }
+
+    @Test func reviewOnlyRowsDoNotInflateStoryOrLatestNavigation() throws {
+        let older = session(daysAgo: 2)
+        let newestEligible = session(daysAgo: 1)
+        let reviewOnly = [
+            session(daysAgo: 0.4, transcript: "two words"),
+            session(daysAgo: 0.3, duration: 2.99),
+            session(daysAgo: 0.2, duration: .infinity),
+            session(daysAgo: 0.1, isEvaluationFixture: true),
+        ]
+
+        let story = try #require(ReviewStoryPresentation.make(
+            trends: [],
+            sessions: [older, newestEligible] + reviewOnly
+        ))
+
+        #expect(story.latestSessionID == newestEligible.id)
+        #expect(story.evidenceCaption == "Based on your latest two reps.")
+        #expect(story.meaning == "There is not enough evidence to call a pattern yet.")
+    }
+
+    @Test func reviewOnlyRowsCannotCreateAStory() {
+        let reviewOnly = [
+            session(transcript: "two words"),
+            session(duration: 2.99),
+            session(duration: .infinity),
+            session(isEvaluationFixture: true),
+        ]
+
+        #expect(ReviewStoryPresentation.make(trends: [], sessions: reviewOnly) == nil)
     }
 
     @Test func changedTimedRecommendationGetsNeutralTimedConfiguration() throws {

@@ -23,6 +23,8 @@ private func makeSession(
     fillers: Int = 0,
     mode: PracticeMode = .timed,
     transcript: String = "a steady answer with a clear point and a clean close",
+    date: Date? = nil,
+    isEvaluationFixture: Bool = false,
     headline: String? = nil,
     prompt: String? = nil,
     coachSummary: String? = nil,
@@ -32,13 +34,14 @@ private func makeSession(
         transcript: transcript,
         fillerWordCount: fillers,
         duration: duration,
-        date: Date().addingTimeInterval(-daysAgo * 86_400),
+        date: date ?? Date().addingTimeInterval(-daysAgo * 86_400),
         mode: mode,
         score: score,
         headline: headline,
         coachSummary: coachSummary,
         aiCoachFeedback: aiCoachFeedback,
-        prompt: prompt
+        prompt: prompt,
+        isEvaluationFixture: isEvaluationFixture
     )
 }
 
@@ -121,6 +124,17 @@ struct UnderTargetScoreCapTests {
 
 struct ReviewHighlightsEngineTests {
 
+    private let now = Date(timeIntervalSince1970: 2_100_000_000)
+
+    private func reviewOnlySessions(score: Int = 10) -> [PracticeSession] {
+        [
+            makeSession(score: score, transcript: "two words", date: now.addingTimeInterval(-60)),
+            makeSession(score: score, duration: 2.99, date: now.addingTimeInterval(-120)),
+            makeSession(score: score, duration: .infinity, date: now.addingTimeInterval(-180)),
+            makeSession(score: score, date: now.addingTimeInterval(-240), isEvaluationFixture: true),
+        ]
+    }
+
     @Test func noPicksBelowEvidenceFloor() {
         let sessions = (0..<4).map { makeSession(score: 8, daysAgo: Double($0)) }
         let picks = ReviewHighlightsEngine.highlights(sessions: sessions, profile: nil)
@@ -186,6 +200,38 @@ struct ReviewHighlightsEngineTests {
         let ids = picks.map(\.sessionID)
         #expect(Set(ids).count == ids.count, "the same rep must not appear twice")
         #expect(picks.first?.kind == .breakthrough)
+    }
+
+    @Test func reviewOnlyRowsCannotMeetHighlightEvidenceFloor() {
+        let eligible = (1...4).map {
+            makeSession(score: 8, date: now.addingTimeInterval(-Double($0) * 86_400))
+        }
+
+        let picks = ReviewHighlightsEngine.highlights(
+            sessions: eligible + reviewOnlySessions(),
+            profile: nil,
+            now: now
+        )
+
+        #expect(picks.isEmpty, "four measured reps remain below the evidence floor")
+    }
+
+    @Test func directHighlightSelectorsRejectReviewOnlyEvidence() {
+        let eligiblePriors = (1...4).map {
+            makeSession(score: 4, date: now.addingTimeInterval(-Double($0) * 86_400))
+        }
+        let invalidStandout = makeSession(
+            score: 10,
+            transcript: "two words",
+            date: now.addingTimeInterval(-60)
+        )
+
+        #expect(ReviewHighlightsEngine.breakthrough(in: [invalidStandout] + eligiblePriors) == nil)
+        #expect(ReviewHighlightsEngine.recentBest(in: [invalidStandout], now: now) == nil)
+        #expect(ReviewHighlightsEngine.goalExample(
+            in: [invalidStandout],
+            profile: makeChosenVoiceProfile(.authoritative)
+        ) == nil)
     }
 }
 
@@ -266,6 +312,25 @@ struct SessionHistoryListModelTests {
         let junk2 = makeSession(score: 1, daysAgo: 2)
         let groups = SessionHistoryListModel.grouped([junk1, junk2], collapsingLowSignal: false)
         #expect(groups.count == 2)
+    }
+
+    @Test func reviewOnlyRowsRemainVisibleInRawHistory() {
+        let reviewOnly = [
+            makeSession(score: 10, transcript: "two words"),
+            makeSession(score: 10, duration: 2.99),
+            makeSession(score: 10, duration: .infinity),
+            makeSession(score: 10, isEvaluationFixture: true),
+        ]
+
+        let visible = SessionHistoryListModel.apply(
+            reviewOnly,
+            mode: nil,
+            query: "",
+            sort: .newest
+        )
+
+        #expect(Set(visible.map(\.id)) == Set(reviewOnly.map(\.id)))
+        #expect(visible.count == reviewOnly.count)
     }
 }
 
