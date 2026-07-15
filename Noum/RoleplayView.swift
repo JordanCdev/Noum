@@ -314,25 +314,19 @@ struct RoleplayView: View {
             phase = .complete
             return
         }
-        currentLevel = RoleplayEngine.nextLevel(after: last.recommendedRetryMode, currentLevel: currentLevel)
-
-        guard turnResults.count < Self.maxTurns else {
-            phase = .complete
-            return
-        }
-
-        let next = RoleplayEngine.nextObjection(
-            after: last.recommendedRetryMode,
+        guard let nextTurn = RoleplayEngine.nextTurn(
+            after: last,
             currentObjection: objection,
             for: scenario,
-            pressureLevel: currentLevel,
+            completedAttemptCount: turnResults.count,
+            maximumAttemptCount: Self.maxTurns,
             excluding: RoleplayStore.shared.usedObjectionIDs
-        )
-        guard let next else {
+        ) else {
             phase = .complete
             return
         }
-        currentObjection = next
+        currentLevel = nextTurn.pressureLevel
+        currentObjection = nextTurn.objection
         speechVM.transcribedText = ""
         phase = .turn
     }
@@ -344,7 +338,7 @@ struct RoleplayView: View {
             Text("Roleplay complete")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
-            Text("\(turnResults.count) response attempts with \(scenario.personaName). Final pressure: \(currentLevel.title).")
+            Text("\(turnResults.count) response attempts with \(scenario.personaName). Final attempted pressure: \(currentLevel.title).")
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
             if let feedback = lastFeedback {

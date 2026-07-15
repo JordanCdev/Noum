@@ -29,6 +29,14 @@ struct RoleplayTurnResult: Codable, Equatable {
     var recommendedRetryMode: RoleplayRetryMode
 }
 
+/// The complete transient state required to begin another Roleplay attempt.
+/// Keeping level and objection together prevents the view from presenting a
+/// prospective rung unless a valid next objection can actually begin there.
+struct RoleplayNextTurn: Equatable {
+    var pressureLevel: RoleplayPressureLevel
+    var objection: RoleplayObjection
+}
+
 /// Pure turn logic for the pressure-ladder roleplay: which objection comes
 /// next, how a spoken/typed response scores against the scenario's rubric,
 /// and what the engine recommends for the following turn. No I/O, no
@@ -84,6 +92,45 @@ enum RoleplayEngine {
             pressureLevel: pressureLevel,
             excluding: usedIDs
         )
+    }
+
+    /// Resolves a complete next turn, or returns `nil` when the session is
+    /// complete or the finished-turn evidence is incoherent. The attempted
+    /// result is authoritative; callers must not mutate prospective view state
+    /// until this projection succeeds.
+    static func nextTurn(
+        after result: RoleplayTurnResult,
+        currentObjection: RoleplayObjection,
+        for scenario: RoleplayScenario,
+        completedAttemptCount: Int,
+        maximumAttemptCount: Int,
+        excluding usedIDs: Set<String>
+    ) -> RoleplayNextTurn? {
+        guard completedAttemptCount > 0,
+              maximumAttemptCount > 0,
+              completedAttemptCount < maximumAttemptCount,
+              result.scenarioId == scenario.scenarioId,
+              result.pressureLevel == currentObjection.pressureLevel,
+              result.objectionType == currentObjection.type,
+              result.objectionId == currentObjection.id,
+              scenario.objectionSet.contains(currentObjection) else {
+            return nil
+        }
+
+        let pressureLevel = nextLevel(
+            after: result.recommendedRetryMode,
+            currentLevel: result.pressureLevel
+        )
+        guard let objection = nextObjection(
+            after: result.recommendedRetryMode,
+            currentObjection: currentObjection,
+            for: scenario,
+            pressureLevel: pressureLevel,
+            excluding: usedIDs
+        ) else {
+            return nil
+        }
+        return RoleplayNextTurn(pressureLevel: pressureLevel, objection: objection)
     }
 
     // MARK: Response scoring

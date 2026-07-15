@@ -52048,6 +52048,116 @@ struct RoleplayEngineTests {
         }
     }
 
+    @Test func terminalAttemptNeverProjectsAnUnattemptedPressureRung() {
+        let scenario = RoleplayCatalog.interview
+        let cases: [(RoleplayPressureLevel, RoleplayRetryMode)] = [
+            (.easy, .levelUp),
+            (.realistic, .levelDown),
+            (.realistic, .sameLevelNewObjection),
+            (.easy, .sameObjectionSlower)
+        ]
+
+        for (attemptedLevel, mode) in cases {
+            let current = scenario.objections(at: attemptedLevel)[0]
+            let result = RoleplayTurnResult(
+                scenarioId: scenario.scenarioId,
+                pressureLevel: attemptedLevel,
+                objectionType: current.type,
+                objectionId: current.id,
+                responseQuality: 0.5,
+                recommendedRetryMode: mode
+            )
+
+            let next = RoleplayEngine.nextTurn(
+                after: result,
+                currentObjection: current,
+                for: scenario,
+                completedAttemptCount: 4,
+                maximumAttemptCount: 4,
+                excluding: [current.id]
+            )
+
+            #expect(next == nil)
+            #expect(result.pressureLevel == attemptedLevel)
+        }
+    }
+
+    @Test func preTerminalAttemptProjectsLevelAndObjectionAtomically() throws {
+        let scenario = RoleplayCatalog.interview
+        let cases: [(RoleplayPressureLevel, RoleplayRetryMode, RoleplayPressureLevel)] = [
+            (.easy, .levelUp, .realistic),
+            (.realistic, .levelDown, .easy),
+            (.realistic, .sameLevelNewObjection, .realistic),
+            (.easy, .sameObjectionSlower, .easy)
+        ]
+
+        for (attemptedLevel, mode, expectedLevel) in cases {
+            let current = scenario.objections(at: attemptedLevel)[0]
+            let result = RoleplayTurnResult(
+                scenarioId: scenario.scenarioId,
+                pressureLevel: attemptedLevel,
+                objectionType: current.type,
+                objectionId: current.id,
+                responseQuality: 0.5,
+                recommendedRetryMode: mode
+            )
+
+            let next = try #require(RoleplayEngine.nextTurn(
+                after: result,
+                currentObjection: current,
+                for: scenario,
+                completedAttemptCount: 3,
+                maximumAttemptCount: 4,
+                excluding: [current.id]
+            ))
+
+            #expect(next.pressureLevel == expectedLevel)
+            #expect(next.objection.pressureLevel == expectedLevel)
+            if mode == .sameObjectionSlower {
+                #expect(next.objection == current)
+            } else {
+                #expect(next.objection.id != current.id)
+            }
+        }
+    }
+
+    @Test func unavailableNextObjectionCannotCommitAProspectiveLevel() {
+        let current = RoleplayObjection(
+            id: "isolated.realistic.1",
+            pressureLevel: .realistic,
+            type: .skepticalPushback,
+            text: "Why should I believe that?"
+        )
+        let scenario = RoleplayScenario(
+            scenarioId: "isolated",
+            title: "Isolated",
+            personaName: "Alex",
+            personaRole: "Stakeholder",
+            objective: "Respond directly.",
+            objectionSet: [current],
+            rubric: []
+        )
+        let result = RoleplayTurnResult(
+            scenarioId: scenario.scenarioId,
+            pressureLevel: .realistic,
+            objectionType: current.type,
+            objectionId: current.id,
+            responseQuality: 0.9,
+            recommendedRetryMode: .levelUp
+        )
+
+        let next = RoleplayEngine.nextTurn(
+            after: result,
+            currentObjection: current,
+            for: scenario,
+            completedAttemptCount: 3,
+            maximumAttemptCount: 4,
+            excluding: [current.id]
+        )
+
+        #expect(next == nil)
+    }
+
     // MARK: Response scoring
 
     @Test func directEvidencedResponseScoresHigherThanRamblingHedgedResponse() {
