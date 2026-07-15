@@ -1,5 +1,27 @@
 # Noum — Current state
 
+## 2026-07-15 — Profile coaching evidence excludes Review-only captures
+
+Implementation commit `8ec313c9` closes the remaining Profile-side split
+between durable saved-rep history and progress-bearing evidence. `ProfileView`
+now reuses `PracticeSessionStore.progressEligibleSessions` for coaching plans,
+Coach Read evidence depth, Coach Parity readiness, the three-rep transformation
+question, goal/forward-plan projections, retention/rank counts, and aggregate
+filler evidence. The All Reps subtitle remains on raw history, so a
+transport-valid capture that is too thin to reward is still inspectable and
+deletable without strengthening a coaching claim.
+
+The deterministic invalid-row matrix and Profile wiring contract pass inside a
+focused **44/44** selection. The complete `NoumTests` target passes **4,177
+unique tests / 4,194 device executions** with zero failures or skips on the
+NoumCleanTest / iOS 26.5 simulator; Xcode recovered from one transient
+parallel-clone launch denial and the authoritative result bundle is Passed.
+This proves local evidence-boundary behavior only. The narrower Review
+story/chart projection leak and terminal Roleplay next-attempt copy remain
+verified follow-ups, and no physical-device, live-provider, professional,
+longitudinal, or launch artifact was collected. Production readiness remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Roleplay completion preserves the pressure actually attempted
 
 Implementation commit `c4376973` closes a terminal-state truthfulness gap in

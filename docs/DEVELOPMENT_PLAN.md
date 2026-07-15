@@ -7,6 +7,18 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Profile progress-evidence hardening at `8ec313c9` completes the visible Profile
+side of the Review-only boundary without hiding saved history. The established
+`PracticeSessionStore.progressEligibleSessions` projection now drives coaching
+plans, Coach Read depth, Coach Parity readiness, the three-rep transformation
+question, goal/forward-plan inputs, retention/rank counts, and filler-pattern
+evidence; the All Reps subtitle deliberately retains raw saved-row ownership.
+The focused selection passes 44/44, and the complete target passes 4,177 unique
+tests / 4,194 device executions. This is local coaching-trust evidence only.
+The narrower Review story/chart projection and terminal Roleplay next-attempt
+copy are the next verified local candidates; all five required external
+artifacts remain missing, so production readiness remains NO-GO at 18/100.
+
 Roleplay completion truthfulness at `c4376973` makes terminal state describe
 the pressure rung actually attempted. The existing engine now returns the next
 pressure level and objection as one atomic transition; the fourth attempt and
