@@ -51991,6 +51991,63 @@ struct RoleplayEngineTests {
         #expect(picked != nil)
     }
 
+    @Test func sameObjectionRetryPreservesExactObjectionDespiteUsedHistory() {
+        let scenario = RoleplayCatalog.interview
+        let current = scenario.objections(at: .easy)[1]
+        let used = Set(scenario.objections(at: .easy).map { $0.id })
+
+        let picked = RoleplayEngine.nextObjection(
+            after: .sameObjectionSlower,
+            currentObjection: current,
+            for: scenario,
+            pressureLevel: .easy,
+            excluding: used
+        )
+
+        #expect(picked == current)
+    }
+
+    @Test func nonRepeatRetryStillUsesFreshSelectionContract() {
+        let scenario = RoleplayCatalog.interview
+        let easy = scenario.objections(at: .easy)
+        let current = easy[0]
+
+        let picked = RoleplayEngine.nextObjection(
+            after: .sameLevelNewObjection,
+            currentObjection: current,
+            for: scenario,
+            pressureLevel: .easy,
+            excluding: [current.id]
+        )
+
+        #expect(picked != nil)
+        #expect(picked != current)
+        #expect(picked?.pressureLevel == .easy)
+    }
+
+    @Test func pressureChangingRetriesSelectFromTheirResolvedRung() {
+        let scenario = RoleplayCatalog.interview
+        let current = scenario.objections(at: .realistic)[0]
+        let cases: [(RoleplayRetryMode, RoleplayPressureLevel)] = [
+            (.levelUp, .hostile),
+            (.levelDown, .easy)
+        ]
+
+        for (mode, resolvedLevel) in cases {
+            let picked = RoleplayEngine.nextObjection(
+                after: mode,
+                currentObjection: current,
+                for: scenario,
+                pressureLevel: resolvedLevel,
+                excluding: [current.id]
+            )
+
+            #expect(picked != nil)
+            #expect(picked?.id != current.id)
+            #expect(picked?.pressureLevel == resolvedLevel)
+        }
+    }
+
     // MARK: Response scoring
 
     @Test func directEvidencedResponseScoresHigherThanRamblingHedgedResponse() {

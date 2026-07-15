@@ -309,7 +309,8 @@ struct RoleplayView: View {
     }
 
     private func advanceAfterFeedback() {
-        guard let last = turnResults.last else {
+        guard let last = turnResults.last,
+              let objection = currentObjection else {
             phase = .complete
             return
         }
@@ -321,6 +322,8 @@ struct RoleplayView: View {
         }
 
         let next = RoleplayEngine.nextObjection(
+            after: last.recommendedRetryMode,
+            currentObjection: objection,
             for: scenario,
             pressureLevel: currentLevel,
             excluding: RoleplayStore.shared.usedObjectionIDs

@@ -65,6 +65,27 @@ enum RoleplayEngine {
         return (fresh.isEmpty ? pool : fresh).first
     }
 
+    /// Resolves the objection promised by the retry recommendation. A floor-
+    /// level rebuild must preserve the exact objection the user just heard;
+    /// every other mode follows the normal fresh-selection contract at the
+    /// already-resolved next pressure level.
+    static func nextObjection(
+        after retryMode: RoleplayRetryMode,
+        currentObjection: RoleplayObjection,
+        for scenario: RoleplayScenario,
+        pressureLevel: RoleplayPressureLevel,
+        excluding usedIDs: Set<String>
+    ) -> RoleplayObjection? {
+        if retryMode == .sameObjectionSlower {
+            return currentObjection
+        }
+        return nextObjection(
+            for: scenario,
+            pressureLevel: pressureLevel,
+            excluding: usedIDs
+        )
+    }
+
     // MARK: Response scoring
 
     // Roleplay turns do not retain finalized duration, so they cannot apply
