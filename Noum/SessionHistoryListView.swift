@@ -135,6 +135,41 @@ enum SessionHistoryListModel {
     }
 }
 
+/// Keeps raw saved-history ownership separate from the evidence allowed to
+/// produce aggregate progress claims on the All Reps surface.
+///
+/// A transport-valid short capture remains searchable, openable, and
+/// deletable. It does not enter score averages, mode summaries, best-rep
+/// selectors, or trend cards until it clears the shared progress floor.
+enum SessionHistoryListEvidence {
+    static func progressSessions(in sessions: [PracticeSession]) -> [PracticeSession] {
+        PracticeProgressEligibility.eligibleSessions(in: sessions)
+    }
+
+    static func leadSummary(for sessions: [PracticeSession]) -> String {
+        let total = sessions.count
+        let progressSessions = progressSessions(in: sessions)
+        var clauses = ["\(total) session\(total == 1 ? "" : "s") saved"]
+
+        if progressSessions.count != total {
+            if progressSessions.isEmpty {
+                clauses.append("No measured reps yet")
+            } else {
+                let noun = progressSessions.count == 1 ? "rep" : "reps"
+                clauses.append("\(progressSessions.count) measured \(noun)")
+            }
+        }
+
+        let scores = progressSessions.compactMap(\.score)
+        if !scores.isEmpty {
+            let average = Double(scores.reduce(0, +)) / Double(scores.count)
+            clauses.append("Average score \(String(format: "%.1f", average))")
+        }
+
+        return clauses.joined(separator: ". ") + "."
+    }
+}
+
 #if canImport(SwiftUI)
 
 // MARK: - Session History List View
@@ -170,6 +205,12 @@ struct SessionHistoryListView: View {
         SessionHistoryListModel.apply(sessions, mode: selectedModeFilter, query: query, sort: sort)
     }
 
+    /// Aggregate cards are progress surfaces, even though the row list below
+    /// is deliberately raw history. Keep those responsibilities separate.
+    private var progressEligibleVisibleSessions: [PracticeSession] {
+        SessionHistoryListEvidence.progressSessions(in: visibleSessions)
+    }
+
     private var groups: [SessionHistoryListGroup] {
         SessionHistoryListModel.grouped(
             visibleSessions,
@@ -178,14 +219,7 @@ struct SessionHistoryListView: View {
     }
 
     private var leadSummary: String {
-        let total = sessions.count
-        var line = "\(total) session\(total == 1 ? "" : "s") saved"
-        let scores = sessions.compactMap(\.score)
-        if !scores.isEmpty {
-            let average = Double(scores.reduce(0, +)) / Double(scores.count)
-            line += ". Average score \(String(format: "%.1f", average))"
-        }
-        return line + "."
+        SessionHistoryListEvidence.leadSummary(for: sessions)
     }
 
     // MARK: - Body
@@ -342,7 +376,7 @@ struct SessionHistoryListView: View {
     private var modeBreakdownSection: some View {
         if selectedModeFilter == nil {
             CrossModeHistoryBreakdownCard(
-                sessions: visibleSessions,
+                sessions: progressEligibleVisibleSessions,
                 onSelectMode: { mode in
                     if reduceMotion {
                         selectedModeFilter = mode
@@ -363,7 +397,7 @@ struct SessionHistoryListView: View {
                         AppDestination.suddenDeathDifficultyDetail(difficulty: difficulty)
                     )
                 },
-                sessions: visibleSessions,
+                sessions: progressEligibleVisibleSessions,
                 onSelectBestRep: { sessionID in
                     navigationPath.append(
                         AppDestination.sessionDetail(sessionID: sessionID)
@@ -376,7 +410,7 @@ struct SessionHistoryListView: View {
 
         if selectedModeFilter == .ahCounter {
             AhCounterHistoryBreakdownCard(
-                sessions: visibleSessions,
+                sessions: progressEligibleVisibleSessions,
                 onSelectCleanestRep: { sessionID in
                     navigationPath.append(
                         AppDestination.sessionDetail(sessionID: sessionID)
@@ -389,7 +423,7 @@ struct SessionHistoryListView: View {
 
         if selectedModeFilter == .timed {
             TimedHistoryBreakdownCard(
-                sessions: visibleSessions,
+                sessions: progressEligibleVisibleSessions,
                 onSelectBestRep: { sessionID in
                     navigationPath.append(
                         AppDestination.sessionDetail(sessionID: sessionID)
@@ -402,7 +436,7 @@ struct SessionHistoryListView: View {
 
         if selectedModeFilter == .imConversation {
             IMHistoryBreakdownCard(
-                sessions: visibleSessions,
+                sessions: progressEligibleVisibleSessions,
                 onSelectScenario: { scenario in
                     navigationPath.append(
                         AppDestination.imScenarioDetail(scenario: scenario)
@@ -463,11 +497,13 @@ struct SessionHistoryListView: View {
         NavigationLink {
             SessionHistoryDetailView(
                 session: session,
-                insights: CoachingPlanner.sessionInsights(
-                    for: session,
-                    comparedTo: sessions,
-                    profile: coachingProfileStore.profile
-                ),
+                insights: PracticeProgressEligibility.qualifies(session)
+                    ? CoachingPlanner.sessionInsights(
+                        for: session,
+                        comparedTo: sessions,
+                        profile: coachingProfileStore.profile
+                    )
+                    : [],
                 navigationPath: $navigationPath
             )
         } label: {
@@ -539,12 +575,15 @@ struct SessionHistoryListView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(session.headline ?? SessionHistoryListModel.modeLabel(for: session.mode))
+                        Text(SessionHistoryDetailPresentation.headline(
+                            for: session,
+                            fallback: SessionHistoryListModel.modeLabel(for: session.mode)
+                        ))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer(minLength: 8)
-                        if let score = session.score {
+                        if PracticeProgressEligibility.qualifies(session), let score = session.score {
                             Text("\(score)/10")
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(scoreColor(score))
@@ -567,7 +606,7 @@ struct SessionHistoryListView: View {
                         Text(summary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .lineLimit(PracticeProgressEligibility.qualifies(session) ? 1 : 2)
                     }
                 }
 

@@ -29,15 +29,17 @@ struct TimedHistorySummaryStats: Equatable {
     /// to one decimal place. `nil` when no qualifying rep is scored
     /// (older sessions can carry `score == nil`).
     let averageScore: Double?
-    /// Highest-scoring rep + date + the WPM at that rep. `nil` when no
-    /// rep has been scored. Tiebreak by most-recent date so the user
-    /// reads "today's peak" before "last month's peak" when both tie.
+    /// Highest-scoring rep + date + optional qualified WPM at that rep. `nil`
+    /// when no rep has been scored. The score remains independent when that
+    /// rep's pace evidence is absent. Tiebreak by most-recent date.
     let best: BestRep?
-    /// Mean of `wordsPerMinute` across reps with a non-zero word
-    /// count and measurable duration. Rounded to nearest integer.
-    /// `nil` when no rep has measurable pace.
+    /// Reps whose pace clears the shared historical comparison boundary.
+    /// `runCount` stays factual; this is the denominator for pace claims.
+    let paceMeasuredRepCount: Int
+    /// Mean qualified words per minute, rounded to nearest integer. `nil` when
+    /// no rep carries comparable pace evidence.
     let averageWPM: Int?
-    /// Number of reps whose `wordsPerMinute` lands in the shared
+    /// Number of pace-qualified reps whose WPM lands in the shared
     /// conversational pace band. Useful as a
     /// "delivery on-rails" signal without leaking the evaluator's
     /// internal scoring weights.
@@ -57,7 +59,7 @@ struct TimedHistorySummaryStats: Equatable {
         let sessionID: UUID
         let date: Date
         let score: Int
-        let wordsPerMinute: Int
+        let wordsPerMinute: Int?
     }
 
     struct TrendComparison: Equatable {
@@ -141,23 +143,25 @@ enum TimedHistorySummary {
                     sessionID: session.id,
                     date: session.date,
                     score: score,
-                    wordsPerMinute: session.wordsPerMinute
+                    wordsPerMinute: SessionQualifier
+                        .quantityQualifiedWordsPerMinute(session)
+                        .map { Int($0.rounded()) }
                 )
             }
 
-        // Average WPM across reps with measurable pace (skips
-        // zero-duration or zero-word reps; same defensive contract as
-        // the Ah-Counter helper's rate-per-minute path).
-        let paceRuns = timedRuns.filter { $0.duration > 0 && $0.wordCount > 0 }
+        // Pace claims use the stricter historical comparison projection rather
+        // than the general saved/progress floor.
+        let paceRuns = timedRuns.compactMap {
+            SessionQualifier.quantityQualifiedWordsPerMinute($0)
+        }
         let averageWPM: Int? = {
             guard !paceRuns.isEmpty else { return nil }
-            let total = paceRuns.map { Double($0.wordsPerMinute) }.reduce(0, +)
+            let total = paceRuns.reduce(0, +)
             return Int((total / Double(paceRuns.count)).rounded())
         }()
 
-        let inZoneRepCount = timedRuns.reduce(0) { count, session in
-            let wpm = session.wordsPerMinute
-            return wpm >= zoneMinWPM && wpm <= zoneMaxWPM ? count + 1 : count
+        let inZoneRepCount = paceRuns.reduce(0) { count, pace in
+            ConversationalPaceBand.contains(pace) ? count + 1 : count
         }
 
         let trend = trendComparison(
@@ -172,6 +176,7 @@ enum TimedHistorySummary {
             runCount: timedRuns.count,
             averageScore: averageScore,
             best: best,
+            paceMeasuredRepCount: paceRuns.count,
             averageWPM: averageWPM,
             inZoneRepCount: inZoneRepCount,
             trend: trend,

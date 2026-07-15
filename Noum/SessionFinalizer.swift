@@ -216,12 +216,34 @@ enum SessionFinalizer {
                   metrics.count > 0 else { return nil }
             return metrics.filledRatio
         }()
+        // Persist duration-derived evidence only when it can be tied back to
+        // the exact saved session and that row clears the historical metric
+        // boundary. The raw snapshot still records score/category/duration for
+        // every general-progress rep; filler/pace trends remain optional.
+        let metricSession = latestSessionID.flatMap { sessionID in
+            progressSessions.first { $0.id == sessionID }
+        }
+        let qualifiedFillerRate = metricSession.flatMap {
+            FillerBurden.quantityQualified($0)?.ratePerMinute
+        }
+        let qualifiedPaceWPM = metricSession.flatMap {
+            SessionQualifier.quantityQualifiedWordsPerMinute($0)
+        }
+        let comparisonMetricSchemaVersion: Int? = if qualifiedFillerRate != nil,
+                                                     qualifiedPaceWPM != nil {
+            metricSession?.comparisonMetricSchemaVersion
+        } else {
+            nil
+        }
         SkillTrendStore.shared.recordFromSession(
             sessionId: latestSessionID ?? UUID(),
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
             score: scoreValue,
+            qualifiedFillerRatePerMinute: qualifiedFillerRate,
+            qualifiedPaceWPM: qualifiedPaceWPM,
+            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
             categoryRatings: categoryMap,
             pauseRate: pauseRate,
             pitchMonotone: pitchMonotone,
@@ -375,6 +397,7 @@ enum SessionFinalizer {
                 sessionCount: progressSessions.count,
                 streakDays: rawHistoryStreak,
                 styleGoal: explicitStyleGoal.title,
+                transcriptConfidence: latestFinalizedSession?.transcriptConfidence,
                 modeAvailability: NextActionModeAvailability(
                     rating: RatingStore.shared.rating,
                     imConversationAvailable: IMModeAvailability.isAvailable
@@ -403,6 +426,9 @@ enum SessionFinalizer {
                     duration: effectiveDuration,
                     wordCount: transcriptWordCount,
                     wpm: wpm,
+                    qualifiedFillerRatePerMinute: qualifiedFillerRate,
+                    qualifiedPaceWPM: qualifiedPaceWPM,
+                    comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
                     score: scoreValue,
                     categoryRatings: categoryMap
                 ),

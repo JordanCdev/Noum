@@ -166,6 +166,7 @@ struct SummaryView: View {
     @State private var miniDrillOutcome: MiniDrillOutcome?
     @State private var miniDrillAwardedXP: Int = 0
     @State private var miniDrillXPBreakdown: DrillXPEngine.Breakdown?
+    @State private var committedMiniDrillOutcomeIDs: Set<UUID> = []
     @State private var showSecondaryDetails = false
     @State private var coachNoteRevealed = false
     @State private var enhancedCoachNote: CoachNote?
@@ -304,7 +305,10 @@ struct SummaryView: View {
             wordCount: transcriptWordCount,
             score: scoreValue,
             feedbackCategories: categoryTuples,
-            styleGoal: chosenStyleGoalEngineInputs.goal
+            styleGoal: chosenStyleGoalEngineInputs.goal,
+            transcriptConfidence: currentStoredSession?.transcriptConfidence,
+            comparisonMetricSchemaVersion: currentStoredSession?.comparisonMetricSchemaVersion,
+            isEvaluationFixture: currentStoredSession?.isEvaluationFixture ?? false
         )
     }
 
@@ -315,8 +319,14 @@ struct SummaryView: View {
     /// The finalized decision wins whenever it exists. `DrillEngineV2` is
     /// consulted only as the explicit first-rep / below-floor / legacy
     /// fallback encoded by `SummaryPrescriptionProjection`.
-    private var summaryPrescription: SummaryPrescriptionProjection {
-        let action = finalizedActionForSummary
+    private var renderedActionForSummary: NextAction? {
+        RecommendationTapCapabilityLossUITestFixture
+            .summaryActionForRendering(finalizedActionForSummary)
+    }
+
+    private func summaryPrescription(
+        for action: NextAction?
+    ) -> SummaryPrescriptionProjection {
         let existingSetup = existingIMPrescriptionSetup(for: action)
         return SummaryPrescriptionProjection.resolve(
             nextAction: action,
@@ -328,6 +338,20 @@ struct SummaryView: View {
                 imConversationAvailable: IMModeAvailability.isAvailable
             )
         )
+    }
+
+    /// Full tap-time capability snapshot for the active Summary action. This
+    /// mirrors Home and Train: live state can remove a rendered capability,
+    /// but it cannot reinterpret or upgrade the prescription the user saw.
+    private var recommendationModeAvailabilityAtTap: NextActionModeAvailability {
+        let imAvailable = RecommendationTapCapabilityLossUITestFixture
+            .imAvailableAtTap(IMModeAvailability.isAvailable)
+        let live = NextActionModeAvailability(
+            rating: ratingStore.rating,
+            imConversationAvailable: imAvailable
+        )
+        return RecommendationTapCapabilityLossUITestFixture
+            .availabilityAtTap(live)
     }
 
     /// Keeps the existing prescribed-rep UI fixture deterministic after the
@@ -617,16 +641,24 @@ struct SummaryView: View {
                 onStart: onPracticeAgain
             )
         case .outcomeLoop:
+            let action = renderedActionForSummary
+            let prescription = summaryPrescription(for: action)
             SummaryPrescriptionActionCard(
-                prescription: summaryPrescription,
+                prescription: prescription,
                 legacyDrill: drillRecommendation,
                 onStartMiniDrill: { drill in
                     activeMiniDrill = drill
                 },
                 onStartDrill: onStartDrill,
-                resolveIMAvailability: { IMModeAvailability.isAvailable },
-                onShowFullRep: onStartLookingAhead == nil ? nil : recordFullRepPrescriptionShown,
-                onStartFullRep: onStartLookingAhead == nil ? nil : startFullRepPrescription
+                resolveModeAvailability: { recommendationModeAvailabilityAtTap },
+                onShowFullRep: fullRepShownHandler(
+                    prescription: prescription,
+                    goalAttribution: action?.goalAttribution
+                ),
+                onStartFullRep: fullRepStartHandler(
+                    prescription: prescription,
+                    goalAttribution: action?.goalAttribution
+                )
             )
         }
     }
@@ -2148,22 +2180,49 @@ struct SummaryView: View {
     }
 
     private func handleDrillComplete(_ outcome: MiniDrillOutcome) {
-        print("[QuickDrill] Complete: succeeded=\(outcome.succeeded) fillers=\(outcome.fillerCount) words=\(outcome.wordCount) type=\(outcome.drillType)")
-        DrillHistoryStore.shared.record(
-            .init(variationId: outcome.drill.variation.id,
-                  skillArea: outcome.drill.skillArea,
-                  succeeded: outcome.succeeded,
-                  sessionId: UUID())
+        // The recording view owns terminal-evidence construction; Summary is
+        // the sole durable reward sink and independently enforces quantity,
+        // parent-session provenance, and process-local idempotency before it
+        // builds the durable receipt.
+        guard outcome.isProgressEligible,
+              let parentSession = currentStoredSession,
+              committedMiniDrillOutcomeIDs.insert(outcome.id).inserted else {
+            return
+        }
+
+        let drillHistory = DrillHistoryStore.shared
+        let awardedStreak = drillHistory.streakAfterRecording(
+            for: outcome.drill.skillArea,
+            succeeded: outcome.succeeded
+        )
+        let xpBreakdown = DrillXPEngine.breakdown(
+            outcome: outcome,
+            streak: awardedStreak
+        )
+        let receipt = DrillHistoryStore.Entry.verified(
+            outcomeID: outcome.id,
+            variationId: outcome.drill.variation.id,
+            skillArea: outcome.drill.skillArea,
+            succeeded: outcome.succeeded,
+            parentSessionId: parentSession.id,
+            terminalWordCount: outcome.wordCount,
+            recorderDuration: outcome.duration,
+            awardedXP: xpBreakdown.total
         )
 
-        let xpBreakdown = DrillXPEngine.breakdown(outcome: outcome)
+        // Durable outcome identity is authoritative across Summary instances
+        // and process launches. Nothing else may mutate or present unless the
+        // exact evidence receipt was inserted successfully.
+        guard drillHistory.record(receipt) else { return }
+
+        print("[QuickDrill] Complete: succeeded=\(outcome.succeeded) fillers=\(outcome.fillerCount) words=\(outcome.wordCount) type=\(outcome.drillType)")
         miniDrillAwardedXP = xpBreakdown.total
         miniDrillXPBreakdown = xpBreakdown
         ProfileManager.shared.addXP(xpBreakdown.total)
         RewardEngine.shared.evaluateDrill(
             skillArea: outcome.drill.skillArea,
             succeeded: outcome.succeeded,
-            streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea)
+            streak: awardedStreak
         )
 
         if !outcome.transcript.isEmpty {
@@ -2185,9 +2244,39 @@ struct SummaryView: View {
     /// full-rep recommendations enter the existing learning ledger; the
     /// fallback is always a drill, and historical Review replays never call
     /// this path.
-    private func recordFullRepPrescriptionShown(mode: PracticeMode) {
-        let prescription = summaryPrescription
-        let goalAttribution = finalizedActionForSummary?.goalAttribution
+    private func fullRepShownHandler(
+        prescription: SummaryPrescriptionProjection,
+        goalAttribution: NextActionGoalAttribution?
+    ) -> ((PracticeMode) -> Void)? {
+        guard onStartLookingAhead != nil else { return nil }
+        return { mode in
+            recordFullRepPrescriptionShown(
+                prescription: prescription,
+                goalAttribution: goalAttribution,
+                mode: mode
+            )
+        }
+    }
+
+    private func fullRepStartHandler(
+        prescription: SummaryPrescriptionProjection,
+        goalAttribution: NextActionGoalAttribution?
+    ) -> ((PracticeModeLaunchProjection) -> Void)? {
+        guard onStartLookingAhead != nil else { return nil }
+        return { launch in
+            startFullRepPrescription(
+                launch: launch,
+                prescription: prescription,
+                goalAttribution: goalAttribution
+            )
+        }
+    }
+
+    private func recordFullRepPrescriptionShown(
+        prescription: SummaryPrescriptionProjection,
+        goalAttribution: NextActionGoalAttribution?,
+        mode: PracticeMode
+    ) {
         guard prescription.source == .finalizedNextAction,
               prescription.fullRepMode == mode,
               onStartLookingAhead != nil else { return }
@@ -2213,16 +2302,32 @@ struct SummaryView: View {
         )
     }
 
-    private func startFullRepPrescription(launch: PracticeModeLaunchProjection) {
+    private func startFullRepPrescription(
+        launch: PracticeModeLaunchProjection,
+        prescription: SummaryPrescriptionProjection,
+        goalAttribution: NextActionGoalAttribution?
+    ) {
         guard let onStartLookingAhead else { return }
-        if launch.acceptsDisplayedPrescription {
-            // `recordShown` is idempotent on the fingerprint, so this also
-            // covers a very fast tap before SwiftUI's onAppear settles.
-            recordFullRepPrescriptionShown(mode: launch.displayedMode)
-            recommendationLearningStore.markTapped(mode: launch.displayedMode)
+        RecommendationTapAttribution.apply(
+            launch: launch,
+            recordShown: {
+                // Idempotent with the card's onAppear path and authoritative
+                // for a fast tap even when the live route must fall back.
+                recordFullRepPrescriptionShown(
+                    prescription: prescription,
+                    goalAttribution: goalAttribution,
+                    mode: launch.displayedMode
+                )
+            },
+            recordAccepted: { mode in
+                recommendationLearningStore.markTapped(mode: mode)
+            }
+        )
+        if !launch.acceptsDisplayedPrescription {
+            // An operational fallback is manual setup, never a continuation
+            // of an interrupted one-tap launch from another surface.
+            PracticeModeQuickStart.clear()
         }
-        // An operational capability change still routes safely, but it is not
-        // counted as acceptance of a mode the user did not tap.
         onStartLookingAhead(launch.destination)
     }
 
@@ -2361,7 +2466,36 @@ struct SummaryView: View {
             }
         }
 
+        #if DEBUG
+        presentRequestedMiniDrillCompletionFixtureIfNeeded()
+        #endif
+
     }
+
+    #if DEBUG
+    /// Enters the real Summary-owned mini-drill route for rendered integrity
+    /// tests. The fixture does not assign a result or reward: eligible evidence
+    /// must still return through `handleDrillComplete(_:)`, whose durable
+    /// receipt insertion is the gate in front of every visible result/effect.
+    private func presentRequestedMiniDrillCompletionFixtureIfNeeded() {
+        guard MiniDrillCompletionUITestFixture.requested() != nil,
+              let variation = DrillCatalog.allVariations.first(where: {
+                $0.id == MiniDrillCompletionUITestFixture.variationID
+              }) else {
+            return
+        }
+        let drill = DrillRecommendationV2(
+            variation: variation,
+            reason: "Rendered mini-drill completion integrity",
+            trendContext: nil,
+            alternateFormat: nil
+        )
+        DispatchQueue.main.async {
+            guard activeMiniDrill == nil, miniDrillOutcome == nil else { return }
+            activeMiniDrill = drill
+        }
+    }
+    #endif
 
     private func requestDeeperFeedback() async {
         aiError = nil

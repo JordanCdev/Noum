@@ -39,18 +39,6 @@ struct TransformationKPIReportTests {
         let day1 = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start))!
         let prescriptionID = UUID()
         let transcriptionID = UUID()
-        let events = [
-            FlowEvent.make(createdAt: start, correlationId: UUID(), flow: .other, stage: "activation.firstEligible"),
-            FlowEvent.make(createdAt: start, correlationId: UUID(), flow: .other, stage: "retention.appActive"),
-            FlowEvent.make(createdAt: day1, correlationId: UUID(), flow: .other, stage: "retention.appActive"),
-            FlowEvent.make(createdAt: start.addingTimeInterval(120), correlationId: UUID(), flow: .other, stage: "review.sessionOpened"),
-            FlowEvent.make(createdAt: start.addingTimeInterval(121), correlationId: UUID(), flow: .other, stage: "coach.typedOpened"),
-            FlowEvent.make(createdAt: start.addingTimeInterval(122), correlationId: UUID(), flow: .other, stage: "coach.typedToLive"),
-            FlowEvent.make(createdAt: start.addingTimeInterval(123), correlationId: UUID(), flow: .other, stage: "notification.authorizationGranted"),
-            FlowEvent.make(createdAt: start.addingTimeInterval(124), correlationId: prescriptionID, flow: .other, stage: TransformationKPIEventStage.prescriptionShown),
-            FlowEvent.make(createdAt: start.addingTimeInterval(125), correlationId: prescriptionID, flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted),
-            FlowEvent.make(createdAt: start.addingTimeInterval(126), correlationId: transcriptionID, flow: .practiceRep, stage: TransformationKPIEventStage.cloudTranscriptionResolvedLocal)
-        ]
         let session = PracticeSession(
             transcript: "A private transcript that must never enter KPI events.",
             fillerWordCount: 0,
@@ -59,6 +47,18 @@ struct TransformationKPIReportTests {
             mode: .timed,
             transcriptionProvider: "local"
         )
+        let events = [
+            FlowEvent.make(createdAt: start, correlationId: UUID(), flow: .other, stage: "activation.firstEligible"),
+            FlowEvent.make(createdAt: start, correlationId: UUID(), flow: .other, stage: "retention.appActive"),
+            FlowEvent.make(createdAt: day1, correlationId: UUID(), flow: .other, stage: "retention.appActive"),
+            FlowEvent.make(createdAt: start.addingTimeInterval(120), correlationId: session.id, flow: .other, stage: "review.sessionOpened"),
+            FlowEvent.make(createdAt: start.addingTimeInterval(121), correlationId: UUID(), flow: .other, stage: "coach.typedOpened"),
+            FlowEvent.make(createdAt: start.addingTimeInterval(122), correlationId: UUID(), flow: .other, stage: "coach.typedToLive"),
+            FlowEvent.make(createdAt: start.addingTimeInterval(123), correlationId: UUID(), flow: .other, stage: "notification.authorizationGranted"),
+            FlowEvent.make(createdAt: start.addingTimeInterval(124), correlationId: prescriptionID, flow: .other, stage: TransformationKPIEventStage.prescriptionShown),
+            FlowEvent.make(createdAt: start.addingTimeInterval(125), correlationId: prescriptionID, flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted),
+            FlowEvent.make(createdAt: start.addingTimeInterval(126), correlationId: transcriptionID, flow: .practiceRep, stage: TransformationKPIEventStage.cloudTranscriptionResolvedLocal)
+        ]
         let outcome = RecommendationOutcome(
             id: UUID(), fingerprint: "one", title: "Practice", focus: nil,
             target: nil, mode: .timed, sessionID: session.id, followed: true,
@@ -89,6 +89,76 @@ struct TransformationKPIReportTests {
         #expect(report.notificationOptInAfterValue == true)
         #expect(report.retainedDay1 == true)
         #expect(events.allSatisfy { !$0.reason.contains("private transcript") })
+    }
+
+    @Test func reviewOpenRateCountsOnlyUniqueEligibleSessionCorrelations() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let openedEligible = PracticeSession(
+            transcript: "Enough speech to measure honestly.",
+            fillerWordCount: 0,
+            duration: 12,
+            date: start,
+            mode: .timed
+        )
+        let unopenedEligible = PracticeSession(
+            transcript: "Another complete response for comparison.",
+            fillerWordCount: 0,
+            duration: 14,
+            date: start.addingTimeInterval(30),
+            mode: .timed
+        )
+        let thinCapture = PracticeSession(
+            transcript: "Brief capture",
+            fillerWordCount: 0,
+            duration: 12,
+            date: start.addingTimeInterval(60),
+            mode: .timed
+        )
+        let events = [
+            FlowEvent.make(correlationId: openedEligible.id, flow: .other, stage: "review.sessionOpened"),
+            FlowEvent.make(correlationId: openedEligible.id, flow: .other, stage: "review.sessionOpened"),
+            FlowEvent.make(correlationId: thinCapture.id, flow: .other, stage: "review.sessionOpened"),
+            FlowEvent.make(correlationId: UUID(), flow: .other, stage: "review.sessionOpened"),
+        ]
+
+        let report = TransformationKPIReport.derive(
+            events: events,
+            sessions: [openedEligible, unopenedEligible, thinCapture],
+            outcomes: []
+        )
+
+        #expect(report.reviewOpenRate == 0.5)
+    }
+
+    @Test func reviewOpenRateFailsClosedAgainstThinAndForeignLegacyEvents() {
+        let eligible = PracticeSession(
+            transcript: "Enough speech to measure honestly.",
+            fillerWordCount: 0,
+            duration: 12,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed
+        )
+        let thinCapture = PracticeSession(
+            transcript: "Brief capture",
+            fillerWordCount: 0,
+            duration: 12,
+            date: Date(timeIntervalSince1970: 1_700_000_030),
+            mode: .timed
+        )
+        let foreignID = UUID()
+        let events = [
+            FlowEvent.make(correlationId: thinCapture.id, flow: .other, stage: "review.sessionOpened"),
+            FlowEvent.make(correlationId: foreignID, flow: .other, stage: "review.sessionOpened"),
+            FlowEvent.make(correlationId: foreignID, flow: .other, stage: "review.sessionOpened"),
+        ]
+
+        let report = TransformationKPIReport.derive(
+            events: events,
+            sessions: [eligible, thinCapture],
+            outcomes: []
+        )
+
+        #expect(report.reviewOpenRate == 0)
     }
 
     @Test func structuredOnlyCompletionIsFirstValueButNotSpokenRep() {

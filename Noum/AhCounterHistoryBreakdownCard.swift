@@ -44,6 +44,7 @@ struct AhCounterHistoryBreakdownCard: View {
         if let stats {
             VStack(alignment: .leading, spacing: 14) {
                 header(for: stats)
+                metricEvidenceLine(for: stats)
                 statRow(for: stats)
                 if let cleanest = stats.cleanest {
                     Divider()
@@ -94,6 +95,22 @@ struct AhCounterHistoryBreakdownCard: View {
         count == 1 ? "1 rep" : "\(count) reps"
     }
 
+    @ViewBuilder
+    private func metricEvidenceLine(for stats: AhCounterHistorySummaryStats) -> some View {
+        if stats.fillerMeasuredRepCount < stats.runCount {
+            Text(Self.metricEvidenceCopy(for: stats))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
+        }
+    }
+
+    static func metricEvidenceCopy(for stats: AhCounterHistorySummaryStats) -> String {
+        let unit = stats.runCount == 1 ? "rep" : "reps"
+        return "Filler rate measured: \(stats.fillerMeasuredRepCount) of \(stats.runCount) \(unit)"
+    }
+
     // MARK: - Trend chip
 
     private func trendChipCopy(for stats: AhCounterHistorySummaryStats) -> String? {
@@ -133,7 +150,7 @@ struct AhCounterHistoryBreakdownCard: View {
                 label: "avg/min"
             )
             statColumn(
-                value: "\(stats.cleanRepCount)",
+                value: stats.fillerMeasuredRepCount > 0 ? "\(stats.cleanRepCount)" : "—",
                 label: "clean reps"
             )
             statColumn(
@@ -142,7 +159,7 @@ struct AhCounterHistoryBreakdownCard: View {
             )
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(statRowAccessibilityLabel(for: stats))
+        .accessibilityLabel(Self.statRowAccessibilityLabel(for: stats))
     }
 
     private func statColumn(value: String, label: String) -> some View {
@@ -162,11 +179,15 @@ struct AhCounterHistoryBreakdownCard: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func statRowAccessibilityLabel(for stats: AhCounterHistorySummaryStats) -> String {
+    static func statRowAccessibilityLabel(for stats: AhCounterHistorySummaryStats) -> String {
+        let evidence = metricEvidenceCopy(for: stats)
+        guard stats.fillerMeasuredRepCount > 0 else {
+            return "\(evidence). Filler progress metrics are not yet available."
+        }
         let avg = stats.averageFillersPerMinute.map { String(format: "%.1f", $0) } ?? "not yet available"
         let cleanCopy = stats.cleanRepCount == 1 ? "1 clean rep" : "\(stats.cleanRepCount) clean reps"
         let best = stats.cleanest.map { String(format: "%.1f", $0.fillersPerMinute) } ?? "not yet available"
-        return "Average \(avg) fillers per minute. \(cleanCopy). Best rep: \(best) fillers per minute."
+        return "\(evidence). Average \(avg) fillers per minute. \(cleanCopy). Best rep: \(best) fillers per minute."
     }
 
     // MARK: - Cleanest rep row

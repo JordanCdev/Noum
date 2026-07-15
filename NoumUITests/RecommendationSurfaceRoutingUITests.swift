@@ -85,10 +85,132 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
     }
 
     @MainActor
+    func testTrainPressureCapabilityLossFallsBackWithoutAcceptanceOrQuickStart() throws {
+        let app = launchRecommendationSurface(
+            at: "noum://practice",
+            profile: "pressureVulnerable",
+            additionalArguments: [
+                "UI_TESTING_RECOMMENDATION_TAP_CAPABILITY_LOSS", "pressure",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            ]
+        )
+
+        let hero = app.descendants(matching: .any)["practiceModes.recommendedHero"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 15))
+        let recommendationSettled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Pressure Drill"),
+            object: hero
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [recommendationSettled], timeout: 8), .completed)
+
+        let begin = app.buttons["practiceModes.recommendedHero.begin"]
+        scrollUntilHittable(begin, in: app, attempts: 6)
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        XCTAssertTrue(begin.isHittable)
+        XCTAssertGreaterThanOrEqual(begin.frame.height, 44)
+        XCTAssertEqual(begin.label, "Start Pressure Drill")
+        addScreenshot(named: "train-pressure-recommendation-before-capability-loss")
+
+        begin.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"]
+                .waitForExistence(timeout: 12),
+            "A Pressure recommendation that loses capability at tap must fail closed to Timed."
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["suddenDeath.screen"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["imPractice.screen"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["timedPractice.prompt"].exists)
+        let setupCue = app.descendants(matching: .any)["timedPractice.prescribedDifficulty"]
+        XCTAssertTrue(setupCue.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            setupCue.label,
+            "Prompt pool, All Themes. 15 seconds to prepare.",
+            "The operational fallback must expose the default Timed setup without a stale prescribed demand."
+        )
+
+        let timedBegin = app.buttons["timedPractice.begin"]
+        scrollUntilHittable(timedBegin, in: app, attempts: 3)
+        XCTAssertTrue(timedBegin.waitForExistence(timeout: 5))
+        XCTAssertTrue(timedBegin.isHittable)
+        XCTAssertGreaterThanOrEqual(timedBegin.frame.height, 44)
+        addScreenshot(named: "train-pressure-capability-loss-timed-setup")
+
+        app.terminate()
+        try assertPersistedShownWithoutAcceptance(surface: "Train capability fallback")
+    }
+
+    @MainActor
+    func testSummaryPressureCapabilityLossFallsBackWithoutAcceptanceOrQuickStart() throws {
+        let app = launchRecommendationSurface(
+            at: "noum://summary",
+            profile: "plateauedAdvanced",
+            additionalArguments: [
+                "UI_TESTING_RECOMMENDATION_TAP_CAPABILITY_LOSS", "pressure",
+                "UI_TESTING_RECOMMENDATION_INTERRUPTED_QUICK_START",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            ]
+        )
+
+        dismissSummaryProgressionIfNeeded(in: app)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["summary.postRepVerdict"]
+                .waitForExistence(timeout: 15)
+        )
+        XCTAssertTrue(app.staticTexts["Pressure Drill · Pressure"].waitForExistence(timeout: 5))
+
+        let begin = app.buttons["summary.postRepVerdict.fullRetry"]
+        scrollUntilHittable(begin, in: app, attempts: 10)
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        XCTAssertTrue(begin.isHittable)
+        XCTAssertGreaterThanOrEqual(begin.frame.height, 44)
+        XCTAssertEqual(begin.label, "Start Pressure Drill")
+        addScreenshot(named: "summary-pressure-recommendation-before-capability-loss")
+
+        begin.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"]
+                .waitForExistence(timeout: 12),
+            "A Summary Pressure prescription that loses capability at tap must fail closed to Timed."
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["suddenDeath.screen"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["imPractice.screen"].exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)["timedPractice.prompt"].exists,
+            "An interrupted Timed quick-start must not survive the Summary fallback."
+        )
+        let setupCue = app.descendants(matching: .any)["timedPractice.prescribedDifficulty"]
+        XCTAssertTrue(setupCue.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            setupCue.label,
+            "Prompt pool, All Themes. 15 seconds to prepare.",
+            "The fallback must expose default manual Timed setup without stale demand."
+        )
+
+        let timedBegin = app.buttons["timedPractice.begin"]
+        scrollUntilHittable(timedBegin, in: app, attempts: 3)
+        XCTAssertTrue(timedBegin.waitForExistence(timeout: 5))
+        XCTAssertTrue(timedBegin.isHittable)
+        XCTAssertGreaterThanOrEqual(timedBegin.frame.height, 44)
+        addScreenshot(named: "summary-pressure-capability-loss-timed-setup")
+
+        app.terminate()
+        try assertPersistedShownWithoutAcceptance(
+            surface: "Summary capability fallback",
+            profile: "plateauedAdvanced",
+            screenshotName: "summary-pressure-capability-loss-shown-only"
+        )
+    }
+
+    @MainActor
     func testTrainTimedRecommendationShowsExactDifficultyAndLaunchesTimed() throws {
         let app = launchRecommendationSurface(
             at: "noum://practice",
-            profile: "beginner"
+            profile: "beginner",
+            additionalArguments: ["UI_TESTING_MICROPHONE_GRANTED"]
         )
 
         let hero = app.descendants(matching: .any)["practiceModes.recommendedHero"]
@@ -121,7 +243,8 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
     @MainActor
     private func launchRecommendationSurface(
         at deepLink: String,
-        profile: String
+        profile: String,
+        additionalArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
@@ -132,6 +255,7 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
             "UI_TESTING_NO_CLOUD_CONSENT",
             "-DeepLink", deepLink,
         ]
+        app.launchArguments += additionalArguments
         app.launch()
         return app
     }
@@ -141,7 +265,10 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
         let diagnostics = XCUIApplication()
         diagnostics.launchArguments += [
             "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE", "plateauedAdvanced",
             "UI_TESTING_RECOMMENDATION_FLOW_LOG",
+            "UI_TESTING_NO_CLOUD_CONSENT",
             "-DeepLink", "noum://settings",
         ]
         diagnostics.launch()
@@ -173,6 +300,71 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
         XCTAssertTrue(diagnostics.staticTexts["prescription.shown"].waitForExistence(timeout: 5))
         addScreenshot(named: "\(surface.lowercased())-recommendation-correlated-acceptance")
         diagnostics.terminate()
+    }
+
+    @MainActor
+    private func assertPersistedShownWithoutAcceptance(
+        surface: String,
+        profile: String = "pressureVulnerable",
+        screenshotName: String = "train-pressure-capability-loss-shown-only"
+    ) throws {
+        let diagnostics = XCUIApplication()
+        diagnostics.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE", profile,
+            "UI_TESTING_RECOMMENDATION_FLOW_LOG",
+            "UI_TESTING_NO_CLOUD_CONSENT",
+            "-DeepLink", "noum://settings",
+        ]
+        diagnostics.launch()
+
+        XCTAssertTrue(
+            diagnostics.descendants(matching: .any)["settings.screen"]
+                .waitForExistence(timeout: 15)
+        )
+        let advanced = diagnostics.buttons["settings.advancedToggle"]
+        scrollUntilHittable(advanced, in: diagnostics, attempts: 14)
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
+        if (advanced.value as? String) != "Expanded" {
+            advanced.tap()
+        }
+
+        let acceptance = diagnostics.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Prescription"))
+            .firstMatch
+        scrollUntilHittable(acceptance, in: diagnostics, attempts: 14)
+        XCTAssertTrue(acceptance.waitForExistence(timeout: 8))
+        XCTAssertEqual(
+            acceptance.label,
+            "Prescription, 0%",
+            "\(surface) must retain the shown denominator without false acceptance; got \(acceptance.label)."
+        )
+
+        let shownEvent = diagnostics.staticTexts["prescription.shown"]
+        scrollUntilHittable(shownEvent, in: diagnostics, attempts: 5)
+        XCTAssertTrue(shownEvent.waitForExistence(timeout: 5))
+        XCTAssertFalse(diagnostics.staticTexts["prescription.accepted"].waitForExistence(timeout: 1))
+        addScreenshot(named: screenshotName)
+        diagnostics.terminate()
+    }
+
+    @MainActor
+    private func dismissSummaryProgressionIfNeeded(in app: XCUIApplication) {
+        for _ in 0..<6 {
+            if app.descendants(matching: .any)["summary.postRepVerdict"].exists { return }
+            var tapped = false
+            for label in ["View Summary", "Continue", "Got it"] {
+                let button = app.buttons[label]
+                if button.waitForExistence(timeout: 1), button.isHittable {
+                    button.tap()
+                    Thread.sleep(forTimeInterval: 0.5)
+                    tapped = true
+                    break
+                }
+            }
+            if !tapped { Thread.sleep(forTimeInterval: 0.5) }
+        }
     }
 
     private func destinationIdentifier(

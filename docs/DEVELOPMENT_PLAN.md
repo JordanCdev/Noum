@@ -7,6 +7,202 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+The current working tree closes the previously ranked Review and immediate-AI
+metric-evidence gap without adding a history, trend, coaching, or routing
+owner. Ah-Counter and Timed summaries keep factual saved-run counts while
+publishing separate measured-rep denominators; filler rate, clean-run claims,
+WPM, pace-zone counts, best-row pace, and mechanic trends now consume only the
+existing `FillerBurden` / `SessionQualifier` projections. Review charts omit
+unqualified mechanic points instead of plotting zero, detail renders
+unqualified WPM as `Not measured`, urgent filler replay uses normalized
+qualified burden, and goal examples require independently qualified filler and
+pace while score-only highlights remain available.
+
+The active post-rep AI prompt now withholds current filler, derivable word
+count, and WPM unless that exact saved rep clears quantity, confidence,
+current-schema, and non-fixture gates. A conservative acceptance guard rejects
+unsupported metric claims and any filler-to-rushed-pace causal join.
+`AIInsightsService` applies the same boundary to session prompts, baseline
+mechanics, deterministic fallback copy, and cache identity; independent score,
+duration, transcript, and question evidence remains usable. Focused verification
+passes 92/92 across 12 suites. The complete unsigned simulator `NoumTests`
+target passes 4,289 unique tests / 4,308 device executions with zero failures
+or skips, and an unsigned current-source Release simulator build succeeds.
+
+This is still a partial product-wide closure. Active Summary Coach Read pace,
+Proof Moment generation, Forward Plan inputs, and other durable narrative or
+reward consumers still contain raw mechanic interpretations and are the next
+P1 audit target. Legacy trend archives intentionally lose filler/pace continuity
+until new qualified snapshots accrue. Durable standalone Pace attribution and
+wider Roleplay prescription routing remain product/schema decisions.
+Production remains NO-GO at 18/100 with 0/5 required external artifacts.
+
+Rendered Summary capability-loss evidence in the current working tree closes
+the highest-ranked remaining recommendation-trust gap without introducing a
+parallel state or routing path. Summary carries the exact finalized action and
+rendered projection into shown/tap attribution, rechecks the complete live
+Pressure/Conversation availability snapshot at tap, can only fail closed to
+manual Timed setup, records acceptance only for an exact displayed/launched
+mode match, and clears an interrupted regular-mode Quick Start on fallback. A
+Release-inert
+fixture proves the real Summary Pressure card at Accessibility XXXL, a
+44-point action, exact default Timed setup with no automatic prompt or stale
+demand, and a content-free shown-only diagnostic at 0% acceptance. The focused
+logic selection passes 23/23, the focused rendered branch passes 1/1, the
+complete recommendation UI suite passes 5/5, the complete unsigned unit target
+passes 4,242 unique tests / 4,261 device executions, and an unsigned
+current-source Release simulator build succeeds. This does not prove a
+physical transition, rendered Summary Conversation or Home capability loss,
+the wider destination catalog, or population benefit. The leading section now
+closes the core metric-specific filler/WPM consumers; the remaining Review
+presentation inventory must be re-ranked before another bounded slice. Durable
+standalone Pace attribution and wider Roleplay prescription routing remain
+product/schema decisions. Production remains NO-GO at 18/100 with 0/5 required
+external artifacts.
+
+Rendered mixed Review-history evidence in the current working tree closes the
+highest-ranked saved-history trust boundary without creating parallel state.
+Raw `PracticeSessionStore` rows remain searchable, openable, replayable,
+deletable, and exportable, while `PracticeProgressEligibility` now owns All
+Reps aggregates and session-backed mode summaries, previous comparison,
+targeted replay, Review story/chart/highlight reads, Profile evidence depth,
+and the eligible review-open KPI denominator and numerator. A DEBUG-only
+fixture proves three newer high-score saved captures cannot move two older
+measured reps: the Accessibility XXXL lane passes 2/2 with Reduce Motion, the
+focused history/KPI lane passes 31/31, the complete unsigned unit target passes
+4,241 unique tests / 4,260 device executions, and an unsigned current-source
+Release simulator build succeeds. Non-finite/evaluation rows remain unit-only;
+the shared progress floor is not every mode's stricter metric floor, and legacy
+Sudden Death run ledgers are not reconciled. The leading status paragraph now
+closes the previously ranked Summary capability-loss candidate; rendered Home
+loss remains bounded. Conversation expansion, durable
+standalone Pace attribution, and wider Roleplay prescription routing still
+require product/schema decisions. Production remains NO-GO at 18/100 with 0/5
+required external artifacts.
+
+Rendered Train capability-loss-at-tap evidence in the current working tree
+closes the highest-ranked bounded recommendation-trust gap without creating a
+parallel recommendation, routing, or analytics path. A Release-inert,
+DEBUG-gated source/tap fixture renders a coherent Pressure recommendation and
+then removes only Pressure from the live capability snapshot. The existing
+projection fails closed to ordinary Timed setup; no Pressure/Conversation
+destination, automatically mounted prompt, or stale prescribed demand survives,
+and the content-free ledger retains shown at exact 0% acceptance with no
+accepted event. The normal Timed control still reaches its real prompt. The
+complete recommendation selection passes 24/24 at Accessibility XXXL from an
+iPhone 17 Pro / iOS 26.5 simulator configured with Reduce Motion, and the
+complete unsigned unit target passes 4,228 unique tests / 4,247 device
+executions, and an unsigned current-source Release simulator build succeeds.
+This proves one deterministic Train Pressure branch, not rendered Home or
+Conversation loss, a physical capability transition, the wider destination
+catalog, or population benefit. The leading status paragraph separately closes
+Summary Pressure loss. The mixed Review-only history
+boundary is now closed above; durable standalone Pace attribution and wider
+Roleplay prescription routing still require product/schema decisions.
+Production remains NO-GO at 18/100 with 0/5 required external artifacts.
+
+Rendered standard mini-drill completion evidence in the current working tree
+closes the bounded local follow-up left by the all-route terminal-evidence and
+account-owned receipt work. A DEBUG-only Summary launch seam resolves the
+existing Silent Transitions variation, supplies only a terminal receipt and
+recorder duration, and then leaves the production disposition, outcome builder,
+and durable Summary sink authoritative. The Accessibility XXXL insufficient and
+eligible branches pass 2/2 from a simulator configured with Reduce Motion; the
+first returns to a hittable retry without result/XP, and the second can render
+its exact 12-second/12-word/zero-filler result only after durable receipt
+insertion. The related focused selection passes 48/48, the adjacent Lesson
+Apply UI suite remains 2/2, and the complete unsigned simulator target passes
+4,224 unique tests / 4,243 device executions. This proves one representative
+shared standard/framework path, not specialized live WPM/pause/PREP metrics or
+real microphone/provider timing. The now-rendered representative Train Pressure
+branch is recorded above; the leading status paragraph also closes Summary
+Pressure, while Home, Conversation, and the wider destination catalog remain
+bounded capability-fallback gaps.
+Standalone Pace attribution and wider Roleplay prescription routing remain
+product/schema decisions. Production remains
+NO-GO at 18/100 with 0/5 required external artifacts.
+
+Unsupported-locale recovery in the current working tree closes the highest
+verified bounded local TR-4 gap without fragmenting speech state ownership. The
+existing recognizer converts its established device/locale-specific local error
+into a typed recording issue, and Timed Practice renders specific offline
+language guidance plus a real return-to-setup action. It withholds the generic
+retry and inactive End Session controls because neither can recover an
+unsupported local model, and its transition respects Reduce Motion. A
+DEBUG-only fixture and deterministic locale seam drive the real Timed lifecycle
+without entering Release. Focused speech/lifecycle verification passes 41/41;
+the Accessibility XXXL + Reduce Motion rendered path and the existing generic
+failure regression each pass 1/1; and the complete unsigned simulator target
+passes 4,223 unique tests / 4,242 device executions. Physical-device locale
+availability, manual VoiceOver, signed TestFlight, and all five external
+artifacts remain unproved, so production remains NO-GO at 18/100. The next safe
+local candidate is the mixed Review-only history boundary; the representative
+rendered mini-drill plus Train/Summary Pressure capability-loss branches are now
+closed, while Home and Conversation capability-loss rendering remains bounded.
+Durable standalone Pace attribution and wider Roleplay prescription routing
+require explicit product/schema decisions.
+
+Lesson Apply integrity in the current working tree closes the highest verified
+local earned-progress gap. Each lesson now exposes and enforces a meaningful
+answer floor: authored 10/14/18/20-word criteria remain authoritative, while
+the six keyword/device-only lessons receive a 12-word fallback. A usable
+terminal transcript receipt and at least three finite recorder-owned seconds
+must produce transcript-free completion evidence before the exact
+concept/spot/apply outcome can mutate lesson history, pass, or award XP. Lesson
+reload/account teardown
+also clears transient celebrations so an account switch cannot present another
+identity's event. The focused integrity selection passes 44/44, the rendered
+keyword-only and eligible paths pass 2/2 with Reduce Motion (including
+Accessibility XXXL), and the complete unsigned simulator target passes 4,222
+unique tests / 4,241 device executions; Swift Testing reports 4,200 tests across
+428 suites. Existing historical lesson aggregates are grandfathered, reward
+writes are not yet one cross-store transaction, and the rubrics remain locally
+derived rather than professionally calibrated. Remaining bounded local UI
+evidence must be freshly ranked now that unsupported-locale behavior is
+rendered, while durable standalone Pace attribution and Roleplay prescription
+routing remain larger product/schema decisions. Production remains NO-GO at
+18/100 with 0/5 required external artifacts.
+
+Mini-drill history hardening in the current working tree makes the existing
+reward path account-owned and evidence-versioned. The former device-global,
+unversioned archive is no longer read as progress: each account now reloads its
+own bounded receipt archive, and every accepted row must bind the exact outcome
+to a real parent practice session, terminal speech quantity, variation, schema,
+source, and bounded XP. Summary must durably insert that verified receipt before
+Profile XP, rewards, baselines, streaks, or result presentation advance; duplicate
+or malformed receipts fail closed. The legacy global archive remains only in the
+unattributed export/deletion boundary and is not silently attributed to the
+current account. Focused verification passes 47/47 and the complete unsigned
+simulator `NoumTests` target passes 4,213 unique tests / 4,232 device executions
+with zero failures; its Swift Testing phase reports 4,191 tests across 427
+suites. This does not reconcile old monotonic XP, provide an unbounded outcome
+ledger, or prove signed Release, UI, device, backend, calibration, transfer, or
+launch behavior. The later Lesson Apply closure is recorded above; a
+deterministic rendered standard mini-drill retry/result fixture is now closed,
+while specialized live-metric routes remain unrendered and the
+rendered unsupported-locale proof was subsequently closed by the current
+working-tree lane described above. Production remains NO-GO at 18/100 with 0/5
+required external artifacts.
+
+Mini-drill completion integrity in the current working tree now applies one
+terminal-evidence contract to all four routed experiences: standard/framework,
+Beat the Brake, Land the Pause, and PREP Stack. Clocks wait for capture
+readiness; completion waits for a terminal provider receipt; quantity uses the
+recorder-owned three-word / three-finite-second floor; and Summary rechecks
+eligibility plus outcome-ID idempotency before history, XP, rewards, or baseline
+writes. Live WPM and pause metrics remain live-owned rather than reconstructed
+from terminal text. PREP's declared 28-word target is now an actual success
+requirement, so four taps and elapsed wall time cannot fabricate success or a
+100% close. Focused verification passes 28/28 unique tests, the complete
+unsigned simulator `NoumTests` target passes 4,183 tests across 426 suites with
+zero failures, and the ordinary five-tab shell remains visually coherent in a
+seeded simulator sweep. A forced
+standard mini-drill retry/result fixture now passes 2/2 at Accessibility XXXL;
+specialized live-metric rendering, physical microphone/provider timing, and
+unbounded historical idempotency remain open. This local closure earns
+no external readiness points: production remains NO-GO at 18/100 with 0/5
+required external artifacts.
+
 Cut the Crutch completion integrity at `bb155866` now places the established
 terminal recording receipt and shared three-word / three-finite-second progress
 floor in front of every result, XP, and Daily Goal/streak effect. The live

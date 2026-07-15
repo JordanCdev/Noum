@@ -8,7 +8,9 @@ private func quantityFairnessSession(
     words: Int,
     date: Date = Date(),
     confidence: Double? = 0.9,
-    insights: [String] = []
+    insights: [String] = [],
+    comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
+    isEvaluationFixture: Bool = false
 ) -> PracticeSession {
     PracticeSession(
         transcript: Array(repeating: "word", count: max(0, words)).joined(separator: " "),
@@ -17,7 +19,9 @@ private func quantityFairnessSession(
         date: date,
         mode: .timed,
         insights: insights,
-        transcriptConfidence: confidence
+        transcriptConfidence: confidence,
+        comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
+        isEvaluationFixture: isEvaluationFixture
     )
 }
 
@@ -268,19 +272,38 @@ struct CoachingPlannerQuantityFairnessTests {
         #expect(insights.contains { $0.contains("below your earlier qualified average") })
     }
 
-    @Test func thinHistoricalReviewWithholdsFillerAndPaceClaims() {
-        let reviewed = quantityFairnessSession(fillers: 0, duration: 5, words: 5, date: baseDate)
+    @Test func unqualifiedHistoricalReviewWithholdsFillerAndPaceClaims() {
         let earlierA = quantityFairnessSession(fillers: 4, duration: 60, words: 100, date: baseDate.addingTimeInterval(-60))
         let earlierB = quantityFairnessSession(fillers: 4, duration: 60, words: 100, date: baseDate.addingTimeInterval(-120))
+        let unqualified = [
+            quantityFairnessSession(fillers: 0, duration: 5, words: 5, date: baseDate),
+            quantityFairnessSession(fillers: 0, duration: 60, words: 100, date: baseDate, confidence: 0.49),
+            quantityFairnessSession(
+                fillers: 0,
+                duration: 60,
+                words: 100,
+                date: baseDate,
+                comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion - 1
+            ),
+            quantityFairnessSession(
+                fillers: 0,
+                duration: 60,
+                words: 100,
+                date: baseDate,
+                isEvaluationFixture: true
+            )
+        ]
 
-        let insights = CoachingPlanner.sessionInsights(
-            for: reviewed,
-            comparedTo: [reviewed, earlierA, earlierB],
-            profile: nil
-        )
+        for reviewed in unqualified {
+            let insights = CoachingPlanner.sessionInsights(
+                for: reviewed,
+                comparedTo: [reviewed, earlierA, earlierB],
+                profile: nil
+            )
 
-        #expect(!insights.contains { $0.localizedCaseInsensitiveContains("filler rate") })
-        #expect(!insights.contains { $0.localizedCaseInsensitiveContains("pace check") })
+            #expect(!insights.contains { $0.localizedCaseInsensitiveContains("filler rate") })
+            #expect(!insights.contains { $0.localizedCaseInsensitiveContains("pace check") })
+        }
     }
 }
 

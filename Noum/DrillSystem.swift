@@ -421,42 +421,313 @@ struct DrillResult: Codable, Equatable {
     let parentSessionId: UUID?          // The session that triggered this drill
 }
 
+// MARK: - Mini Drill Completion Integrity
+
+/// Terminal evidence that is substantial enough to become a mini-drill
+/// outcome. Keeping this separate from the live transcript prevents interim
+/// fragments and provider-finalization latency from entering rewards.
+struct MiniDrillCompletionEvidence: Equatable, Sendable {
+    static let minimumWordCount = 3
+    static let minimumDuration: TimeInterval = 3
+
+    let transcript: String
+    let wordCount: Int
+    let duration: TimeInterval
+
+    static func validated(
+        transcript: String,
+        captureDuration: TimeInterval
+    ) -> MiniDrillCompletionEvidence? {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split { !$0.isLetter && !$0.isNumber }
+        guard words.count >= minimumWordCount,
+              captureDuration.isFinite,
+              captureDuration >= minimumDuration else {
+            return nil
+        }
+        return MiniDrillCompletionEvidence(
+            transcript: trimmed,
+            wordCount: words.count,
+            duration: captureDuration
+        )
+    }
+}
+
+/// Resolves one recorder stop into an explicit next action. Only `.eligible`
+/// may construct an outcome; usable-but-thin speech returns the user to Ready
+/// with a retry explanation, while transport/finalization failures preserve
+/// the speech owner's recovery error.
+enum MiniDrillCompletionDisposition: Equatable, Sendable {
+    case eligible(MiniDrillCompletionEvidence)
+    case insufficientSpeech
+    case unusableRecording
+
+    static func resolve(
+        completion: FinalizedTranscript?,
+        captureDuration: TimeInterval
+    ) -> MiniDrillCompletionDisposition {
+        guard RecordingCompletionGate.allowsScoringAndProgress(completion),
+              let completion else {
+            return .unusableRecording
+        }
+        guard let evidence = MiniDrillCompletionEvidence.validated(
+            transcript: completion.text,
+            captureDuration: captureDuration
+        ) else {
+            return .insufficientSpeech
+        }
+        return .eligible(evidence)
+    }
+}
+
+#if DEBUG
+/// Deterministic terminal evidence for the rendered TR-5 mini-drill contract.
+/// The fixture deliberately supplies only the provider-owned final transcript
+/// and recorder-owned duration. The real drill view still resolves the
+/// disposition and constructs the outcome, and Summary remains the only
+/// durable reward/result sink.
+enum MiniDrillCompletionUITestFixture: String {
+    case insufficient
+    case eligible
+
+    static let variationID = "filler.silentTransitions"
+
+    static func requested(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Self? {
+        guard arguments.contains("UI_TESTING"),
+              let index = arguments.firstIndex(
+                of: "UI_TESTING_MINI_DRILL_COMPLETION_FIXTURE"
+              ),
+              arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return Self(rawValue: arguments[index + 1])
+    }
+
+    var completion: FinalizedTranscript {
+        let text: String
+        switch self {
+        case .insufficient:
+            text = "Too short"
+        case .eligible:
+            text = "Clear answers give listeners one point one reason and one concrete example"
+        }
+        return FinalizedTranscript(
+            text: text,
+            receivedFinalResult: true,
+            audioByteCount: 4_096
+        )
+    }
+
+    var captureDuration: TimeInterval { 12 }
+}
+#endif
+
+/// Pure PREP evaluation shared by the specialized view and tests. Completing
+/// the four UI steps is not sufficient evidence by itself: the spoken response
+/// must also reach the 28-word floor disclosed by the drill.
+enum PREPStackEvaluation {
+    static let requiredSteps = 4
+    static let minimumWordCount = 28
+    static let minimumDuration: TimeInterval = 20
+
+    static func closeStrength(stepsCompleted: Int, wordCount: Int) -> Double {
+        let stepCoverage = Double(max(0, min(requiredSteps, stepsCompleted)))
+            / Double(requiredSteps)
+        let wordCoverage = Double(max(0, min(minimumWordCount, wordCount)))
+            / Double(minimumWordCount)
+        return min(stepCoverage, wordCoverage)
+    }
+
+    static func succeeded(
+        stepsCompleted: Int,
+        wordCount: Int,
+        duration: TimeInterval
+    ) -> Bool {
+        stepsCompleted >= requiredSteps
+            && wordCount >= minimumWordCount
+            && duration.isFinite
+            && duration >= minimumDuration
+    }
+}
+
 // MARK: - Drill History
 
 /// Tracks recent drill completions for freshness rotation and streak detection.
 class DrillHistoryStore: ObservableObject {
     static let shared = DrillHistoryStore()
+    static let capacity = 30
+    static let storageKeyPrefix = "drillHistory"
+    static let currentEvidenceSchemaVersion = 1
 
-    @Published var entries: [Entry] = []
+    @Published private(set) var entries: [Entry] = []
 
-    struct Entry: Identifiable, Codable {
+    struct Entry: Identifiable, Codable, Equatable {
+        enum Source: String, Codable, Equatable {
+            case miniDrill
+        }
+
         let id: UUID
         let variationId: String
         let skillArea: SkillArea
         let date: Date
         let succeeded: Bool
-        let sessionId: UUID
+        /// The practice session that prescribed this drill, when one exists.
+        let sessionId: UUID?
+        /// Stable identity from the terminal mini-drill outcome. This is the
+        /// durable idempotency key; `id` remains the history-row identity for
+        /// backwards-compatible decoding.
+        let outcomeID: UUID?
+        let evidenceSchemaVersion: Int?
+        let source: Source?
+        let terminalWordCount: Int?
+        let terminalDuration: TimeInterval?
+        let awardedXP: Int?
 
-        init(variationId: String, skillArea: SkillArea, date: Date = Date(), succeeded: Bool, sessionId: UUID) {
+        /// Explicit semantic name for new call sites while the encoded
+        /// `sessionId` field remains stable for legacy archive decoding.
+        var parentSessionId: UUID? { sessionId }
+
+        /// Legacy value initializer retained for pure evaluators and old
+        /// archives. Rows built this way deliberately have no current evidence
+        /// provenance and therefore cannot be persisted by `record(_:)`.
+        init(
+            variationId: String,
+            skillArea: SkillArea,
+            date: Date = Date(),
+            succeeded: Bool,
+            sessionId: UUID
+        ) {
             self.id = UUID()
             self.variationId = variationId
             self.skillArea = skillArea
             self.date = date
             self.succeeded = succeeded
             self.sessionId = sessionId
+            self.outcomeID = nil
+            self.evidenceSchemaVersion = nil
+            self.source = nil
+            self.terminalWordCount = nil
+            self.terminalDuration = nil
+            self.awardedXP = nil
+        }
+
+        private init(
+            id: UUID,
+            variationId: String,
+            skillArea: SkillArea,
+            date: Date,
+            succeeded: Bool,
+            sessionId: UUID?,
+            outcomeID: UUID?,
+            evidenceSchemaVersion: Int?,
+            source: Source?,
+            terminalWordCount: Int?,
+            terminalDuration: TimeInterval?,
+            awardedXP: Int?
+        ) {
+            self.id = id
+            self.variationId = variationId
+            self.skillArea = skillArea
+            self.date = date
+            self.succeeded = succeeded
+            self.sessionId = sessionId
+            self.outcomeID = outcomeID
+            self.evidenceSchemaVersion = evidenceSchemaVersion
+            self.source = source
+            self.terminalWordCount = terminalWordCount
+            self.terminalDuration = terminalDuration
+            self.awardedXP = awardedXP
+        }
+
+        /// Constructs a current-schema receipt. Validation intentionally lives
+        /// at the store boundary too, so a malformed candidate can never become
+        /// progress merely because a caller used this factory.
+        static func verified(
+            outcomeID: UUID,
+            variationId: String,
+            skillArea: SkillArea,
+            date: Date = Date(),
+            succeeded: Bool,
+            parentSessionId: UUID,
+            terminalWordCount: Int,
+            recorderDuration: TimeInterval,
+            awardedXP: Int
+        ) -> Entry {
+            Entry(
+                id: outcomeID,
+                variationId: variationId,
+                skillArea: skillArea,
+                date: date,
+                succeeded: succeeded,
+                sessionId: parentSessionId,
+                outcomeID: outcomeID,
+                evidenceSchemaVersion: DrillHistoryStore.currentEvidenceSchemaVersion,
+                source: .miniDrill,
+                terminalWordCount: terminalWordCount,
+                terminalDuration: recorderDuration,
+                awardedXP: awardedXP
+            )
+        }
+
+        var isVerified: Bool {
+            evidenceSchemaVersion == DrillHistoryStore.currentEvidenceSchemaVersion
+                && source == .miniDrill
+                && outcomeID == id
+                && sessionId != nil
+                && !variationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && terminalWordCount.map { $0 >= MiniDrillCompletionEvidence.minimumWordCount } == true
+                && terminalDuration.map {
+                    $0.isFinite && $0 >= MiniDrillCompletionEvidence.minimumDuration
+                } == true
+                && awardedXP.map { DrillXPEngine.awardRange.contains($0) } == true
         }
     }
 
-    private let storageKey = "drillHistory"
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
 
-    private init() {
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: (() -> String?)? = nil
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider ?? {
+            KeychainHelper.load(key: "NoumAccountID")
+        }
         load()
     }
 
-    func record(_ entry: Entry) {
-        entries.insert(entry, at: 0)
-        if entries.count > 30 { entries = Array(entries.prefix(30)) }
+    /// Persists one verified terminal receipt. Duplicate outcomes and invalid
+    /// evidence are rejected before any in-memory or durable mutation occurs.
+    @discardableResult
+    func record(_ entry: Entry) -> Bool {
+        guard entry.isVerified,
+              let outcomeID = entry.outcomeID,
+              !entries.contains(where: { $0.outcomeID == outcomeID }) else {
+            return false
+        }
+
+        var updated = entries
+        updated.append(entry)
+        updated.sort { lhs, rhs in
+            if lhs.date == rhs.date { return lhs.id.uuidString > rhs.id.uuidString }
+            return lhs.date > rhs.date
+        }
+        entries = Array(updated.prefix(Self.capacity))
         save()
+        return true
+    }
+
+    func reloadForCurrentAccount() {
+        load()
+    }
+
+    /// Clears only process memory. Durable account history remains available
+    /// when that account starts another authenticated session.
+    func endSession() {
+        entries = []
     }
 
     /// How many consecutive successful drills in a given skill area (most recent first).
@@ -466,6 +737,13 @@ class DrillHistoryStore: ObservableObject {
             if entry.succeeded { count += 1 } else { break }
         }
         return count
+    }
+
+    /// The streak that would be visible after a candidate outcome is inserted.
+    /// This lets the caller calculate and persist its exact XP receipt before
+    /// granting any separate profile reward.
+    func streakAfterRecording(for skillArea: SkillArea, succeeded: Bool) -> Int {
+        succeeded ? currentStreak(for: skillArea) + 1 : 0
     }
 
     /// The most recently completed variation IDs for a skill area.
@@ -483,14 +761,34 @@ class DrillHistoryStore: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(entries) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            defaults.set(data, forKey: currentStorageKey)
         }
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([Entry].self, from: data) else { return }
-        entries = decoded
+        guard let data = defaults.data(forKey: currentStorageKey),
+              let decoded = try? JSONDecoder().decode([Entry].self, from: data) else {
+            entries = []
+            return
+        }
+
+        entries = Array(decoded
+            .filter(\.isVerified)
+            .sorted { lhs, rhs in
+                if lhs.date == rhs.date { return lhs.id.uuidString > rhs.id.uuidString }
+                return lhs.date > rhs.date
+            }
+            .prefix(Self.capacity))
+
+        // Rewrite the account archive after filtering so unverified legacy
+        // rows are quarantined once rather than reconsidered on every launch.
+        save()
+    }
+
+    private var currentStorageKey: String {
+        let accountID = accountIDProvider()
+        let accountScope = accountID.map { $0.isEmpty ? "guest" : $0 } ?? "guest"
+        return "\(Self.storageKeyPrefix).\(accountScope)"
     }
 }
 
@@ -1088,13 +1386,20 @@ enum DrillSelector {
 ///
 /// Range: 10–80 XP per drill (roughly).
 enum DrillXPEngine {
+    static let awardRange = 10...80
+
     struct Breakdown: Equatable {
         let base: Int
         let quality: Int
         let clean: Int
         let streak: Int
 
-        var total: Int { max(10, base + quality + clean + streak) }
+        var total: Int {
+            min(
+                DrillXPEngine.awardRange.upperBound,
+                max(DrillXPEngine.awardRange.lowerBound, base + quality + clean + streak)
+            )
+        }
         var label: String {
             var parts = ["\(base) base"]
             if quality > 0 { parts.append("+\(quality) quality") }
@@ -1110,6 +1415,16 @@ enum DrillXPEngine {
     }
 
     static func breakdown(outcome: MiniDrillOutcome) -> Breakdown {
+        breakdown(
+            outcome: outcome,
+            streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea)
+        )
+    }
+
+    /// Variant used by the durable reward sink. The caller supplies the
+    /// prospective streak so the exact award can be written into the receipt
+    /// before profile XP is granted.
+    static func breakdown(outcome: MiniDrillOutcome, streak: Int) -> Breakdown {
         let base = outcome.succeeded ? 30 : 10
 
         var qualityBonus = 0
@@ -1139,8 +1454,7 @@ enum DrillXPEngine {
         }
 
         // Streak modifier: consecutive successes in this skill area give a small bump
-        let streak = DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea)
-        let streakBonus = min(streak * 3, 15) // Cap at +15 for 5+ streak
+        let streakBonus = min(max(0, streak) * 3, 15) // Cap at +15 for 5+ streak
 
         return Breakdown(base: base, quality: qualityBonus, clean: cleanBonus, streak: streakBonus)
     }

@@ -9,6 +9,9 @@ import SwiftUI
 
 struct SessionHistoryRowPreview: Equatable {
     static func text(for session: PracticeSession) -> String? {
+        guard PracticeProgressEligibility.qualifies(session) else {
+            return "Saved capture · Not enough speech to measure"
+        }
         if let summary = clean(session.coachSummary) { return summary }
         if let outcome = clean(session.imConversationDetails?.outcome?.summary) { return outcome }
         return factualFallback(for: session)
@@ -42,6 +45,25 @@ struct SessionHistoryRowPreview: Equatable {
 }
 
 struct SessionHistoryDetailPresentation: Equatable {
+    static let insufficientEvidenceHeadline = "Saved capture"
+    static let insufficientEvidenceMessage =
+        "This capture is saved, but there was not enough speech for a reliable score or coaching read. It does not affect your progress."
+
+    /// A persisted headline can contain evaluator praise even when the raw
+    /// capture later fails the shared progress boundary. Keep the row
+    /// inspectable, but never present that stale positive read as evidence.
+    static func headline(for session: PracticeSession, fallback: String) -> String {
+        guard PracticeProgressEligibility.qualifies(session) else {
+            return insufficientEvidenceHeadline
+        }
+        return session.headline ?? fallback
+    }
+
+    static func scoreLabel(for session: PracticeSession) -> String {
+        guard PracticeProgressEligibility.qualifies(session) else { return "Not measured" }
+        return session.score.map { "\($0)/10" } ?? "Pending"
+    }
+
     static func focusLabel(for session: PracticeSession) -> String {
         if session.imConversationDetails != nil {
             return "Next Rep"
@@ -53,7 +75,18 @@ struct SessionHistoryDetailPresentation: Equatable {
     }
 
     static func durationLabel(for session: PracticeSession) -> String {
-        "\(max(0, Int(session.duration.rounded())))s"
+        guard session.duration.isFinite else { return "Unavailable" }
+        return "\(max(0, Int(session.duration.rounded())))s"
+    }
+
+    /// Historical WPM is a derived comparison metric, not a raw history fact.
+    /// Keep the exact saved row inspectable while withholding pace when its
+    /// quantity, confidence, schema, or fixture provenance is insufficient.
+    static func paceLabel(for session: PracticeSession) -> String {
+        guard let pace = SessionQualifier.quantityQualifiedWordsPerMinute(session) else {
+            return "Not measured"
+        }
+        return "\(Int(pace.rounded()))"
     }
 
     /// The prompt this rep answered, or nil when none was captured. The
@@ -85,8 +118,8 @@ struct SessionHistoryDetailPresentation: Equatable {
     /// of the same mode — answers "what happened between sessions" without
     /// judging a drop. Nil when this is the first scored rep of its mode.
     static func previousRepLine(for session: PracticeSession, in sessions: [PracticeSession]) -> String? {
-        guard session.score != nil else { return nil }
-        let previous = sessions
+        guard PracticeProgressEligibility.qualifies(session), session.score != nil else { return nil }
+        let previous = PracticeProgressEligibility.eligibleSessions(in: sessions)
             .filter { $0.mode == session.mode && $0.date < session.date && $0.score != nil }
             .max(by: { $0.date < $1.date })
         guard let previous, let previousScore = previous.score else { return nil }
@@ -535,31 +568,36 @@ struct SessionHistoryDetailView: View {
                     heroCard
 
                     promptCard
-                    if let goalOutcomeRead {
-                        // Historical goal movement is a read, not a fresh
-                        // adaptive prescription. The replay action below owns
-                        // the only launch and deliberately writes no causal
-                        // recommendation acceptance.
-                        GoalOutcomeCard(read: goalOutcomeRead)
-                    }
-                    focusCard
-                    fullReviewToggle
-
-                    if showsFullReview {
-                        if let imDetails = session.imConversationDetails {
-                            conversationReadCard(imDetails)
-                        } else {
-                            sessionMetricsCard
+                    if isProgressEligible {
+                        if let goalOutcomeRead {
+                            // Historical goal movement is a read, not a fresh
+                            // adaptive prescription. The replay action below owns
+                            // the only launch and deliberately writes no causal
+                            // recommendation acceptance.
+                            GoalOutcomeCard(read: goalOutcomeRead)
                         }
+                        focusCard
+                        fullReviewToggle
 
-                        if !insights.isEmpty {
-                            insightsCard
+                        if showsFullReview {
+                            if let imDetails = session.imConversationDetails {
+                                conversationReadCard(imDetails)
+                            } else {
+                                sessionMetricsCard
+                            }
+
+                            if !insights.isEmpty {
+                                insightsCard
+                            }
+
+                            if let aiFeedback = session.aiCoachFeedback {
+                                coachReadCard(aiFeedback)
+                            }
+
+                            transcriptCard
                         }
-
-                        if let aiFeedback = session.aiCoachFeedback {
-                            coachReadCard(aiFeedback)
-                        }
-
+                    } else {
+                        insufficientEvidenceCard
                         transcriptCard
                     }
                 }
@@ -579,7 +617,8 @@ struct SessionHistoryDetailView: View {
     }
 
     private var goalOutcomeRead: GoalOutcomeRead? {
-        GoalOutcomeEngine.read(
+        guard isProgressEligible else { return nil }
+        return GoalOutcomeEngine.read(
             profile: coachingProfileStore.profile,
             baseline: baselineStore.baseline,
             rating: ratingStore.rating,
@@ -591,17 +630,25 @@ struct SessionHistoryDetailView: View {
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(session.headline ?? "Session detail")
+            Text(SessionHistoryDetailPresentation.headline(for: session, fallback: "Session detail"))
                 .font(.title2.weight(.bold))
 
             Text(primarySummary)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
-                detailMetric(title: "Score", value: session.score.map { "\($0)/10" } ?? "Pending", tint: .green)
-                detailMetric(title: "Focus", value: SessionHistoryDetailPresentation.focusLabel(for: session), tint: .blue)
-                detailMetric(title: "Mode", value: modeLabel, tint: AppColor.tint(for: session.mode))
+            if isProgressEligible {
+                HStack(spacing: 10) {
+                    detailMetric(title: "Score", value: SessionHistoryDetailPresentation.scoreLabel(for: session), tint: .green)
+                    detailMetric(title: "Focus", value: SessionHistoryDetailPresentation.focusLabel(for: session), tint: .blue)
+                    detailMetric(title: "Mode", value: modeLabel, tint: AppColor.tint(for: session.mode))
+                }
+            } else {
+                HStack(spacing: 10) {
+                    detailMetric(title: "Score", value: SessionHistoryDetailPresentation.scoreLabel(for: session), tint: .secondary)
+                    detailMetric(title: "Duration", value: SessionHistoryDetailPresentation.durationLabel(for: session), tint: .blue)
+                    detailMetric(title: "Mode", value: modeLabel, tint: AppColor.tint(for: session.mode))
+                }
             }
 
             if let previousLine = SessionHistoryDetailPresentation.previousRepLine(for: session, in: sessionStore.sessions) {
@@ -706,7 +753,7 @@ struct SessionHistoryDetailView: View {
                 HStack(spacing: 10) {
                     detailMetric(title: "Duration", value: SessionHistoryDetailPresentation.durationLabel(for: session), tint: .blue)
                     detailMetric(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
-                    detailMetric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
+                    detailMetric(title: "WPM", value: SessionHistoryDetailPresentation.paceLabel(for: session), tint: .indigo)
                 }
             }
 
@@ -714,6 +761,22 @@ struct SessionHistoryDetailView: View {
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    private var insufficientEvidenceCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Saved capture")
+                .font(.headline)
+            Text(SessionHistoryDetailPresentation.insufficientEvidenceMessage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            practiceThisModeLink
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .accessibilityIdentifier("history.detail.insufficientEvidence")
     }
 
     private var practiceThisModeLink: some View {
@@ -804,7 +867,7 @@ struct SessionHistoryDetailView: View {
 
             HStack(spacing: 10) {
                 detailMetric(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
-                detailMetric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
+                detailMetric(title: "WPM", value: SessionHistoryDetailPresentation.paceLabel(for: session), tint: .indigo)
                 detailMetric(title: "Duration", value: SessionHistoryDetailPresentation.durationLabel(for: session), tint: .blue)
             }
         }
@@ -979,6 +1042,9 @@ struct SessionHistoryDetailView: View {
     }
 
     private var primarySummary: String {
+        guard isProgressEligible else {
+            return "Saved capture. Not enough speech to measure reliably."
+        }
         if let coachSummary = session.coachSummary, !coachSummary.isEmpty {
             return coachSummary
         }
@@ -1022,6 +1088,10 @@ struct SessionHistoryDetailView: View {
 
     private var modeLabel: String {
         session.mode.displayLabel
+    }
+
+    private var isProgressEligible: Bool {
+        PracticeProgressEligibility.qualifies(session)
     }
 }
 #endif

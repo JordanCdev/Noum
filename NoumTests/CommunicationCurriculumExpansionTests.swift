@@ -115,6 +115,74 @@ struct CommunicationCurriculumExpansionTests {
             #expect(!LessonApplyEvaluator.evaluate(transcript: generic, findings: [], lesson: lesson).passed)
         }
     }
+
+    @Test func everyLessonRequiresAVisibleCompleteResponseCriterion() {
+        for lesson in LessonsCatalog.all {
+            let criteria = LessonApplyEvaluator.effectiveCriteria(for: lesson)
+            let quantityFloors = criteria.compactMap { criterion -> Int? in
+                switch criterion.kind {
+                case .minimumWords(let minimum): return minimum
+                case .wordRange(let minimum, _): return minimum
+                default: return nil
+                }
+            }
+
+            #expect(!quantityFloors.isEmpty, "\(lesson.id) needs an explicit response floor")
+            #expect(
+                LessonApplyEvaluator.minimumWordCount(for: lesson) == (quantityFloors.max() ?? 0),
+                "\(lesson.id) should derive one authoritative word floor"
+            )
+        }
+    }
+
+    @Test func keywordFragmentsCannotClearLessons() {
+        let fixtures: [(Lesson, String)] = [
+            (LessonsCatalog.checkUnderstanding, "send Thursday correct"),
+            (LessonsCatalog.giveUsefulFeedback, "changed because please"),
+            (LessonsCatalog.setAClearBoundary, "I can't because tomorrow"),
+            (LessonsCatalog.repairTheConversation, "I'm sorry dismissive next time"),
+        ]
+
+        for (lesson, transcript) in fixtures {
+            let evaluation = LessonApplyEvaluator.evaluate(
+                transcript: transcript,
+                findings: [],
+                lesson: lesson
+            )
+            #expect(!evaluation.passed, "\(lesson.id) accepted keyword-only speech")
+            #expect(evaluation.firstMiss?.criterionID == "complete-answer")
+        }
+    }
+
+    @Test func deviceDetectionCannotClearAThinLessonResponse() {
+        let fixtures: [(Lesson, EloquenceDevice, String)] = [
+            (LessonsCatalog.ruleOfThree, .tricolon, "Fast clean clear"),
+            (LessonsCatalog.repeatToStick, .anaphora, "We listen. We act."),
+        ]
+
+        for (lesson, device, transcript) in fixtures {
+            let evaluation = LessonApplyEvaluator.evaluate(
+                transcript: transcript,
+                findings: [EloquenceFinding(
+                    device: device,
+                    snippet: transcript,
+                    coachLine: "Detected fixture"
+                )],
+                lesson: lesson
+            )
+            #expect(!evaluation.passed, "\(lesson.id) accepted a device-only fragment")
+            #expect(evaluation.firstMiss?.criterionID == "complete-answer")
+        }
+    }
+
+    @Test func authoredResponseFloorsRemainAuthoritative() {
+        #expect(LessonApplyEvaluator.minimumWordCount(for: LessonsCatalog.askABetterQuestion) == 10)
+        #expect(LessonApplyEvaluator.minimumWordCount(for: LessonsCatalog.listenForMeaning) == 14)
+        #expect(LessonApplyEvaluator.minimumWordCount(for: LessonsCatalog.pauseBeatsFiller) == 18)
+        #expect(LessonApplyEvaluator.minimumWordCount(for: LessonsCatalog.makeItPlain) == 20)
+        #expect(LessonApplyEvaluator.minimumWordCount(for: LessonsCatalog.checkUnderstanding) == 12)
+        #expect(LessonApplyEvaluator.minimumWordCount(for: LessonsCatalog.ruleOfThree) == 12)
+    }
 }
 
 @Suite("Lesson spaced review")

@@ -12,6 +12,15 @@ struct SkillSnapshot: Identifiable, Codable {
     let duration: TimeInterval
     let wordCount: Int
     let wpm: Double
+    /// Duration-derived metrics admitted by the shared historical evidence
+    /// boundary at write time. Legacy snapshots decode these as nil and fail
+    /// closed; unrelated score/category/pause/pitch evidence remains usable.
+    let qualifiedFillerRatePerMinute: Double?
+    let qualifiedPaceWPM: Double?
+    /// Metric-production epoch for the qualified values above. Keeping the
+    /// epoch lets a future evaluator change invalidate old comparisons without
+    /// deleting the raw snapshot.
+    let comparisonMetricSchemaVersion: Int?
     let score: Int
     let categoryRatings: [String: String]   // dimension name → FeedbackRating.rawValue
     let drillCompleted: CompletedDrillRef?
@@ -44,6 +53,9 @@ struct SkillSnapshot: Identifiable, Codable {
         duration: TimeInterval,
         wordCount: Int,
         wpm: Double,
+        qualifiedFillerRatePerMinute: Double? = nil,
+        qualifiedPaceWPM: Double? = nil,
+        comparisonMetricSchemaVersion: Int? = nil,
         score: Int,
         categoryRatings: [String: String] = [:],
         drillCompleted: CompletedDrillRef? = nil,
@@ -58,6 +70,9 @@ struct SkillSnapshot: Identifiable, Codable {
         self.duration = duration
         self.wordCount = wordCount
         self.wpm = wpm
+        self.qualifiedFillerRatePerMinute = qualifiedFillerRatePerMinute
+        self.qualifiedPaceWPM = qualifiedPaceWPM
+        self.comparisonMetricSchemaVersion = comparisonMetricSchemaVersion
         self.score = score
         self.categoryRatings = categoryRatings
         self.drillCompleted = drillCompleted
@@ -68,6 +83,7 @@ struct SkillSnapshot: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, sessionId, date, fillerCount, duration, wordCount, wpm
+        case qualifiedFillerRatePerMinute, qualifiedPaceWPM, comparisonMetricSchemaVersion
         case score, categoryRatings, drillCompleted, pauseRate, pitchMonotone
         case pauseFilledRatio
     }
@@ -81,12 +97,31 @@ struct SkillSnapshot: Identifiable, Codable {
         duration = try c.decode(TimeInterval.self, forKey: .duration)
         wordCount = try c.decode(Int.self, forKey: .wordCount)
         wpm = try c.decode(Double.self, forKey: .wpm)
+        qualifiedFillerRatePerMinute = try c.decodeIfPresent(Double.self, forKey: .qualifiedFillerRatePerMinute)
+        qualifiedPaceWPM = try c.decodeIfPresent(Double.self, forKey: .qualifiedPaceWPM)
+        comparisonMetricSchemaVersion = try c.decodeIfPresent(Int.self, forKey: .comparisonMetricSchemaVersion)
         score = try c.decode(Int.self, forKey: .score)
         categoryRatings = try c.decodeIfPresent([String: String].self, forKey: .categoryRatings) ?? [:]
         drillCompleted = try c.decodeIfPresent(CompletedDrillRef.self, forKey: .drillCompleted)
         pauseRate = try c.decodeIfPresent(Double.self, forKey: .pauseRate)
         pitchMonotone = try c.decodeIfPresent(Double.self, forKey: .pitchMonotone)
         pauseFilledRatio = try c.decodeIfPresent(Double.self, forKey: .pauseFilledRatio)
+    }
+
+    var currentQualifiedFillerRatePerMinute: Double? {
+        guard comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              let rate = qualifiedFillerRatePerMinute,
+              rate.isFinite,
+              rate >= 0 else { return nil }
+        return rate
+    }
+
+    var currentQualifiedPaceWPM: Double? {
+        guard comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              let pace = qualifiedPaceWPM,
+              pace.isFinite,
+              pace > 0 else { return nil }
+        return pace
     }
 }
 
@@ -127,6 +162,9 @@ final class SkillTrendStore: ObservableObject {
         duration: TimeInterval,
         wordCount: Int,
         score: Int,
+        qualifiedFillerRatePerMinute: Double? = nil,
+        qualifiedPaceWPM: Double? = nil,
+        comparisonMetricSchemaVersion: Int? = nil,
         categoryRatings: [String: String] = [:],
         drillCompleted: SkillSnapshot.CompletedDrillRef? = nil,
         pauseRate: Double? = nil,
@@ -140,6 +178,9 @@ final class SkillTrendStore: ObservableObject {
             duration: duration,
             wordCount: wordCount,
             wpm: wpm,
+            qualifiedFillerRatePerMinute: qualifiedFillerRatePerMinute,
+            qualifiedPaceWPM: qualifiedPaceWPM,
+            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
             score: score,
             categoryRatings: categoryRatings,
             drillCompleted: drillCompleted,
@@ -503,12 +544,17 @@ enum TrendAnalyzer {
 
         // Final fallback: use current session metrics
         if let snapshot = currentSessionSnapshot {
-            let fillerBurden = FillerBurden(
-                fillerCount: snapshot.fillerCount,
-                duration: snapshot.duration
-            )
-            if fillerBurden.meets(.primaryFocus) { return .fillerReduction }
-            if snapshot.wpm > ConversationalPaceBand.maxWPM { return .paceControl }
+            if snapshot.currentQualifiedFillerRatePerMinute != nil {
+                let fillerBurden = FillerBurden(
+                    fillerCount: snapshot.fillerCount,
+                    duration: snapshot.duration
+                )
+                if fillerBurden.meets(.primaryFocus) { return .fillerReduction }
+            }
+            if let pace = snapshot.currentQualifiedPaceWPM,
+               pace > ConversationalPaceBand.maxWPM {
+                return .paceControl
+            }
             if snapshot.duration < 15 { return .answerDevelopment }
         }
 
@@ -557,9 +603,15 @@ enum TrendAnalyzer {
     // MARK: - Private Analysis Helpers
 
     private static func analyzeFillers(_ snapshots: [SkillSnapshot]) -> SkillTrend {
-        let window = Array(snapshots.prefix(8))
-        let rates = window.compactMap {
-            FillerBurden(fillerCount: $0.fillerCount, duration: $0.duration).ratePerMinute
+        let rates = Array(snapshots.compactMap(\.currentQualifiedFillerRatePerMinute).prefix(8))
+        guard !rates.isEmpty else {
+            return SkillTrend(
+                skillArea: .fillerReduction,
+                direction: .stable,
+                confidence: .low,
+                windowSize: 0,
+                currentLevel: .developing
+            )
         }
         let confidence = trendConfidence(rates.count)
 
@@ -605,11 +657,20 @@ enum TrendAnalyzer {
     }
 
     private static func analyzePace(_ snapshots: [SkillSnapshot]) -> SkillTrend {
-        let window = Array(snapshots.prefix(8))
-        let confidence = trendConfidence(window.count)
+        let paceValues = Array(snapshots.compactMap(\.currentQualifiedPaceWPM).prefix(8))
+        guard !paceValues.isEmpty else {
+            return SkillTrend(
+                skillArea: .paceControl,
+                direction: .stable,
+                confidence: .low,
+                windowSize: 0,
+                currentLevel: .developing
+            )
+        }
+        let confidence = trendConfidence(paceValues.count)
 
-        let recentWPMs = window.prefix(3).map(\.wpm)
-        let olderWPMs = window.dropFirst(3).map(\.wpm)
+        let recentWPMs = paceValues.prefix(3)
+        let olderWPMs = paceValues.dropFirst(3)
         let recentAvg = recentWPMs.average
         let olderAvg = olderWPMs.average
 
@@ -620,7 +681,7 @@ enum TrendAnalyzer {
         else { level = .weak }
 
         let direction: TrendDirection
-        if window.count < 3 {
+        if paceValues.count < 3 {
             direction = .stable
         } else if level == .weak && olderAvg >= ConversationalPaceBand.minWPM - 10 && olderAvg <= ConversationalPaceBand.maxWPM + 10 {
             direction = .newIssue
@@ -637,7 +698,7 @@ enum TrendAnalyzer {
             skillArea: .paceControl,
             direction: direction,
             confidence: confidence,
-            windowSize: window.count,
+            windowSize: paceValues.count,
             currentLevel: level
         )
     }

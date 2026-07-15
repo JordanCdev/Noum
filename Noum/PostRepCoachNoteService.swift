@@ -21,10 +21,9 @@ import Foundation
 //   • Voice carries through `CoachPersona.persona(for:)`. The same
 //     facts produce different phrasing for an authoritative-voice user
 //     vs. a warm-voice user vs. a concise-voice user.
-//   • Never overclaim — the deterministic path cites only what the
-//     session input contains. If filler count is zero, it says "clean
-//     run." If filler count is high, it acknowledges it without
-//     punishing.
+//   • Never overclaim — the deterministic path cites only qualified
+//     session evidence. A credible zero-filler sample can read as a
+//     "clean run"; thin, noisy, stale, or fixture mechanics stay silent.
 //   • Bounded length — `noteText` ≤ 200 chars across both paths so the
 //     hero card never has to truncate.
 
@@ -40,6 +39,16 @@ struct PostRepCoachNoteInput {
     let fillerCount: Int
     let duration: TimeInterval
     let wordCount: Int
+    /// Confidence attached to the transcript that produced this rep's
+    /// word/filler counts. Nil means the provider supplied no confidence;
+    /// an explicit value below the shared floor withholds metric claims.
+    let transcriptConfidence: Double?
+    /// Metric-production epoch persisted with the originating session.
+    /// Filler-rate and pace claims fail closed when this is missing/stale.
+    let comparisonMetricSchemaVersion: Int?
+    /// Evaluation-corpus rows can exercise the product but must never be
+    /// presented as live user metric evidence.
+    let isEvaluationFixture: Bool
     let voice: SpeakingStyleGoal?
     let intentLabel: String?
     let baselineFillerRate: Double?     // per-minute, nil when insufficient data
@@ -196,7 +205,10 @@ struct PostRepCoachNoteInput {
         standingHypothesis: String? = nil,
         standingFocusLabel: String? = nil,
         standingWatchClause: String? = nil,
-        standingWatchIsAssured: Bool = false
+        standingWatchIsAssured: Bool = false,
+        transcriptConfidence: Double? = nil,
+        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
+        isEvaluationFixture: Bool = false
     ) {
         self.sessionID = sessionID
         self.mode = mode
@@ -204,6 +216,9 @@ struct PostRepCoachNoteInput {
         self.fillerCount = fillerCount
         self.duration = duration
         self.wordCount = wordCount
+        self.transcriptConfidence = transcriptConfidence
+        self.comparisonMetricSchemaVersion = comparisonMetricSchemaVersion
+        self.isEvaluationFixture = isEvaluationFixture
         self.voice = voice
         self.intentLabel = intentLabel
         self.baselineFillerRate = baselineFillerRate
@@ -334,9 +349,9 @@ enum MomentumComputer {
 
     // MARK: - Individual signal computations
 
-    /// Count consecutive recent reps where the filler rate is at or below
-    /// half the baseline (or ≤1 filler total). Stops at the first rep
-    /// that exceeds. Returns 0 when baseline is unavailable.
+    /// Count consecutive recent reps where quantity-qualified filler rate is
+    /// at or below half the baseline. An unqualified newest rep stops the
+    /// streak rather than inheriting a claim from older evidence.
     static func consecutiveCleanReps(
         sorted: [PracticeSession],
         baselineFillerRate: Double?
@@ -344,10 +359,11 @@ enum MomentumComputer {
         guard let baseRate = baselineFillerRate, baseRate > 0 else { return 0 }
         var count = 0
         for session in sorted {
-            let durationMinutes = max(session.duration / 60.0, 1.0 / 60.0)
-            let sessionRate = Double(session.fillerWordCount) / durationMinutes
+            guard let sessionRate = FillerBurden.quantityQualified(session)?.ratePerMinute else {
+                break
+            }
             let threshold = max(baseRate * 0.5, 0.5)
-            if sessionRate <= threshold || session.fillerWordCount <= 1 {
+            if sessionRate <= threshold {
                 count += 1
             } else {
                 break
@@ -356,24 +372,18 @@ enum MomentumComputer {
         return count
     }
 
-    /// Filler rate direction: last 3 sessions vs prior 3. Nil when fewer
-    /// than 6 sessions exist. "Improving" = recent avg is ≤70% of prior.
+    /// Filler rate direction: last 3 qualified samples vs prior 3. The newest
+    /// rep must itself qualify so an undersized current capture cannot revive
+    /// or advance an older trend claim.
     static func fillerTrend(sorted: [PracticeSession]) -> TrendDirection? {
-        guard sorted.count >= 6 else { return nil }
-        let recent = sorted.prefix(3)
-        let prior = sorted.dropFirst(3).prefix(3)
-
-        func avgRate(_ sessions: some Collection<PracticeSession>) -> Double {
-            let rates = sessions.map { s -> Double in
-                let mins = max(s.duration / 60.0, 1.0 / 60.0)
-                return Double(s.fillerWordCount) / mins
-            }
-            guard !rates.isEmpty else { return 0 }
-            return rates.reduce(0, +) / Double(rates.count)
-        }
-
-        let recentAvg = avgRate(recent)
-        let priorAvg = avgRate(prior)
+        guard let newest = sorted.first,
+              FillerBurden.quantityQualified(newest) != nil else { return nil }
+        let rates = sorted.compactMap { FillerBurden.quantityQualified($0)?.ratePerMinute }
+        guard rates.count >= 6 else { return nil }
+        let recent = rates.prefix(3)
+        let prior = rates.dropFirst(3).prefix(3)
+        let recentAvg = recent.reduce(0, +) / Double(recent.count)
+        let priorAvg = prior.reduce(0, +) / Double(prior.count)
         guard priorAvg > 0 else { return .stable }
 
         if recentAvg <= priorAvg * 0.7 { return .improving }
@@ -615,6 +625,14 @@ actor PostRepCoachNoteService {
                 record(.fallback, "Coach note failed brand-voice gate", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return fallback
             }
+            // Metric-evidence gate: the prompt deliberately withholds current
+            // filler and pace mechanics when the exact session cannot clear the
+            // shared provenance boundary. Do not let a model reconstruct or
+            // invent those claims and replace the safe deterministic note.
+            guard !Self.usesUnsupportedMetricClaim(noteText, input: input) else {
+                record(.fallback, "Coach note failed metric-evidence gate", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return fallback
+            }
             // Presence gate (mirrors GrammarFeedbackService's excerpt-must-
             // appear check): when there's a real rep to quote, the note must
             // actually engage the transcript — share a content word or a
@@ -802,12 +820,17 @@ actor PostRepCoachNoteService {
             )
         }
 
+        // Per-rep duration-derived mechanics need the complete historical
+        // provenance boundary. General score/transcript branches remain
+        // available, while thin/noisy, stale, or evaluation mechanics fail
+        // closed everywhere through these shared helpers.
+        let qualifiedFillerBurden = qualifiedFillerBurden(for: input)
+        let qualifiedPaceWPM = qualifiedPaceWPM(for: input)
+
         // 1) Filler comparison vs baseline (when both signals exist).
         if let baselineRate = input.baselineFillerRate,
            baselineRate > 0,
-           input.duration > 0 {
-            let durationMinutes = max(input.duration / 60.0, 1.0 / 60.0)
-            let sessionRate = Double(input.fillerCount) / durationMinutes
+           let sessionRate = qualifiedFillerBurden?.ratePerMinute {
             if sessionRate <= max(baselineRate * 0.5, 0.5), input.fillerCount <= 2 {
                 return fillerWinSentence(fillerCount: input.fillerCount, persona: persona)
             }
@@ -817,7 +840,7 @@ actor PostRepCoachNoteService {
         }
 
         // 2) Zero fillers — universal clean-run marker.
-        if input.fillerCount == 0 && input.wordCount >= 20 {
+        if input.fillerCount == 0, qualifiedFillerBurden != nil {
             return fillerWinSentence(fillerCount: 0, persona: persona)
         }
 
@@ -832,8 +855,7 @@ actor PostRepCoachNoteService {
         }
 
         // 4) Pace outside conversational range when measurable.
-        if input.duration >= 15, input.wordCount >= 20 {
-            let wpm = Double(input.wordCount) / (input.duration / 60.0)
+        if let wpm = qualifiedPaceWPM {
             if wpm > 170 {
                 return rushedPaceSentence(wpm: Int(wpm.rounded()), persona: persona)
             }
@@ -1348,6 +1370,94 @@ actor PostRepCoachNoteService {
         text.replacingOccurrences(of: "!", with: ".")
     }
 
+    /// Exact current-session filler evidence admitted to both the deterministic
+    /// note and the AI prompt. The current-sample quantity primitive is wrapped
+    /// in the saved-session provenance boundary so legacy/evaluation rows fail
+    /// closed just like historical comparisons do.
+    nonisolated static func qualifiedFillerBurden(
+        for input: PostRepCoachNoteInput
+    ) -> FillerBurden? {
+        guard input.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              !input.isEvaluationFixture else { return nil }
+        return FillerBurden.quantityQualified(
+            fillerCount: input.fillerCount,
+            duration: input.duration,
+            wordCount: input.wordCount,
+            transcriptConfidence: input.transcriptConfidence
+        )
+    }
+
+    /// Exact current-session pace evidence, held to the same provenance and
+    /// quantity/confidence boundary as filler evidence.
+    nonisolated static func qualifiedPaceWPM(
+        for input: PostRepCoachNoteInput
+    ) -> Double? {
+        guard input.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              !input.isEvaluationFixture else { return nil }
+        return SessionQualifier.quantityQualifiedWordsPerMinute(
+            duration: input.duration,
+            wordCount: input.wordCount,
+            transcriptConfidence: input.transcriptConfidence
+        )
+    }
+
+    /// Rejects only explicit observed mechanics when their corresponding
+    /// evidence was withheld. Generic coaching such as "pause before the
+    /// close" remains valid; direct filler counts/rates, WPM, or statements
+    /// that this rep was fast/slow/rushed do not.
+    nonisolated static func usesUnsupportedMetricClaim(
+        _ text: String,
+        input: PostRepCoachNoteInput
+    ) -> Bool {
+        let normalized = collapseWhitespace(in: text).lowercased()
+
+        // Even when both measurements qualify, filler burden is not evidence
+        // that pacing was rushed. Reject explicit causal joins while allowing
+        // independently stated qualified filler and WPM observations.
+        let fillerImpliesPacePatterns = [
+            #"\bfillers?\b.{0,32}\b(?:means?|shows?|proves?|suggests?|signals?|indicates?)\b.{0,32}\b(?:pace|pacing|rushed|rushing)\b"#,
+            #"\b(?:pace|pacing|rushed|rushing)\b.{0,32}\b(?:because|from|due to)\b.{0,32}\bfillers?\b"#
+        ]
+        if fillerImpliesPacePatterns.contains(where: { containsRegex($0, in: normalized) }) {
+            return true
+        }
+
+        if qualifiedFillerBurden(for: input) == nil {
+            let fillerPatterns = [
+                #"\bfiller[\s-]*(?:count|rate|words?|burden|control)\b"#,
+                #"\b(?:zero|no|one|two|three|four|five|six|seven|eight|nine|ten|\d+|few|fewer|many|more|less|low|high)\s+fillers?\b"#,
+                #"\b(?:your|the|this rep's)\s+fillers?\b"#,
+                #"\bfillers?\s+(?:surfaced|crept|appeared|rose|fell|dropped|increased|decreased|held|stayed|spiked|weakened|undercut|disrupted)\b"#,
+                #"\b(?:zero|no|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:disfluenc(?:y|ies)|ums?|uhs?)\b"#,
+                #"\bdisfluenc(?:y|ies)\s+(?:count|rate)\b"#
+            ]
+            if fillerPatterns.contains(where: { containsRegex($0, in: normalized) }) {
+                return true
+            }
+        }
+
+        if qualifiedPaceWPM(for: input) == nil {
+            let pacePatterns = [
+                #"\b\d{2,3}(?:\.\d+)?\s*(?:wpm|words?\s+per\s+minute)\b"#,
+                #"\b(?:your|this|that|the)\s+(?:speaking\s+)?(?:pace|pacing)\b"#,
+                #"\b(?:pace|pacing)\s+(?:was|is|ran|felt|held|stayed|landed|came|looked|sounded|reads?)\b"#,
+                #"\byou\s+(?:were\s+|felt\s+|sounded\s+|moved\s+)?(?:too\s+)?(?:fast|slow|rushed|rushing)\b"#,
+                #"\b(?:delivery|answer|rep|opening|close)\s+(?:was|were|felt|sounded|ran|came)\s+(?:too\s+)?(?:fast|slow|rushed)\b"#,
+                #"\b(?:rushed|rushing)\s+(?:delivery|pace|pacing|answer|rep|opening|close)\b"#,
+                #"\byou\s+(?:sped\s+up|slowed\s+down|rushed)\b"#
+            ]
+            if pacePatterns.contains(where: { containsRegex($0, in: normalized) }) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private nonisolated static func containsRegex(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
+    }
+
     /// Local content-word stop set for the presence gate. Same established
     /// local-set pattern used elsewhere; kept private to this type. Tokens
     /// in this set don't count as "engaging the transcript" so a note that
@@ -1458,9 +1568,19 @@ actor PostRepCoachNoteService {
         if let score = input.score {
             lines.append("Score: \(score)/10")
         }
-        lines.append("Filler count: \(input.fillerCount)")
         lines.append("Duration: \(Int(input.duration.rounded()))s")
-        lines.append("Word count: \(input.wordCount)")
+        // Duration is factual context on every saved rep. Word count makes
+        // pace directly derivable, so it travels only with qualified pace;
+        // filler count likewise travels only with qualified filler evidence.
+        if let burden = qualifiedFillerBurden(for: input),
+           let rate = burden.ratePerMinute {
+            lines.append("Filler count: \(burden.fillerCount)")
+            lines.append(String(format: "Filler rate: %.1f per minute", rate))
+        }
+        if let pace = qualifiedPaceWPM(for: input) {
+            lines.append("Word count: \(input.wordCount)")
+            lines.append("Current pace: \(Int(pace.rounded())) WPM")
+        }
         if let baselineRate = input.baselineFillerRate {
             lines.append(String(format: "Baseline filler rate: %.1f per minute", baselineRate))
         }
@@ -1587,7 +1707,7 @@ actor PostRepCoachNoteService {
         adds genuine continuity — "this is the second time you've leaned \
         on…", "the pause game from last week showed up again here." \
         Never invent past behavior.
-        3. Stats (score, filler count, duration) are CONTEXT, not the \
+        3. Stats (score, qualified filler count, duration, qualified pace) are CONTEXT, not the \
         point. If you can write the note without quoting a stat, do. \
         Stat-restating reads as a dashboard, not a coach.
 
@@ -1597,6 +1717,8 @@ actor PostRepCoachNoteService {
         "Let's"). No emoji.
         - Never invent stats, quotes, or past behavior. Only reference what \
         the input actually contains.
+        - If current filler or pace evidence is omitted, do not mention, \
+        derive, or infer it. Filler evidence never proves rushed pacing.
         - Never punish-shame. If a number dropped, name it factually and \
         anchor a small next move.
         - Output STRICT JSON: {"note": "..."} — nothing else.

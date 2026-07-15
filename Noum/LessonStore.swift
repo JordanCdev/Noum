@@ -237,8 +237,17 @@ final class LessonStore: ObservableObject {
     static let masteryPassCap: Int = LessonProgressPresentation.masteryPassCap
 
     private let storageKeyPrefix = "noum.lessons.progress."
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
 
-    private init() {
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: (() -> String?)? = nil
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider ?? {
+            AuthManager.shared.currentAccountID
+        }
         load()
     }
 
@@ -296,6 +305,14 @@ final class LessonStore: ObservableObject {
     /// crosses a milestone (1, 3, 5).
     @discardableResult
     func apply(outcome: LessonOutcome, now: Date = Date()) -> LessonProgressUpdate {
+        guard outcome.hasVerifiedAttemptShape else {
+            return LessonProgressUpdate(
+                outcomePassed: false,
+                didAdvanceRetention: false,
+                didCompleteMaintenanceReview: false
+            )
+        }
+
         var current = progress(for: outcome.lessonID)
         let priorPassCount = current.practicePassCount
         let canCountAnotherPass = LessonReviewSchedule.canCountAnotherPass(for: current, now: now)
@@ -352,21 +369,27 @@ final class LessonStore: ObservableObject {
     }
 
     func reloadForCurrentAccount() {
+        pendingCelebration = nil
         load()
+    }
+
+    /// Clears process-local account state without deleting the account's
+    /// durable lesson progress. A later authenticated session reloads it.
+    func endSession() {
+        progress = [:]
+        pendingCelebration = nil
     }
 
     // MARK: - Persistence
 
-    private static func currentAccountID() -> String {
-        AuthManager.shared.currentAccountID ?? "guest"
-    }
-
     private var storageKey: String {
-        storageKeyPrefix + Self.currentAccountID()
+        let accountID = accountIDProvider()
+        let accountScope = accountID.map { $0.isEmpty ? "guest" : $0 } ?? "guest"
+        return storageKeyPrefix + accountScope
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        guard let data = defaults.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode([String: LessonProgress].self, from: data) else {
             progress = [:]
             return
@@ -376,7 +399,7 @@ final class LessonStore: ObservableObject {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(progress) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        defaults.set(data, forKey: storageKey)
     }
 }
 

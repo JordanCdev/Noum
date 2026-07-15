@@ -4,8 +4,201 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 
 Audit date: 2026-07-15
 
-Committed implementation inspected through:
-`bb155866`
+Committed implementation inspected through `3969c817`, plus the current
+Summary/Train recommendation capability-loss evidence, mini-drill
+completion/history/rendered-evidence, Lesson Apply integrity,
+unsupported-locale recovery, mixed Review-history, and metric-specific
+filler/WPM evidence through Review and immediate AI coaching in the working
+tree.
+
+The current working tree closes the previously ranked raw Review inventory and
+immediate post-rep/AI Insights metric leak through existing owners. Ah-Counter
+and Timed summaries retain factual saved-run counts while exposing exact
+measured denominators; filler/pace aggregates, clean-run claims, trends, chart
+points, detail WPM, normalized replay targeting, and goal examples consume the
+established 20-word / 15-second, supplied-confidence, current-schema, and
+non-fixture projections. Unqualified chart values remain absent rather than
+zero, raw filler count stays inspectable as a saved fact, and score-only reads
+remain independent.
+
+`PostRepCoachNoteService` now withholds current filler, derivable word count,
+and WPM from the AI prompt unless the exact rep qualifies, then rejects output
+that asserts withheld mechanics or treats filler as proof of rushed pace.
+Recent summaries and baseline mechanics fail closed through existing owners.
+`AIInsightsService` applies the same boundary to session prompts, baseline
+context, deterministic fallback, and cache identity without synthesizing a
+missing score. The focused selection passes 92/92 across 12 suites; the
+complete unsigned simulator `NoumTests` target passes 4,289 unique tests /
+4,308 device executions with zero failures or skips, and an unsigned
+current-source Release simulator build succeeds. Product-wide closure remains
+partial because active Summary Coach Read, Proof Moment generation, Forward
+Plan inputs, and other durable narrative/reward consumers still contain raw
+mechanic interpretations; legacy trend archives also remain intentionally
+absent until qualified snapshots accrue. This is local deterministic evidence,
+not professional calibration, physical-device behavior, user benefit, or an
+external artifact.
+
+The current working tree closes Summary's rendered capability-loss and exact
+attribution gap through the existing recommendation owners. The exact
+finalized `NextAction` and `SummaryPrescriptionProjection` used to render the
+card now remain the exposure identity through tap; the complete live
+`NextActionModeAvailability` snapshot may only downgrade that displayed mode
+to Timed. `RecommendationTapAttribution` synchronously preserves the shown
+denominator on fast fallback, acceptance still requires an exact
+displayed/launched mode match, and a non-accepting route clears any interrupted
+regular-mode `PracticeModeQuickStart`. A Release-inert fixture renders the real Summary
+Pressure branch, removes Pressure only at tap, and pre-arms stale Timed state.
+At Accessibility XXXL on iPhone 17 Pro / iOS 26.5, the 1/1 focused lane proves
+the 44-point Pressure action reaches exact default manual Timed setup with no
+Pressure/Conversation destination, automatic prompt, prescribed demand, or
+stale quick-start; the content-free diagnostic retains shown at exact 0% with
+no accepted event. Projection/fixture/attribution tests pass 23/23, the full
+recommendation UI suite passes 5/5, the complete unsigned unit target passes
+4,242 unique tests / 4,261 device executions, and the unsigned Release
+simulator build succeeds. This is deterministic local simulator evidence for
+one Summary Pressure branch, not physical capability loss, rendered Summary
+Conversation/Home loss, population effectiveness, or an external artifact.
+
+The current working tree closes the rendered mixed Review-history trust gap
+through existing owners. Raw `PracticeSessionStore.sessions` still owns saved
+count, search, exact detail, replay setup, deletion, and export, while the
+shared progress-eligible projection now owns score aggregates, session-backed
+mode cards, previous comparison, targeted replay, Review story/chart/highlight
+reads, and Profile coaching depth. `TransformationKPIReport` counts unique
+review-open correlations only when they match eligible session IDs, so thin,
+foreign, and duplicate opens fail closed. A DEBUG-only five-row fixture renders
+three newer high-score saved captures alongside two older measured reps. At
+Accessibility XXXL from a simulator configured with Reduce Motion, the 2/2 UI
+lane proves five raw rows remain inspectable while Review/Profile remain at two
+measured reps and thin detail shows neutral saved-capture provenance. The
+focused history/KPI lane passes 31/31, the complete unsigned unit target passes
+4,241 unique tests / 4,260 device executions with zero failures or skips, and
+an unsigned current-source Release simulator build succeeds. Non-finite and
+evaluation-only rows remain unit-only; this does not prove every stricter
+filler/WPM quantity floor, legacy Sudden Death run-ledger reconciliation,
+physical hardware, calibration, transfer, operations, or an external artifact.
+
+The current working tree closes the representative rendered
+capability-loss-at-tap gap on Train without adding another recommendation,
+routing, or analytics owner. A Release-inert, DEBUG-gated fixture supplies a
+coherent Pressure source blueprint and a later unavailable capability snapshot;
+`TrainRecommendationProjection`, `PracticeModeLaunchProjection`,
+`RecommendationTapAttribution`, `RecommendationLearningStore`, `FlowEventLog`,
+and the established router remain authoritative. Train renders the exact
+Pressure Drill recommendation and a hittable 44-point Begin action, then fails
+closed to ordinary Timed setup when capability disappears at tap. The fallback
+has no Pressure/Conversation destination, automatically mounted prompt, or
+stale prescribed demand; the content-free flow diagnostic retains shown at
+exact 0% with no accepted event. The complete availability, attribution,
+fixture, and recommendation-surface selection passes 24/24, and the complete
+current-source unsigned unit target passes 4,228 unique tests / 4,247 device
+executions with zero failures or skips; an unsigned current-source Release
+simulator build also succeeds. This is deterministic simulator evidence
+for one Train Pressure branch, not a physical capability transition, rendered
+Home or Conversation loss, signed TestFlight behavior, or effectiveness
+evidence. The leading current-source paragraph separately closes Summary
+Pressure loss.
+
+The current working tree closes the remaining representative rendered
+mini-drill completion gap without creating a second scoring or persistence
+path. A DEBUG-only fixture selects the existing Silent Transitions variation
+from Summary and contributes only a finalized transcript receipt and recorder
+duration. The production `MiniDrillCompletionDisposition` still classifies
+that evidence, `MiniDrillView` still constructs the outcome, and Summary still
+requires durable insertion of the exact account-owned receipt before XP,
+reward, baseline, streak, or result presentation. At Accessibility XXXL from a
+simulator configured with Reduce Motion, the two-word branch returns to a
+hittable Start drill state with the established three-word/three-second
+explanation and no result/XP; the 12-word/12-second branch renders the exact
+zero-filler Clean Run, nonzero XP, and a usable Done transition back to Summary.
+The fixture contract joins the related speech/history/account selection at
+48/48; the rendered lane passes 2/2, the neighboring Lesson Apply completion
+lane remains 2/2, and the complete current-source unsigned simulator
+`NoumTests` target passes 4,224 unique tests / 4,243 device executions with zero
+failures or skips. This is representative shared standard/framework rendering,
+not proof of specialized live WPM/pause/PREP metrics, real microphone/provider
+timing, physical hardware, calibration, transfer, or an external readiness
+artifact.
+
+The current working tree closes the rendered TR-4 gap through existing owners.
+`SpeechRecognizerViewModel` preserves the exact
+`LocalSpeechError.onDeviceRecognitionUnavailable` locale as a typed recording
+issue; Timed Practice renders a specific offline-language headline and guidance,
+withholds the futile generic retry and inactive End Session controls, and uses
+its existing cleanup/reset lifecycle for Back to setup. The transition respects
+Reduce Motion. A DEBUG-only provider fixture emits the same typed error and a
+deterministic launch seam writes through `LocaleSettingsManager`, so persisted
+test order cannot change the claimed locale and no parallel production store is
+introduced. Focused speech/lifecycle verification passes 41/41. The real Timed
+flow passes 1/1 at Accessibility XXXL with Reduce Motion, the generic provider
+failure recovery remains green at 1/1, and the complete current-source unsigned
+simulator `NoumTests` target passes 4,223 unique tests / 4,242 device executions
+with zero failures. This proves local typed mapping and rendered recovery, not
+real `SFSpeechRecognizer` availability, manual VoiceOver behavior, signed
+TestFlight, deployed services, user benefit, or any required external artifact.
+
+The current working tree closes a Lesson Apply false-progress path without
+claiming that the research prescribed a literal numeric threshold. Four
+keyword-only and two device-only lessons could previously pass on a fragment
+that matched their narrow rubric. The evaluator now preserves every authored
+quantity criterion and adds a visible 12-word complete-answer criterion only
+where none existed. A usable terminal receipt and at least three finite
+recorder-owned seconds produce transcript-free schema/word-count/duration
+evidence; `LessonOutcome` requires that verified evidence plus the exact
+concept/spot/apply result shape before lesson history or XP can mutate. Account reload
+and teardown also clear transient lesson celebrations. Exact fragment, terminal
+receipt/duration, malformed-outcome, XP, account-switch, source-order, and
+rendered retry/completion contracts pass. The focused unit selection is 44/44,
+the rendered UI selection is 2/2 with Reduce Motion and Accessibility XXXL
+coverage, and the complete unsigned simulator `NoumTests` target passes 4,222
+unique tests / 4,241 device executions; Swift Testing reports 4,200 tests across
+428 suites (`/tmp/noum-lesson-apply-full.xcresult`). This is local
+believable-progress evidence only. Historical aggregates remain grandfathered,
+rubric thresholds lack professional calibration, microphone/provider timing is
+not forced by the fixture, and no external readiness artifact was collected.
+
+The current working tree also closes a mini-drill history ownership and receipt
+provenance gap. The former `drillHistory` archive was device-global and
+unversioned, yet it supplied streak, coaching, forward-plan, and recommendation
+evidence. `DrillHistoryStore` now reloads a per-account archive and admits only
+versioned mini-drill receipts that bind the exact outcome ID to its parent
+practice session, terminal word count/duration, variation, and bounded XP.
+Malformed, legacy, and duplicate rows fail closed before memory or disk changes;
+the newest 30 verified receipts remain the deliberate retention window. Summary
+must persist the receipt before any XP, reward, baseline, streak, or result
+effect. The old global archive is not migrated into an account; it remains only
+in the existing unattributed export/deletion inventory. The focused
+DrillHistory/account-registry/Summary selection passes 47/47, and the complete
+current-source unsigned simulator `NoumTests` target passes 4,213 unique tests /
+4,232 device executions with zero failures; its Swift Testing phase reports
+4,191 tests across 427 suites (`/tmp/noum-drill-history-full.xcresult`). This is
+local deterministic evidence only: historical monotonic XP is not reconciled,
+the bounded archive is not an unbounded idempotency ledger, and signed Release,
+complete UI, device, backend, calibration, transfer, and external launch proof
+remain missing.
+
+The current working tree corrects the earlier TR-5 overclaim. The generic
+standard/framework drill already awaited readiness and finalization, but the
+three active specialized routes did not. Standard/framework, Beat the Brake,
+Land the Pause, and PREP Stack now share awaited readiness, terminal completion,
+recorder-owned duration, a three-word / three-finite-second outcome floor, and
+retry behavior for thin speech. Summary independently validates that quantity,
+binds the outcome to the parent practice session, and requires durable insertion
+of the versioned receipt before XP/reward/baseline/result effects. Live WPM
+samples and pause locks remain the specialized metric owners. PREP additionally
+requires its declared 28 words for
+success and bounds close strength below 100% until that evidence exists. The
+foundational focused speech-integrity suite passes 28/28 unique tests across
+receipt, quantity, lifecycle-source, PREP-boundary, and Summary-ordering
+contracts; the later fixture contract brings the related current selection to
+48/48. The current complete unsigned simulator `NoumTests` target passes 4,224
+unique tests / 4,243 device executions with zero failures or skips. A seeded
+light sweep plus the representative standard insufficient/eligible branches
+were visually inspected, and the rendered lane passes 2/2 at Accessibility
+XXXL from a simulator configured with Reduce Motion. Specialized live-metric
+branches, microphone/provider timing, physical hardware, calibration,
+effectiveness, longitudinal transfer, and launch operations remain unproved,
+so this earns no external readiness point.
 
 At `bb155866`, Cut the Crutch no longer converts a one- or two-word terminal
 capture into visible score, XP, or Daily Goal/streak progress. The existing
@@ -61,13 +254,20 @@ Reps count and exact saved-history inspection, while the existing
 coaching-plan input, Coach Read evidence depth, Coach Parity diagnosis, the
 three-rep transformation question, goal/forward-plan projections, retention
 and session stats, and filler-pattern evidence. A matrix of too-few-word,
-sub-three-second, non-finite, and evaluation-fixture rows remains visible as
-raw history but leaves all tested Profile evidence cold. The focused selection
+sub-three-second, non-finite, and evaluation-fixture rows remains covered in
+raw-history projection tests but leaves all tested Profile evidence cold. The
+focused selection
 passes 44/44; the complete target passes 4,177 unique tests / 4,194 device
 executions with zero failures or skips. This is deterministic local
 coaching-trust evidence only. It earns no external readiness point and does not
 prove physical rendering, calibrated effectiveness, longitudinal benefit, or
 launch operations.
+
+The current working-tree fixture supersedes the earlier rendered-evidence
+limit for durable finite rows: too-few-word and sub-three-second captures are
+now exercised through Review, All Reps, detail, and Profile. Non-finite and
+evaluation-only cases remain unit-only because durable persistence rejects or
+filters them; no UI claim is made for those shapes.
 
 At `c4376973`, Roleplay completion remains bound to the pressure rung actually
 attempted. The existing engine now resolves the prospective pressure level and
@@ -345,7 +545,11 @@ Home and Train now also apply one shared tap-attribution policy to the exact
 captured rendered exposure: a recommended Begin tap records shown before the
 live capability result is classified, while acceptance remains restricted to
 an exact displayed/launched mode match. Capability-loss fallback therefore
-contributes the KPI denominator without becoming accepted or followed. Current
+contributes the KPI denominator without becoming accepted or followed. The
+current Train Pressure lane now proves that shown-only contract through the
+rendered recommendation, manual Timed fallback, and content-free flow
+diagnostic; Home, Summary, and Conversation loss remain outside that rendered
+proof. Current
 Timed recommendations additionally carry their visible difficulty through the
 existing route and adherence ledger. A followed outcome now requires current
 adherence schema plus exact prescribed/executed demand; legacy mode-only rows
@@ -528,8 +732,8 @@ coach.
 | Up to two alternatives | **Contradicted** | Noum deliberately renders exactly one best next rep. `NextAction` retains one optional internal secondary for older decision paths, but `SummaryPrescriptionProjection` does not expose an alternatives menu. Because “up to two” permits zero, this does not block the one-action research outcome; it records an intentional product-contract choice against simultaneous alternatives rather than an implementation gap. |
 | Route across Timed, Sudden Death, Ah Counter, Cut the Crutch, pace, roleplay, Lessons, Projects, and Path | **Incomplete** | The engine can return existing mini-drills and the four `PracticeMode` values (Timed, Sudden Death, Ah Counter, IM conversation). Separate Roleplay curriculum, Lessons, Speech Projects, and Path are not prescription destinations. Speech Projects are now independently executable: a stable catalog ID resolves into Timed with its curated prompts and project duration contract, but that does not make Projects an adaptive recommendation destination. |
 | Short coach-voice rationale | **Proved** | Action reason, wider evidence, and confidence are kept distinct and duplicate copy is suppressed. |
-| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. At detached source commit `eb597589`, focused UI tests mounted the real Home and Train surfaces from the `plateauedAdvanced` profile, verified their exact Filler Control prescription and 44-point actions, followed both into `ahCounter.screen`, and read the existing account-local flow log back as one correlated `prescription.shown` / `prescription.accepted` pair at 100%. Exposure still waits for a settled selected-tab projection, so retained off-tab Home and Train's transient initial blueprint cannot create false denominators. A recommended Begin tap now records the exact captured visible exposure synchronously before the live capability result is classified. An exact displayed/launched mode match then records acceptance; Pressure or IM capability loss records shown only, does not arm Quick Start, and remains unfollowed. Same-fingerprint shown writes are idempotent, and Train's Adjust/alternate actions remain excluded. At `77b1361a`, a serial seeded Train UI contract additionally renders the exact `Medium · 30 sec` Timed demand and reaches the real Timed prompt; pure route/adherence tests prove that this Begin path carries the same difficulty into the outcome ledger. Home and Train continue to reuse `RecommendationLearningStore`, `FlowEventLog`, `NextActionModeAvailability`, and the established router. This row remains incomplete because Roleplay, Lessons, Projects, Path, pace, and the rest of the report's wider destination catalog lack one rendered prescription contract. |
-| Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, and no false acceptance. Prep-specific tests preserve the planned rehearsal identity, render honest Timed fallback copy/setup, withhold false readiness credit, prevent a fallback from upgrading at tap, and route unavailable pressure/audience shapes with a category-bounded prompt containing neither the moment title nor transcript. A focused iPhone 17 Pro simulator UI test now mounts the real Prep surface with both planned shapes locked, verifies the honest readiness labels and 44-point action, follows the Pressure fallback, and proves the exact category prompt reaches Timed. Other recommendation surfaces and the report's wider destination catalog remain outside this rendered proof. |
+| Home/Train card and deep link | **Incomplete** | Summary renders and deep-links the finalizer-owned action. At detached source commit `eb597589`, focused UI tests mounted the real Home and Train surfaces from the `plateauedAdvanced` profile, verified their exact Filler Control prescription and 44-point actions, followed both into `ahCounter.screen`, and read the existing account-local flow log back as one correlated `prescription.shown` / `prescription.accepted` pair at 100%. Exposure still waits for a settled selected-tab projection, so retained off-tab Home and Train's transient initial blueprint cannot create false denominators. A recommended Begin tap now records the exact captured visible exposure synchronously before the live capability result is classified. An exact displayed/launched mode match then records acceptance; Pressure or IM capability loss records shown only, does not arm Quick Start, and remains unfollowed. Same-fingerprint shown writes are idempotent, and Train's Adjust/alternate actions remain excluded. The current rendered Train lane additionally presents Pressure Drill at Accessibility XXXL, removes Pressure only at tap, reaches manual Timed setup without a stale demand or automatically mounted prompt, and retains shown at exact 0% with no accepted event. At `77b1361a`, a serial seeded Train UI contract additionally renders the exact `Medium · 30 sec` Timed demand and reaches the real Timed prompt; pure route/adherence tests prove that this Begin path carries the same difficulty into the outcome ledger. Home and Train continue to reuse `RecommendationLearningStore`, `FlowEventLog`, `NextActionModeAvailability`, and the established router. This row remains incomplete because Roleplay, Lessons, Projects, Path, pace, and the rest of the report's wider destination catalog lack one rendered prescription contract. |
+| Availability/locked-mode fallback | **Proved** | Summary, Home, Train, Prep, both Ask Noum recommendation paths, and the defensive router consume the shared rating/IM availability contract. Pure tests cover coherent projection values, suppressed stale setup/evidence/confidence, retained established IM focus/target, safe tap-time loss, no false acceptance, and the no-upgrade invariant for a mode that already rendered as Timed. Prep-specific rendered coverage preserves planned rehearsal identity and exact category-only fallback prompts. The current Train and Summary lanes prove the stronger after-render Pressure branch: each visible recommendation can lose Pressure at tap, reach default manual Timed setup with no stale demand or automatic prompt, retain shown-only attribution, and avoid acceptance. Summary additionally clears a pre-armed interrupted regular-mode Quick Start and carries the exact rendered projection through attribution. Rendered Home loss, rendered Conversation loss, physical capability transition, and the report's wider destination catalog remain outside this proof. |
 
 ### 4. Fast-lane first session
 
@@ -552,7 +756,7 @@ coach.
 | Persisted cloud-disabled choice | **Proved** | The existing `AISettingsManager` consent owner persists the choice and production construction tests prove no cloud route when it is off. |
 | Automatically fall back for missing credentials/network/cloud | **Incomplete** | Setup failure can fall back before audio begins. At `c44bd91c`, Mini-drills and Lesson Apply now wait for that readiness and require terminal receipts, so failure cannot consume their clock or create XP/history/lesson progress. Once either provider starts, a mid-rep failure still stops honestly and offers retry; audio is never replayed to a second provider. The report's broad runtime failover promise is intentionally narrower. |
 | Graceful failover banner | **Proved locally** | At `c3e018d4`, requested-cloud/resolved-local startup produces one shared content-free, accessibility-labelled notice across all nine speech surfaces: Timed, Pressure, Ah Counter, IM, Cut the Crutch, Pace Training, Roleplay, Mini-drills, and Lesson Apply. Deliberate local use and successful cloud stay quiet, and a new route clears stale notice state. The nine-surface source contract plus provider-semantic tests pass. No real provider failure was forced during the light simulator sweep, so rendered physical-device/TestFlight presentation, VoiceOver announcement, and reduced-motion behavior remain external proof. |
-| Helpful unsupported-locale state | **Weak evidence** | `LocalSpeechProviderTests` proves the device/locale-specific `LocalSpeechError` passes through the production recording-error mapper for both startup and interruption while arbitrary provider detail stays collapsed. Real `SFSpeechRecognizer` locale availability and rendered presentation still require physical-device/TestFlight evidence. |
+| Helpful unsupported-locale state | **Proved locally** | The current working tree preserves the exact configured locale from `LocalSpeechError.onDeviceRecognitionUnavailable` as a typed recognizer-owned issue while arbitrary provider detail remains collapsed. A DEBUG-only equivalent provider fixture drives the real Timed lifecycle at a deterministic `en-US` locale. The Accessibility XXXL + Reduce Motion UI lane proves a specific offline-language headline, exact locale/device explanation, Settings/device guidance, no futile retry or inactive End Session control, and a hittable Back to setup action that clears the issue. Focused speech/lifecycle verification passes 41/41 and the rendered lane passes 1/1. Real `SFSpeechRecognizer` model availability, manual VoiceOver announcement, physical-device behavior, and TestFlight remain unverified. |
 
 ### 6. Privacy and consent centre
 
@@ -595,7 +799,7 @@ different.
 | PR-1 | High filler burden chooses Ah Counter or Sudden Death | **Proved** | At `c3d1ff65`, qualifying high filler burden became duration-normalized: 10/600 does not enter the severe path, 3/20 does, count/duration floors fail closed, and filler retains priority over simultaneous severe pace. At `ec10990f`, that severe path selects Ah Counter (`Filler Control`) and no longer emits a generic filler mini-drill or Sudden Death. The finalizer permits this directly observed severe prescription on the first qualifying rep while continuing to suppress non-severe adaptive claims on thin evidence. Focused destination/boundary/context tests pass 93/93; the full unit target passes 4,065 tests with zero failures or skips. This proves the literal local route, not professional threshold calibration or outcome benefit. |
 | PR-2 | Pacing issues choose pace training | **Incomplete** | Severe, persistent, declining, and new pace evidence can select an existing `.paceControl` focused mini-drill; supported Home/Train pace trends project to Timed with a pace instruction. At `4da56e3e`, the immediate severe branch requires the shared 15-second / 20-word quantity floor and finite WPM, so a short or non-finite first rep cannot create that prescription and established evidence still falls through. At `8e7af9d9`, standalone Pace itself now awaits the terminal provider receipt and recorder-owned duration, requires the shared three-word / three-finite-second progress floor, withholds result/XP for thin speech, and preserves the exact live sampled result for eligible speech. No adaptive route selects that standalone destination, and it still writes neither `PracticeSession`, drill history, recommendation outcome, nor comparable response evidence. Routing there without first adding durable attribution would weaken the observe/adapt loop. |
 | PR-3 | Interpersonal-pressure goals bias toward Roleplay | **Missing** | The established engine can route IM conversation, not the separate Roleplay curriculum requested by the report. |
-| PR-4 | Locked modes fall back gracefully | **Proved** | The shared four-mode matrix covers locked-at-render and capability-lost-at-tap paths without stale setup/copy/confidence or false acceptance. Prep adds stable planned-shape identity, honest fallback copy/setup, no false readiness credit, no capability-return upgrade, and a route-bound, category-only prompt for unavailable pressure/audience shapes. The 2026-07-14 simulator UI test and retained attachments prove the locked Prep copy, touch target, real fallback route, and exact Timed prompt in rendered SwiftUI. This is not physical-device/TestFlight evidence, and a matrix for the report's broader destination catalog still does not exist. |
+| PR-4 | Locked modes fall back gracefully | **Proved** | The shared four-mode matrix covers locked-at-render and capability-lost-at-tap paths without stale setup/copy/confidence or false acceptance. Prep adds stable planned-shape identity, honest fallback copy/setup, no false readiness credit, no capability-return upgrade, and a route-bound, category-only prompt for unavailable pressure/audience shapes. The 2026-07-14 simulator UI test proves the locked Prep route. Current Train and Summary UI lanes separately prove Pressure can render as available and then fail closed at tap to manual Timed setup with no stale demand, automatic prompt, or accepted event; Summary additionally clears interrupted regular-mode Quick Start and keeps the exact rendered exposure identity. This is not physical-device/TestFlight evidence, and a matrix for the report's broader destination catalog still does not exist. |
 | FL-1 | Fresh install reaches a first rep without auth | **Contradicted** | It reaches structured first value without login credentials, after durable guest identity. A local fallback identity can persist and relaunch without remote traffic, but it is still an identity and typing is still not claimed as a spoken rep. |
 | FL-2 | Denied microphone does not dead-end | **Proved** | The written rehearsal path is permissionless, and upgrade routing is separately tested. |
 | FL-3 | Completed first rep resumes full onboarding later | **Incomplete** | Structured first value resumes prefilled full onboarding and later spoken practice, including across a signed simulator relaunch with a durable local guest. The literal initial spoken-rep case is not the fast-lane contract. |
@@ -603,8 +807,8 @@ different.
 | TR-1 | Missing AWS credentials still allows local practice | **Proved** | Local construction has no AWS dependency. The premise is stale because AWS is not the Release primary. |
 | TR-2 | Cloud-disabled preference persists | **Proved** | Existing consent persistence and no-cloud construction tests pass. |
 | TR-3 | Switching providers does not break filler detection | **Proved** | A focused provider-neutral contract passes equivalent local, Deepgram, Google, and AWS transcript updates—with deliberately different provider filler hints—through the production `handleTranscriptUpdate`/semantic-highlighting path and asserts identical transcript, count, and highlighted output. This proves between-route behavior locally; the product intentionally does not switch providers mid-audio-stream. |
-| TR-4 | Unsupported locale shows a helpful message | **Weak evidence** | A focused test proves the exact device/locale-specific error reaches the production recording-UI mapper before and after recording begins, while arbitrary provider detail remains hidden. Hardware locale availability and rendered UI presentation remain unverified. |
-| TR-5 | Failed supplemental capture cannot create progress | **Proved locally** | At `c44bd91c`, Mini-drill and Lesson Apply clocks start only after awaited capture readiness; both await finalization and require `RecordingCompletionGate` before outcome, XP/history, or lesson-result mutation. The focused integrity selection passes 13/13 unique tests and pins removal of the old fire-and-forget/fixed-delay paths. Microphone interruption and provider timing remain physical-device evidence. |
+| TR-4 | Unsupported locale shows a helpful message | **Proved locally** | The exact device/locale-specific error reaches a typed recognizer-owned issue while arbitrary provider detail stays hidden. A deterministic equivalent local-provider failure passes through Timed Practice at Accessibility XXXL with Reduce Motion and renders an offline-language explanation, exact locale, Settings/device guidance, no dead retry/stop actions, and a real Back to setup transition. Focused speech/lifecycle verification is 41/41 and rendered verification is 1/1. Hardware model availability, manual VoiceOver, physical-device, and TestFlight evidence remain missing. |
+| TR-5 | Failed supplemental capture cannot create progress | **Proved locally** | Standard/framework mini-drills, Beat the Brake, Land the Pause, PREP Stack, and Lesson Apply all await capture readiness/finalization and use recorder-owned duration before progress. Mini-drills require the shared three-word / three-finite-second floor and a durable account-scoped versioned receipt before history, XP, reward, baseline, streak, or result presentation; PREP also enforces its declared 28-word success floor. Lesson Apply preserves authored 10/14/18/20-word criteria, adds a visible 12-word floor to six quantity-free lessons, requires at least three finite seconds, and binds transcript-free completion evidence to the exact concept/spot/apply outcome before lesson progress or XP. Malformed/duplicate receipts and malformed lesson outcomes fail closed. The current related mini-drill speech/history/account selection passes 48/48, and representative standard insufficient/eligible rendering passes 2/2 at Accessibility XXXL from a simulator configured with Reduce Motion. Lesson Apply passes 44/44 with its two rendered branches also green at 2/2. Specialized mini-drill live metrics, microphone interruption/provider timing, and physical-device behavior remain unproved. |
 | PC-1 | Cloud toggle changes provider selection | **Proved** | Production consent-on/off construction is directly tested. |
 | PC-2 | Export creates and cleans up ZIP | **Proved** | `AccountDataExportServiceTests` verify the real temporary ZIP and its deletion. |
 | PC-3 | Deletion entry point visibility follows account state | **Proved** | Focused UI tests render both branches of the existing `authManager.isSignedIn` owner: the durable local guest/account path exposes `settings.account.delete`, while explicitly signed-out Settings exposes login and no deletion control. Local-guest deletion intentionally performs local teardown without making a remote deletion call; this row does not prove Firebase deletion. |
@@ -623,12 +827,12 @@ substrate, but it is not a cohort analytics service.
 | Typed-to-live upgrade rate | **Proved** | **Missing** | Tap intent, first later persisted spoken rep, and elapsed upgrade time are distinct; no cohort rate exists. |
 | Practice sessions per active user per week | **Proved** | **Missing** | Active days and sessions per active week are derived locally; no population aggregation exists. |
 | Goal-score improvement over 7/28 days | **Contradicted** | **Missing** | The public metric is qualitative goal follow-up/movement, not numeric goal-score improvement or a causal slope. |
-| Session-review open rate | **Proved** | **Missing** | Account-local eligible-session/review-open counts exist. |
-| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces. At `eb597589`, the shared tap-attribution policy always records the exact captured visible prescription as shown before classifying the live route, then records acceptance only when the displayed mode is the mode actually launched. Pressure/IM capability-loss tests prove fallback contributes shown only; existing outcome tests keep that rep unfollowed. The source-bound Home/Train UI run proves the normal Filler Control accepted path produces a content-free correlated shown/accepted pair without off-tab or unsettled-projection inflation. No population result, physical-device run, or rendered fallback-tap capture exists. |
+| Session-review open rate | **Proved** | **Missing** | Account-local eligible-session/review-open counts exist. In the current working tree, the numerator is a set of unique `review.sessionOpened` correlations intersected with progress-eligible session IDs, so duplicate, thin, and foreign legacy events cannot inflate the rate. No population aggregation exists. |
+| Prescriptions accepted rate | **Proved** | **Missing** | Exposure ownership sits on the rendered Summary/Home/Train surfaces. The shared tap-attribution policy records the exact captured visible prescription as shown before classifying the live route, then records acceptance only when the displayed mode is the mode actually launched. Pressure/IM capability-loss tests prove fallback contributes shown only; existing outcome tests keep that rep unfollowed. Source-bound Home/Train accepted-path UI coverage produces content-free correlated shown/accepted evidence. The current Train and Summary Pressure loss-at-tap captures each read back exact 0% acceptance with `prescription.shown` and no `prescription.accepted`; Summary also proves a fast fallback cannot lose the denominator and clears an interrupted regular-mode Quick Start. No population result or physical-device run exists; rendered Home and Conversation loss remain unproved. |
 | Notification opt-in after first value | **Proved** | **Missing** | Decisions before value are excluded and the local conversion signal exists. |
 | D1/D7/D28 retention | **Proved** | **Missing** | Account-local active-day return anchors exist; there is no retention cohort. |
 | Cloud-to-local fallback rate | **Proved** | **Missing** | Only cloud-requested routes resolved locally enter the denominator; deliberate local sessions are excluded. |
-| “Did Noum help you move toward the speaker you want to be?” after at least three reps | **Proved** | **Missing** | Exact localized copy and one-shot behavior are present and tested. At `8ec313c9`, the rendered Profile count uses only progress-eligible reps, so saved Review-only captures cannot unlock the prompt. No collected real-user result is staged. |
+| “Did Noum help you move toward the speaker you want to be?” after at least three reps | **Proved** | **Missing** | Exact localized copy and one-shot behavior are present and tested. At `8ec313c9`, Profile uses only progress-eligible reps. The current Accessibility XXXL fixture renders five raw saved rows but only two eligible reps, keeps the question withheld, and uses neutral starting-point copy. No collected real-user result is staged. |
 
 ## Experiment audit
 
@@ -657,14 +861,17 @@ Historical results are not treated as proof for later behavior.
 |---|---|---|
 | Recorded full integrated Swift regression | **Proved** | At clean commit `47cbab5f`, the result bundle passed 3,946 tests across 411 suites with zero failures or skips. The run used the local Swift package cache, disabled automatic package resolution and code signing, and removed provider credential variables. One transient parallel-clone launch rejection was retried by Xcode; the final result is Passed with the complete count. The unsigned optimized Release simulator build also succeeded from the same detached source boundary. |
 | Current full integrated Swift regression | **Proved** | At clean implementation commit `7ae1fe43153f76c682f8a2d909842632cdcb4410`, `/private/tmp/NoumProductionClosureSerial-7ae1fe43-20260714T105310Z.xcresult` completed the signed serial scheme with 4,061 tests, zero failures, and zero skips. Xcode's phase output records 3,989 unit tests across 411 suites and all 56 UI tests passing, with no clone loss. The run used a unique DerivedData directory, the populated offline Swift package cache, disabled automatic package resolution, and removed provider credential variables. Its deterministic result-bundle file rollup is `f6aa4bf32c25ce661ab10c6f8837a8eb5328655f90bd7212be09e92bab0d3c21`. The same detached commit passed the optimized Release simulator build and `release-scan-app-bundle.sh`. This is clean local simulator/build evidence, not physical-device, deployed-backend, or external-provider proof. |
-| Current-source unit regression | **Proved locally** | At implementation commit `bb155866`, the `NoumTests` target records 4,200 unique tests / 4,219 device executions, zero failures, zero skips, and result `Passed` on the iPhone 17 Pro / iOS 26.5 simulator. The focused Cut the Crutch, Pace, and shared speech-integrity selection separately passes 36 parameterized executions across three suites. This does not supersede the clean signed full-scheme, Release-scan, complete UI, physical-device, deployed-backend, or external evidence gates. |
+| Current-source unit regression | **Proved locally** | In the current Summary/Train recommendation-capability-loss, rendered-mini-drill, Lesson Apply, account-owned mini-drill-history, unsupported-locale, mixed Review-history, and metric-specific Review/AI evidence working tree, the complete unsigned simulator `NoumTests` target passes 4,289 unique tests / 4,308 device executions with zero failures or skips (`.build-roleplay-terminal/Evidence/Review-ai-metric-evidence-full-20260715-1950.xcresult`). The Review/history/post-rep/AI metric selection passes 92/92 across 12 suites (`.build-roleplay-terminal/Evidence/Review-ai-metric-evidence-focused-20260715-1945.xcresult`). Earlier Summary projection/fixture/attribution passes 23/23, the focused Summary UI branch passes 1/1, and the complete recommendation UI suite passes 5/5; mixed-history, mini-drill, Lesson Apply, and unsupported-locale evidence remains recorded in their rows. An unsigned current-source Release simulator build also succeeds. This does not supersede the clean signed full-scheme, optimized Release scan, complete UI, manual VoiceOver, physical-device, deployed-backend, or external evidence gates. |
+| Rendered mixed Review-only history | **Proved locally** | `.build-roleplay-terminal/Logs/Test/Test-Noum-2026.07.15_review-history-ui-final2.xcresult` passes 2/2 on an iPhone 17 Pro / iOS 26.5 simulator at Accessibility XXXL from a base simulator configured with Reduce Motion. Five durable finite rows remain visible and searchable, but only two drive Review/Profile evidence and the 6.5 All Reps average. The thin row and detail show neutral `Saved capture` / `Not measured` provenance, no stored 10/10 or praise headline, and no coaching cards; exact prompt, replay, transcript, deletion, and export ownership remain raw. Five passing attachments were visually inspected and retained in `.screenshots/2026-07-15_review-only-history-rendered/verified/`. Non-finite/evaluation cases are unit-only, Sudden Death's independent legacy run ledger is not reconciled, and the shared progress floor is not every mode's stricter metric floor. |
+| Rendered unsupported-locale recovery | **Proved locally** | `/tmp/noum-unsupported-locale-ui-actionable-rm.xcresult` passes 1/1 on an iPhone 17 Pro simulator. The real Timed setup/start path receives the typed local-provider fixture at deterministic `en-US`, renders the specific actionable issue at Accessibility XXXL with Reduce Motion enabled, exposes neither generic retry nor inactive End Session, and returns to pristine setup through the identified recovery action. The retained attachment was visually inspected. `/tmp/noum-unsupported-locale-ui-generic-regression.xcresult` separately keeps the established generic provider-failure path green at 1/1. These fixtures bypass hardware speech-model availability and are not manual VoiceOver, physical-device, signed Release, or TestFlight proof. |
+| Rendered standard mini-drill completion | **Proved locally** | `.build-roleplay-terminal/Logs/Test/Test-Noum-2026.07.15_11-48-52-+0100.xcresult` passes 2/2 on an iPhone 17 Pro simulator at Accessibility XXXL from a base simulator configured with Reduce Motion. The insufficient fixture supplies a usable two-word terminal receipt and proves the production disposition returns to Ready with exact quantity guidance, a hittable Start drill action, and no result/XP. The eligible fixture supplies 12 terminal words over 12 recorder-owned seconds and can render the exact zero-filler Clean Run, nonzero XP, and Done-to-Summary transition only after Summary inserts the account-owned verified receipt. Both captures and a seeded light five-tab sweep were visually inspected; the handoff is `.screenshots/2026-07-15_mini-drill-rendered-completion/HANDOFF.md`. This is representative standard/framework evidence only: it bypasses microphone/provider timing and does not render specialized live WPM, pause-lock, or PREP-step metrics, manual VoiceOver, physical-device, signed Release, or TestFlight behavior. |
 | Selected pre-baseline Swift product/test contracts | **Proved** | At `40d5e903`, focused simulator tests passed for goal calibration/outcomes, rewrite, Phrase Bank, prescription, fast lane, local speech, privacy, KPI, and experiment contracts. They remain valid for that named source boundary, not as a substitute for the final full run. |
 | Post-baseline explicit-style, weekly-copy, mode-availability, and coach-provenance contracts | **Proved** | The explicit-style trust-boundary run passed 238 tests with zero failures, the weekly digest goal-copy suite passed 4 unique tests with zero failures, and the final integrated availability run passed 69 tests across `NextActionAvailabilityTests`, `PrescriptionProjectionTests`, `SummaryLookingAheadRouterTests`, `AskNoumModeSuggestionTests`, `NextActionEngineTests`, and `HomeCoachCardVariantTests`, with zero failures or skips. The availability matrix exhausts all four modes × four capability snapshots × live IM states. The regression-repair run passed 219 tests across seven suites and the style-aware evidence boundary passed 112 tests across three suites. App-path rows carry an explicit styled, neutral, or unknown semantic expectation. Styled turns require a passed gate and typed assessment; known neutral turns require `notEvaluated` without typed assessment; unknown IDs fail closed. The 25 supplemental arena scenarios are explicitly neutral at construction, so missing fixtures cannot silently inherit neutrality. Fabricated/default voice telemetry remains rejected. The refreshed commit-bound report preserves this contract with 23 styled, 27 neutral, and zero invalid selected traces. |
 | Rendered account-visibility contract | **Proved** | The focused `testSignedOutSettingsPresentsAccountOptions` and `testPermissionlessFirstValueStaysStructuredAndDefersSetupToHome` UI runs passed on the iPhone 17 Pro simulator with its normal local test-signing path. The newer signed local-guest onboarding/relaunch run passed 2/2 and preserved the same durable account across relaunch without permission/App Check traffic. They prove the deletion entry point's rendered account-state branches and local fallback persistence, not remote deletion success. |
 | Durable local-guest persistence boundary | **Proved** | Commit `7ae1fe43` centralizes backend eligibility in `AuthManager.shouldSyncBackend`, and the existing profile, coaching-profile, session, recommendation, and backend-sync owners use that policy instead of inventing a parallel local store. Signed simulator runs passed the no-remote UI contract 1/1 and onboarding/relaunch contracts 2/2 with no permission/App Check traffic; the complete clean regression also passed. Local-guest deletion skips remote account deletion by design. This proves the named local boundary only; it does not prove deployed Firebase, physical-device persistence, or remote deletion. |
 | Rendered active-week phrase execution | **Proved** | On 2026-07-14, `testActiveWeekPhraseLaunchesExactPromptFromHome` passed on the iPhone 17 Pro simulator and retained an attachment of the exact saved line in Timed's thinking phase. The same 19-test focused run passed `ForwardPlanPhraseHandoffTests`, `PhrasePracticeIntentTests`, and `TimedPracticePromptHandoffTests`, including account binding and exact-once consumption. This is simulator/source evidence, not physical-device, TestFlight, or longitudinal outcome evidence. |
 | Rendered Prep availability fallback | **Proved** | On 2026-07-14, a combined 23-test focused run passed the real locked-shape Prep UI flow plus `PrepSessionAvailabilityTests`, `TimedPracticePromptHandoffTests`, and `ReleaseIdentityPrivacyTests`, with zero failures or skips. Retained attachments `prep-locked-shapes-timed-fallbacks` and `prep-pressure-fallback-exact-timed-prompt` were visually checked after the readiness-copy correction. They prove honest planned-shape status, Timed fallback actions, a 44-point target, and the exact category prompt at the destination on the iPhone 17 Pro simulator—not physical-device or TestFlight behavior. |
-| Rendered Home/Train recommendation ownership | **Proved** | At detached implementation commit `eb597589`, `/private/tmp/NoumRecommendationAttribution-eb597589.xcresult` passed 63/63 tests with zero failures or skips: both `RecommendationSurfaceRoutingUITests` plus 61 focused unit tests across tap attribution, availability, visible Home exposure, KPI derivation, and followed-rep gating. Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a diagnostic attachment showing one 100% correlated shown/accepted pair. Pure tests additionally prove ordered shown-then-accepted attribution for an available mode and shown-only attribution when Pressure or IM disappears at tap time. This proves the rendered normal Filler Control path and the shared fallback accounting policy. It is not four rendered recommendation modes, a rendered fallback-tap capture, population effectiveness, physical-device behavior, or TestFlight behavior. |
+| Rendered recommendation ownership and capability loss | **Proved** | At detached implementation commit `eb597589`, Home and Train each rendered Filler Control, exposed a 44-point action, reached `ahCounter.screen`, and retained a 100% correlated shown/accepted diagnostic. The later Train Pressure lane proved available-at-render/unavailable-at-tap fallback to default manual Timed setup at Accessibility XXXL. The current working-tree Summary lane carries the exact finalized action and rendered projection into attribution, rechecks the complete live capability snapshot, clears an interrupted regular-mode Quick Start on fallback, and preserves shown without acceptance. Its focused branch passes 1/1; all five current recommendation UI tests pass together, including normal Home/Train acceptance, Train/Summary Pressure fallback, and exact Timed demand. Focused logic passes 23/23, and eight current captures in `.screenshots/2026-07-15_summary-capability-loss/` were visually inspected. This proves rendered Train and Summary Pressure loss-at-tap plus normal Home/Train ownership. It does not render Home capability loss, Conversation Practice loss, the wider destination catalog, physical-device behavior, population effectiveness, or TestFlight behavior. |
 | Rendered Speech Project execution | **Proved** | At implementation commit `47cbab5f`, the focused routing and project-duration contracts passed together with `FocusedPracticeSetupUITests.testFocusedSetupIdentifiersSelectionTraitsAndTabBarHiding` on the iPhone 17 Pro simulator. The rendered `noum://projects/ice_breaker` route retained the catalog ID in Timed, exposed its project cue and begin control, hid the tab bar, and showed the aligned four-to-six-minute contract. The light five-tab sweep and project frame in `.screenshots/2026-07-14_speech-project-execution/` were visually checked. This proves local catalog-to-practice execution, not adaptive prescription, per-project longitudinal progress, physical-device behavior, or TestFlight behavior. |
 | Recommendation outcome attribution | **Proved** | `0da19af1` established explicit acceptance plus matching-mode attribution. At the detached clean `f1d6ec72` boundary, 75 focused simulator tests passed across `GoalOutcomeLoopTests`, `RecommendationResponseAnalyzerTests`, `RecommendationAdaptationAnalyzerTests`, and `TransformationKPIReportTests` with zero failures or skips. They additionally prove bounded persisted-demand comparison, unique-session floors, evaluator/outcome schema rejection, normalized filler polarity, focus-matched pace/filler judging, legacy fail-closed behavior, and KPI gating. At the detached clean `488f8040` boundary, all 54 `CoachMemoryEngineTests` passed with zero failures or skips. They prove that case status admits only exact accepted comparable session IDs, rejects duplicate/missing/future/pre-prescription/wrong-focus/legacy/target-metric-missing evidence, uses fillers per minute, rebuilds legacy criteria, and keeps target-aware success bars stable. The seeded light five-tab sweep in `.screenshots/2026-07-14_comparable-recommendation-evidence/` was visually checked for the earlier response contract; it does not prove this case-state logic, the lower DEBUG diagnostic, or population effectiveness. |
 | Exact executed practice demand | **Proved** | At detached clean `ea7a3845`, Functions lint and all 67 Node tests passed. A fresh iPhone 17 Pro simulator build passed 43/43 focused tests across `PracticeSessionDemandTests`, `GoalOutcomeLoopTests`, and `AccountDataRegistryTests`; result bundle `/private/tmp/NoumExactDemand-ea7a3845.xcresult`. They prove current/legacy codecs, exact Timed/Pressure/Project comparison, comparison-schema v2 fail-closed behavior, intent-copy retention, and account-isolated export/deletion. The canonical local `demo-noum` Auth/Firestore/Functions emulator gate later passed all 22 integration tests at clean `bbd040b5`, including the private-session mode/demand allow/reject matrix. The light screenshot sweep was blocked by the simulator account-bootstrap recovery surface and does not visually prove the share-card label. This remains local source/emulator evidence, not deployed enforcement. |
@@ -684,14 +891,17 @@ Historical results are not treated as proof for later behavior.
 | Ineligible competitive observation substrate | **Proved locally** | Commits through `81c17f4c` add exact Auth/App-Check/cutover-gated begin/complete contracts, bounded canonical PCM, at-most-once provider work, transcript-free permanently ineligible receipts, direct-rule denial, account deletion, and a false-gated iOS Ah Counter route. At `5aa8e728`, the source replaces the per-UID raw-audio claim with one server-only seven-day domain-separated exact-PCM claim shared across accounts. At `23fbfeee`, the post-create challenge sheet carries exact server prompt bytes plus the existing challenge intent through the account/token-bound Timed handoff; prompt replacement, Unicode/case/whitespace drift, stale tokens, wrong accounts, and byte-different armed sessions fail closed. At `c7cd0b51`, the prompt-bearing arm becomes a process-local route lease created only after exact account/token consumption and authoritative cached participant/expiry/unplayed validation, bound to the exact saved session before Summary, and removed from reload/export/migration; matching unbound cancellation, retry/terminal cleanup, account teardown, and legacy-key purge are fail-closed. A focused iOS selection passes 73/73. Both capabilities remain false, receipts remain ineligible, no verified-evidence writer exists, and the sheets have no production call site. The clean detached canonical gate (26/26 callable/rules/lifecycle plus 6/6 real adapter tests), the current 22/22 static readiness checks, and a clean unsigned arm64 Release simulator build remain the broader local boundary. This proves bounded local exact-byte capture/replay and route-lifecycle mechanics only. Hydrated/opponent navigation, replay after transformation or after the retention window, deployed TTL, live provider behavior, non-challenge provenance, evaluator calibration, and eligible evidence remain unproved. |
 | Supported backend deploy path | **Proved locally closed for checked-in configuration** | At `d96afc90`, `npm --prefix functions run deploy` became a non-executing blocker with no process, network, or file-read primitive. At `77352b03`, the exact blocker becomes the first hook for every checked-in Firebase Functions/Firestore target, closing scoped, combined, and unscoped deploys before preparation or mutation; 7/7 deploy tests, 86/86 readiness tests, and 22/22 static checks pass. Hosting deliberately remains independent. This does not control direct gcloud/Cloud Console mutation or alternate Firebase config files, authorize deployment, or prove production state. |
 | Speech-quantity fairness across evaluation, goal evidence, and immediate prescription | **Proved locally** | At `c3d1ff65`, one pure `FillerBurden` projection drives severity, drill focus, cross-session trends, filler-aligned copy, and controlled pressure-stretch eligibility. At `ec10990f`, severe qualifying burden routes to Ah Counter (`Filler Control`), including after a first severe qualifying rep; non-severe thin evidence stays suppressed. At `4da56e3e`, Timed/Ah evaluation uses the same qualifying rate for score, XP, feedback, clarity, weak moments, insights, and recent-session comparison; 1/60 equals 10/600, 3/20 stays concentrated, and sub-floor speech withholds judgment. At `ac393554`, the latest trajectory pack, qualitative goal rubric, goal-card confidence, and public weekly filler trend require quantity-qualified, duration-normalized evidence. At `dbafb01b`, Summary, Practice insights, `CoachingPlanner`, and chronological Review/Profile comparison join the same boundary. At `ac664112`, direct Ask Noum context, provisional Coach Read, AI Coach feedback/fallbacks, and comparable proof tests also join it; thin evidence cannot leak an older count or become a pressure pattern. At `a2502c04`, Clean rep and Filler-free week Path milestones require the same quantity, confidence, current-schema, and non-fixture evidence, while persisted unlock IDs remain grandfathered through the existing ledger. At `c3e018d4`, Roleplay withholds filler scoring entirely because its turn model lacks finalized duration; semantic terms and isolated unqualified disfluencies cannot alter quality or pressure while non-filler content signals remain. At `9088fdc3`, every duration-bearing practice surface uses the same recorder-stop receipt, and legacy-clock rows fail closed for duration-derived coaching. Focused capture verification passes 26 unique tests, the related selection passes 74, and the complete target passes 4,155 unique tests / 4,172 device executions. This proves local consistency and fail-closed behavior, not professional calibration or user benefit. |
+| Metric-specific historical filler/WPM evidence | **Partially proved locally** | The current working tree makes duration-derived mechanics optional evidence rather than inferred truth from finalization through Review and immediate AI coaching. The exact saved row must clear the 20-word / 15-second quantity floor, any supplied confidence floor, current comparison schema, and non-fixture boundary before it can support filler-rate or pace claims. Legacy snapshots keep unrelated evidence but fail closed for these mechanics. Trend confidence, baseline/session comparison, recommendation aggregates, momentum, severe routing, drill focus/rationale, Ah-Counter/Timed summaries, Review charts/detail/replay/highlights, post-rep AI, and AI Insights now consume qualified projections while score-only and factual saved-row evidence remain independent. The focused selection passes 92/92 and the complete target passes 4,289 unique tests / 4,308 device executions; the unsigned Release simulator build succeeds. This remains partial because active Summary Coach Read pace, Proof Moment generation, Forward Plan inputs, and other durable narrative/reward consumers still contain raw mechanic interpretations, and legacy trend continuity is intentionally absent until new qualified snapshots accrue. No professional, device, transfer, or external evidence exists. |
 | Capture-duration and baseline metric provenance | **Proved locally** | At `9088fdc3`, the microphone-capture interval freezes before audio teardown/provider drain and supplies persisted duration, telemetry, pitch eligibility, Mini-drill, and exact Pressure Drill round totals. Comparison schema 2 separates exact receipts from readable schema-1 history. Baseline recipes rebuild from current-epoch rows on mismatch, and pressure EMA replay is chronological. Focused, related, and full passes cover 26, 74, and 4,155 unique tests respectively. No deliberately delayed live-provider or physical-device run exists, so this remains local provenance evidence. |
 | Path unlock delivery and evidence provenance | **Proved locally** | At `b5747542`, `PracticeSessionFinalizer` captures synchronized unlock state before append and `PathProgressManager` compares it after dependent state lands, so a reactive recompute cannot consume the celebration event. The event carries the exact finalized session ID; stat copy and proof resolve that ID rather than `.last`. General criteria reject sub-floor and evaluation-only rows, stricter filler milestones remain unchanged, and persisted unlock IDs remain grandfathered. Focused 23-test, related 55-test, and complete 4,145-unique-test / 4,162-execution simulator gates pass. The light sweep does not force the overlay, and no signed-device, accessibility, retention, or transfer result exists. |
-| Progress-bearing session provenance | **Proved locally** | At `eaf2f31c`, one three-word/three-finite-second/non-fixture policy separates Review history from every earned, coaching, recommendation, rehearsal, and KPI projection. IM, Pressure Drill, Summary, reactive managers, longitudinal reads, and proof/archive paths fail closed. At `8ec313c9`, Profile's coaching plan, Coach Read depth, Coach Parity diagnosis, transformation prompt, goal/forward-plan inputs, retention/rank counts, and filler-pattern evidence explicitly consume that eligible projection while All Reps remains raw. At `cb5f0327`, Review story depth/latest navigation, highlight selection, and the shared parent/child development-chart gate join the same boundary. The focused Review selection passes 48/48 and the complete simulator target passes 4,184 unique tests / 4,201 executions. Existing monotonic ledgers are not reconciled, the light sweep does not prove mixed invalid history, and no device, live-provider, professional, longitudinal, or launch result exists. |
+| Progress-bearing session provenance | **Proved locally** | At `eaf2f31c`, one three-word/three-finite-second/non-fixture policy separates raw Review history from earned, coaching, recommendation, rehearsal, and KPI projections. At `8ec313c9` and `cb5f0327`, Profile coaching depth plus Review story/latest/highlight/chart reads consume that projection. The current working tree completes the rendered boundary: All Reps keeps raw saved count, search, exact detail, replay setup, deletion, and export, while its score aggregate and session-backed mode cards, previous-rep comparison, targeted mistake replay, Profile starting-point copy/transformation gate, and unique eligible review-open KPI use measured rows only. Thin rows replace stored score/praise with neutral saved-capture provenance and withhold coaching detail while retaining prompt, replay, and transcript access. The focused history/KPI lane passes 31/31, the rendered lane passes 2/2 with five visually inspected attachments, and the current complete target passes 4,242 unique tests / 4,261 executions. Non-finite/evaluation rows remain unit-only. The shared floor does not replace stricter filler/WPM quantity gates; Sudden Death's independent legacy run ledger and existing monotonic ledgers are not reconciled. No device, live-provider, professional, longitudinal, or launch result exists. |
+| Account-owned mini-drill receipt provenance | **Proved locally** | In the current working tree, `DrillHistoryStore` no longer imports the device-global `drillHistory` archive into progress. Each account owns a separate bounded archive; accepted receipts require current schema/source, exact outcome identity, parent practice-session identity, terminal word count and finite duration, variation, and bounded XP. Summary durably records that receipt before XP/reward/baseline/streak/result effects. Eight store tests cover account isolation, legacy filtering, invalid evidence, duplicate rejection, persistence/order/streak, teardown, and capacity; the current related selection including the rendered fixture contract passes 48/48. The eligible representative UI path reaches its result only after that insertion and the insufficient path shows neither result nor XP; the UI lane passes 2/2. The complete current-source target passes 4,224 unique tests / 4,243 device executions. The legacy global archive remains unattributed for export/deletion, historical XP is not reconciled, and deduplication is bounded by the retained 30 receipts. |
+| Lesson Apply earned-progress integrity | **Proved locally** | The evaluator preserves authored word floors and supplies a visible 12-word fallback for the six lessons that previously had only keyword/device evidence. A usable terminal receipt, at least three finite recorder-owned seconds, and transcript-free schema/word-count/duration evidence must accompany the exact concept/spot/apply result shape before a known lesson can pass or earn XP. Exact thin keyword fragments, device-only thin findings, non-finite/short duration, malformed outcomes, account-switch celebration teardown, and persistence are covered in the focused 44/44 selection. The rendered keyword-only retry and eligible summary flows pass 2/2 with Reduce Motion, including Accessibility XXXL; their retained captures were visually inspected. Historical aggregate lesson progress remains grandfathered, Profile XP and LessonStore mutation are not one cross-store transaction, fixtures bypass microphone/provider timing, and thresholds lack professional calibration. |
 | Roleplay completion pressure provenance | **Proved locally** | At `c4376973`, the fourth attempt and an unavailable-next-objection path complete without applying a prospective pressure rung. The chip and “Final attempted pressure” summary therefore remain bound to `RoleplayTurnResult.pressureLevel`; pre-terminal level and objection transitions remain atomic. Focused 55-test and complete 4,175-unique-test / 4,192-execution simulator gates pass. No deterministic rendered microphone-completion fixture, physical-device result, or effectiveness evidence exists. |
 | Roleplay terminal continuation guidance | **Proved locally** | At `5987636f`, feedback and completion share one cached engine transition. A real next turn retains its exact adaptive promise; the fourth attempt becomes future-practice guidance; and a missing transition fails closed without claiming a rung or objection. Four pure tests pass inside a focused 38/38 selection, 3/3 deterministic UI flows pass including Accessibility XXXL terminal feedback/completion, and the complete target passes 4,188 unique tests / 4,205 device executions. The UI fixture bypasses microphone capture and is not physical-device, effectiveness, or launch evidence. |
 | Standalone Pace earned-result integrity | **Proved locally** | At `8e7af9d9`, the provider's terminal receipt owns final speech eligibility, the recorder owns duration, and existing live samples own the Pace result. The shared recording gate plus three-word / three-finite-second floor prevents thin or unusable capture from presenting a score or awarding XP; eligible capture preserves the exact result and awards once. The focused engine/result/integrity selection passes 34/34, and the insufficient and eligible rendered fixtures pass individually, including Accessibility XXXL and accessible retry/exit actions. The complete unit target was not rerun at this commit; the latest complete target remains 4,188 unique tests / 4,205 device executions at `5987636f`. Fixtures bypass microphone/provider timing, and no durable Pace attribution or effectiveness evidence exists. |
 | Standalone Cut the Crutch earned-result integrity | **Proved locally** | At `bb155866`, live engine evidence owns avoided-word violations and the candidate result, while the terminal provider receipt and recorder duration own minimum speech eligibility. The shared completion gate plus three-word / three-finite-second floor prevents thin or unusable capture from presenting a score, awarding XP, or committing Daily Goal/streak progress; eligible capture preserves the exact live candidate and commits once. Focused verification passes 36 parameterized executions across three suites, and both UI branches pass with Reduce Motion enabled, including Accessibility XXXL, accessible retry/exit actions, and exact +150 eligible copy. The complete unit target passes 4,200 unique tests / 4,219 device executions. Fixtures bypass microphone/provider timing; terminal text cannot reconstruct or independently reconcile live avoided-word timing; and no durable Cut the Crutch attribution or effectiveness evidence exists. |
-| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, retry continuity, attempted-pressure and continuation truthfulness, speech-notice wiring, Path integrity, duration provenance, progress-eligibility/Profile/Review evidence, and Pace/Cut the Crutch earned-result integrity tests pass through implementation commit `bb155866`, but they earn no external readiness points; the readiness artifact predates current source and is not current-source evidence for these later closures. The current unit target is green, but the clean signed full-scheme, Release scan, complete UI, physical-device, deployed-backend, and external gates were not rerun at this source. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
+| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, retry continuity, attempted-pressure and continuation truthfulness, speech-notice wiring, unsupported-locale recovery, rendered Train and Summary Pressure capability loss, mixed Review/Profile history, the metric-specific filler/WPM boundary through Review and immediate AI coaching, Path integrity, duration provenance, Pace/Cut the Crutch earned-result integrity, all-route mini-drill completion/history plus representative standard rendering, and Lesson Apply earned-progress integrity pass locally, but they earn no external readiness points; the readiness artifact predates these closures. The complete current-source unsigned unit target is green at 4,289 unique tests / 4,308 device executions, the Review/AI metric selection is 92/92, the complete recommendation UI suite remains 5/5, and the unsigned Release simulator build succeeds. The clean signed full-scheme, optimized Release scan, complete UI, manual VoiceOver, physical-device, deployed-backend, and external gates were not rerun at this source. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
 
 ## External proof gates
 
@@ -744,6 +954,42 @@ assessment, declared-neutral rows remain truthfully `notEvaluated`, unknown
 fixture IDs fail closed, and all 109 traces carry the current commit and coach
 fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
+
+In the current working tree, the highest-impact unambiguous rendered TR-4 gap
+is closed. The existing recognizer owns an exact typed unsupported-locale issue;
+Timed Practice presents specific offline-language guidance, removes recovery
+controls that cannot help, and returns through its established setup lifecycle.
+Focused speech/lifecycle verification passes 41/41, the Accessibility XXXL +
+Reduce Motion lane passes 1/1, the generic provider-failure regression remains
+green at 1/1, and the complete target passes 4,223 unique tests / 4,242 device
+executions. Hardware model availability, manual VoiceOver, signed TestFlight,
+and user benefit remain external. The later representative standard mini-drill
+closure now passes 48/48 focused, 2/2 rendered, and 4,224 unique tests / 4,243
+device executions in the complete unit target. It intentionally does not
+fabricate specialized live WPM, pause-lock, or PREP-step evidence. The current
+Train Pressure capability-loss closure remains proved, and the new Summary
+closure carries the exact rendered projection through tap-time availability
+and attribution. Projection/fixture/attribution verification passes 23/23, the
+focused Summary branch passes 1/1, and all five current recommendation UI tests
+pass together. The latest complete unit target now passes 4,267 unique tests /
+4,286 device executions. This proves deterministic Train and Summary Pressure
+branches, not rendered Home or Conversation loss, physical capability loss, or
+benefit.
+The rendered mixed Review-only history gap is now closed for durable finite
+rows: raw saved captures remain inspectable while thin rows cannot own scores,
+mode aggregates, comparisons, replay targeting, Review/Profile depth, or the
+review-open KPI. Non-finite/evaluation cases remain unit-only, and stricter
+mode-metric floors plus legacy Sudden Death run ledgers remain explicit
+boundaries. The core metric-specific quantity gate is now closed for trend,
+baseline/comparison, recommendation aggregation, momentum, severe next action,
+drill focus/rationale, and deterministic post-rep copy. Its focused selection
+passes 31/31, the complete target passes 4,267 unique tests / 4,286 device
+executions, and the unsigned Release simulator build succeeds. Raw Review
+history cards/charts/detail, replay/highlight interpretation, and one AI insight
+fallback remain P1; legacy trend archives intentionally fail closed for filler
+and pace until qualified snapshots accrue. Rendered Home/Conversation
+expansion, standalone Pace attribution, and wider Roleplay prescription routing
+remain product/schema decisions rather than safe mechanical follow-ups.
 
 At `bb155866`, the highest-impact verified standalone Cut the Crutch integrity
 gap is closed: the live engine may compute a candidate, but terminal provider

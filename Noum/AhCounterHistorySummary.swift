@@ -30,22 +30,26 @@ import Foundation
 @available(iOS 17.0, *)
 struct AhCounterHistorySummaryStats: Equatable {
     let runCount: Int
-    /// Mean of (fillerWordCount / durationMinutes) across reps. ≥ 0.
-    /// `nil` when no rep had a measurable duration (defensive — should
-    /// never happen in practice).
+    /// Reps whose filler mechanics clear the shared historical comparison
+    /// boundary. `runCount` stays factual; this denominator explains how many
+    /// of those saved reps may support filler-rate progress claims.
+    let fillerMeasuredRepCount: Int
+    /// Mean of (fillerWordCount / durationMinutes) across qualified reps. ≥ 0.
+    /// `nil` when no rep carries comparable filler evidence.
     let averageFillersPerMinute: Double?
     /// The rep with the lowest fillers-per-minute. `nil` on empty
     /// input. When there's a multi-way tie, the most-recent qualifying
     /// rep wins (user reads "today's clean rep" before "last month's
     /// clean rep").
     let cleanest: CleanestRep?
-    /// Number of reps with `fillerWordCount == 0`. The honest "clutch
-    /// win" tally — every zero-filler rep counts.
+    /// Number of qualified reps with `fillerWordCount == 0`. An unqualified
+    /// zero is still inspectable on its saved row, but cannot become a clean
+    /// progress claim.
     let cleanRepCount: Int
     /// Per-minute filler rate over the most recent 7 calendar days,
     /// and over the 7 days before that. Only set when BOTH windows
-    /// have ≥1 rep with measurable duration; otherwise both nil so
-    /// the surface omits the trend rather than fabricating it.
+    /// have ≥1 qualified filler-rate rep; otherwise nil so the surface
+    /// omits the trend rather than fabricating it.
     let trend: TrendComparison?
     /// `true` when `cleanest.date` lands inside the current 7-day
     /// window (`now - 7d` ≤ date ≤ `now`). Drives the "Cleanest this
@@ -104,11 +108,12 @@ enum AhCounterHistorySummary {
         let ahCounterRuns = sessions.filter { $0.mode == .ahCounter }
         guard !ahCounterRuns.isEmpty else { return nil }
 
-        // Cleanest rep: lowest fillers-per-minute, tiebreak by most
+        // Cleanest rep: lowest qualified fillers-per-minute, tiebreak by most
         // recent date so the user reads their freshest clean rep first.
         let withRate: [(PracticeSession, Double)] = ahCounterRuns.compactMap { session in
-            guard session.duration > 0 else { return nil }
-            let rate = ratePerMinute(fillerCount: session.fillerWordCount, durationSeconds: session.duration)
+            guard let rate = FillerBurden.quantityQualified(session)?.ratePerMinute else {
+                return nil
+            }
             return (session, rate)
         }
         let cleanest = withRate
@@ -134,7 +139,9 @@ enum AhCounterHistorySummary {
             return (mean * 10).rounded() / 10
         }()
 
-        let cleanRepCount = ahCounterRuns.reduce(0) { $0 + ($1.fillerWordCount == 0 ? 1 : 0) }
+        let cleanRepCount = withRate.reduce(0) { count, entry in
+            count + (entry.0.fillerWordCount == 0 ? 1 : 0)
+        }
 
         let trend = trendComparison(
             sessions: ahCounterRuns,
@@ -146,6 +153,7 @@ enum AhCounterHistorySummary {
 
         return AhCounterHistorySummaryStats(
             runCount: ahCounterRuns.count,
+            fillerMeasuredRepCount: withRate.count,
             averageFillersPerMinute: averageFillersPerMinute,
             cleanest: cleanest,
             cleanRepCount: cleanRepCount,
@@ -169,19 +177,10 @@ enum AhCounterHistorySummary {
         return date >= windowStart && date <= now
     }
 
-    /// Pure rate calculation — filler count divided by minutes of
-    /// recorded speech. Exposed for tests so the rate math itself can
-    /// be locked independent of the rest of the summary.
-    static func ratePerMinute(fillerCount: Int, durationSeconds: TimeInterval) -> Double {
-        guard durationSeconds > 0 else { return 0 }
-        let minutes = durationSeconds / 60.0
-        return Double(fillerCount) / minutes
-    }
-
     // MARK: - Trend helpers (internal — exposed for tests)
 
     /// 7-day vs prior 7-day mean filler-rate comparison. Both windows
-    /// must have ≥1 measurable rep — otherwise `nil` so the UI omits
+    /// must have ≥1 qualified rep — otherwise `nil` so the UI omits
     /// the trend chip rather than rendering a single-point "direction."
     static func trendComparison(
         sessions: [PracticeSession],
@@ -192,8 +191,6 @@ enum AhCounterHistorySummary {
         let priorWindowStart = calendar.date(byAdding: .day, value: -14, to: now) ?? now
         let recent = sessions.filter { $0.date >= recentWindowStart && $0.date <= now }
         let prior = sessions.filter { $0.date >= priorWindowStart && $0.date < recentWindowStart }
-        guard !recent.isEmpty, !prior.isEmpty else { return nil }
-
         let recentRate = meanRate(sessions: recent)
         let priorRate = meanRate(sessions: prior)
         guard let recentRate, let priorRate else { return nil }
@@ -204,10 +201,7 @@ enum AhCounterHistorySummary {
     }
 
     private static func meanRate(sessions: [PracticeSession]) -> Double? {
-        let rates: [Double] = sessions.compactMap { session in
-            guard session.duration > 0 else { return nil }
-            return ratePerMinute(fillerCount: session.fillerWordCount, durationSeconds: session.duration)
-        }
+        let rates = FillerBurden.quantityQualifiedRatesPerMinute(in: sessions)
         guard !rates.isEmpty else { return nil }
         return rates.reduce(0, +) / Double(rates.count)
     }

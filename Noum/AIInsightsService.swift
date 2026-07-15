@@ -286,7 +286,9 @@ actor AIInsightsService {
         use chirpy filler ("Awesome!", "Great job!"). No emoji. No \
         exclamation marks. Sentences land in 18 words or fewer. Reference \
         the user's actual numbers — never invent statistics. If a number \
-        isn't given, don't claim a number.
+        isn't given, don't claim a number. A session metric marked "not \
+        measured" is unavailable evidence: do not infer it. Filler evidence \
+        never proves pace or rushed delivery.
         \(voiceRegister)
         Output strict JSON with keys: headline (≤ 8 words), body \
         (≤ 80 words, 1 paragraph), evidence (array of 1-3 short strings, \
@@ -354,8 +356,14 @@ actor AIInsightsService {
             lines.append("Top filler word: \(filler)")
         }
         lines.append("Average score baseline: \(String(format: "%.1f", input.baseline.averageScore.value))/10")
-        lines.append("Filler rate baseline: \(String(format: "%.1f", input.baseline.fillerRate.value)) per minute")
-        lines.append("Pace baseline: \(String(format: "%.0f", input.baseline.pace.value)) WPM")
+        if input.baseline.usesCurrentComparisonMetrics,
+           input.baseline.fillerRate.confidence != .insufficient {
+            lines.append("Filler rate baseline: \(String(format: "%.1f", input.baseline.fillerRate.value)) per minute")
+        }
+        if input.baseline.usesCurrentComparisonMetrics,
+           input.baseline.pace.confidence != .insufficient {
+            lines.append("Pace baseline: \(String(format: "%.0f", input.baseline.pace.value)) WPM")
+        }
         if !input.baseline.topStrengths.isEmpty {
             lines.append("Strengths: \(input.baseline.topStrengths.joined(separator: ", "))")
         }
@@ -368,7 +376,21 @@ actor AIInsightsService {
             for (idx, session) in input.focusSessions.enumerated() {
                 let scoreText = session.score.map { "\($0)/10" } ?? "n/a"
                 let durText = String(format: "%.0fs", session.duration)
-                lines.append("  \(idx + 1). \(session.mode.displayLabel) | score \(scoreText) | duration \(durText) | fillers \(session.fillerWordCount)")
+                let fillerText: String
+                if let burden = FillerBurden.quantityQualified(session),
+                   let rate = burden.ratePerMinute {
+                    fillerText = String(
+                        format: "%d (%.1f per minute)",
+                        burden.fillerCount,
+                        rate
+                    )
+                } else {
+                    fillerText = "not measured"
+                }
+                let paceText = SessionQualifier.quantityQualifiedWordsPerMinute(session)
+                    .map { "\(Int($0.rounded())) WPM" }
+                    ?? "not measured"
+                lines.append("  \(idx + 1). \(session.mode.displayLabel) | score \(scoreText) | duration \(durText) | fillers \(fillerText) | pace \(paceText)")
             }
         }
 
@@ -586,26 +608,51 @@ actor AIInsightsService {
                 generatedAt: Date()
             )
         }
-        let score = session.score ?? 0
-        let evidence: [String] = [
-            "Score \(score)/10",
-            "\(session.fillerWordCount) filler\(session.fillerWordCount == 1 ? "" : "s")",
-            String(format: "%.0fs duration", session.duration)
-        ]
+        let score = session.score
+        let qualifiedFillerBurden = FillerBurden.quantityQualified(session)
+        let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(session)
+        var evidence: [String] = []
+        if let score {
+            evidence.append("Score \(score)/10")
+        }
+        if qualifiedFillerBurden != nil {
+            evidence.append("\(session.fillerWordCount) filler\(session.fillerWordCount == 1 ? "" : "s") in \(Int(session.duration.rounded()))s")
+        }
+        if let qualifiedPaceWPM {
+            evidence.append("\(Int(qualifiedPaceWPM.rounded())) WPM")
+        }
+        if evidence.count < 3 {
+            evidence.append(String(format: "%.0fs duration", session.duration))
+        }
         let headline: String
         let body: String
         let action: String
-        if score >= 8 && session.fillerWordCount <= 2 {
-            headline = "Clean delivery landed"
-            body = "Score of \(score) with low filler count suggests structure and pace held under load. Run it again under more pressure before calling it solved."
+        if let score, score >= 8,
+           let qualifiedFillerBurden,
+           qualifiedFillerBurden.isAtMost(.elevated) {
+            headline = "Filler control held"
+            body = "Score of \(score) with \(session.fillerWordCount) measured filler\(session.fillerWordCount == 1 ? "" : "s") suggests filler control held in this sample. Run it again under more pressure before calling it solved."
             action = "Repeat the same mode at higher pressure tomorrow."
-        } else if session.fillerWordCount >= 5 {
+        } else if let qualifiedFillerBurden,
+                  qualifiedFillerBurden.meets(.urgent) {
             headline = "Fillers crept in"
-            body = "Score \(score) with \(session.fillerWordCount) fillers means pacing was rushed. The fix is intentional pauses, not faster delivery."
+            body = "This measured sample recorded \(session.fillerWordCount) fillers. Replace one with an intentional pause on the next rep."
             action = "Try Land the Pause as your next rep."
+        } else if let qualifiedPaceWPM, qualifiedPaceWPM > 170 {
+            headline = "Pace ran high"
+            body = "This measured sample ran at \(Int(qualifiedPaceWPM.rounded())) WPM. Give the next answer slightly more room to land."
+            action = "Pause once after your opening sentence."
+        } else if let qualifiedPaceWPM, qualifiedPaceWPM < 95 {
+            headline = "Pace needs more lift"
+            body = "This measured sample ran at \(Int(qualifiedPaceWPM.rounded())) WPM. Keep the next opening compact and move into the point sooner."
+            action = "State the answer in your first sentence."
+        } else if let score {
+            headline = score >= 8 ? "Strong rep saved" : "Steady rep"
+            body = "This rep scored \(score)/10. Use the next attempt to tighten either the opening or the close."
+            action = "Open your next rep with the answer in the first sentence."
         } else {
-            headline = "Steady rep"
-            body = "Score of \(score) and clean enough delivery. The next gain is in opening or close — pick one and tighten it."
+            headline = "Rep captured"
+            body = "This rep is saved without a reliable mechanics read. Review where the main point first became clear."
             action = "Open your next rep with the answer in the first sentence."
         }
         return AIInsight(
@@ -643,7 +690,28 @@ actor AIInsightsService {
         hasher.combine(input.weeklyDelta)
         hasher.combine(input.currentStreak)
         hasher.combine(input.topFillerWord ?? "")
-        hasher.combine(input.focusSessions.first?.id)
+        hasher.combine(input.baseline.comparisonMetricSchemaVersion)
+        hasher.combine(input.baseline.averageScore.value)
+        hasher.combine(input.baseline.averageScore.confidence.rawValue)
+        hasher.combine(input.baseline.fillerRate.value)
+        hasher.combine(input.baseline.fillerRate.confidence.rawValue)
+        hasher.combine(input.baseline.pace.value)
+        hasher.combine(input.baseline.pace.confidence.rawValue)
+        hasher.combine(input.baseline.topStrengths)
+        hasher.combine(input.baseline.persistentBlockers)
+        for session in input.focusSessions {
+            hasher.combine(session.id)
+            hasher.combine(session.mode.rawValue)
+            hasher.combine(session.score)
+            hasher.combine(session.duration)
+            hasher.combine(session.wordCount)
+            hasher.combine(session.fillerWordCount)
+            hasher.combine(session.transcriptConfidence)
+            hasher.combine(session.comparisonMetricSchemaVersion)
+            hasher.combine(session.isEvaluationFixture)
+            hasher.combine(session.transcript)
+            hasher.combine(session.prompt ?? "")
+        }
         hasher.combine(input.voice?.rawValue ?? "no-style")
         hasher.combine(input.goalParaphrase ?? "")
         hasher.combine(input.goalDistance)

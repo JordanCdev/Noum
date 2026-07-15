@@ -1,5 +1,380 @@
 # Noum — Current state
 
+## 2026-07-15 — Review and immediate AI mechanics require exact evidence
+
+The current working tree closes the previously ranked Review metric inventory
+without creating parallel history or coaching state. Ah-Counter and Timed
+history keep factual `runCount` values, while `fillerMeasuredRepCount` and
+`paceMeasuredRepCount` state exactly how many rows may support mechanic claims.
+Filler rate, zero-filler wins, cleanest rep, pace average, in-zone ratio,
+best-row pace, and their trends consume only the shared quantity-qualified
+projections. The cards name mixed evidence, show dashes rather than false
+zeroes when no mechanic is measured, and preserve independent score reads.
+
+Review charts now omit unqualified filler/WPM points rather than manufacturing
+zeroes. Session detail keeps raw filler count inspectable as a saved fact but
+renders unqualified WPM as `Not measured`. Targeted filler replay requires an
+urgent normalized qualified burden. Goal-example highlights require both
+qualified filler and pace projections, while breakthrough and recent-best
+score evidence remain independent.
+
+The active post-rep AI boundary now admits current filler count/rate, derivable
+word count, and WPM only when the exact rep clears quantity, confidence,
+current comparison schema, and non-fixture gates. AI output is rejected when it
+asserts a withheld mechanic or treats filler evidence as proof of rushed pace.
+Recent summaries and baseline mechanics fail closed through the same existing
+owners. `AIInsightsService` likewise marks unavailable session mechanics as
+not measured, omits stale or insufficient baseline mechanics, keeps filler and
+pace fallback branches independent, avoids synthesizing score zero, and keys
+its cache on the full mechanic provenance.
+
+Focused verification passes **92/92** across 12 suites. The complete unsigned
+simulator `NoumTests` target passes **4,289 unique tests / 4,308 device
+executions** with zero failures or skips, and an unsigned current-source
+Release simulator build succeeds. This remains partial product-wide coverage:
+the active Summary Coach Read, Proof Moment generation, Forward Plan inputs,
+and other durable narrative/reward consumers still need the same metric audit.
+Legacy trend archives intentionally contribute no mechanic continuity until
+new qualified snapshots accrue. Manual/device evidence, professional
+calibration, longitudinal transfer, operations, and all five required external
+artifacts remain unproved. Production readiness therefore remains **NO-GO at
+18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Filler and pace evidence stay optional per metric
+
+The current working tree closes the highest-ranked core metric-specific
+evidence leak through the existing session, trend, recommendation, and
+post-rep owners. `SessionQualifier` supplies one historical boundary for
+duration-derived mechanics: at least 20 words and 15 finite seconds, any
+supplied transcript confidence at or above 0.5, the current comparison metric
+schema, and a non-evaluation row. `PracticeSessionFinalizer` resolves the exact
+saved session before it records optional qualified filler-rate and pace values
+in `SkillSnapshot`. Legacy snapshots decode those values and their schema as
+absent, preserving unrelated score/category/pause/pitch evidence without
+promoting old raw metrics into current trends.
+
+`TrendAnalyzer` now compacts filler and pace independently and derives their
+confidence from the number of qualified metric samples, not from general rep
+count. Baseline/session comparison, recommendation aggregates, prompt
+summaries, and momentum use the same boundary. The exact finalized session's
+confidence also reaches `NextActionEngine`, `DrillEngineV2`, and
+`PostRepCoachNoteService`: low-confidence, thin, stale-schema, evaluation, or
+explicitly unqualified captures cannot trigger severe filler/pace routing,
+bias drill focus, leak raw counts/rates into rationale, or produce
+deterministic filler/pace coaching. Qualified controls retain the prior
+behavior, and independent score/category evidence remains usable.
+
+Focused verification passes **31/31** across
+`MetricSpecificQualificationTests`, `NextActionMetricEvidenceTests`,
+`DrillMetricEvidenceTests`, `PostRepMetricEvidenceQualificationTests`, and
+`CoachingPlannerQuantityFairnessTests`. The complete unsigned simulator
+`NoumTests` target passes **4,267 unique tests / 4,286 device executions** with
+zero failures or skips, and an unsigned current-source Release simulator build
+succeeds. This is not complete Review presentation coverage:
+`AhCounterHistorySummary`, `TimedHistorySummary`, `ProgressionCharts`,
+`SessionHistoryView` detail WPM, `MistakeReplayCard`,
+`ReviewHighlightsEngine`, and the `AIInsightsService` fallback remain P1.
+Legacy trend archives intentionally contribute no filler/pace continuity until
+new qualified snapshots accrue. Durable standalone Pace attribution, wider
+Roleplay prescription routing, manual/device evidence, professional
+calibration, longitudinal transfer, operations, and all five required external
+artifacts remain unproved. Production readiness therefore remains **NO-GO at
+18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Summary capability loss preserves the rendered prescription
+
+The current working tree closes the highest-ranked remaining rendered
+recommendation-trust gap without adding a recommendation, navigation, or
+analytics owner. Summary now captures the exact finalized action and
+`SummaryPrescriptionProjection` used by its card and carries that same value
+through exposure and tap attribution instead of recomputing it. At tap, the
+projection rechecks the complete live Pressure/Conversation capability snapshot;
+a capability may only downgrade the rendered mode to manual Timed setup, never
+upgrade or reinterpret what the user saw. The shared
+`RecommendationTapAttribution` records the rendered prescription as shown even
+on a fast fallback, records acceptance only for an exact displayed/launched mode
+match, and clears any interrupted regular-mode `PracticeModeQuickStart`
+handshake before the
+fallback route.
+
+A Release-inert DEBUG fixture renders a real Summary Pressure prescription,
+removes Pressure only at tap, and arms a stale Timed quick-start to make the
+cleanup observable. At Accessibility XXXL on the iPhone 17 Pro / iOS 26.5
+simulator, Summary presents `Pressure Drill · Pressure` with a hittable
+44-point action, then reaches ordinary Timed setup with the exact default
+`Prompt pool, All Themes. 15 seconds to prepare.` contract. No Pressure or
+Conversation destination, automatic prompt, recommended demand, or stale
+quick-start survives. The content-free diagnostic retains
+`prescription.shown`, exact 0% acceptance, and no `prescription.accepted` event.
+The focused projection/fixture/attribution selection passes **23/23**, the
+focused rendered branch passes **1/1**, and the complete recommendation UI
+suite passes **5/5**. The complete unsigned simulator `NoumTests` target passes
+**4,242 unique tests / 4,261 device executions** with zero failures or skips,
+and an unsigned current-source Release simulator build succeeds. The focused
+states and light sweep were visually inspected and retained in
+`.screenshots/2026-07-15_summary-capability-loss/HANDOFF.md`.
+
+This proves one deterministic Summary Pressure loss-at-tap branch, not a
+physical capability transition or rendered Summary Conversation loss. Rendered
+Home capability loss, the wider prescription catalog, metric-specific quantity
+floors for every filler-rate/WPM interpretation, legacy Sudden Death
+run-ledger reconciliation, manual VoiceOver, the clean signed full scheme,
+optimized Release scanning, physical-device/TestFlight behavior, live-provider
+behavior, professional calibration, longitudinal transfer, operations, and all
+five required external artifacts remain unproved. Production readiness
+therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Mixed Review history stays inspectable without becoming progress
+
+The current working tree closes the highest-ranked rendered mixed-history
+trust gap without adding a second history, progress, coaching, or analytics
+owner. `PracticeSessionStore.sessions` remains the raw source for saved count,
+search, exact detail, replay setup, deletion, and export.
+`PracticeProgressEligibility` now supplies All Reps score aggregates and
+session-backed mode cards, previous-rep comparison, targeted mistake replay,
+Review story/chart/highlight reads, and Profile coaching depth. Review-open KPI
+derivation also counts only unique `review.sessionOpened` correlations that
+match an eligible session, so opening a thin, duplicate, or foreign legacy row
+cannot inflate the eligible-session rate.
+
+A Release-inert DEBUG fixture installs five finite Timed rows through the real
+account-scoped stores: three newer saved captures retain deliberately high raw
+scores but fail the shared speech floor, while two older rows are measurable.
+It resets dependent XP, Pressure-run, clutch-word, baseline, trend, memory, and
+recommendation state so unrelated seed data cannot masquerade as evidence. At
+Accessibility XXXL on the iPhone 17 Pro / iOS 26.5 simulator configured with
+Reduce Motion, Review and Profile remain at two measured reps while linking to
+five saved rows; All Reps reports “5 sessions saved. 2 measured reps. Average
+score 6.5.” The thin row remains searchable but renders `Saved capture` with no
+score, and its detail keeps prompt, replay, and transcript access while showing
+`Not measured` and withholding outcome, focus, metrics, insights, and AI read.
+The final rendered lane passes **2/2**, the focused history/KPI selection passes
+**31/31**, and the complete unsigned simulator `NoumTests` target passes
+**4,241 unique tests / 4,260 device executions** with zero failures or skips.
+The current source also completes an unsigned Release simulator build. Five
+focused captures and the seeded light sweep are retained in
+`.screenshots/2026-07-15_review-only-history-rendered/HANDOFF.md`.
+
+This proves durable finite too-few-word and sub-three-second presentation, not
+every malformed legacy row: non-finite and evaluation-only cases remain
+unit-only because durable persistence rejects or filters them. The shared
+three-word / three-second floor is not the stricter quantity floor required for
+every filler-rate or WPM interpretation. Sudden Death's independent run ledger
+is not retroactively reconciled, although current run writes are gated. Manual
+VoiceOver, the clean signed full scheme and optimized Release scan, physical
+device/TestFlight, live-provider behavior, professional calibration,
+longitudinal transfer, operations, and all five required external artifacts
+remain unproved. Production readiness therefore remains **NO-GO at 18/100 with
+0/5 required external artifacts**.
+
+## 2026-07-15 — Recommendation capability loss now has rendered honesty evidence
+
+The current working tree closes the highest-ranked representative
+capability-loss-at-tap evidence gap without adding a recommendation, routing,
+or analytics owner. A Release-inert, DEBUG-gated fixture supplies a coherent
+Pressure source blueprint for rendering and then only removes Pressure from the
+live capability snapshot at tap. The existing `TrainRecommendationProjection`,
+`PracticeModeLaunchProjection`, `RecommendationTapAttribution`,
+`RecommendationLearningStore`, `FlowEventLog`, and navigation destination
+remain authoritative. Home uses the same source/tap split and now clears an
+interrupted `PracticeModeQuickStart` handshake before a non-accepting fallback,
+but that Home branch is not part of the rendered claim.
+
+At Accessibility XXXL, Train visibly presents Pressure Drill with a hittable
+44-point Begin action. When Pressure becomes unavailable at tap, the production
+projection opens ordinary Timed setup with the exact default “Prompt pool, All
+Themes. 15 seconds to prepare.” accessibility contract: no Pressure or
+Conversation destination, recommended difficulty, or automatically mounted
+prompt survives. The neighboring normal Timed recommendation still reaches its
+real prompt, separating the fallback's manual setup from a functioning Quick
+Start control. A diagnostic relaunch shows the content-free
+`prescription.shown` event, exact 0% acceptance, and no
+`prescription.accepted` event. The strengthened availability, attribution,
+fixture, and complete recommendation-surface selection passes **24/24** with
+zero failures or skips
+(`.build-roleplay-terminal/Logs/Test/Test-Noum-2026.07.15_12-54-47-+0100.xcresult`).
+The complete current-source unsigned simulator `NoumTests` target passes
+**4,228 unique tests / 4,247 device executions** with zero failures or skips
+(`.build-roleplay-terminal/Logs/Test/Test-Noum-2026.07.15_12-50-45-+0100.xcresult`).
+The current source also completes an unsigned Release simulator build; the
+optimized bundle scan and signed full scheme were not rerun.
+The base iPhone 17 Pro / iOS 26.5 simulator had Reduce Motion enabled and
+microphone permission granted; the focused states and seeded five-tab sweep were
+visually inspected and retained in
+`.screenshots/2026-07-15_recommendation-capability-loss/HANDOFF.md`.
+
+This proves one deterministic Train Pressure loss-at-tap branch, not a physical
+capability transition. Conversation loss remains unit-only; rendered Home and
+Summary fallbacks, the later IM destination race, the report's wider
+recommendation catalog, manual VoiceOver, signed Release/full-scheme behavior,
+physical-device/TestFlight behavior, population effectiveness, and all five
+required external artifacts remain unproved. Production readiness therefore
+remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Standard mini-drill completion now has rendered evidence
+
+The current working tree closes the explicit rendered-evidence gap left by the
+all-route mini-drill integrity and account-owned history work. A DEBUG-only
+fixture selects the existing `filler.silentTransitions` variation from Summary
+and supplies only a terminal provider receipt plus recorder duration. The
+existing `MiniDrillCompletionDisposition` still decides whether that evidence
+is sufficient, `MiniDrillView` still constructs the outcome, and
+`SummaryView.handleDrillComplete` remains the only durable sink. Eligible
+evidence therefore cannot mount the result until the exact account-owned
+receipt has been inserted ahead of XP, reward, baseline, and streak effects;
+two-word evidence returns to Ready with the established three-word /
+three-second explanation and no result or reward.
+
+The fixture contract joins the related speech/history/account selection at
+**48/48**. Both rendered branches pass **2/2** on the iPhone 17 Pro / iOS 26.5
+simulator at Accessibility XXXL from a simulator configured with Reduce Motion:
+the insufficient branch keeps Start drill hittable and presents no result/XP,
+while the eligible branch renders the exact 12-second, 12-word, zero-filler
+Clean Run with nonzero XP, dismisses through Done, and returns to Summary. The
+neighboring Lesson Apply completion suite remains green at **2/2**. The complete
+current-source unsigned simulator `NoumTests` target passes **4,224 unique tests
+/ 4,243 device executions** with zero failures or skips
+(`.build-roleplay-terminal/Logs/Test/Test-Noum-2026.07.15_11-56-36-+0100.xcresult`).
+A seeded light five-tab sweep and both focused states were visually inspected;
+the retained handoff is
+`.screenshots/2026-07-15_mini-drill-rendered-completion/HANDOFF.md`.
+
+This is representative rendered proof for the shared standard/framework
+mini-drill path, not a fabricated proof of Beat the Brake live WPM, Land the
+Pause locks, or PREP step/word metrics. The deterministic fixture bypasses real
+microphone and provider timing. Manual VoiceOver, signed Release/full-scheme
+behavior, physical-device/TestFlight capture, deployed services, professional
+calibration, longitudinal benefit, and every required external artifact remain
+unproved. Production readiness therefore remains **NO-GO at 18/100 with 0/5
+required external artifacts**.
+
+## 2026-07-15 — Unsupported Practice locales now fail with a useful recovery
+
+The current working tree closes the bounded rendered gap behind research
+requirement TR-4 without adding another speech owner or parsing provider text in
+the view. `SpeechRecognizerViewModel` maps the established
+`LocalSpeechError.onDeviceRecognitionUnavailable` case into a typed recording
+issue while retaining the exact configured locale. Timed Practice now explains
+that the language is unavailable offline, identifies the affected locale,
+directs the user to choose another Practice language in Settings or use a
+supporting device, removes the futile generic retry and inactive End Session
+controls, and provides a real Back to setup transition through the existing
+Timed lifecycle owner. Its issue-card transition is opacity-only when Reduce
+Motion is enabled.
+
+A DEBUG-only provider fixture emits the same typed local error, and a
+deterministic launch seam writes the requested locale through the existing
+`LocaleSettingsManager`; neither seam enters Release. The focused local-speech
+and lifecycle selection passes **41/41**. The real Timed flow passes **1/1** on
+an iPhone 17 Pro simulator at Accessibility XXXL with Reduce Motion enabled,
+including exact copy, absent dead controls, a hittable recovery action, and
+return to pristine setup
+(`/tmp/noum-unsupported-locale-ui-actionable-rm.xcresult`). The existing generic
+provider-failure recovery also passes **1/1**. The complete current-source
+unsigned simulator `NoumTests` target passes **4,223 unique tests / 4,242 device
+executions** with zero failures
+(`/tmp/noum-unsupported-locale-full-actionable.xcresult`).
+
+This is deterministic local rendering evidence, not proof of real
+`SFSpeechRecognizer` model availability. Manual VoiceOver announcement, signed
+Release/full-scheme behavior, physical-device/TestFlight capture, deployed
+backend behavior, professional calibration, longitudinal benefit, and every
+required external artifact remain unproved. Production readiness remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Lesson mastery now requires verified Apply speech
+
+The current working tree closes a false-progress path in the Lesson Apply step.
+Six lessons previously relied only on keyword or device findings, so fragments
+such as “send Thursday correct” could satisfy their authored rubric and create
+lesson progress plus 30–50 XP. Apply now preserves each authored quantity
+criterion (10, 14, 18, or 20 words) and adds a visible 12-word complete-answer
+floor only where the lesson had none. A usable terminal provider receipt and at
+least three finite recorder-owned seconds are also required. The resulting
+transcript-free evidence stores only schema, word count, and duration.
+
+`LessonOutcome` now fails closed unless it has the exact concept/spot/apply
+shape, a known lesson, verified Apply evidence, and three passing results;
+malformed outcomes cannot mutate lesson history or earn XP. `LessonStore`
+reload and account teardown clear
+pending celebrations before another identity can observe them, while completed
+lesson progress continues to reload from its existing account-scoped archive.
+Historical aggregate progress is deliberately grandfathered rather than
+reinterpreted without source evidence.
+
+The focused curriculum/completion/speech selection passes **44/44**. Two
+deterministic rendered flows pass with Reduce Motion: the Accessibility XXXL
+keyword-only fragment shows the matched semantic criteria but transparently
+withholds completion, while an eligible terminal response reaches the real
+summary. The complete current-source unsigned simulator `NoumTests` target
+passes **4,222 unique tests / 4,241 device executions** with zero failures; its
+Swift Testing phase reports **4,200 tests across 428 suites**
+(`/tmp/noum-lesson-apply-full.xcresult`). The focused UI result is 2/2
+(`/tmp/noum-lesson-apply-ui.xcresult`), and a fresh light five-tab sweep plus
+both Apply states and the summary were visually inspected. These fixtures
+bypass microphone/provider timing; heuristic rubrics still lack independent
+professional calibration, reward writes are not a cross-store transaction,
+and no signed full-scheme, Release, physical-device, deployed-backend,
+longitudinal, or external artifact was collected. Production readiness remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Mini-drill history is account-owned and evidence-versioned
+
+The current working tree closes a progress-trust and account-isolation defect
+behind mini-drill rewards. `DrillHistoryStore` previously persisted one
+device-global, unversioned `drillHistory` archive, so a later account could
+inherit another account's streak/coaching evidence and legacy rows could not be
+distinguished from verified completions. History now reloads from an
+account-scoped key, accepts only versioned mini-drill receipts with the exact
+outcome ID, parent practice-session ID, terminal word count/duration, variation,
+and bounded awarded XP, rejects duplicates before mutation, and caps the newest
+verified receipts at 30. The old global archive is deliberately not migrated;
+it remains available only to the existing unattributed export/deletion boundary
+and cannot become progress evidence.
+
+Summary now persists that verified receipt before Profile XP, reward, baseline,
+streak, or result presentation can advance. Account switching clears the
+in-memory projection and reloads only the new account's receipts. Eight focused
+store-integrity tests and the related account-registry/Summary selection pass
+**47/47**. The complete current-source unsigned simulator `NoumTests` target
+passes **4,213 unique tests / 4,232 device executions** with zero failures; its
+Swift Testing phase reports 4,191 tests across 427 suites
+(`/tmp/noum-drill-history-full.xcresult`). Existing historical XP is not
+reconciled, and the bounded 30-receipt archive is not an unbounded idempotency
+ledger. Signed full-scheme, Release, complete rendered UI, physical-device,
+deployed-backend, professional calibration, longitudinal benefit, and all five
+external artifacts remain unproved. Production readiness therefore remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
+
+## 2026-07-15 — Every mini-drill reward now requires terminal speech quantity
+
+The current working tree closes the supplemental-capture gap that remained
+behind the generic mini-drill audit. Standard and framework drills, Beat the
+Brake, Land the Pause, and PREP Stack now start their clocks only after awaited
+recorder readiness, await the provider's terminal receipt at stop, and use the
+recorder-owned duration. A shared disposition requires at least three terminal
+words over three finite seconds before any `MiniDrillOutcome` can reach Summary.
+Thin usable speech returns to Ready with calm retry guidance; unusable capture
+keeps the recognizer's recovery message. Summary independently checks the same
+quantity floor and deduplicates outcome IDs before its first drill-history, XP,
+reward, or baseline mutation.
+
+Specialized live metrics remain authoritative: terminal text does not pretend
+to reconstruct WPM samples, pause locks, or PREP step taps. PREP success now
+also requires the 28-word target disclosed by the drill, and close strength
+cannot report 100% below that floor. The focused speech-integrity suite passes
+**28/28 unique tests** after one stale source assertion was corrected; the new
+matrix covers unusable receipts, one/two-word speech, duration/non-finite
+boundaries, all four routed lifecycle implementations, PREP's 27/28-word edge,
+and Summary's eligibility/idempotency ordering. The complete unsigned simulator
+`NoumTests` target then passed **4,183 tests across 426 suites** with zero
+failures. That initial light sweep rendered only the ordinary seeded shell; the
+later entry above closes the representative standard insufficient/eligible
+rendered branch without fabricating specialized live metrics. Microphone and
+provider timing, physical-device behavior, professional calibration, longitudinal
+benefit, and all five external artifacts remain unproved. Production readiness
+therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Cut the Crutch progress now requires terminal speech quantity
 
 Implementation commit `bb155866` closes a believable-progress defect in the

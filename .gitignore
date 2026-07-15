@@ -7,6 +7,7 @@ build/
 xcuserdata/
 *.xcuserstate
 .build/
+/.build-roleplay-terminal/
 __pycache__/
 *.pyc
 .DS_Store
@@ -43,6 +44,7 @@ PLAN.md
 .screenshots/**/*.png
 .screenshots/**/*.jpg
 .screenshots/**/*.jpeg
+.screenshots/**/manifest.json
 
 # Screen recordings are local-only — heavy, and a single one can exceed
 # GitHub's 100MB push limit (this is what blocked a push). Never commit them.

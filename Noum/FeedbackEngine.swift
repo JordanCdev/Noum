@@ -708,7 +708,9 @@ enum VerdictEngine {
         duration: TimeInterval,
         wordCount: Int,
         categoryRatings: [String: String],
-        styleGoal: SpeakingStyleGoal? = nil
+        styleGoal: SpeakingStyleGoal? = nil,
+        fillerEvidenceQualified: Bool = true,
+        paceEvidenceQualified: Bool = true
     ) -> String {
         let base = baseDrillRationale(
             for: skillArea,
@@ -716,7 +718,9 @@ enum VerdictEngine {
             wpm: wpm,
             duration: duration,
             wordCount: wordCount,
-            categoryRatings: categoryRatings
+            categoryRatings: categoryRatings,
+            fillerEvidenceQualified: fillerEvidenceQualified,
+            paceEvidenceQualified: paceEvidenceQualified
         )
 
         guard let styleGoal, styleGoal.aligns(with: skillArea) else { return base }
@@ -732,10 +736,15 @@ enum VerdictEngine {
         wpm: Double,
         duration: TimeInterval,
         wordCount: Int,
-        categoryRatings: [String: String]
+        categoryRatings: [String: String],
+        fillerEvidenceQualified: Bool,
+        paceEvidenceQualified: Bool
     ) -> String {
         switch skillArea {
         case .fillerReduction:
+            guard fillerEvidenceQualified else {
+                return "This drill builds cleaner transitions by replacing verbal placeholders with deliberate pauses."
+            }
             let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
             if fillerBurden.meets(.severe) {
                 return "You used \(fillerCount) filler words — they clustered at transition points before the next idea was ready."
@@ -752,7 +761,7 @@ enum VerdictEngine {
             // declarative the first sentence reads. We can cite the
             // observable data point (filler count) without pretending we
             // analysed prosody on the opening specifically.
-            if fillerCount >= 3 && duration >= 15 {
+            if fillerEvidenceQualified && fillerCount >= 3 && duration >= 15 {
                 return "Your opening didn't land — \(fillerCount) fillers in the first stretch made the start sound uncertain. The first sentence is where listeners decide whether to lean in."
             }
             return "Your opening didn't land — the first sentence read tentative rather than declarative. Listeners decide whether to lean in inside the first eight seconds."
@@ -765,6 +774,9 @@ enum VerdictEngine {
             return "Your close trailed off rather than ending with conviction. The last sentence is what listeners walk away repeating — make it land."
 
         case .paceControl:
+            guard paceEvidenceQualified else {
+                return "This drill builds a steadier conversational rhythm so key ideas have room to land."
+            }
             if wpm > ConversationalPaceBand.maxWPM {
                 return "Your pace hit \(Int(wpm)) WPM — faster than conversational. Slowing down makes you sound more in control."
             } else if wpm < ConversationalPaceBand.minWPM && duration >= 15 {
@@ -822,11 +834,31 @@ enum DrillEngineV2 {
         styleGoal: SpeakingStyleGoal? = nil,
         trendOverride: [SkillTrend]? = nil,
         trendStore: SkillTrendStore = .shared,
-        drillHistory: DrillHistoryStore = .shared
+        drillHistory: DrillHistoryStore = .shared,
+        transcriptConfidence: Double? = nil,
+        comparisonMetricSchemaVersion: Int? = PracticeSession.currentComparisonMetricSchemaVersion,
+        isEvaluationFixture: Bool = false
     ) -> DrillRecommendationV2 {
         let wpm = duration > 0 ? Double(wordCount) / duration * 60 : 0
         let isMinimal = wordCount < 5 || duration < 5
-        let fillerBurden = FillerBurden(fillerCount: fillerCount, duration: duration)
+        let acceptsComparisonMetrics = comparisonMetricSchemaVersion
+            == PracticeSession.currentComparisonMetricSchemaVersion
+            && !isEvaluationFixture
+        let qualifiedFillerBurden = acceptsComparisonMetrics
+            ? FillerBurden.quantityQualified(
+                fillerCount: fillerCount,
+                duration: duration,
+                wordCount: wordCount,
+                transcriptConfidence: transcriptConfidence
+            )
+            : nil
+        let qualifiedPaceWPM = acceptsComparisonMetrics
+            ? SessionQualifier.quantityQualifiedWordsPerMinute(
+                duration: duration,
+                wordCount: wordCount,
+                transcriptConfidence: transcriptConfidence
+            )
+            : nil
 
         // Build category ratings dict
         let categoryRatings = Dictionary(uniqueKeysWithValues: feedbackCategories.map { ($0.dimension, $0.rating) })
@@ -835,12 +867,18 @@ enum DrillEngineV2 {
         let trends = trendOverride ?? TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
 
         // Build a current session snapshot for trend context
+        let qualifiedFillerRate = qualifiedFillerBurden?.ratePerMinute
         let sessionSnapshot = SkillSnapshot(
             sessionId: UUID(),
             fillerCount: fillerCount,
             duration: duration,
             wordCount: wordCount,
             wpm: wpm,
+            qualifiedFillerRatePerMinute: qualifiedFillerRate,
+            qualifiedPaceWPM: qualifiedPaceWPM,
+            comparisonMetricSchemaVersion: qualifiedFillerRate != nil && qualifiedPaceWPM != nil
+                ? PracticeSession.currentComparisonMetricSchemaVersion
+                : nil,
             score: score,
             categoryRatings: categoryRatings
         )
@@ -854,8 +892,8 @@ enum DrillEngineV2 {
             focusArea = .answerDevelopment
         } else {
             focusArea = determineFocus(
-                fillerBurden: fillerBurden,
-                wpm: wpm,
+                fillerBurden: qualifiedFillerBurden,
+                paceWPM: qualifiedPaceWPM,
                 duration: duration,
                 score: score,
                 categoryRatings: categoryRatings,
@@ -887,7 +925,9 @@ enum DrillEngineV2 {
             duration: duration,
             wordCount: wordCount,
             categoryRatings: categoryRatings,
-            styleGoal: styleGoal
+            styleGoal: styleGoal,
+            fillerEvidenceQualified: qualifiedFillerBurden != nil,
+            paceEvidenceQualified: qualifiedPaceWPM != nil
         )
 
         // Get trend context
@@ -914,8 +954,8 @@ enum DrillEngineV2 {
     // MARK: - Focus Determination
 
     private static func determineFocus(
-        fillerBurden: FillerBurden,
-        wpm: Double,
+        fillerBurden: FillerBurden?,
+        paceWPM: Double?,
         duration: TimeInterval,
         score: Int,
         categoryRatings: [String: String],
@@ -927,7 +967,7 @@ enum DrillEngineV2 {
         // First: check if current session has a clear, urgent weakness
         let urgentFocus = urgentSessionFocus(
             fillerBurden: fillerBurden,
-            wpm: wpm,
+            paceWPM: paceWPM,
             duration: duration,
             categoryRatings: categoryRatings
         )
@@ -949,7 +989,9 @@ enum DrillEngineV2 {
             // If session has an urgent weakness but trend says something else,
             // use session weakness if it's severe, otherwise trust trends
             if let urgent = urgentFocus {
-                if fillerBurden.meets(.severe) || duration < 10 || wpm > 180 {
+                if fillerBurden?.meets(.severe) == true
+                    || duration < 10
+                    || paceWPM.map({ $0 > 180 }) == true {
                     return urgent  // Severe session issue overrides trend
                 }
                 return trendFocus  // Moderate issue — trust the trend analysis
@@ -961,7 +1003,7 @@ enum DrillEngineV2 {
         // No trend data — fall back to session-only analysis
         return urgentFocus ?? sessionOnlyFocus(
             fillerBurden: fillerBurden,
-            wpm: wpm,
+            paceWPM: paceWPM,
             duration: duration,
             score: score,
             categoryRatings: categoryRatings,
@@ -971,40 +1013,40 @@ enum DrillEngineV2 {
 
     /// Check for urgent single-session weaknesses.
     private static func urgentSessionFocus(
-        fillerBurden: FillerBurden,
-        wpm: Double,
+        fillerBurden: FillerBurden?,
+        paceWPM: Double?,
         duration: TimeInterval,
         categoryRatings: [String: String]
     ) -> SkillArea? {
-        if fillerBurden.meets(.urgent) { return .fillerReduction }
+        if fillerBurden?.meets(.urgent) == true { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
-        if wpm > ConversationalPaceBand.maxWPM { return .paceControl }
-        if wpm > 0 && wpm < ConversationalPaceBand.minWPM && duration >= 15 { return .paceControl }
+        if paceWPM.map({ $0 > ConversationalPaceBand.maxWPM }) == true { return .paceControl }
+        if paceWPM.map({ $0 < ConversationalPaceBand.minWPM }) == true && duration >= 15 { return .paceControl }
         if categoryRatings["Opening"] == "Could improve" { return .openingStrength }
         if categoryRatings["Structure"] == "Could improve" { return .structure }
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
         if categoryRatings["Depth"] == "Could improve" { return .answerDevelopment }
-        if fillerBurden.meets(.elevated) { return .fillerReduction }
+        if fillerBurden?.meets(.elevated) == true { return .fillerReduction }
         return nil
     }
 
     /// Session-only focus when no trend data exists (new users).
     private static func sessionOnlyFocus(
-        fillerBurden: FillerBurden,
-        wpm: Double,
+        fillerBurden: FillerBurden?,
+        paceWPM: Double?,
         duration: TimeInterval,
         score: Int,
         categoryRatings: [String: String],
         styleGoal: SpeakingStyleGoal? = nil
     ) -> SkillArea {
-        if fillerBurden.meets(.urgent) { return .fillerReduction }
+        if fillerBurden?.meets(.urgent) == true { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
-        if wpm > ConversationalPaceBand.maxWPM { return .paceControl }
-        if fillerBurden.meets(.elevated) { return .fillerReduction }
+        if paceWPM.map({ $0 > ConversationalPaceBand.maxWPM }) == true { return .paceControl }
+        if fillerBurden?.meets(.elevated) == true { return .fillerReduction }
         if categoryRatings["Opening"] == "Could improve" { return .openingStrength }
         if categoryRatings["Structure"] == "Could improve" { return .structure }
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
-        if wpm > 0 && wpm < ConversationalPaceBand.minWPM && duration >= 15 { return .paceControl }
+        if paceWPM.map({ $0 < ConversationalPaceBand.minWPM }) == true && duration >= 15 { return .paceControl }
         if categoryRatings["Depth"] == "Could improve" { return .answerDevelopment }
         // No clear session signal. Prefer the user's stated voice goal over the
         // generic .confidence / .structure defaults — keeps day-one users with

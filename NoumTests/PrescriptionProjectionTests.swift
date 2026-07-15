@@ -89,6 +89,36 @@ struct PrescriptionProjectionTests {
         #expect(projection.evidence == nil)
         #expect(projection.confidenceLabel == nil)
         #expect(projection.destination(imAvailable: true) == .timedPractice(difficulty: nil))
+        #expect(
+            projection.launch(modeAvailabilityAtTap: .allAvailable)?.destination
+                == .timedPractice(difficulty: nil)
+        )
+    }
+
+    @Test func availablePressureProjectionRechecksFullAvailabilityAtTap() {
+        let projection = SummaryPrescriptionProjection.resolve(
+            nextAction: nextAction(
+                .pressureExposure(
+                    .suddenDeath,
+                    reason: "Test the same control under pressure."
+                ),
+                reasoning: "Your casual reps read stronger than your pressure reps.",
+                confidence: .moderate
+            ),
+            fallbackDrill: drill(id: "fallback", title: "Fallback", format: .miniDrill),
+            modeAvailability: .allAvailable
+        )
+
+        let fallback = projection.launch(modeAvailabilityAtTap: .failClosed)
+        #expect(fallback?.displayedMode == .suddenDeath)
+        #expect(fallback?.launchedMode == .timed)
+        #expect(fallback?.destination == .timedPractice(difficulty: nil))
+        #expect(fallback?.acceptsDisplayedPrescription == false)
+
+        let accepted = projection.launch(modeAvailabilityAtTap: .allAvailable)
+        #expect(accepted?.launchedMode == .suddenDeath)
+        #expect(accepted?.destination == .suddenDeathPractice)
+        #expect(accepted?.acceptsDisplayedPrescription == true)
     }
 
     @Test func stabilizingRepProjectsToOneFullRep() {

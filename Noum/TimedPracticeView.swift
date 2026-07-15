@@ -893,7 +893,11 @@ struct TimedPracticeView: View {
             if phase == .speaking, let error = speechVM.connectionError, !speechVM.isRecording {
                 recordingIssueCard(error)
                     .padding(.horizontal, Spacing.screenH)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .opacity.combined(with: .scale(scale: 0.96))
+                    )
             }
         }
         .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
@@ -1391,7 +1395,21 @@ struct TimedPracticeView: View {
     }
 
     private func recordingIssueCard(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
+        let title: String
+        let detail: String
+        let requiresLocaleChange: Bool
+        switch speechVM.recordingIssue {
+        case .unsupportedOnDeviceLocale:
+            title = "This language isn't available offline"
+            detail = "\(message) Choose another Practice language in Settings or continue on a device that supports it."
+            requiresLocaleChange = true
+        case nil:
+            title = "We could not hear the rep"
+            detail = message
+            requiresLocaleChange = false
+        }
+
+        return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .center, spacing: 10) {
                 Image(systemName: "mic.slash.fill")
                     .font(Typography.headline)
@@ -1401,27 +1419,40 @@ struct TimedPracticeView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("We could not hear the rep")
+                    Text(title)
                         .font(Typography.cardTitle)
                         .foregroundStyle(.white)
 
-                    Text(message)
+                    Text(detail)
                         .font(Typography.subheadline)
                         .foregroundStyle(.white.opacity(0.76))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            Button(action: retryRecordingAfterIssue) {
-                Label(speechVM.microphonePermissionState == .denied ? "Open Settings" : "Try again", systemImage: "arrow.clockwise")
-                    .font(Typography.caption.weight(.bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(.white, in: Capsule())
-                    .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
+            if requiresLocaleChange {
+                Button(action: returnToSetupAfterRecordingIssue) {
+                    Label("Back to setup", systemImage: "arrow.backward")
+                        .font(Typography.caption.weight(.bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(.white, in: Capsule())
+                        .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("timedPractice.recordingIssue.backToSetup")
+            } else {
+                Button(action: retryRecordingAfterIssue) {
+                    Label(speechVM.microphonePermissionState == .denied ? "Open Settings" : "Try again", systemImage: "arrow.clockwise")
+                        .font(Typography.caption.weight(.bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(.white, in: Capsule())
+                        .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("timedPractice.recordingIssue.retry")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("timedPractice.recordingIssue.retry")
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2760,9 +2791,15 @@ struct TimedPracticeView: View {
     private var speakingBottomBar: some View {
         let isImmersive = phase == .speaking && !showLiveTranscript && !isFullScreenCameraActive
         let isCamera = isFullScreenCameraActive
+        let hasRecordingIssue = speechVM.connectionError != nil
 
         return Group {
-            if isCamera {
+            if hasRecordingIssue {
+                // Startup and interruption failures own their recovery action
+                // in `recordingIssueCard`; the normal stop action has no live
+                // recording to end and would otherwise be a dead control.
+                Color.clear.frame(height: 0)
+            } else if isCamera {
                 // Camera mode: stop button is in the overlay panel, no bottom bar needed
                 Color.clear.frame(height: 0)
             } else {
@@ -2856,6 +2893,11 @@ struct TimedPracticeView: View {
             return
         }
         startSpeaking()
+    }
+
+    private func returnToSetupAfterRecordingIssue() {
+        cleanup()
+        resetState(keepPrompt: true)
     }
 
     private func beginSession() {

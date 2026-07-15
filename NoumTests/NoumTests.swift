@@ -7616,13 +7616,28 @@ struct GoalProgressTests {
         pauseFilledRatio: Double? = nil
     ) -> SkillSnapshot {
         let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        let wordCount = 120
+        let qualifiedFillerRate = FillerBurden.quantityQualified(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount
+        )?.ratePerMinute
+        let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(
+            duration: duration,
+            wordCount: wordCount
+        )
         return SkillSnapshot(
             sessionId: UUID(),
             date: date,
             fillerCount: fillerCount,
             duration: duration,
-            wordCount: 120,
+            wordCount: wordCount,
             wpm: 130,
+            qualifiedFillerRatePerMinute: qualifiedFillerRate,
+            qualifiedPaceWPM: qualifiedPaceWPM,
+            comparisonMetricSchemaVersion: qualifiedFillerRate != nil && qualifiedPaceWPM != nil
+                ? PracticeSession.currentComparisonMetricSchemaVersion
+                : nil,
             score: score,
             categoryRatings: [:],
             drillCompleted: nil,
@@ -8301,12 +8316,27 @@ struct GoalAwareDrillSelectionTests {
         duration: TimeInterval,
         wpm: Double = 130
     ) -> SkillSnapshot {
-        SkillSnapshot(
+        let wordCount = Int(wpm * duration / 60)
+        let qualifiedFillerRate = FillerBurden.quantityQualified(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount
+        )?.ratePerMinute
+        let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(
+            duration: duration,
+            wordCount: wordCount
+        )
+        return SkillSnapshot(
             sessionId: UUID(),
             fillerCount: fillerCount,
             duration: duration,
-            wordCount: Int(wpm * duration / 60),
+            wordCount: wordCount,
             wpm: wpm,
+            qualifiedFillerRatePerMinute: qualifiedFillerRate,
+            qualifiedPaceWPM: qualifiedPaceWPM,
+            comparisonMetricSchemaVersion: qualifiedFillerRate != nil && qualifiedPaceWPM != nil
+                ? PracticeSession.currentComparisonMetricSchemaVersion
+                : nil,
             score: 6
         )
     }
@@ -14650,14 +14680,14 @@ struct RecommendationBiasContextBuilderTests {
             fillers: 10,
             duration: 600,
             score: 6,
-            transcript: "A long complete answer"
+            transcript: "A long complete answer explains the decision, relevant evidence, expected outcome, accountable owner, next steps, risks, timing, and follow-up clearly."
         )
         let shortHighRate = session(
             mode: .timed,
             fillers: 3,
             duration: 20,
             score: 6,
-            transcript: "A short pressured answer"
+            transcript: "A short pressured answer explains the decision, relevant evidence, expected outcome, accountable owner, next steps, risks, timing, and follow-up clearly."
         )
         let belowFloor = session(
             mode: .timed,
@@ -32495,7 +32525,7 @@ struct AhCounterHistorySummaryThisWeekTests {
 
     private func session(daysAgo: Double, fillers: Int, duration: TimeInterval = 60) -> PracticeSession {
         PracticeSession(
-            transcript: "test rep \(fillers)",
+            transcript: Array(repeating: "word", count: 30).joined(separator: " "),
             fillerWordCount: fillers,
             duration: duration,
             date: now.addingTimeInterval(-daysAgo * 86400),
@@ -50423,7 +50453,7 @@ struct ReviewSurfaceCopyTests {
         insights: [String] = []
     ) -> PracticeSession {
         PracticeSession(
-            transcript: "test transcript with enough ordinary words for a saved rep",
+            transcript: Array(repeating: "word", count: 30).joined(separator: " "),
             fillerWordCount: fillers,
             duration: 60,
             date: date,

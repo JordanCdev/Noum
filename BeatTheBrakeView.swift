@@ -16,11 +16,14 @@ struct BeatTheBrakeView: View {
     let onCancel: () -> Void
 
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var phase: DrillPhase = .ready
     @State private var elapsedSeconds: Int = 0
     @State private var countdownValue: Int = 3
     @State private var timerTask: Task<Void, Never>?
+    @State private var lifecycleTask: Task<Void, Never>?
+    @State private var completionIssue: String?
 
     // WPM tracking
     @State private var currentWPM: Double = 0
@@ -31,7 +34,6 @@ struct BeatTheBrakeView: View {
     @State private var lowestWPM: Double = 999
     @State private var wasInZone: Bool = false
     @State private var wpmSamples: [Double] = []
-    @State private var recordingStartDate: Date?
 
     private let drillDuration: Int = 45
     // The ONE conversational pace zone — shared with PaceTrainingEngine,
@@ -43,7 +45,7 @@ struct BeatTheBrakeView: View {
     private let gaugeMax: Double = 200
 
     enum DrillPhase {
-        case ready, countdown, speaking, finishing
+        case ready, countdown, connecting, speaking, finishing
     }
 
     private var isInZone: Bool {
@@ -82,13 +84,31 @@ struct BeatTheBrakeView: View {
                         Text("\(countdownValue)")
                             .font(.system(size: 56, weight: .bold, design: .rounded))
                             .foregroundStyle(drill.tint)
-                            .transition(.scale.combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                    case .connecting:
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .tint(drill.tint)
+                            Text("Connecting")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .textCase(.uppercase)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Connecting live transcription")
                     case .speaking:
                         wpmGauge
                     case .finishing:
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 36, weight: .bold))
-                            .foregroundStyle(drill.tint)
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .tint(drill.tint)
+                            Text("Finishing")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .textCase(.uppercase)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Finishing your recording")
                     }
                 }
 
@@ -126,6 +146,18 @@ struct BeatTheBrakeView: View {
                             .padding(.horizontal, 24)
                     }
 
+                    if phase == .ready {
+                        if let completionIssue {
+                            FocusedPracticeErrorStatus(message: completionIssue)
+                                .padding(.horizontal, Spacing.sm)
+                                .accessibilityIdentifier("beatTheBrake.insufficientSpeech")
+                        } else if let error = speechVM.connectionError {
+                            FocusedPracticeErrorStatus(message: error)
+                                .padding(.horizontal, Spacing.sm)
+                                .accessibilityIdentifier("beatTheBrake.captureError")
+                        }
+                    }
+
                     // Action button
                     switch phase {
                     case .ready:
@@ -144,7 +176,7 @@ struct BeatTheBrakeView: View {
                             .background(drill.tint, in: Capsule())
                         }
                         .buttonStyle(.pressable)
-                    case .countdown:
+                    case .countdown, .connecting:
                         EmptyView()
                     case .speaking:
                         Button {
@@ -191,7 +223,15 @@ struct BeatTheBrakeView: View {
                 Spacer()
             }
         }
-        .interactiveDismissDisabled(phase == .speaking)
+        .interactiveDismissDisabled(phase == .connecting || phase == .speaking || phase == .finishing)
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
+        .onDisappear {
+            timerTask?.cancel()
+            lifecycleTask?.cancel()
+            if speechVM.recordingLifecycle.isBusy {
+                speechVM.cancelRecording()
+            }
+        }
     }
 
     // MARK: - Ready Content
@@ -238,7 +278,7 @@ struct BeatTheBrakeView: View {
                     style: StrokeStyle(lineWidth: 14, lineCap: .round)
                 )
                 .frame(width: 200, height: 200)
-                .animation(.easeOut(duration: 0.5), value: currentWPM)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: currentWPM)
 
                 // Needle
                 NeedleShape()
@@ -246,7 +286,7 @@ struct BeatTheBrakeView: View {
                     .frame(width: 4, height: 70)
                     .offset(y: -35)
                     .rotationEffect(.degrees(angleForWPM(min(currentWPM, gaugeMax)) - 270))
-                    .animation(.easeOut(duration: 0.5), value: currentWPM)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: currentWPM)
 
                 // Center hub
                 Circle()
@@ -258,8 +298,8 @@ struct BeatTheBrakeView: View {
                     Text("\(Int(currentWPM))")
                         .font(.system(size: 40, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                        .contentTransition(.numericText())
-                        .animation(.easeOut(duration: 0.3), value: Int(currentWPM))
+                        .contentTransition(reduceMotion ? .identity : .numericText())
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: Int(currentWPM))
                     Text("WPM")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white.opacity(0.4))
@@ -319,41 +359,63 @@ struct BeatTheBrakeView: View {
     // MARK: - Actions
 
     private func startCountdown() {
-        withAnimation(.snappySpring) { phase = .countdown }
+        guard phase == .ready else { return }
+        timerTask?.cancel()
+        lifecycleTask?.cancel()
+        resetAttemptState()
+        completionIssue = nil
+        speechVM.connectionError = nil
+        setPhase(.countdown)
         CoachHaptic.drillStart()
 
-        Task {
+        lifecycleTask = Task { @MainActor in
             for i in stride(from: 3, through: 1, by: -1) {
-                await MainActor.run {
+                guard !Task.isCancelled, phase == .countdown else { return }
+                if reduceMotion {
+                    countdownValue = i
+                } else {
                     withAnimation(.snappySpring) { countdownValue = i }
                 }
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
-            await MainActor.run { startSpeaking() }
+            guard !Task.isCancelled, phase == .countdown else { return }
+            await connectRecorderAndStartSpeaking()
         }
     }
 
-    private func startSpeaking() {
-        withAnimation(.standardSpring) { phase = .speaking }
-
+    @MainActor
+    private func connectRecorderAndStartSpeaking() async {
+        setPhase(.connecting)
         speechVM.sessionPrompt = prompt
         speechVM.shouldRecordPracticeSession = false
         speechVM.prepareSession(mode: .timed)
-        recordingStartDate = Date()
-        speechVM.startRecording()
 
-        timerTask = Task {
+        let captureReady = await speechVM.startRecordingAwaitingReadiness()
+        guard !Task.isCancelled,
+              phase == .connecting,
+              RecordingStartGate.allowsTimerStart(captureReady: captureReady) else {
+            if phase == .connecting {
+                setPhase(.ready)
+            }
+            return
+        }
+
+        beginSpeakingTimer()
+    }
+
+    private func beginSpeakingTimer() {
+        setPhase(.speaking)
+
+        timerTask = Task { @MainActor in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    elapsedSeconds += 1
-                    updateWPM()
+                elapsedSeconds += 1
+                updateWPM()
 
-                    if elapsedSeconds >= drillDuration {
-                        finishDrill()
-                    }
+                if elapsedSeconds >= drillDuration {
+                    finishDrill()
                 }
             }
         }
@@ -400,26 +462,42 @@ struct BeatTheBrakeView: View {
     private func finishDrill() {
         guard phase == .speaking else { return }
         timerTask?.cancel()
-        speechVM.stopRecording()
+        setPhase(.finishing)
 
-        withAnimation(.standardSpring) { phase = .finishing }
+        lifecycleTask?.cancel()
+        lifecycleTask = Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
+            guard !Task.isCancelled, phase == .finishing else { return }
 
-        let fillerCount = speechVM.fillerWordCount
-        let measuredDuration = recordingStartDate.map { Date().timeIntervalSince($0) } ?? TimeInterval(elapsedSeconds)
-        let duration = max(speechVM.lastSessionDuration, measuredDuration, TimeInterval(elapsedSeconds))
-        let transcript = speechVM.transcribedText
-        let wordCount = transcript.split(separator: " ").count
+            let disposition = MiniDrillCompletionDisposition.resolve(
+                completion: completion,
+                captureDuration: speechVM.lastSessionDuration
+            )
+            switch disposition {
+            case .eligible(let evidence):
+                completionIssue = nil
+                onComplete(completedOutcome(from: evidence))
+            case .insufficientSpeech:
+                completionIssue = Self.insufficientSpeechMessage
+                setPhase(.ready)
+            case .unusableRecording:
+                completionIssue = nil
+                setPhase(.ready)
+            }
+        }
+    }
 
+    private func completedOutcome(from evidence: MiniDrillCompletionEvidence) -> MiniDrillOutcome {
         let avgWPM = wpmSamples.isEmpty ? 0 : wpmSamples.reduce(0, +) / Double(wpmSamples.count)
         let zonePct = elapsedSeconds > 0 ? Double(timeInZone) / Double(elapsedSeconds) : 0
         let rushedBursts = wpmSamples.filter { $0 > zoneMax }.count
-        let fillerAnalysis = FillerWordDetector.analysis(in: transcript, prompt: prompt ?? "")
+        let fillerAnalysis = FillerWordDetector.analysis(in: evidence.transcript, prompt: prompt ?? "")
         let succeeded = zonePct >= 0.60 && elapsedSeconds >= 10
 
         let metrics = BeatTheBrakeMetrics(
             averageWPM: avgWPM,
             timeInZone: TimeInterval(timeInZone),
-            totalDuration: duration,
+            totalDuration: evidence.duration,
             zonePercentage: zonePct,
             peakWPM: peakWPM,
             lowestWPM: lowestWPM == 999 ? 0 : lowestWPM,
@@ -436,25 +514,50 @@ struct BeatTheBrakeView: View {
         let outcome = MiniDrillOutcome(
             drill: drill,
             drillType: .beatTheBrake,
-            transcript: transcript,
-            fillerCount: fillerCount,
-            duration: duration,
-            wordCount: wordCount,
+            transcript: evidence.transcript,
+            fillerCount: fillerAnalysis.adjustedCount,
+            duration: evidence.duration,
+            wordCount: evidence.wordCount,
             succeeded: succeeded,
             beatTheBrakeMetrics: metrics
         )
-
-        Task {
-            try? await Task.sleep(for: .milliseconds(800))
-            await MainActor.run { onComplete(outcome) }
-        }
+        return outcome
     }
 
     private func cancelDrill() {
         timerTask?.cancel()
-        if speechVM.isRecording { speechVM.stopRecording() }
+        lifecycleTask?.cancel()
+        if speechVM.recordingLifecycle.isBusy {
+            speechVM.cancelRecording()
+        }
         onCancel()
     }
+
+    private func resetAttemptState() {
+        elapsedSeconds = 0
+        countdownValue = 3
+        currentWPM = 0
+        previousWordCount = 0
+        wordTimestamps = []
+        timeInZone = 0
+        peakWPM = 0
+        lowestWPM = 999
+        wasInZone = false
+        wpmSamples = []
+    }
+
+    private func setPhase(_ newPhase: DrillPhase) {
+        if reduceMotion {
+            phase = newPhase
+        } else {
+            withAnimation(.standardSpring) {
+                phase = newPhase
+            }
+        }
+    }
+
+    private static let insufficientSpeechMessage =
+        "We didn’t catch enough speech to score that drill. Speak a little longer and try again."
 }
 
 // MARK: - Arc Shape

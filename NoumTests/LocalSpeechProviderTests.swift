@@ -90,6 +90,8 @@ struct LocalSpeechProviderTests {
         #expect(beforeStart == "On-device transcription isn't available for es-ES on this device.")
         #expect(afterStart == beforeStart)
         #expect(beforeStart.contains("on this device"))
+        #expect(recognizer.recordingIssue(for: error) == .unsupportedOnDeviceLocale("es-ES"))
+        #expect(recognizer.recordingIssue(for: UnsafeProviderFailure()) == nil)
         #expect(
             recognizer.userFacingRecordingError(
                 for: UnsafeProviderFailure(),
@@ -97,6 +99,28 @@ struct LocalSpeechProviderTests {
             ) == "Live transcription is temporarily unavailable. Your rep hasn’t started."
         )
     }
+
+    #if DEBUG
+    @Test func unsupportedLocaleUIFixtureUsesTheConfiguredLocaleAndLocalRoute() async {
+        let provider = UITestUnsupportedLocaleTranscriptionProvider()
+        let spanishConfig = TranscriptionConfig(
+            languageCode: "es-ES",
+            sampleRate: 16_000,
+            encoding: .pcmSigned16Bit,
+            enableFillerWordDetection: false
+        )
+
+        #expect(provider.identifier == TranscriptionProviderID.local.rawValue)
+        do {
+            _ = try await provider.startSession(config: spanishConfig)
+            Issue.record("The unsupported-locale fixture unexpectedly opened a session")
+        } catch let error as LocalSpeechError {
+            #expect(error == .onDeviceRecognitionUnavailable("es-ES"))
+        } catch {
+            Issue.record("Unexpected fixture error: \(error)")
+        }
+    }
+    #endif
 
     @Test func cloudStartupFallbackProducesContentFreeNotice() {
         let notice = SpeechRecognizerViewModel.routeNotice(

@@ -487,6 +487,8 @@ struct TransformationKPIReport: Equatable {
     /// durable speech evidence.
     let firstStructuredValueCompleted: Bool
     let sessionsPerActiveWeek: Double
+    /// Unique eligible session-detail opens divided by eligible persisted
+    /// sessions. Thin, foreign, and repeated legacy events fail closed.
     let reviewOpenRate: Double?
     let prescriptionAcceptanceRate: Double?
     let cloudToLocalFallbackRate: Double?
@@ -540,8 +542,16 @@ struct TransformationKPIReport: Equatable {
             ? 0
             : Double(orderedSessions.count) / Double(activeWeekStarts.count)
 
-        let reviewOpens = events.filter { $0.stage == "review.sessionOpened" }.count
-        let reviewRate = orderedSessions.isEmpty ? nil : min(1, Double(reviewOpens) / Double(orderedSessions.count))
+        let eligibleSessionIDs = Set(orderedSessions.map(\.id))
+        let reviewOpenSessionIDs = Set(events.lazy
+            .filter {
+                $0.stage == "review.sessionOpened"
+                    && eligibleSessionIDs.contains($0.correlationId)
+            }
+            .map(\.correlationId))
+        let reviewRate = orderedSessions.isEmpty
+            ? nil
+            : Double(reviewOpenSessionIDs.count) / Double(orderedSessions.count)
         let shownPrescriptionIDs = Set(events.lazy
             .filter { $0.stage == TransformationKPIEventStage.prescriptionShown }
             .map(\.correlationId))

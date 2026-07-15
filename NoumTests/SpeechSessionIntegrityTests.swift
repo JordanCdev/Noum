@@ -109,7 +109,8 @@ struct SpeechSessionIntegrityTests {
         let nextFunction = outcomeTail.range(of: "\n    private func", options: [], range: outcomeTail.index(after: outcomeTail.startIndex)..<outcomeTail.endIndex)
         let outcomeBody = nextFunction.map { outcomeTail[..<$0.lowerBound] } ?? outcomeTail[...]
 
-        #expect(outcomeBody.contains("let duration = speechVM.lastSessionDuration"))
+        #expect(source.contains("captureDuration: speechVM.lastSessionDuration"))
+        #expect(outcomeBody.contains("let duration = evidence.duration"))
         #expect(!outcomeBody.contains("Date().timeIntervalSince"))
         #expect(!outcomeBody.contains("max(speechVM.lastSessionDuration"))
     }
@@ -407,7 +408,7 @@ struct SpeechSessionIntegrityTests {
         let miniStart = try #require(miniDrill.range(of: "await speechVM.startRecordingAwaitingReadiness()"))
         let miniTimer = try #require(miniDrill.range(of: "beginSpeakingTimer()"))
         let miniStop = try #require(miniDrill.range(of: "await speechVM.stopRecordingAwaitingFinalization()"))
-        let miniCompletionGate = try #require(miniDrill.range(of: "RecordingCompletionGate.allowsScoringAndProgress(completion)"))
+        let miniCompletionGate = try #require(miniDrill.range(of: "MiniDrillCompletionDisposition.resolve("))
         #expect(miniStart.lowerBound < miniTimer.lowerBound)
         #expect(miniStop.lowerBound < miniCompletionGate.lowerBound)
         #expect(miniDrill.contains("RecordingStartGate.allowsTimerStart(captureReady: captureReady)"))
@@ -417,13 +418,208 @@ struct SpeechSessionIntegrityTests {
         let lessonStart = try #require(lesson.range(of: "await speech.startRecordingAwaitingReadiness()"))
         let lessonTimer = try #require(lesson.range(of: "beginApplyTimer()"))
         let lessonStop = try #require(lesson.range(of: "await speech.stopRecordingAwaitingFinalization()"))
-        let lessonCompletionGate = try #require(lesson.range(of: "RecordingCompletionGate.allowsScoringAndProgress(completion)"))
+        let lessonConsumption = try #require(lesson.range(of: "consumeApplyCompletion("))
+        let lessonDisposition = try #require(lesson.range(of: "LessonApplyCompletionDisposition.resolve("))
+        let lessonStepMutation = try #require(lesson.range(of: "stepResults.append(.apply("))
+        let lessonOutcome = try #require(lesson.range(of: "applyEvidence: applyEvidence"))
+        let lessonProgress = try #require(lesson.range(of: "lessonStore.apply(outcome: final)"))
         #expect(lessonStart.lowerBound < lessonTimer.lowerBound)
-        #expect(lessonStop.lowerBound < lessonCompletionGate.lowerBound)
+        #expect(lessonStop.lowerBound < lessonConsumption.lowerBound)
+        #expect(lessonConsumption.lowerBound < lessonDisposition.lowerBound)
+        #expect(lessonDisposition.lowerBound < lessonStepMutation.lowerBound)
+        #expect(lessonStepMutation.lowerBound < lessonOutcome.lowerBound)
+        #expect(lessonOutcome.lowerBound < lessonProgress.lowerBound)
         #expect(lesson.contains("RecordingStartGate.allowsTimerStart(captureReady: captureReady)"))
+        #expect(lesson.contains("recorderDuration: speech.lastSessionDuration"))
+        #expect(lesson.contains("guard let evidence,"))
         #expect(lesson.contains(".transcriptionRouteNotice(speech.transcriptionRouteNotice)"))
         #expect(!lesson.contains("speech.startRecording()"))
         #expect(!lesson.contains("asyncAfter(deadline: .now() + 0.6)"))
+    }
+
+    @Test("Mini-drill completion requires terminal speech and a quantity floor")
+    func miniDrillCompletionDispositionMatrix() {
+        func receipt(_ text: String, final: Bool = true, bytes: Int = 4_096) -> FinalizedTranscript {
+            FinalizedTranscript(text: text, receivedFinalResult: final, audioByteCount: bytes)
+        }
+
+        #expect(MiniDrillCompletionDisposition.resolve(completion: nil, captureDuration: 10) == .unusableRecording)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("one two three", bytes: 0), captureDuration: 10) == .unusableRecording)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("one two three", final: false), captureDuration: 10) == .unusableRecording)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("   "), captureDuration: 10) == .unusableRecording)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("one"), captureDuration: 10) == .insufficientSpeech)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("one two"), captureDuration: 10) == .insufficientSpeech)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("one two three"), captureDuration: 2.99) == .insufficientSpeech)
+        #expect(MiniDrillCompletionDisposition.resolve(completion: receipt("one two three"), captureDuration: .nan) == .insufficientSpeech)
+
+        let eligible = MiniDrillCompletionDisposition.resolve(
+            completion: receipt("one, two; three!"),
+            captureDuration: 3
+        )
+        guard case .eligible(let evidence) = eligible else {
+            Issue.record("Expected boundary evidence to be eligible")
+            return
+        }
+        #expect(evidence.transcript == "one, two; three!")
+        #expect(evidence.wordCount == 3)
+        #expect(evidence.duration == 3)
+    }
+
+    #if DEBUG
+    @Test("Rendered mini-drill fixtures enter the production disposition")
+    func miniDrillCompletionUIFixtureContract() throws {
+        #expect(MiniDrillCompletionUITestFixture.requested(arguments: []) == nil)
+        #expect(
+            MiniDrillCompletionUITestFixture.requested(arguments: [
+                "UI_TESTING_MINI_DRILL_COMPLETION_FIXTURE", "eligible",
+            ]) == nil
+        )
+
+        let insufficient = try #require(
+            MiniDrillCompletionUITestFixture.requested(arguments: [
+                "UI_TESTING",
+                "UI_TESTING_MINI_DRILL_COMPLETION_FIXTURE", "insufficient",
+            ])
+        )
+        #expect(
+            MiniDrillCompletionDisposition.resolve(
+                completion: insufficient.completion,
+                captureDuration: insufficient.captureDuration
+            ) == .insufficientSpeech
+        )
+
+        let eligible = try #require(
+            MiniDrillCompletionUITestFixture.requested(arguments: [
+                "UI_TESTING",
+                "UI_TESTING_MINI_DRILL_COMPLETION_FIXTURE", "eligible",
+            ])
+        )
+        #expect(MiniDrillCompletionUITestFixture.variationID == "filler.silentTransitions")
+        let disposition = MiniDrillCompletionDisposition.resolve(
+            completion: eligible.completion,
+            captureDuration: eligible.captureDuration
+        )
+        guard case .eligible(let evidence) = disposition else {
+            Issue.record("Expected the rendered eligible fixture to pass the production gate")
+            return
+        }
+        #expect(evidence.wordCount == 12)
+        #expect(evidence.duration == 12)
+    }
+    #endif
+
+    @Test("PREP completion cannot succeed from four taps without 28 spoken words")
+    func prepStackQuantityFloor() {
+        #expect(PREPStackEvaluation.closeStrength(stepsCompleted: 4, wordCount: 0) == 0)
+        #expect(PREPStackEvaluation.closeStrength(stepsCompleted: 4, wordCount: 27) < 1)
+        #expect(!PREPStackEvaluation.succeeded(stepsCompleted: 4, wordCount: 27, duration: 20))
+        #expect(!PREPStackEvaluation.succeeded(stepsCompleted: 4, wordCount: 28, duration: 19.99))
+        #expect(PREPStackEvaluation.succeeded(stepsCompleted: 4, wordCount: 28, duration: 20))
+        #expect(PREPStackEvaluation.closeStrength(stepsCompleted: 4, wordCount: 28) == 1)
+    }
+
+    @Test("Every mini-drill route awaits capture readiness and terminal evidence")
+    func allMiniDrillRoutesUseTerminalLifecycle() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let paths = [
+            "Noum/MiniDrillView.swift",
+            "BeatTheBrakeView.swift",
+            "LandThePauseView.swift",
+            "PREPStackView.swift",
+        ]
+
+        for path in paths {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(path),
+                encoding: .utf8
+            )
+            let start = try #require(source.range(of: "await speechVM.startRecordingAwaitingReadiness()"), Comment(rawValue: path))
+            let timer = try #require(source.range(of: "RecordingStartGate.allowsTimerStart(captureReady: captureReady)"), Comment(rawValue: path))
+            let stop = try #require(source.range(of: "await speechVM.stopRecordingAwaitingFinalization()"), Comment(rawValue: path))
+            let disposition = try #require(source.range(of: "MiniDrillCompletionDisposition.resolve("), Comment(rawValue: path))
+            let outcome = try #require(
+                source.range(
+                    of: "MiniDrillOutcome(",
+                    range: disposition.lowerBound..<source.endIndex
+                ),
+                Comment(rawValue: path)
+            )
+            #expect(start.lowerBound < timer.lowerBound, Comment(rawValue: path))
+            #expect(stop.lowerBound < disposition.lowerBound, Comment(rawValue: path))
+            #expect(disposition.lowerBound < outcome.lowerBound, Comment(rawValue: path))
+            #expect(source.contains(".transcriptionRouteNotice(speechVM.transcriptionRouteNotice)"), Comment(rawValue: path))
+            #expect(!source.contains("speechVM.startRecording()"), Comment(rawValue: path))
+            #expect(!source.contains("speechVM.stopRecording()"), Comment(rawValue: path))
+            #expect(!source.contains("max(speechVM.lastSessionDuration"), Comment(rawValue: path))
+            #expect(!source.contains("milliseconds(800)"), Comment(rawValue: path))
+        }
+    }
+
+    @Test("Summary durably inserts a verified mini-drill receipt before every reward effect")
+    func summaryGuardsMiniDrillRewardSink() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let summary = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/SummaryView.swift"),
+            encoding: .utf8
+        )
+        let functionStart = try #require(
+            summary.range(of: "private func handleDrillComplete(_ outcome: MiniDrillOutcome)")
+        )
+        let tail = summary[functionStart.lowerBound...]
+        let nextFunction = tail.range(
+            of: "\n    private func",
+            options: [],
+            range: tail.index(after: tail.startIndex)..<tail.endIndex
+        )
+        let body = String(nextFunction.map { tail[..<$0.lowerBound] } ?? tail[...])
+
+        let eligibility = try #require(body.range(of: "outcome.isProgressEligible"))
+        let parentSession = try #require(body.range(of: "let parentSession = currentStoredSession"))
+        let processGuard = try #require(
+            body.range(of: "committedMiniDrillOutcomeIDs.insert(outcome.id).inserted")
+        )
+        let prospectiveStreak = try #require(body.range(of: "drillHistory.streakAfterRecording("))
+        let exactXP = try #require(
+            body.range(of: "DrillXPEngine.breakdown(\n            outcome: outcome,\n            streak: awardedStreak")
+        )
+        let verifiedReceipt = try #require(
+            body.range(of: "DrillHistoryStore.Entry.verified(")
+        )
+        let durableInsertion = try #require(
+            body.range(of: "guard drillHistory.record(receipt) else { return }")
+        )
+        let profileXP = try #require(
+            body.range(of: "ProfileManager.shared.addXP(xpBreakdown.total)")
+        )
+        let reward = try #require(body.range(of: "RewardEngine.shared.evaluateDrill("))
+        let baseline = try #require(
+            body.range(of: "BaselineStore.shared.recordMiniDrillOutcome(")
+        )
+        let resultPresentation = try #require(body.range(of: "miniDrillOutcome = outcome"))
+
+        #expect(eligibility.lowerBound < parentSession.lowerBound)
+        #expect(parentSession.lowerBound < processGuard.lowerBound)
+        #expect(processGuard.lowerBound < prospectiveStreak.lowerBound)
+        #expect(prospectiveStreak.lowerBound < exactXP.lowerBound)
+        #expect(exactXP.lowerBound < verifiedReceipt.lowerBound)
+        #expect(verifiedReceipt.lowerBound < durableInsertion.lowerBound)
+        #expect(durableInsertion.lowerBound < profileXP.lowerBound)
+        #expect(durableInsertion.lowerBound < reward.lowerBound)
+        #expect(durableInsertion.lowerBound < baseline.lowerBound)
+        #expect(durableInsertion.lowerBound < resultPresentation.lowerBound)
+
+        #expect(body.contains("outcomeID: outcome.id"))
+        #expect(body.contains("parentSessionId: parentSession.id"))
+        #expect(body.contains("terminalWordCount: outcome.wordCount"))
+        #expect(body.contains("recorderDuration: outcome.duration"))
+        #expect(body.contains("awardedXP: xpBreakdown.total"))
+        #expect(body.contains("streak: awardedStreak"))
+        #expect(!body.contains("sessionId: UUID()"))
+        #expect(!body.contains("DrillXPEngine.breakdown(outcome: outcome)"))
     }
 
     @Test("Every speech surface explains a cloud-to-device startup fallback")

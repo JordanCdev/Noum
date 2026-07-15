@@ -109,19 +109,24 @@ enum ReviewHighlightsEngine {
     static func goalExample(in scoredNewestFirst: [PracticeSession], profile: CoachingProfile?) -> Highlight? {
         guard let profile, profile.hasChosenVoice, let voice = profile.chosenStyleGoal else { return nil }
 
-        let ranked: [(session: PracticeSession, fit: Double)] = eligibleScoredSessions(in: scoredNewestFirst)
+        let ranked: [(session: PracticeSession, fit: Double, fillerCount: Int, paceWPM: Double)] =
+            eligibleScoredSessions(in: scoredNewestFirst)
             .compactMap { session in
                 guard let score = session.score, score >= 7,
                       session.imConversationDetails == nil else { return nil }
+                guard let fillerBurden = FillerBurden.quantityQualified(session),
+                      let paceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(session) else {
+                    return nil
+                }
                 let fit = PracticeEvaluator.voiceDeliveryBonus(
                     profile: profile,
                     wordCount: session.wordCount,
                     duration: session.duration,
-                    fillerCount: session.fillerWordCount,
-                    wordsPerMinute: Double(session.wordsPerMinute)
+                    fillerCount: fillerBurden.fillerCount,
+                    wordsPerMinute: paceWPM
                 )
                 guard fit >= goalFitFloor else { return nil }
-                return (session, fit)
+                return (session, fit, fillerBurden.fillerCount, paceWPM)
             }
             .sorted { lhs, rhs in
                 if lhs.fit != rhs.fit { return lhs.fit > rhs.fit }
@@ -134,7 +139,7 @@ enum ReviewHighlightsEngine {
             kind: .goalExample,
             sessionID: best.session.id,
             title: "Closest to your \(voice.title.lowercased()) voice",
-            line: "\(score)/10 · \(best.session.fillerWordCount) fillers · \(best.session.wordsPerMinute) WPM — re-read how it landed"
+            line: "\(score)/10 · \(best.fillerCount) fillers · \(Int(best.paceWPM.rounded())) WPM — re-read how it landed"
         )
     }
 

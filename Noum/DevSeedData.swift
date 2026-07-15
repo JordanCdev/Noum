@@ -78,6 +78,8 @@ enum DevSeedData {
         // the seeded recommendation with a stale coaching focus.
         let trendSnapshots = sessions.map { session in
             let wordCount = session.transcript.split { !$0.isLetter }.count
+            let qualifiedFillerRate = FillerBurden.quantityQualified(session)?.ratePerMinute
+            let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(session)
             return SkillSnapshot(
                 sessionId: session.id,
                 date: session.date,
@@ -87,6 +89,11 @@ enum DevSeedData {
                 wpm: session.duration > 0
                     ? Double(wordCount) / session.duration * 60.0
                     : 0,
+                qualifiedFillerRatePerMinute: qualifiedFillerRate,
+                qualifiedPaceWPM: qualifiedPaceWPM,
+                comparisonMetricSchemaVersion: qualifiedFillerRate != nil && qualifiedPaceWPM != nil
+                    ? session.comparisonMetricSchemaVersion
+                    : nil,
                 score: session.score ?? 5,
                 categoryRatings: categoryRatingsForSession(session)
             )
@@ -127,6 +134,12 @@ enum DevSeedData {
             now: Date()
         )
         populateCoachIntelligenceFixture(fixture)
+
+        // A dedicated rendered-integrity lane can replace the broad persona
+        // with persistence-realistic mixed history after the canonical seed
+        // has established the normal account/profile shell. The fixture is
+        // launch-argument gated and remains absent from Release builds.
+        ReviewProgressEligibilityUITestFixture.installIfRequested()
     }
 
     /// Populate the real Phrase Bank and Forward Plan owners with one current-

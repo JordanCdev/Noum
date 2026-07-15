@@ -267,7 +267,14 @@ struct GoalProgressTrend: Equatable {
         SkillSnapshot(
             sessionId: UUID(),
             date: Calendar.current.date(byAdding: .day, value: -i, to: Date()) ?? Date(),
-            fillerCount: i < 5 ? 1 : 3, duration: 60, wordCount: 120, wpm: 130, score: 7
+            fillerCount: i < 5 ? 1 : 3,
+            duration: 60,
+            wordCount: 120,
+            wpm: 130,
+            qualifiedFillerRatePerMinute: Double(i < 5 ? 1 : 3),
+            qualifiedPaceWPM: 130,
+            comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion,
+            score: 7
         )
     }
     return GoalProgressView(goal: .reduceFillers, baseline: baseline, snapshots: snapshots)

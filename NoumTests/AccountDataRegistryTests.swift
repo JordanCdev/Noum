@@ -179,7 +179,7 @@ final class AccountDataRegistryTests: XCTestCase {
             "forward-plan", "session-intent", "session-reflections",
             "coach-check-ins", "coach-letters", "post-rep-notes",
             "coach-memory", "proof-moments", "phrase-bank", "ask-noum", "pressure-history",
-            "daily-goal", "streak-freeze", "path-progress", "lessons",
+            "drill-history", "daily-goal", "streak-freeze", "path-progress", "lessons",
             "skill-progression", "daily-challenges", "word-of-day",
             "practice-locale", "roleplay", "primary-focus", "prompt-history",
             "account-prompts", "home-recommendations", "ai-rate-limits",
@@ -187,6 +187,64 @@ final class AccountDataRegistryTests: XCTestCase {
             "legacy-device-coaching", "app-managed-recordings",
         ])
         XCTAssertTrue(registry.coverage.hasParity)
+    }
+
+    func testDrillHistoryExportAndDeletionStayAccountIsolatedFromLegacyHistory() throws {
+        let suite = "AccountDataRegistryDrillHistory.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountAKey = "drillHistory.account-a"
+        let accountBKey = "drillHistory.account-b"
+        let legacyKey = "drillHistory"
+        defaults.set("A history", forKey: accountAKey)
+        defaults.set("B history", forKey: accountBKey)
+        defaults.set("legacy history", forKey: legacyKey)
+
+        let registry = AccountDataRegistry.production(defaults: defaults)
+        let availableKeys = Set(defaults.dictionaryRepresentation().keys)
+        let drillHistory = try XCTUnwrap(
+            registry.participants.first { $0.id == "drill-history" }
+        )
+        XCTAssertEqual(
+            drillHistory.claimedKeys(in: availableKeys, accountID: "account-a"),
+            Set([accountAKey])
+        )
+        XCTAssertFalse(
+            drillHistory.claimedKeys(in: availableKeys, accountID: "account-a")
+                .contains(legacyKey)
+        )
+
+        let legacy = try XCTUnwrap(
+            registry.participants.first { $0.id == "legacy-device-coaching" }
+        )
+        XCTAssertEqual(legacy.scope, .legacyDeviceUnattributed)
+        XCTAssertTrue(
+            legacy.claimedKeys(in: availableKeys, accountID: "account-a")
+                .contains(legacyKey)
+        )
+
+        let entries = try registry.exportEntries(for: "account-a")
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try data(in: entries, path: "data/drill-history.json")
+        ) as? [String: Any])
+        let records = try XCTUnwrap(payload["records"] as? [String: Any])
+        XCTAssertEqual(records[accountAKey] as? String, "A history")
+        XCTAssertNil(records[accountBKey])
+        XCTAssertNil(records[legacyKey])
+
+        let legacyEntry = try XCTUnwrap(entries.first {
+            $0.relativePath == "data/legacy-device-coaching.json"
+        })
+        XCTAssertEqual(legacyEntry.scope, .legacyDeviceUnattributed)
+        let legacyPayload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try data(in: entries, path: legacyEntry.relativePath)
+        ) as? [String: Any])
+        let legacyRecords = try XCTUnwrap(legacyPayload["records"] as? [String: Any])
+        XCTAssertEqual(legacyRecords[legacyKey] as? String, "legacy history")
+
+        try registry.deleteAllData(for: "account-a")
+        XCTAssertNil(defaults.object(forKey: accountAKey))
+        XCTAssertEqual(defaults.string(forKey: accountBKey), "B history")
     }
 
     func testRecommendationSyncMetadataExportsAndDeletesWithItsAccount() throws {

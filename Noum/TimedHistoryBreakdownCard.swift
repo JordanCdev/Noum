@@ -45,6 +45,7 @@ struct TimedHistoryBreakdownCard: View {
         if let stats {
             VStack(alignment: .leading, spacing: 14) {
                 header(for: stats)
+                metricEvidenceLine(for: stats)
                 statRow(for: stats)
                 zoneBand(for: stats)
                 if let best = stats.best {
@@ -61,12 +62,11 @@ struct TimedHistoryBreakdownCard: View {
 
     // MARK: - Zone band
     //
-    // Visual restatement of the `inZoneRepCount / runCount` ratio
+    // Visual restatement of the `inZoneRepCount / paceMeasuredRepCount` ratio
     // beneath the stat row. The middle stat column already shows the
     // raw integer — this surfaces the same data as a progress band so
-    // a user can see at a glance "12 of 30 reps inside zone." Self-
-    // hides when there are zero reps in zone AND zero total — defensive
-    // belt-and-braces (the card itself self-hides on cold start).
+    // a user can see at a glance "12 of 30 measured reps inside zone."
+    // Self-hides until at least one rep carries qualified pace evidence.
     //
     // Range copy reads from the canonical `TimedHistorySummary.zoneMin/
     // MaxWPM` constants so a future zone shift can never produce stale
@@ -74,10 +74,10 @@ struct TimedHistoryBreakdownCard: View {
 
     @ViewBuilder
     private func zoneBand(for stats: TimedHistorySummaryStats) -> some View {
-        if stats.runCount > 0 {
+        if stats.paceMeasuredRepCount > 0 {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(zoneBandSubtitle(for: stats))
+                    Text(Self.zoneBandSubtitle(for: stats))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 4)
@@ -87,7 +87,7 @@ struct TimedHistoryBreakdownCard: View {
                         .monospacedDigit()
                 }
                 GeometryReader { proxy in
-                    let ratio = zoneBandRatio(for: stats)
+                    let ratio = Self.zoneBandRatio(for: stats)
                     let filledWidth = max(0, min(proxy.size.width, proxy.size.width * ratio))
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
@@ -101,7 +101,7 @@ struct TimedHistoryBreakdownCard: View {
                 .accessibilityHidden(true)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(zoneBandAccessibilityLabel(for: stats))
+            .accessibilityLabel(Self.zoneBandAccessibilityLabel(for: stats))
             .accessibilityIdentifier("history.timed.zoneBand")
         }
     }
@@ -110,19 +110,19 @@ struct TimedHistoryBreakdownCard: View {
         "\(TimedHistorySummary.zoneMinWPM)–\(TimedHistorySummary.zoneMaxWPM) WPM"
     }
 
-    private func zoneBandSubtitle(for stats: TimedHistorySummaryStats) -> String {
-        let zoneRunUnit = stats.inZoneRepCount == 1 ? "rep" : "reps"
-        return "\(stats.inZoneRepCount) of \(stats.runCount) \(zoneRunUnit) in zone"
+    static func zoneBandSubtitle(for stats: TimedHistorySummaryStats) -> String {
+        let unit = stats.paceMeasuredRepCount == 1 ? "measured rep" : "measured reps"
+        return "\(stats.inZoneRepCount) of \(stats.paceMeasuredRepCount) \(unit) in zone"
     }
 
-    private func zoneBandRatio(for stats: TimedHistorySummaryStats) -> Double {
-        guard stats.runCount > 0 else { return 0 }
-        return min(1, max(0, Double(stats.inZoneRepCount) / Double(stats.runCount)))
+    static func zoneBandRatio(for stats: TimedHistorySummaryStats) -> Double {
+        guard stats.paceMeasuredRepCount > 0 else { return 0 }
+        return min(1, max(0, Double(stats.inZoneRepCount) / Double(stats.paceMeasuredRepCount)))
     }
 
-    private func zoneBandAccessibilityLabel(for stats: TimedHistorySummaryStats) -> String {
+    static func zoneBandAccessibilityLabel(for stats: TimedHistorySummaryStats) -> String {
         let percent = Int((zoneBandRatio(for: stats) * 100).rounded())
-        return "\(zoneBandSubtitle(for: stats)) (\(zoneBandRangeLabel)). \(percent) percent in zone."
+        return "\(zoneBandSubtitle(for: stats)) (\(TimedHistorySummary.zoneMinWPM)–\(TimedHistorySummary.zoneMaxWPM) WPM). \(percent) percent of measured reps in zone."
     }
 
     // MARK: - Header
@@ -160,6 +160,22 @@ struct TimedHistoryBreakdownCard: View {
 
     private func repCountLabel(_ count: Int) -> String {
         count == 1 ? "1 rep" : "\(count) reps"
+    }
+
+    @ViewBuilder
+    private func metricEvidenceLine(for stats: TimedHistorySummaryStats) -> some View {
+        if stats.paceMeasuredRepCount < stats.runCount {
+            Text(Self.metricEvidenceCopy(for: stats))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
+        }
+    }
+
+    static func metricEvidenceCopy(for stats: TimedHistorySummaryStats) -> String {
+        let unit = stats.runCount == 1 ? "rep" : "reps"
+        return "Pace measured: \(stats.paceMeasuredRepCount) of \(stats.runCount) \(unit)"
     }
 
     // MARK: - Trend chip
@@ -201,7 +217,7 @@ struct TimedHistoryBreakdownCard: View {
                 label: "avg score"
             )
             statColumn(
-                value: "\(stats.inZoneRepCount)",
+                value: stats.paceMeasuredRepCount > 0 ? "\(stats.inZoneRepCount)" : "—",
                 label: "in zone"
             )
             statColumn(
@@ -210,7 +226,7 @@ struct TimedHistoryBreakdownCard: View {
             )
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(statRowAccessibilityLabel(for: stats))
+        .accessibilityLabel(Self.statRowAccessibilityLabel(for: stats))
     }
 
     private func statColumn(value: String, label: String) -> some View {
@@ -230,11 +246,15 @@ struct TimedHistoryBreakdownCard: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func statRowAccessibilityLabel(for stats: TimedHistorySummaryStats) -> String {
+    static func statRowAccessibilityLabel(for stats: TimedHistorySummaryStats) -> String {
+        let evidence = metricEvidenceCopy(for: stats)
         let avg = stats.averageScore.map { String(format: "%.1f", $0) } ?? "not yet available"
-        let zoneCopy = stats.inZoneRepCount == 1 ? "1 rep in zone" : "\(stats.inZoneRepCount) reps in zone"
+        guard stats.paceMeasuredRepCount > 0 else {
+            return "\(evidence). Average score \(avg). Pace progress metrics are not yet available."
+        }
+        let zoneCopy = stats.inZoneRepCount == 1 ? "1 measured rep in zone" : "\(stats.inZoneRepCount) measured reps in zone"
         let wpm = stats.averageWPM.map { "\($0)" } ?? "not yet available"
-        return "Average score \(avg). \(zoneCopy). Average pace \(wpm) words per minute."
+        return "\(evidence). Average score \(avg). \(zoneCopy). Average pace \(wpm) words per minute."
     }
 
     // MARK: - Best rep row
@@ -289,7 +309,7 @@ struct TimedHistoryBreakdownCard: View {
     }
 
     private func bestSubtitle(_ best: TimedHistorySummaryStats.BestRep) -> String {
-        let wpmCopy = best.wordsPerMinute > 0 ? "\(best.wordsPerMinute) WPM" : "pace not measured"
+        let wpmCopy = best.wordsPerMinute.map { "\($0) WPM" } ?? "pace not measured"
         return "\(best.score)/10 · \(wpmCopy) · \(best.date.formatted(.relative(presentation: .named)))"
     }
 

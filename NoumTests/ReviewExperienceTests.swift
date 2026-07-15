@@ -166,8 +166,15 @@ struct ReviewHighlightsEngineTests {
 
     @Test func goalExampleRequiresAChosenVoice() {
         // Strong, voice-fitting reps (0 fillers, 30s+ → authoritative fit 0.5).
+        let metricQualifiedTranscript = Array(repeating: "word", count: 40).joined(separator: " ")
         let sessions = (0..<6).map {
-            makeSession(score: 8, daysAgo: Double($0), duration: 40, fillers: 0)
+            makeSession(
+                score: 8,
+                daysAgo: Double($0),
+                duration: 40,
+                fillers: 0,
+                transcript: metricQualifiedTranscript
+            )
         }
 
         let withoutChoice = ReviewHighlightsEngine.goalExample(

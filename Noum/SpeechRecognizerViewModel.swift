@@ -82,6 +82,13 @@ enum RecordingLifecycleState: Equatable, Sendable {
     }
 }
 
+/// Typed recording failures that need treatment beyond the shared retry card.
+/// The recognizer remains the single owner; speech surfaces can adapt copy and
+/// actions without parsing provider strings or retaining provider errors.
+enum SpeechRecordingIssue: Equatable, Sendable {
+    case unsupportedOnDeviceLocale(String)
+}
+
 /// Monotonic timing receipt for one microphone capture. Provider drain and
 /// terminal-transcript latency happen after `stop(at:)` and therefore cannot
 /// become speaking time. The value type keeps the boundary independently
@@ -146,7 +153,14 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
     @Published var lastSessionDuration: TimeInterval = 0
     @Published var pastSessions: [PracticeSession] = []
-    @Published var connectionError: String?
+    @Published var connectionError: String? {
+        didSet {
+            if connectionError == nil {
+                recordingIssue = nil
+            }
+        }
+    }
+    @Published private(set) var recordingIssue: SpeechRecordingIssue?
     @Published var activeProviderName: String = ""
     private var activeProviderIdentifier: String
     @Published private(set) var transcriptionRouteNotice: TranscriptionRouteNotice?
@@ -364,6 +378,9 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private static func resolveProvider() -> any TranscriptionProvider {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_UNSUPPORTED_LOCALE") {
+            return UITestUnsupportedLocaleTranscriptionProvider()
+        }
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_START_FAILURE") {
             return UITestUnavailableTranscriptionProvider()
         }
@@ -960,6 +977,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private func failStartRecording(with error: Error) {
         let message = userFacingRecordingError(for: error, started: false)
+        recordingIssue = recordingIssue(for: error)
         connectionError = message
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
@@ -981,6 +999,7 @@ class SpeechRecognizerViewModel: ObservableObject {
               recordingLifecycle.isBusy else { return }
 
         let message = userFacingRecordingError(for: error, started: true)
+        recordingIssue = recordingIssue(for: error)
         connectionError = message
         let session = activeSession
         sessionGeneration &+= 1
@@ -1021,6 +1040,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         return started
             ? "Live transcription was interrupted. That rep wasn’t saved — start again when the connection is ready."
             : "Live transcription is temporarily unavailable. Your rep hasn’t started."
+    }
+
+    func recordingIssue(for error: Error) -> SpeechRecordingIssue? {
+        guard let localError = error as? LocalSpeechError,
+              case .onDeviceRecognitionUnavailable(let locale) = localError else {
+            return nil
+        }
+        return .unsupportedOnDeviceLocale(locale)
     }
 
     private func transition(to state: RecordingLifecycleState) {
@@ -1403,6 +1430,20 @@ class SpeechRecognizerViewModel: ObservableObject {
 }
 
 #if DEBUG
+/// Deterministic UI-test seam for the research TR-4 unsupported-locale path.
+/// The production `LocalSpeechProvider` emits the same typed error after
+/// checking `SFSpeechRecognizer`; this fixture only removes device/model
+/// availability from rendered simulator verification. The configured locale
+/// remains authoritative so the UI cannot claim a different language failed.
+struct UITestUnsupportedLocaleTranscriptionProvider: TranscriptionProvider {
+    let name = "Unsupported-locale UI test provider"
+    let identifier = TranscriptionProviderID.local.rawValue
+
+    func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
+        throw LocalSpeechError.onDeviceRecognitionUnavailable(config.languageCode)
+    }
+}
+
 /// Deterministic UI-test seam for the provider-start recovery path. It is
 /// selected only by an explicit launch argument and cannot enter Release.
 private struct UITestUnavailableTranscriptionProvider: TranscriptionProvider {

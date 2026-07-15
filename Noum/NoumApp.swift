@@ -119,6 +119,15 @@ struct NoumApp: App {
                 LessonStore.shared.consumeCelebration()
             }
         }
+        // Rendered locale-specific speech tests must not inherit a prior
+        // account's persisted Practice language. This DEBUG-only seam still
+        // writes through the established per-account locale owner.
+        if args.contains("UI_TESTING"),
+           let localeIndex = args.firstIndex(of: "UI_TESTING_PRACTICE_LOCALE"),
+           localeIndex + 1 < args.count,
+           let locale = PracticeLocale(rawValue: args[localeIndex + 1]) {
+            LocaleSettingsManager.shared.current = locale
+        }
         // UI coverage may opt into the existing DEBUG-only entitlement seam
         // without changing StoreKit state or granting a Release entitlement.
         if args.contains("UI_TESTING_PREMIUM") {
@@ -173,6 +182,14 @@ struct NoumApp: App {
         }
         if args.contains("UI_TESTING_CLEAR_FLOW_EVENTS") {
             FlowEventLog.shared.reset()
+        }
+        // The capability-loss lane can opt into an interrupted regular-mode
+        // handshake so the destination must prove it reaches manual setup,
+        // not merely a Timed screen that auto-started from stale state.
+        if let interruptedMode = RecommendationTapCapabilityLossUITestFixture
+            .interruptedQuickStartMode(arguments: args) {
+            PracticeModeQuickStart.clear()
+            PracticeModeQuickStart.arm(for: interruptedMode)
         }
         // `-DeepLink noum://<host>` launch arg lets the noum-screenshots
         // skill drive tab nav via `simctl launch --terminate-running-process`

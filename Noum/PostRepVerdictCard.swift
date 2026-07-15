@@ -929,7 +929,7 @@ struct SummaryPrescriptionActionCard: View {
     var legacyDrill: DrillRecommendation? = nil
     var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
     var onStartDrill: ((DrillRecommendation) -> Void)? = nil
-    var resolveIMAvailability: () -> Bool = { true }
+    var resolveModeAvailability: (() -> NextActionModeAvailability)? = nil
     var onShowFullRep: ((PracticeMode) -> Void)? = nil
     var onStartFullRep: ((PracticeModeLaunchProjection) -> Void)? = nil
 
@@ -955,7 +955,10 @@ struct SummaryPrescriptionActionCard: View {
                 confidenceLabel: prescription.confidenceLabel,
                 mode: mode,
                 resolveLaunch: {
-                    prescription.launch(imAvailable: resolveIMAvailability())
+                    prescription.launch(
+                        modeAvailabilityAtTap: resolveModeAvailability?()
+                            ?? prescription.modeAvailability
+                    )
                 },
                 onShown: onShowFullRep,
                 onStart: onStartFullRep

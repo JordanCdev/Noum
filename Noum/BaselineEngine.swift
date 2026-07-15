@@ -287,18 +287,21 @@ struct CommunicationBaseline: Codable, Equatable {
         in snapshots: [SkillSnapshot],
         minimumSamples: Int = 3
     ) -> Double? {
-        guard snapshots.count >= minimumSamples else { return nil }
         switch goal {
         case .reduceFillers:
-            let totalSeconds = snapshots.reduce(0.0) { $0 + $1.duration }
+            let qualifying = snapshots.filter { $0.currentQualifiedFillerRatePerMinute != nil }
+            guard qualifying.count >= minimumSamples else { return nil }
+            let totalSeconds = qualifying.reduce(0.0) { $0 + $1.duration }
             guard totalSeconds > 0 else { return nil }
-            let totalFillers = snapshots.reduce(0) { $0 + $1.fillerCount }
+            let totalFillers = qualifying.reduce(0) { $0 + $1.fillerCount }
             let rate = Double(totalFillers) / (totalSeconds / 60.0)
             return min(rate / 8.0, 1.0)
         case .moreConcise:
+            guard snapshots.count >= minimumSamples else { return nil }
             let mean = snapshots.reduce(0.0) { $0 + $1.duration } / Double(snapshots.count)
             return max(0, min((mean - 20) / 100.0, 1.0))
         case .thinkFaster:
+            guard snapshots.count >= minimumSamples else { return nil }
             let mean = Double(snapshots.reduce(0) { $0 + $1.score }) / Double(snapshots.count)
             return max(0, 1.0 - mean / 7.5)
         case .calmerDelivery:
@@ -994,6 +997,45 @@ enum SessionQualifier {
         }
         return true
     }
+
+    /// Historical filler-rate and pace interpretations must compare like with
+    /// like. Raw sessions remain readable when this returns false; only their
+    /// duration-derived metrics are withheld.
+    static func acceptsHistoricalComparisonMetrics(_ session: PracticeSession) -> Bool {
+        qualifies(session)
+            && session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion
+            && !session.isEvaluationFixture
+    }
+
+    /// Quantity-qualified pace for a current speech sample. Returning `nil`
+    /// keeps missing evidence distinct from a real zero-WPM measurement.
+    static func quantityQualifiedWordsPerMinute(
+        duration: TimeInterval,
+        wordCount: Int,
+        transcriptConfidence: Double? = nil
+    ) -> Double? {
+        guard meetsQuantityFloor(duration: duration, wordCount: wordCount) else {
+            return nil
+        }
+        if let transcriptConfidence,
+           transcriptConfidence < minimumConfidence {
+            return nil
+        }
+        let wordsPerMinute = Double(wordCount) / (duration / 60.0)
+        guard wordsPerMinute.isFinite, wordsPerMinute > 0 else { return nil }
+        return wordsPerMinute
+    }
+
+    /// Historical pace additionally requires current metric provenance and a
+    /// non-evaluation row, matching the existing baseline admission boundary.
+    static func quantityQualifiedWordsPerMinute(_ session: PracticeSession) -> Double? {
+        guard acceptsHistoricalComparisonMetrics(session) else { return nil }
+        return quantityQualifiedWordsPerMinute(
+            duration: session.duration,
+            wordCount: session.wordCount,
+            transcriptConfidence: session.transcriptConfidence
+        )
+    }
 }
 
 // MARK: - Filler Burden
@@ -1061,9 +1103,7 @@ struct FillerBurden {
     /// Historical comparisons use the complete session qualifier, including
     /// the transcript-confidence floor when a provider supplied one.
     static func quantityQualified(_ session: PracticeSession) -> FillerBurden? {
-        guard SessionQualifier.qualifies(session),
-              session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
-              !session.isEvaluationFixture else { return nil }
+        guard SessionQualifier.acceptsHistoricalComparisonMetrics(session) else { return nil }
         return quantityQualified(
             fillerCount: session.fillerWordCount,
             duration: session.duration,
@@ -1294,9 +1334,7 @@ enum BaselineEngine {
     /// read. Historical metric epochs remain readable in Review but cannot be
     /// averaged with the current microphone-stop recipe.
     static func acceptsCurrentComparisonMetrics(_ session: PracticeSession) -> Bool {
-        SessionQualifier.qualifies(session)
-            && session.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion
-            && !session.isEvaluationFixture
+        SessionQualifier.acceptsHistoricalComparisonMetrics(session)
     }
 
     // MARK: - Full Recompute
@@ -1791,8 +1829,8 @@ enum BaselineEngine {
     static func sessionComparison(session: PracticeSession, baseline: CommunicationBaseline) -> [String: String] {
         var comparisons: [String: String] = [:]
 
-        if baseline.fillerRate.isReliable {
-            let sessionRate = session.duration > 0 ? Double(session.fillerWordCount) / (session.duration / 60.0) : 0
+        if baseline.fillerRate.isReliable,
+           let sessionRate = FillerBurden.quantityQualified(session)?.ratePerMinute {
             let delta = sessionRate - baseline.fillerRate.value
             if abs(delta) > 0.3 {
                 let direction = delta > 0 ? "above" : "below"
@@ -1802,14 +1840,15 @@ enum BaselineEngine {
             }
         }
 
-        if baseline.pace.isReliable {
-            let wpm = Double(session.wordsPerMinute)
+        if baseline.pace.isReliable,
+           let wpm = SessionQualifier.quantityQualifiedWordsPerMinute(session) {
+            let displayedWPM = Int(wpm.rounded())
             if wpm < baseline.pace.percentile25 {
-                comparisons["Pace"] = "\(session.wordsPerMinute) WPM (slower than your usual \(Int(baseline.pace.percentile25))–\(Int(baseline.pace.percentile75)))"
+                comparisons["Pace"] = "\(displayedWPM) WPM (slower than your usual \(Int(baseline.pace.percentile25))–\(Int(baseline.pace.percentile75)))"
             } else if wpm > baseline.pace.percentile75 {
-                comparisons["Pace"] = "\(session.wordsPerMinute) WPM (faster than your usual \(Int(baseline.pace.percentile25))–\(Int(baseline.pace.percentile75)))"
+                comparisons["Pace"] = "\(displayedWPM) WPM (faster than your usual \(Int(baseline.pace.percentile25))–\(Int(baseline.pace.percentile75)))"
             } else {
-                comparisons["Pace"] = "\(session.wordsPerMinute) WPM (in your zone)"
+                comparisons["Pace"] = "\(displayedWPM) WPM (in your zone)"
             }
         }
 

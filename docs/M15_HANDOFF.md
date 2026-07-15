@@ -1,5 +1,36 @@
 # M15 — "A coach who's actually present" — Handoff
 
+## Current production-closure continuation — 2026-07-15
+
+Current work is on `ux-overhaul`, based on committed HEAD `3969c817`, with a
+deliberately dirty shared worktree containing multiple preserved production
+closure slices. The May M15 brief below remains historical context; do not use
+its branch, merge, or completion claims as current instructions.
+
+The latest bounded slice closes the previously ranked raw Review inventory and
+immediate post-rep/AI Insights metric leak through existing owners. Ah-Counter
+and Timed history retain factual saved-run counts but expose separate measured
+denominators; filler/pace aggregates, trends, chart points, pace detail, replay
+targeting, and goal examples now require the shared quantity, confidence,
+current-schema, and non-fixture projections. Score-only evidence remains
+independent. Post-rep AI receives only qualified current mechanics, rejects
+unsupported mechanic claims and filler-to-pace causality, and AI Insights uses
+the same boundary for prompts, baseline context, deterministic fallback, and
+cache identity. Focused verification passes 92/92 across 12 suites; the
+complete unsigned simulator unit target passes 4,289 unique tests / 4,308
+device executions with zero failures or skips. An unsigned current-source
+Release simulator build also succeeds.
+
+This is not product-wide metric-specific closure. The next bounded audit target
+is the active Summary Coach Read plus durable mechanic consumers such as Proof
+Moments and Forward Plans; their raw pace/filler interpretations must be
+qualified without suppressing independent transcript, question, score, or
+duration evidence. Legacy trend continuity is intentionally absent until new
+qualified snapshots accrue. Standalone Pace attribution and wider Roleplay
+routing remain product/schema decisions. Do not claim production readiness:
+the authoritative gate remains NO-GO at 18/100, with 0/5 required external
+artifacts.
+
 _Last updated: 2026-05-21 · branch `Redesign` · base HEAD `60a9afe`_
 
 This doc is self-contained. Read top to bottom before starting any pending phase. You should not need this conversation to pick up.

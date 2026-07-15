@@ -206,7 +206,9 @@ struct HomeCoachCard: View {
     var body: some View {
         _ = aiSettings.cloudProcessingConsent
         let renderedAvailability = currentModeAvailability
-        let renderedBlueprint = renderedAvailability.resolving(coherentRecommendationBlueprint)
+        let sourceBlueprint = RecommendationTapCapabilityLossUITestFixture
+            .blueprintForRendering(coherentRecommendationBlueprint)
+        let renderedBlueprint = renderedAvailability.resolving(sourceBlueprint)
         let renderedExposure = recommendationExposure(for: renderedBlueprint)
         return VStack(spacing: presentation == .immersive ? Spacing.md : Spacing.xs) {
             ZStack {
@@ -798,13 +800,16 @@ struct HomeCoachCard: View {
             == renderedExposure.fingerprint
             ? lastRenderedRecommendationExposure ?? renderedExposure
             : renderedExposure
-        let liveAvailability = currentModeAvailability
+        let liveAvailability = RecommendationTapCapabilityLossUITestFixture
+            .availabilityAtTap(currentModeAvailability)
+        let liveIMAvailability = RecommendationTapCapabilityLossUITestFixture
+            .imAvailableAtTap(IMModeAvailability.isAvailable)
         let launch = PracticeModeLaunchProjection.resolve(
             displayedMode: exposure.mode,
             scenario: exposure.scenario,
             tone: exposure.tone,
             prescribedDemand: exposure.prescribedDemand,
-            imAvailable: IMModeAvailability.isAvailable,
+            imAvailable: liveIMAvailability,
             modeAvailability: liveAvailability
         )
         RecommendationTapAttribution.apply(
@@ -826,6 +831,11 @@ struct HomeCoachCard: View {
                     forKey: "timedPractice.selectedTheme"
                 )
             }
+        }
+        if !launch.acceptsDisplayedPrescription {
+            // A fallback is not a one-tap acceptance. Clear any interrupted
+            // handshake from an earlier Train launch before Timed mounts.
+            PracticeModeQuickStart.clear()
         }
         navigationPath.append(launch.destination)
     }
@@ -992,19 +1002,10 @@ struct HomeCoachCard: View {
         guard baseline.fillerRate.confidence != .insufficient,
               let baseRate = Optional(baseline.fillerRate.value),
               baseRate > 0 else { return 0 }
-        let sorted = sessionStore.progressEligibleSessions // already sorted newest-first
-        var count = 0
-        for session in sorted {
-            let mins = max(session.duration / 60.0, 1.0 / 60.0)
-            let rate = Double(session.fillerWordCount) / mins
-            let threshold = max(baseRate * 0.5, 0.5)
-            if rate <= threshold || session.fillerWordCount <= 1 {
-                count += 1
-            } else {
-                break
-            }
-        }
-        return count
+        return MomentumComputer.consecutiveCleanReps(
+            sorted: sessionStore.progressEligibleSessions,
+            baselineFillerRate: baseRate
+        )
     }
 
     /// The most credible recurring-position read across the recent rep window,

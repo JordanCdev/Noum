@@ -147,6 +147,18 @@ final class ClutchWordStore: ObservableObject {
         topClutchWords.filter { $0.sessionCount >= 3 }
     }
 
+    #if DEBUG
+    /// Clears the account-independent legacy store for an isolated rendered
+    /// fixture. Production mutation continues through the explicit add,
+    /// analyze, and dismiss operations above.
+    func resetForDebug() {
+        customFillerWords = []
+        clutchProfile = [:]
+        dismissedWords = []
+        save()
+    }
+    #endif
+
     // MARK: - Helpers
 
     private func countOccurrences(of word: String, in text: String) -> Int {

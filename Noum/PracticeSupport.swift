@@ -11173,22 +11173,22 @@ enum PracticeSessionFinalizer {
         let bigMoment = BigMomentStore.shared.activeMoment
         let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
 
-        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient ? nil : baseline.fillerRate.value
-        let baselinePace: Double? = baseline.pace.confidence == .insufficient ? nil : baseline.pace.value
+        let baselineFillerRate: Double? = baseline.usesCurrentComparisonMetrics
+            && baseline.fillerRate.confidence != .insufficient
+            ? baseline.fillerRate.value
+            : nil
+        let baselinePace: Double? = baseline.usesCurrentComparisonMetrics
+            && baseline.pace.confidence != .insufficient
+            ? baseline.pace.value
+            : nil
 
         // Pull the recents + proofs the AI needs to write a continuity-aware
         // note ("third time you've leaned on…") rather than a stat dashboard.
         let allSessions = PracticeSessionStore.shared.progressEligibleSessions
-        let recentSummaries: [String] = allSessions
-            .filter { $0.id != session.id }
-            .prefix(3)
-            .map { rep in
-                var parts: [String] = [rep.mode.displayLabel]
-                if let s = rep.score { parts.append("score \(s)/10") }
-                parts.append("\(rep.fillerWordCount) filler\(rep.fillerWordCount == 1 ? "" : "s")")
-                parts.append("\(Int(rep.duration.rounded()))s")
-                return parts.joined(separator: ", ")
-            }
+        let recentSummaries = AICoachService.recentSessionSummaries(
+            sessions: allSessions,
+            currentRepID: session.id
+        )
         let recentProofs: [String] = ProofMomentStore.shared
             .recent(limit: 2, compatibleWith: profile?.chosenStyleGoal)
             .map { $0.proof.quote }
@@ -11255,7 +11255,10 @@ enum PracticeSessionFinalizer {
             standingHypothesis: standingWatch.hypothesis,
             standingFocusLabel: standingWatch.focusLabel,
             standingWatchClause: standingWatch.clause,
-            standingWatchIsAssured: standingWatch.isAssured
+            standingWatchIsAssured: standingWatch.isAssured,
+            transcriptConfidence: session.transcriptConfidence,
+            comparisonMetricSchemaVersion: session.comparisonMetricSchemaVersion,
+            isEvaluationFixture: session.isEvaluationFixture
         )
 
         // Deterministic note lands synchronously so the Summary
@@ -11310,10 +11313,14 @@ enum PracticeSessionFinalizer {
         recentProofQuotes: [String] = [],
         standingWatch: PostRepStandingWatch = .empty
     ) -> PostRepCoachNoteInput {
-        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient
-            ? nil : baseline.fillerRate.value
-        let baselinePace: Double? = baseline.pace.confidence == .insufficient
-            ? nil : baseline.pace.value
+        let baselineFillerRate: Double? = baseline.usesCurrentComparisonMetrics
+            && baseline.fillerRate.confidence != .insufficient
+            ? baseline.fillerRate.value
+            : nil
+        let baselinePace: Double? = baseline.usesCurrentComparisonMetrics
+            && baseline.pace.confidence != .insufficient
+            ? baseline.pace.value
+            : nil
         return PostRepCoachNoteInput(
             sessionID: session.id,
             mode: session.mode,
@@ -11334,7 +11341,10 @@ enum PracticeSessionFinalizer {
             standingHypothesis: standingWatch.hypothesis,
             standingFocusLabel: standingWatch.focusLabel,
             standingWatchClause: standingWatch.clause,
-            standingWatchIsAssured: standingWatch.isAssured
+            standingWatchIsAssured: standingWatch.isAssured,
+            transcriptConfidence: session.transcriptConfidence,
+            comparisonMetricSchemaVersion: session.comparisonMetricSchemaVersion,
+            isEvaluationFixture: session.isEvaluationFixture
         )
     }
 
@@ -11415,10 +11425,10 @@ enum CoachingPlanner {
             ? recentFillerRates.reduce(0, +) / Double(recentFillerRates.count)
             : nil
         let averageDuration = recent.map(\.duration).reduce(0, +) / Double(recent.count)
-        let qualifyingRecent = recent.filter(SessionQualifier.qualifies)
-        let averageWordsPerMinute = qualifyingRecent.isEmpty
+        let qualifyingPaces = recent.compactMap(SessionQualifier.quantityQualifiedWordsPerMinute)
+        let averageWordsPerMinute = qualifyingPaces.isEmpty
             ? 0
-            : qualifyingRecent.map { Double($0.wordsPerMinute) }.reduce(0, +) / Double(qualifyingRecent.count)
+            : qualifyingPaces.reduce(0, +) / Double(qualifyingPaces.count)
         let strongestMode = Dictionary(grouping: recent, by: \.mode).max { lhs, rhs in
             averageScore(for: lhs.value) < averageScore(for: rhs.value)
         }?.key
@@ -11546,9 +11556,9 @@ enum CoachingPlanner {
             insights.append("This answer ended sooner than your typical response length.")
         }
 
-        if SessionQualifier.meetsQuantityFloor(duration: session.duration, wordCount: session.wordCount) {
+        if let qualifiedPace = SessionQualifier.quantityQualifiedWordsPerMinute(session) {
             let sessionPace = PracticeEvaluator.paceSnapshot(forTranscript: session.transcript, duration: session.duration)
-            insights.append("Pace check: \(sessionPace.wordsPerMinute) WPM. \(sessionPace.coachNote)")
+            insights.append("Pace check: \(Int(qualifiedPace.rounded())) WPM. \(sessionPace.coachNote)")
         }
         let styleTrend = PracticeEvaluator.styleTrendSnapshot(
             transcript: session.transcript,
@@ -11857,8 +11867,10 @@ enum RecommendationBiasContextBuilder {
         let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
         let recent = Array(eligibleSessions.prefix(5))
         let previous = Array(eligibleSessions.dropFirst(5).prefix(5))
-        let recentFillerRates = FillerBurden.qualifyingRatesPerMinute(in: recent)
-        let previousFillerRates = FillerBurden.qualifyingRatesPerMinute(in: previous)
+        let recentFillerRates = FillerBurden.quantityQualifiedRatesPerMinute(in: recent)
+        let previousFillerRates = FillerBurden.quantityQualifiedRatesPerMinute(in: previous)
+        let recentPaces = recent.compactMap(SessionQualifier.quantityQualifiedWordsPerMinute)
+        let previousPaces = previous.compactMap(SessionQualifier.quantityQualifiedWordsPerMinute)
         let identity = PracticeEvaluator.speakingIdentity(
             for: recent.first?.transcript ?? "",
             profile: profile
@@ -11871,7 +11883,7 @@ enum RecommendationBiasContextBuilder {
             ),
             averageFillersPerMinute: average(recentFillerRates),
             averageDuration: average(recent.map(\.duration)),
-            averageWordsPerMinute: average(recent.map { Double($0.wordsPerMinute) }),
+            averageWordsPerMinute: average(recentPaces),
             fillerRateTrendDelta: trendDelta(
                 current: recentFillerRates,
                 previous: previousFillerRates
@@ -11881,8 +11893,8 @@ enum RecommendationBiasContextBuilder {
                 previous: previous.map(\.duration)
             ),
             paceTrendDelta: trendDelta(
-                current: recent.map { Double($0.wordsPerMinute) },
-                previous: previous.map { Double($0.wordsPerMinute) }
+                current: recentPaces,
+                previous: previousPaces
             ),
             averageWordCount: average(recent.map { Double($0.wordCount) }),
             strongestMode: plan?.strongestMode,
@@ -11914,15 +11926,19 @@ enum RecommendationBiasContextBuilder {
         case .detailed:
             return sessions.enumerated().map { index, session in
                 let scoreText = session.score.map(String.init) ?? "n/a"
-                let pace = PracticeEvaluator.paceSnapshot(
-                    forTranscript: session.transcript,
-                    duration: session.duration
-                )
+                let qualifiedPace = SessionQualifier.quantityQualifiedWordsPerMinute(session)
+                let paceText = qualifiedPace.map { String(Int($0.rounded())) } ?? "not_measured"
+                let paceLabel = qualifiedPace.map { _ in
+                    PracticeEvaluator.paceSnapshot(
+                        forTranscript: session.transcript,
+                        duration: session.duration
+                    ).label
+                } ?? "not measured"
                 let identity = PracticeEvaluator.speakingIdentity(
                     for: session.transcript,
                     profile: profile
                 )
-                return "Session \(index + 1): mode=\(session.mode.rawValue), fillers=\(session.fillerWordCount), duration=\(Int(session.duration))s, words=\(session.wordCount), wpm=\(session.wordsPerMinute), paceLabel=\(pace.label), score=\(scoreText), headline=\(session.headline ?? "none"), identity=\(identity.identity)"
+                return "Session \(index + 1): mode=\(session.mode.rawValue), fillers=\(session.fillerWordCount), duration=\(Int(session.duration))s, words=\(session.wordCount), wpm=\(paceText), paceLabel=\(paceLabel), score=\(scoreText), headline=\(session.headline ?? "none"), identity=\(identity.identity)"
             }.joined(separator: "\n")
         }
     }

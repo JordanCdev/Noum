@@ -137,8 +137,7 @@ struct ProgressionChartsCard: View {
 
     private var selectedSeriesValues: [Double] {
         dataPoints
-            .filter { selectedSeries.hasValue(in: $0) }
-            .map { selectedSeries.value(from: $0) }
+            .compactMap { selectedSeries.value(from: $0) }
     }
 
     private func seriesButton(_ series: ChartSeries) -> some View {
@@ -287,8 +286,7 @@ struct ProgressionChartsCard: View {
     private var statsRow: some View {
         let series = selectedSeries
         let values = dataPoints
-            .filter { series.hasValue(in: $0) }
-            .map { series.value(from: $0) }
+            .compactMap { series.value(from: $0) }
 
         if values.count >= 2 {
             let avg = values.reduce(0, +) / Double(values.count)
@@ -577,14 +575,14 @@ extension ProgressionChartsCard {
             }
         }
 
-        func value(from point: ChartPoint) -> Double {
+        func value(from point: ChartPoint) -> Double? {
             switch self {
             case .score:      return point.score
             case .fillerRate: return point.fillerRate
             case .pace:       return point.pace
-            case .pauseRate:  return point.pauseRate ?? 0
+            case .pauseRate:  return point.pauseRate
             // Render variation (1 - monotone) so up = better, like score.
-            case .pitch:      return point.pitchVariation ?? 0
+            case .pitch:      return point.pitchVariation
             }
         }
 
@@ -593,11 +591,7 @@ extension ProgressionChartsCard {
         /// provider didn't capture word timings (pause series), and
         /// sessions where pitch wasn't reliable (pitch series).
         func hasValue(in point: ChartPoint) -> Bool {
-            switch self {
-            case .pauseRate: return point.pauseRate != nil
-            case .pitch:     return point.pitchVariation != nil
-            default:         return true
-            }
+            value(from: point) != nil
         }
 
         func formatValue(_ value: Double) -> String {
@@ -745,8 +739,12 @@ extension ProgressionChartsCard {
         let id: UUID
         let date: Date
         let score: Double
-        let fillerRate: Double
-        let pace: Double
+        /// Optional because a generally progress-eligible row can still be too
+        /// thin, noisy, stale, or fixture-only for historical filler reads.
+        let fillerRate: Double?
+        /// Optional for the same reason. Missing pace must never render as a
+        /// real zero or enter averages, trends, or target-band coaching.
+        let pace: Double?
         /// Pauses per minute — nil when the session didn't capture word
         /// timings. Filtered out at the chart-render layer for the
         /// `.pauseRate` series so we don't draw fake zeros.
@@ -763,9 +761,8 @@ extension ProgressionChartsCard {
             self.date = session.date
             self.score = Double(score)
             let minutes = max(1.0 / 60.0, session.duration / 60.0)
-            self.fillerRate = Double(session.fillerWordCount) / minutes
-            let words = session.wordCount
-            self.pace = session.duration > 0 ? Double(words) / minutes : 0
+            self.fillerRate = FillerBurden.quantityQualified(session)?.ratePerMinute
+            self.pace = SessionQualifier.quantityQualifiedWordsPerMinute(session)
             if let metrics = session.pauseMetrics, session.duration > 0 {
                 self.pauseRate = Double(metrics.count) / minutes
             } else {
@@ -834,7 +831,7 @@ extension ProgressionChartsCard {
         }
 
         init(series: ChartSeries, points: [ChartPoint]) {
-            let values = points.map { series.value(from: $0) }
+            let values = points.compactMap { series.value(from: $0) }
             self.average = values.reduce(0, +) / Double(max(1, values.count))
             self.rawSamples = Self.samples(from: values)
             self.trendSamples = Self.trendSamples(for: values)
@@ -846,7 +843,7 @@ extension ProgressionChartsCard {
             self.yMin = domain.lowerBound
             self.yMax = domain.upperBound
 
-            let xDomain = Self.ordinalDomain(forPointCount: points.count)
+            let xDomain = Self.ordinalDomain(forPointCount: values.count)
             self.xMin = xDomain.lowerBound
             self.xMax = xDomain.upperBound
 

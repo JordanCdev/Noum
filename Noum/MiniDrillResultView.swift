@@ -20,6 +20,7 @@ struct MiniDrillResultView: View {
     let onDone: () -> Void
     let onTryAnother: (() -> Void)?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: Int = 0       // 0=hidden, 1=icon, 2=text, 3=badges, 4=stats, 5=buttons
 
     private var wpm: Double {
@@ -50,6 +51,7 @@ struct MiniDrillResultView: View {
                     Text(DrillCompletionCopy.title(for: outcome))
                         .font(Typography.figtree(size: 26, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(.white)
+                        .accessibilityIdentifier("miniDrillResult.title")
 
                     Text(feedbackText)
                         .font(Typography.subheadline)
@@ -83,6 +85,7 @@ struct MiniDrillResultView: View {
                             Text("+\(xpEarned) XP")
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(outcome.drill.tint)
+                                .accessibilityIdentifier("miniDrillResult.xp")
                             if let xpBreakdown {
                                 Text(xpBreakdown.label)
                                     .font(.caption2.weight(.medium))
@@ -129,6 +132,7 @@ struct MiniDrillResultView: View {
                             .background(outcome.drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                     }
                     .buttonStyle(.pressable)
+                    .accessibilityIdentifier("miniDrillResult.done")
 
                     if let onTryAnother {
                         Button {
@@ -166,6 +170,11 @@ struct MiniDrillResultView: View {
         InteractionSoundEngine.cue(
             outcome.succeeded ? .drillCompleteSuccess : .drillCompleteIncomplete
         )
+        if reduceMotion {
+            phase = 5
+            CoachHaptic.xpEarned()
+            return
+        }
         withAnimation(.bouncySpring) { phase = 1 }
 
         // Phase 2: Title + feedback (0.2s)

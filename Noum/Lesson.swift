@@ -154,6 +154,9 @@ struct LessonApplyEvaluation: Equatable {
 /// It intentionally avoids sentiment, personality, or semantic-certainty
 /// claims that the captured words cannot support.
 enum LessonApplyEvaluator {
+    static let defaultMinimumWordCount = 12
+    static let minimumRecorderDuration: TimeInterval = 3
+
     private static let fillerTokens: Set<String> = [
         "um", "uh", "erm", "hmm", "basically", "literally"
     ]
@@ -195,9 +198,11 @@ enum LessonApplyEvaluator {
     }
 
     static func effectiveCriteria(for lesson: Lesson) -> [LessonApplyCriterion] {
-        if !lesson.applyCriteria.isEmpty { return lesson.applyCriteria }
-        if let device = lesson.targetDevice {
-            return [
+        let authored: [LessonApplyCriterion]
+        if !lesson.applyCriteria.isEmpty {
+            authored = lesson.applyCriteria
+        } else if let device = lesson.targetDevice {
+            authored = [
                 LessonApplyCriterion(
                     id: "expected-device",
                     title: device.title,
@@ -206,16 +211,35 @@ enum LessonApplyEvaluator {
                     retryFeedback: "Try the pattern once more so it is visible in the answer."
                 )
             ]
+        } else {
+            authored = []
         }
-        return [
-            LessonApplyCriterion(
-                id: "complete-answer",
-                title: "Complete answer",
-                kind: .minimumWords(12),
-                successFeedback: "You gave the move enough room to land.",
-                retryFeedback: "Give a complete answer of at least 12 words."
-            )
-        ]
+
+        guard !authored.contains(where: { $0.kind.minimumWordCount != nil }) else {
+            return authored
+        }
+
+        return [completeResponseCriterion(minimumWords: defaultMinimumWordCount)] + authored
+    }
+
+    static func minimumWordCount(for lesson: Lesson) -> Int {
+        effectiveCriteria(for: lesson)
+            .compactMap { $0.kind.minimumWordCount }
+            .max() ?? defaultMinimumWordCount
+    }
+
+    static func wordCount(in transcript: String) -> Int {
+        normalize(transcript).split(separator: " ").count
+    }
+
+    private static func completeResponseCriterion(minimumWords: Int) -> LessonApplyCriterion {
+        LessonApplyCriterion(
+            id: "complete-answer",
+            title: "Complete answer",
+            kind: .minimumWords(minimumWords),
+            successFeedback: "You gave the move enough room to land.",
+            retryFeedback: "Give a complete answer of at least \(minimumWords) words."
+        )
     }
 
     private static func evaluate(
@@ -281,6 +305,96 @@ enum LessonApplyEvaluator {
     }
 }
 
+private extension LessonApplyCriterion.Kind {
+    var minimumWordCount: Int? {
+        switch self {
+        case .minimumWords(let minimum):
+            return minimum
+        case .wordRange(let minimum, _):
+            return minimum
+        case .containsAny, .avoidsAny, .maximumFillers,
+             .minimumQuestionSignals, .directOpening, .expectedDevice:
+            return nil
+        }
+    }
+}
+
+// MARK: - Apply completion evidence
+
+/// Transcript-free proof that a terminal Lesson Apply capture carried enough
+/// real speech to make its authored rubric meaningful. The transcript remains
+/// transient in the view; durable lesson progress stores only aggregate passes.
+struct LessonApplyCompletionEvidence: Equatable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let terminalWordCount: Int
+    let recorderDuration: TimeInterval
+
+    static func verified(
+        transcript: String,
+        recorderDuration: TimeInterval,
+        lesson: Lesson
+    ) -> LessonApplyCompletionEvidence? {
+        let evidence = LessonApplyCompletionEvidence(
+            schemaVersion: currentSchemaVersion,
+            terminalWordCount: LessonApplyEvaluator.wordCount(in: transcript),
+            recorderDuration: recorderDuration
+        )
+        return evidence.isVerified(for: lesson) ? evidence : nil
+    }
+
+    func isVerified(for lesson: Lesson) -> Bool {
+        schemaVersion == Self.currentSchemaVersion
+            && terminalWordCount >= LessonApplyEvaluator.minimumWordCount(for: lesson)
+            && recorderDuration.isFinite
+            && recorderDuration >= LessonApplyEvaluator.minimumRecorderDuration
+    }
+}
+
+enum LessonApplyCompletionDisposition: Equatable {
+    case unusableRecording
+    case insufficientDuration(required: TimeInterval)
+    case evaluated(
+        transcript: String,
+        evaluation: LessonApplyEvaluation,
+        evidence: LessonApplyCompletionEvidence?
+    )
+
+    static func resolve(
+        completion: FinalizedTranscript?,
+        recorderDuration: TimeInterval,
+        findings: [EloquenceFinding],
+        lesson: Lesson
+    ) -> LessonApplyCompletionDisposition {
+        guard RecordingCompletionGate.allowsScoringAndProgress(completion),
+              let completion else {
+            return .unusableRecording
+        }
+
+        let transcript = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let evaluation = LessonApplyEvaluator.evaluate(
+            transcript: transcript,
+            findings: findings,
+            lesson: lesson
+        )
+        guard recorderDuration.isFinite,
+              recorderDuration >= LessonApplyEvaluator.minimumRecorderDuration else {
+            return .insufficientDuration(required: LessonApplyEvaluator.minimumRecorderDuration)
+        }
+
+        return .evaluated(
+            transcript: transcript,
+            evaluation: evaluation,
+            evidence: LessonApplyCompletionEvidence.verified(
+                transcript: transcript,
+                recorderDuration: recorderDuration,
+                lesson: lesson
+            )
+        )
+    }
+}
+
 // MARK: - Lesson Outcome
 
 /// Result of one full pass through a lesson. Used by `LessonStore` to
@@ -290,15 +404,39 @@ struct LessonOutcome: Equatable {
     let lessonID: String
     let stepResults: [StepResult]
     let xpEarned: Int
+    let applyEvidence: LessonApplyCompletionEvidence?
+
+    init(
+        lessonID: String,
+        stepResults: [StepResult],
+        xpEarned: Int,
+        applyEvidence: LessonApplyCompletionEvidence? = nil
+    ) {
+        self.lessonID = lessonID
+        self.stepResults = stepResults
+        self.xpEarned = xpEarned
+        self.applyEvidence = applyEvidence
+    }
 
     var isPerfect: Bool {
-        stepResults.allSatisfy(\.passed)
+        passed && stepResults.allSatisfy(\.passed)
+    }
+
+    var hasVerifiedAttemptShape: Bool {
+        guard stepResults.count == 3,
+              stepResults.filter({ $0.kind == .concept }).count == 1,
+              stepResults.filter({ $0.kind == .spotIt }).count == 1,
+              stepResults.filter({ $0.kind == .apply }).count == 1,
+              let lesson = LessonsCatalog.lesson(id: lessonID),
+              applyEvidence?.isVerified(for: lesson) == true else {
+            return false
+        }
+        return true
     }
 
     var passed: Bool {
-        // A lesson is "passed" if the user got the spot-it step right and
-        // demonstrated the technique on the apply step (when applicable).
-        stepResults.allSatisfy { $0.passed || $0.kind == .concept }
+        guard hasVerifiedAttemptShape else { return false }
+        return stepResults.allSatisfy(\.passed)
     }
 
     enum StepResult: Equatable {
@@ -336,6 +474,7 @@ enum LessonXP {
     static let perfectBonus = 20
 
     static func xp(for outcome: LessonOutcome) -> Int {
+        guard outcome.passed else { return 0 }
         var xp = baseXP
         if outcome.isPerfect { xp += perfectBonus }
         return xp

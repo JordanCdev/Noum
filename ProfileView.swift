@@ -1023,7 +1023,7 @@ struct ProfileCoachBriefPresentation: Equatable {
         if evidenceCount == 0 {
             observation = "One short rep gives Noum something real to read."
         } else if evidenceCount <= 2 {
-            observation = latestRepObservation(focus: plan?.currentFocus)
+            observation = startingPointObservation(for: evidenceCount)
         } else {
             observation = plainLanguage(content.read)
         }
@@ -1064,24 +1064,10 @@ struct ProfileCoachBriefPresentation: Equatable {
             .replacingOccurrences(of: "proof point", with: "concrete example", options: .caseInsensitive)
     }
 
-    private static func latestRepObservation(focus: String?) -> String {
-        guard var focus = bounded(focus) else {
-            return "Your latest rep is the next thing to review."
-        }
-        focus = plainLanguage(focus)
-        if focus.hasPrefix("Focus on ") {
-            focus.removeFirst("Focus on ".count)
-        }
-        focus = focus.trimmingCharacters(in: CharacterSet(charactersIn: ".!? "))
-        guard !focus.isEmpty else {
-            return "Your latest rep is the next thing to review."
-        }
-        return "Your latest rep points to \(focus.prefix(1).lowercased())\(focus.dropFirst())."
-    }
-
-    private static func bounded(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+    private static func startingPointObservation(for evidenceCount: Int) -> String {
+        evidenceCount == 1
+            ? "Your first rep gives Noum a starting point."
+            : "Your latest two reps are setting a starting point."
     }
 }
 

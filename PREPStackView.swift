@@ -8,7 +8,8 @@ import SwiftUI
 /// PREP Stack — a guided 4-step structure drill.
 /// User advances through Point → Reason → Example → Point by tapping "Next Step."
 /// Each step shows a coaching hint. Minimum 3 seconds per step before advancing.
-/// Success: all 4 steps completed AND total duration >= 20s.
+/// Success: all 4 steps completed, at least 28 terminal words, and at least
+/// 20 seconds of recorder-owned capture duration.
 struct PREPStackView: View {
     let drill: DrillRecommendationV2
     let prompt: String?
@@ -16,24 +17,28 @@ struct PREPStackView: View {
     let onCancel: () -> Void
 
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var phase: DrillPhase = .ready
     @State private var elapsedSeconds: Int = 0
     @State private var countdownValue: Int = 3
     @State private var timerTask: Task<Void, Never>?
+    @State private var lifecycleTask: Task<Void, Never>?
+    @State private var completionIssue: String?
 
     // PREP tracking
     @State private var currentStep: Int = 0  // 0-3
     @State private var stepStartTime: Date = Date()
     @State private var stepElapsed: Int = 0
     @State private var stepsCompleted: Int = 0
-    @State private var recordingStartDate: Date?
 
     private let drillDuration: Int = 90  // Longer for guided structure
     private let minStepSeconds: Int = 3
+    private static let insufficientSpeechMessage =
+        "We need at least a few spoken words across three seconds to count this drill. Try again when you're ready."
 
     enum DrillPhase {
-        case ready, countdown, speaking, finishing
+        case ready, countdown, connecting, speaking, finishing
     }
 
     private var steps: [(letter: String, name: String, hint: String)] {
@@ -80,13 +85,31 @@ struct PREPStackView: View {
                         Text("\(countdownValue)")
                             .font(.system(size: 56, weight: .bold, design: .rounded))
                             .foregroundStyle(drill.tint)
-                            .transition(.scale.combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                    case .connecting:
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .tint(drill.tint)
+                            Text("Connecting")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .textCase(.uppercase)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Connecting live transcription")
                     case .speaking:
                         speakingContent
                     case .finishing:
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 36, weight: .bold))
-                            .foregroundStyle(drill.tint)
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .tint(drill.tint)
+                            Text("Finishing")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .textCase(.uppercase)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Finishing your recording")
                     }
                 }
 
@@ -174,6 +197,18 @@ struct PREPStackView: View {
                             .padding(.horizontal, 24)
                     }
 
+                    if phase == .ready {
+                        if let completionIssue {
+                            FocusedPracticeErrorStatus(message: completionIssue)
+                                .padding(.horizontal, Spacing.sm)
+                                .accessibilityIdentifier("prepStack.insufficientSpeech")
+                        } else if let error = speechVM.connectionError {
+                            FocusedPracticeErrorStatus(message: error)
+                                .padding(.horizontal, Spacing.sm)
+                                .accessibilityIdentifier("prepStack.captureError")
+                        }
+                    }
+
                     // Begin button
                     if phase == .ready {
                         Button {
@@ -191,6 +226,7 @@ struct PREPStackView: View {
                             .background(drill.tint, in: Capsule())
                         }
                         .buttonStyle(.pressable)
+                        .accessibilityIdentifier("prepStack.start")
                     }
                 }
                 .padding(.bottom, 40)
@@ -218,7 +254,15 @@ struct PREPStackView: View {
                 Spacer()
             }
         }
-        .interactiveDismissDisabled(phase == .speaking)
+        .interactiveDismissDisabled(phase == .connecting || phase == .speaking || phase == .finishing)
+        .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
+        .onDisappear {
+            timerTask?.cancel()
+            lifecycleTask?.cancel()
+            if speechVM.recordingLifecycle.isBusy {
+                speechVM.cancelRecording()
+            }
+        }
     }
 
     // MARK: - Speaking Content
@@ -340,31 +384,53 @@ struct PREPStackView: View {
     // MARK: - Actions
 
     private func startCountdown() {
-        withAnimation(.snappySpring) { phase = .countdown }
+        guard phase == .ready else { return }
+        completionIssue = nil
+        speechVM.connectionError = nil
+        resetAttemptState()
+        updateWithMotion(.snappySpring) { phase = .countdown }
         CoachHaptic.drillStart()
 
-        Task {
+        lifecycleTask?.cancel()
+        lifecycleTask = Task { @MainActor in
             for i in stride(from: 3, through: 1, by: -1) {
-                await MainActor.run {
-                    withAnimation(.snappySpring) { countdownValue = i }
-                }
+                guard !Task.isCancelled else { return }
+                updateWithMotion(.snappySpring) { countdownValue = i }
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
-            await MainActor.run { startSpeaking() }
+            guard !Task.isCancelled else { return }
+            connectRecorderAndStartSpeaking()
         }
     }
 
-    private func startSpeaking() {
-        withAnimation(.standardSpring) { phase = .speaking }
-        stepStartTime = Date()
-
+    private func connectRecorderAndStartSpeaking() {
+        guard phase == .countdown else { return }
+        updateWithMotion(.standardSpring) { phase = .connecting }
         speechVM.sessionPrompt = prompt
         speechVM.shouldRecordPracticeSession = false
         speechVM.prepareSession(mode: .timed)
-        recordingStartDate = Date()
-        speechVM.startRecording()
 
+        lifecycleTask?.cancel()
+        lifecycleTask = Task { @MainActor in
+            let captureReady = await speechVM.startRecordingAwaitingReadiness()
+            guard !Task.isCancelled,
+                  phase == .connecting,
+                  RecordingStartGate.allowsTimerStart(captureReady: captureReady) else {
+                if phase == .connecting {
+                    updateWithMotion(.standardSpring) { phase = .ready }
+                }
+                return
+            }
+            beginSpeakingTimer()
+        }
+    }
+
+    private func beginSpeakingTimer() {
+        updateWithMotion(.standardSpring) { phase = .speaking }
+        stepStartTime = Date()
+
+        timerTask?.cancel()
         timerTask = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
@@ -384,7 +450,7 @@ struct PREPStackView: View {
     private func advanceStep() {
         guard canAdvance, currentStep < steps.count - 1 else { return }
 
-        withAnimation(.snappySpring) {
+        updateWithMotion(.snappySpring) {
             stepsCompleted = currentStep + 1
             currentStep += 1
             stepElapsed = 0
@@ -397,73 +463,115 @@ struct PREPStackView: View {
     private func completeLastStep() {
         guard canAdvance else { return }
 
-        withAnimation(.snappySpring) {
+        updateWithMotion(.snappySpring) {
             stepsCompleted = steps.count
         }
-
-        CoachHaptic.drillSuccess()
-
-        // Auto-finish after brief delay
-        Task {
-            try? await Task.sleep(for: .milliseconds(600))
-            await MainActor.run { finishDrill() }
-        }
+        finishDrill()
     }
 
     private func finishDrill() {
         guard phase == .speaking else { return }
         timerTask?.cancel()
-        speechVM.stopRecording()
+        updateWithMotion(.standardSpring) { phase = .finishing }
 
-        withAnimation(.standardSpring) { phase = .finishing }
+        lifecycleTask?.cancel()
+        lifecycleTask = Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
+            let disposition = MiniDrillCompletionDisposition.resolve(
+                completion: completion,
+                captureDuration: speechVM.lastSessionDuration
+            )
 
-        let fillerCount = speechVM.fillerWordCount
-        let measuredDuration = recordingStartDate.map { Date().timeIntervalSince($0) } ?? TimeInterval(elapsedSeconds)
-        let duration = max(speechVM.lastSessionDuration, measuredDuration, TimeInterval(elapsedSeconds))
-        let transcript = speechVM.transcribedText
-        let wordCount = transcript.split(separator: " ").count
+            guard !Task.isCancelled, phase == .finishing else { return }
+            switch disposition {
+            case .eligible(let evidence):
+                completionIssue = nil
+                onComplete(completedOutcome(from: evidence))
+            case .insufficientSpeech:
+                returnToReady(completionIssue: Self.insufficientSpeechMessage)
+            case .unusableRecording:
+                returnToReady(completionIssue: nil)
+            }
+        }
+    }
 
+    private func completedOutcome(from evidence: MiniDrillCompletionEvidence) -> MiniDrillOutcome {
         let finalSteps = stepsCompleted
-        let detections = FillerWordDetector.detections(in: transcript, prompt: prompt ?? "")
-        let transitionFillers = detections.filter { $0.confidence >= 0.65 && ($0.context == .transitionGap || $0.context == .sentenceStart) }.count
-        let closeStrength = finalSteps >= steps.count && wordCount >= 28 ? 1.0 : Double(finalSteps) / Double(steps.count)
-        let succeeded = finalSteps >= steps.count && duration >= 20 && closeStrength >= 0.75
+        let fillerAnalysis = FillerWordDetector.analysis(
+            in: evidence.transcript,
+            prompt: prompt ?? ""
+        )
+        let transitionFillers = fillerAnalysis.detections.filter {
+            $0.confidence >= 0.65
+                && ($0.context == .transitionGap || $0.context == .sentenceStart)
+        }.count
+        let closeStrength = PREPStackEvaluation.closeStrength(
+            stepsCompleted: finalSteps,
+            wordCount: evidence.wordCount
+        )
+        let succeeded = PREPStackEvaluation.succeeded(
+            stepsCompleted: finalSteps,
+            wordCount: evidence.wordCount,
+            duration: evidence.duration
+        )
 
         let metrics = PREPStackMetrics(
             stepsCompleted: finalSteps,
-            totalDuration: duration,
-            wordCount: wordCount,
-            fillerCount: fillerCount,
+            totalDuration: evidence.duration,
+            wordCount: evidence.wordCount,
+            fillerCount: fillerAnalysis.adjustedCount,
             transitionFillers: transitionFillers,
             closeStrength: closeStrength
         )
 
         if succeeded {
-            // Already fired in completeLastStep, but fire again if auto-timed-out
+            CoachHaptic.drillSuccess()
         } else {
             CoachHaptic.drillIncomplete()
         }
 
-        let outcome = MiniDrillOutcome(
+        return MiniDrillOutcome(
             drill: drill,
             drillType: .prepStack,
-            transcript: transcript,
-            fillerCount: fillerCount,
-            duration: duration,
-            wordCount: wordCount,
+            transcript: evidence.transcript,
+            fillerCount: fillerAnalysis.adjustedCount,
+            duration: evidence.duration,
+            wordCount: evidence.wordCount,
             succeeded: succeeded,
             prepStackMetrics: metrics
         )
+    }
 
-        Task {
-            try? await Task.sleep(for: .milliseconds(800))
-            await MainActor.run { onComplete(outcome) }
+    private func returnToReady(completionIssue: String?) {
+        resetAttemptState()
+        self.completionIssue = completionIssue
+        updateWithMotion(.standardSpring) { phase = .ready }
+    }
+
+    private func resetAttemptState() {
+        timerTask?.cancel()
+        elapsedSeconds = 0
+        countdownValue = 3
+        currentStep = 0
+        stepElapsed = 0
+        stepsCompleted = 0
+        stepStartTime = Date()
+    }
+
+    private func updateWithMotion(_ animation: Animation, _ updates: () -> Void) {
+        if reduceMotion {
+            updates()
+        } else {
+            withAnimation(animation, updates)
         }
     }
 
     private func cancelDrill() {
         timerTask?.cancel()
-        if speechVM.isRecording { speechVM.stopRecording() }
+        lifecycleTask?.cancel()
+        if speechVM.recordingLifecycle.isBusy {
+            speechVM.cancelRecording()
+        }
         onCancel()
     }
 }

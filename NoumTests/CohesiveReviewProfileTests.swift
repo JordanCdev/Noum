@@ -216,17 +216,22 @@ struct CohesiveProfileCompositionTests {
         #expect(established.surfaces == [.identity, .progressHero, .coachRead, .evidenceHub])
     }
 
-    @Test func oneOrTwoRepsUseLatestRepLanguageOnly() {
-        for count in 1...2 {
-            let brief = ProfileCoachBriefPresentation.make(
-                sessionCount: count,
-                plan: plan(),
-                memory: nil
-            )
-            #expect(brief.observation == "Your latest rep points to deliberate openings.")
-            #expect(!brief.observation.localizedCaseInsensitiveContains("pattern"))
-            #expect(!brief.observation.localizedCaseInsensitiveContains("recent reps"))
-        }
+    @Test func oneOrTwoRepsDescribeAStartingPointWithoutAttributingTheStatedGoal() {
+        let one = ProfileCoachBriefPresentation.make(
+            sessionCount: 1,
+            plan: plan(),
+            memory: nil
+        )
+        let two = ProfileCoachBriefPresentation.make(
+            sessionCount: 2,
+            plan: plan(),
+            memory: nil
+        )
+
+        #expect(one.observation == "Your first rep gives Noum a starting point.")
+        #expect(two.observation == "Your latest two reps are setting a starting point.")
+        #expect(!one.observation.localizedCaseInsensitiveContains("deliberate openings"))
+        #expect(!two.observation.localizedCaseInsensitiveContains("deliberate openings"))
     }
 
     @Test func evidenceCaptionScalesWithDepth() {
@@ -503,6 +508,9 @@ struct AccountScopedCoachingTrendTests {
             duration: 30,
             wordCount: 70,
             wpm: 140,
+            qualifiedFillerRatePerMinute: 4,
+            qualifiedPaceWPM: 140,
+            comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion,
             score: score
         )
     }

@@ -15,6 +15,7 @@ struct MiniDrillView: View {
     let onCancel: () -> Void
 
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var phase: DrillPhase = .ready
     @State private var elapsedSeconds: Int = 0
@@ -23,7 +24,10 @@ struct MiniDrillView: View {
     @State private var showPulse = false
     @State private var timerTask: Task<Void, Never>?
     @State private var lifecycleTask: Task<Void, Never>?
-    @State private var recordingStartDate: Date?
+    @State private var completionIssue: String?
+    #if DEBUG
+    @State private var didInstallCompletionFixture = false
+    #endif
 
     private let drillDuration: Int = 45
 
@@ -59,7 +63,7 @@ struct MiniDrillView: View {
                         .stroke(drill.tint, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                         .frame(width: 180, height: 180)
                         .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: 1), value: progressRingFill)
+                        .animation(reduceMotion ? nil : .linear(duration: 1), value: progressRingFill)
 
                     // Inner orb
                     Circle()
@@ -158,6 +162,12 @@ struct MiniDrillView: View {
                             .accessibilityIdentifier("miniDrill.captureError")
                     }
 
+                    if phase == .ready, let completionIssue {
+                        FocusedPracticeErrorStatus(message: completionIssue)
+                            .padding(.horizontal, Spacing.sm)
+                            .accessibilityIdentifier("miniDrill.completionIssue")
+                    }
+
                     // Action button
                     switch phase {
                     case .ready:
@@ -176,6 +186,7 @@ struct MiniDrillView: View {
                             .background(drill.tint, in: Capsule())
                         }
                         .buttonStyle(.pressable)
+                        .accessibilityIdentifier("miniDrill.start")
                     case .countdown, .connecting:
                         EmptyView()
                     case .speaking:
@@ -224,6 +235,11 @@ struct MiniDrillView: View {
         }
         .interactiveDismissDisabled(phase == .connecting || phase == .speaking || phase == .finishing)
         .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
+        .onAppear {
+            #if DEBUG
+            installCompletionFixtureIfNeeded()
+            #endif
+        }
         .onDisappear {
             timerTask?.cancel()
             lifecycleTask?.cancel()
@@ -263,7 +279,8 @@ struct MiniDrillView: View {
     // MARK: - Actions
 
     private func startCountdown() {
-        withAnimation(.snappySpring) { phase = .countdown }
+        completionIssue = nil
+        setPhase(.countdown, animation: .snappySpring)
         CoachHaptic.drillStart()
 
         lifecycleTask?.cancel()
@@ -271,7 +288,11 @@ struct MiniDrillView: View {
             for i in stride(from: 3, through: 1, by: -1) {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    withAnimation(.snappySpring) { countdownValue = i }
+                    if reduceMotion {
+                        countdownValue = i
+                    } else {
+                        withAnimation(.snappySpring) { countdownValue = i }
+                    }
                 }
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
@@ -283,11 +304,10 @@ struct MiniDrillView: View {
 
     private func connectRecorderAndStartSpeaking() {
         guard phase == .countdown else { return }
-        withAnimation(.standardSpring) {
-            phase = .connecting
-        }
+        setPhase(.connecting, animation: .standardSpring)
 
         speechVM.connectionError = nil
+        completionIssue = nil
         speechVM.sessionPrompt = prompt
         speechVM.shouldRecordPracticeSession = false
         speechVM.prepareSession(mode: .timed)
@@ -299,7 +319,7 @@ struct MiniDrillView: View {
                   phase == .connecting,
                   RecordingStartGate.allowsTimerStart(captureReady: captureReady) else {
                 if phase == .connecting {
-                    withAnimation(.standardSpring) { phase = .ready }
+                    setPhase(.ready, animation: .standardSpring)
                 }
                 return
             }
@@ -308,13 +328,10 @@ struct MiniDrillView: View {
     }
 
     private func beginSpeakingTimer() {
-        withAnimation(.standardSpring) {
-            phase = .speaking
-            showPulse = true
-        }
+        setPhase(.speaking, animation: .standardSpring)
+        showPulse = !reduceMotion
         elapsedSeconds = 0
         progressRingFill = 0
-        recordingStartDate = Date()
 
         // Timer task
         timerTask = Task {
@@ -323,8 +340,11 @@ struct MiniDrillView: View {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     elapsedSeconds += 1
-                    withAnimation(.linear(duration: 0.3)) {
-                        progressRingFill = Double(elapsedSeconds) / Double(drillDuration)
+                    let fill = Double(elapsedSeconds) / Double(drillDuration)
+                    if reduceMotion {
+                        progressRingFill = fill
+                    } else {
+                        withAnimation(.linear(duration: 0.3)) { progressRingFill = fill }
                     }
 
                     // Auto-stop at drill duration
@@ -336,8 +356,10 @@ struct MiniDrillView: View {
         }
 
         // Pulse animation
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-            showPulse = true
+        if !reduceMotion {
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                showPulse = true
+            }
         }
     }
 
@@ -345,37 +367,67 @@ struct MiniDrillView: View {
         guard phase == .speaking else { return }
         timerTask?.cancel()
 
-        withAnimation(.standardSpring) {
-            phase = .finishing
-            progressRingFill = 1.0
-        }
+        setPhase(.finishing, animation: .standardSpring)
+        progressRingFill = 1.0
 
         lifecycleTask?.cancel()
         lifecycleTask = Task { @MainActor in
             let completion = await speechVM.stopRecordingAwaitingFinalization()
-            guard !Task.isCancelled,
-                  RecordingCompletionGate.allowsScoringAndProgress(completion),
-                  let completion else {
-                recordingStartDate = nil
+            guard !Task.isCancelled else { return }
+            let disposition = MiniDrillCompletionDisposition.resolve(
+                completion: completion,
+                captureDuration: speechVM.lastSessionDuration
+            )
+            switch disposition {
+            case .eligible(let evidence):
+                let outcome = completedOutcome(from: evidence)
+                guard phase == .finishing else { return }
+                onComplete(outcome)
+            case .insufficientSpeech:
                 progressRingFill = 0
-                withAnimation(.standardSpring) { phase = .ready }
-                return
+                completionIssue = Self.insufficientSpeechMessage
+                setPhase(.ready, animation: .standardSpring)
+            case .unusableRecording:
+                progressRingFill = 0
+                setPhase(.ready, animation: .standardSpring)
             }
-            let outcome = completedOutcome(from: completion)
-            try? await Task.sleep(for: .milliseconds(800))
-            guard !Task.isCancelled, phase == .finishing else { return }
-            onComplete(outcome)
         }
     }
 
-    private func completedOutcome(from completion: FinalizedTranscript) -> MiniDrillOutcome {
-        let fillerCount = speechVM.fillerWordCount
-        // The speech owner freezes this at the microphone stop boundary.
-        // Local clocks have already crossed provider finalization and would
-        // reintroduce network latency into duration-gated drill outcomes.
-        let duration = speechVM.lastSessionDuration
-        let transcript = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let wordCount = transcript.split(whereSeparator: \.isWhitespace).count
+    #if DEBUG
+    private func installCompletionFixtureIfNeeded() {
+        guard !didInstallCompletionFixture,
+              let fixture = MiniDrillCompletionUITestFixture.requested(),
+              drill.variation.id == MiniDrillCompletionUITestFixture.variationID else {
+            return
+        }
+        didInstallCompletionFixture = true
+
+        switch MiniDrillCompletionDisposition.resolve(
+            completion: fixture.completion,
+            captureDuration: fixture.captureDuration
+        ) {
+        case .eligible(let evidence):
+            completionIssue = nil
+            onComplete(completedOutcome(from: evidence))
+        case .insufficientSpeech:
+            progressRingFill = 0
+            completionIssue = Self.insufficientSpeechMessage
+            setPhase(.ready, animation: .standardSpring)
+        case .unusableRecording:
+            assertionFailure("Mini-drill UI fixture must provide a usable terminal receipt")
+        }
+    }
+    #endif
+
+    private func completedOutcome(from evidence: MiniDrillCompletionEvidence) -> MiniDrillOutcome {
+        let transcript = evidence.transcript
+        let duration = evidence.duration
+        let wordCount = evidence.wordCount
+        let fillerCount = FillerWordDetector.analysis(
+            in: transcript,
+            prompt: prompt ?? ""
+        ).adjustedCount
 
         let succeeded = evaluateSuccess(
             skillArea: drill.skillArea,
@@ -424,6 +476,17 @@ struct MiniDrillView: View {
         if speechVM.recordingLifecycle.isBusy { speechVM.cancelRecording() }
         onCancel()
     }
+
+    private func setPhase(_ newPhase: DrillPhase, animation: Animation) {
+        if reduceMotion {
+            phase = newPhase
+        } else {
+            withAnimation(animation) { phase = newPhase }
+        }
+    }
+
+    private static let insufficientSpeechMessage =
+        "Say at least 3 words over 3 seconds so Noum has enough speech to assess this drill."
 
     // MARK: - Success Evaluation
 
@@ -485,6 +548,18 @@ struct MiniDrillOutcome: Identifiable {
     /// moves the score). `nil` when below the detector's evidence floor or for
     /// non-framework drills.
     var frameworkVerdict: FrameworkDrillVerdict?
+}
+
+extension MiniDrillOutcome {
+    /// Defense-in-depth for the reward sink. Views should only construct an
+    /// outcome from terminal evidence, and Summary independently rechecks the
+    /// same minimum quantity before mutating history, XP, streaks, or baselines.
+    var isProgressEligible: Bool {
+        MiniDrillCompletionEvidence.validated(
+            transcript: transcript,
+            captureDuration: duration
+        )?.wordCount == wordCount
+    }
 }
 
 /// A type-erased wrapper over the per-framework verdicts so the result view

@@ -37,12 +37,15 @@ struct LessonView: View {
     @State private var applyTranscript: String = ""
     @State private var applyFindings: [EloquenceFinding] = []
     @State private var applyEvaluation: LessonApplyEvaluation?
+    @State private var applyEvidence: LessonApplyCompletionEvidence?
+    @State private var applyRetryMessage: String?
     @State private var applyElapsed: TimeInterval = 0
     @State private var applyTimer: Timer?
     @State private var applyLifecycleTask: Task<Void, Never>?
     @State private var applyStart: Date?
     @State private var didShowSummary: Bool = false
     @State private var progressUpdate: LessonProgressUpdate?
+    @State private var didInstallApplyCompletionFixture = false
 
     init(lesson: Lesson, navigationPath: Binding<NavigationPath>) {
         self.lesson = lesson
@@ -80,6 +83,9 @@ struct LessonView: View {
             }
         }
         .transcriptionRouteNotice(speech.transcriptionRouteNotice)
+        .task {
+            installApplyCompletionFixtureIfNeeded()
+        }
         .onDisappear {
             applyTimer?.invalidate()
             applyLifecycleTask?.cancel()
@@ -110,6 +116,7 @@ struct LessonView: View {
                     )
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("lesson.screen")
     }
 
@@ -432,6 +439,14 @@ struct LessonView: View {
                     .accessibilityIdentifier("lesson.apply.captureError")
             }
 
+            if applyPhase == .ready, let applyRetryMessage {
+                Label(applyRetryMessage, systemImage: "arrow.counterclockwise.circle.fill")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("lesson.apply.insufficientSpeech")
+            }
+
             if applyPhase == .done {
                 applyResultBlock
             }
@@ -584,10 +599,13 @@ struct LessonView: View {
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(result.title). \(result.passed ? "Met" : "Try again"). \(result.feedback)")
+                    .accessibilityIdentifier("lesson.apply.criterion.\(result.criterionID)")
                 }
             }
         }
         .padding(.top, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lesson.apply.result")
     }
 
     private var applyExpectedDevice: EloquenceDevice? {
@@ -668,6 +686,8 @@ struct LessonView: View {
         applyTranscript = ""
         applyFindings = []
         applyEvaluation = nil
+        applyEvidence = nil
+        applyRetryMessage = nil
         applyElapsed = 0
         applyStart = nil
         speech.connectionError = nil
@@ -724,39 +744,127 @@ struct LessonView: View {
         applyLifecycleTask?.cancel()
         applyLifecycleTask = Task { @MainActor in
             let completion = await speech.stopRecordingAwaitingFinalization()
-            guard !Task.isCancelled,
-                  RecordingCompletionGate.allowsScoringAndProgress(completion),
-                  let completion else {
-                applyStart = nil
-                applyPhase = .ready
+            guard !Task.isCancelled else { return }
+            consumeApplyCompletion(
+                completion: completion,
+                recorderDuration: speech.lastSessionDuration
+            )
+        }
+    }
+
+    private func consumeApplyCompletion(
+        completion: FinalizedTranscript?,
+        recorderDuration: TimeInterval
+    ) {
+        let terminalText = completion?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let terminalFindings = terminalText.isEmpty
+            ? []
+            : EloquenceEngine.analyse(transcript: terminalText)
+        let disposition = LessonApplyCompletionDisposition.resolve(
+            completion: completion,
+            recorderDuration: recorderDuration,
+            findings: terminalFindings,
+            lesson: lesson
+        )
+
+        switch disposition {
+        case .unusableRecording:
+            applyEvidence = nil
+            applyStart = nil
+            applyPhase = .ready
+        case .insufficientDuration(let required):
+            applyEvidence = nil
+            applyStart = nil
+            applyPhase = .ready
+            applyRetryMessage = "Speak for at least \(Int(required)) seconds so Noum can assess the move fairly."
+        case .evaluated(let transcript, let evaluation, let evidence):
+            applyTranscript = transcript
+            applyFindings = terminalFindings
+            applyEvaluation = evaluation
+            applyEvidence = evidence
+            applyElapsed = recorderDuration
+            applyStart = nil
+            applyPhase = .done
+
+            stepResults.removeAll(where: { $0.kind == .apply })
+            guard let evidence,
+                  evidence.isVerified(for: lesson) else {
                 return
             }
 
-            let transcript = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            applyTranscript = transcript
-            applyFindings = EloquenceEngine.analyse(transcript: transcript)
-            applyEvaluation = LessonApplyEvaluator.evaluate(
-                transcript: transcript,
-                findings: applyFindings,
-                lesson: lesson
-            )
-            applyPhase = .done
-
             let didUseDevice = applyExpectedDevice.map { expected in
-                applyFindings.contains(where: { $0.device == expected })
-            } ?? (applyEvaluation?.passed == true)
-            let passed = applyEvaluation?.passed == true
-            stepResults.removeAll(where: { $0.kind == .apply })
-            stepResults.append(.apply(passed: passed, didUseDevice: didUseDevice))
-            if passed { CoachHaptic.trendBreakthrough() }
+                terminalFindings.contains(where: { $0.device == expected })
+            } ?? evaluation.passed
+            stepResults.append(.apply(
+                passed: evaluation.passed,
+                didUseDevice: didUseDevice
+            ))
+            if evaluation.passed { CoachHaptic.trendBreakthrough() }
         }
     }
+
+    private func installApplyCompletionFixtureIfNeeded() {
+        #if DEBUG
+        guard !didInstallApplyCompletionFixture,
+              let fixture = ApplyCompletionFixture.current else { return }
+        didInstallApplyCompletionFixture = true
+        guard let applyIndex = lesson.steps.firstIndex(where: { step in
+            if case .apply = step { return true }
+            return false
+        }) else { return }
+
+        currentStep = applyIndex
+        stepResults = [.concept, .spotIt(passed: true)]
+        applyPhase = .evaluating
+        consumeApplyCompletion(
+            completion: fixture.completion,
+            recorderDuration: fixture.recorderDuration
+        )
+        #endif
+    }
+
+    #if DEBUG
+    private enum ApplyCompletionFixture: String {
+        case keywordOnly
+        case eligible
+
+        static var current: ApplyCompletionFixture? {
+            let arguments = ProcessInfo.processInfo.arguments
+            guard let index = arguments.firstIndex(of: "UI_TESTING_LESSON_APPLY_COMPLETION_FIXTURE"),
+                  arguments.indices.contains(index + 1) else {
+                return nil
+            }
+            return ApplyCompletionFixture(rawValue: arguments[index + 1])
+        }
+
+        var completion: FinalizedTranscript {
+            FinalizedTranscript(
+                text: transcript,
+                receivedFinalResult: true,
+                audioByteCount: 4_096
+            )
+        }
+
+        var recorderDuration: TimeInterval { 8 }
+
+        private var transcript: String {
+            switch self {
+            case .keywordOnly:
+                return "send Thursday correct"
+            case .eligible:
+                return "I will send the revised proposal Thursday at three p m after Finance confirms the final number. Is that correct?"
+            }
+        }
+    }
+    #endif
 
     private func resetApplyForRetry() {
         applyPhase = .ready
         applyTranscript = ""
         applyFindings = []
         applyEvaluation = nil
+        applyEvidence = nil
+        applyRetryMessage = nil
         applyElapsed = 0
         applyStart = nil
         stepResults.removeAll(where: { $0.kind == .apply })
@@ -804,6 +912,8 @@ struct LessonView: View {
             applyTranscript = ""
             applyFindings = []
             applyEvaluation = nil
+            applyEvidence = nil
+            applyRetryMessage = nil
         }
         if reduceMotion { update() }
         else {
@@ -815,13 +925,15 @@ struct LessonView: View {
         let outcome = LessonOutcome(
             lessonID: lesson.id,
             stepResults: stepResults,
-            xpEarned: 0
+            xpEarned: 0,
+            applyEvidence: applyEvidence
         )
         let xp = LessonXP.xp(for: outcome)
         let final = LessonOutcome(
             lessonID: lesson.id,
             stepResults: stepResults,
-            xpEarned: xp
+            xpEarned: xp,
+            applyEvidence: applyEvidence
         )
         // Apply mastery progress + XP accounting.
         let update = lessonStore.apply(outcome: final)
@@ -885,13 +997,16 @@ struct LessonView: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.top, Spacing.lg)
         .padding(.bottom, Spacing.lg)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lesson.summary")
     }
 
     private var passedHeadline: String {
         let outcome = LessonOutcome(
             lessonID: lesson.id,
             stepResults: stepResults,
-            xpEarned: 0
+            xpEarned: 0,
+            applyEvidence: applyEvidence
         )
         if outcome.passed { return "Practice complete" }
         return "Keep working the move"

@@ -11,7 +11,7 @@ import SwiftUI
 //
 // Sourcing rules (in priority order):
 //   1. Sessions with score <= 5 in the last 14 days
-//   2. Sessions with high filler count (>= 6) in the last 14 days
+//   2. Sessions with quantity-qualified urgent filler burden in the last 14 days
 //   3. Sudden Death sessions that failed in round 1 or 2 in the last 7 days
 //
 // The card hides itself entirely (`EmptyView()`) when there is nothing
@@ -44,13 +44,26 @@ struct MistakeReplayCard: View {
         reduceMotion || ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     }
 
+    /// A saved short capture can still be opened from All Reps, but it cannot
+    /// become a targeted replay prescription or strengthen the Review root.
+    static func eligibleReviewSessions(in sessions: [PracticeSession]) -> [PracticeSession] {
+        PracticeProgressEligibility.eligibleSessions(in: sessions)
+    }
+
+    /// Targeted filler replay is a coaching interpretation, so absolute count
+    /// alone is not enough. Reuse the historical metric boundary and normalized
+    /// burden threshold; raw counts remain visible in the row as saved facts.
+    static func hasFillerReplaySignal(_ session: PracticeSession) -> Bool {
+        FillerBurden.quantityQualified(session)?.meets(.urgent) == true
+    }
+
     static func hasReviewRows(in sessions: [PracticeSession], now: Date = Date()) -> Bool {
         let cutoff14 = now.addingTimeInterval(-14 * 24 * 3600)
         let cutoff7  = now.addingTimeInterval(-7  * 24 * 3600)
-        return sessions.contains { session in
+        return eligibleReviewSessions(in: sessions).contains { session in
             if session.date >= cutoff14 {
                 if let score = session.score, score <= 5 { return true }
-                if session.fillerWordCount >= 6 { return true }
+                if hasFillerReplaySignal(session) { return true }
             }
             if session.date >= cutoff7,
                session.mode == .suddenDeath,
@@ -84,7 +97,8 @@ struct MistakeReplayCard: View {
 
         // Newest-first iteration so coach lines reflect the most recent
         // review-worthy reps.
-        let recent = sessionStore.sessions.sorted { $0.date > $1.date }
+        let recent = Self.eligibleReviewSessions(in: sessionStore.sessions)
+            .sorted { $0.date > $1.date }
 
         // 1. Low-score reps (priority 0)
         for session in recent where session.date >= cutoff14 {
@@ -102,7 +116,7 @@ struct MistakeReplayCard: View {
 
         // 2. Filler-heavy reps (priority 1)
         for session in recent where session.date >= cutoff14 {
-            guard session.fillerWordCount >= 6 else { continue }
+            guard Self.hasFillerReplaySignal(session) else { continue }
             guard !seenIDs.contains(session.id) else { continue }
             seenIDs.insert(session.id)
             collected.append(ReplayRow(

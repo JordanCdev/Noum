@@ -342,6 +342,20 @@ struct SummaryPrescriptionProjection {
     /// actions return nil because their mini/full behavior stays with
     /// `SummaryDrillActionCard` and the existing drill callbacks.
     func launch(imAvailable: Bool) -> PracticeModeLaunchProjection? {
+        let tapAvailability = NextActionModeAvailability(
+            suddenDeathAvailable: modeAvailability.suddenDeathAvailable,
+            imConversationAvailable: imAvailable
+        )
+        return launch(modeAvailabilityAtTap: tapAvailability)
+    }
+
+    /// Rechecks the complete live capability snapshot after the full-rep
+    /// prescription has rendered. The displayed mode remains the exposure
+    /// identity, so a newly unavailable mode can only fail closed to Timed;
+    /// a mode that already rendered as Timed is never upgraded at tap.
+    func launch(
+        modeAvailabilityAtTap: NextActionModeAvailability
+    ) -> PracticeModeLaunchProjection? {
         guard case .fullRep(let mode, let scenario, let tone) = kind else {
             return nil
         }
@@ -349,8 +363,8 @@ struct SummaryPrescriptionProjection {
             displayedMode: mode,
             scenario: scenario,
             tone: tone,
-            imAvailable: imAvailable,
-            modeAvailability: modeAvailability
+            imAvailable: modeAvailabilityAtTap.imConversationAvailable,
+            modeAvailability: modeAvailabilityAtTap
         )
     }
 
@@ -396,6 +410,11 @@ struct NextActionInput {
     let sessionCount: Int
     let streakDays: Int
     let styleGoal: String?
+
+    /// Provider confidence for the current transcript. Optional preserves
+    /// source compatibility for synthetic callers and providers that do not
+    /// report confidence, while an explicit weak value must fail closed.
+    var transcriptConfidence: Double? = nil
 
     /// Pure snapshot supplied by the current rating owner. It fails closed so
     /// an omitted argument cannot prescribe a still-locked Pressure Drill.
@@ -767,11 +786,20 @@ enum NextActionEngine {
 
     /// Priority 1: Severe session issues that need immediate correction.
     private static func checkSevereIssue(input: NextActionInput) -> ActionRecommendation? {
-        let fillerBurden = FillerBurden(
-            fillerCount: input.fillerCount,
-            duration: input.duration
-        )
-        if fillerBurden.meets(.severe) {
+        // A finalized session carries an explicit qualification decision. A
+        // synthetic input without an ID can still derive qualification from
+        // its primitive quantity/confidence evidence.
+        let metricEvidenceAllowed = input.latestSessionID == nil
+            || input.latestSessionQualifies
+        let fillerBurden = metricEvidenceAllowed
+            ? FillerBurden.quantityQualified(
+                fillerCount: input.fillerCount,
+                duration: input.duration,
+                wordCount: input.wordCount,
+                transcriptConfidence: input.transcriptConfidence
+            )
+            : nil
+        if fillerBurden?.meets(.severe) == true {
             return .practiceMode(
                 .ahCounter,
                 reason: "Fillers carried too much of this rep. Use Filler Control to replace the next one with a pause."
@@ -782,10 +810,14 @@ enum NextActionEngine {
                 return .drill(drill)
             }
         }
-        if SessionQualifier.meetsQuantityFloor(
-            duration: input.duration,
-            wordCount: input.wordCount
-        ), input.wpm.isFinite, input.wpm > 200 {
+        let qualifiedWordsPerMinute = metricEvidenceAllowed
+            ? SessionQualifier.quantityQualifiedWordsPerMinute(
+                duration: input.duration,
+                wordCount: input.wordCount,
+                transcriptConfidence: input.transcriptConfidence
+            )
+            : nil
+        if let qualifiedWordsPerMinute, qualifiedWordsPerMinute > 200 {
             if let drill = selectDrill(for: .paceControl, input: input) {
                 return .drill(drill)
             }
@@ -910,7 +942,8 @@ enum NextActionEngine {
             wordCount: input.wordCount,
             score: input.score,
             feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) },
-            targetArea: area
+            targetArea: area,
+            transcriptConfidence: input.transcriptConfidence
         )
     }
 
@@ -928,7 +961,8 @@ enum NextActionEngine {
             score: input.score,
             feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) },
             styleGoal: style,
-            trendOverride: input.trends
+            trendOverride: input.trends,
+            transcriptConfidence: input.transcriptConfidence
         )
         return .drill(rec)
     }

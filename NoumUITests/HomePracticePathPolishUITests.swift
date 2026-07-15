@@ -50,6 +50,63 @@ final class HomePracticePathPolishUITests: XCTestCase {
     }
 
     @MainActor
+    func testUnsupportedOnDeviceLocaleRendersSpecificActionableIssueAtAccessibilityXXXL() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_MICROPHONE_GRANTED",
+            "UI_TESTING_TRANSCRIPTION_UNSUPPORTED_LOCALE",
+            "UI_TESTING_PRACTICE_LOCALE",
+            "en-US",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            "-DeepLink",
+            "noum://practice/timed",
+        ]
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"]
+                .waitForExistence(timeout: 12)
+        )
+
+        let begin = app.buttons["timedPractice.begin"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        scrollUntilHittable(begin, in: app, attempts: 3)
+        XCTAssertTrue(begin.isHittable)
+        begin.tap()
+
+        let startNow = app.buttons["timedPractice.startNow"]
+        XCTAssertTrue(startNow.waitForExistence(timeout: 5))
+        XCTAssertTrue(startNow.isHittable)
+        startNow.tap()
+
+        let issue = app.descendants(matching: .any)["timedPractice.recordingIssue"]
+        XCTAssertTrue(
+            issue.waitForExistence(timeout: 15),
+            "The typed unsupported-locale failure should reach the real Timed issue card."
+        )
+        XCTAssertTrue(issue.label.contains("This language isn't available offline"))
+        XCTAssertTrue(issue.label.contains("On-device transcription isn't available"))
+        XCTAssertTrue(issue.label.contains("en-US"))
+        XCTAssertTrue(issue.label.contains("on this device"))
+        XCTAssertTrue(issue.label.contains("Choose another Practice language in Settings"))
+        XCTAssertFalse(app.buttons["timedPractice.recordingIssue.retry"].exists)
+        XCTAssertFalse(app.buttons["timedPractice.end"].exists)
+
+        let backToSetup = app.buttons["timedPractice.recordingIssue.backToSetup"]
+        XCTAssertTrue(backToSetup.waitForExistence(timeout: 5))
+        XCTAssertTrue(backToSetup.isHittable)
+        attachScreenshot(named: "timed-unsupported-locale-axxxl", app: app)
+
+        backToSetup.tap()
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        XCTAssertFalse(issue.exists)
+    }
+
+    @MainActor
     func testPaceInsufficientSpeechWithholdsResultAndXPAtAccessibilityXXXL() {
         let app = launchPaceCompletionFixture(
             "insufficient",
@@ -173,6 +230,18 @@ final class HomePracticePathPolishUITests: XCTestCase {
         app.launchArguments += extraArguments
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func scrollUntilHittable(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        attempts: Int
+    ) {
+        guard !element.isHittable else { return }
+        for _ in 0..<attempts where !element.isHittable {
+            app.swipeUp(velocity: .slow)
+        }
     }
 
     @MainActor

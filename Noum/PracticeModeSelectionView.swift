@@ -1706,9 +1706,11 @@ struct PracticeModeSelectionView: View {
             trends: trends,
             sessionCount: sessionStore.progressEligibleSessionCount
         )?.applying(to: context.blueprint) ?? context.blueprint
-        cachedRecommendationBlueprint = coherentBlueprint
+        let sourceBlueprint = RecommendationTapCapabilityLossUITestFixture
+            .blueprintForRendering(coherentBlueprint)
+        cachedRecommendationBlueprint = sourceBlueprint
         let recommendation = TrainRecommendationProjection.resolve(
-            blueprint: coherentBlueprint,
+            blueprint: sourceBlueprint,
             availability: NextActionModeAvailability(
                 rating: ratingStore.rating,
                 imConversationAvailable: imAvailable
@@ -1776,7 +1778,15 @@ struct PracticeModeSelectionView: View {
         let prescribedDemand = recordsRecommendationAcceptance && carriesRecommendationSetup
             ? launchRecommendation.prescribedDemand
             : nil
-        let imAvailable = IMModeAvailability.isAvailable
+        let imAvailable = RecommendationTapCapabilityLossUITestFixture
+            .imAvailableAtTap(IMModeAvailability.isAvailable)
+        let liveAvailability = RecommendationTapCapabilityLossUITestFixture
+            .availabilityAtTap(
+                NextActionModeAvailability(
+                    rating: ratingStore.rating,
+                    imConversationAvailable: imAvailable
+                )
+            )
         let launch = PracticeModeLaunchProjection.resolve(
             displayedMode: displayedMode,
             scenario: displayedMode == .imConversation && carriesRecommendationSetup
@@ -1787,10 +1797,7 @@ struct PracticeModeSelectionView: View {
                 : nil,
             prescribedDemand: prescribedDemand,
             imAvailable: imAvailable,
-            modeAvailability: NextActionModeAvailability(
-                rating: ratingStore.rating,
-                imConversationAvailable: imAvailable
-            )
+            modeAvailability: liveAvailability
         )
         if recordsRecommendationAcceptance {
             RecommendationTapAttribution.apply(
