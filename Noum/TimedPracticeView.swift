@@ -3154,7 +3154,8 @@ struct TimedPracticeView: View {
             transcript: transcript,
             fillerCount: fillerCount,
             duration: duration,
-            result: result
+            result: result,
+            finalizedSessionID: finalized.id
         )
     }
 
@@ -3162,7 +3163,8 @@ struct TimedPracticeView: View {
         transcript: String,
         fillerCount: Int,
         duration: TimeInterval,
-        result: PracticeEvaluation
+        result: PracticeEvaluation,
+        finalizedSessionID: UUID
     ) {
         let payloadId = UUID()
         let entry = SummaryDataStore.Entry(
@@ -3172,6 +3174,7 @@ struct TimedPracticeView: View {
             score: result.score,
             progressSegments: progressSegments,
             xpEarned: result.xpEarned,
+            finalizedSessionID: finalizedSessionID,
             committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],
@@ -3265,7 +3268,7 @@ struct TimedPracticeView: View {
                 }
             }
 
-            pushSummary()
+            pushSummary(finalizedSessionID: savedSessionID)
         }
     }
 
@@ -3359,7 +3362,7 @@ struct TimedPracticeView: View {
 
     // MARK: - Navigation
 
-    private func pushSummary() {
+    private func pushSummary(finalizedSessionID: UUID?) {
         let payloadId = UUID()
         let entry = SummaryDataStore.Entry(
             transcript: speechVM.highlightedText,
@@ -3368,6 +3371,7 @@ struct TimedPracticeView: View {
             score: evaluation?.score,
             progressSegments: progressSegments,
             xpEarned: evaluation?.xpEarned ?? 0,
+            finalizedSessionID: finalizedSessionID,
             committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],

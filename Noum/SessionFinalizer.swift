@@ -42,6 +42,46 @@ struct SessionFinalizationResult {
 @MainActor
 enum SessionFinalizer {
 
+    /// Neutral result for a Summary that cannot be tied to an eligible saved
+    /// row. Keeping this construction beside the mutation owner ensures the
+    /// view can fail closed without manufacturing a second lifecycle path.
+    static func withheldResult(
+        pressureLevel: PressureLevel = .standard
+    ) -> SessionFinalizationResult {
+        let profile = ProfileManager.shared
+        let currentXP = profile.xp
+        let level = ProfileManager.levelTitle(forXP: currentXP)
+        return SessionFinalizationResult(
+            previousXP: currentXP,
+            newXP: currentXP,
+            previousLevel: level,
+            newLevel: level,
+            isLevelUp: false,
+            achievementDeltas: [],
+            newUnlocks: [],
+            milestone: nil,
+            isPersonalBest: false,
+            showProgressionScreen: false,
+            nextAction: nil,
+            baselineComparisons: [:],
+            pressureLevel: pressureLevel,
+            coachNote: nil,
+            eloquenceFindings: [],
+            eloquenceBonusXP: 0
+        )
+    }
+
+    /// Pause timing and its denominator come from the same persisted row.
+    /// Presentation duration is intentionally not an input, preventing a
+    /// mismatched payload from creating a hybrid trend measurement.
+    static func pauseRateForTrend(session: PracticeSession) -> Double? {
+        guard let metrics = session.pauseMetrics,
+              session.duration.isFinite,
+              session.duration > 0 else { return nil }
+        let rate = Double(metrics.count) / (session.duration / 60.0)
+        return rate.isFinite ? rate : nil
+    }
+
     /// Finalize a session: apply XP, evaluate achievements, detect milestones, record trends,
     /// and compute next-action recommendation with baseline-aware coaching.
     /// Call exactly once per session. Modes with a replay-first result screen may
@@ -70,44 +110,27 @@ enum SessionFinalizer {
 
         let previousXP = profile.xp
 
-        // Evidence floor: a rep too short to read (accidental instant-stop,
-        // empty transcript) must not manufacture progress. Below the floor we
-        // award no XP, unlock no achievements, record no skill-trend snapshot,
-        // advance no path, and generate no coach note — the summary shows a
-        // neutral "too short" state instead. Threshold matches the evaluator's
-        // own score-floor boundary (PracticeEvaluator, wordCount/duration < 3)
-        // so no rep that already scored normally is affected.
-        if !PracticeProgressEligibility.qualifies(
-            wordCount: transcriptWordCount,
-            duration: effectiveDuration
-        ) {
+        // Finalization is an earned-progress boundary, not a presentation
+        // fallback. The payload and its exact persisted row must both clear
+        // the shared floor before any XP, achievement, reminder, trend, path,
+        // or coach-memory mutation can begin. A nil, stale, or unrelated ID
+        // therefore fails closed instead of borrowing the newest saved rep.
+        guard PracticeProgressEligibility.qualifies(
+                  wordCount: transcriptWordCount,
+                  duration: effectiveDuration
+              ),
+              let latestSessionID,
+              let finalizedSession = sessionStore.sessions.first(where: { $0.id == latestSessionID }),
+              PracticeProgressEligibility.qualifies(finalizedSession) else {
             FlowLog.log(
                 correlationId: latestSessionID ?? UUID(),
                 flow: .practiceRep,
                 stage: "finalize.skipped",
                 outcome: .skipped,
-                reason: "below evidence floor — no XP, achievements, trend, path, or coach note",
+                reason: "missing exact eligible saved row — no XP, achievements, trend, path, or coach note",
                 numerics: ["words": transcriptWordCount, "durationMs": Int(effectiveDuration * 1000), "score": scoreValue]
             )
-            let level = ProfileManager.levelTitle(forXP: profile.xp)
-            return SessionFinalizationResult(
-                previousXP: previousXP,
-                newXP: previousXP,
-                previousLevel: level,
-                newLevel: level,
-                isLevelUp: false,
-                achievementDeltas: [],
-                newUnlocks: [],
-                milestone: nil,
-                isPersonalBest: false,
-                showProgressionScreen: false,
-                nextAction: nil,
-                baselineComparisons: [:],
-                pressureLevel: pressureLevel,
-                coachNote: nil,
-                eloquenceFindings: [],
-                eloquenceBonusXP: 0
-            )
+            return withheldResult(pressureLevel: pressureLevel)
         }
 
         // Raw history can contain a transport-valid short capture kept only so
@@ -193,16 +216,12 @@ enum SessionFinalizer {
         // Pull pause-rate from the freshly-finalized session so the trend
         // analyzer can pick up pause progress without re-tokenising the
         // transcript. nil for sessions whose provider didn't emit timings.
-        let pauseRate: Double? = {
-            guard let metrics = progressSessions.first?.pauseMetrics,
-                  effectiveDuration > 0 else { return nil }
-            return Double(metrics.count) / (effectiveDuration / 60.0)
-        }()
+        let pauseRate = pauseRateForTrend(session: finalizedSession)
         // Pull pitch monotone score for the trend analyzer — only when the
         // PitchAnalyzer reading was reliable (≥10 voiced windows, mean inside
         // 70–400Hz). Hides M10's noisy reads from the trend pill.
         let pitchMonotone: Double? = {
-            guard let metrics = progressSessions.first?.pitchMetrics,
+            guard let metrics = finalizedSession.pitchMetrics,
                   metrics.isReliable else { return nil }
             return metrics.monotoneScore
         }()
@@ -212,7 +231,7 @@ enum SessionFinalizer {
         // rep would falsely look like "perfect calmness" (filledRatio = 0
         // by definition when count = 0).
         let pauseFilledRatio: Double? = {
-            guard let metrics = progressSessions.first?.pauseMetrics,
+            guard let metrics = finalizedSession.pauseMetrics,
                   metrics.count > 0 else { return nil }
             return metrics.filledRatio
         }()
@@ -220,23 +239,16 @@ enum SessionFinalizer {
         // the exact saved session and that row clears the historical metric
         // boundary. The raw snapshot still records score/category/duration for
         // every general-progress rep; filler/pace trends remain optional.
-        let metricSession = latestSessionID.flatMap { sessionID in
-            progressSessions.first { $0.id == sessionID }
-        }
-        let qualifiedFillerRate = metricSession.flatMap {
-            FillerBurden.quantityQualified($0)?.ratePerMinute
-        }
-        let qualifiedPaceWPM = metricSession.flatMap {
-            SessionQualifier.quantityQualifiedWordsPerMinute($0)
-        }
+        let qualifiedFillerRate = FillerBurden.quantityQualified(finalizedSession)?.ratePerMinute
+        let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(finalizedSession)
         let comparisonMetricSchemaVersion: Int? = if qualifiedFillerRate != nil,
                                                      qualifiedPaceWPM != nil {
-            metricSession?.comparisonMetricSchemaVersion
+            finalizedSession.comparisonMetricSchemaVersion
         } else {
             nil
         }
         SkillTrendStore.shared.recordFromSession(
-            sessionId: latestSessionID ?? UUID(),
+            sessionId: latestSessionID,
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
@@ -269,14 +281,10 @@ enum SessionFinalizer {
         // First-rep magic — a once-only celebration when the user finishes
         // their very first session. Driven by `FirstRepCelebrationManager`
         // so duplicate triggers across reload/relaunch can't fire twice.
-        if let latestSession = latestSessionID.flatMap({ sessionID in
-            progressSessions.first { $0.id == sessionID }
-        }) ?? progressSessions.first {
-            FirstRepCelebrationManager.shared.consider(
-                session: latestSession,
-                totalSessionCount: progressSessions.count
-            )
-        }
+        FirstRepCelebrationManager.shared.consider(
+            session: finalizedSession,
+            totalSessionCount: progressSessions.count
+        )
 
         // Goal refresh — every 14 days, surface a lightweight "still your
         // goal?" confirmation so coach memory stays current.
@@ -358,18 +366,10 @@ enum SessionFinalizer {
 
         // Baseline comparisons
         let comparisons: [String: String]
-        if let latestSession = latestSessionID.flatMap({ sessionID in
-            progressSessions.first { $0.id == sessionID }
-        }) ?? progressSessions.first {
-            comparisons = BaselineEngine.sessionComparison(session: latestSession, baseline: baseline)
-        } else {
-            comparisons = [:]
-        }
+        comparisons = BaselineEngine.sessionComparison(session: finalizedSession, baseline: baseline)
 
         let currentCoachMemory = CoachMemoryStore.shared.currentMemory
-        let latestFinalizedSession = latestSessionID.flatMap { sessionID in
-            progressSessions.first { $0.id == sessionID }
-        }
+        let latestFinalizedSession = finalizedSession
         let currentGoalOutcomeRead = GoalOutcomeEngine.read(
             profile: coachingProfileStore.profile,
             baseline: baseline,
@@ -397,7 +397,7 @@ enum SessionFinalizer {
                 sessionCount: progressSessions.count,
                 streakDays: rawHistoryStreak,
                 styleGoal: explicitStyleGoal.title,
-                transcriptConfidence: latestFinalizedSession?.transcriptConfidence,
+                transcriptConfidence: latestFinalizedSession.transcriptConfidence,
                 modeAvailability: NextActionModeAvailability(
                     rating: RatingStore.shared.rating,
                     imConversationAvailable: IMModeAvailability.isAvailable
@@ -406,8 +406,7 @@ enum SessionFinalizer {
                 coachMemory: currentCoachMemory,
                 goalOutcomeRead: currentGoalOutcomeRead,
                 latestSessionID: latestSessionID,
-                latestSessionQualifies: latestFinalizedSession
-                    .map(SessionQualifier.qualifies) ?? false
+                latestSessionQualifies: SessionQualifier.qualifies(latestFinalizedSession)
             )
             return NextActionEngine.recommendAfterSession(input: input)
         }()
@@ -421,7 +420,7 @@ enum SessionFinalizer {
             let primaryFocus = TrendAnalyzer.primaryFocus(
                 trends: skillTrends,
                 currentSessionSnapshot: SkillSnapshot(
-                    sessionId: latestSessionID ?? UUID(),
+                    sessionId: latestSessionID,
                     fillerCount: effectiveFillerCount,
                     duration: effectiveDuration,
                     wordCount: transcriptWordCount,
@@ -451,7 +450,7 @@ enum SessionFinalizer {
                 duration: effectiveDuration,
                 wordCount: transcriptWordCount,
                 wpm: wpm,
-                score: scoreValue,
+                score: latestFinalizedSession.score,
                 categoryRatings: categoryMap,
                 trends: skillTrends,
                 primaryFocus: primaryFocus,
@@ -460,7 +459,8 @@ enum SessionFinalizer {
                 pressureProfile: baselineStore.pressureProfile,
                 pressureLevel: pressureLevel,
                 styleGoal: explicitStyleGoal.title,
-                promptRelevance: promptRelevanceRead
+                promptRelevance: promptRelevanceRead,
+                metricSession: latestFinalizedSession
             )
         }()
 
@@ -472,7 +472,7 @@ enum SessionFinalizer {
         let eloquenceFindings = preliminaryEloquenceFindings
 
         FlowLog.log(
-            correlationId: latestSessionID ?? UUID(),
+            correlationId: latestSessionID,
             flow: .practiceRep,
             stage: "finalize.applied",
             reason: newUnlocks.isEmpty ? "progress applied" : "progress applied + \(newUnlocks.count) achievement(s) unlocked",

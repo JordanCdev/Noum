@@ -68,6 +68,7 @@ struct SummaryView: View {
     let score: Int?
     let progressSegments: Int
     let xpEarned: Int
+    var finalizedSessionID: UUID? = nil
     var committedFinalization: SessionFinalizationResult? = nil
     var suddenDeathGamePoints: Int? = nil
     var suddenDeathMultiplierLabels: [String] = []
@@ -202,25 +203,34 @@ struct SummaryView: View {
     private var effectiveFillerCount: Int { lockedFillerCount ?? fillerCount }
     private var effectiveDuration: TimeInterval { lockedDuration ?? duration }
 
+    /// Every stored-evidence projection on Summary is bound to the exact row
+    /// represented by this presentation. A missing or unmatched identifier
+    /// must not borrow the newest row: coach notes, delivery reads, analytics,
+    /// and durable follow-up effects all fail closed together.
     private var currentStoredSession: PracticeSession? {
-        if let latestSessionID {
-            return sessionStore.sessions.first(where: { $0.id == latestSessionID })
-                ?? recentSessions.first(where: { $0.id == latestSessionID })
-        }
-        return recentSessions.first ?? sessionStore.sessions.first
+        SummaryMetricSessionResolver.resolve(
+            finalizedSessionID: finalizedSessionID,
+            storedSessions: sessionStore.sessions
+        )
+    }
+
+    /// Filler, pace, and coach-score evidence must resolve to the exact row
+    /// represented by this Summary. This alias makes mechanic-specific call
+    /// sites explicit while retaining the single exact-session owner above.
+    private var currentMetricSession: PracticeSession? {
+        currentStoredSession
+    }
+
+    private var coachScoreEvidence: Int? {
+        lockedScore ?? score ?? currentMetricSession?.score
     }
 
     /// Summary is a second presentation/AI boundary after persistence. A raw
     /// Review row may render here, but it cannot display earned credit, start
     /// cloud coaching, or alter a durable coaching ledger.
     private var currentRepIsProgressEligible: Bool {
-        if let currentStoredSession {
-            return PracticeProgressEligibility.qualifies(currentStoredSession)
-        }
-        return PracticeProgressEligibility.qualifies(
-            wordCount: transcriptWordCount,
-            duration: effectiveDuration
-        )
+        guard let currentStoredSession else { return false }
+        return PracticeProgressEligibility.qualifies(currentStoredSession)
     }
 
     private var progressEligibleRecentSessions: [PracticeSession] {
@@ -423,13 +433,14 @@ struct SummaryView: View {
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
             wpm: wpm,
-            score: scoreValue,
+            score: coachScoreEvidence,
             categoryRatings: categoryRatings,
             trends: skillTrends,
             primaryFocus: drillRecommendationV2.skillArea,
             drillHistory: DrillHistoryStore.shared.entries,
             styleGoal: chosenStyleGoalEngineInputs.title,
-            promptRelevance: promptRelevanceRead
+            promptRelevance: promptRelevanceRead,
+            metricSession: currentMetricSession
         )
     }
 
@@ -462,7 +473,8 @@ struct SummaryView: View {
             effectiveDuration: effectiveDuration,
             transcriptWordCount: transcriptWordCount,
             isMinimalEffort: isMinimalEffort,
-            customFillerWords: ClutchWordStore.shared.customFillerWords
+            customFillerWords: ClutchWordStore.shared.customFillerWords,
+            metricSession: currentMetricSession
         )
     }
 
@@ -556,10 +568,9 @@ struct SummaryView: View {
     /// matching the established recent-window contract.
     private var summaryFillerPresentation: SummaryFillerPresentation {
         SummaryFillerPresentation.make(
-            fillerCount: effectiveFillerCount,
-            duration: effectiveDuration,
-            wordCount: transcriptWordCount,
-            transcriptConfidence: currentStoredSession?.transcriptConfidence,
+            metricSession: currentMetricSession,
+            fallbackFillerCount: effectiveFillerCount,
+            fallbackDuration: effectiveDuration,
             previousSessions: previousProgressSessions
         )
     }
@@ -777,7 +788,7 @@ struct SummaryView: View {
     }
 
     private var latestSessionID: UUID? {
-        recentSessions.first?.id ?? sessionStore.sessions.first?.id
+        finalizedSessionID
     }
 
     private var derivedInsights: [String] {
@@ -2344,7 +2355,9 @@ struct SummaryView: View {
         lockedHeadlineOverride = headlineOverride
         lockedScoreBreakdown = scoreBreakdown
         lockedInsights = insights
-        aiFeedback = currentRepIsProgressEligible ? currentStoredSession?.aiCoachFeedback : nil
+        aiFeedback = currentRepIsProgressEligible
+            ? currentStoredSession?.evidenceSafeAICoachFeedback
+            : nil
         progressionPreviousXP = profile.xp
         displayedXP = profile.xp
         currentLevel = ProfileManager.levelTitle(forXP: profile.xp)
@@ -2354,23 +2367,28 @@ struct SummaryView: View {
 
         // Sudden Death commits lifecycle effects on run completion so replay
         // can never skip earned progress. Other modes still commit here.
-        let result = committedFinalization ?? SessionFinalizer.finalize(
-            xpEarned: xpEarned,
-            scoreValue: scoreValue,
-            effectiveFillerCount: effectiveFillerCount,
-            effectiveDuration: effectiveDuration,
-            transcriptWordCount: transcriptWordCount,
-            scoreBreakdown: lockedScoreBreakdown,
-            currentMode: currentMode,
-            sessionPrompt: sessionPrompt,
-            latestSessionID: latestSessionID,
-            recentSessions: recentSessions,
-            imConversationDetails: imConversationDetails,
-            practiceTitle: practiceTitle,
-            derivedInsightsFirst: derivedInsights.first,
-            pressureLevel: currentStoredSession?.pressureLevel ?? .standard,
-            transcript: transcriptText
-        )
+        let result: SessionFinalizationResult
+        if currentRepIsProgressEligible {
+            result = committedFinalization ?? SessionFinalizer.finalize(
+                xpEarned: xpEarned,
+                scoreValue: scoreValue,
+                effectiveFillerCount: effectiveFillerCount,
+                effectiveDuration: effectiveDuration,
+                transcriptWordCount: transcriptWordCount,
+                scoreBreakdown: lockedScoreBreakdown,
+                currentMode: currentMode,
+                sessionPrompt: sessionPrompt,
+                latestSessionID: latestSessionID,
+                recentSessions: recentSessions,
+                imConversationDetails: imConversationDetails,
+                practiceTitle: practiceTitle,
+                derivedInsightsFirst: derivedInsights.first,
+                pressureLevel: currentStoredSession?.pressureLevel ?? .standard,
+                transcript: transcriptText
+            )
+        } else {
+            result = SessionFinalizer.withheldResult()
+        }
 
         progressionDeltas = result.achievementDeltas
         progressionNewUnlocks = result.newUnlocks
@@ -2522,13 +2540,16 @@ struct SummaryView: View {
             return
         }
 
-        guard let sessionID = latestSessionID else {
+        guard let sessionID = latestSessionID,
+              let currentSession = sessionStore.sessions.first(where: { $0.id == sessionID }),
+              let saveToken = sessionStore.coachReadSaveToken(sessionID: sessionID),
+              saveToken.source == currentSession.coachReadSourceSnapshot else {
             aiError = "This session has not been saved yet. Finish one more rep and try again."
             return
         }
 
-        let text = transcriptText
-        let wordCount = text.split(whereSeparator: \.isWhitespace).count
+        let text = currentSession.transcript
+        let wordCount = currentSession.wordCount
         if wordCount < 10 {
             aiError = "Speak at least 10 words to generate coaching feedback."
             return
@@ -2543,45 +2564,26 @@ struct SummaryView: View {
                 for: text,
                 profile: coachingProfileStore.profile
             )
-            let currentMode = currentStoredSession?.mode ?? .timed
             // THE QUESTION ASKED — the stored prompt of this rep, the single
             // source of truth the deterministic verdict + the rubric both read.
-            let repPrompt = currentStoredSession?.prompt ?? sessionPrompt ?? ""
-            // Continuity — drop the current rep, map the next 3 prior reps to
-            // the same shape AIInsights renders. Never invented. Pure helper so
-            // the exclude-current-rep + bound-to-3 logic is unit-tested.
-            let priorSummaries = AICoachService.recentSessionSummaries(
+            let repPrompt = currentSession.prompt ?? ""
+            // Continuity is deliberately mode + score only. Historical filler
+            // and pace mechanics need a durable typed receipt before free-form
+            // prose can compare them safely across replay.
+            let priorSummaries = AICoachService.recentCoachReadSummaries(
                 sessions: sessionStore.sessions,
-                currentRepID: latestSessionID
+                currentRepID: sessionID
             )
-            let currentSession = latestSessionID.flatMap { sessionID in
-                sessionStore.sessions.first { $0.id == sessionID }
-            } ?? currentStoredSession
-            // Confidence-gated baseline (nil on insufficient data — never a
-            // fake number). Same gate as PostRepCoachNote (:7182-7185).
-            let coachBaseline = baselineStore.baseline
-            let baselineFiller: Double? = coachBaseline.fillerRate.confidence == .insufficient
-                ? nil : coachBaseline.fillerRate.value
-            let baselinePace: Double? = coachBaseline.pace.confidence == .insufficient
-                ? nil : coachBaseline.pace.value
             let feedback = try await aiCoachService.generateDeeperFeedback(
                 input: AICoachSessionInput(
                     transcript: text,
-                    mode: currentMode,
-                    score: score,
-                    fillerCount: fillerCount,
-                    duration: duration,
-                    wordsPerMinute: PracticeEvaluator.paceSnapshot(
-                        forTranscript: text,
-                        duration: duration
-                    ).wordsPerMinute,
+                    mode: currentSession.mode,
+                    score: currentSession.score,
+                    duration: currentSession.duration,
                     speakingIdentity: styleSnapshot.identity,
-                    transcriptConfidence: currentSession?.transcriptConfidence,
                     prompt: repPrompt,
                     voice: coachingProfileStore.profile?.chosenStyleGoal,
                     recentSessionSummaries: priorSummaries,
-                    baselineFillerRate: baselineFiller,
-                    baselinePaceWPM: baselinePace,
                     // STANDING CASE (SUBSTANCE-4) — the durable working
                     // hypothesis + the already-built case-file target/measure/cadence
                     // (single source of truth: reuse caseFile.observableTarget/
@@ -2594,8 +2596,14 @@ struct SummaryView: View {
                 profile: coachingProfileStore.profile,
                 plan: plan
             )
-            sessionStore.saveAIFeedback(sessionID: sessionID, feedback: feedback)
-            aiFeedback = feedback
+            guard let savedFeedback = sessionStore.saveAIFeedback(
+                expected: saveToken,
+                feedback: feedback
+            ) else {
+                aiError = "This Coach Read could not be attached to the saved rep. Try again from Review."
+                return
+            }
+            aiFeedback = savedFeedback
         } catch {
             let desc = error.localizedDescription
             if desc.contains("transcriptTooShort") || desc.contains("too short") {
@@ -2686,6 +2694,7 @@ extension SummaryView {
         self.score = entry?.score
         self.progressSegments = entry?.progressSegments ?? 0
         self.xpEarned = entry?.xpEarned ?? 0
+        self.finalizedSessionID = entry?.finalizedSessionID
         self.committedFinalization = entry?.committedFinalization
         self.suddenDeathGamePoints = entry?.suddenDeathGamePoints
         self.suddenDeathMultiplierLabels = entry?.suddenDeathMultiplierLabels ?? []

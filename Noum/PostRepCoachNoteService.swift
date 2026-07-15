@@ -1409,53 +1409,11 @@ actor PostRepCoachNoteService {
         _ text: String,
         input: PostRepCoachNoteInput
     ) -> Bool {
-        let normalized = collapseWhitespace(in: text).lowercased()
-
-        // Even when both measurements qualify, filler burden is not evidence
-        // that pacing was rushed. Reject explicit causal joins while allowing
-        // independently stated qualified filler and WPM observations.
-        let fillerImpliesPacePatterns = [
-            #"\bfillers?\b.{0,32}\b(?:means?|shows?|proves?|suggests?|signals?|indicates?)\b.{0,32}\b(?:pace|pacing|rushed|rushing)\b"#,
-            #"\b(?:pace|pacing|rushed|rushing)\b.{0,32}\b(?:because|from|due to)\b.{0,32}\bfillers?\b"#
-        ]
-        if fillerImpliesPacePatterns.contains(where: { containsRegex($0, in: normalized) }) {
-            return true
-        }
-
-        if qualifiedFillerBurden(for: input) == nil {
-            let fillerPatterns = [
-                #"\bfiller[\s-]*(?:count|rate|words?|burden|control)\b"#,
-                #"\b(?:zero|no|one|two|three|four|five|six|seven|eight|nine|ten|\d+|few|fewer|many|more|less|low|high)\s+fillers?\b"#,
-                #"\b(?:your|the|this rep's)\s+fillers?\b"#,
-                #"\bfillers?\s+(?:surfaced|crept|appeared|rose|fell|dropped|increased|decreased|held|stayed|spiked|weakened|undercut|disrupted)\b"#,
-                #"\b(?:zero|no|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:disfluenc(?:y|ies)|ums?|uhs?)\b"#,
-                #"\bdisfluenc(?:y|ies)\s+(?:count|rate)\b"#
-            ]
-            if fillerPatterns.contains(where: { containsRegex($0, in: normalized) }) {
-                return true
-            }
-        }
-
-        if qualifiedPaceWPM(for: input) == nil {
-            let pacePatterns = [
-                #"\b\d{2,3}(?:\.\d+)?\s*(?:wpm|words?\s+per\s+minute)\b"#,
-                #"\b(?:your|this|that|the)\s+(?:speaking\s+)?(?:pace|pacing)\b"#,
-                #"\b(?:pace|pacing)\s+(?:was|is|ran|felt|held|stayed|landed|came|looked|sounded|reads?)\b"#,
-                #"\byou\s+(?:were\s+|felt\s+|sounded\s+|moved\s+)?(?:too\s+)?(?:fast|slow|rushed|rushing)\b"#,
-                #"\b(?:delivery|answer|rep|opening|close)\s+(?:was|were|felt|sounded|ran|came)\s+(?:too\s+)?(?:fast|slow|rushed)\b"#,
-                #"\b(?:rushed|rushing)\s+(?:delivery|pace|pacing|answer|rep|opening|close)\b"#,
-                #"\byou\s+(?:sped\s+up|slowed\s+down|rushed)\b"#
-            ]
-            if pacePatterns.contains(where: { containsRegex($0, in: normalized) }) {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private nonisolated static func containsRegex(_ pattern: String, in text: String) -> Bool {
-        text.range(of: pattern, options: .regularExpression) != nil
+        CoachMetricEvidenceGuard.usesUnsupportedMetricClaim(
+            text,
+            hasFillerEvidence: qualifiedFillerBurden(for: input) != nil,
+            hasPaceEvidence: qualifiedPaceWPM(for: input) != nil
+        )
     }
 
     /// Local content-word stop set for the presence gate. Same established

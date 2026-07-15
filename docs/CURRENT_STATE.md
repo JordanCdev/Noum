@@ -1,5 +1,70 @@
 # Noum — Current state
 
+## 2026-07-15 — Persisted Coach Read fails closed on free-form mechanics
+
+The current working tree extends the exact-session Summary boundary through
+the premium generated Coach Read without creating another session or coaching
+store. Generation resolves the identified persisted row and carries only its
+transcript, prompt, mode, score, and duration; recent continuity is score-only,
+and baseline context deliberately omits filler, WPM, pace, tempo, and cadence
+mechanics from this free-form surface. The deterministic fallback follows the
+same boundary.
+
+Provider output is rejected if it invents current or historical mechanics,
+turns filler evidence into a pace claim, or quotes words absent from the exact
+transcript. Generic prescriptions remain available. The store issues an
+account-scoped source revision before the asynchronous request, atomically
+rechecks every source field before persistence, revalidates the output, and
+returns only the value that was actually saved. Summary and Review replay the
+same safe projection: unsupported legacy mechanic prose is hidden while
+grounded nonmetric coaching remains available.
+
+Focused verification passes **47 unique tests / 49 device executions** across
+generated Coach Read, shared post-rep evidence, filler fairness, and Coach Read
+parity. The complete unsigned simulator `NoumTests` target passes **4,311
+unique tests / 4,330 device executions** with zero failures or skips. The
+current-source unsigned Release simulator build also succeeds. This is still a
+bounded trust closure: the qualitative Summary delivery line, durable
+CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum session
+opener, share/request-feedback WPM, Proof Moment generation, Forward Plan
+inputs, other durable narrative/reward consumers, rendered/device behavior,
+live-provider quality, and all external evidence gates remain open. Production
+readiness therefore remains **NO-GO at 18/100 with 0/5 required external
+artifacts**.
+
+## 2026-07-15 — Summary mechanics bind to the identified saved rep
+
+The current working tree closes one bounded Summary provenance gap through the
+existing session and finalization owners. Every active and diagnostic Summary
+entry now carries its `finalizedSessionID`; mechanic resolution no longer
+borrows the newest row, and a nil or unmatched identifier withholds
+filler/WPM projections and all new `SessionFinalizer` lifecycle effects. The
+deterministic verdict, filler-rate presentation, and improvement bullets admit
+filler/WPM claims only through the identified row's existing `FillerBurden`
+and `SessionQualifier` projections. Finalization also takes pause and pitch
+readings, baseline comparison, and qualified coach-note mechanics from that
+row. Independent presentation score, category, transcript, and duration
+evidence remains available when those mechanics are absent.
+
+The figures in this paragraph belong to this preceding Summary-only slice;
+the newer cumulative regression is recorded above. Focused verification passes
+**58/58** across the Summary verdict, filler
+presentation, filler-rate, and improvement-bullet suites. The complete
+unsigned simulator `NoumTests` target passes **4,302 unique tests / 4,321
+device executions** with zero failures or skips, and the current-source
+unsigned Release simulator build succeeds. The required light five-tab sweep
+did not reach tab content because normal guest bootstrap rendered the
+account-save failure on every deep link; it supplies no visual proof and is
+recorded in `.screenshots/2026-07-15_summary-verdict-evidence/HANDOFF.md`. This
+remains partial product-wide coverage: the qualitative Summary delivery line,
+durable CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum
+session opener, share/request-feedback WPM,
+Proof Moment generation, Forward Plan inputs, and other durable narrative or
+reward consumers still need the same provenance boundary. Manual/device
+evidence, professional calibration, longitudinal transfer, operations, and all
+five required external artifacts remain unproved. Production readiness
+therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Review and immediate AI mechanics require exact evidence
 
 The current working tree closes the previously ranked Review metric inventory
@@ -28,12 +93,15 @@ not measured, omits stale or insufficient baseline mechanics, keeps filler and
 pace fallback branches independent, avoids synthesizing score zero, and keys
 its cache on the full mechanic provenance.
 
-Focused verification passes **92/92** across 12 suites. The complete unsigned
+The figures in this paragraph belong to this earlier Review/immediate-AI
+slice. Focused verification passes **92/92** across 12 suites. The complete unsigned
 simulator `NoumTests` target passes **4,289 unique tests / 4,308 device
 executions** with zero failures or skips, and an unsigned current-source
-Release simulator build succeeds. This remains partial product-wide coverage:
-the active Summary Coach Read, Proof Moment generation, Forward Plan inputs,
-and other durable narrative/reward consumers still need the same metric audit.
+Release simulator build succeeds. At that boundary active Summary Coach Read
+remained open; the newest section above now quarantines its free-form mechanic
+claims. Proof Moment generation, Forward Plan inputs, durable
+CoachMemory/derived delivery reads, and other narrative/reward consumers still
+need the same metric audit.
 Legacy trend archives intentionally contribute no mechanic continuity until
 new qualified snapshots accrue. Manual/device evidence, professional
 calibration, longitudinal transfer, operations, and all five required external

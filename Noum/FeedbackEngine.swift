@@ -138,12 +138,20 @@ enum VerdictEngine {
     /// Threaded here so the Timed three-part note shares one "answered vs buried"
     /// substance read with every other surface instead of carrying none. It only
     /// ever softens the leverage line on a clear miss; it never moves the score.
+    ///
+    /// `metricSession` is the exact persisted row behind this presentation.
+    /// Filler and pace coaching fail closed when it is absent or does not clear
+    /// the shared historical quantity/confidence/provenance boundary. The raw
+    /// scalar arguments remain API-compatible for callers, but they never
+    /// authorize a filler or WPM claim by themselves. `score` is optional so
+    /// a presentation without an exact saved score cannot turn a synthetic
+    /// fallback into praise about control or intention.
     static func generate(
         fillerCount: Int,
         duration: TimeInterval,
         wordCount: Int,
         wpm: Double,
-        score: Int,
+        score: Int?,
         categoryRatings: [String: String],
         trends: [SkillTrend],
         primaryFocus: SkillArea,
@@ -153,13 +161,16 @@ enum VerdictEngine {
         pressureLevel: PressureLevel = .standard,
         styleGoal: String? = nil,
         imContext: IMContextFit? = nil,
-        promptRelevance: PracticeEvaluator.PromptRelevanceRead? = nil
+        promptRelevance: PracticeEvaluator.PromptRelevanceRead? = nil,
+        metricSession: PracticeSession? = nil
     ) -> CoachNote {
         let confidence = baseline?.overallConfidence ?? .insufficient
+        let qualifiedFillerBurden = metricSession.flatMap(FillerBurden.quantityQualified)
+        let qualifiedPaceWPM = metricSession.flatMap(SessionQualifier.quantityQualifiedWordsPerMinute)
 
         var momentum = buildMomentum(
-            fillerCount: fillerCount,
-            wpm: wpm,
+            fillerBurden: qualifiedFillerBurden,
+            paceWPM: qualifiedPaceWPM,
             score: score,
             categoryRatings: categoryRatings,
             trends: trends,
@@ -168,8 +179,8 @@ enum VerdictEngine {
 
         var leverage = buildLeverage(
             primaryFocus: primaryFocus,
-            fillerCount: fillerCount,
-            wpm: wpm,
+            fillerBurden: qualifiedFillerBurden,
+            paceWPM: qualifiedPaceWPM,
             duration: duration,
             wordCount: wordCount,
             categoryRatings: categoryRatings,
@@ -180,8 +191,19 @@ enum VerdictEngine {
 
         // --- Layer 1 Enhancement: Baseline-referenced feedback ---
         if let baseline, baseline.overallConfidence >= .moderate {
-            momentum = enrichWithBaseline(momentum, fillerCount: fillerCount, wpm: wpm, duration: duration, baseline: baseline, confidence: confidence)
-            leverage = enrichLeverageWithBaseline(leverage, fillerCount: fillerCount, wpm: wpm, duration: duration, baseline: baseline, confidence: confidence)
+            momentum = enrichWithBaseline(
+                momentum,
+                fillerBurden: qualifiedFillerBurden,
+                paceWPM: qualifiedPaceWPM,
+                baseline: baseline,
+                confidence: confidence
+            )
+            leverage = enrichLeverageWithBaseline(
+                leverage,
+                fillerBurden: qualifiedFillerBurden,
+                baseline: baseline,
+                confidence: confidence
+            )
         }
 
         // --- Layer 2: IM context-fit ---
@@ -222,7 +244,12 @@ enum VerdictEngine {
             momentum = enrichMomentumWithStyleAlignment(momentum, trends: trends, styleGoal: goal)
             leverage = enrichLeverageWithStyleAlignment(leverage, primaryFocus: primaryFocus, styleGoal: goal)
             nextStep = enrichNextStepWithStyleAlignment(nextStep, primaryFocus: primaryFocus, styleGoal: goal)
-            let styleNote = buildStyleNote(goal: goal, fillerCount: fillerCount, wpm: wpm, duration: duration, categoryRatings: categoryRatings)
+            let styleNote = buildStyleNote(
+                goal: goal,
+                fillerBurden: qualifiedFillerBurden,
+                duration: duration,
+                categoryRatings: categoryRatings
+            )
             if !styleNote.isEmpty {
                 nextStep = nextStep + " " + styleNote
             }
@@ -240,9 +267,9 @@ enum VerdictEngine {
     // MARK: - Momentum (What's Getting Stronger)
 
     private static func buildMomentum(
-        fillerCount: Int,
-        wpm: Double,
-        score: Int,
+        fillerBurden: FillerBurden?,
+        paceWPM: Double?,
+        score: Int?,
         categoryRatings: [String: String],
         trends: [SkillTrend],
         drillHistory: [DrillHistoryStore.Entry]
@@ -274,10 +301,13 @@ enum VerdictEngine {
         }
 
         // Check for strong areas in this session
-        if fillerCount == 0 && !strengths.contains(where: { $0.contains("filler") }) {
+        if fillerBurden?.fillerCount == 0,
+           !strengths.contains(where: { $0.contains("filler") }) {
             strengths.append("Zero filler words — clean delivery.")
         }
-        if ConversationalPaceBand.contains(wpm) && !strengths.contains(where: { $0.contains("pace") }) {
+        if let paceWPM,
+           ConversationalPaceBand.contains(paceWPM),
+           !strengths.contains(where: { $0.contains("pace") }) {
             strengths.append("Natural, well-controlled pace.")
         }
 
@@ -297,9 +327,9 @@ enum VerdictEngine {
 
         // Fallback — always find something
         if strengths.isEmpty {
-            if score >= 7 {
+            if let score, score >= 7 {
                 strengths.append("Solid session overall — you showed control and intention.")
-            } else if score >= 5 {
+            } else if let score, score >= 5 {
                 strengths.append("You showed up and practiced — that's the foundation everything else builds on.")
             } else {
                 strengths.append("Every session builds the habit. The fact that you're here matters.")
@@ -313,8 +343,8 @@ enum VerdictEngine {
 
     private static func buildLeverage(
         primaryFocus: SkillArea,
-        fillerCount: Int,
-        wpm: Double,
+        fillerBurden: FillerBurden?,
+        paceWPM: Double?,
         duration: TimeInterval,
         wordCount: Int,
         categoryRatings: [String: String],
@@ -325,9 +355,15 @@ enum VerdictEngine {
 
         switch primaryFocus {
         case .fillerReduction:
-            return fillerLeverage(count: fillerCount, sensitivity: sensitivity, trend: trend)
+            guard let fillerBurden else {
+                return "Filler evidence was not measured on this rep. One fuller take will make the next comparison useful."
+            }
+            return fillerLeverage(burden: fillerBurden, trend: trend)
         case .paceControl:
-            return paceLeverage(wpm: wpm, sensitivity: sensitivity)
+            guard let paceWPM else {
+                return "Pace was not measured on this rep. One fuller take will make the next comparison useful."
+            }
+            return paceLeverage(wpm: paceWPM, sensitivity: sensitivity)
         case .openingStrength:
             return "Your opening is the biggest opportunity right now — a strong first sentence sets the tone for everything after."
         case .closingStrength:
@@ -353,15 +389,30 @@ enum VerdictEngine {
         }
     }
 
-    private static func fillerLeverage(count: Int, sensitivity: FeedbackSensitivity, trend: SkillTrend?) -> String {
+    private static func fillerLeverage(burden: FillerBurden, trend: SkillTrend?) -> String {
         // Gentle framing for filler words — this is anxiety-adjacent
-        if let trend, trend.direction == .improving {
-            return "Fillers are still above target at \(count), but they've been coming down — you're moving in the right direction. The next drill can push this further."
+        let count = burden.fillerCount
+
+        if count == 0 {
+            return "No filler words were detected in this rep. Repeat the same control before treating it as a pattern."
+        } else if count == 1 {
+            return "One filler word surfaced at a transition point. It is minor; another rep will show whether it repeats."
         }
 
-        if count >= 8 {
+        // Count alone is not a burden signal: two fillers across a ten-minute
+        // answer are materially different from two in twenty seconds. Only
+        // make a corrective claim once the shared rate-normalized threshold
+        // is met.
+        guard burden.meets(.elevated) else {
+            let rate = burden.ratePerMinute ?? 0
+            return "Filler use stayed low at \(String(format: "%.1f", rate)) per minute. Repeat that control before treating it as a pattern."
+        }
+
+        if let trend, trend.direction == .improving {
+            return "Fillers are still above target at \(count), but they've been coming down — you're moving in the right direction. The next drill can push this further."
+        } else if burden.meets(.severe) {
             return "\(count) filler words this session. This is common when your brain is working faster than your mouth — the fix is learning to pause instead of fill."
-        } else if count >= 5 {
+        } else if burden.meets(.urgent) {
             return "\(count) filler words — most appeared at transition points between ideas. These are trainable moments."
         } else {
             return "A few filler words crept in at transition points. They're minor but noticeable."
@@ -460,17 +511,17 @@ enum VerdictEngine {
     /// Enriches momentum text with baseline comparisons where available.
     private static func enrichWithBaseline(
         _ momentum: String,
-        fillerCount: Int,
-        wpm: Double,
-        duration: TimeInterval,
+        fillerBurden: FillerBurden?,
+        paceWPM: Double?,
         baseline: CommunicationBaseline,
         confidence: BaselineConfidence
     ) -> String {
         var additions: [String] = []
 
         // Filler rate vs baseline
-        if baseline.fillerRate.isReliable && duration > 0 {
-            let sessionRate = Double(fillerCount) / (duration / 60.0)
+        if baseline.usesCurrentComparisonMetrics,
+           baseline.fillerRate.isReliable,
+           let sessionRate = fillerBurden?.ratePerMinute {
             let delta = sessionRate - baseline.fillerRate.value
             if delta < -0.5 {
                 additions.append(ConfidencePhrasing.frame(
@@ -481,9 +532,11 @@ enum VerdictEngine {
         }
 
         // Pace vs baseline
-        if baseline.pace.isReliable {
-            if wpm >= baseline.pace.percentile25 && wpm <= baseline.pace.percentile75 {
-                additions.append("Pace held steady at \(Int(wpm)) WPM — right in your zone.")
+        if baseline.usesCurrentComparisonMetrics,
+           baseline.pace.isReliable,
+           let paceWPM {
+            if paceWPM >= baseline.pace.percentile25 && paceWPM <= baseline.pace.percentile75 {
+                additions.append("Pace held steady at \(Int(paceWPM)) WPM — right in your zone.")
             }
         }
 
@@ -496,15 +549,16 @@ enum VerdictEngine {
     /// Enriches leverage text with baseline comparisons.
     private static func enrichLeverageWithBaseline(
         _ leverage: String,
-        fillerCount: Int,
-        wpm: Double,
-        duration: TimeInterval,
+        fillerBurden: FillerBurden?,
         baseline: CommunicationBaseline,
         confidence: BaselineConfidence
     ) -> String {
         // Compare session filler *rate* against baseline filler *rate* (both per minute)
-        if baseline.fillerRate.isReliable, fillerCount > 0, duration > 0 {
-            let sessionRate = Double(fillerCount) / (duration / 60.0)
+        if baseline.usesCurrentComparisonMetrics,
+           baseline.fillerRate.isReliable,
+           let fillerBurden,
+           fillerBurden.fillerCount > 0,
+           let sessionRate = fillerBurden.ratePerMinute {
             if sessionRate > baseline.fillerRate.value + 0.5 {
                 return leverage + " " + ConfidencePhrasing.frame(
                     "Your filler rate this session was \(String(format: "%.1f", sessionRate))/min — above your usual \(String(format: "%.1f", baseline.fillerRate.value))/min.",
@@ -566,8 +620,7 @@ enum VerdictEngine {
     /// Generates style-aligned next step guidance.
     private static func buildStyleNote(
         goal: String,
-        fillerCount: Int,
-        wpm: Double,
+        fillerBurden: FillerBurden?,
         duration: TimeInterval,
         categoryRatings: [String: String]
     ) -> String {
@@ -580,7 +633,7 @@ enum VerdictEngine {
         for trait in traits {
             let hint = trait.evaluationHint.lowercased()
             if hint.contains("low hedging") || hint.contains("minimal filler") {
-                if FillerBurden(fillerCount: fillerCount, duration: duration).meets(.urgent) {
+                if fillerBurden?.meets(.urgent) == true {
                     mismatches.append("Your \(goal.lowercased()) goal needs fewer fillers — they undercut \(trait.name.lowercased()).")
                     break
                 }

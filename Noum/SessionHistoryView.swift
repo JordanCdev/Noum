@@ -590,7 +590,7 @@ struct SessionHistoryDetailView: View {
                                 insightsCard
                             }
 
-                            if let aiFeedback = session.aiCoachFeedback {
+                            if let aiFeedback = session.evidenceSafeAICoachFeedback {
                                 coachReadCard(aiFeedback)
                             }
 
@@ -1058,7 +1058,7 @@ struct SessionHistoryDetailView: View {
         if let relationship = session.imConversationDetails?.relationshipSnapshot {
             return relationship.nextSessionHook(profile: coachingProfileStore.profile)
         }
-        if let aiFeedback = session.aiCoachFeedback {
+        if let aiFeedback = session.evidenceSafeAICoachFeedback {
             // Lead sentence only — the full paragraph renders inside Coach
             // Read below, and showing it twice on one screen reads as
             // padding rather than coaching.

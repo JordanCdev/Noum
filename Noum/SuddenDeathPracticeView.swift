@@ -62,6 +62,7 @@ struct SuddenDeathPracticeView: View {
     @State private var wordThresholdHapticFired = false
     @State private var enrichedResult: PressureSessionResult?
     @State private var committedFinalization: SessionFinalizationResult?
+    @State private var finalizedSessionID: UUID?
     @State private var didCommitCompletedRun = false
     @State private var runHadUsableCapture = false
     @State private var isPreparingPressureRecorder = false
@@ -1078,6 +1079,7 @@ struct SuddenDeathPracticeView: View {
         evaluation = nil
         enrichedResult = nil
         committedFinalization = nil
+        finalizedSessionID = nil
         didCommitCompletedRun = false
         runHadUsableCapture = false
         isPreparingPressureRecorder = false
@@ -1380,6 +1382,7 @@ struct SuddenDeathPracticeView: View {
                 coachSummary: eval.feedback
             )
         )
+        finalizedSessionID = session.id
         committedFinalization = SessionFinalizer.finalize(
             xpEarned: result.xpEarned,
             scoreValue: result.score,
@@ -1425,6 +1428,7 @@ struct SuddenDeathPracticeView: View {
             score: result.score,
             progressSegments: result.roundsSurvived,
             xpEarned: result.xpEarned,
+            finalizedSessionID: finalizedSessionID,
             committedFinalization: committedFinalization,
             suddenDeathGamePoints: result.gamePoints,
             suddenDeathMultiplierLabels: result.multiplierLabels,

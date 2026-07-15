@@ -942,20 +942,20 @@ struct AhCounterView: View {
                 profile: coachingProfileStore.profile
             )
             evaluation = result
-            speechVM.annotateLatestSession(
+            let finalizedSessionID = speechVM.annotateLatestSession(
                 score: result.score,
                 xpEarned: result.xpEarned,
                 headline: result.headline,
                 insights: result.insights,
                 coachSummary: result.feedback
             )
-            pushSummary()
+            pushSummary(finalizedSessionID: finalizedSessionID)
         }
     }
 
     // MARK: - Navigation
 
-    private func pushSummary() {
+    private func pushSummary(finalizedSessionID: UUID?) {
         let payloadId = UUID()
         let entry = SummaryDataStore.Entry(
             transcript: speechVM.highlightedText,
@@ -964,6 +964,7 @@ struct AhCounterView: View {
             score: evaluation?.score,
             progressSegments: 0,
             xpEarned: evaluation?.xpEarned ?? 0,
+            finalizedSessionID: finalizedSessionID,
             committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],

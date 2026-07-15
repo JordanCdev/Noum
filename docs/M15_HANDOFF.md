@@ -2,34 +2,41 @@
 
 ## Current production-closure continuation — 2026-07-15
 
-Current work is on `ux-overhaul`, based on committed HEAD `3969c817`, with a
-deliberately dirty shared worktree containing multiple preserved production
-closure slices. The May M15 brief below remains historical context; do not use
-its branch, merge, or completion claims as current instructions.
+Current work is on `ux-overhaul`, based on committed HEAD `7e6c430d`, with a
+deliberately dirty shared worktree containing this bounded production-closure
+slice. The May M15 brief below remains historical context; do not use its
+branch, merge, or completion claims as current instructions.
 
-The latest bounded slice closes the previously ranked raw Review inventory and
-immediate post-rep/AI Insights metric leak through existing owners. Ah-Counter
-and Timed history retain factual saved-run counts but expose separate measured
-denominators; filler/pace aggregates, trends, chart points, pace detail, replay
-targeting, and goal examples now require the shared quantity, confidence,
-current-schema, and non-fixture projections. Score-only evidence remains
-independent. Post-rep AI receives only qualified current mechanics, rejects
-unsupported mechanic claims and filler-to-pace causality, and AI Insights uses
-the same boundary for prompts, baseline context, deterministic fallback, and
-cache identity. Focused verification passes 92/92 across 12 suites; the
-complete unsigned simulator unit target passes 4,289 unique tests / 4,308
-device executions with zero failures or skips. An unsigned current-source
-Release simulator build also succeeds.
+The latest bounded slice extends exact-session Summary integrity through the
+premium persisted Coach Read using the existing session, baseline, and coaching
+owners. Generation resolves the identified saved row and exposes transcript,
+prompt, mode, score, duration, and score-only continuity while deliberately
+withholding filler/WPM/pace mechanics from free-form provider and fallback
+prose. Qualified mechanics remain in deterministic Summary components.
 
-This is not product-wide metric-specific closure. The next bounded audit target
-is the active Summary Coach Read plus durable mechanic consumers such as Proof
-Moments and Forward Plans; their raw pace/filler interpretations must be
-qualified without suppressing independent transcript, question, score, or
-duration evidence. Legacy trend continuity is intentionally absent until new
-qualified snapshots accrue. Standalone Pace attribution and wider Roleplay
+Provider output fails closed for invented current or historical mechanics and
+fabricated transcript quotes. An account-scoped full-source token is captured
+before the asynchronous request; the store atomically rechecks it, revalidates
+the output, persists, and returns the saved value. Summary and both Review
+replay paths selectively hide unsupported legacy mechanic prose without
+deleting grounded nonmetric coaching.
+
+Focused verification passes 47 unique tests / 49 device executions. The
+complete unsigned simulator unit target passes 4,311 unique tests / 4,330
+device executions with zero failures or skips, and the current-source unsigned
+Release simulator build succeeds. The light five-tab sweep is
+still blocked before tab content by the normal guest account-save failure; see
+`.screenshots/2026-07-15_summary-verdict-evidence/HANDOFF.md` and do not count
+those captures as visual proof.
+
+This is not product-wide metric or Coach Read closure. Next audit the
+qualitative Summary delivery line, durable CoachMemory/derived delivery reads,
+IM baseline comparison, Ask Noum session opener, share/request-feedback WPM,
+Proof Moment generation, Forward Plan inputs, and remaining durable
+narrative/reward consumers. Standalone Pace attribution and wider Roleplay
 routing remain product/schema decisions. Do not claim production readiness:
-the authoritative gate remains NO-GO at 18/100, with 0/5 required external
-artifacts.
+the authoritative gate remains **NO-GO at 18/100, with 0/5 required external
+artifacts**.
 
 _Last updated: 2026-05-21 · branch `Redesign` · base HEAD `60a9afe`_
 

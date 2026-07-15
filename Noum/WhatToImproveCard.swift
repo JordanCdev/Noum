@@ -38,6 +38,10 @@ struct WhatToImproveCard: View {
     let effectiveDuration: TimeInterval
     let transcriptWordCount: Int
     let isMinimalEffort: Bool
+    /// Exact saved row behind this presentation. Filler and pace bullets are
+    /// omitted when the row is absent or fails the shared historical metric
+    /// boundary; independent leverage/category/AI bullets remain available.
+    var metricSession: PracticeSession? = nil
     /// M21: the user's declared focus for this rep, if any. When a
     /// bullet aligns, an "You aimed for this" chip renders beneath
     /// the headline.
@@ -45,11 +49,6 @@ struct WhatToImproveCard: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedBulletIDs: Set<String> = []
-
-    private var wpm: Int {
-        guard effectiveDuration > 0 else { return 0 }
-        return Int((Double(transcriptWordCount) / effectiveDuration * 60).rounded())
-    }
 
     private var bullets: [Bullet] {
         WhatToImproveCard.computeBullets(
@@ -61,7 +60,8 @@ struct WhatToImproveCard: View {
             effectiveDuration: effectiveDuration,
             transcriptWordCount: transcriptWordCount,
             isMinimalEffort: isMinimalEffort,
-            customFillerWords: ClutchWordStore.shared.customFillerWords
+            customFillerWords: ClutchWordStore.shared.customFillerWords,
+            metricSession: metricSession
         )
     }
 
@@ -82,14 +82,13 @@ struct WhatToImproveCard: View {
         effectiveDuration: TimeInterval,
         transcriptWordCount: Int,
         isMinimalEffort: Bool,
-        customFillerWords: Set<String>
+        customFillerWords: Set<String>,
+        metricSession: PracticeSession? = nil
     ) -> [Bullet] {
         guard !isMinimalEffort else { return [] }
 
-        let wpm: Int = {
-            guard effectiveDuration > 0 else { return 0 }
-            return Int((Double(transcriptWordCount) / effectiveDuration * 60).rounded())
-        }()
+        let qualifiedFillerBurden = metricSession.flatMap(FillerBurden.quantityQualified)
+        let qualifiedPaceWPM = metricSession.flatMap(SessionQualifier.quantityQualifiedWordsPerMinute)
 
         var out: [Bullet] = []
 
@@ -113,21 +112,25 @@ struct WhatToImproveCard: View {
             )
         }
 
-        // 2) Filler issue — only when there's a meaningful count. We
+        // 2) Filler issue — only when the shared duration-normalized burden
+        //    threshold is met. Absolute counts would mislabel a long answer
+        //    with a few isolated fillers as a problem. We
         //    surface the actual chips (top 3 words) as evidence so the
         //    user can see *which* filler they leaned on, not just
         //    "fillers were a thing".
-        if effectiveFillerCount >= 2 {
+        if let qualifiedFillerBurden,
+           qualifiedFillerBurden.meets(.elevated) {
+            let qualifiedFillerCount = qualifiedFillerBurden.fillerCount
             let breakdown = FillerWordDetector.breakdown(
-                in: transcriptText,
+                in: metricSession?.transcript ?? transcriptText,
                 customWords: customFillerWords
             )
             let topWords = Array(breakdown.topWords.prefix(3))
             let headline: String = {
-                if effectiveFillerCount >= 5 {
-                    return "Fillers clustered — \(effectiveFillerCount) across this rep."
+                if qualifiedFillerCount >= 5 {
+                    return "Fillers clustered — \(qualifiedFillerCount) across this rep."
                 }
-                return "Filler usage was higher than ideal (\(effectiveFillerCount))."
+                return "Filler usage was higher than ideal (\(qualifiedFillerCount))."
             }()
             out.append(
                 Bullet(
@@ -172,7 +175,8 @@ struct WhatToImproveCard: View {
         // 4) Pace anomaly — only when outside the soft band AND we have
         //    headroom. Avoid surfacing pace + filler + leverage all at
         //    once on the same rep; the user needs ONE focus, not five.
-        if out.count < 3, transcriptWordCount >= 12, effectiveDuration >= 10 {
+        if out.count < 3, let qualifiedPaceWPM {
+            let wpm = Int(qualifiedPaceWPM.rounded())
             if wpm >= 170 {
                 out.append(
                     Bullet(

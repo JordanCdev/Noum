@@ -219,6 +219,26 @@ struct CommunicationBaseline: Codable, Equatable {
         comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion
     }
 
+    /// Filler and pace baselines are comparison inputs, not timeless facts.
+    /// A persisted aggregate built with an older metric recipe must not leak
+    /// back into current coaching merely because its statistical confidence
+    /// was once high enough.
+    var currentComparisonFillerRate: Double? {
+        guard usesCurrentComparisonMetrics,
+              fillerRate.isReliable,
+              fillerRate.value.isFinite,
+              fillerRate.value >= 0 else { return nil }
+        return fillerRate.value
+    }
+
+    var currentComparisonPaceWPM: Double? {
+        guard usesCurrentComparisonMetrics,
+              pace.isReliable,
+              pace.value.isFinite,
+              pace.value > 0 else { return nil }
+        return pace.value
+    }
+
     /// Normalized 0.0–1.0 distance from the user's stated coaching goal.
     /// 0.0 means the user is at (or beyond) the goal target; 1.0 means far from it.
     /// Returns 0.5 when there is insufficient data to measure.
@@ -881,7 +901,19 @@ struct PressureProfile: Codable, Equatable {
 
     /// Which dimension degrades most under pressure
     var mostAffectedDimension: PressureDimension? {
-        let dimensions: [PressureDimension] = [.fillers, .pace, .score, .duration, .structure]
+        mostAffectedDimension(includingComparisonMechanics: true)
+    }
+
+    /// Selects the strongest pressure delta without allowing a withheld filler
+    /// or pace comparison to influence an otherwise mechanic-free prompt.
+    func mostAffectedDimension(
+        includingComparisonMechanics: Bool
+    ) -> PressureDimension? {
+        let dimensions: [PressureDimension] = if includingComparisonMechanics {
+            [.fillers, .pace, .score, .duration, .structure]
+        } else {
+            [.score, .duration, .structure]
+        }
         let withDeltas = dimensions.compactMap { dim -> (PressureDimension, Double)? in
             guard let delta = pressureDelta(for: dim) else { return nil }
             return (dim, delta)
@@ -891,10 +923,21 @@ struct PressureProfile: Codable, Equatable {
 
     /// Multiple human-readable pressure insights
     var pressureInsights: [String] {
+        pressureInsights(includingComparisonMechanics: true)
+    }
+
+    /// Builds pressure context while retaining independently measured score,
+    /// duration, and structure facts when comparison mechanics are withheld.
+    /// Resilience is omitted in that mode because its formula requires filler
+    /// evidence and can also incorporate pace evidence.
+    func pressureInsights(
+        includingComparisonMechanics: Bool
+    ) -> [String] {
         var insights: [String] = []
 
         // Filler insight
-        if let casual = casualFillerRate, casual.isReliable,
+        if includingComparisonMechanics,
+           let casual = casualFillerRate, casual.isReliable,
            let high = highFillerRate, high.isReliable {
             let diff = high.value - casual.value
             if diff > 1.5 {
@@ -907,7 +950,9 @@ struct PressureProfile: Codable, Equatable {
         }
 
         // Pace insight
-        if let cp = casualPace, cp.isReliable, let hp = highPace, hp.isReliable {
+        if includingComparisonMechanics,
+           let cp = casualPace, cp.isReliable,
+           let hp = highPace, hp.isReliable {
             let diff = hp.value - cp.value
             if diff > 15 {
                 insights.append("Your pace accelerates by \(Int(diff)) WPM under pressure (\(Int(cp.value)) → \(Int(hp.value))).")
@@ -933,7 +978,8 @@ struct PressureProfile: Codable, Equatable {
         }
 
         // Resilience summary
-        if let resilience = pressureResilience {
+        if includingComparisonMechanics,
+           let resilience = pressureResilience {
             if resilience >= 0.85 {
                 insights.append("Pressure resilience: strong — your performance barely changes under stress.")
             } else if resilience >= 0.6 {
@@ -1157,6 +1203,15 @@ struct QuantityQualifiedFillerEvidence: Equatable {
     let durationSeconds: Int?
     let ratePerMinute: Double?
 
+    static var insufficient: QuantityQualifiedFillerEvidence {
+        QuantityQualifiedFillerEvidence(
+            status: .insufficient,
+            fillerCount: nil,
+            durationSeconds: nil,
+            ratePerMinute: nil
+        )
+    }
+
     private static func displayRate(_ rate: Double) -> Double {
         (rate * 10).rounded() / 10
     }
@@ -1173,12 +1228,7 @@ struct QuantityQualifiedFillerEvidence: Equatable {
             wordCount: wordCount,
             transcriptConfidence: transcriptConfidence
         ), let rate = burden.ratePerMinute else {
-            return QuantityQualifiedFillerEvidence(
-                status: .insufficient,
-                fillerCount: nil,
-                durationSeconds: nil,
-                ratePerMinute: nil
-            )
+            return .insufficient
         }
         return QuantityQualifiedFillerEvidence(
             status: .qualified,
@@ -1200,12 +1250,7 @@ struct QuantityQualifiedFillerEvidence: Equatable {
     static func historical(_ session: PracticeSession) -> QuantityQualifiedFillerEvidence {
         guard let burden = FillerBurden.quantityQualified(session),
               let rate = burden.ratePerMinute else {
-            return QuantityQualifiedFillerEvidence(
-                status: .insufficient,
-                fillerCount: nil,
-                durationSeconds: nil,
-                ratePerMinute: nil
-            )
+            return .insufficient
         }
         return QuantityQualifiedFillerEvidence(
             status: .qualified,
@@ -1231,12 +1276,7 @@ struct QuantityQualifiedFillerEvidence: Equatable {
 
     static func parseLatest(in text: String) -> QuantityQualifiedFillerEvidence? {
         if text.contains(insufficientLine) {
-            return QuantityQualifiedFillerEvidence(
-                status: .insufficient,
-                fillerCount: nil,
-                durationSeconds: nil,
-                ratePerMinute: nil
-            )
+            return .insufficient
         }
 
         let escapedPrefix = NSRegularExpression.escapedPattern(for: qualifiedPrefix)
@@ -1263,6 +1303,80 @@ struct QuantityQualifiedFillerEvidence: Equatable {
             durationSeconds: duration,
             ratePerMinute: rate
         )
+    }
+}
+
+/// One enforcement boundary for generated coaching that mentions observed
+/// filler or pace mechanics. Prompts can withhold unsupported measurements,
+/// but a provider can still reconstruct them; every generated coaching path
+/// must therefore validate the returned prose as well.
+enum CoachMetricEvidenceGuard {
+    /// Rejects only observed mechanic claims whose corresponding evidence was
+    /// withheld. Generic prescriptions such as "pause before the close" and
+    /// semantic uses such as "that detail was not filler" remain valid.
+    static func usesUnsupportedMetricClaim(
+        _ text: String,
+        hasFillerEvidence: Bool,
+        hasPaceEvidence: Bool
+    ) -> Bool {
+        let normalized = collapseWhitespace(in: text).lowercased()
+
+        // Filler burden does not prove pace. Reject the causal join even when
+        // both independent measurements are available.
+        let fillerImpliesPacePatterns = [
+            #"\bfillers?\b.{0,32}\b(?:means?|shows?|proves?|suggests?|signals?|indicates?)\b.{0,32}\b(?:pace|pacing|rushed|rushing)\b"#,
+            #"\b(?:pace|pacing|rushed|rushing)\b.{0,32}\b(?:because|from|due to)\b.{0,32}\bfillers?\b"#
+        ]
+        if fillerImpliesPacePatterns.contains(where: { containsRegex($0, in: normalized) }) {
+            return true
+        }
+
+        if !hasFillerEvidence {
+            let fillerPatterns = [
+                #"\bfiller[\s-]*(?:count|rate|words?|burden)\b"#,
+                #"\b(?:your|this rep's|the rep's)\s+filler[\s-]*control\b"#,
+                #"\b(?:zero|no|one|two|three|four|five|six|seven|eight|nine|ten|\d+|few|fewer|many|more|less|low|high)\s+fillers?\b"#,
+                #"\b(?:your|this rep's|the rep's)\s+fillers?\b"#,
+                #"\bfillers?\s+(?:surfaced|crept|appeared|rose|fell|dropped|increased|decreased|held|stayed|spiked|weakened|undercut|disrupted)\b"#,
+                #"\b(?:zero|no|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:disfluenc(?:y|ies)|ums?|uhs?)\b"#,
+                #"\bdisfluenc(?:y|ies)\s+(?:count|rate)\b"#,
+                #"\b(?:repeated|frequent|several|many|more|fewer)\s+(?:disfluenc(?:y|ies)|ums?|uhs?)\b"#,
+                #"\b(?:disfluenc(?:y|ies)|ums?|uhs?)\s+(?:surfaced|crept|appeared|rose|fell|dropped|increased|decreased|spiked|weakened|undercut|disrupted)\b"#
+            ]
+            if fillerPatterns.contains(where: { containsRegex($0, in: normalized) }) {
+                return true
+            }
+        }
+
+        if !hasPaceEvidence {
+            let pacePatterns = [
+                #"\b\d{2,3}(?:\.\d+)?\s*(?:wpm|words?\s+per\s+minute)\b"#,
+                #"\b(?:your|this|that|the)\s+(?:speaking\s+)?(?:pace|pacing)\b"#,
+                #"\b(?:your|this|that|the)\s+(?:tempo|cadence)\b"#,
+                #"\b(?:pace|pacing)\s+(?:was|is|ran|felt|held|stayed|landed|came|looked|sounded|reads?)\b"#,
+                #"\b(?:tempo|cadence)\s+(?:was|is|felt|held|stayed|accelerated|slowed|quickened)\b"#,
+                #"\byou\s+(?:were\s+|felt\s+|sounded\s+|moved\s+)?(?:too\s+)?(?:fast|slow|rushed|rushing)\b"#,
+                #"\byou\s+(?:spoke|talked|moved)\s+(?:quickly|slowly|rapidly)\b"#,
+                #"\b(?:delivery|answer|rep|opening|close)\s+(?:was|were|felt|sounded|ran|came)\s+(?:too\s+)?(?:fast|slow|rushed)\b"#,
+                #"\b(?:rushed|rushing)\s+(?:delivery|pace|pacing|answer|rep|opening|close)\b"#,
+                #"\byou\s+(?:sped\s+up|slowed\s+down|rushed)\b"#
+            ]
+            if pacePatterns.contains(where: { containsRegex($0, in: normalized) }) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func containsRegex(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private static func collapseWhitespace(in text: String) -> String {
+        text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 }
 
@@ -1729,7 +1843,8 @@ enum BaselineEngine {
         baseline: CommunicationBaseline,
         pressure: PressureProfile,
         currentPressureLevel: PressureLevel = .standard,
-        styleGoal: String? = nil
+        styleGoal: String? = nil,
+        includeComparisonMechanics: Bool = true
     ) -> String {
         guard baseline.overallConfidence >= .tentative else {
             return "Baseline: Not yet established (fewer than 3 qualifying sessions)."
@@ -1738,11 +1853,13 @@ enum BaselineEngine {
         var lines: [String] = []
         lines.append("--- SPEAKER BASELINE (confidence: \(baseline.overallConfidence.label)) ---")
 
-        if baseline.fillerRate.isReliable {
-            lines.append("Filler rate: \(String(format: "%.1f", baseline.fillerRate.value))/min (range: \(baseline.fillerRate.rangeLabel))")
+        if includeComparisonMechanics,
+           let fillerRate = baseline.currentComparisonFillerRate {
+            lines.append("Filler rate: \(String(format: "%.1f", fillerRate))/min (range: \(baseline.fillerRate.rangeLabel))")
         }
-        if baseline.pace.isReliable {
-            lines.append("Pace: \(Int(baseline.pace.value)) WPM (range: \(baseline.pace.rangeLabel))")
+        if includeComparisonMechanics,
+           let paceWPM = baseline.currentComparisonPaceWPM {
+            lines.append("Pace: \(Int(paceWPM)) WPM (range: \(baseline.pace.rangeLabel))")
         }
         if baseline.durationTendency.isReliable {
             lines.append("Typical duration: \(Int(baseline.durationTendency.value))s")
@@ -1776,11 +1893,19 @@ enum BaselineEngine {
             lines.append("Category averages: \(descriptions.joined(separator: ", "))")
         }
 
-        if !baseline.topStrengths.isEmpty {
-            lines.append("Consistent strengths: \(baseline.topStrengths.joined(separator: ", "))")
+        let promptStrengths = promptSummaryItems(
+            baseline.topStrengths,
+            includeComparisonMechanics: includeComparisonMechanics
+        )
+        if !promptStrengths.isEmpty {
+            lines.append("Consistent strengths: \(promptStrengths.joined(separator: ", "))")
         }
-        if !baseline.persistentBlockers.isEmpty {
-            lines.append("Persistent blockers: \(baseline.persistentBlockers.joined(separator: ", "))")
+        let promptBlockers = promptSummaryItems(
+            baseline.persistentBlockers,
+            includeComparisonMechanics: includeComparisonMechanics
+        )
+        if !promptBlockers.isEmpty {
+            lines.append("Persistent blockers: \(promptBlockers.joined(separator: ", "))")
         }
 
         // Verbal habits (clutch words)
@@ -1797,16 +1922,21 @@ enum BaselineEngine {
         lines.append("")
         lines.append("Current session pressure: \(currentPressureLevel.label)")
 
-        if let resilience = pressure.pressureResilience {
+        if includeComparisonMechanics,
+           let resilience = pressure.pressureResilience {
             lines.append("Pressure resilience: \(String(format: "%.0f", resilience * 100))%")
         }
 
-        if let worstDim = pressure.mostAffectedDimension,
+        if let worstDim = pressure.mostAffectedDimension(
+            includingComparisonMechanics: includeComparisonMechanics
+        ),
            let delta = pressure.pressureDelta(for: worstDim), delta > 0 {
             lines.append("Most affected under pressure: \(worstDim.label)")
         }
 
-        for insight in pressure.pressureInsights.prefix(2) {
+        for insight in pressure.pressureInsights(
+            includingComparisonMechanics: includeComparisonMechanics
+        ).prefix(2) {
             lines.append("Pressure pattern: \(insight)")
         }
 
@@ -1820,6 +1950,22 @@ enum BaselineEngine {
         lines.append("")
         lines.append("Compare this session against the baseline. Note deviations — positive or negative.")
         return lines.joined(separator: "\n")
+    }
+
+    private static func promptSummaryItems(
+        _ items: [String],
+        includeComparisonMechanics: Bool
+    ) -> [String] {
+        guard !includeComparisonMechanics else { return items }
+        return items.filter { !mentionsComparisonMechanic($0) }
+    }
+
+    private static func mentionsComparisonMechanic(_ text: String) -> Bool {
+        let pattern = #"\b(?:fillers?|pace|pacing|wpm|words?\s+per\s+minute|tempo|cadence)\b"#
+        return text.range(
+            of: pattern,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
     }
 
     // MARK: - Session Comparison

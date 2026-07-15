@@ -1578,6 +1578,7 @@ struct ContentView: View {
                     score: session.score,
                     progressSegments: 0,
                     xpEarned: 0,
+                    finalizedSessionID: session.id,
                     committedFinalization: nil,
                     suddenDeathGamePoints: nil,
                     suddenDeathMultiplierLabels: [],

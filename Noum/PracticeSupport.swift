@@ -265,6 +265,10 @@ final class SummaryDataStore {
         let score: Int?
         let progressSegments: Int
         let xpEarned: Int
+        /// Exact persisted row represented by this Summary. Metric-specific
+        /// coaching must resolve this identifier rather than infer a row from
+        /// mutable recency ordering.
+        let finalizedSessionID: UUID?
         /// Set when a mode commits reward/coaching side effects before
         /// opening Summary. Summary renders this result without finalizing
         /// the same session a second time.
@@ -304,6 +308,19 @@ final class SummaryDataStore {
 
     func remove(for id: UUID) {
         entries.removeValue(forKey: id)
+    }
+}
+
+/// Resolves metric evidence for a Summary without recency inference. A missing
+/// or unmatched identifier deliberately returns nil so filler and pace copy
+/// fail closed instead of borrowing another rep's measurements.
+enum SummaryMetricSessionResolver {
+    static func resolve(
+        finalizedSessionID: UUID?,
+        storedSessions: [PracticeSession]
+    ) -> PracticeSession? {
+        guard let finalizedSessionID else { return nil }
+        return storedSessions.first(where: { $0.id == finalizedSessionID })
     }
 }
 
@@ -1898,6 +1915,69 @@ struct AICoachFeedback: Codable, Equatable {
     let keyImprovement: String
     let suggestedDrill: String
     let revisedOpening: String
+}
+
+/// Immutable source fields that a generated Coach Read is allowed to reason
+/// over. This is deliberately a value snapshot rather than a hash: equality is
+/// exact, inspectable, and collision-free. A save token also carries account
+/// scope so an async provider result cannot cross an account hydration.
+struct CoachReadSourceSnapshot: Equatable {
+    let sessionID: UUID
+    let transcript: String
+    let mode: PracticeMode
+    let score: Int?
+    let prompt: String?
+    let fillerCount: Int
+    let duration: TimeInterval
+    let transcriptConfidence: Double?
+    let comparisonMetricSchemaVersion: Int?
+    let isEvaluationFixture: Bool
+
+    init(session: PracticeSession) {
+        sessionID = session.id
+        transcript = session.transcript
+        mode = session.mode
+        score = session.score
+        prompt = session.prompt
+        fillerCount = session.fillerWordCount
+        duration = session.duration
+        transcriptConfidence = session.transcriptConfidence
+        comparisonMetricSchemaVersion = session.comparisonMetricSchemaVersion
+        isEvaluationFixture = session.isEvaluationFixture
+    }
+}
+
+struct CoachReadSaveToken: Equatable {
+    let accountScope: String?
+    let source: CoachReadSourceSnapshot
+
+    func matches(accountScope: String?, session: PracticeSession) -> Bool {
+        self.accountScope == accountScope
+            && source == CoachReadSourceSnapshot(session: session)
+    }
+}
+
+extension PracticeSession {
+    var coachReadSourceSnapshot: CoachReadSourceSnapshot {
+        CoachReadSourceSnapshot(session: self)
+    }
+
+    /// Revalidates persisted Coach Read prose at every durable replay boundary.
+    /// This keeps legacy feedback that is grounded in transcript/score evidence
+    /// while suppressing old observed mechanic claims that the originating rep
+    /// could never support under the current recipe.
+    var evidenceSafeAICoachFeedback: AICoachFeedback? {
+        guard let aiCoachFeedback,
+              !AICoachService.usesUnsupportedMetricClaim(
+                aiCoachFeedback,
+                transcript: transcript
+              ),
+              !AICoachService.containsUnverifiedAttributedQuote(
+                aiCoachFeedback,
+                transcript: transcript
+              ) else { return nil }
+        return aiCoachFeedback
+    }
 }
 
 enum IMConversationScenario: String, CaseIterable, Codable, Identifiable {
@@ -9044,12 +9124,47 @@ final class PracticeSessionStore: ObservableObject {
         syncSessionIfPossible(sessions[index])
     }
 
-    func saveAIFeedback(sessionID: UUID, feedback: AICoachFeedback) {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+    /// Issues an account-scoped compare-and-swap token for one exact saved row.
+    /// Callers must obtain this before suspending for provider work.
+    func coachReadSaveToken(sessionID: UUID) -> CoachReadSaveToken? {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
+        return CoachReadSaveToken(
+            accountScope: currentAccountID,
+            source: session.coachReadSourceSnapshot
+        )
+    }
+
+    /// Atomically re-resolves and revalidates the exact source row after an
+    /// async generation request. The store is the final write boundary: future
+    /// callers cannot persist unsupported mechanics by skipping a view-level
+    /// check, and Summary renders only the value this method actually stored.
+    @discardableResult
+    func saveAIFeedback(
+        expected token: CoachReadSaveToken,
+        feedback: AICoachFeedback
+    ) -> AICoachFeedback? {
+        guard let index = sessions.firstIndex(where: { $0.id == token.source.sessionID }) else {
+            return nil
+        }
+        let liveSession = sessions[index]
+        guard token.matches(accountScope: currentAccountID, session: liveSession),
+              !AICoachService.usesUnsupportedMetricClaim(
+                feedback,
+                transcript: liveSession.transcript
+              ),
+              AICoachService.hasVerifiedTranscriptQuote(
+                feedback,
+                transcript: liveSession.transcript
+              ),
+              !AICoachService.containsUnverifiedAttributedQuote(
+                feedback,
+                transcript: liveSession.transcript
+              ) else { return nil }
         sessions[index].aiCoachFeedback = feedback
         persist()
         UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(sessions[index])
+        return feedback
     }
 
     func deleteSession(id: UUID) {
@@ -11606,10 +11721,7 @@ struct AICoachSessionInput {
     let transcript: String
     let mode: PracticeMode
     let score: Int?
-    let fillerCount: Int
     let duration: TimeInterval
-    let wordsPerMinute: Int
-    let transcriptConfidence: Double?
     let speakingIdentity: String
     // --- new, all defaulted (initiative #9: Coach Read parity) ---
     /// The question this rep answered (`PracticeSession.prompt`). Lets the
@@ -11619,14 +11731,10 @@ struct AICoachSessionInput {
     /// The user's voice goal. Drives the per-voice register line + the
     /// deterministic fallback persona. Nil when not yet set (cold start).
     let voice: SpeakingStyleGoal?
-    /// Short descriptors of the last few reps for continuity ("Timed | score
-    /// 7 | 2 fillers"). Never invented — built from real sessions at the call
-    /// site, current rep dropped.
+    /// Short mode + score descriptors of the last few reps for bounded
+    /// continuity. Generated Coach Read deliberately excludes historical
+    /// filler/pace mechanics until those claims have a typed durable receipt.
     let recentSessionSummaries: [String]
-    /// Confidence-gated baseline (nil when insufficient data — never a fake
-    /// number). Mirrors `PostRepCoachNoteInput.baselineFillerRate`/`PaceWPM`.
-    let baselineFillerRate: Double?
-    let baselinePaceWPM: Double?
     // --- new, all defaulted (SUBSTANCE-4: standing-case context) ---
     /// The user's STANDING working hypothesis from `CoachMemory` — the durable
     /// read the coach is carrying across reps, not this rep's evidence. Lets the
@@ -11646,21 +11754,15 @@ struct AICoachSessionInput {
     /// `CoachCaseFile.reviewDueAt`). Nil when no active intervention or review
     /// cadence exists; never synthesized from the current rep.
     let standingReviewDueAt: Date?
-
     init(
         transcript: String,
         mode: PracticeMode,
         score: Int?,
-        fillerCount: Int,
         duration: TimeInterval,
-        wordsPerMinute: Int,
         speakingIdentity: String,
-        transcriptConfidence: Double? = nil,
         prompt: String = "",
         voice: SpeakingStyleGoal? = nil,
         recentSessionSummaries: [String] = [],
-        baselineFillerRate: Double? = nil,
-        baselinePaceWPM: Double? = nil,
         standingHypothesis: String? = nil,
         standingObservableTarget: String? = nil,
         standingSuccessMeasure: String? = nil,
@@ -11669,29 +11771,15 @@ struct AICoachSessionInput {
         self.transcript = transcript
         self.mode = mode
         self.score = score
-        self.fillerCount = fillerCount
         self.duration = duration
-        self.wordsPerMinute = wordsPerMinute
-        self.transcriptConfidence = transcriptConfidence
         self.speakingIdentity = speakingIdentity
         self.prompt = prompt
         self.voice = voice
         self.recentSessionSummaries = recentSessionSummaries
-        self.baselineFillerRate = baselineFillerRate
-        self.baselinePaceWPM = baselinePaceWPM
         self.standingHypothesis = standingHypothesis
         self.standingObservableTarget = standingObservableTarget
         self.standingSuccessMeasure = standingSuccessMeasure
         self.standingReviewDueAt = standingReviewDueAt
-    }
-
-    var fillerEvidence: QuantityQualifiedFillerEvidence {
-        QuantityQualifiedFillerEvidence.current(
-            fillerCount: fillerCount,
-            duration: duration,
-            wordCount: transcript.split(whereSeparator: \.isWhitespace).count,
-            transcriptConfidence: transcriptConfidence
-        )
     }
 }
 
@@ -13954,6 +14042,42 @@ struct AICoachService: AICoachServicing {
                 record(.fallback, "Coach Read failed brand-voice gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return fallback
             }
+            // Metric-evidence gate: withholding a value from the prompt is not
+            // enough because a model can reconstruct or invent a filler/WPM
+            // observation from the transcript. Reject the entire generated
+            // read and use the deterministic fallback when any field crosses
+            // the exact saved rep's mechanic boundary.
+            guard !Self.usesUnsupportedMetricClaim(
+                feedback,
+                transcript: input.transcript
+            ) else {
+                record(.fallback, "Coach Read failed metric-evidence gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                return fallback
+            }
+            // The prompt requires a specific transcript quote. Shared-word
+            // overlap is not enough: at least one strength must carry an exact
+            // source fragment. Fabricated attribution is checked separately
+            // below so proposed language is not mistaken for source speech.
+            guard Self.hasVerifiedTranscriptQuote(
+                feedback,
+                transcript: input.transcript
+            ) else {
+                record(.fallback, "Coach Read failed quote-verification gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                return fallback
+            }
+            // Quote-presence and quote-fabrication are separate boundaries. The
+            // provider still owes one exact source quote in a strength, while
+            // every field independently rejects an attributed quote that the
+            // shared transcript guard cannot verify. This includes proposed
+            // drill/opening prose without mistaking an unattributed example for
+            // words the speaker actually used.
+            guard !Self.containsUnverifiedAttributedQuote(
+                feedback,
+                transcript: input.transcript
+            ) else {
+                record(.fallback, "Coach Read failed attributed-quote gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                return fallback
+            }
             // Transcript-grounding gate (mirrors PostRepCoachNoteService
             // .engagesTranscript + GrammarFeedbackService's excerpt
             // check): keyImprovement OR revisedOpening must actually engage
@@ -13994,16 +14118,18 @@ struct AICoachService: AICoachServicing {
         is a dashboard, not a coach.
         3. SUPPORT vs ASSERTION. Note whether claims were backed by an example \
         or specifics, or stated bare — when the transcript shows it.
-        4. Connect to prior reps only when genuinely true (continuity), e.g. \
-        "second time the lede arrived late." Never invent past behavior.
+        4. Connect to prior reps only when a fact is explicitly present in \
+        RECENT REPS. Those summaries carry mode and score only; never invent \
+        historical filler, pace, or point-placement comparisons.
         5. STANDING CASE. If a STANDING CASE is given, weigh this rep against \
         that standing target/measure/review cadence (the user's ongoing goal), \
         not just this rep in isolation — but it is durable context, NOT this-rep evidence: \
         treat it as the hypothesis you are testing, and never assert the \
         standing target was hit this rep unless the transcript shows it.
-        6. Stats (score, quantity-qualified filler evidence, pace) are CONTEXT, not the read. \
-        Never cite a filler count without its duration and per-minute rate; when filler \
-        comparison is withheld, do not turn the raw count or zero into a claim.
+        6. Score and duration are context, not the read. Filler and pace mechanics \
+        are intentionally absent from this free-form surface because Noum renders \
+        those facts canonically elsewhere. Do not assert or compare filler, WPM, \
+        pace, tempo, cadence, ums, or disfluencies in any output field.
 
         Honesty rules (hard):
         - Patterns are HYPOTHESES, not diagnoses. Association, never causation.
@@ -14043,7 +14169,8 @@ struct AICoachService: AICoachServicing {
             baseline: baselineStore.baseline,
             pressure: baselineStore.pressureProfile,
             currentPressureLevel: pressureLevel,
-            styleGoal: profile?.chosenStyleGoal?.title
+            styleGoal: profile?.chosenStyleGoal?.title,
+            includeComparisonMechanics: false
         )
         return Self.userPrompt(
             input: input,
@@ -14075,8 +14202,7 @@ struct AICoachService: AICoachServicing {
         }
         lines.append("Mode: \(input.mode.displayLabel)")
         lines.append("Score: \(input.score.map(String.init) ?? "n/a")/10")
-        lines.append(input.fillerEvidence.contextLine)
-        lines.append("Duration: \(Int(input.duration))s   Words per minute: \(input.wordsPerMinute)")
+        lines.append("Duration: \(Int(input.duration))s")
         lines.append("Current speaking identity: \(input.speakingIdentity)")
         lines.append("Speaker context: \(profile?.speakingContext.title ?? "unknown")")
         lines.append("Speaker priority: \(profile?.primaryGoal.title ?? "unknown")")
@@ -14087,14 +14213,6 @@ struct AICoachService: AICoachServicing {
         lines.append("Coaching brief: \(profile?.coachingBrief ?? "none")")
         lines.append("Current focus suggestion: \(plan?.currentFocus ?? "none")")
         lines.append("Suggested drill: \(plan?.suggestedDrill ?? "none")")
-        // Confidence-gated baselines — omitted when nil (never a fake number).
-        if let baselineFiller = input.baselineFillerRate {
-            lines.append(String(format: "Baseline filler rate: %.1f per minute", baselineFiller))
-        }
-        if let baselinePace = input.baselinePaceWPM {
-            lines.append(String(format: "Baseline pace: %.0f WPM", baselinePace))
-        }
-
         let trimmedContext = baselineContext.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedContext.isEmpty {
             lines.append("")
@@ -14198,8 +14316,8 @@ struct AICoachService: AICoachServicing {
     /// - The substance verdict is asserted ONLY above its evidence floor
     ///   (`promptAnswerVerdict` returns nil on thin prompt/transcript); below
     ///   the floor the read states delivery facts only — no fake certainty.
-    /// - Baseline comparisons fire only when the confidence-gated baseline is
-    ///   present (`baselineFillerRate`/`PaceWPM` non-nil).
+    /// - Filler/pace mechanics are never emitted here. Those facts remain in
+    ///   deterministic Summary components rather than free-form persisted text.
     /// - Never invents a quote: `openerAnchor` returns nil on a too-short
     ///   transcript, and `revisedOpening` is then "" (the render path already
     ///   handles empty `revisedOpening`).
@@ -14212,9 +14330,6 @@ struct AICoachService: AICoachServicing {
         let firstStrength: String
         if let opener {
             firstStrength = openerStrength(opener: opener, persona: persona)
-        } else if input.fillerEvidence.status == .qualified,
-                  input.fillerCount == 0 {
-            firstStrength = "You kept the delivery clean — no filler words to cut."
         } else if let score = input.score, score >= 7 {
             firstStrength = "A solid rep — the read held together start to finish."
         } else {
@@ -14292,7 +14407,7 @@ struct AICoachService: AICoachServicing {
     /// Per-voice quoted-opener strength (mirrors
     /// `PostRepCoachNoteService.openerAnchoredSentence`).
     private nonisolated static func openerStrength(opener: String, persona: CoachPersona) -> String {
-        let quoted = "'\(opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"")))'"
+        let quoted = "“\(opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"“”‘’")))”"
         switch persona.voice {
         case .authoritative: return "Your opener — \(quoted) — set the frame cleanly."
         case .warm:          return "You opened with \(quoted) — it set the right tone."
@@ -14304,45 +14419,19 @@ struct AICoachService: AICoachServicing {
         }
     }
 
-    /// A delivery strength grounded in the metrics vs the confidence-gated
-    /// baseline — never invented. Priority: fillers at/below baseline, then a
-    /// pace in the shared conversational band, then a clean zero-filler rep,
-    /// then a steady fallback that asserts nothing it cannot support.
+    /// A non-mechanic completion strength. Filler and average pace already have
+    /// canonical Summary owners and never enter persisted free-form feedback.
     private nonisolated static func deliveryStrength(input: AICoachSessionInput) -> String {
-        if let baselineFiller = input.baselineFillerRate,
-           baselineFiller > 0,
-           let sessionRate = input.fillerEvidence.ratePerMinute {
-            if sessionRate <= baselineFiller {
-                return "Your filler rate sat at or below your usual — the discipline is holding."
-            }
+        if input.duration >= 30 {
+            return "You stayed with the rep long enough to develop the idea rather than abandoning it early."
         }
-        if ConversationalPaceBand.contains(input.wordsPerMinute) {
-            return "Your pace stayed in a listenable band — easy to follow, no rush."
-        }
-        if input.fillerEvidence.status == .qualified,
-           input.fillerCount == 0 {
-            return "Not a single filler word — the delivery stayed clean throughout."
-        }
-        return "You held a steady delivery and saw the rep through."
+        return "You completed the rep and gave the coach a real answer to work with."
     }
 
-    /// Delivery-only improvement used when the substance verdict is below its
-    /// evidence floor (no prompt / thin transcript) — states a pace or filler
-    /// fact, never a substance claim. No fake certainty.
+    /// Evidence-soft improvement used when the substance verdict is below its
+    /// floor. It prescribes one move without inventing delivery mechanics.
     private nonisolated static func deliveryImprovement(input: AICoachSessionInput) -> String {
-        if input.wordsPerMinute > 170 {
-            return "Your pace ran fast at \(input.wordsPerMinute) WPM. Add a beat between points so each one has room to land."
-        }
-        if input.wordsPerMinute > 0 && input.wordsPerMinute < 95 {
-            return "Your pace ran slow at \(input.wordsPerMinute) WPM. Lift the energy a touch so the line carries."
-        }
-        if input.fillerEvidence.status == .qualified,
-           FillerBurden(
-            fillerCount: input.fillerCount,
-            duration: input.duration
-           ).meets(.elevated) {
-            return "Fillers crept in this rep. Try a deliberate pause where a filler wants to go, then say the next word cleanly."
-        }
+        _ = input
         return "Pick one concrete idea and make it the spine of the next rep, then cut anything that doesn't serve it."
     }
 
@@ -14367,20 +14456,158 @@ struct AICoachService: AICoachServicing {
 
     /// A deterministic lead-with-the-point rewrite anchored to the opener.
     private nonisolated static func revisedOpeningLine(opener: String, persona: CoachPersona) -> String {
-        let trimmedOpener = opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\""))
+        let trimmedOpener = opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"“”‘’"))
         switch persona.voice {
         case .executive, .authoritative:
-            return "Lead with the verdict, then support it: open on your conclusion in one line before the context you started with ('\(trimmedOpener)')."
+            return "Lead with the verdict, then support it: open on your conclusion in one line before the context you started with (“\(trimmedOpener)”)."
         case .persuasive:
-            return "Open with your claim, then the evidence: state the recommendation first, then earn it — rather than building up to it from '\(trimmedOpener)'."
+            return "Open with your claim, then the evidence: state the recommendation first, then earn it — rather than building up to it from “\(trimmedOpener)”."
         case .concise:
-            return "Cut to it: make your first sentence the point itself, not the run-up ('\(trimmedOpener)')."
+            return "Cut to it: make your first sentence the point itself, not the run-up (“\(trimmedOpener)”)."
         default:
-            return "Try opening on the point itself — say what you concluded first, then walk back to '\(trimmedOpener)' as support."
+            return "Try opening on the point itself — say what you concluded first, then walk back to “\(trimmedOpener)” as support."
         }
     }
 
     // MARK: - Brand-voice contract + grounding gate (pure, exposed for tests)
+
+    /// Free-form Coach Read prose never owns observed filler or pace facts.
+    /// Those mechanics render through deterministic Summary components; this
+    /// gate preserves generic prescriptions and semantic uses while rejecting
+    /// provider-invented observations, exact values, and comparisons.
+    nonisolated static func usesUnsupportedMetricClaim(
+        _ feedback: AICoachFeedback,
+        transcript: String
+    ) -> Bool {
+        let fields = feedback.strengths + [
+            feedback.keyImprovement,
+            feedback.suggestedDrill,
+            feedback.revisedOpening,
+        ]
+        return fields.contains { field in
+            let text = removingVerifiedQuotes(from: field, transcript: transcript)
+            if CoachMetricEvidenceGuard.usesUnsupportedMetricClaim(
+                text,
+                hasFillerEvidence: false,
+                hasPaceEvidence: false
+            ) {
+                return true
+            }
+            return containsUnownedMechanicObservation(text)
+        }
+    }
+
+    /// Provider output must contain at least one exact transcript quote in a
+    /// strength. This is only the required-presence half of the quote boundary;
+    /// attribution-aware fabrication is checked separately across every field
+    /// by `containsUnverifiedAttributedQuote`.
+    nonisolated static func hasVerifiedTranscriptQuote(
+        _ feedback: AICoachFeedback,
+        transcript: String
+    ) -> Bool {
+        let context = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let strengthQuotes = feedback.strengths.flatMap {
+            AICoachChatService.quotedFragments(in: $0)
+        }
+        return strengthQuotes.contains(where: context.verifies)
+    }
+
+    /// Rejects only quotes that a field attributes to the speaker and that the
+    /// shared chat quote guard cannot verify against the exact transcript.
+    /// Running the guard field-by-field prevents an attribution in one JSON
+    /// field from accidentally reclassifying an unrelated proposed example in
+    /// another. Legacy replay uses this gate without the provider-only required
+    /// quote rule, so grounded nonquoted coaching remains readable.
+    nonisolated static func containsUnverifiedAttributedQuote(
+        _ feedback: AICoachFeedback,
+        transcript: String
+    ) -> Bool {
+        let context = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let fields = feedback.strengths + [
+            feedback.keyImprovement,
+            feedback.suggestedDrill,
+            feedback.revisedOpening,
+        ]
+        return fields.contains { field in
+            AICoachChatService.containsUnverifiedQuotedUserSpeech(
+                in: field,
+                quoteGuard: context
+            )
+        }
+    }
+
+    private nonisolated static func removingVerifiedQuotes(
+        from text: String,
+        transcript: String
+    ) -> String {
+        let context = CoachChatQuoteGuardContext(transcripts: [transcript])
+        return AICoachChatService.quotedFragments(in: text)
+            .filter(context.verifies)
+            .reduce(text) { partial, quote in
+                partial.replacingOccurrences(of: quote, with: "")
+            }
+    }
+
+    private nonisolated static func containsUnownedMechanicObservation(_ text: String) -> Bool {
+        let normalized = text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .lowercased()
+
+        let fillerTerm = #"(?:fillers?|filler[\s-]*(?:count|rate|words?|burden|control)|ums?|uhs?|disfluenc(?:y|ies)|filled[\s-]*pauses?|verbal[\s-]*crutches?|hesitation[\s-]*markers?)"#
+        let fillerMention = containsRegex(
+            #"\b\#(fillerTerm)\b"#,
+            in: normalized
+        )
+        if fillerMention {
+            let semanticUse = containsRegex(
+                #"\b(?:not\s+(?:(?:a|an|one|the)\s+)?\#(fillerTerm)|\#(fillerTerm)\s+(?:was|is|were|are)\s+not)\b"#,
+                in: normalized
+            )
+            let prescription = containsRegex(
+                #"\b(?:drill|practice|try|replace|use|run|exercise|pause|instead|avoid|swap|substitute|rehearse|aim|target|next\s+rep|next\s+time)\b"#,
+                in: normalized
+            )
+            let observation = containsRegex(
+                #"\b(?:recorded|detected|count|rate|had|showed|surfaced|crept|repeated|frequent|many|few|zero|appeared|occurred|clustered|weakened|increased|decreased|improved|worsened|returned|dropped|rose|fell|used)\b"#,
+                in: normalized
+            )
+            let comparison = containsRegex(
+                #"\b(?:more|less|fewer)\s+\#(fillerTerm)\b[^.!?]{0,48}\b(?:than|compared\s+(?:with|to))\b|\b\#(fillerTerm)\b[^.!?]{0,48}\b(?:than\s+(?:usual|before|last|prior|previous|recent)|compared\s+(?:with|to)|increased|decreased|improved|worsened|rose|fell|dropped)\b"#,
+                in: normalized
+            )
+            if comparison || (!semanticUse && (!prescription || observation)) {
+                return true
+            }
+        }
+
+        let paceTerm = #"(?:pace|pacing|wpm|words?\s+per\s+minute|tempo|cadence|speed|fast(?:er|est)?|slow(?:er|est|ly)?|quick(?:er|est|ly)?|brisk(?:er|est|ly)?|rapidly|rushed|rushing|hurried|drag(?:ged|ging|s)?|sped\s+up|slowed\s+down)"#
+        let paceMention = containsRegex(
+            #"\b\#(paceTerm)\b"#,
+            in: normalized
+        )
+        if paceMention {
+            let prescription = containsRegex(
+                #"\b(?:drill|practice|try|use|add|pause|slow\s+down|speed\s+up|next\s+rep|next\s+time|aim|target|make|keep|choose|deliver|open|finish|repeat|rehearse|should|could)\b"#,
+                in: normalized
+            )
+            let observation = containsRegex(
+                #"\b(?:was|were|felt|sounded|measured|average|spoke|talked|accelerated|slowed|quickened|stayed|held|ran|improved|worsened|dragged|became|seemed)\b"#,
+                in: normalized
+            )
+            let comparison = containsRegex(
+                #"\b\#(paceTerm)\b[^.!?]{0,48}\b(?:than\s+(?:usual|before|last|prior|previous|recent)|compared\s+(?:with|to)|since\s+(?:the\s+)?(?:last|prior|previous)|improved|worsened)\b"#,
+                in: normalized
+            )
+            if comparison || !prescription || observation { return true }
+        }
+
+        return false
+    }
+
+    private nonisolated static func containsRegex(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
+    }
 
     /// True when every emitted text field honors the brand-voice contract:
     /// no exclamation marks, no chirpy filler ("Awesome"/"Great job"/"Let's"),
@@ -14471,6 +14698,24 @@ struct AICoachService: AICoachServicing {
                 let scoreText = rep.score.map { "\($0)/10" } ?? "n/a"
                 let fillerEvidence = QuantityQualifiedFillerEvidence.historical(rep)
                 return "\(rep.mode.displayLabel) | score \(scoreText) | \(fillerEvidence.summary ?? "filler comparison withheld")"
+            }
+    }
+
+    /// Continuity context for the free-form premium Coach Read. Mode and score
+    /// are independently valid durable facts; filler and pace are excluded so
+    /// the provider cannot turn unversioned history strings into comparisons
+    /// that replay cannot later verify.
+    nonisolated static func recentCoachReadSummaries(
+        sessions: [PracticeSession],
+        currentRepID: UUID?
+    ) -> [String] {
+        sessions
+            .filter { currentRepID == nil || $0.id != currentRepID }
+            .filter(PracticeProgressEligibility.qualifies)
+            .prefix(3)
+            .map { rep in
+                let scoreText = rep.score.map { "\($0)/10" } ?? "n/a"
+                return "\(rep.mode.displayLabel) | score \(scoreText)"
             }
     }
 }

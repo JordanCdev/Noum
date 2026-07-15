@@ -7,35 +7,38 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
-The current working tree closes the previously ranked Review and immediate-AI
-metric-evidence gap without adding a history, trend, coaching, or routing
-owner. Ah-Counter and Timed summaries keep factual saved-run counts while
-publishing separate measured-rep denominators; filler rate, clean-run claims,
-WPM, pace-zone counts, best-row pace, and mechanic trends now consume only the
-existing `FillerBurden` / `SessionQualifier` projections. Review charts omit
-unqualified mechanic points instead of plotting zero, detail renders
-unqualified WPM as `Not measured`, urgent filler replay uses normalized
-qualified burden, and goal examples require independently qualified filler and
-pace while score-only highlights remain available.
+The current working tree implements the next bounded P1 trust slice across the
+existing Summary, session-store, baseline, and coaching owners. Summary
+mechanics and lifecycle effects remain bound to `finalizedSessionID`. Premium
+Coach Read generation now resolves that exact persisted row, carries only
+transcript, prompt, mode, score, duration, and score-only continuity, and
+withholds filler/WPM/pace mechanics from both provider and deterministic
+free-form prose. Deterministic Summary components remain the owner of qualified
+mechanic facts.
 
-The active post-rep AI prompt now withholds current filler, derivable word
-count, and WPM unless that exact saved rep clears quantity, confidence,
-current-schema, and non-fixture gates. A conservative acceptance guard rejects
-unsupported metric claims and any filler-to-rushed-pace causal join.
-`AIInsightsService` applies the same boundary to session prompts, baseline
-mechanics, deterministic fallback copy, and cache identity; independent score,
-duration, transcript, and question evidence remains usable. Focused verification
-passes 92/92 across 12 suites. The complete unsigned simulator `NoumTests`
-target passes 4,289 unique tests / 4,308 device executions with zero failures
-or skips, and an unsigned current-source Release simulator build succeeds.
+Provider output must contain a transcript-verifiable quote and is rejected for
+invented current or historical mechanics. An account-scoped, full-source
+compare-and-swap token closes the asynchronous save race; the store revalidates
+the response before persistence and Summary renders only the returned saved
+value. Summary and Review selectively hide unsafe legacy mechanic prose while
+retaining grounded nonmetric coaching.
 
-This is still a partial product-wide closure. Active Summary Coach Read pace,
-Proof Moment generation, Forward Plan inputs, and other durable narrative or
-reward consumers still contain raw mechanic interpretations and are the next
-P1 audit target. Legacy trend archives intentionally lose filler/pace continuity
-until new qualified snapshots accrue. Durable standalone Pace attribution and
-wider Roleplay prescription routing remain product/schema decisions.
-Production remains NO-GO at 18/100 with 0/5 required external artifacts.
+Focused verification passes 47 unique tests / 49 device executions across the
+new boundary and shared regressions. The complete unsigned simulator
+`NoumTests` target passes 4,311 unique tests / 4,330 device executions with zero
+failures or skips, and the current-source unsigned Release simulator build
+succeeds. The earlier light five-tab sweep remains blocker evidence,
+not visual proof: normal guest bootstrap stopped every deep link at the
+account-save failure before tab content rendered.
+
+This remains partial product-wide closure. The qualitative Summary delivery
+line, durable CoachMemory/derived delivery reads, IM baseline comparison, Ask
+Noum session opener, share/request-feedback WPM, Proof Moment generation,
+Forward Plan inputs, and other durable narrative/reward consumers remain P1
+audit targets. Legacy trend continuity remains intentionally absent until
+qualified snapshots accrue. Standalone Pace attribution and wider Roleplay
+prescription routing remain product/schema decisions. Production remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
 
 Rendered Summary capability-loss evidence in the current working tree closes
 the highest-ranked remaining recommendation-trust gap without introducing a

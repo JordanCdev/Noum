@@ -1946,11 +1946,30 @@ struct SpeakingStyleGoalAlignmentTests {
 
 struct VerdictEngineTests {
 
+    private func metricSession(
+        words: Int,
+        duration: TimeInterval,
+        fillers: Int,
+        score: Int = 7
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: Array(repeating: "word", count: words).joined(separator: " "),
+            fillerWordCount: fillers,
+            duration: duration,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            score: score,
+            transcriptConfidence: 0.8,
+            comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion
+        )
+    }
+
     @Test func cleanSessionGeneratesMomentum() {
         let note = VerdictEngine.generate(
             fillerCount: 0, duration: 45, wordCount: 120, wpm: 135, score: 8,
             categoryRatings: ["Opening": "Good", "Structure": "Good", "Depth": "Good"],
-            trends: [], primaryFocus: .structure, drillHistory: []
+            trends: [], primaryFocus: .structure, drillHistory: [],
+            metricSession: metricSession(words: 120, duration: 45, fillers: 0, score: 8)
         )
         #expect(!note.momentum.isEmpty, "Should generate momentum")
         #expect(note.momentum.lowercased().contains("zero filler") || note.momentum.lowercased().contains("clean") || note.momentum.lowercased().contains("pace"),
@@ -1975,7 +1994,8 @@ struct VerdictEngineTests {
             fillerCount: 1, duration: 60, wordCount: 160, wpm: 130, score: 7,
             categoryRatings: ["Opening": "Good", "Structure": "OK"],
             trends: [], primaryFocus: .fillerReduction, drillHistory: [],
-            baseline: baseline
+            baseline: baseline,
+            metricSession: metricSession(words: 130, duration: 60, fillers: 1)
         )
         // Should mention baseline improvement
         let mentionsBaseline = note.momentum.lowercased().contains("baseline") || note.momentum.lowercased().contains("below") || note.momentum.lowercased().contains("dropped")
@@ -2001,7 +2021,8 @@ struct VerdictEngineTests {
             fillerCount: 6, duration: 45, wordCount: 100, wpm: 133, score: 5,
             categoryRatings: ["Opening": "Could improve", "Structure": "OK"],
             trends: [], primaryFocus: .fillerReduction, drillHistory: [],
-            styleGoal: "authoritative"
+            styleGoal: "authoritative",
+            metricSession: metricSession(words: 100, duration: 45, fillers: 6, score: 5)
         )
         // Authoritative + high fillers → style note about fillers undercutting authority
         #expect(note.nextStep.lowercased().contains("authoritative") || note.nextStep.lowercased().contains("filler"),
@@ -3162,6 +3183,24 @@ struct SkillSpecificFeedbackTests {
 
 struct FillerRateComparisonTests {
 
+    private func metricSession(
+        words: Int,
+        duration: TimeInterval,
+        fillers: Int,
+        score: Int
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: Array(repeating: "word", count: words).joined(separator: " "),
+            fillerWordCount: fillers,
+            duration: duration,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            score: score,
+            transcriptConfidence: 0.8,
+            comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion
+        )
+    }
+
     @Test func leverageUsesRateNotCountForBaseline() {
         // Short session (30 sec) with 3 fillers = 6/min — high rate
         // Baseline rate is 2.0/min
@@ -3180,7 +3219,8 @@ struct FillerRateComparisonTests {
         let note = VerdictEngine.generate(
             fillerCount: 3, duration: 30, wordCount: 60, wpm: 120, score: 6,
             categoryRatings: [:], trends: [], primaryFocus: .fillerReduction, drillHistory: [],
-            baseline: baseline
+            baseline: baseline,
+            metricSession: metricSession(words: 60, duration: 30, fillers: 3, score: 6)
         )
         // With rate 6.0/min vs baseline 2.0/min, leverage should note "above your usual"
         let mentionsRate = note.leverage.contains("/min")
@@ -3204,7 +3244,8 @@ struct FillerRateComparisonTests {
         let note = VerdictEngine.generate(
             fillerCount: 3, duration: 180, wordCount: 400, wpm: 133, score: 7,
             categoryRatings: [:], trends: [], primaryFocus: .fillerReduction, drillHistory: [],
-            baseline: baseline
+            baseline: baseline,
+            metricSession: metricSession(words: 400, duration: 180, fillers: 3, score: 7)
         )
         // 1.0/min is below baseline 2.0/min — should NOT say "above your usual"
         let mentionsAbove = note.leverage.contains("above your usual")
@@ -18587,6 +18628,31 @@ struct WhatToImproveBulletSelectorTests {
         CoachNote(momentum: momentum, leverage: leverage, nextStep: nextStep)
     }
 
+    private func metricSession(
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval
+    ) -> PracticeSession {
+        let existingWords = transcript.split { !$0.isLetter && !$0.isNumber }.count
+        let padding = Array(
+            repeating: "word",
+            count: max(0, SessionQualifier.minimumWordCount - existingWords)
+        )
+        let paddedTranscript = ([transcript] + padding)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return PracticeSession(
+            transcript: paddedTranscript,
+            fillerWordCount: fillerCount,
+            duration: duration,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            score: 7,
+            transcriptConfidence: 0.8,
+            comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion
+        )
+    }
+
     @Test func minimalEffortYieldsNoBullets() {
         // 4-second blurts get no "to improve" feedback — punishing a
         // user for not really starting is the wrong vibe.
@@ -18685,7 +18751,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 18,
             transcriptWordCount: 30,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: "Um a clean rep mostly.",
+                fillerCount: 1,
+                duration: 18
+            )
         )
         #expect(!bullets.contains { $0.id == "filler" })
     }
@@ -18700,7 +18771,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 18,
             transcriptWordCount: 30,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: "Um like you know um a few here.",
+                fillerCount: 3,
+                duration: 18
+            )
         )
         let fillerBullet = bullets.first { $0.id == "filler" }
         #expect(fillerBullet != nil)
@@ -18719,7 +18795,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 18,
             transcriptWordCount: 30,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: "Um um like you know um like uh I mean um.",
+                fillerCount: 7,
+                duration: 18
+            )
         )
         let fillerBullet = bullets.first { $0.id == "filler" }
         #expect(fillerBullet?.headline.lowercased().contains("clustered") == true)
@@ -18782,7 +18863,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 20,
             transcriptWordCount: 60,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: String(repeating: "one ", count: 60),
+                fillerCount: 0,
+                duration: 20
+            )
         )
         let paceBullet = bullets.first { $0.id == "pace-fast" }
         #expect(paceBullet != nil)
@@ -18800,7 +18886,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 20,
             transcriptWordCount: 20,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: String(repeating: "one ", count: 20),
+                fillerCount: 0,
+                duration: 20
+            )
         )
         let paceBullet = bullets.first { $0.id == "pace-slow" }
         #expect(paceBullet != nil)
@@ -18821,7 +18912,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 20,
             transcriptWordCount: 60,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: String(repeating: "one ", count: 60),
+                fillerCount: 0,
+                duration: 20
+            )
         )
         #expect(!bullets.contains { $0.id.hasPrefix("pace-") })
     }
@@ -18838,7 +18934,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 5,
             transcriptWordCount: 10,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: "ten quick words land here in this short stretch ok",
+                fillerCount: 0,
+                duration: 5
+            )
         )
         #expect(!bullets.contains { $0.id.hasPrefix("pace-") })
     }
@@ -18912,7 +19013,12 @@ struct WhatToImproveBulletSelectorTests {
             effectiveDuration: 20,
             transcriptWordCount: 65,
             isMinimalEffort: false,
-            customFillerWords: []
+            customFillerWords: [],
+            metricSession: metricSession(
+                transcript: "um like um you know um " + String(repeating: "one ", count: 60),
+                fillerCount: 5,
+                duration: 20
+            )
         )
         #expect(bullets.count == 3)
     }
@@ -26866,16 +26972,11 @@ struct CoachReadParityTests {
         transcript: String = "Here is the core of what I want to say today.",
         mode: PracticeMode = .timed,
         score: Int? = 7,
-        fillerCount: Int = 2,
         duration: TimeInterval = 60,
-        wordsPerMinute: Int = 130,
         speakingIdentity: String = "Composed speaker",
-        transcriptConfidence: Double? = nil,
         prompt: String = "",
         voice: SpeakingStyleGoal? = nil,
         recentSessionSummaries: [String] = [],
-        baselineFillerRate: Double? = nil,
-        baselinePaceWPM: Double? = nil,
         standingHypothesis: String? = nil,
         standingObservableTarget: String? = nil,
         standingSuccessMeasure: String? = nil,
@@ -26885,16 +26986,11 @@ struct CoachReadParityTests {
             transcript: transcript,
             mode: mode,
             score: score,
-            fillerCount: fillerCount,
             duration: duration,
-            wordsPerMinute: wordsPerMinute,
             speakingIdentity: speakingIdentity,
-            transcriptConfidence: transcriptConfidence,
             prompt: prompt,
             voice: voice,
             recentSessionSummaries: recentSessionSummaries,
-            baselineFillerRate: baselineFillerRate,
-            baselinePaceWPM: baselinePaceWPM,
             standingHypothesis: standingHypothesis,
             standingObservableTarget: standingObservableTarget,
             standingSuccessMeasure: standingSuccessMeasure,
@@ -26907,16 +27003,14 @@ struct CoachReadParityTests {
         let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
         for voice in voices {
             for score in [nil, 3, 5, 7, 9] {
-                for fillers in [0, 3, 8] {
-                    let fb = AICoachService.deterministicFeedback(
-                        input: makeInput(score: score, fillerCount: fillers, voice: voice)
-                    )
-                    #expect(fb.strengths.count == 2,
-                            "voice \(String(describing: voice)) score \(String(describing: score)) fillers \(fillers): strengths=\(fb.strengths.count)")
-                    #expect(fb.strengths.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
-                    #expect(!fb.keyImprovement.trimmingCharacters(in: .whitespaces).isEmpty)
-                    #expect(!fb.suggestedDrill.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                let fb = AICoachService.deterministicFeedback(
+                    input: makeInput(score: score, voice: voice)
+                )
+                #expect(fb.strengths.count == 2,
+                        "voice \(String(describing: voice)) score \(String(describing: score)): strengths=\(fb.strengths.count)")
+                #expect(fb.strengths.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+                #expect(!fb.keyImprovement.trimmingCharacters(in: .whitespaces).isEmpty)
+                #expect(!fb.suggestedDrill.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
     }
@@ -26926,21 +27020,19 @@ struct CoachReadParityTests {
         let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
         for voice in voices {
             for score in [nil, 3, 5, 7, 9] {
-                for fillers in [0, 3, 8] {
-                    let fb = AICoachService.deterministicFeedback(
-                        input: makeInput(score: score, fillerCount: fillers, voice: voice)
-                    )
-                    #expect(AICoachService.passesBrandVoiceContract(fb),
-                            "voice \(String(describing: voice)) score \(String(describing: score)) fillers \(fillers) violates brand voice")
-                    // Explicit no-exclamation / no-chirp sweep over every field.
-                    for field in fb.strengths + [fb.keyImprovement, fb.suggestedDrill, fb.revisedOpening] {
-                        let lower = field.lowercased()
-                        #expect(!field.contains("!"))
-                        #expect(!lower.contains("awesome"))
-                        #expect(!lower.contains("great job"))
-                        #expect(!lower.contains("let's"))
-                        #expect(!lower.contains("lets "))
-                    }
+                let fb = AICoachService.deterministicFeedback(
+                    input: makeInput(score: score, voice: voice)
+                )
+                #expect(AICoachService.passesBrandVoiceContract(fb),
+                        "voice \(String(describing: voice)) score \(String(describing: score)) violates brand voice")
+                // Explicit no-exclamation / no-chirp sweep over every field.
+                for field in fb.strengths + [fb.keyImprovement, fb.suggestedDrill, fb.revisedOpening] {
+                    let lower = field.lowercased()
+                    #expect(!field.contains("!"))
+                    #expect(!lower.contains("awesome"))
+                    #expect(!lower.contains("great job"))
+                    #expect(!lower.contains("let's"))
+                    #expect(!lower.contains("lets "))
                 }
             }
         }
@@ -27027,7 +27119,7 @@ struct CoachReadParityTests {
         let readThin = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: thin)
         #expect(PracticeEvaluator.promptAnswerVerdict(for: readThin) == nil)
         let fbThin = AICoachService.deterministicFeedback(
-            input: makeInput(transcript: thin, wordsPerMinute: 180, prompt: prompt)
+            input: makeInput(transcript: thin, prompt: prompt)
         )
         let lowerB = fbThin.keyImprovement.lowercased()
         #expect(!lowerB.contains("engaged the question"))
@@ -27047,7 +27139,7 @@ struct CoachReadParityTests {
 
         // Too-short transcript -> no fabricated quote, empty revisedOpening.
         let shortFb = AICoachService.deterministicFeedback(
-            input: makeInput(transcript: "Yes.", score: nil, fillerCount: 0)
+            input: makeInput(transcript: "Yes.", score: nil)
         )
         #expect(shortFb.revisedOpening.isEmpty)
     }
@@ -27147,23 +27239,18 @@ struct CoachReadParityTests {
         #expect(fb.revisedOpening == "z")
     }
 
-    // 11. The old 7-arg positional construction still compiles and defaults
-    //     the new fields. (Compile-guard for the defaulted init.)
-    @Test func inputDefaultsKeepLegacyConstructionCompiling() {
+    // 11. The compact source-only input defaults optional context fields.
+    @Test func inputDefaultsKeepSourceOnlyConstructionCompiling() {
         let input = AICoachSessionInput(
             transcript: "Hello there friends",
             mode: .timed,
             score: 5,
-            fillerCount: 1,
             duration: 30,
-            wordsPerMinute: 120,
             speakingIdentity: "Speaker"
         )
         #expect(input.prompt == "")
         #expect(input.voice == nil)
         #expect(input.recentSessionSummaries.isEmpty)
-        #expect(input.baselineFillerRate == nil)
-        #expect(input.baselinePaceWPM == nil)
         // SUBSTANCE-4 standing-case fields also default to nil.
         #expect(input.standingHypothesis == nil)
         #expect(input.standingObservableTarget == nil)
@@ -27174,8 +27261,7 @@ struct CoachReadParityTests {
     // 12. The user prompt omits the question / continuity / baseline lines when
     //     those inputs are absent (no placeholder injected).
     @Test func userPromptOmitsQuestionAndContinuityWhenAbsent() {
-        let input = makeInput(prompt: "", recentSessionSummaries: [],
-                              baselineFillerRate: nil, baselinePaceWPM: nil)
+        let input = makeInput(prompt: "", recentSessionSummaries: [])
         let user = AICoachService.userPrompt(
             input: input, profile: nil, plan: nil, baselineContext: ""
         )

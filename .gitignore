@@ -7,7 +7,7 @@ build/
 xcuserdata/
 *.xcuserstate
 .build/
-/.build-roleplay-terminal/
+/.build-roleplay-terminal*/
 __pycache__/
 *.pyc
 .DS_Store

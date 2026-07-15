@@ -104,11 +104,8 @@ struct CoachFillerEvidenceTests {
             transcript: "Short answer only",
             mode: .timed,
             score: 7,
-            fillerCount: 0,
             duration: 8,
-            wordsPerMinute: 120,
-            speakingIdentity: "Developing speaker",
-            transcriptConfidence: 0.9
+            speakingIdentity: "Developing speaker"
         )
         let prompt = AICoachService.userPrompt(
             input: input,
@@ -118,8 +115,8 @@ struct CoachFillerEvidenceTests {
         )
         let feedback = AICoachService.deterministicFeedback(input: input)
 
-        #expect(prompt.contains("comparison withheld"))
-        #expect(!prompt.contains("Filler words: 0"))
+        #expect(!prompt.lowercased().contains("filler"))
+        #expect(!prompt.lowercased().contains("pace"))
         #expect(!feedback.strengths.joined(separator: " ").contains("no filler"))
         #expect(!feedback.strengths.joined(separator: " ").contains("Not a single filler"))
     }

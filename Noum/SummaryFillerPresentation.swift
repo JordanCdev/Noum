@@ -67,7 +67,47 @@ struct SummaryFillerPresentation: Equatable {
             wordCount: wordCount,
             transcriptConfidence: transcriptConfidence
         )
-        let currentRate = burden?.ratePerMinute
+        return assemble(
+            fillerCount: fillerCount,
+            duration: duration,
+            currentRate: burden?.ratePerMinute,
+            previousSessions: previousSessions
+        )
+    }
+
+    /// Summary's live projection requires the exact persisted row so current
+    /// schema and non-fixture provenance are checked along with quantity and
+    /// confidence. Raw presentation facts remain visible when resolution
+    /// fails, but they cannot become a rate, trend, or tone judgment.
+    static func make(
+        metricSession: PracticeSession?,
+        fallbackFillerCount: Int,
+        fallbackDuration: TimeInterval,
+        previousSessions: [PracticeSession]
+    ) -> SummaryFillerPresentation {
+        guard let metricSession else {
+            return assemble(
+                fillerCount: fallbackFillerCount,
+                duration: fallbackDuration,
+                currentRate: nil,
+                previousSessions: previousSessions
+            )
+        }
+
+        return assemble(
+            fillerCount: metricSession.fillerWordCount,
+            duration: metricSession.duration,
+            currentRate: FillerBurden.quantityQualified(metricSession)?.ratePerMinute,
+            previousSessions: previousSessions
+        )
+    }
+
+    private static func assemble(
+        fillerCount: Int,
+        duration: TimeInterval,
+        currentRate: Double?,
+        previousSessions: [PracticeSession]
+    ) -> SummaryFillerPresentation {
         let previousRates = FillerBurden.quantityQualifiedRatesPerMinute(
             in: previousSessions
         )

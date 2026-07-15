@@ -1250,7 +1250,7 @@ struct IMPracticeView: View {
                         isPressureModeOn: pressureOn,
                         streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
                     )
-                    _ = PracticeSessionFinalizer.finalize(
+                    let finalizedSession = PracticeSessionFinalizer.finalize(
                         store: sessionStore,
                         draft: PracticeSessionDraft(
                             transcript: transcript,
@@ -1272,7 +1272,7 @@ struct IMPracticeView: View {
                             pauseMetrics: speechVM.currentSessionPauseMetrics()
                         )
                     )
-                    pushSummary()
+                    pushSummary(finalizedSessionID: finalizedSession.id)
                     isEndingConversation = false
                 }
                 return
@@ -1317,7 +1317,7 @@ struct IMPracticeView: View {
                         isPressureModeOn: pressureOn,
                         streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
                     )
-                    _ = PracticeSessionFinalizer.finalize(
+                    let finalizedSession = PracticeSessionFinalizer.finalize(
                         store: sessionStore,
                         draft: PracticeSessionDraft(
                             transcript: transcript,
@@ -1346,7 +1346,7 @@ struct IMPracticeView: View {
                             coachSummary: finalEvaluation.feedback
                         )
                     )
-                    pushSummary()
+                    pushSummary(finalizedSessionID: finalizedSession.id)
                     isEndingConversation = false
                 }
             } catch {
@@ -1469,7 +1469,7 @@ struct IMPracticeView: View {
 
     // MARK: - Navigation
 
-    private func pushSummary() {
+    private func pushSummary(finalizedSessionID: UUID) {
         let payloadId = UUID()
         let entry = SummaryDataStore.Entry(
             transcript: summaryTranscript,
@@ -1478,6 +1478,7 @@ struct IMPracticeView: View {
             score: summaryEvaluation?.overallScore,
             progressSegments: min(4, userTurnCount),
             xpEarned: summaryEvaluation?.xpEarned ?? 0,
+            finalizedSessionID: finalizedSessionID,
             committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],
