@@ -95,6 +95,53 @@ final class HomePracticePathPolishUITests: XCTestCase {
     }
 
     @MainActor
+    func testCutTheCrutchInsufficientSpeechWithholdsResultAndProgressAtAccessibilityXXXL() {
+        let app = launchCutTheCrutchCompletionFixture(
+            "insufficient",
+            extraArguments: [
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            ]
+        )
+        defer { app.terminate() }
+
+        let issue = app.descendants(matching: .any)["cutTheCrutch.insufficientSpeech"]
+        XCTAssertTrue(issue.waitForExistence(timeout: 10))
+        XCTAssertTrue(issue.label.contains("enough speech"))
+        XCTAssertFalse(app.descendants(matching: .any)["cutTheCrutch.result"].exists)
+        XCTAssertFalse(app.staticTexts["Score"].exists)
+        XCTAssertFalse(app.staticTexts["XP earned"].exists)
+
+        let start = app.buttons["cutTheCrutch.start"]
+        for _ in 0..<6 where !start.isHittable {
+            app.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertTrue(start.isHittable)
+        attachScreenshot(named: "crutch-insufficient-speech-axxxl", app: app)
+    }
+
+    @MainActor
+    func testCutTheCrutchEligibleTerminalEvidenceRendersExactResult() {
+        let app = launchCutTheCrutchCompletionFixture("eligible")
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["cutTheCrutch.result"].waitForExistence(timeout: 10)
+        )
+        XCTAssertTrue(app.staticTexts["Score"].exists)
+        XCTAssertTrue(app.staticTexts["XP earned"].exists)
+        XCTAssertTrue(app.staticTexts["+150"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["cutTheCrutch.insufficientSpeech"].exists)
+
+        let retry = app.buttons["Try another rep"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertTrue(retry.isHittable)
+        XCTAssertTrue(app.buttons["Done"].isHittable)
+        attachScreenshot(named: "crutch-eligible-result", app: app)
+    }
+
+    @MainActor
     private func launchPaceCompletionFixture(
         _ fixture: String,
         extraArguments: [String] = []
@@ -105,6 +152,23 @@ final class HomePracticePathPolishUITests: XCTestCase {
             "UI_TESTING_SEED_FORCE",
             "UI_TESTING_PACE_COMPLETION_FIXTURE", fixture,
             "-DeepLink", "noum://practice/pace"
+        ]
+        app.launchArguments += extraArguments
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func launchCutTheCrutchCompletionFixture(
+        _ fixture: String,
+        extraArguments: [String] = []
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CRUTCH_COMPLETION_FIXTURE", fixture,
+            "-DeepLink", "noum://practice/cut-the-crutch"
         ]
         app.launchArguments += extraArguments
         app.launch()

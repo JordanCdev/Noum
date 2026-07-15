@@ -17,7 +17,11 @@ struct CutTheCrutchView: View {
 
     @State private var didAwardXP = false
     @State private var hasValidatedResult = false
+    @State private var completionIssue: String?
     @State private var showAdjustments = false
+    #if DEBUG
+    @State private var isPresentingCompletionFixture = false
+    #endif
 
     private let tint: Color = AppColor.modeCrutch
     private static let universalCrutches = ["actually", "basically", "honestly"]
@@ -96,6 +100,7 @@ struct CutTheCrutchView: View {
         .onChange(of: speechVM.recordingLifecycle) { _, lifecycle in
             guard case .failed = lifecycle,
                   engine.phase != .setup else { return }
+            completionIssue = nil
             engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
         }
         .onDisappear {
@@ -103,6 +108,9 @@ struct CutTheCrutchView: View {
             engine.cancel()
         }
         .task {
+            #if DEBUG
+            if presentRequestedCompletionFixtureIfNeeded() { return }
+            #endif
             // Quick Start handshake — picker armed Cut the Crutch for a
             // one-tap launch. The engine's init already picked a top
             // user crutch (or "actually") + a random prompt, so the
@@ -127,19 +135,34 @@ struct CutTheCrutchView: View {
                 return
             }
         case .ended(let result):
+            #if DEBUG
+            guard !isPresentingCompletionFixture else { return }
+            #endif
             Task { @MainActor in
                 let completion = await speechVM.stopRecordingAwaitingFinalization()
-                guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                let disposition = CutTheCrutchCompletionDisposition.resolve(
+                    candidate: result,
+                    completion: completion,
+                    captureDuration: speechVM.lastSessionDuration
+                )
+                switch disposition {
+                case .eligible:
+                    guard engine.confirmCompletedCapture() else { return }
+                    completionIssue = nil
+                    if !didAwardXP {
+                        profileManager.addXP(disposition.awardedXP)
+                        didAwardXP = true
+                    }
+                    hasValidatedResult = true
+                case .insufficientSpeech:
                     engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
                     hasValidatedResult = false
-                    return
+                    completionIssue = Self.insufficientSpeechMessage
+                case .unusableRecording:
+                    engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
+                    hasValidatedResult = false
+                    completionIssue = nil
                 }
-                guard engine.confirmCompletedCapture() else { return }
-                if !didAwardXP {
-                    profileManager.addXP(result.xpEarned)
-                    didAwardXP = true
-                }
-                hasValidatedResult = true
             }
         default:
             break
@@ -150,9 +173,39 @@ struct CutTheCrutchView: View {
         guard case .setup = engine.phase else { return }
         hasValidatedResult = false
         didAwardXP = false
+        completionIssue = nil
         speechVM.connectionError = nil
         engine.beginCountdown()
     }
+
+    #if DEBUG
+    private func presentRequestedCompletionFixtureIfNeeded() -> Bool {
+        guard !isPresentingCompletionFixture,
+              let fixture = CutTheCrutchCompletionFixture.requested() else { return false }
+        isPresentingCompletionFixture = true
+        let candidate = fixture.candidate(avoidedWord: engine.avoidedWord)
+        let disposition = CutTheCrutchCompletionDisposition.resolve(
+            candidate: candidate,
+            completion: fixture.completion,
+            captureDuration: fixture.captureDuration
+        )
+        switch disposition {
+        case .eligible(let result):
+            didAwardXP = true
+            hasValidatedResult = true
+            completionIssue = nil
+            engine.presentResultForUITesting(result)
+        case .insufficientSpeech:
+            didAwardXP = false
+            hasValidatedResult = false
+            completionIssue = Self.insufficientSpeechMessage
+            engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
+        case .unusableRecording:
+            assertionFailure("Cut the Crutch completion fixture must provide a usable receipt")
+        }
+        return true
+    }
+    #endif
 
     private func connectRecorderAndStartRound() {
         Task { @MainActor in
@@ -214,7 +267,10 @@ struct CutTheCrutchView: View {
         } content: {
             VStack(spacing: Spacing.md) {
                 crutchSetupCue
-                if let error = speechVM.connectionError {
+                if let completionIssue {
+                    FocusedPracticeErrorStatus(message: completionIssue)
+                        .accessibilityIdentifier("cutTheCrutch.insufficientSpeech")
+                } else if let error = speechVM.connectionError {
                     FocusedPracticeErrorStatus(message: error)
                 }
             }
@@ -528,6 +584,7 @@ struct CutTheCrutchView: View {
         .safeAreaInset(edge: .bottom) {
             resultCTA(result)
         }
+        .accessibilityIdentifier("cutTheCrutch.result")
     }
 
     private func resultHero(_ result: CutTheCrutchResult) -> some View {
@@ -618,6 +675,7 @@ struct CutTheCrutchView: View {
                 let nextWord = engine.avoidedWord
                 let nextPrompt = PracticeTopics.random()
                 didAwardXP = false
+                completionIssue = nil
                 engine.reset(avoidedWord: nextWord, prompt: nextPrompt)
             } label: {
                 Text("Try another rep")
@@ -648,7 +706,49 @@ struct CutTheCrutchView: View {
             .ignoresSafeArea()
         )
     }
+
+    private static let insufficientSpeechMessage =
+        "We didn’t catch enough speech to score that rep. Speak a little longer and try again."
 }
+
+#if DEBUG
+/// Deterministic terminal receipts for rendered completion-integrity tests.
+/// They enter the same pure disposition as live capture without mutating
+/// persisted XP, Daily Goal, or streak state.
+private enum CutTheCrutchCompletionFixture: String {
+    case insufficient
+    case eligible
+
+    static func requested(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self? {
+        guard let index = arguments.firstIndex(of: "UI_TESTING_CRUTCH_COMPLETION_FIXTURE"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return Self(rawValue: arguments[index + 1])
+    }
+
+    func candidate(avoidedWord: String) -> CutTheCrutchResult {
+        CutTheCrutchResult(
+            avoidedWord: avoidedWord,
+            heartsRemaining: 3,
+            composure: 1,
+            survivedDuration: 60,
+            violations: [],
+            cleanCut: true
+        )
+    }
+
+    var completion: FinalizedTranscript {
+        FinalizedTranscript(
+            text: self == .eligible
+                ? "This terminal response contains enough speech"
+                : "Too short",
+            receivedFinalResult: true,
+            audioByteCount: 4_096
+        )
+    }
+
+    var captureDuration: TimeInterval { 60 }
+}
+#endif
 
 // MARK: - Composure Meter
 

@@ -90,6 +90,50 @@ struct CutTheCrutchResult: Equatable {
     }
 }
 
+// MARK: - Completion Integrity
+
+/// Resolves whether a finished Cut the Crutch round may become earned progress.
+/// Live engine state owns survival and violation timing; terminal provider text
+/// owns only final speech quantity, and recorder time owns the duration floor.
+enum CutTheCrutchCompletionDisposition: Equatable {
+    case eligible(CutTheCrutchResult)
+    case insufficientSpeech
+    case unusableRecording
+
+    static func resolve(
+        candidate: CutTheCrutchResult,
+        completion: FinalizedTranscript?,
+        captureDuration: TimeInterval
+    ) -> Self {
+        guard RecordingCompletionGate.allowsScoringAndProgress(completion),
+              let completion else {
+            return .unusableRecording
+        }
+
+        let terminalWordCount = completion.text.split {
+            !$0.isLetter && !$0.isNumber
+        }.count
+        guard PracticeProgressEligibility.qualifies(
+            wordCount: terminalWordCount,
+            duration: captureDuration
+        ) else {
+            return .insufficientSpeech
+        }
+
+        return .eligible(candidate)
+    }
+
+    var awardedXP: Int {
+        guard case .eligible(let result) = self else { return 0 }
+        return result.xpEarned
+    }
+
+    var result: CutTheCrutchResult? {
+        guard case .eligible(let result) = self else { return nil }
+        return result
+    }
+}
+
 // MARK: - Engine
 
 /// Drives a single Cut the Crutch round. Observable for SwiftUI binding.
@@ -195,6 +239,16 @@ final class CutTheCrutchEngine: ObservableObject {
         tickTask?.cancel()
         tickTask = nil
     }
+
+    #if DEBUG
+    /// Deterministic route into the production result surface for UI tests.
+    /// Fixtures pass through `CutTheCrutchCompletionDisposition` first and do
+    /// not mutate persisted XP, Daily Goal, or streak state.
+    func presentResultForUITesting(_ result: CutTheCrutchResult) {
+        cancel()
+        phase = .ended(result)
+    }
+    #endif
 
     /// User force-stopped the round — finalize as not-cleanCut with current state.
     func userEnded() {
