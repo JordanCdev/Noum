@@ -7,6 +7,20 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Microphone-stop duration provenance at `9088fdc3` gives Timed, Ah Counter,
+Impromptu, Mini-drill, Pressure Drill, persisted practice evidence, pitch
+eligibility, and quality telemetry one monotonic recorder-owned receipt frozen
+before provider finalization. Comparison epoch 2 excludes readable legacy-clock
+rows from duration-derived coaching; persisted baselines rebuild from current
+rows on recipe mismatch, and pressure EMA replay is chronological. Focused and
+related selections pass 26 and 74 unique tests respectively, and the full target
+passes 4,155 unique tests / 4,172 device executions. This is deterministic local
+evidence, not physical-device, live-provider-latency, retention, transfer, or
+launch proof. The next verified local correctness gap is that the common
+finalization path can still mutate Daily Goal, baseline/clutch/streak/personal-
+best, achievement, and coach-note state before `SessionFinalizer` applies its
+later sub-floor progress guard.
+
 Path progress-delivery hardening at `b5747542` makes a landmark one atomic
 post-finalization event rather than an inference from whichever session happens
 to sit at an array edge. The common practice finalizer snapshots synchronized

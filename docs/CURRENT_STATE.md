@@ -1,5 +1,33 @@
 # Noum — Current state
 
+## 2026-07-15 — Practice duration now ends when microphone capture ends
+
+Implementation commit `9088fdc3` closes a shared evidence-provenance defect in
+the existing `SpeechRecognizerViewModel`, practice finalizer, and baseline
+owners. Speaking duration is now measured by one monotonic microphone-capture
+clock and frozen before audio teardown and terminal provider completion.
+Provider drain and transcription-finalization latency can no longer inflate
+persisted duration, pitch eligibility, quality telemetry, Mini-drill duration,
+or Pressure Drill round totals.
+
+The frozen recorder receipt is reused across Timed, Ah Counter, Impromptu,
+Mini-drill, and Pressure Drill flows instead of being remeasured after an
+`await`. Comparison schema version 2 identifies exact microphone-stop evidence.
+Existing version 1 sessions remain readable and visible, but fail closed for
+duration-derived comparisons, baseline inputs, and pressure profiling. A
+persisted baseline now records its comparison recipe; a missing or mismatched
+recipe rebuilds from already-hydrated current-epoch sessions rather than
+blending old and new clocks. Pressure EMA replay is explicitly chronological.
+
+Focused capture and pressure verification passes **26 unique tests**; the
+related comparison, trajectory, Path, and baseline selection passes **74 unique
+tests**; and the complete `NoumTests` target passes **4,155 unique tests / 4,172
+device executions** with zero failures or skips on the iPhone 17 Pro / iOS 26.5
+simulator. This was a logic-only change, so no new screenshot sweep was created.
+No physical-device or deliberately delayed live-provider run proves the timing
+boundary outside the deterministic local substrate. Production readiness
+therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Path landmarks now bind to the exact finalized rep
 
 Implementation commit `b5747542` closes an order-dependent progress-trust gap
