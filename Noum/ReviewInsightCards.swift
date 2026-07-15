@@ -109,6 +109,12 @@ struct CurrentCoachingFocusPresentation: Equatable {
     }
 
     func applying(to blueprint: RecommendationBiasBlueprint) -> RecommendationBiasBlueprint {
+        // The durable case has already cleared its evidence/status policy in
+        // RecommendationBiasEngine. A generic trend projection must not erase
+        // the prescribed mode, target, or setup while that case is active.
+        if blueprint.source == .caseIntervention {
+            return blueprint
+        }
         let modeChanged = recommendedMode != blueprint.recommendedMode
         let playbook = RecommendationBiasEngine.playbook.first { entry in
             entry.mode == recommendedMode

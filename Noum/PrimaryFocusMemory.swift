@@ -121,6 +121,17 @@ enum CoachInterventionReviewStatus: String, Codable, Equatable {
             return "Adapt before repeating."
         }
     }
+
+    /// One shared continuation rule for every recommendation surface. A case
+    /// that needs diagnosis or adaptation must not be prescribed unchanged.
+    var shouldContinuePrescription: Bool {
+        switch self {
+        case .awaitingAttempt, .formingEvidence, .continueAndVerify:
+            return true
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return false
+        }
+    }
 }
 
 /// The measurable session metric a success criterion is judged against.

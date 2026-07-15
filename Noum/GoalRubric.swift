@@ -71,23 +71,38 @@ struct GoalOutcomeRead: Equatable {
         assessment: CoachAssessment,
         outcomes: [RecommendationOutcome] = []
     ) -> GoalOutcomeRead {
+        let rubric = GoalRubricStore.rubric(for: style)
         let usefulScores = assessment.rubricScores.filter { !$0.evidence.isEmpty }
         let strongest = usefulScores.max {
             if $0.score != $1.score { return $0.score < $1.score }
             return $0.dimensionID > $1.dimensionID
         }
-        let next = usefulScores.min {
-            if $0.score != $1.score { return $0.score < $1.score }
-            return $0.dimensionID < $1.dimensionID
-        }
+        // Select the largest goal-weighted deficit among dimensions that can
+        // be acted on without distorting the chosen voice. Lowest raw score is
+        // not enough: warm/storytelling intentionally down-weight verdict and
+        // hedge mechanics, and those dimensions must not become prescriptions.
+        let next = usefulScores
+            .filter {
+                GoalRubricStore.actionTarget(
+                    for: style,
+                    dimensionID: $0.dimensionID
+                ) != nil
+            }
+            .max {
+                let lhs = (rubric.defaultWeights[$0.dimensionID] ?? 0)
+                    * max(0, 1 - $0.score)
+                let rhs = (rubric.defaultWeights[$1.dimensionID] ?? 0)
+                    * max(0, 1 - $1.score)
+                if lhs != rhs { return lhs < rhs }
+                return $0.dimensionID > $1.dimensionID
+            }
         let confidence = min(1, max(0, assessment.confidence))
         // Rubrics deliberately set different evidence floors. For example, an
         // executive-presence read needs more corroboration than a concise
         // delivery read before we call the pattern established. Keep the
         // presentation tied to that same rubric rather than silently applying
         // a one-size-fits-all threshold.
-        let establishedEvidenceFloor = GoalRubricStore.rubric(for: style)
-            .establishedEvidenceFloor ?? 0.70
+        let establishedEvidenceFloor = rubric.establishedEvidenceFloor ?? 0.70
         let evidenceLevel: GoalEvidenceLevel
         if confidence < 0.35 || assessment.evidenceReferenceCount == 0 {
             evidenceLevel = .insufficient
@@ -97,17 +112,19 @@ struct GoalOutcomeRead: Equatable {
             evidenceLevel = .established
         }
 
+        let currentTargetID = next?.dimensionID
         let goalOutcomes = outcomes
-            .filter {
-                $0.goal == style
-                    && $0.isVerifiedFollowed
-                    && $0.hasComparableBaseline
+            .filter { outcome in
+                outcome.goal == style
+                    && outcome.isVerifiedFollowed
+                    && outcome.hasComparableBaseline
+                    && outcome.targetDimensionID == currentTargetID
+                    && rubric.dimensions.contains(where: { dimension in
+                        dimension.id == outcome.targetDimensionID
+                    })
             }
             .sorted { $0.completedAt > $1.completedAt }
-        let latestTargetID = goalOutcomes.first?.targetDimensionID
-        let comparableTargetOutcomes = goalOutcomes.filter {
-            latestTargetID == nil || $0.targetDimensionID == latestTargetID
-        }
+        let comparableTargetOutcomes = goalOutcomes
         let movement: GoalMovement
         let followUps = comparableTargetOutcomes.prefix(3).compactMap(\.goalFollowUpResult)
         if followUps.contains(.mixed) {
@@ -126,6 +143,10 @@ struct GoalOutcomeRead: Equatable {
             .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             ?? strongest?.evidence.first
 
+        let prescribedNextAction = next.flatMap { score in
+            rubric.dimensions.first { $0.id == score.dimensionID }?.proofTest
+        } ?? assessment.nextProofTest
+
         return GoalOutcomeRead(
             style: style,
             evidenceLevel: evidenceLevel,
@@ -134,7 +155,7 @@ struct GoalOutcomeRead: Equatable {
             nextDimension: next,
             evidenceCitation: citation,
             confidence: confidence,
-            prescribedNextAction: assessment.nextProofTest,
+            prescribedNextAction: prescribedNextAction,
             latestFollowUpResult: comparableTargetOutcomes.first?.goalFollowUpResult
         )
     }

@@ -2,6 +2,18 @@ import Foundation
 
 // MARK: - Next Action
 
+/// Exact provenance for a goal-outcome recommendation. This is carried only
+/// when the goal read itself won the cascade; a severe, blocker, case, or
+/// generic action must never be mislabeled as goal-target proof.
+struct NextActionGoalAttribution: Equatable {
+    let goal: SpeakingStyleGoal
+    let targetDimensionID: String
+    let targetDimensionLabel: String
+    let sourceSessionID: UUID
+    let proofTest: String
+    let movement: GoalMovement
+}
+
 /// The single unified recommendation produced after every session.
 /// Represents the ONE thing the user should do next, with reasoning.
 struct NextAction {
@@ -9,6 +21,7 @@ struct NextAction {
     let secondary: ActionRecommendation?   // Optional alternative
     let reasoning: String                  // Why this was chosen
     let confidenceLevel: BaselineConfidence // How much data backs this recommendation
+    let goalAttribution: NextActionGoalAttribution?
     /// Explicit provenance for an operational capability fallback. The
     /// original gated mode is retained so downstream trust UI never has to
     /// infer fallback state from mutable display copy.
@@ -19,12 +32,14 @@ struct NextAction {
         secondary: ActionRecommendation?,
         reasoning: String,
         confidenceLevel: BaselineConfidence,
+        goalAttribution: NextActionGoalAttribution? = nil,
         availabilityFallbackFrom: PracticeMode? = nil
     ) {
         self.primary = primary
         self.secondary = secondary
         self.reasoning = reasoning
         self.confidenceLevel = confidenceLevel
+        self.goalAttribution = goalAttribution
         self.availabilityFallbackFrom = availabilityFallbackFrom
     }
 }
@@ -392,6 +407,19 @@ struct NextActionInput {
     /// ledger yields a nil verdict, so the engine behaves exactly as before until
     /// ≥3 measurable reps exist for a mode.
     var recommendationOutcomes: [RecommendationOutcome] = []
+
+    /// Refreshed durable case snapshot. The engine remains a pure transform;
+    /// SessionFinalizer owns the store read and passes the value in.
+    var coachMemory: CoachMemory? = nil
+
+    /// The one qualitative goal read computed after the latest session and
+    /// Coach Memory refresh. Nil preserves all legacy/no-goal behavior.
+    var goalOutcomeRead: GoalOutcomeRead? = nil
+
+    /// Exact latest-session provenance and qualification. These prevent a
+    /// mature history from routing a stale or low-confidence current rep.
+    var latestSessionID: UUID? = nil
+    var latestSessionQualifies: Bool = false
 }
 
 // MARK: - Next Action Engine
@@ -401,12 +429,14 @@ struct NextActionInput {
 /// Decision priority (highest → lowest):
 /// 1. Severe session issue (qualifying filler burden ≥ 8/min, duration < 8s, qualifying WPM > 200)
 /// 2. Persistent blocker (same issue for 10+ sessions)
-/// 3. Pressure gap (strong casually but untested under pressure)
-/// 4. Declining trend with high confidence
-/// 5. New issue detected
-/// 6. Improving trend (reinforcing rep)
-/// 7. Stable + strong (stretch challenge)
-/// 8. Default (TrendAnalyzer primary focus)
+/// 3. Continuing durable coaching case
+/// 4. Established, actionable goal outcome
+/// 5. Pressure gap (strong casually but untested under pressure)
+/// 6. Declining trend with high confidence
+/// 7. New issue detected
+/// 8. Improving trend (reinforcing rep)
+/// 9. Stable + strong (stretch challenge)
+/// 10. Default (TrendAnalyzer primary focus)
 enum NextActionEngine {
 
     static func recommend(input: NextActionInput) -> NextAction {
@@ -423,11 +453,20 @@ enum NextActionEngine {
         if input.baseline.qualifyingSessionCount >= 2 {
             return recommend(input: input)
         }
-        guard let immediate = severeRecommendation(input: input) else {
+        if let immediate = severeRecommendation(input: input) {
+            return applyingModeAvailability(
+                to: immediate,
+                availability: input.modeAvailability
+            )
+        }
+        // A case can outlive a temporarily thin current baseline. Preserve an
+        // already-evidenced intervention, but do not admit the wider adaptive
+        // cascade or a new goal target below the baseline floor.
+        guard let activeCase = activeCaseRecommendation(input: input) else {
             return nil
         }
         return applyingModeAvailability(
-            to: immediate,
+            to: activeCase,
             availability: input.modeAvailability
         )
     }
@@ -451,7 +490,17 @@ enum NextActionEngine {
             )
         }
 
-        // --- Priority 3: Pressure gap ---
+        // --- Priority 3: Continuing durable coaching case ---
+        if let activeCase = activeCaseRecommendation(input: input) {
+            return activeCase
+        }
+
+        // --- Priority 4: Established, actionable goal outcome ---
+        if let goalAction = goalOutcomeRecommendation(input: input, style: style) {
+            return goalAction
+        }
+
+        // --- Priority 5: Pressure gap ---
         if confidence >= .moderate, let pressureAction = checkPressureGap(input: input) {
             return NextAction(
                 primary: pressureAction,
@@ -461,7 +510,7 @@ enum NextActionEngine {
             )
         }
 
-        // --- Priority 4: Declining trend ---
+        // --- Priority 6: Declining trend ---
         if let declining = checkDecliningTrend(input: input) {
             let base = ConfidencePhrasing.frame("A previously stronger skill read lower recently. One focused drill can test whether the pattern responds.", confidence: confidence)
             return NextAction(
@@ -472,7 +521,7 @@ enum NextActionEngine {
             )
         }
 
-        // --- Priority 5: New issue ---
+        // --- Priority 7: New issue ---
         if let newIssue = checkNewIssue(input: input) {
             return NextAction(
                 primary: newIssue,
@@ -482,7 +531,7 @@ enum NextActionEngine {
             )
         }
 
-        // --- Priority 6: Improving trend ---
+        // --- Priority 8: Improving trend ---
         // A confidently-replaced mode is NOT re-handed as a stabilizing rep:
         // when the ledger shows this mode's metric trending down over ≥6
         // measurable reps, the coach varies the modality instead of repeating
@@ -499,7 +548,7 @@ enum NextActionEngine {
             )
         }
 
-        // --- Priority 7: Stable + strong ---
+        // --- Priority 9: Stable + strong ---
         if input.score >= 7, let stretch = stretchChallenge(input: input) {
             return NextAction(
                 primary: stretch,
@@ -509,7 +558,7 @@ enum NextActionEngine {
             )
         }
 
-        // --- Priority 8: Default ---
+        // --- Priority 10: Default ---
         let defaultDrill = standardDrill(input: input)
         return NextAction(
             primary: defaultDrill ?? .practiceMode(.timed, reason: "Keep building your baseline with another practice session."),
@@ -542,9 +591,94 @@ enum NextActionEngine {
                 ? primaryResolution.action.displayReason
                 : recommendation.reasoning,
             confidenceLevel: recommendation.confidenceLevel,
+            // A capability fallback is safe navigation, not execution of the
+            // selected goal proof. Clear attribution so the fallback cannot
+            // enter followed-rep learning as pressure/goal evidence.
+            goalAttribution: primaryResolution.didFallback
+                ? nil
+                : recommendation.goalAttribution,
             availabilityFallbackFrom: primaryResolution.didFallback
                 ? recommendation.primary.recommendedMode
                 : recommendation.availabilityFallbackFrom
+        )
+    }
+
+    private static func activeCaseRecommendation(input: NextActionInput) -> NextAction? {
+        guard let memory = input.coachMemory,
+              memory.evidenceConfidence >= .tentative,
+              let intervention = memory.activeIntervention,
+              intervention.reviewStatus.shouldContinuePrescription else {
+            return nil
+        }
+        let target = [intervention.target, intervention.focus, intervention.title]
+            .compactMap { value -> String? in
+                guard let value else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .first ?? "Complete one followed rep against the active coaching target."
+        let action = ActionRecommendation.practiceMode(
+            intervention.mode,
+            reason: target
+        )
+        return NextAction(
+            primary: action,
+            secondary: nil,
+            reasoning: "Your active coaching case still needs a followed rep before the coach changes direction.",
+            confidenceLevel: memory.evidenceConfidence
+        )
+    }
+
+    private static func goalOutcomeRecommendation(
+        input: NextActionInput,
+        style: SpeakingStyleGoal?
+    ) -> NextAction? {
+        guard let style,
+              let read = input.goalOutcomeRead,
+              read.style == style,
+              read.evidenceLevel == .established,
+              read.movement != .mixed,
+              input.latestSessionQualifies,
+              let sourceSessionID = input.latestSessionID,
+              let dimension = read.nextDimension,
+              !dimension.evidence.isEmpty else {
+            return nil
+        }
+
+        let rubric = GoalRubricStore.rubric(for: style)
+        let evidenceFloor = rubric.establishedEvidenceFloor ?? 0.70
+        guard dimension.confidence >= evidenceFloor,
+              dimension.score < 0.70 || dimension.missingEvidence != nil,
+              let target = GoalRubricStore.actionTarget(
+                for: style,
+                dimensionID: dimension.dimensionID
+              ) else {
+            return nil
+        }
+
+        let proof = read.prescribedNextAction
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !proof.isEmpty else { return nil }
+
+        let primary: ActionRecommendation
+        if target.mode == .suddenDeath {
+            primary = .pressureExposure(target.mode, reason: proof)
+        } else {
+            primary = .practiceMode(target.mode, reason: proof)
+        }
+        return NextAction(
+            primary: primary,
+            secondary: nil,
+            reasoning: "The established goal read points to \(dimension.label.lowercased()). One comparable rep can test the next proof point.",
+            confidenceLevel: input.baseline.overallConfidence,
+            goalAttribution: NextActionGoalAttribution(
+                goal: style,
+                targetDimensionID: dimension.dimensionID,
+                targetDimensionLabel: dimension.label,
+                sourceSessionID: sourceSessionID,
+                proofTest: proof,
+                movement: read.movement
+            )
         )
     }
 
@@ -596,13 +730,14 @@ enum NextActionEngine {
     /// mode the evidence says is not moving the metric.
     ///
     /// Scope of the adaptation verdict across the cascade: it is a TIE-BREAKER
-    /// over P3 (pressure), P6 (this reinforcement) and P7 (stretch) ONLY — and
+    /// over P5 (pressure), P8 (this reinforcement) and P9 (stretch) ONLY — and
     /// only ever biases AWAY from a confidently-replaced mode (never INTO one,
     /// never toward `nil` where an action was previously returned). The hard
-    /// real-time signals P1/P2/P4/P5 (severe/blocker/declining/new-issue) return
-    /// before any tie-breaker and are never suppressed; the skill-keyed P8 `.drill`
+    /// higher-priority signals P1-P4/P6/P7 (severe/blocker/case/goal/
+    /// declining/new-issue) return before any tie-breaker and are never
+    /// suppressed; the skill-keyed P10 `.drill`
     /// is likewise never overridden — a per-MODE verdict must not veto a
-    /// SKILL-keyed drill (P8 stays inert; at most its fallback `.practiceMode`
+    /// SKILL-keyed drill (P10 stays inert; at most its fallback `.practiceMode`
     /// could bias away from `input.mode`). `.vary` is inert and an empty ledger is
     /// a guaranteed no-op, so `recommend()` stays a total function throughout.
     private static func shouldDeferReinforcement(_ action: ActionRecommendation, input: NextActionInput) -> Bool {
@@ -683,7 +818,7 @@ enum NextActionEngine {
         return nil
     }
 
-    /// Priority 3: Strong casually but untested or weak under pressure.
+    /// Priority 5: Strong casually but untested or weak under pressure.
     private static func checkPressureGap(input: NextActionInput) -> ActionRecommendation? {
         guard let resilience = input.pressureProfile.pressureResilience,
               resilience < 0.6 else { return nil }
@@ -714,7 +849,7 @@ enum NextActionEngine {
         return .pressureExposure(mode, reason: "Your casual delivery has read stronger than your pressure reps. One pressure rep can test the gap.")
     }
 
-    /// Priority 4: A skill that was strong is now declining.
+    /// Priority 6: A skill that was strong is now declining.
     private static func checkDecliningTrend(input: NextActionInput) -> ActionRecommendation? {
         let declining = input.trends.filter { $0.direction == .declining }
         guard !declining.isEmpty else { return nil }
@@ -736,7 +871,7 @@ enum NextActionEngine {
         return nil
     }
 
-    /// Priority 5: A new issue just appeared.
+    /// Priority 7: A new issue just appeared.
     private static func checkNewIssue(input: NextActionInput) -> ActionRecommendation? {
         let newIssues = input.trends.filter { $0.direction == .newIssue }
         guard !newIssues.isEmpty else { return nil }
@@ -747,7 +882,7 @@ enum NextActionEngine {
         return nil
     }
 
-    /// Priority 6: A skill is improving — reinforce with a stabilizing rep.
+    /// Priority 8: A skill is improving — reinforce with a stabilizing rep.
     private static func checkImprovingTrend(input: NextActionInput) -> ActionRecommendation? {
         let improving = input.trends.filter { $0.direction == .improving }
         guard !improving.isEmpty else { return nil }
@@ -782,7 +917,8 @@ enum NextActionEngine {
     /// A standard drill recommendation using DrillEngineV2. Passes through the
     /// resolved style goal so the focus picker can prefer goal-aligned skills
     /// when otherwise-equivalent candidates are tied — the only path where
-    /// the engine picks the skill itself (priority 1–7 hand it a `targetArea`).
+    /// the engine picks the skill itself (priority 1–9 either return first or
+    /// hand an explicit target/mode).
     private static func standardDrill(input: NextActionInput) -> ActionRecommendation? {
         let style = SpeakingStyleGoal.resolve(input.styleGoal)
         let rec = DrillEngineV2.recommend(

@@ -338,6 +338,19 @@ enum SessionFinalizer {
             comparisons = [:]
         }
 
+        let currentCoachMemory = CoachMemoryStore.shared.currentMemory
+        let latestFinalizedSession = latestSessionID.flatMap { sessionID in
+            sessionStore.sessions.first { $0.id == sessionID }
+        }
+        let currentGoalOutcomeRead = GoalOutcomeEngine.read(
+            profile: coachingProfileStore.profile,
+            baseline: baseline,
+            rating: RatingStore.shared.rating,
+            sessions: sessionStore.sessions,
+            coachMemory: currentCoachMemory,
+            outcomes: RecommendationLearningStore.shared.outcomes
+        )
+
         // NextAction recommendation
         let nextAction: NextAction? = {
             let input = NextActionInput(
@@ -360,7 +373,12 @@ enum SessionFinalizer {
                     rating: RatingStore.shared.rating,
                     imConversationAvailable: IMModeAvailability.isAvailable
                 ),
-                recommendationOutcomes: RecommendationLearningStore.shared.outcomes
+                recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
+                coachMemory: currentCoachMemory,
+                goalOutcomeRead: currentGoalOutcomeRead,
+                latestSessionID: latestSessionID,
+                latestSessionQualifies: latestFinalizedSession
+                    .map(SessionQualifier.qualifies) ?? false
             )
             return NextActionEngine.recommendAfterSession(input: input)
         }()

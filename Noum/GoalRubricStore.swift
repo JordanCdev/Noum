@@ -8,6 +8,15 @@ import Foundation
 /// new mutable state owner.
 enum GoalRubricStore {
 
+    /// A safe bridge from a qualitative rubric dimension to an existing
+    /// practice surface. The skill is descriptive provenance for tests and
+    /// future presentation; the mode is the full comparable rep that can
+    /// enter the existing recommendation-outcome ledger.
+    struct ActionTarget: Equatable {
+        let skillArea: SkillArea
+        let mode: PracticeMode
+    }
+
     static func activeRubric(for profile: CoachingProfile?) -> ActiveGoalRubric? {
         guard let voice = profile?.chosenStyleGoal else { return nil }
         return ActiveGoalRubric(
@@ -36,6 +45,71 @@ enum GoalRubricStore {
         case .persuasive: return persuasiveRubric
         case .concise: return conciseRubric
         }
+    }
+
+    /// Only dimensions that are semantically compatible with the chosen
+    /// voice may direct practice. In particular, warm and storytelling speech
+    /// must not be corrected toward verdict-first or stripped-hedge delivery,
+    /// and semantic hedges must never be reclassified as filler speech.
+    static func actionTarget(
+        for voice: SpeakingStyleGoal,
+        dimensionID: String
+    ) -> ActionTarget? {
+        let skill: SkillArea?
+        switch (voice, dimensionID) {
+        case (.authoritative, "verdict_first"):
+            skill = .openingStrength
+        case (.authoritative, "hedge_control"):
+            skill = .confidence
+        case (.authoritative, "clean_close"):
+            skill = .closingStrength
+        case (.authoritative, "pressure_stability"):
+            skill = .confidence
+
+        case (.executive, "verdict_first"):
+            skill = .openingStrength
+        case (.executive, "hedge_control"),
+             (.executive, "pressure_stability"):
+            skill = .confidence
+        case (.executive, "clean_close"):
+            skill = .conciseSpeaking
+
+        case (.concise, "verdict_first"),
+             (.concise, "hedge_control"),
+             (.concise, "clean_close"):
+            skill = .conciseSpeaking
+        case (.concise, "controlled_pacing"):
+            skill = .fillerReduction
+        case (.concise, "salience"):
+            skill = .structure
+
+        case (.persuasive, "verdict_first"):
+            skill = .structure
+        case (.persuasive, "clean_close"):
+            skill = .closingStrength
+        case (.persuasive, "salience"):
+            skill = .answerDevelopment
+
+        case (.warm, "controlled_pacing"):
+            skill = .paceControl
+        case (.warm, "salience"):
+            skill = .answerDevelopment
+
+        case (.storytelling, "clean_close"),
+             (.storytelling, "salience"):
+            skill = .answerDevelopment
+        case (.storytelling, "controlled_pacing"):
+            skill = .pauseUsage
+
+        default:
+            skill = nil
+        }
+
+        guard let skill, voice.aligns(with: skill) else { return nil }
+        let mode: PracticeMode = dimensionID == "pressure_stability"
+            ? .suddenDeath
+            : .timed
+        return ActionTarget(skillArea: skill, mode: mode)
     }
 
     /// The six coaching dimensions are shared verbatim across every voice — only

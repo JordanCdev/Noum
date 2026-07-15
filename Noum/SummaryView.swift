@@ -2140,6 +2140,7 @@ struct SummaryView: View {
     /// this path.
     private func recordFullRepPrescriptionShown(mode: PracticeMode) {
         let prescription = summaryPrescription
+        let goalAttribution = finalizedActionForSummary?.goalAttribution
         guard prescription.source == .finalizedNextAction,
               prescription.fullRepMode == mode,
               onStartLookingAhead != nil else { return }
@@ -2149,14 +2150,19 @@ struct SummaryView: View {
                 latestSessionID?.uuidString ?? "legacy",
                 mode.rawValue,
                 prescription.title,
+                goalAttribution?.targetDimensionID ?? "general",
+                goalAttribution?.sourceSessionID.uuidString ?? "no-goal-source",
             ].joined(separator: "|"),
             title: prescription.title,
             focus: prescription.reason,
-            target: prescription.evidence ?? prescription.reason,
+            target: goalAttribution?.proofTest
+                ?? prescription.evidence
+                ?? prescription.reason,
             mode: mode,
             isAIBacked: false,
-            goal: coachingProfileStore.profile?.chosenStyleGoal,
-            sourceSessionID: latestSessionID
+            goal: goalAttribution?.goal,
+            targetDimensionID: goalAttribution?.targetDimensionID,
+            sourceSessionID: goalAttribution?.sourceSessionID ?? latestSessionID
         )
     }
 

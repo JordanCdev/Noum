@@ -72,7 +72,7 @@ struct GoalOutcomeLoopTests {
                 completedAt: Date(timeIntervalSince1970: TimeInterval(index)),
                 scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
                 durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
-                goal: .concise, targetDimensionID: "clean_close",
+                goal: .concise, targetDimensionID: "hedge_control",
                 goalFollowUpResult: .earlyImprovement
             )
         }
@@ -143,7 +143,7 @@ struct GoalOutcomeLoopTests {
                     sessionID: UUID(), followed: true, completedAt: Date(),
                     scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
                     durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
-                    goal: .concise, targetDimensionID: "clean_close",
+                    goal: .concise, targetDimensionID: "hedge_control",
                     goalFollowUpResult: .earlyImprovement
                 ),
                 RecommendationOutcome(
@@ -152,7 +152,7 @@ struct GoalOutcomeLoopTests {
                     sessionID: UUID(), followed: true, completedAt: Date(timeIntervalSince1970: 1),
                     scoreDelta: 1, hasComparableScore: true, fillerDelta: -1,
                     durationDelta: 0, fillerRateDelta: -1, comparisonSessionCount: 3,
-                    goal: .concise, targetDimensionID: "clean_close",
+                    goal: .concise, targetDimensionID: "hedge_control",
                     goalFollowUpResult: .earlyImprovement
                 ),
             ]
@@ -182,7 +182,7 @@ struct GoalOutcomeLoopTests {
                     sessionID: UUID(), followed: true, completedAt: Date(),
                     scoreDelta: 1, hasComparableScore: true, fillerDelta: 1,
                     durationDelta: 0, fillerRateDelta: 1, comparisonSessionCount: 3,
-                    goal: .concise, targetDimensionID: "clean_close",
+                    goal: .concise, targetDimensionID: "hedge_control",
                     goalFollowUpResult: .mixed
                 ),
             ]

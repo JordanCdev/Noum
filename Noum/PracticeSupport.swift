@@ -12090,7 +12090,7 @@ enum RecommendationBiasEngine {
         guard let memory,
               memory.evidenceConfidence >= .tentative,
               let intervention = memory.activeIntervention,
-              shouldContinueCaseIntervention(intervention) else {
+              intervention.reviewStatus.shouldContinuePrescription else {
             return nil
         }
 
@@ -12116,15 +12116,6 @@ enum RecommendationBiasEngine {
             suggestedTheme: theme,
             source: .caseIntervention
         )
-    }
-
-    private static func shouldContinueCaseIntervention(_ intervention: CoachIntervention) -> Bool {
-        switch intervention.reviewStatus {
-        case .awaitingAttempt, .formingEvidence, .continueAndVerify:
-            return true
-        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
-            return false
-        }
     }
 
     private static func caseFocus(for intervention: CoachIntervention) -> String {
