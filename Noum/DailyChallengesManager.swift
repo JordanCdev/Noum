@@ -97,7 +97,7 @@ final class DailyChallengesManager: ObservableObject {
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: Date())
         let nextDayStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
-        let sessionsToday = PracticeSessionStore.shared.sessions
+        let sessionsToday = PracticeSessionStore.shared.progressEligibleSessions
             .filter { $0.date >= todayStart && $0.date < nextDayStart }
 
         guard let latest = sessionsToday.first else {

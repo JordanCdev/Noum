@@ -1231,6 +1231,53 @@ struct IMPracticeView: View {
                 return
             }
 
+            let wordCount = transcript.split(whereSeparator: \.isWhitespace).count
+            guard PracticeProgressEligibility.qualifies(
+                wordCount: wordCount,
+                duration: totalDuration
+            ) else {
+                // A transport-valid short capture still belongs in Review, but
+                // it is not enough evidence for a coach grade or a durable
+                // relationship update. Persist the raw conversation without
+                // calling either the cloud evaluator or the relationship store.
+                await MainActor.run {
+                    summaryEvaluation = nil
+                    summaryTranscript = AttributedString(transcript)
+
+                    let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
+                    let pressure = BaselineEngine.classifyPressure(
+                        mode: .imConversation,
+                        isPressureModeOn: pressureOn,
+                        streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
+                    )
+                    _ = PracticeSessionFinalizer.finalize(
+                        store: sessionStore,
+                        draft: PracticeSessionDraft(
+                            transcript: transcript,
+                            fillerWordCount: totalFillers,
+                            duration: totalDuration,
+                            date: Date(),
+                            mode: .imConversation,
+                            imDetails: IMConversationDetails(
+                                setup: setup,
+                                turns: turns,
+                                actualTone: nil,
+                                finalState: conversationState,
+                                outcome: nil,
+                                relationshipSnapshot: relationshipProfile,
+                                contextSnapshot: sessionContext
+                            ),
+                            pressureLevel: pressure,
+                            isRated: pressureOn,
+                            pauseMetrics: speechVM.currentSessionPauseMetrics()
+                        )
+                    )
+                    pushSummary()
+                    isEndingConversation = false
+                }
+                return
+            }
+
             do {
                 let evaluation = try await evaluationService.evaluateConversation(
                     setup: setup,

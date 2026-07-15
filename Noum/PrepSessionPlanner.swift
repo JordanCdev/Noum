@@ -353,7 +353,10 @@ enum PrepSessionPlanner {
         momentCreatedAt: Date
     ) -> PrepSessionReadiness {
         let plannedModes = plan.steps.map(\.mode)
-        let windowSessions = sessions.filter { $0.date >= momentCreatedAt }
+        let windowSessions = sessions.filter {
+            $0.date >= momentCreatedAt
+                && PracticeProgressEligibility.qualifies($0)
+        }
         let practiced = Set(windowSessions.map(\.mode))
         // Preserve plan order so the copy reads warm-up → pressure → audience.
         let covered = plannedModes.filter { practiced.contains($0) }

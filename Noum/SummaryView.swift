@@ -201,6 +201,39 @@ struct SummaryView: View {
     private var effectiveFillerCount: Int { lockedFillerCount ?? fillerCount }
     private var effectiveDuration: TimeInterval { lockedDuration ?? duration }
 
+    private var currentStoredSession: PracticeSession? {
+        if let latestSessionID {
+            return sessionStore.sessions.first(where: { $0.id == latestSessionID })
+                ?? recentSessions.first(where: { $0.id == latestSessionID })
+        }
+        return recentSessions.first ?? sessionStore.sessions.first
+    }
+
+    /// Summary is a second presentation/AI boundary after persistence. A raw
+    /// Review row may render here, but it cannot display earned credit, start
+    /// cloud coaching, or alter a durable coaching ledger.
+    private var currentRepIsProgressEligible: Bool {
+        if let currentStoredSession {
+            return PracticeProgressEligibility.qualifies(currentStoredSession)
+        }
+        return PracticeProgressEligibility.qualifies(
+            wordCount: transcriptWordCount,
+            duration: effectiveDuration
+        )
+    }
+
+    private var progressEligibleRecentSessions: [PracticeSession] {
+        PracticeProgressEligibility.eligibleSessions(in: recentSessions)
+    }
+
+    private var previousProgressSessions: [PracticeSession] {
+        sessionStore.progressEligibleSessions.filter { $0.id != latestSessionID }
+    }
+
+    private var earnedXPForPresentation: Int {
+        currentRepIsProgressEligible ? xpEarned : 0
+    }
+
     private var currentMode: PracticeMode {
         if let explicitMode { return explicitMode }
         if imConversationDetails != nil { return .imConversation }
@@ -214,6 +247,9 @@ struct SummaryView: View {
     private var isSuddenDeathSummary: Bool { currentMode == .suddenDeath }
 
     private var scoreValue: Int {
+        if !currentRepIsProgressEligible {
+            return transcriptWordCount == 0 ? 0 : 1
+        }
         if let lockedScore { return lockedScore }
         if let score { return score }
         // No words spoken at all = 0
@@ -374,7 +410,8 @@ struct SummaryView: View {
     }
 
     private var currentPostRepCoachNote: PostRepCoachNote? {
-        guard let sessionID = sessionStore.sessions.first?.id else { return nil }
+        guard currentRepIsProgressEligible,
+              let sessionID = currentStoredSession?.id else { return nil }
         return postRepCoachNoteStore.note(
             for: sessionID,
             chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
@@ -413,7 +450,8 @@ struct SummaryView: View {
     /// Nil whenever the finalized session isn't available yet or either
     /// read failed to form — the card simply omits the line. Never numeric.
     private var postRepDeliveryReadLine: String? {
-        guard let session = sessionStore.sessions.first else { return nil }
+        guard currentRepIsProgressEligible,
+              let session = currentStoredSession else { return nil }
         let baseline = baselineStore.baseline
         let composure = ComposureReadEngine.derive(
             session: session,
@@ -445,6 +483,7 @@ struct SummaryView: View {
     }
 
     private var headline: String {
+        if !currentRepIsProgressEligible { return "Just getting started" }
         if let lockedHeadlineOverride { return lockedHeadlineOverride }
         if let headlineOverride { return headlineOverride }
         if transcriptWordCount == 0 { return "No response detected" }
@@ -485,7 +524,7 @@ struct SummaryView: View {
     }
 
     private var recentWindow: [PracticeSession] {
-        Array(sessionStore.sessions.prefix(5))
+        Array(sessionStore.progressEligibleSessions.prefix(5))
     }
 
     /// One strict filler read owns every Summary comparison. The persisted
@@ -496,9 +535,8 @@ struct SummaryView: View {
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
-            transcriptConfidence: recentSessions.first?.transcriptConfidence
-                ?? sessionStore.sessions.first?.transcriptConfidence,
-            previousSessions: Array(recentWindow.dropFirst())
+            transcriptConfidence: currentStoredSession?.transcriptConfidence,
+            previousSessions: previousProgressSessions
         )
     }
 
@@ -551,11 +589,12 @@ struct SummaryView: View {
     }
 
     private var goalOutcomeRead: GoalOutcomeRead? {
-        GoalOutcomeEngine.read(
+        guard currentRepIsProgressEligible else { return nil }
+        return GoalOutcomeEngine.read(
             profile: coachingProfileStore.profile,
             baseline: baselineStore.baseline,
             rating: ratingStore.rating,
-            sessions: sessionStore.sessions,
+            sessions: sessionStore.progressEligibleSessions,
             coachMemory: coachMemoryStore.currentMemory,
             outcomes: recommendationLearningStore.outcomes
         )
@@ -611,9 +650,10 @@ struct SummaryView: View {
     /// `if #available` guards the iOS-17 summary type so this unannotated
     /// view still compiles; `IMToneDrillSignal` itself is non-gated.
     private var imToneDrillSignal: IMToneDrillSignal? {
-        guard IMModeAvailability.isAvailable else { return nil }
+        guard currentRepIsProgressEligible,
+              IMModeAvailability.isAvailable else { return nil }
         if #available(iOS 17.0, *) {
-            return IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+            return IMHistorySummary.toneDrillSignal(from: sessionStore.progressEligibleSessions)
         }
         return nil
     }
@@ -641,16 +681,17 @@ struct SummaryView: View {
         // Only IM reps can resolve an IM tone drill. The summary view's
         // own `imConversationDetails` carries the just-finished scenario,
         // matching how the finalizer scopes the crossing read.
-        guard let details = imConversationDetails else { return nil }
+        guard currentRepIsProgressEligible,
+              let details = imConversationDetails else { return nil }
         if #available(iOS 17.0, *) {
             // Latest session in the store is the just-finalized rep
             // (`PracticeSessionStore` prepends). Pass its id to the
             // helper so the with-vs-without-this-rep comparison is
             // order-independent — same primitive the finalizer uses.
-            guard let currentRepId = sessionStore.sessions.first?.id else { return nil }
+            guard let currentRepId = currentStoredSession?.id else { return nil }
             let scenario = details.setup.scenario
             guard let crossed = IMHistorySummary.toneDrillCrossing(
-                in: sessionStore.sessions,
+                in: sessionStore.progressEligibleSessions,
                 scenario: scenario,
                 currentRepId: currentRepId
             ) else { return nil }
@@ -687,7 +728,7 @@ struct SummaryView: View {
     }
 
     private var daysSinceLastSession: Int {
-        guard let last = sessionStore.sessions.first?.date else { return 99 }
+        guard let last = sessionStore.progressEligibleSessions.first?.date else { return 99 }
         return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: last), to: Calendar.current.startOfDay(for: Date())).day ?? 0
     }
 
@@ -710,7 +751,7 @@ struct SummaryView: View {
     private var derivedInsights: [String] {
         if !lockedInsights.isEmpty { return lockedInsights }
         if !insights.isEmpty { return insights }
-        let previousSessions = Array(recentSessions.dropFirst())
+        let previousSessions = previousProgressSessions
         guard !previousSessions.isEmpty else {
             return ["First rep saved. Complete another rep to start comparing."]
         }
@@ -724,7 +765,8 @@ struct SummaryView: View {
         if let fillerInsight = summaryFillerPresentation.derivedInsight {
             messages.append(fillerInsight)
         }
-        messages.append("You now have \(recentSessions.count) saved practice session\(recentSessions.count == 1 ? "" : "s") to compare against.")
+        let eligibleCount = sessionStore.progressEligibleSessionCount
+        messages.append("You now have \(eligibleCount) saved practice session\(eligibleCount == 1 ? "" : "s") to compare against.")
         return Array(messages.prefix(3))
     }
 
@@ -756,7 +798,7 @@ struct SummaryView: View {
                     .transition(reduceMotion ? .identity : .opacity)
                 case .achievementProgress:
                     PostSessionProgressionView(
-                        xpEarned: xpEarned,
+                        xpEarned: earnedXPForPresentation,
                         previousXP: progressionPreviousXP,
                         newXP: profile.xp,
                         previousLevel: currentLevel,
@@ -1087,7 +1129,8 @@ struct SummaryView: View {
 
     /// Delta vs recent average duration (positive = improved)
     private var durationDelta: Int? {
-        let past = recentWindow.dropFirst().map(\.duration)
+        guard currentRepIsProgressEligible else { return nil }
+        let past = previousProgressSessions.map(\.duration)
         guard !past.isEmpty else { return nil }
         let avg = past.reduce(0, +) / Double(past.count)
         let delta = Int(effectiveDuration) - Int(avg.rounded())
@@ -1118,8 +1161,10 @@ struct SummaryView: View {
                     // reads as a quiet volume caption in here. Self-hides
                     // when nothing accrued (never renders "+0").
                     if let credit = PracticeVolumeNarration.verdictCreditLine(
-                        xpEarned: xpEarned,
-                        eloquenceBonus: EloquenceXP.totalXP(for: eloquenceFindings)
+                        xpEarned: earnedXPForPresentation,
+                        eloquenceBonus: currentRepIsProgressEligible
+                            ? EloquenceXP.totalXP(for: eloquenceFindings)
+                            : 0
                     ) {
                         HStack(spacing: 6) {
                             Image(systemName: "plus.circle")
@@ -1166,7 +1211,7 @@ struct SummaryView: View {
                             score: score,
                             scoreValue: scoreValue,
                             rating: ratingStore.rating,
-                            pressureLevel: recentSessions.first?.pressureLevel ?? .standard
+                            pressureLevel: currentStoredSession?.pressureLevel ?? .standard
                         )
                     }
 
@@ -1181,10 +1226,10 @@ struct SummaryView: View {
                     // collapses to whatever the rep actually produced.
                     if !isIMSummary {
                         EloquenceFindingsCard(findings: eloquenceFindings)
-                        if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
+                        if let pauseMetrics = currentStoredSession?.pauseMetrics {
                             PauseSummaryCard(metrics: pauseMetrics)
                         }
-                        if let pitchMetrics = sessionStore.sessions.first?.pitchMetrics {
+                        if let pitchMetrics = currentStoredSession?.pitchMetrics {
                             PitchSummaryCard(metrics: pitchMetrics)
                         }
                         // Positional read — WHERE the rep's notable moments
@@ -1192,7 +1237,7 @@ struct SummaryView: View {
                         // to the coach's positional prompt block; self-hides
                         // (engine returns nil) when no credible positional
                         // signal exists, so it never pads a non-finding.
-                        if let eventLocations = sessionStore.sessions.first?.repEventLocations {
+                        if let eventLocations = currentStoredSession?.repEventLocations {
                             RepTimelineCard(locations: eventLocations)
                         }
                         // Recurring-position trend — the LONGITUDINAL companion
@@ -1206,7 +1251,7 @@ struct SummaryView: View {
                         }
                         let wordChoiceMetrics = WordChoiceMetrics.compute(transcript: transcriptText)
                         WordChoiceCard(metrics: wordChoiceMetrics)
-                        GrammarPolishCard(session: sessionStore.sessions.first)
+                        GrammarPolishCard(session: currentStoredSession)
 
                         // Honest empty-state — when the rep produced no
                         // readable speech-quality analytics AND the user is
@@ -1218,12 +1263,12 @@ struct SummaryView: View {
                         // never nags or overclaims (`SummaryAnalyticsEmptyState`).
                         if let analyticsEmptyState = SummaryAnalyticsEmptyState.message(
                             isIMSummary: isIMSummary,
-                            repCount: sessionStore.sessions.count,
+                            repCount: sessionStore.progressEligibleSessionCount,
                             signals: SummaryAnalyticsEmptyState.Signals(
                                 hasEloquence: !eloquenceFindings.isEmpty,
-                                hasPause: sessionStore.sessions.first?.pauseMetrics != nil,
-                                hasPitch: sessionStore.sessions.first?.pitchMetrics != nil,
-                                hasPositional: sessionStore.sessions.first?.repEventLocations != nil,
+                                hasPause: currentStoredSession?.pauseMetrics != nil,
+                                hasPitch: currentStoredSession?.pitchMetrics != nil,
+                                hasPositional: currentStoredSession?.repEventLocations != nil,
                                 hasTrend: !positionalTrends.isEmpty,
                                 hasWordChoice: wordChoiceMetrics.contentWordCount >= WordChoiceMetrics.minContentWords
                             )
@@ -1256,18 +1301,19 @@ struct SummaryView: View {
                         // voice instead of producing AI-default coaching
                         // text. Only renders when there's a clear
                         // weakness category to act on AND the user is Pro.
-                        if let weakness = primaryWeakness,
+                        if currentRepIsProgressEligible,
+                           let weakness = primaryWeakness,
                            premium.isPremium,
                            AIRewriteService.eligibility(
                                transcript: transcriptText,
-                               confidence: sessionStore.sessions.first?.transcriptConfidence,
+                               confidence: currentStoredSession?.transcriptConfidence,
                                locale: localeSettings.current
                            ) == .eligible {
                             RewriteSuggestionCard(
                                 transcript: transcriptText,
                                 weakness: weakness,
                                 targetDimension: goalOutcomeRead?.nextDimension?.label,
-                                transcriptConfidence: sessionStore.sessions.first?.transcriptConfidence,
+                                transcriptConfidence: currentStoredSession?.transcriptConfidence,
                                 onPracticePhrase: onStartLookingAhead.map { launch in
                                     { intent in
                                         guard let token = TimedPracticePromptHandoff.shared.offerToken(
@@ -1286,7 +1332,7 @@ struct SummaryView: View {
                         // path unreachable while the Pro pitch still
                         // advertised it. It lives here as quiet premium
                         // depth behind the chevron.
-                        if premium.isPremium {
+                        if currentRepIsProgressEligible && premium.isPremium {
                             deepReadCard
                         }
 
@@ -1324,7 +1370,7 @@ struct SummaryView: View {
                     // analyze entry is the rescued counterpart of the Pro
                     // pitch's "video analysis" claim — the old recording
                     // card that carried it was only mounted from dead code.
-                    if recordingURL != nil {
+                    if currentRepIsProgressEligible && recordingURL != nil {
                         videoPlaybackButton
                         if premium.isPremium {
                             videoAnalysisSection
@@ -2005,6 +2051,7 @@ struct SummaryView: View {
             .first
         guard let session = recent,
               !session.transcript.isEmpty,
+              PracticeProgressEligibility.qualifies(session),
               session.duration > 8 else {
             return nil
         }
@@ -2192,7 +2239,7 @@ struct SummaryView: View {
         lockedHeadlineOverride = headlineOverride
         lockedScoreBreakdown = scoreBreakdown
         lockedInsights = insights
-        aiFeedback = recentSessions.first?.aiCoachFeedback
+        aiFeedback = currentRepIsProgressEligible ? currentStoredSession?.aiCoachFeedback : nil
         progressionPreviousXP = profile.xp
         displayedXP = profile.xp
         currentLevel = ProfileManager.levelTitle(forXP: profile.xp)
@@ -2216,7 +2263,7 @@ struct SummaryView: View {
             imConversationDetails: imConversationDetails,
             practiceTitle: practiceTitle,
             derivedInsightsFirst: derivedInsights.first,
-            pressureLevel: recentSessions.first?.pressureLevel ?? .standard,
+            pressureLevel: currentStoredSession?.pressureLevel ?? .standard,
             transcript: transcriptText
         )
 
@@ -2236,7 +2283,7 @@ struct SummaryView: View {
         // frame so the channels land together. The two verdicts without
         // an animated ring (IM, Pressure Drill) keep the immediate
         // punctuation here — same moment, same two channels.
-        if isIMSummary || isSuddenDeathSummary {
+        if currentRepIsProgressEligible && (isIMSummary || isSuddenDeathSummary) {
             CoachHaptic.scoreReveal()
             InteractionSoundEngine.cue(.verdictReveal)
         }
@@ -2249,8 +2296,10 @@ struct SummaryView: View {
             }
         }
 
-        preSummaryEvents = skillProgression.pendingLevelUps
-        let completedRepCount = sessionStore.sessions.count
+        preSummaryEvents = currentRepIsProgressEligible
+            ? skillProgression.pendingLevelUps
+            : []
+        let completedRepCount = sessionStore.progressEligibleSessionCount
         selectedInterstitial = SummaryInterstitialPolicy.select(
             completedRepCount: completedRepCount,
             hasPersonalBest: personalBestMilestone != nil,
@@ -2294,7 +2343,7 @@ struct SummaryView: View {
                     celebrationVisible = selectedInterstitial == nil && completedRepCount > 1 && Self.shouldShowCelebration(
                         hasMilestoneCrossing: result.milestone != nil,
                         score: scoreValue,
-                        xpEarned: xpEarned
+                        xpEarned: earnedXPForPresentation
                     )
                 }
             }
@@ -2316,6 +2365,11 @@ struct SummaryView: View {
 
     private func requestDeeperFeedback() async {
         aiError = nil
+
+        guard currentRepIsProgressEligible else {
+            aiError = "This capture is saved for review, but there isn't enough speech for a deeper read."
+            return
+        }
 
         guard aiSettings.isCloudProcessingAllowed else {
             pendingCloudProcessingAction = .coachRead
@@ -2355,10 +2409,10 @@ struct SummaryView: View {
                 for: text,
                 profile: coachingProfileStore.profile
             )
-            let currentMode = recentSessions.first?.mode ?? .timed
+            let currentMode = currentStoredSession?.mode ?? .timed
             // THE QUESTION ASKED — the stored prompt of this rep, the single
             // source of truth the deterministic verdict + the rubric both read.
-            let repPrompt = recentSessions.first?.prompt ?? sessionPrompt ?? ""
+            let repPrompt = currentStoredSession?.prompt ?? sessionPrompt ?? ""
             // Continuity — drop the current rep, map the next 3 prior reps to
             // the same shape AIInsights renders. Never invented. Pure helper so
             // the exclude-current-rep + bound-to-3 logic is unit-tested.
@@ -2368,7 +2422,7 @@ struct SummaryView: View {
             )
             let currentSession = latestSessionID.flatMap { sessionID in
                 sessionStore.sessions.first { $0.id == sessionID }
-            } ?? recentSessions.first
+            } ?? currentStoredSession
             // Confidence-gated baseline (nil on insufficient data — never a
             // fake number). Same gate as PostRepCoachNote (:7182-7185).
             let coachBaseline = baselineStore.baseline
@@ -2419,6 +2473,10 @@ struct SummaryView: View {
     }
 
     private func analyzeVideo() {
+        guard currentRepIsProgressEligible else {
+            aiError = "This capture is saved for review, but there isn't enough speech for a delivery read."
+            return
+        }
         guard aiSettings.isCloudProcessingAllowed else {
             pendingCloudProcessingAction = .videoAnalysis
             showAIDisclosure = true
@@ -2449,12 +2507,13 @@ struct SummaryView: View {
         Task {
             if shouldReduceMotion {
                 await MainActor.run {
+                    let earned = endXP > displayedXP
                     displayedXP = endXP
                     progress = ProfileManager.progressTowardsNextLevel(forXP: endXP)
                     currentLevel = ProfileManager.levelTitle(forXP: endXP)
                     nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                     xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
-                    CoachHaptic.xpEarned()
+                    if earned { CoachHaptic.xpEarned() }
                 }
                 return
             }
@@ -2471,7 +2530,7 @@ struct SummaryView: View {
                 currentLevel = ProfileManager.levelTitle(forXP: endXP)
                 nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                 xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
-                CoachHaptic.xpEarned()
+                if endXP > startXP { CoachHaptic.xpEarned() }
             }
         }
     }

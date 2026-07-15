@@ -449,6 +449,7 @@ struct FirstRepCelebration: View {
     /// keeps "real" proofs only; celebration-local quotes are surface-
     /// only so Ask Noum never quotes a low-evidence rep 1 weeks later.
     static func celebrationLocalProof(for session: PracticeSession) -> ProofMoment? {
+        guard PracticeProgressEligibility.qualifies(session) else { return nil }
         let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return nil }
         guard let slice = minimumVerbatimSlice(in: transcript) else { return nil }

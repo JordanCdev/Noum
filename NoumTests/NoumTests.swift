@@ -13742,6 +13742,40 @@ struct ProofMomentServiceTests {
         }
     }
 
+    @Test func deterministicProofRejectsProgressIneligibleFixture() throws {
+        let session = sampleSession(
+            transcript: "We focused on three priorities this quarter. Revenue grew steadily.",
+            score: 8,
+            duration: 40,
+            isEvaluationFixture: true
+        )
+        let input = ProofMomentInput(
+            session: session,
+            voice: .authoritative,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        #expect(!PracticeProgressEligibility.qualifies(session))
+        #expect(ProofMomentService.deterministicProof(for: input) == nil)
+
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/ProofMomentService.swift"),
+            encoding: .utf8
+        )
+        let gate = try #require(source.range(
+            of: "guard PracticeProgressEligibility.qualifies(input.session)"
+        ))
+        let cache = try #require(source.range(
+            of: "let cacheKey = Self.cacheIdentity(for: input)"
+        ))
+        #expect(gate.lowerBound < cache.lowerBound)
+    }
+
     @Test func deterministicProofVoiceSpecificMapping() {
         // Same transcript + same session shape, different voice goal
         // → different (technique, claim). Locks the promise that
@@ -13880,7 +13914,8 @@ struct ProofMomentServiceTests {
         transcript: String,
         score: Int,
         duration: TimeInterval,
-        fillerCount: Int = 0
+        fillerCount: Int = 0,
+        isEvaluationFixture: Bool = false
     ) -> PracticeSession {
         PracticeSession(
             id: UUID(),
@@ -13889,7 +13924,8 @@ struct ProofMomentServiceTests {
             duration: duration,
             date: Date(),
             mode: .timed,
-            score: score
+            score: score,
+            isEvaluationFixture: isEvaluationFixture
         )
     }
 }
@@ -23874,7 +23910,7 @@ private func makePracticeSession(
 ) -> PracticeSession {
     PracticeSession(
         id: UUID(),
-        transcript: "test",
+        transcript: "test practice transcript",
         fillerWordCount: fillerCount,
         duration: duration,
         date: date,
@@ -41562,7 +41598,7 @@ struct PrepSessionReadinessTests {
 
     private func session(_ mode: PracticeMode, daysAfter offset: Int, from base: Date) -> PracticeSession {
         PracticeSession(
-            transcript: "x",
+            transcript: "complete rehearsal response",
             fillerWordCount: 0,
             duration: 60,
             date: base.addingTimeInterval(Double(offset) * 86_400),
@@ -41623,6 +41659,26 @@ struct PrepSessionReadinessTests {
         let r = PrepSessionPlanner.readiness(plan: plan(), sessions: sessions, momentCreatedAt: created)
         #expect(r.totalRepsInWindow == 1)
         #expect(r.coveredModes == [.suddenDeath])
+    }
+
+    @Test func reviewOnlyCaptureDoesNotAdvanceReadiness() {
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let capture = PracticeSession(
+            transcript: "brief capture",
+            fillerWordCount: 0,
+            duration: 60,
+            date: created.addingTimeInterval(86_400),
+            mode: .timed
+        )
+        let r = PrepSessionPlanner.readiness(
+            plan: plan(),
+            sessions: [capture],
+            momentCreatedAt: created
+        )
+
+        #expect(r.level == .notStarted)
+        #expect(r.coveredModes.isEmpty)
+        #expect(r.totalRepsInWindow == 0)
     }
 
     @Test func contextLineReportsActivityNotConfidence() {
@@ -50126,6 +50182,20 @@ struct LiveCallLandingLineTests {
                     transcript: "im rep",
                     date: Date(timeIntervalSince1970: 3_000),
                     mode: .imConversation
+                )
+            ]
+        )
+
+        #expect(selected == nil)
+    }
+
+    @Test func liveLandingSelectorIgnoresReviewOnlyTimedCapture() {
+        let selected = LiveCoachCallView.latestTimedRepForLiveLanding(
+            from: [
+                liveLandingSession(
+                    transcript: "brief capture",
+                    date: Date(timeIntervalSince1970: 3_000),
+                    mode: .timed
                 )
             ]
         )

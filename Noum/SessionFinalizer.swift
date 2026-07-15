@@ -110,6 +110,15 @@ enum SessionFinalizer {
             )
         }
 
+        // Raw history can contain a transport-valid short capture kept only so
+        // Review can explain it. Once the current rep clears the shared floor,
+        // every longitudinal/reward input below still uses only progress-
+        // eligible history so an older thin row cannot tip a count or verdict.
+        let progressSessions = sessionStore.progressEligibleSessions
+        let progressRecentSessions = PracticeProgressEligibility.eligibleSessions(
+            in: recentSessions
+        )
+
         // Streak ownership: anything the USER reads (streak milestones,
         // achievement progress) uses the freeze-aware displayed streak from
         // StreakFreezeManager — the single displayed-streak owner — so the
@@ -120,13 +129,13 @@ enum SessionFinalizer {
         let displayedStreak = StreakFreezeManager.shared.currentStreak
         // Raw history streak — kept ONLY as a model input (NextAction
         // heuristics), mirroring the baseline-pressure call sites.
-        let rawHistoryStreak = PracticeSession.calculateStreak(from: sessionStore.sessions)
+        let rawHistoryStreak = PracticeSession.calculateStreak(from: progressSessions)
 
         // Capture achievement state BEFORE applying session
         let achievementsBefore: [String: (current: Int, target: Int)] = {
             var map: [String: (Int, Int)] = [:]
             for tier in AchievementStore.allTiers {
-                map[tier.id] = tier.evaluate(recentSessions, displayedStreak)
+                map[tier.id] = tier.evaluate(progressRecentSessions, displayedStreak)
             }
             return map
         }()
@@ -145,7 +154,7 @@ enum SessionFinalizer {
 
         // Re-evaluate achievements after XP (session already recorded by PracticeSessionFinalizer)
         let newlyUnlockedIDs = AchievementStore.shared.evaluate(
-            sessions: sessionStore.sessions,
+            sessions: progressSessions,
             streak: displayedStreak
         )
 
@@ -153,7 +162,7 @@ enum SessionFinalizer {
         var deltas: [AchievementProgressDelta] = []
         for tier in AchievementStore.allTiers {
             let before = achievementsBefore[tier.id] ?? (0, 1)
-            let (current, target) = tier.evaluate(sessionStore.sessions, displayedStreak)
+            let (current, target) = tier.evaluate(progressSessions, displayedStreak)
             let prevProgress = target > 0 ? min(1.0, Double(before.0) / Double(target)) : 0
             let newProgress = target > 0 ? min(1.0, Double(current) / Double(target)) : 0
             let delta = newProgress - prevProgress
@@ -185,7 +194,7 @@ enum SessionFinalizer {
         // analyzer can pick up pause progress without re-tokenising the
         // transcript. nil for sessions whose provider didn't emit timings.
         let pauseRate: Double? = {
-            guard let metrics = sessionStore.sessions.first?.pauseMetrics,
+            guard let metrics = progressSessions.first?.pauseMetrics,
                   effectiveDuration > 0 else { return nil }
             return Double(metrics.count) / (effectiveDuration / 60.0)
         }()
@@ -193,7 +202,7 @@ enum SessionFinalizer {
         // PitchAnalyzer reading was reliable (≥10 voiced windows, mean inside
         // 70–400Hz). Hides M10's noisy reads from the trend pill.
         let pitchMonotone: Double? = {
-            guard let metrics = sessionStore.sessions.first?.pitchMetrics,
+            guard let metrics = progressSessions.first?.pitchMetrics,
                   metrics.isReliable else { return nil }
             return metrics.monotoneScore
         }()
@@ -203,7 +212,7 @@ enum SessionFinalizer {
         // rep would falsely look like "perfect calmness" (filledRatio = 0
         // by definition when count = 0).
         let pauseFilledRatio: Double? = {
-            guard let metrics = sessionStore.sessions.first?.pauseMetrics,
+            guard let metrics = progressSessions.first?.pauseMetrics,
                   metrics.count > 0 else { return nil }
             return metrics.filledRatio
         }()
@@ -224,7 +233,7 @@ enum SessionFinalizer {
             await notificationManager.scheduleFollowUpReminder(
                 profile: coachingProfileStore.profile,
                 relationship: imConversationDetails?.relationshipSnapshot,
-                sessions: sessionStore.sessions,
+                sessions: progressSessions,
                 practiceTitle: practiceTitle,
                 nextMove: derivedInsightsFirst
             )
@@ -238,17 +247,19 @@ enum SessionFinalizer {
         // First-rep magic — a once-only celebration when the user finishes
         // their very first session. Driven by `FirstRepCelebrationManager`
         // so duplicate triggers across reload/relaunch can't fire twice.
-        if let latestSession = sessionStore.sessions.first {
+        if let latestSession = latestSessionID.flatMap({ sessionID in
+            progressSessions.first { $0.id == sessionID }
+        }) ?? progressSessions.first {
             FirstRepCelebrationManager.shared.consider(
                 session: latestSession,
-                totalSessionCount: sessionStore.sessions.count
+                totalSessionCount: progressSessions.count
             )
         }
 
         // Goal refresh — every 14 days, surface a lightweight "still your
         // goal?" confirmation so coach memory stays current.
         GoalRefreshManager.shared.consider(
-            sessionCount: sessionStore.sessions.count,
+            sessionCount: progressSessions.count,
             profile: coachingProfileStore.profile
         )
 
@@ -269,7 +280,7 @@ enum SessionFinalizer {
         // dialog. Fires once on session 1, then respects 30-day cooldown
         // on decline.
         NotificationPrePromptManager.shared.consider(
-            sessionCount: sessionStore.sessions.count
+            sessionCount: progressSessions.count
         )
 
         // Milestone detection
@@ -292,7 +303,7 @@ enum SessionFinalizer {
         CoachMemoryStore.shared.refresh(
             profile: coachingProfileStore.profile,
             baseline: BaselineStore.shared.baseline,
-            sessions: sessionStore.sessions,
+            sessions: progressSessions,
             trends: skillTrends,
             forwardPlan: currentForwardPlan,
             lastSessionID: latestSessionID,
@@ -312,7 +323,7 @@ enum SessionFinalizer {
             scoreValue: scoreValue,
             currentMode: currentMode,
             currentStreak: displayedStreak,
-            sessions: sessionStore.sessions,
+            sessions: progressSessions,
             skillTrends: skillTrends
         )
 
@@ -332,7 +343,9 @@ enum SessionFinalizer {
 
         // Baseline comparisons
         let comparisons: [String: String]
-        if let latestSession = sessionStore.sessions.first {
+        if let latestSession = latestSessionID.flatMap({ sessionID in
+            progressSessions.first { $0.id == sessionID }
+        }) ?? progressSessions.first {
             comparisons = BaselineEngine.sessionComparison(session: latestSession, baseline: baseline)
         } else {
             comparisons = [:]
@@ -340,13 +353,13 @@ enum SessionFinalizer {
 
         let currentCoachMemory = CoachMemoryStore.shared.currentMemory
         let latestFinalizedSession = latestSessionID.flatMap { sessionID in
-            sessionStore.sessions.first { $0.id == sessionID }
+            progressSessions.first { $0.id == sessionID }
         }
         let currentGoalOutcomeRead = GoalOutcomeEngine.read(
             profile: coachingProfileStore.profile,
             baseline: baseline,
             rating: RatingStore.shared.rating,
-            sessions: sessionStore.sessions,
+            sessions: progressSessions,
             coachMemory: currentCoachMemory,
             outcomes: RecommendationLearningStore.shared.outcomes
         )
@@ -366,7 +379,7 @@ enum SessionFinalizer {
                 pressureProfile: baselineStore.pressureProfile,
                 trends: skillTrends,
                 drillHistory: DrillHistoryStore.shared.entries,
-                sessionCount: sessionStore.sessions.count,
+                sessionCount: progressSessions.count,
                 streakDays: rawHistoryStreak,
                 styleGoal: explicitStyleGoal.title,
                 modeAvailability: NextActionModeAvailability(

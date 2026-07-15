@@ -112,7 +112,9 @@ enum RepEventTrendEngine {
         // Newest-first, then the recent window — same ordering discipline as
         // `DerivedReadsTrendEngine.compute`.
         let recent = Array(
-            sessions.sorted { $0.date > $1.date }.prefix(window)
+            PracticeProgressEligibility.eligibleSessions(in: sessions)
+                .sorted { $0.date > $1.date }
+                .prefix(window)
         )
         let locations = recent.compactMap { $0.repEventLocations }
         guard !locations.isEmpty else { return [] }

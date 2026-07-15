@@ -31,7 +31,7 @@ enum SharedNoumStateMirror {
     private static func performRefresh() {
         let calendar = Calendar.current
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        let weeklyReps = PracticeSessionStore.shared.sessions
+        let weeklyReps = PracticeSessionStore.shared.progressEligibleSessions
             .filter { $0.date >= weekAgo }
             .count
 

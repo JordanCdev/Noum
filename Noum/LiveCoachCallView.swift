@@ -501,7 +501,7 @@ struct LiveCoachCallView: View {
         from sessions: [PracticeSession]
     ) -> PracticeSession? {
         sessions
-            .filter { $0.mode == .timed }
+            .filter { $0.mode == .timed && PracticeProgressEligibility.qualifies($0) }
             .max { $0.date < $1.date }
     }
 

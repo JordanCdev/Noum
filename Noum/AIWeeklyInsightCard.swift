@@ -64,13 +64,13 @@ struct AIWeeklyInsightCard: View {
 
     private var weeklyReps: Int {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        return sessionStore.sessions.filter { $0.date >= cutoff }.count
+        return sessionStore.progressEligibleSessions.filter { $0.date >= cutoff }.count
     }
 
     var body: some View {
         let shouldRequest = AIWeeklyInsightPresentation.shouldRequestInsight(
             weeklyReps: weeklyReps,
-            totalSessions: sessionStore.sessions.count
+            totalSessions: sessionStore.progressEligibleSessionCount
         )
         if !shouldRequest {
             EmptyView()
@@ -292,7 +292,7 @@ struct AIWeeklyInsightCard: View {
     private func refresh(force: Bool = false) async {
         let calendar = Calendar.current
         let cutoff = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        let weekly = sessionStore.sessions.filter { $0.date >= cutoff }
+        let weekly = sessionStore.progressEligibleSessions.filter { $0.date >= cutoff }
         let topFiller = clutchWordStore.topClutchWords.first?.word
         let profile = coachingProfileStore.profile
         let goalParaphrase = profile?.displayableGoal

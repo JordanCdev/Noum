@@ -737,6 +737,7 @@ extension ProgressionChartsCard {
         let pitchVariation: Double?
 
         init?(session: PracticeSession) {
+            guard PracticeProgressEligibility.qualifies(session) else { return nil }
             guard let score = session.score else { return nil }
             self.id = session.id
             self.date = session.date

@@ -99,10 +99,6 @@ actor ProofMomentService {
     /// the session has no transcript or its duration is too short to
     /// produce a meaningful proof (≤8 seconds — likely a misfire rep).
     func proof(for input: ProofMomentInput) async -> ProofMoment? {
-        let cacheKey = Self.cacheIdentity(for: input)
-        if let cached = cache[cacheKey] {
-            return cached
-        }
         func record(
             _ outcome: AICallDiagnosticOutcome,
             _ reason: String,
@@ -120,10 +116,16 @@ actor ProofMomentService {
             )
         }
 
-        guard !input.session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        guard PracticeProgressEligibility.qualifies(input.session),
+              !input.session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               input.session.duration > 8 else {
             record(.skipped, "Session below proof signal floor")
             return nil
+        }
+
+        let cacheKey = Self.cacheIdentity(for: input)
+        if let cached = cache[cacheKey] {
+            return cached
         }
 
         // Always have a deterministic fallback ready. Even if the AI
@@ -481,6 +483,8 @@ actor ProofMomentService {
     /// useful — the AI version is just sharper.
     static func deterministicProof(for input: ProofMomentInput) -> ProofMoment? {
         let s = input.session
+        guard PracticeProgressEligibility.qualifies(s),
+              s.duration > 8 else { return nil }
         let candidate = longestThought(in: s.transcript, maxWords: 14)
         guard let quote = candidate, !quote.isEmpty else { return nil }
 

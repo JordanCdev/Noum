@@ -1398,6 +1398,11 @@ struct SuddenDeathPracticeView: View {
             transcript: transcript
         )
 
+        guard result.isProgressEligible else {
+            print("[PressureDrill] Review-only capture persisted without game progress")
+            return
+        }
+
         // Persist personal best
         if result.roundsSurvived > previousBestRounds {
             UserDefaults.standard.set(result.roundsSurvived, forKey: Self.personalBestKey)

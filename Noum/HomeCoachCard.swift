@@ -56,7 +56,7 @@ struct HomeCoachRecommendationExposure: Equatable {
         profile: CoachingProfile?,
         recentSessions: [PracticeSession]
     ) -> HomeCoachRecommendationExposure {
-        let recent = recentSessions.prefix(5).map { session in
+        let recent = PracticeProgressEligibility.eligibleSessions(in: recentSessions).prefix(5).map { session in
             "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
         }.joined(separator: "|")
         let profileKey = profile.map {
@@ -487,7 +487,7 @@ struct HomeCoachCard: View {
             return "Welcome."
         }
 
-        if sessionStore.sessions.count < 3 {
+        if sessionStore.progressEligibleSessionCount < 3 {
             return "Start clean."
         }
 
@@ -536,7 +536,7 @@ struct HomeCoachCard: View {
             return "One short rep sets your starting line."
         }
 
-        if sessionStore.sessions.count < 3 {
+        if sessionStore.progressEligibleSessionCount < 3 {
             return "Three reps and Noum starts finding your weakest line."
         }
 
@@ -903,7 +903,7 @@ struct HomeCoachCard: View {
     // MARK: - Derived state
 
     private var hasSignal: Bool {
-        !sessionStore.sessions.isEmpty
+        sessionStore.progressEligibleSessionCount > 0
     }
 
     private var recommendedMode: PracticeMode {
@@ -938,7 +938,7 @@ struct HomeCoachCard: View {
         let trends = TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
         let coherentBlueprint = CurrentCoachingFocusPresentation.make(
             trends: trends,
-            sessionCount: sessionStore.sessions.count
+            sessionCount: sessionStore.progressEligibleSessionCount
         )?.applying(to: base) ?? base
         return coherentBlueprint
     }
@@ -962,7 +962,7 @@ struct HomeCoachCard: View {
             blueprint: blueprint,
             title: coachTitle(for: blueprint),
             profile: coachingProfileStore.profile,
-            recentSessions: sessionStore.sessions
+            recentSessions: sessionStore.progressEligibleSessions
         )
     }
 
@@ -992,7 +992,7 @@ struct HomeCoachCard: View {
         guard baseline.fillerRate.confidence != .insufficient,
               let baseRate = Optional(baseline.fillerRate.value),
               baseRate > 0 else { return 0 }
-        let sorted = sessionStore.sessions // already sorted newest-first
+        let sorted = sessionStore.progressEligibleSessions // already sorted newest-first
         var count = 0
         for session in sorted {
             let mins = max(session.duration / 60.0, 1.0 / 60.0)
@@ -1015,7 +1015,7 @@ struct HomeCoachCard: View {
     /// pause → filler), so `.first` deterministically prefers the most
     /// actionable pace read when several patterns co-exist.
     private var positionalTrend: RepEventTrend? {
-        RepEventTrendEngine.compute(sessions: sessionStore.sessions).first
+        RepEventTrendEngine.compute(sessions: sessionStore.progressEligibleSessions).first
     }
 
     /// Reps completed in the current ISO week.
@@ -1023,7 +1023,7 @@ struct HomeCoachCard: View {
         let cal = Calendar.current
         let now = Date()
         let currentWeek = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-        return sessionStore.sessions.filter { session in
+        return sessionStore.progressEligibleSessions.filter { session in
             let w = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: session.date)
             return w.yearForWeekOfYear == currentWeek.yearForWeekOfYear
                 && w.weekOfYear == currentWeek.weekOfYear
@@ -1031,7 +1031,7 @@ struct HomeCoachCard: View {
     }
 
     private var daysSinceLastSession: Int {
-        guard let latest = sessionStore.sessions.first else { return 0 }
+        guard let latest = sessionStore.progressEligibleSessions.first else { return 0 }
         return Calendar.current.dateComponents([.day], from: latest.date, to: Date()).day ?? 0
     }
 

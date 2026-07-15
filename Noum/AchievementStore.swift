@@ -411,10 +411,11 @@ final class AchievementStore: ObservableObject {
 
     @discardableResult
     func evaluate(sessions: [PracticeSession], streak: Int) -> [String] {
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
         var justUnlocked: [String] = []
 
         for tier in Self.allTiers {
-            let (current, target) = tier.evaluate(sessions, streak)
+            let (current, target) = tier.evaluate(eligibleSessions, streak)
             let isComplete = current >= target
 
             if isComplete && unlocks[tier.id] == nil {
@@ -445,8 +446,9 @@ final class AchievementStore: ObservableObject {
 
     /// Returns display statuses for all tiers.
     func allStatuses(sessions: [PracticeSession], streak: Int) -> [PracticeAchievementStatus] {
-        Self.allTiers.map { tier in
-            let (current, target) = tier.evaluate(sessions, streak)
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        return Self.allTiers.map { tier in
+            let (current, target) = tier.evaluate(eligibleSessions, streak)
             let isUnlocked = unlocks[tier.id] != nil
             let progress = target > 0 ? min(1.0, Double(current) / Double(target)) : 0
 

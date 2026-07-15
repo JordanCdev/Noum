@@ -1704,7 +1704,7 @@ struct PracticeModeSelectionView: View {
         let trends = TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
         let coherentBlueprint = CurrentCoachingFocusPresentation.make(
             trends: trends,
-            sessionCount: sessionStore.sessions.count
+            sessionCount: sessionStore.progressEligibleSessionCount
         )?.applying(to: context.blueprint) ?? context.blueprint
         cachedRecommendationBlueprint = coherentBlueprint
         let recommendation = TrainRecommendationProjection.resolve(
@@ -1731,7 +1731,7 @@ struct PracticeModeSelectionView: View {
     }
 
     private func recommendationFingerprint(for blueprint: RecommendationBiasBlueprint) -> String {
-        let recent = sessionStore.sessions.prefix(5).map { session in
+        let recent = sessionStore.progressEligibleSessions.prefix(5).map { session in
             "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
         }.joined(separator: "|")
         let profileKey = coachingProfileStore.profile.map {
@@ -1834,7 +1834,7 @@ struct PracticeModeSelectionView: View {
     }
 
     private var daysSinceLastSession: Int {
-        guard let last = sessionStore.sessions.first?.date else { return 99 }
+        guard let last = sessionStore.progressEligibleSessions.first?.date else { return 99 }
         return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: last), to: Calendar.current.startOfDay(for: Date())).day ?? 0
     }
 }

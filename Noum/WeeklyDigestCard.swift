@@ -112,7 +112,9 @@ struct WeeklySnapshot: Equatable {
         let calendar = Calendar.current
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
 
-        let reps = sessions.filter { $0.date >= weekAgo }.count
+        let reps = PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { $0.date >= weekAgo }
+            .count
 
         return WeeklySnapshot(
             repsThisWeek: reps,

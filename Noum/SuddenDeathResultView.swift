@@ -39,6 +39,14 @@ struct SuddenDeathResultView: View {
         highScoreStore.bestPoints()
     }
 
+    private var isProgressEligible: Bool {
+        result.isProgressEligible
+    }
+
+    private var earnedGamePoints: Int {
+        isProgressEligible ? result.gamePoints : 0
+    }
+
     private var runEndNote: String {
         switch result.finalOutcome {
         case .survived:          return "Round cleared"
@@ -62,7 +70,7 @@ struct SuddenDeathResultView: View {
     // MARK: - Share text
 
     private var shareText: String {
-        let pts = result.gamePoints
+        let pts = earnedGamePoints
         let mults = result.multiplierLabels
         var text = "Tier \(tierReached) · \(pts.formatted()) pts on Noum Pressure Drill."
         if !mults.isEmpty {
@@ -86,7 +94,7 @@ struct SuddenDeathResultView: View {
                     outcomeIcon
                     headerBlock
                     pointsHero
-                    if !result.computedMultipliers.isEmpty { multiplierChips }
+                    if isProgressEligible && !result.computedMultipliers.isEmpty { multiplierChips }
                     statsRow
                     compactRunPath
                 }
@@ -332,6 +340,11 @@ struct SuddenDeathResultView: View {
     }
 
     private func resolveAndAnimate() {
+        guard result.isProgressEligible else {
+            displayedPoints = 0
+            multipliersRevealed = true
+            return
+        }
         _ = highScoreStore.recordRun(
             roundsSurvived: result.roundsSurvived,
             difficulty: result.difficulty
@@ -358,7 +371,7 @@ struct SuddenDeathResultView: View {
     }
 
     private func animatePoints() {
-        let target = result.gamePoints
+        let target = earnedGamePoints
         guard !reduceMotion, target > 0 else {
             displayedPoints = target
             multipliersRevealed = true

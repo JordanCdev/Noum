@@ -51,7 +51,8 @@ enum CoachingPlanCardVisibility {
         calendar: Calendar = .current
     ) -> CoachingPlanCardState {
         guard profile != nil else { return .hidden }
-        let qualifyingCount = sessions.count
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        let qualifyingCount = eligibleSessions.count
         guard let plan else {
             // No plan; show the pre-prompt only after enough data.
             return qualifyingCount >= 3 ? .prompt : .hidden
@@ -64,7 +65,7 @@ enum CoachingPlanCardVisibility {
         }
         let progress = ForwardPlanProgress.currentWeekProgress(
             plan: plan,
-            sessions: sessions,
+            sessions: eligibleSessions,
             now: now,
             calendar: calendar
         )

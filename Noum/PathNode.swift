@@ -53,6 +53,14 @@ enum PracticeProgressEligibility {
             isEvaluationFixture: session.isEvaluationFixture
         )
     }
+
+    /// Durable history intentionally retains transport-valid short captures so
+    /// Review can explain them. Every earned-progress or coaching projection
+    /// must pass through this boundary instead of treating raw persistence as
+    /// proof that a rep was completed.
+    static func eligibleSessions(in sessions: [PracticeSession]) -> [PracticeSession] {
+        sessions.filter { qualifies($0) }
+    }
 }
 
 // MARK: - Inputs evaluated by node criteria

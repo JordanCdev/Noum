@@ -642,9 +642,9 @@ struct ContentView: View {
     /// inspection only; retired Home surfaces stay off.
     private var homeCardGate: HomeCardGate {
         HomeSignalGate.evaluate(
-            sessionCount: sessionStore.sessions.count,
+            sessionCount: sessionStore.progressEligibleSessionCount,
             sessionsThisWeekCount: HomeSignalGate.sessionsInCurrentISOWeek(
-                sessionDates: sessionStore.sessions.map(\.date)
+                sessionDates: sessionStore.progressEligibleSessions.map(\.date)
             ),
             hasUnlockedPathNode: !pathProgress.completedNodes.isEmpty,
             hasCoachingProfile: coachingProfileStore.profile != nil,
@@ -928,7 +928,7 @@ struct ContentView: View {
         }
 
         return HomePrimaryActionPresentation.resolve(
-            sessionCount: sessionStore.sessions.count,
+            sessionCount: sessionStore.progressEligibleSessionCount,
             hasPendingOutcomeCheckIn: bigMomentStore.pendingOutcomeCheckInMoment != nil,
             hasUpcomingMomentPrep: hasUpcomingPrep
         )
@@ -1325,7 +1325,7 @@ struct ContentView: View {
 
     private var homeAskNoumRow: some View {
         let tint = AppColor.pro // brand violet — the chat/ask hue
-        let body = HomeAskNoumShortcut.body(sessionCount: sessionStore.sessions.count)
+        let body = HomeAskNoumShortcut.body(sessionCount: sessionStore.progressEligibleSessionCount)
         return Button {
             navigationPath.append(AppDestination.askNoum)
         } label: {
@@ -1645,6 +1645,7 @@ struct ContentView: View {
         pathCelebrationProof = nil
         guard let sessionID = pathProgress.pendingCelebrationSessionID,
               let session = sessionStore.sessions.first(where: { $0.id == sessionID }),
+              PracticeProgressEligibility.qualifies(session),
               !session.transcript.isEmpty,
               session.duration > 8 else {
             return

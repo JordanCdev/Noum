@@ -67,7 +67,7 @@ final class WordOfTheDayManager: ObservableObject {
         guard !hasUsedToday else { return }
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: Date())
-        let todaysSessions = PracticeSessionStore.shared.sessions
+        let todaysSessions = PracticeSessionStore.shared.progressEligibleSessions
             .filter { $0.date >= todayStart }
         for session in todaysSessions {
             if Self.transcriptContains(any: todaysEntry.acceptedForms, in: session.transcript) {

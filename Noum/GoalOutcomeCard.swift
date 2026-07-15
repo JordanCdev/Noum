@@ -22,12 +22,13 @@ enum GoalOutcomeEngine {
     ) -> GoalOutcomeRead? {
         let effectiveLocale = locale ?? currentLocale()
         guard effectiveLocale.aiSupported else { return nil }
-        guard let style = selectedGoal(from: profile), !sessions.isEmpty else { return nil }
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        guard let style = selectedGoal(from: profile), !eligibleSessions.isEmpty else { return nil }
         var trajectory = UserTrajectoryCache.shared.snapshot(
             profile: profile,
             baseline: baseline,
             rating: rating,
-            sessions: sessions,
+            sessions: eligibleSessions,
             coachMemory: coachMemory
         ).snapshot
         // This card answers how the latest rep moved toward the goal. Mature

@@ -568,12 +568,12 @@ struct AskNoumView: View {
     /// and the composer is replaced by a first-rep CTA (full replies stay
     /// gated on rep 1; see `AskNoumDayZeroGreeting`).
     private var isDayZero: Bool {
-        AskNoumDayZeroGreeting.isActive(sessionCount: sessionStore.sessions.count)
+        AskNoumDayZeroGreeting.isActive(sessionCount: sessionStore.progressEligibleSessionCount)
     }
 
     private var canDisplayPersistedThread: Bool {
         AskNoumDayZeroGreeting.canDisplayPersistedThread(
-            sessionCount: sessionStore.sessions.count
+            sessionCount: sessionStore.progressEligibleSessionCount
         )
     }
 
@@ -1575,7 +1575,7 @@ struct AskNoumView: View {
     }
 
     private var weeklyCheckInDueForChat: Bool {
-        !sessionStore.sessions.isEmpty && coachCheckInStore.isCheckInDue()
+        sessionStore.progressEligibleSessionCount > 0 && coachCheckInStore.isCheckInDue()
     }
 
     /// Starters shown in the empty state. AI-generated or hidden; never a
@@ -2250,7 +2250,7 @@ struct AskNoumView: View {
             hasCurrentFocus: Self.currentFocusValue(
                 caseFile: coachMemoryStore.currentMemory?.caseFile
             ) != nil,
-            recentRepCount: sessionStore.sessions.count
+            recentRepCount: sessionStore.progressEligibleSessionCount
         )
     }
 

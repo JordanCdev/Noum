@@ -30,7 +30,7 @@ enum ForwardPlanCoordinator {
     static func buildInput() -> ForwardPlanInput {
         let profile = CoachingProfileStore.shared.profile
         let baseline = BaselineStore.shared.baseline
-        let sessions = PracticeSessionStore.shared.sessions
+        let sessions = PracticeSessionStore.shared.progressEligibleSessions
         let rating = RatingStore.shared.rating
         let bigMoment = BigMomentStore.shared.activeMoment
         let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }

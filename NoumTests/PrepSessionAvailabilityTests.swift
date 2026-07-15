@@ -124,7 +124,7 @@ struct PrepSessionAvailabilityTests {
 
         let momentCreatedAt = Date(timeIntervalSince1970: 1_000)
         let timedRep = PracticeSession(
-            transcript: "One rehearsal",
+            transcript: "One complete rehearsal",
             fillerWordCount: 0,
             duration: 60,
             date: momentCreatedAt.addingTimeInterval(60),

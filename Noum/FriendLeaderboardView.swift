@@ -341,9 +341,11 @@ struct FriendLeaderboardView: View {
         var rows: [LeaderboardRow] = []
 
         // Current user — always present, real data.
-        let calendar = Calendar.current
-        let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        let myRepsThisWeek = sessionStore.sessions.filter { $0.date >= weekAgo }.count
+        let myRepsThisWeek = LeagueActivityPresentation.weeklySessionCount(
+            from: sessionStore.sessions,
+            now: Date(),
+            calendar: .current
+        )
 
         let myName = authManager.currentAccountName?.trimmingCharacters(in: .whitespaces) ?? "You"
         let myInitials = String((myName.isEmpty ? "Y" : myName).prefix(1)).uppercased()

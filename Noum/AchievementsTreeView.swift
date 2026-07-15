@@ -29,7 +29,7 @@ struct AchievementsTreeView: View {
     // MARK: - Derived state
 
     private var sessions: [PracticeSession] {
-        sessionStore.sessions
+        sessionStore.progressEligibleSessions
     }
 
     private var statuses: [PracticeAchievementStatus] {

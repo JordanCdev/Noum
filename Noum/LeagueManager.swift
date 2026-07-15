@@ -134,7 +134,9 @@ enum LeagueActivityPresentation {
 
     static func weeklySessionCount(from sessions: [PracticeSession], now: Date, calendar: Calendar = isoCalendar()) -> Int {
         guard let week = calendar.dateInterval(of: .weekOfYear, for: now) else { return 0 }
-        return sessions.filter { week.contains($0.date) }.count
+        return PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { week.contains($0.date) }
+            .count
     }
 
     private static func isoCalendar() -> Calendar {

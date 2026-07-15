@@ -505,10 +505,11 @@ class SpeechRecognizerViewModel: ObservableObject {
             expectedSessionID: sessionID
         )
         pastSessions = sessionStore.sessions
-        if let latest = sessionStore.sessions.first {
+        if let latest = sessionStore.sessions.first(where: { $0.id == sessionID }),
+           PracticeProgressEligibility.qualifies(latest) {
             recommendationLearningStore.recordOutcome(
                 for: latest,
-                previousSessions: Array(sessionStore.sessions.dropFirst())
+                previousSessions: sessionStore.progressEligibleSessions.filter { $0.id != sessionID }
             )
         }
         return sessionID

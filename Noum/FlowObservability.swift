@@ -514,7 +514,8 @@ struct TransformationKPIReport: Equatable {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> TransformationKPIReport {
-        let orderedSessions = sessions.filter { !$0.isEvaluationFixture }.sorted { $0.date < $1.date }
+        let orderedSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .sorted { $0.date < $1.date }
         let firstEligible = events.filter { $0.stage == "activation.firstEligible" }.map(\.createdAt).min()
         let firstRep = orderedSessions.first?.date
         let firstStructuredValue = events

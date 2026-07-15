@@ -123,7 +123,7 @@ final class DailyGoalManager: ObservableObject {
         let todayStart = calendar.startOfDay(for: Date())
         let nextDayStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
 
-        let sessionRepsToday = PracticeSessionStore.shared.sessions
+        let sessionRepsToday = PracticeSessionStore.shared.progressEligibleSessions
             .filter { $0.date >= todayStart && $0.date < nextDayStart }
             .count
 

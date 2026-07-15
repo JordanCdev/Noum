@@ -8589,7 +8589,12 @@ enum PracticeEvaluator {
     ) -> StyleTrendSnapshot {
         let currentSnapshot = speakingIdentitySnapshot(for: transcript, profile: profile)
         let currentAlignment = styleAlignmentScore(snapshot: currentSnapshot, profile: profile)
-        let previousSessions = Array(recentSessions.dropFirst().prefix(4))
+        let previousSessions = Array(
+            recentSessions
+                .dropFirst()
+                .filter(PracticeProgressEligibility.qualifies)
+                .prefix(4)
+        )
         guard !previousSessions.isEmpty else {
             return StyleTrendSnapshot(
                 hasHistory: false,
@@ -8714,7 +8719,11 @@ enum PracticeEvaluator {
         transcriptConfidence: Double?,
         recentSessions: [PracticeSession]
     ) -> TrendSnapshot {
-        let previousSessions = Array(recentSessions.dropFirst())
+        let previousSessions = Array(
+            recentSessions
+                .dropFirst()
+                .filter(PracticeProgressEligibility.qualifies)
+        )
         let currentFillerRate = FillerBurden.quantityQualified(
             fillerCount: fillerCount,
             duration: duration,
@@ -8788,7 +8797,10 @@ extension PracticeSession {
     /// displayed-streak owner) instead.
     static func calculateStreak(from sessions: [PracticeSession]) -> Int {
         let calendar = Calendar.current
-        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        let uniqueDays = Set(
+            PracticeProgressEligibility.eligibleSessions(in: sessions)
+                .map { calendar.startOfDay(for: $0.date) }
+        )
         guard !uniqueDays.isEmpty else { return 0 }
 
         var streak = 0
@@ -8924,6 +8936,17 @@ final class PracticeSessionStore: ObservableObject {
     static let shared = PracticeSessionStore()
 
     @Published private(set) var sessions: [PracticeSession]
+
+    /// History rows that may drive earned progress and coaching. Raw
+    /// `sessions` remains the Review/persistence source and can include a
+    /// transport-valid 1–3 second capture that is too thin to reward.
+    var progressEligibleSessions: [PracticeSession] {
+        PracticeProgressEligibility.eligibleSessions(in: sessions)
+    }
+
+    var progressEligibleSessionCount: Int {
+        progressEligibleSessions.count
+    }
 
     private let accountKey = "NoumAccountID"
     private let providerKey = "NoumAccountProvider"
@@ -10636,6 +10659,7 @@ final class RecommendationLearningStore: ObservableObject {
     }
 
     func recordOutcome(for session: PracticeSession, previousSessions: [PracticeSession]) {
+        guard PracticeProgressEligibility.qualifies(session) else { return }
         guard let pendingExposure else { return }
 
         // A same-mode rep is not enough to claim the user followed the
@@ -10647,9 +10671,10 @@ final class RecommendationLearningStore: ObservableObject {
             completedSession: session
         )
 
-        let history = previousSessions.isEmpty
+        let rawHistory = previousSessions.isEmpty
             ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id }
             : previousSessions
+        let history = PracticeProgressEligibility.eligibleSessions(in: rawHistory)
         let comparison = RecommendationComparisonEngine.baseline(
             for: session,
             previousSessions: history
@@ -11028,6 +11053,30 @@ enum PracticeSessionFinalizer {
         }
         let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
 
+        // Persistence and intent cleanup happen for every transport-valid row
+        // so Review can explain an accidental short capture and a declared
+        // intent cannot leak into the next rep. Everything below this point is
+        // earned progress or coaching evidence and therefore shares the same
+        // three-word / three-second boundary as SessionFinalizer.
+        guard PracticeProgressEligibility.qualifies(finalized) else {
+            FlowLog.log(
+                correlationId: finalized.id,
+                flow: .practiceRep,
+                stage: "progress-effects.skipped",
+                outcome: .skipped,
+                reason: "persisted for review; below shared progress evidence floor",
+                numerics: [
+                    "words": finalized.wordCount,
+                    "durationMs": finalized.duration.isFinite
+                        ? Int(finalized.duration * 1_000)
+                        : -1,
+                ]
+            )
+            return finalized
+        }
+
+        let progressSessions = store.progressEligibleSessions
+
         // Deferred profile capture belongs to durable session completion, not
         // Summary presentation. Scheduling it here means every finalized mode
         // gets the same post-value prompt even if the user exits before opening
@@ -11038,7 +11087,7 @@ enum PracticeSessionFinalizer {
         }
         #endif
         DeferredProfileCaptureManager.shared.consider(
-            sessionCount: store.sessions.count,
+            sessionCount: progressSessions.count,
             profile: CoachingProfileStore.shared.profile
         )
 
@@ -11054,7 +11103,7 @@ enum PracticeSessionFinalizer {
         if annotation != .empty {
             RecommendationLearningStore.shared.recordOutcome(
                 for: finalized,
-                previousSessions: store.sessions.filter { $0.id != finalized.id }
+                previousSessions: progressSessions.filter { $0.id != finalized.id }
             )
         }
 
@@ -11085,7 +11134,7 @@ enum PracticeSessionFinalizer {
         }
 
         // Evaluate achievements
-        AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
+        AchievementStore.shared.evaluate(sessions: progressSessions, streak: streak)
 
         // Path unlock delivery belongs to the same durable finalization
         // boundary as the session that earned it. The pre-append snapshot
@@ -11129,7 +11178,7 @@ enum PracticeSessionFinalizer {
 
         // Pull the recents + proofs the AI needs to write a continuity-aware
         // note ("third time you've leaned on…") rather than a stat dashboard.
-        let allSessions = PracticeSessionStore.shared.sessions
+        let allSessions = PracticeSessionStore.shared.progressEligibleSessions
         let recentSummaries: [String] = allSessions
             .filter { $0.id != session.id }
             .prefix(3)
@@ -11358,8 +11407,9 @@ struct HiddenBaseline {
 
 enum CoachingPlanner {
     static func plan(for sessions: [PracticeSession], profile: CoachingProfile?) -> CoachingPlan? {
-        guard !sessions.isEmpty else { return nil }
-        let recent = Array(sessions.prefix(8))
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        guard !eligibleSessions.isEmpty else { return nil }
+        let recent = Array(eligibleSessions.prefix(8))
         let recentFillerRates = FillerBurden.quantityQualifiedRatesPerMinute(in: recent)
         let averageFillersPerMinute: Double? = recentFillerRates.count >= FillerRateComparison.minimumPriorSamples
             ? recentFillerRates.reduce(0, +) / Double(recentFillerRates.count)
@@ -11466,7 +11516,8 @@ enum CoachingPlanner {
         // Review rows compare only with evidence that existed at that point in
         // time. A newer rep must never rewrite the interpretation of an older
         // session.
-        let previousSessions = sessions.filter { $0.id != session.id && $0.date < session.date }
+        let previousSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { $0.id != session.id && $0.date < session.date }
         guard !previousSessions.isEmpty else {
             return session.insights.isEmpty
                 ? ["This is the first saved session in your history, so it sets the initial baseline."]
@@ -11760,10 +11811,11 @@ enum RecommendationBiasContextBuilder {
         preferredScenarioBias: String = "",
         modeBenefitBias: String = ""
     ) -> RecommendationBiasContext {
-        let plan = CoachingPlanner.plan(for: sessions, profile: profile)
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        let plan = CoachingPlanner.plan(for: eligibleSessions, profile: profile)
         let input = input(
             profile: profile,
-            sessions: sessions,
+            sessions: eligibleSessions,
             plan: plan,
             sessionStreak: sessionStreak,
             daysSinceLastSession: daysSinceLastSession,
@@ -11773,7 +11825,7 @@ enum RecommendationBiasContextBuilder {
             preferredScenarioBias: preferredScenarioBias,
             modeBenefitBias: modeBenefitBias
         )
-        let imToneSignal = imAvailable ? IMHistorySummary.toneDrillSignal(from: sessions) : nil
+        let imToneSignal = imAvailable ? IMHistorySummary.toneDrillSignal(from: eligibleSessions) : nil
         let blueprint = RecommendationBiasEngine.blueprint(
             profile: profile,
             input: input,
@@ -11802,8 +11854,9 @@ enum RecommendationBiasContextBuilder {
         preferredScenarioBias: String = "",
         modeBenefitBias: String = ""
     ) -> AIHomeRecommendationInput {
-        let recent = Array(sessions.prefix(5))
-        let previous = Array(sessions.dropFirst(5).prefix(5))
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        let recent = Array(eligibleSessions.prefix(5))
+        let previous = Array(eligibleSessions.dropFirst(5).prefix(5))
         let recentFillerRates = FillerBurden.qualifyingRatesPerMinute(in: recent)
         let previousFillerRates = FillerBurden.qualifyingRatesPerMinute(in: previous)
         let identity = PracticeEvaluator.speakingIdentity(
@@ -14396,6 +14449,7 @@ struct AICoachService: AICoachServicing {
     ) -> [String] {
         sessions
             .filter { currentRepID == nil || $0.id != currentRepID }
+            .filter(PracticeProgressEligibility.qualifies)
             .prefix(3)
             .map { rep in
                 let scoreText = rep.score.map { "\($0)/10" } ?? "n/a"

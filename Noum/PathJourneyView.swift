@@ -45,7 +45,7 @@ struct PathJourneyView: View {
     /// sequence renders separately in `landmarksCard` so the two
     /// progressions never masquerade as one number.
     private var snapshot: PracticeJourneySnapshot {
-        let base = PracticeJourneySnapshot.make(from: sessionStore.sessions)
+        let base = PracticeJourneySnapshot.make(from: sessionStore.progressEligibleSessions)
             .withDisplayedStreak(streakManager.currentStreak)
 #if DEBUG
         if isDebugActive {
@@ -61,14 +61,14 @@ struct PathJourneyView: View {
         PathJourneyPresentation.make(
             statuses: pathProgress.statuses,
             currentStreak: streakManager.currentStreak,
-            sessionCount: sessionStore.sessions.count,
+            sessionCount: sessionStore.progressEligibleSessionCount,
             currentGatingPhrase: pathProgress.currentNodeGatingPhrase
         )
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
-            sessions: sessionStore.sessions,
+            sessions: sessionStore.progressEligibleSessions,
             profile: coachingProfileStore.profile,
             displayedStreak: streakManager.currentStreak
         )
@@ -91,13 +91,13 @@ struct PathJourneyView: View {
 
     private var practicedToday: Bool {
         let calendar = Calendar.current
-        return sessionStore.sessions.contains { calendar.isDateInToday($0.date) }
+        return sessionStore.progressEligibleSessions.contains { calendar.isDateInToday($0.date) }
     }
 
     /// Whole days since the most recent rep; nil when the user has never
     /// practiced. Drives the why card's coach line — forward-framing only.
     private var daysSinceLastSession: Int? {
-        guard let last = sessionStore.sessions.map(\.date).max() else { return nil }
+        guard let last = sessionStore.progressEligibleSessions.map(\.date).max() else { return nil }
         let calendar = Calendar.current
         return calendar.dateComponents(
             [.day],
@@ -849,7 +849,8 @@ enum RetentionLoopEngine {
         profile: CoachingProfile?,
         displayedStreak: Int? = nil
     ) -> RetentionLoopSnapshot {
-        let sortedSessions = sessions.sorted { $0.date > $1.date }
+        let sortedSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .sorted { $0.date > $1.date }
         let recentSessions = Array(sortedSessions.prefix(6))
         let currentStreak = displayedStreak ?? currentStreak(from: sortedSessions)
 
@@ -1112,6 +1113,7 @@ struct PracticeJourneySnapshot {
     }
 
     static func make(from sessions: [PracticeSession]) -> PracticeJourneySnapshot {
+        let sessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let windowDays = 21

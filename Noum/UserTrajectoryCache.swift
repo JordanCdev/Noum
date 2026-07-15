@@ -21,11 +21,12 @@ final class UserTrajectoryCache {
         sessions: [PracticeSession],
         coachMemory: CoachMemory?
     ) -> UserTrajectoryCacheResult {
+        let progressSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
         let signature = Self.signature(
             profile: profile,
             baseline: baseline,
             rating: rating,
-            sessions: sessions,
+            sessions: progressSessions,
             coachMemory: coachMemory
         )
         lock.lock()
@@ -38,7 +39,7 @@ final class UserTrajectoryCache {
             profile: profile,
             baseline: baseline,
             rating: rating,
-            sessions: sessions,
+            sessions: progressSessions,
             coachMemory: coachMemory
         )
         cachedSignature = signature

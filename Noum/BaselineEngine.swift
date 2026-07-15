@@ -1304,6 +1304,7 @@ enum BaselineEngine {
     /// Recomputes the entire baseline from session history.
     /// Called on app launch and after account switch.
     static func compute(from sessions: [PracticeSession]) -> CommunicationBaseline {
+        let eligibleSessionCount = PracticeProgressEligibility.eligibleSessions(in: sessions).count
         let qualifying = sessions.filter(acceptsCurrentComparisonMetrics)
         guard !qualifying.isEmpty else { return .empty }
 
@@ -1312,7 +1313,7 @@ enum BaselineEngine {
         let recent = Array(sorted.prefix(20))
 
         var baseline = CommunicationBaseline.empty
-        baseline.sessionCount = sessions.count
+        baseline.sessionCount = eligibleSessionCount
         baseline.qualifyingSessionCount = qualifying.count
         baseline.lastUpdated = Date()
 
@@ -1453,6 +1454,7 @@ enum BaselineEngine {
     /// Updates an existing baseline with a new session.
     /// Uses EMA with recency bias: α = 0.5 for early sessions (< 5), 0.15 for established.
     static func update(_ baseline: CommunicationBaseline, with session: PracticeSession) -> CommunicationBaseline {
+        guard PracticeProgressEligibility.qualifies(session) else { return baseline }
         guard acceptsCurrentComparisonMetrics(session) else {
             var updated = baseline
             updated.sessionCount += 1

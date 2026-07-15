@@ -55,7 +55,7 @@ struct CoachSessionView: View {
             return Self.resolvedInitialMode(
                 requested: initialMode,
                 voiceAccessible: Self.voiceAccessibleNow(),
-                hasCompletedReps: !sessionStore.sessions.isEmpty,
+                hasCompletedReps: sessionStore.progressEligibleSessionCount > 0,
                 hasVoiceProfile: coachingProfileStore.profile?.chosenStyleGoal != nil
             )
         }()
@@ -114,7 +114,7 @@ struct CoachSessionView: View {
 
     private var hasCompletedPracticeEvidence: Bool {
         AskNoumStore.hasCompletedPracticeEvidence(
-            sessionCount: sessionStore.sessions.count
+            sessionCount: sessionStore.progressEligibleSessionCount
         )
     }
 

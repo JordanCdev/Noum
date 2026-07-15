@@ -4,6 +4,34 @@ import Testing
 
 @Suite("Privacy-bounded transformation KPIs")
 struct TransformationKPIReportTests {
+    @Test func reviewOnlyCaptureDoesNotBecomeACompletedSpokenRep() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let capture = PracticeSession(
+            transcript: "brief capture",
+            fillerWordCount: 0,
+            duration: 30,
+            date: start.addingTimeInterval(20),
+            mode: .timed
+        )
+        let report = TransformationKPIReport.derive(
+            events: [
+                FlowEvent.make(
+                    createdAt: start,
+                    correlationId: UUID(),
+                    flow: .other,
+                    stage: "activation.firstEligible"
+                )
+            ],
+            sessions: [capture],
+            outcomes: []
+        )
+
+        #expect(!report.firstRepCompleted)
+        #expect(report.timeToFirstRepSeconds == nil)
+        #expect(!report.firstValueCompleted)
+        #expect(report.reviewOpenRate == nil)
+    }
+
     @Test func derivesActivationRetentionAndAcceptanceWithoutTranscriptData() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

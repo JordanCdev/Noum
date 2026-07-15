@@ -286,6 +286,17 @@ struct PressureSessionResult: Equatable {
     /// view to reconstruct round configs.
     var minimumWordsByRound: [Int] = []
 
+    /// Pressure rounds can finish with a transport-valid capture before they
+    /// meet the shared evidence floor. Game points, run history, and personal
+    /// bests all reuse this boundary instead of treating a cleared timer as
+    /// proof that a progress-bearing rep occurred.
+    var isProgressEligible: Bool {
+        PracticeProgressEligibility.qualifies(
+            wordCount: totalWords,
+            duration: totalDuration
+        )
+    }
+
     // MARK: Quality signals (populated post-session before gamePoints is read)
 
     /// Pitch metrics from the audio engine's tap buffer.

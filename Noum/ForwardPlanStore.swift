@@ -221,7 +221,9 @@ enum ForwardPlanProgress {
     ) -> (completed: Int, target: Int)? {
         guard let week = plan.currentWeek(now: now, calendar: calendar) else { return nil }
         let range = plan.dateRange(forWeek: week.weekIndex, calendar: calendar)
-        let completed = sessions.filter { range.start <= $0.date && $0.date < range.end }.count
+        let completed = PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { range.start <= $0.date && $0.date < range.end }
+            .count
         return (completed, week.sessionTarget)
     }
 }

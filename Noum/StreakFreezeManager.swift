@@ -147,7 +147,7 @@ final class StreakFreezeManager: ObservableObject {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
 
-        let sessions = PracticeSessionStore.shared.sessions
+        let sessions = PracticeSessionStore.shared.progressEligibleSessions
         let drillDates = recentDrillDates()
 
         let practiceDays = Set(

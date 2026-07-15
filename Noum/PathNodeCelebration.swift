@@ -523,7 +523,7 @@ struct PathNodeCelebration: View {
 
     private func uniquePracticeDayCount() -> Int {
         let calendar = Calendar.current
-        return Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) }).count
+        return Set(sessionStore.progressEligibleSessions.map { calendar.startOfDay(for: $0.date) }).count
     }
 
     private func modeName(_ mode: PracticeMode) -> String {

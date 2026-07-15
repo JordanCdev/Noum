@@ -5167,7 +5167,7 @@ enum CoachContextBuilder {
         // Most-recent first. `sessions` is persisted newest-last in some
         // call paths and newest-first in others, so sort explicitly by
         // date to make the digest deterministic regardless of caller order.
-        let recent = sessions
+        let recent = PracticeProgressEligibility.eligibleSessions(in: sessions)
             .sorted { $0.date > $1.date }
             .prefix(limit)
 

@@ -191,7 +191,9 @@ enum CoachReplyPipeline {
         let snapshots = SkillTrendStore.shared.snapshots
         let trends = TrendAnalyzer.analyze(snapshots: snapshots)
 
-        let sessions = sessionsOverride ?? PracticeSessionStore.shared.sessions
+        let sessions = PracticeProgressEligibility.eligibleSessions(
+            in: sessionsOverride ?? PracticeSessionStore.shared.sessions
+        )
         let coachMemory: CoachMemory?
         if let coachMemoryOverride {
             coachMemory = coachMemoryOverride()

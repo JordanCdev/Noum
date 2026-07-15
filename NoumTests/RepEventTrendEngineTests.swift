@@ -176,7 +176,7 @@ struct RepEventTrendEngineTests {
 
     private func session(_ date: Date, _ loc: RepEventLocations?) -> PracticeSession {
         PracticeSession(
-            transcript: "x", fillerWordCount: 0, duration: 30, date: date,
+            transcript: "eligible positional rep", fillerWordCount: 0, duration: 30, date: date,
             repEventLocations: loc
         )
     }

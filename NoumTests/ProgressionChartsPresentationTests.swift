@@ -193,7 +193,7 @@ struct ProgressionChartsPresentationTests {
     private func makeScorePoints(_ values: [Double]) -> [ProgressionChartsCard.ChartPoint] {
         values.enumerated().compactMap { offset, value in
             let session = PracticeSession(
-                transcript: "rep",
+                transcript: "eligible score rep",
                 fillerWordCount: 0,
                 duration: 60,
                 date: Date(timeIntervalSince1970: Double(offset)),

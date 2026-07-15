@@ -27,7 +27,7 @@ enum CoachLetterCoordinator {
     static func buildInput(monthKey: String) -> CoachLetterInput {
         let voice = CoachingProfileStore.shared.profile?.chosenStyleGoal
         let baseline = BaselineStore.shared.baseline
-        let allSessions = PracticeSessionStore.shared.sessions
+        let allSessions = PracticeSessionStore.shared.progressEligibleSessions
         let bigMoment = BigMomentStore.shared.activeMoment
         let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
 
@@ -98,7 +98,7 @@ enum CoachLetterCoordinator {
         guard day >= 1, day <= 3 else { return false }
         let monthKey = CoachLetter.previousMonthKey(now: now)
         guard !CoachLetterStore.shared.hasLetter(for: monthKey) else { return false }
-        guard !PracticeSessionStore.shared.sessions.isEmpty else { return false }
+        guard !PracticeSessionStore.shared.progressEligibleSessions.isEmpty else { return false }
         return true
     }
 

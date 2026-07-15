@@ -75,9 +75,10 @@ enum TrajectorySummaryBuilder {
         coachMemory: CoachMemory?,
         now: Date
     ) -> MemoryTrajectorySnapshot {
-        guard profile != nil || !sessions.isEmpty else { return .empty }
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        guard profile != nil || !eligibleSessions.isEmpty else { return .empty }
 
-        let sorted = sessions.sorted { $0.date > $1.date }
+        let sorted = eligibleSessions.sorted { $0.date > $1.date }
         let caseFile = coachMemory?.caseFile
         let freshnessDays = sorted.first.map { daysBetween($0.date, now) }
         let isStale = freshnessDays.map { $0 > stalenessThresholdDays } ?? false

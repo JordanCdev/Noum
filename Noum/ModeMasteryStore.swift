@@ -154,7 +154,7 @@ final class ModeMasteryStore: ObservableObject {
     private func rebuild(from sessions: [PracticeSession]) {
         var totals: [PracticeMode: Int] = [:]
         var counts: [PracticeMode: Int] = [:]
-        for session in sessions {
+        for session in PracticeProgressEligibility.eligibleSessions(in: sessions) {
             counts[session.mode, default: 0] += 1
             if let xp = session.xpEarned, xp > 0 {
                 totals[session.mode, default: 0] += xp
