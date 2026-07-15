@@ -5,7 +5,21 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 Audit date: 2026-07-15
 
 Committed implementation inspected through:
-`9088fdc3`
+`eaf2f31c`
+
+At `eaf2f31c`, raw Review persistence and earned progress have one explicit
+boundary. Non-empty transport-valid captures remain inspectable, but sub-three-
+word, sub-three-finite-second, and evaluation-only rows cannot mutate XP,
+Path/achievement/mode/league state, streaks, goals, baselines, recommendation
+outcomes, coaching memory, proof archives, rehearsal readiness, or retention
+KPIs. The existing stores/finalizers remain authoritative; reactive and pure
+projections filter the same eligible view. IM skips grading and relationship
+mutation, Pressure Drill skips parallel game ledgers, and Summary withholds
+credit and AI/durable coaching effects for Review-only rows. Focused selections
+pass 25/25 and 30/30; the complete target passes 4,166 unique tests / 4,183
+device executions with zero failures or skips. This is local deterministic
+integrity only. Existing monotonic ledgers are not retroactively reconciled,
+and no external artifact was collected.
 
 At `9088fdc3`, `SpeechRecognizerViewModel` owns one monotonic microphone-capture
 receipt frozen before audio teardown and terminal provider completion.
@@ -583,7 +597,8 @@ Historical results are not treated as proof for later behavior.
 | Speech-quantity fairness across evaluation, goal evidence, and immediate prescription | **Proved locally** | At `c3d1ff65`, one pure `FillerBurden` projection drives severity, drill focus, cross-session trends, filler-aligned copy, and controlled pressure-stretch eligibility. At `ec10990f`, severe qualifying burden routes to Ah Counter (`Filler Control`), including after a first severe qualifying rep; non-severe thin evidence stays suppressed. At `4da56e3e`, Timed/Ah evaluation uses the same qualifying rate for score, XP, feedback, clarity, weak moments, insights, and recent-session comparison; 1/60 equals 10/600, 3/20 stays concentrated, and sub-floor speech withholds judgment. At `ac393554`, the latest trajectory pack, qualitative goal rubric, goal-card confidence, and public weekly filler trend require quantity-qualified, duration-normalized evidence. At `dbafb01b`, Summary, Practice insights, `CoachingPlanner`, and chronological Review/Profile comparison join the same boundary. At `ac664112`, direct Ask Noum context, provisional Coach Read, AI Coach feedback/fallbacks, and comparable proof tests also join it; thin evidence cannot leak an older count or become a pressure pattern. At `a2502c04`, Clean rep and Filler-free week Path milestones require the same quantity, confidence, current-schema, and non-fixture evidence, while persisted unlock IDs remain grandfathered through the existing ledger. At `c3e018d4`, Roleplay withholds filler scoring entirely because its turn model lacks finalized duration; semantic terms and isolated unqualified disfluencies cannot alter quality or pressure while non-filler content signals remain. At `9088fdc3`, every duration-bearing practice surface uses the same recorder-stop receipt, and legacy-clock rows fail closed for duration-derived coaching. Focused capture verification passes 26 unique tests, the related selection passes 74, and the complete target passes 4,155 unique tests / 4,172 device executions. This proves local consistency and fail-closed behavior, not professional calibration or user benefit. |
 | Capture-duration and baseline metric provenance | **Proved locally** | At `9088fdc3`, the microphone-capture interval freezes before audio teardown/provider drain and supplies persisted duration, telemetry, pitch eligibility, Mini-drill, and exact Pressure Drill round totals. Comparison schema 2 separates exact receipts from readable schema-1 history. Baseline recipes rebuild from current-epoch rows on mismatch, and pressure EMA replay is chronological. Focused, related, and full passes cover 26, 74, and 4,155 unique tests respectively. No deliberately delayed live-provider or physical-device run exists, so this remains local provenance evidence. |
 | Path unlock delivery and evidence provenance | **Proved locally** | At `b5747542`, `PracticeSessionFinalizer` captures synchronized unlock state before append and `PathProgressManager` compares it after dependent state lands, so a reactive recompute cannot consume the celebration event. The event carries the exact finalized session ID; stat copy and proof resolve that ID rather than `.last`. General criteria reject sub-floor and evaluation-only rows, stricter filler milestones remain unchanged, and persisted unlock IDs remain grandfathered. Focused 23-test, related 55-test, and complete 4,145-unique-test / 4,162-execution simulator gates pass. The light sweep does not force the overlay, and no signed-device, accessibility, retention, or transfer result exists. |
-| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, speech-notice wiring, Path integrity, and exact microphone-stop duration tests pass, but they earn no external readiness points; that artifact also predates the current `9088fdc3` implementation and is not current-source evidence for it. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
+| Progress-bearing session provenance | **Proved locally** | At `eaf2f31c`, one three-word/three-finite-second/non-fixture policy separates Review history from every earned, coaching, recommendation, rehearsal, and KPI projection. IM, Pressure Drill, Summary, reactive managers, longitudinal reads, and proof/archive paths fail closed. Focused 25-test and 30-test selections plus the complete 4,166-unique-test / 4,183-execution simulator target pass. Existing monotonic ledgers are not reconciled, and no device, live-provider, professional, longitudinal, or launch result exists. |
+| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, speech-notice wiring, Path integrity, duration provenance, and progress eligibility tests pass, but they earn no external readiness points; that artifact predates the current `eaf2f31c` implementation and is not current-source evidence for it. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. The main checkout additionally preserves the user's unrelated localization edit and staged screenshot handoffs. |
 
 ## External proof gates
 
@@ -636,6 +651,14 @@ assessment, declared-neutral rows remain truthfully `notEvaluated`, unknown
 fixture IDs fail closed, and all 109 traces carry the current commit and coach
 fingerprint. Local reruns cannot raise production readiness past the external
 cap by themselves.
+
+At `eaf2f31c`, the highest-impact progress-provenance gap is closed without
+hiding raw Review history. The next verified local lifecycle gap is the retired
+Daily Challenge system: the tile has no production construction site, while its
+manager and notification scheduling remain operational and a later miss can
+replace earlier unclaimed readiness. After that, Roleplay's “same objection,
+slower” retry copy still needs to retain the actual objection rather than select
+a fresh one. Neither local correction would earn an external readiness point.
 
 At `ab5b6aaa`, the highest-impact locally executable goal-action gap is closed:
 an established, qualified, style-compatible goal target can select and

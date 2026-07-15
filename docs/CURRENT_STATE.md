@@ -1,5 +1,36 @@
 # Noum — Current state
 
+## 2026-07-15 — Review-only captures no longer manufacture progress
+
+Implementation commit `eaf2f31c` makes `PracticeProgressEligibility` the
+authoritative boundary between durable Review history and earned product state.
+Transport-valid non-empty captures of at least one second remain inspectable,
+but fewer than three words, less than three finite seconds, or evaluation-only
+fixtures cannot award XP, Path/achievement/mode/league progress, goals, streaks,
+baselines, coach memory, recommendation outcomes, proof moments, rehearsal
+readiness, or retention/KPI credit.
+
+The existing practice stores and finalizers remain the state owners. The common
+finalizer appends, consumes pending intent, and annotates before one shared
+guard; explicit, reactive, longitudinal, and visible projections then reuse the
+eligible-history view. Mode-specific escape paths now fail closed too: short IM
+captures skip cloud grading and relationship mutation, Pressure Drill skips
+points/run history/personal bests, and Summary withholds displayed XP plus
+rewrite, deeper-read, proof, and video-memory side effects. Exact-ID Review,
+detail, export, and deletion paths retain raw history.
+
+Focused proof/progress contracts pass **25/25** and focused Prep/KPI regression
+passes **30/30**. The complete `NoumTests` target passes **4,166 unique tests /
+4,183 device executions** with zero failures or skips on the iPhone 17 Pro /
+iOS 26.5 simulator. A fresh light sweep launched successfully, but first-value
+onboarding intercepted all five tab deep links and two frames rendered
+incompletely, so it does not prove the review-only Summary or Pressure result.
+Existing monotonic ledgers are not retroactively reconciled; the pre-release
+assumption is that no production user ledger must be preserved.
+No physical-device, live-provider, retention, transfer, or professional result
+was collected. Production readiness remains **NO-GO at 18/100 with 0/5 required
+external artifacts**.
+
 ## 2026-07-15 — Practice duration now ends when microphone capture ends
 
 Implementation commit `9088fdc3` closes a shared evidence-provenance defect in

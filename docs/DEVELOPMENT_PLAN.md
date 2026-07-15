@@ -7,6 +7,19 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Progress-eligibility hardening at `eaf2f31c` closes the split boundary between
+Review persistence and earned effects. Raw transport-valid captures remain in
+history, while every explicit finalizer, reactive manager, coaching/recommendation
+projection, Summary AI surface, Pressure Drill ledger, IM relationship update,
+Prep readiness read, and retention KPI requires at least three words and three
+finite seconds and rejects evaluation fixtures. Focused selections pass 25 and
+30 tests, and the complete target passes 4,166 unique tests / 4,183 device
+executions. This is local progress/coaching integrity, not external product
+evidence. The next verified local lifecycle gap is the retired Daily Challenge:
+its UI is unreachable, but its manager and notification paths still operate and
+can revoke earlier unclaimed readiness. Roleplay same-objection retry continuity
+remains the next bounded coaching-adaptation gap after that.
+
 Microphone-stop duration provenance at `9088fdc3` gives Timed, Ah Counter,
 Impromptu, Mini-drill, Pressure Drill, persisted practice evidence, pitch
 eligibility, and quality telemetry one monotonic recorder-owned receipt frozen
@@ -16,10 +29,8 @@ rows on recipe mismatch, and pressure EMA replay is chronological. Focused and
 related selections pass 26 and 74 unique tests respectively, and the full target
 passes 4,155 unique tests / 4,172 device executions. This is deterministic local
 evidence, not physical-device, live-provider-latency, retention, transfer, or
-launch proof. The next verified local correctness gap is that the common
-finalization path can still mutate Daily Goal, baseline/clutch/streak/personal-
-best, achievement, and coach-note state before `SessionFinalizer` applies its
-later sub-floor progress guard.
+launch proof. That previously documented split finalization gap is closed by
+`eaf2f31c`.
 
 Path progress-delivery hardening at `b5747542` makes a landmark one atomic
 post-finalization event rather than an inference from whichever session happens
