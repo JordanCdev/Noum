@@ -1,5 +1,35 @@
 # Noum — Current state
 
+## 2026-07-15 — Roleplay filler scoring and speech fallback now fail closed
+
+Implementation commit `c3e018d4` closes two local coaching-trust gaps without
+adding a new recognizer, score owner, or notice system. Roleplay turns do not
+persist finalized duration, so their previous word-ratio heuristic could not
+apply Noum's shared quantity-qualified fillers-per-minute contract. The engine
+now withholds filler evidence from response quality and retry-pressure selection
+until that durable duration contract exists. Semantic uses of “like”,
+“actually”, “kind”, and “sort”, plus isolated unqualified disfluencies, cannot
+lower the Roleplay score or raise pressure; the existing directness, evidence,
+listening, question, and explicit-hedge signals remain.
+
+Pace Training, Cut the Crutch, and Roleplay now reuse the shared
+`transcriptionRouteNotice`, completing source-level parity across all nine
+speech surfaces. Existing provider tests prove that only a requested-cloud /
+resolved-local startup shows the content-free accessible notice, deliberate
+local and successful cloud routes stay quiet, and a new route clears stale
+notice state. A new nine-surface contract prevents future wiring drift.
+
+Focused fallback verification passes **26 unique tests**, focused Roleplay
+verification passes **24 unique tests**, and the complete `NoumTests` target
+passes **4,139 unique tests / 4,156 device executions** with zero failures or
+skips on the iPhone 17 / iOS 26.4 simulator. A fresh light sweep rendered Home,
+Train, Review, Profile, and Settings without a launch, routing, or top-level
+layout regression. It did not force a real provider failure, so the notice still
+lacks rendered physical-device/TestFlight proof. Standalone Pace attribution
+and wider Roleplay/Lessons/Projects/Path recommendation routing remain
+decision-gated. Production readiness remains **NO-GO at 18/100 with 0/5
+required external artifacts**.
+
 ## 2026-07-15 — Established goal evidence can select and attribute the next rep
 
 Implementation commit `ab5b6aaa` closes the highest-impact local
