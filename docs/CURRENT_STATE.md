@@ -1,5 +1,36 @@
 # Noum — Current state
 
+## 2026-07-15 — Path landmarks now bind to the exact finalized rep
+
+Implementation commit `b5747542` closes an order-dependent progress-trust gap
+inside the existing `PracticeSessionFinalizer` and `PathProgressManager`
+owners. Previously, the reactive session-store sink could recompute and persist
+a newly completed node before the later explicit evaluation captured its
+“before” set. The node stayed unlocked, but the landmark could silently lose
+its celebration. The common finalizer now captures a synchronized pre-append
+snapshot and resolves the post-finalization event with the exact triggering
+session ID after dependent rating and achievement state lands.
+
+Celebration stat copy and proof now resolve that session ID rather than assuming
+an array position; this also removes the newest-first store bug where `.last`
+could cite the oldest rep. General Path criteria now share the evaluator's
+minimum progress-bearing boundary of three words and three finite seconds and
+exclude evaluation fixtures. Stricter filler milestones keep their existing
+15-second / 20-word evidence qualification, and persisted unlock IDs remain
+grandfathered rather than being revoked after upgrade.
+
+The focused Path integrity and filler selection passes **23 unique tests**. The
+broader Path/finalization/presentation selection passes **55/55**, and the
+complete `NoumTests` target passes **4,145 unique tests / 4,162 device
+executions** with zero failures or skips on the iPhone 17 / iOS 26.4
+simulator. Xcode recovered from one transient simulator-clone launch denial;
+the authoritative result bundle is fully green. A fresh light sweep rendered
+Home, Train, Review, Profile, and Settings without a launch, route, or top-level
+layout regression. It did not manufacture an earned landmark, so the exact
+celebration overlay, VoiceOver, Reduce Motion, and physical-device behavior
+remain visually unproved. Production readiness remains **NO-GO at 18/100 with
+0/5 required external artifacts**.
+
 ## 2026-07-15 — Roleplay filler scoring and speech fallback now fail closed
 
 Implementation commit `c3e018d4` closes two local coaching-trust gaps without
