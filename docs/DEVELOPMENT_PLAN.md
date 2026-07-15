@@ -7,6 +7,21 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+Pace completion integrity at `8e7af9d9` now requires the established terminal
+recording receipt plus the shared three-word / three-finite-second progress
+floor before a standalone Pace run may show a result or award XP. The live
+sampled result remains authoritative for pace metrics; the terminal transcript
+owns only speech eligibility, avoiding fabricated sample reconstruction. Thin
+speech returns to setup with a calm retry explanation, unusable capture keeps
+the recognizer error path, and eligible XP is awarded once. The focused Pace
+regression passes 34/34 across three suites, both rendered completion branches
+pass individually including Accessibility XXXL, and the light five-tab sweep is
+clean. The latest complete unit target remains the 4,188-unique-test / 4,205-
+execution result at `5987636f`; it was not rerun at this commit. Standalone Pace
+still lacks durable session/recommendation/comparable-response attribution, so
+adaptive routing remains intentionally incomplete. All five required external
+artifacts remain missing and production readiness remains NO-GO at 18/100.
+
 Terminal Roleplay guidance at `5987636f` now binds visible continuation copy to
 the exact cached engine transition. Pre-terminal turns preserve their adaptive
 promise, the fourth response converts its recommendation into a future

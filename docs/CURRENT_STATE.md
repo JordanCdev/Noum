@@ -1,5 +1,30 @@
 # Noum — Current state
 
+## 2026-07-15 — Pace results now require terminal speech evidence
+
+Implementation commit `8e7af9d9` closes a believable-progress defect in the
+standalone Pace flow. Pace still uses its live per-second samples to describe
+the run, but it now awaits the provider's terminal transcript receipt and uses
+the recorder-owned capture duration before presenting a result or awarding XP.
+A receipt must pass the established recording-completion gate and contain at
+least three spoken words across three finite seconds. Thin usable speech returns
+to the existing setup with a calm retry explanation; unusable capture retains
+the recognizer's established error path. Eligible runs preserve the exact live
+result and award its XP once, without pretending a late transcript can
+reconstruct pace samples.
+
+The focused Pace regression passes **34/34 tests across three suites**. The
+insufficient-speech fixture passes at Accessibility XXXL with no result or XP,
+and the eligible fixture passes with the existing result, exact +40 XP display,
+and both exit actions accessible. A fresh light five-tab sweep and both Pace
+states were visually inspected on the iPhone 17 simulator. The complete unit
+target was not rerun at this commit; the latest complete target remains the
+**4,188 unique tests / 4,205 device executions** result at `5987636f`. These
+fixtures bypass microphone capture and do not establish durable Pace
+attribution, provider timing, physical-device behavior, or effectiveness. No
+required external artifact was collected, so production readiness remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-15 — Terminal Roleplay guidance no longer promises a nonexistent turn
 
 Implementation commit `5987636f` closes the remaining split between
