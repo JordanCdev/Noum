@@ -2,39 +2,44 @@
 
 ## Current production-closure continuation — 2026-07-16
 
-This handoff covers the Forward Plan async-ownership source developed on
-`ux-overhaul` above baseline `c869b5aef`. It reuses the existing authentication,
-plan, session, provider-consent, and Ask Noum owners. A generation lease is
-available only for a fully hydrated loaded account and binds account lifecycle,
-latest intent, plan-store generation, session epoch, exact plan input, and the
-captured locale, consent record, and active provider.
+This handoff covers the Forward Plan metric-qualification source developed on
+`ux-overhaul` above baseline `8f0107df1`. It reuses the existing baseline,
+filler-evidence, authentication, plan, session, provider-consent, and Ask Noum
+owners. Recent filler context reaches the provider only as a per-minute rate
+after the shared 20-word, 15-second, confidence, current-schema, and non-fixture
+boundary; otherwise it is explicitly not measured. Persisted filler and pace
+baselines likewise use the current-comparison accessors. Independent mode,
+score, and average-score evidence remains available.
 
 The final validity check and actual data-task start occur synchronously in one
 MainActor turn. Provider, deterministic, and fallback outcomes revalidate after
 suspension, and the final compare-and-save requires the source,
 authorization, plan owner, and Ask Noum loaded account to remain exact.
 Lifecycle, reload, completed local deletion, assignment, and
-phrase-reconciliation mutations invalidate stale requests. Focused
-verification passes **17/17**, the related
-selection passes **128/128**, and the complete unsigned target passes **4,348
-unique tests / 4,367 device-configuration executions** with zero failures or
-skips. The current-source unsigned Release simulator build succeeds.
+phrase-reconciliation mutations invalidate stale requests. Focused metric
+verification passes **7/7**, the combined metric and Forward Plan selection
+passes **134/134**, and the complete unsigned target passes **4,355 unique
+tests / 4,374 device-configuration executions** with zero failures or skips.
+Its result bundle is
+`/private/tmp/noum-forward-plan-metric-full-20260716-0140.xcresult`. The
+current-source unsigned Release simulator build succeeds.
 
-Do not broaden this into full Forward Plan completion. The prompt still uses
-raw recent-session filler counts rather than metric-qualified filler-rate
-evidence; first-plan generation is runtime-unreachable because the Profile card
-is unmounted, Home suppresses `.prompt`, and Ask Noum has no entry; legitimate
-fail-closed results are not explained by the mounted Home navigation path, which
-also does not retain the task for proactive cancellation; deletion initiation
-is not a lease input, so provider work can start or continue until local
-teardown;
-device-global AI-call diagnostics can retain provider/outcome/timing metadata
-across account lifecycle boundaries; repeated full-history hashing may cost
-MainActor time; and the Ask/plan durable writes are not crash-atomic. No UI
-changed, and no Forward-Plan-specific rendered, physical-device, live-provider,
-professional, longitudinal, operational, or required external evidence was
-added. The authoritative gate remains **NO-GO at 18/100, with 0/5 required
-external artifacts**.
+Do not broaden this into full Forward Plan completion. First-plan generation is
+source-reachable after three eligible reps through **Profile → Library →
+Coaching evidence → Coaching direction**, correcting the preceding audit, but
+that entry is deeply buried. Home suppresses `.prompt`, Ask Noum has no
+dedicated entry, and the mounted stale-plan path does not explain a legitimate
+fail-closed result or retain its task for proactive cancellation. Deletion
+initiation is not a lease input, so provider work can start or continue until
+local teardown. Device-global AI-call diagnostics remain outside lifecycle and
+registry deletion; their reason metadata can expose interaction/coaching-gate
+details, and an optional live-evaluation path can append provider draft
+fragments even though no checked-in build setting enables it. Repeated
+full-history hashing may cost MainActor time, and the Ask/plan durable writes
+are not crash-atomic. No UI changed, and no Forward-Plan-specific rendered,
+physical-device, live-provider, professional, longitudinal, operational, or
+required external evidence was added. The authoritative gate remains **NO-GO
+at 18/100, with 0/5 required external artifacts**.
 
 ## Current production-closure continuation — 2026-07-15
 

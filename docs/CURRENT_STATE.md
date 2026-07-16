@@ -1,51 +1,54 @@
 # Noum — Current state
 
-## 2026-07-16 — Forward Plan async work is account/source/authorization leased
+## 2026-07-16 — Forward Plan provider context is metric-qualified
 
-The current source, developed above baseline `c869b5aef`, closes the verified
-P0 cross-account, stale-source, and consent-borrowing races in asynchronous
-Forward Plan generation through the existing authentication, plan, session,
-provider-consent, and Ask Noum owners. A request can be leased only while the
-signed-in account is fully hydrated and owns the loaded plan and session-store
-epochs. Its token binds the account lifecycle, latest request, plan-store
-generation, session epoch, exact plan-shaping input identity, and captured
-locale, consent record, and active provider.
+The current source, developed above baseline `8f0107df1`, closes the bounded
+Forward Plan evidence gap through the existing baseline and filler-evidence
+owners. Recent-session mode and score remain independently available, while
+filler context now passes through
+`QuantityQualifiedFillerEvidence.historical`: samples below 20 words or 15
+seconds, below transcript confidence, from an old comparison schema, or from an
+evaluation fixture are described as not measured. Qualified samples expose a
+normalized per-minute rate rather than a context-free raw count. Persisted
+filler and pace baselines now use `currentComparisonFillerRate` and
+`currentComparisonPaceWPM`, so insufficient or stale aggregates cannot reach
+the provider while independently reliable average score remains available.
 
-`ForwardPlanService` uses only that captured execution authorization. The
-final authorization check and `URLSessionDataTask.resume()` occur in one
-synchronous MainActor turn, and cancellation stops an owned in-flight data
-task. Provider, deterministic, and fallback results are revalidated after any
-suspension. The final in-process commit rechecks source and authorization,
-requires Ask Noum's independently loaded account to match, writes the coach
-turn, and then persists the plan without allowing another account event to
-interleave. Reload, lifecycle, completed local deletion, phrase assignment,
-and phrase reconciliation mutations invalidate outstanding leases. These two
-durable writes are deliberately not described as crash-atomic.
-
-Focused account/source/authorization verification passes **17/17**. The
-related Forward Plan, Ask Noum, provider, and account regression selection
-passes **128/128**. The complete unsigned `NoumTests` target passes **4,348
-unique tests / 4,367 device-configuration executions** with zero failures or
-skips; the local result bundle is
-`/private/tmp/noum-forward-plan-atomic-full-20260716-0108.xcresult`. The
+The provider-visible prompt is a directly testable static boundary. Focused
+qualification verification passes **7/7**. The combined metric, Forward Plan,
+Ask Noum, and account regression selection passes **134/134**. The complete
+unsigned `NoumTests` target passes **4,355 unique tests / 4,374
+device-configuration executions** with zero failures or skips; the local
+result bundle is
+`/private/tmp/noum-forward-plan-metric-full-20260716-0140.xcresult`. The
 current-source unsigned Release simulator build succeeds.
 
-This closes only the asynchronous ownership and authorization boundary. The
-provider prompt still exposes raw recent-session filler counts rather than the
-20-word / 15-second, confidence-, schema-, and fixture-qualified filler-rate
-projection. First-plan generation is currently runtime-unreachable: the
-Profile `CoachingPlanCard` is not mounted, Home suppresses `.prompt` and only
-generates for `.stale`, and Ask Noum has no first-plan entry. The mounted Home
-path navigates to Ask immediately and does not explain a legitimate fail-closed
-result; it also does not retain the task handle for proactive cancellation.
+The preceding asynchronous ownership boundary remains intact: requests are
+leased to the fully hydrated loaded account, account lifecycle, latest intent,
+plan-store generation, session epoch, exact source input, locale, consent, and
+provider. Transport start, postflight, and the in-process plan/Ask compare-and-
+save continue to revalidate that lease. The two durable writes are still not
+crash-atomic.
+
+Source inspection corrects the previous reachability finding. After three
+eligible reps, first-plan generation is source-reachable through **Profile →
+Library → Coaching evidence → Coaching direction**. It remains deeply buried,
+Home suppresses `.prompt`, and Ask Noum has no dedicated first-plan entry. The
+mounted Home stale-plan path still navigates immediately and gives no
+explanation when generation legitimately fails closed; no rendered navigation
+proof was collected in this prompt-only slice.
+
 Account deletion initiation is not yet part of the lease, so a pending request
-may start or continue provider processing during remote deletion; completed
-local teardown and postflight still prevent plan/thread persistence. AI-call
-diagnostics also remain device-global metadata outside the account registry,
-so provider/outcome/timing rows can survive account switch or deletion even
-though they contain no prompt or response content. No Forward-Plan-specific
-rendered, physical-device, live-provider, professional, longitudinal,
-operational, or required external
+can start or continue provider processing during deletion, and an in-process
+plan/thread commit can still occur before local teardown. Successful teardown
+later removes account-scoped writes; completions after teardown fail closed,
+but provider work cannot be retracted. AI-call diagnostics also remain
+device-global and outside the account registry. Their reason metadata can
+include interaction and coaching-gate details, and the optional
+`NOUM_LIVE_AI_EVAL_INCLUDE_DRAFTS=1` path can append provider draft fragments;
+no checked-in build setting enables that option, but the privacy invariant is
+not enforced. No Forward-Plan-specific rendered, physical-device,
+live-provider, professional, longitudinal, operational, or required external
 evidence was collected. Production readiness remains **NO-GO at 18/100 with
 0/5 required external artifacts**.
 

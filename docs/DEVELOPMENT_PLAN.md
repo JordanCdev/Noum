@@ -7,50 +7,53 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
-## Current production-closure slice — Forward Plan async ownership
+## Current production-closure slice — Forward Plan evidence boundary
 
-The current source developed above baseline `c869b5aef` closes the verified P0
-Forward Plan race through the existing authentication, `ForwardPlanStore`,
-`ForwardPlanService`, `PracticeSessionStore`, provider-consent, and
-`AskNoumStore` owners. A synchronously captured lease binds the fully hydrated
-loaded account, account lifecycle, latest request, plan-store generation,
-session epoch, exact plan-shaping input identity, and exact locale, consent
-record, and active provider. The last validity check and network-task start
-share one MainActor turn; postflight and the final compare-and-save revalidate
-the same source and authorization. Plan reloads, lifecycle changes, completed
-local deletion, and practice-phrase mutations invalidate pending work, while
-checked Ask Noum insertion prevents a result from landing in another account's
-thread.
+The current source developed above baseline `8f0107df1` extends the existing
+Forward Plan account/source/authorization lease with the product-wide metric
+qualification boundary. Provider-visible recent filler context now uses the
+shared historical filler projection and emits only a qualified per-minute rate
+or `not measured`. Persisted filler and pace baselines use the current-schema
+comparison accessors; stale or insufficient comparison aggregates are absent,
+while independent score context remains available. No new metric owner, plan
+store, or routing path was introduced.
 
-Focused verification passes **17/17**, the related selection passes
-**128/128**, and the complete unsigned target passes **4,348 unique tests /
-4,367 device-configuration executions** with zero failures or skips. The
+Focused verification passes **7/7**, the combined metric and Forward Plan
+selection passes **134/134**, and the complete unsigned target passes **4,355
+unique tests / 4,374 device-configuration executions** with zero failures or
+skips. Its result bundle is
+`/private/tmp/noum-forward-plan-metric-full-20260716-0140.xcresult`. The
 current-source unsigned Release simulator build succeeds. No UI changed in
 this slice, so no screenshot evidence was added.
 
 The next Forward Plan work remains bounded P1/P2 hardening through those same
 owners:
 
-- qualify filler history before it reaches the provider prompt instead of
-  exposing raw recent-session counts;
-- mount one coherent first-plan entry; the Profile card is currently not in the
-  runtime tree, Home suppresses `.prompt`, and Ask Noum has no entry;
+- surface one coherent first-plan entry in a primary path. The existing entry
+  is source-reachable after three eligible reps through Profile → Library →
+  Coaching evidence → Coaching direction, but it is deeply buried; Home
+  suppresses `.prompt`, and Ask Noum has no dedicated entry;
 - explain a legitimate fail-closed generation result instead of navigating to
   an unchanged Ask thread;
-- bind AI-call diagnostic metadata to account lifecycle and registry deletion;
-  and
+- close Forward Plan admission at deletion initiation, cancel owned provider
+  work, and persist the deletion fence across relaunch;
+- bind AI-call diagnostics to account lifecycle and registry deletion, reject
+  delayed cross-account writes, purge unattributable legacy rows, and remove
+  the optional provider-draft persistence path; and
 - retain and cancel the Home-owned generation task, and avoid repeatedly
   hashing unbounded session history on the MainActor.
 
 This is not full Forward Plan or production closure. Account deletion start is
 not yet a lease input, so pending provider work can start or continue until
-local teardown or caller cancellation; postflight still rejects persistence.
-AI-call diagnostics also remain device-global metadata outside the account
-registry, so provider/outcome/timing rows can cross account lifecycle boundaries
-without prompt or response content. The two local persistence writes are not
-crash-atomic, and no
-Forward-Plan-specific rendered,
-physical-device, live-provider, professional, longitudinal, operational, or
+local teardown or caller cancellation, and an in-process plan/thread commit can
+still occur before teardown. Successful teardown later removes account-scoped
+writes; only completions after teardown fail closed. AI-call diagnostics also
+remain device-global metadata outside the account registry. Their reason field
+can retain interaction and coaching-gate details,
+and an opt-in live-evaluation flag can append provider draft fragments even
+though no checked-in build setting enables it. The two local persistence writes
+are not crash-atomic, and no Forward-Plan-specific rendered, physical-device,
+live-provider, professional, longitudinal, operational, or
 required external evidence was collected. Production remains **NO-GO at
 18/100 with 0/5 required external artifacts**.
 

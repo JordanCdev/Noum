@@ -646,7 +646,7 @@ actor ForwardPlanService {
 
     private func requestBody(for provider: AIProvider, input: ForwardPlanInput) -> [String: Any] {
         let system = Self.systemPrompt(for: input.profile?.chosenStyleGoal)
-        let user = userPrompt(input: input)
+        let user = Self.userPrompt(input: input)
         // Token budget — four week-objects with ≤200-char rationale each
         // plus JSON scaffolding fits in ~600 tokens. The earlier unbounded
         // shape risked silent truncation around week 4, where the parser
@@ -743,7 +743,12 @@ actor ForwardPlanService {
         }
     }
 
-    private func userPrompt(input: ForwardPlanInput) -> String {
+    /// Provider-visible plan context. Recent filler mechanics pass through the
+    /// same quantity, confidence, comparison-schema, and fixture boundary as
+    /// the rest of Noum's historical coaching surfaces. Keeping this static
+    /// makes that trust boundary directly testable without starting an actor or
+    /// constructing a provider request.
+    nonisolated static func userPrompt(input: ForwardPlanInput) -> String {
         var lines: [String] = []
         if let profile = input.profile {
             if let voice = profile.chosenStyleGoal {
@@ -766,11 +771,11 @@ actor ForwardPlanService {
         if input.baseline.averageScore.confidence != .insufficient {
             lines.append("Average score baseline: \(String(format: "%.1f", input.baseline.averageScore.value))/10")
         }
-        if input.baseline.fillerRate.confidence != .insufficient {
-            lines.append("Filler rate baseline: \(String(format: "%.1f", input.baseline.fillerRate.value)) per minute")
+        if let fillerRate = input.baseline.currentComparisonFillerRate {
+            lines.append("Filler rate baseline: \(String(format: "%.1f", fillerRate)) per minute")
         }
-        if input.baseline.pace.confidence != .insufficient {
-            lines.append("Pace baseline: \(String(format: "%.0f", input.baseline.pace.value)) WPM")
+        if let paceWPM = input.baseline.currentComparisonPaceWPM {
+            lines.append("Pace baseline: \(String(format: "%.0f", paceWPM)) WPM")
         }
         if input.baseline.pauseRate.confidence != .insufficient {
             lines.append("Pause rate baseline: \(String(format: "%.1f", input.baseline.pauseRate.value)) per minute")
@@ -783,7 +788,18 @@ actor ForwardPlanService {
         }
         let recent = input.sessions.prefix(5).enumerated().map { idx, s in
             let score = s.score.map { "\($0)/10" } ?? "n/a"
-            return "  \(idx + 1). \(s.mode.displayLabel) | score \(score) | fillers \(s.fillerWordCount)"
+            let fillerEvidence: String
+            if let rate = QuantityQualifiedFillerEvidence.historical(s).ratePerMinute {
+                let formatted = String(
+                    format: "%.1f",
+                    locale: Locale(identifier: "en_US_POSIX"),
+                    rate
+                )
+                fillerEvidence = "filler rate \(formatted) per minute"
+            } else {
+                fillerEvidence = "filler rate not measured"
+            }
+            return "  \(idx + 1). \(s.mode.displayLabel) | score \(score) | \(fillerEvidence)"
         }
         if !recent.isEmpty {
             lines.append("Recent sessions (newest first):")
