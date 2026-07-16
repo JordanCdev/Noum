@@ -151,8 +151,8 @@ enum CoachReplyPipeline {
 
     /// Assemble context from the shared stores, call the model, and hydrate the
     /// pending coach row identified by `coachID`. Returns the outcome so the
-    /// caller can decide whether to speak it. `@MainActor`: the store reads run
-    /// on main before the single `await`, exactly as the original prologue did.
+    /// caller can decide whether to speak it. `@MainActor` keeps lease capture,
+    /// shared-store reads, and every checked mutation on the same executor.
     @MainActor
     @discardableResult
     static func generate(
@@ -160,6 +160,7 @@ enum CoachReplyPipeline {
         pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil,
         surface: CoachReplySurface = .text,
         store: AskNoumStore? = nil,
+        expectedReplyLease: AskNoumReplyLease? = nil,
         coachService: AICoachChatService = .shared,
         judgementPassEnabled: Bool = CoachBrainFlags.judgementPassEnabled,
         realtimeCoachModeEnabled: Bool = CoachBrainFlags.realtimeCoachModeEnabled,
@@ -180,6 +181,19 @@ enum CoachReplyPipeline {
     ) async -> ChatOutcome {
         let turnStartedAt = Date()
         let store = store ?? AskNoumStore.shared
+        let replyLease: AskNoumReplyLease
+        if let expectedReplyLease {
+            guard expectedReplyLease.coachID == coachID,
+                  store.replyLeaseIsCurrent(expectedReplyLease) else {
+                return .failure(.unauthenticated)
+            }
+            replyLease = expectedReplyLease
+        } else {
+            guard let capturedLease = store.replyLease(for: coachID) else {
+                return .failure(.unauthenticated)
+            }
+            replyLease = capturedLease
+        }
         let profileStore = CoachingProfileStore.shared
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
@@ -277,6 +291,16 @@ enum CoachReplyPipeline {
                 voice: profileStore.profile?.chosenStyleGoal,
                 hasDiagnosis: hasDiagnosis
             )
+        }
+        guard !Task.isCancelled else {
+            _ = store.cancelPendingCoachTurn(
+                id: coachID,
+                expected: replyLease
+            )
+            return .failure(.network)
+        }
+        guard store.replyLeaseIsCurrent(replyLease) else {
+            return .failure(.unauthenticated)
         }
         AICallDiagnostics.record(
             surface: "Coach brain retrieval",
@@ -387,7 +411,8 @@ enum CoachReplyPipeline {
                 if store.setProvisionalCoachRead(
                     id: coachID,
                     text: immediateCoachRead,
-                    metadata: provisionalMetadata
+                    metadata: provisionalMetadata,
+                    expected: replyLease
                 ) {
                     firstVisibleAt = provisionalVisibleAt
                     firstVisibleSource = .localImmediateRead
@@ -459,9 +484,14 @@ enum CoachReplyPipeline {
                 surface: surface
             )
         }
+        // Context enrichment is complete before provider work begins. Capture
+        // one immutable String so the Sendable provider task and the later
+        // final-vision evaluation use identical input without sharing a mutable
+        // local across the task boundary (a Swift 6 concurrency error).
+        let contextSnapshot = context
         let promptTrace = CoachPromptTrace.make(
             systemPrompt: systemPrompt,
-            userContext: context
+            userContext: contextSnapshot
         )
 
         // Quote-grounding context — assembled in the same main-actor prologue
@@ -483,77 +513,113 @@ enum CoachReplyPipeline {
         var qualityGateEvents: [CoachTurnQualityGateEvent] = []
         var providerAttemptEvents: [CoachProviderAttemptEvent] = []
         Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
-        let outcome = await coachService.reply(
-            history: history,
-            systemPrompt: systemPrompt,
-            userContext: context,
-            grounding: groundingContext,
-            turnDepth: turnDepth,
-            assessment: assessment,
-            surface: surface,
-            preferredTier: preferredTier,
-            onStreamedPartialVisible: { partialText in
-                // Withhold raw un-vetted provider tokens from the visible row
-                // unless explicitly opted in. Default off means the user sees
-                // the local deterministic read while the model verbalises, then
-                // the committed (gate-approved) final — never a rich draft that
-                // is silently downgraded to a shorter substituted final.
-                guard CoachBrainFlags.streamRawPartialsToUI else { return }
-                let streamedVisibleAt = Date()
-                let streamedTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt)
-                let streamedFirstVisibleSource = firstVisibleSource ?? CoachFirstVisibleTokenSource.streamedProviderPartial
-                let streamedMetadata = CoachTurnMetadata(
-                    turnDepth: turnDepth,
-                    providerTier: preferredTier,
-                    semanticGateOutcome: .notEvaluated,
-                    evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
-                    assessment: assessment,
-                    assessmentConfidence: assessment?.confidence,
-                    proofTestHash: assessmentProofTestHash,
-                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
-                    retrievalTrace: retrievalTrace,
-                    promptTrace: promptTrace,
-                    assessmentCacheHit: assessmentResult?.cacheHit,
-                    assessmentCacheAgeMs: assessmentCacheAgeMsAt(streamedVisibleAt),
-                    immediateCoachReadShown: immediateCoachReadShown,
-                    ttftMs: streamedTTFT,
-                    timeToFirstVisibleTokenMs: streamedTTFT,
-                    timeToFirstVisibleTokenSource: streamedFirstVisibleSource,
-                    trajectoryCacheHit: trajectoryResult.cacheHit,
-                    surface: surface
-                )
-                if store.setProvisionalCoachRead(
-                    id: coachID,
-                    text: partialText,
-                    metadata: streamedMetadata
-                ) {
-                    if firstVisibleAt == nil {
-                        firstVisibleAt = streamedVisibleAt
-                        firstVisibleSource = .streamedProviderPartial
-                        FlowLog.log(
-                            correlationId: coachID,
-                            flow: .chatTurn,
-                            stage: "chat.draftShown",
-                            reason: "streamed provider partials made visible (pre-gate)",
-                            numerics: ["ttftMs": streamedTTFT]
-                        )
-                    }
-                }
-            },
-            onProviderChosen: { choice in
-                providerChoice = choice
-            },
-            onProviderAttemptEvent: { event in
-                providerAttemptEvents.append(event)
-            },
-            onQualityGateEvent: { event in
-                qualityGateEvents.append(event)
-                onQualityGateEvent?(event)
+        guard store.replyLeaseIsCurrent(replyLease) else {
+            return .failure(.unauthenticated)
+        }
+        // The explicit task gives the store a concrete cancellation handle.
+        // Deletion can best-effort stop transport, but the lease checks before
+        // and after this await remain the authoritative privacy boundary.
+        let providerTask = Task { @MainActor in
+            guard !Task.isCancelled,
+                  store.replyLeaseIsCurrent(replyLease) else {
+                return ChatOutcome.failure(.unauthenticated)
             }
+            return await coachService.reply(
+                history: history,
+                systemPrompt: systemPrompt,
+                userContext: contextSnapshot,
+                grounding: groundingContext,
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: surface,
+                preferredTier: preferredTier,
+                providerWorkAllowed: {
+                    await MainActor.run {
+                        store.replyLeaseIsCurrent(replyLease)
+                    }
+                },
+                onStreamedPartialVisible: { partialText in
+                    // Withhold raw un-vetted provider tokens from the visible row
+                    // unless explicitly opted in. Default off means the user sees
+                    // the local deterministic read while the model verbalises, then
+                    // the committed (gate-approved) final — never a rich draft that
+                    // is silently downgraded to a shorter substituted final.
+                    guard CoachBrainFlags.streamRawPartialsToUI else { return }
+                    let streamedVisibleAt = Date()
+                    let streamedTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt)
+                    let streamedFirstVisibleSource = firstVisibleSource ?? CoachFirstVisibleTokenSource.streamedProviderPartial
+                    let streamedMetadata = CoachTurnMetadata(
+                        turnDepth: turnDepth,
+                        providerTier: preferredTier,
+                        semanticGateOutcome: .notEvaluated,
+                        evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
+                        assessment: assessment,
+                        assessmentConfidence: assessment?.confidence,
+                        proofTestHash: assessmentProofTestHash,
+                        proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                        retrievalTrace: retrievalTrace,
+                        promptTrace: promptTrace,
+                        assessmentCacheHit: assessmentResult?.cacheHit,
+                        assessmentCacheAgeMs: assessmentCacheAgeMsAt(streamedVisibleAt),
+                        immediateCoachReadShown: immediateCoachReadShown,
+                        ttftMs: streamedTTFT,
+                        timeToFirstVisibleTokenMs: streamedTTFT,
+                        timeToFirstVisibleTokenSource: streamedFirstVisibleSource,
+                        trajectoryCacheHit: trajectoryResult.cacheHit,
+                        surface: surface
+                    )
+                    if store.setProvisionalCoachRead(
+                        id: coachID,
+                        text: partialText,
+                        metadata: streamedMetadata,
+                        expected: replyLease
+                    ) {
+                        if firstVisibleAt == nil {
+                            firstVisibleAt = streamedVisibleAt
+                            firstVisibleSource = .streamedProviderPartial
+                            FlowLog.log(
+                                correlationId: coachID,
+                                flow: .chatTurn,
+                                stage: "chat.draftShown",
+                                reason: "streamed provider partials made visible (pre-gate)",
+                                numerics: ["ttftMs": streamedTTFT]
+                            )
+                        }
+                    }
+                },
+                onProviderChosen: { choice in
+                    providerChoice = choice
+                },
+                onProviderAttemptEvent: { event in
+                    providerAttemptEvents.append(event)
+                },
+                onQualityGateEvent: { event in
+                    qualityGateEvents.append(event)
+                    onQualityGateEvent?(event)
+                }
+            )
+        }
+        guard store.registerProviderWorkCancellation(
+            expected: replyLease,
+            cancel: { providerTask.cancel() }
+        ) else {
+            providerTask.cancel()
+            return .failure(.unauthenticated)
+        }
+        let outcome = await withTaskCancellationHandler(
+            operation: { await providerTask.value },
+            onCancel: { providerTask.cancel() }
         )
+        store.unregisterProviderWorkCancellation(expected: replyLease)
         guard !Task.isCancelled else {
-            store.cancelPendingCoachTurn(id: coachID)
+            _ = store.cancelPendingCoachTurn(
+                id: coachID,
+                expected: replyLease
+            )
             return .failure(.network)
+        }
+        guard store.replyLeaseIsCurrent(replyLease) else {
+            return .failure(.unauthenticated)
         }
         let completionAt = Date()
 
@@ -658,7 +724,7 @@ enum CoachReplyPipeline {
                     latestUserTurn: latestUserTurn,
                     recentUserTurns: recentUserTurns
                 ),
-                systemContext: context,
+                systemContext: contextSnapshot,
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
                 assessment: assessment,
@@ -786,11 +852,14 @@ enum CoachReplyPipeline {
         case .failure(let failure):
             Self.log.notice("coach pipeline produced failure=\(String(describing: failure), privacy: .public)")
         }
-        store.completeCoachTurn(
+        guard store.completeCoachTurn(
             id: coachID,
             outcome: finalizedOutcome,
-            metadata: finalMetadata
-        )
+            metadata: finalMetadata,
+            expected: replyLease
+        ) else {
+            return .failure(.unauthenticated)
+        }
         return finalizedOutcome
     }
 

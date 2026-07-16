@@ -32,7 +32,7 @@ def complete_snapshot():
     return {
         "functions": [
             function_fixture(name, constant)
-            for name, constant in validator.EXPECTED_CALLABLES.items()
+            for name, constant in validator.EXPECTED_FUNCTIONS.items()
         ],
         "project_policy": {
             "bindings": [
@@ -72,7 +72,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_current_source_has_exact_reviewed_callable_contract(self):
         passes = validator.validate_source_contract(self.source)
-        self.assertEqual(len(passes), 3)
+        self.assertEqual(len(passes), 4)
 
     def test_live_probe_consumes_the_validator_roster_for_unauthenticated_checks(self):
         probe = (
@@ -128,6 +128,39 @@ class SourceContractTests(unittest.TestCase):
         ):
             validator.validate_source_contract(changed)
 
+    def test_missing_scheduled_reconciler_fails_closed(self):
+        changed = self.source.replace(
+            "export const reconcileAccountDeletionTombstones = onSchedule(",
+            "const reconcileAccountDeletionTombstones = onSchedule(",
+            1,
+        )
+        with self.assertRaisesRegex(
+            validator.ContractError,
+            "Missing scheduled exports: reconcileAccountDeletionTombstones",
+        ):
+            validator.validate_source_contract(changed)
+
+    def test_scheduled_reconciler_contract_fails_closed(self):
+        for old, new, expected in (
+            (
+                'schedule: "every 15 minutes",',
+                'schedule: "every 30 minutes",',
+                "must retain the reviewed 15-minute schedule",
+            ),
+            (
+                "serviceAccount: ACCOUNT_RUNTIME_SERVICE_ACCOUNT,",
+                "serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,",
+                "must use ACCOUNT_RUNTIME_SERVICE_ACCOUNT",
+            ),
+        ):
+            with self.subTest(old=old):
+                changed = self.source.replace(old, new, 1)
+                with self.assertRaisesRegex(
+                    validator.ContractError,
+                    expected,
+                ):
+                    validator.validate_source_contract(changed)
+
 
 class SnapshotContractTests(unittest.TestCase):
     def validate(self, snapshot):
@@ -148,7 +181,8 @@ class SnapshotContractTests(unittest.TestCase):
         snapshot = complete_snapshot()
         snapshot["functions"].pop()
         with self.assertRaisesRegex(
-            validator.ContractError, "Missing deployed callables: deleteAccount"
+            validator.ContractError,
+            "Missing deployed functions: reconcileAccountDeletionTombstones",
         ):
             self.validate(snapshot)
 
@@ -168,7 +202,7 @@ class SnapshotContractTests(unittest.TestCase):
         })
         with self.assertRaisesRegex(
             validator.ContractError,
-            "Unexpected deployed callables: legacyCredentialVendor",
+            "Unexpected deployed functions: legacyCredentialVendor",
         ):
             self.validate(snapshot)
 

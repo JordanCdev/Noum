@@ -212,6 +212,12 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
+                initialError: AccountDeletionConfirmationPresentation.initialError(
+                    from: authManager.accountDeletionState
+                ),
+                supportURLProvider: {
+                    authManager.accountDeletionSupportURL
+                },
                 onConfirm: {
                     try await authManager.deleteCurrentAccount()
                     showDeleteSheet = false
@@ -2262,8 +2268,100 @@ struct CloudProcessingConsentDisclosure: View {
 
 // MARK: - Delete Account Confirmation Sheet
 
+enum AccountDeletionConfirmationPresentation: Equatable {
+    case confirmation
+    case localCleanup
+    case supportOnly
+
+    static func resolve(
+        after error: AccountDeletionError?
+    ) -> AccountDeletionConfirmationPresentation {
+        guard let error else { return .confirmation }
+        switch error {
+        case .localCleanupFailed:
+            return .localCleanup
+        case .completionUncertain, .completionUncertainRequiresReauthentication:
+            return .supportOnly
+        default:
+            return .confirmation
+        }
+    }
+
+    static func initialError(
+        from state: AccountDeletionState
+    ) -> AccountDeletionError? {
+        guard case .failed(let error) = state else { return nil }
+        return error
+    }
+
+    var allowsDestructiveConfirmation: Bool {
+        self != .supportOnly
+    }
+
+    var requiresTypedConfirmation: Bool {
+        self == .confirmation
+    }
+
+    func actionIsEnabled(matchesRequiredPhrase: Bool) -> Bool {
+        switch self {
+        case .confirmation:
+            return matchesRequiredPhrase
+        case .localCleanup:
+            return true
+        case .supportOnly:
+            return false
+        }
+    }
+
+    var primaryActionTitle: String {
+        switch self {
+        case .confirmation: return "Delete account"
+        case .localCleanup: return "Finish device cleanup"
+        case .supportOnly: return ""
+        }
+    }
+
+    var workingActionTitle: String {
+        switch self {
+        case .confirmation: return "Deleting…"
+        case .localCleanup: return "Finishing cleanup…"
+        case .supportOnly: return ""
+        }
+    }
+
+    var primaryActionAccessibilityHint: String {
+        switch self {
+        case .confirmation:
+            return "Permanently deletes your account."
+        case .localCleanup:
+            return "Finishes clearing account data from this device without sending another remote deletion request."
+        case .supportOnly:
+            return ""
+        }
+    }
+
+    var dismissButtonTitle: String {
+        switch self {
+        case .confirmation, .localCleanup: return "Cancel"
+        case .supportOnly: return "Close"
+        }
+    }
+
+    var dismissAccessibilityHint: String {
+        switch self {
+        case .confirmation:
+            return "Closes this sheet without deleting your account."
+        case .localCleanup:
+            return "Closes this sheet without finishing device cleanup."
+        case .supportOnly:
+            return "Closes this unresolved deletion status. Contact deletion support before signing in or creating another account."
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 private struct DeleteAccountConfirmationSheet: View {
+    let supportURLProvider: () -> URL
     let onConfirm: () async throws -> Void
     let onClose: () -> Void
     let onReauthenticate: () -> Void
@@ -2280,6 +2378,30 @@ private struct DeleteAccountConfirmationSheet: View {
         typedConfirmation == requiredPhrase
     }
 
+    private var presentation: AccountDeletionConfirmationPresentation {
+        .resolve(after: deletionError)
+    }
+
+    private var actionIsEnabled: Bool {
+        presentation.actionIsEnabled(matchesRequiredPhrase: matchesPhrase)
+    }
+
+    init(
+        initialError: AccountDeletionError? = nil,
+        supportURLProvider: @escaping () -> URL = {
+            NoumWebURLs.supportMail
+        },
+        onConfirm: @escaping () async throws -> Void,
+        onClose: @escaping () -> Void,
+        onReauthenticate: @escaping () -> Void
+    ) {
+        self.supportURLProvider = supportURLProvider
+        self.onConfirm = onConfirm
+        self.onClose = onClose
+        self.onReauthenticate = onReauthenticate
+        _deletionError = State(initialValue: initialError)
+    }
+
     var body: some View {
         ZStack {
             AppColor.screenBackground.ignoresSafeArea()
@@ -2291,7 +2413,7 @@ private struct DeleteAccountConfirmationSheet: View {
                         .foregroundStyle(AppColor.warning)
                     Text("Delete account")
                         .font(Typography.bigStat)
-                    Text("This asks Noum to permanently remove your account, account-scoped practice history, coaching data, and cloud records it controls. You can't undo a completed deletion.")
+                    Text("This permanently removes your account, account-scoped practice history, coaching data, and active cloud records. Noum keeps a content-free deletion-security record with account and request identifiers, status, and timestamps as a temporary write fence; automatic cleanup and server reconciliation manage that record. You can't undo a completed deletion.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2305,7 +2427,7 @@ private struct DeleteAccountConfirmationSheet: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
                         .frame(minHeight: 44)
-                    Link("Contact deletion support", destination: NoumWebURLs.supportMail)
+                    Link("Contact deletion support", destination: supportURLProvider())
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
                         .frame(minHeight: 44)
@@ -2331,73 +2453,91 @@ private struct DeleteAccountConfirmationSheet: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Type delete to confirm")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.8)
+                if presentation.requiresTypedConfirmation {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Type delete to confirm")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.8)
 
-                    TextField("delete", text: $typedConfirmation)
-                        .font(.title3.weight(.semibold))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .focused($fieldFocused)
-                        .padding(Spacing.md)
-                        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                .stroke(matchesPhrase ? AppColor.warning : Color.black.opacity(0.05), lineWidth: 1)
-                        )
-                        .accessibilityLabel("Confirmation text")
-                        .accessibilityHint("Type the lowercase word delete to enable deletion.")
+                        TextField("delete", text: $typedConfirmation)
+                            .font(.title3.weight(.semibold))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                            .focused($fieldFocused)
+                            .padding(Spacing.md)
+                            .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                                    .stroke(matchesPhrase ? AppColor.warning : Color.black.opacity(0.05), lineWidth: 1)
+                            )
+                            .accessibilityLabel("Confirmation text")
+                            .accessibilityHint("Type the lowercase word delete to enable deletion.")
 
-                    Text("This step exists so a single tap can't end your account.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Text("This step exists so a single tap can't end your account.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()
 
                 VStack(spacing: Spacing.sm) {
-                    Button {
-                        guard matchesPhrase else { return }
-                        isDeleting = true
-                        deletionError = nil
-                        Task {
-                            do {
-                                try await onConfirm()
-                            } catch {
-                                await MainActor.run {
-                                    deletionError = (error as? AccountDeletionError) ?? .remoteRejected
-                                    isDeleting = false
+                    if presentation.allowsDestructiveConfirmation {
+                        Button {
+                            guard actionIsEnabled else { return }
+                            isDeleting = true
+                            Task {
+                                do {
+                                    try await onConfirm()
+                                } catch {
+                                    await MainActor.run {
+                                        let resolvedError = (error as? AccountDeletionError) ?? .remoteRejected
+                                        deletionError = resolvedError
+                                        if AccountDeletionConfirmationPresentation.resolve(
+                                            after: resolvedError
+                                        ) == .supportOnly {
+                                            typedConfirmation = ""
+                                            fieldFocused = false
+                                        }
+                                        isDeleting = false
+                                    }
                                 }
                             }
-                        }
-                    } label: {
-                        HStack(spacing: Spacing.xs) {
-                            if isDeleting {
-                                ProgressView().tint(.white)
-                            } else {
-                                Image(systemName: "trash.fill")
+                        } label: {
+                            HStack(spacing: Spacing.xs) {
+                                if isDeleting {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "trash.fill")
+                                }
+                                Text(
+                                    isDeleting
+                                        ? presentation.workingActionTitle
+                                        : presentation.primaryActionTitle
+                                )
+                                    .font(.headline.weight(.semibold))
                             }
-                            Text(isDeleting ? "Deleting…" : "Delete account")
-                                .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.md)
+                            .background(
+                                (actionIsEnabled ? AppColor.warning : AppColor.warning.opacity(0.4)),
+                                in: Capsule()
+                            )
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md)
-                        .background(
-                            (matchesPhrase ? AppColor.warning : AppColor.warning.opacity(0.4)),
-                            in: Capsule()
+                        .buttonStyle(.pressable)
+                        .disabled(!actionIsEnabled || isDeleting)
+                        .accessibilityLabel(presentation.primaryActionTitle)
+                        .accessibilityHint(
+                            actionIsEnabled
+                                ? presentation.primaryActionAccessibilityHint
+                                : "Type delete first to enable."
                         )
                     }
-                    .buttonStyle(.pressable)
-                    .disabled(!matchesPhrase || isDeleting)
-                    .accessibilityLabel("Confirm delete account")
-                    .accessibilityHint(matchesPhrase ? "Permanently deletes your account." : "Type delete first to enable.")
 
-                    Button("Cancel") {
+                    Button(presentation.dismissButtonTitle) {
                         onClose()
                     }
                     .font(.subheadline.weight(.semibold))
@@ -2405,6 +2545,8 @@ private struct DeleteAccountConfirmationSheet: View {
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 44)
                     .disabled(isDeleting)
+                    .accessibilityLabel(presentation.dismissButtonTitle)
+                    .accessibilityHint(presentation.dismissAccessibilityHint)
                 }
             }
             .padding(Spacing.lg)
@@ -2418,14 +2560,22 @@ private struct DeleteAccountConfirmationSheet: View {
                     ProgressView()
                         .controlSize(.large)
                         .tint(.white)
-                    Text("Removing your account…")
+                    Text(
+                        presentation == .localCleanup
+                            ? "Finishing device cleanup…"
+                            : "Removing your account…"
+                    )
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                 }
                 .padding(Spacing.lg)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Removing your account")
+                .accessibilityLabel(
+                    presentation == .localCleanup
+                        ? "Finishing device cleanup"
+                        : "Removing your account"
+                )
             }
         }
         .interactiveDismissDisabled(isDeleting)

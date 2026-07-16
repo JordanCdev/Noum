@@ -17,6 +17,42 @@ enum NoumWebURLs {
     static let supportEmail = "noumsupport@gmail.com"
     static let supportMail = URL(string: "mailto:\(supportEmail)")!
 
+    /// Account-deletion support needs the same opaque request reference that
+    /// appears in server logs. The local phase helps triage without exposing
+    /// an account identifier or coaching content in the email draft.
+    static func deletionSupportMail(
+        requestReference: String?,
+        phase: String?
+    ) -> URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = supportEmail
+        let referenceLine = requestReference.map {
+            "Deletion reference: \($0)"
+        } ?? "Deletion reference: unavailable"
+        let phaseLine = phase.map {
+            "Local deletion phase: \($0)"
+        } ?? "Local deletion phase: unavailable"
+        components.queryItems = [
+            URLQueryItem(
+                name: "subject",
+                value: "Noum account deletion support"
+            ),
+            URLQueryItem(
+                name: "body",
+                value: """
+                I need help verifying an account deletion.
+
+                \(referenceLine)
+                \(phaseLine)
+
+                Please do not include practice transcripts or other coaching content.
+                """
+            )
+        ]
+        return components.url ?? supportMail
+    }
+
     /// Firebase Hosting default subdomain. The custom apex
     /// (e.g., `noum.app`) redirects here once DNS is wired.
     static let landing = URL(string: "https://noum-d0b6f.web.app")!

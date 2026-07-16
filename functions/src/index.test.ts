@@ -32,6 +32,18 @@ interface HttpsErrorShape {
   details?: {reason?: string};
 }
 
+/**
+ * Returns the shared account-deletion executor from the source contract.
+ * @param {string} source Function source.
+ * @return {string} Shared deletion executor source.
+ */
+function deletionExecutorSource(source: string): string {
+  const start = source.indexOf("async function executeAccountDeletion(");
+  const end = source.indexOf("export const deleteAccount", start);
+  assert.equal(start >= 0 && end > start, true);
+  return source.slice(start, end);
+}
+
 test("validates the versioned coach request", () => {
   assert.deepEqual(validateCoachChatRequest(request), request);
 });
@@ -279,8 +291,12 @@ test(
       (match) => match[1] === "deleteAccount"
     );
     assert.ok(deletion);
-    assert.match(deletion[0], /assertSocialReferenceCutoverComplete/);
+    assert.match(deletion[0], /executeAccountDeletion\(request\)/);
     assert.doesNotMatch(deletion[0], /assertSocialCallablesAvailable/);
+    assert.match(
+      deletionExecutorSource(source),
+      /assertSocialReferenceCutoverComplete/
+    );
   }
 );
 
@@ -410,9 +426,26 @@ test("friendship callables preserve server-only reciprocal authority", () => {
   );
   assert.match(list, /\.friendAccountIDs\]\.sort\(\)/);
   assert.doesNotMatch(list, /\.slice\(/);
-  const deletion = source.slice(source.indexOf("export const deleteAccount"));
+  const deletion = deletionExecutorSource(source);
   assert.match(deletion, /collectionGroup\("friends"\)/);
   assert.match(deletion, /FieldValue\.arrayRemove\(uid\)/);
+  const callable = source.slice(
+    source.indexOf("export const deleteAccount"),
+    source.indexOf("export const reconcileAccountDeletionTombstones")
+  );
+  const validateIndex = callable.indexOf("validateDeleteAccountRequest(");
+  const identityBindingIndex = callable.indexOf(
+    "assertDeleteAccountRequestIdentity("
+  );
+  const firstDeletionWorkIndex = callable.indexOf(
+    "executeAccountDeletion(request)"
+  );
+  assert.equal(
+    validateIndex >= 0 &&
+      identityBindingIndex > validateIndex &&
+      identityBindingIndex < firstDeletionWorkIndex,
+    true
+  );
   const peer = source.slice(
     source.indexOf("export const getPeerProfile"),
     source.indexOf("export const listLeagueMembers")
@@ -627,22 +660,92 @@ test("competitive observation storage is callable-only", () => {
   }
 });
 
-test("competitive observation expiry fields have source-declared TTL", () => {
+test("completed deletion tombstones remain server-only write fences", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  assert.match(rules, /function deletionFenceExists\(accountID\)/);
+  assert.match(
+    rules,
+    /return isOwner\(accountID\) && !deletionFenceExists\(accountID\);/
+  );
+  const storageStart = rules.indexOf(
+    "match /_accountDeletionState/{document=**}"
+  );
+  assert.notEqual(storageStart, -1);
+  assert.match(
+    rules.slice(storageStart, storageStart + 140),
+    /allow read, write: if false;/
+  );
+
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  const deletion = deletionExecutorSource(source);
+  assert.match(deletion, /schemaVersion: 2,[\s\S]*?status: "pending"/);
+  assert.match(
+    deletion,
+    // eslint-disable-next-line max-len
+    /completedTombstone:[\s\S]*?transaction\.set\(deletionStateRef, completedAccountDeletionTombstone\(/
+  );
+  assert.doesNotMatch(deletion, /deletionStateRef\.delete\(\)/);
+  assert.match(deletion, /admission === "alreadyCompleted"/);
+
+  const scheduler = source.slice(
+    source.indexOf("export const reconcileAccountDeletionTombstones")
+  );
+  assert.match(scheduler, /onSchedule\(/);
+  assert.match(scheduler, /schedule: "every 15 minutes"/);
+  assert.match(scheduler, /serviceAccount: ACCOUNT_RUNTIME_SERVICE_ACCOUNT/);
+  assert.match(scheduler, /where\("status", "==", "pending"\)/);
+  assert.match(scheduler, /where\("updatedAt", "<=", cutoff\)/);
+  assert.match(
+    scheduler,
+    /pendingAccountDeletionReconciliationCandidate\(/
+  );
+  assert.match(scheduler, /executeAccountDeletion\(null, candidate\)/);
+  assert.match(scheduler, /pageQuery\.startAfter\(cursor\)/);
+  assert.match(
+    scheduler,
+    /admission === "resumePending"[\s\S]*?updatedAt: Timestamp\.now\(\)/
+  );
+  assert.doesNotMatch(scheduler, /completedAccountDeletionTombstone\(/);
+  assert.doesNotMatch(scheduler, /deletionStateRef\.delete\(\)/);
+  assert.match(deletion, /executeAccountDeletionPlan\(work\)/);
+});
+
+test("ephemeral server records have source-declared TTL", () => {
   const config = JSON.parse(readFileSync(
     resolve(process.cwd(), "../firestore.indexes.json"),
     "utf8"
-  )) as {fieldOverrides?: Array<Record<string, unknown>>};
+  )) as {
+    indexes?: Array<Record<string, unknown>>;
+    fieldOverrides?: Array<Record<string, unknown>>;
+  };
   const ttlGroups = new Set((config.fieldOverrides ?? [])
     .filter((entry) => entry.fieldPath === "expiresAt" && entry.ttl === true &&
       Array.isArray(entry.indexes) && entry.indexes.length === 0)
     .map((entry) => entry.collectionGroup));
   for (const collectionGroup of [
+    "_accountDeletionState",
     "captureIntents",
     "observations",
     "_competitiveAudioReplayClaims",
   ]) {
     assert.equal(ttlGroups.has(collectionGroup), true, collectionGroup);
   }
+  assert.deepEqual(
+    (config.indexes ?? []).find(
+      (entry) => entry.collectionGroup === "_accountDeletionState"
+    ),
+    {
+      collectionGroup: "_accountDeletionState",
+      queryScope: "COLLECTION",
+      fields: [
+        {fieldPath: "status", order: "ASCENDING"},
+        {fieldPath: "updatedAt", order: "ASCENDING"},
+      ],
+    }
+  );
 });
 
 test("friendship authority storage is callable-only", () => {

@@ -312,6 +312,7 @@ final class ForwardPlanStore: ObservableObject {
     private let accountIDProvider: () -> String?
     private let accountLifecycleGenerationProvider: () -> UInt64
     private let accountIsReadyProvider: () -> Bool
+    private let providerWorkAllowedProvider: (String) -> Bool
     private let sessionStoreEpochProvider: () -> PracticeSessionStoreEpoch?
     private let executionAuthorizationProvider: () -> ForwardPlanExecutionAuthorization
     private let planKeyPrefix = "forwardPlan."
@@ -323,6 +324,7 @@ final class ForwardPlanStore: ObservableObject {
         accountIDProvider: (() -> String?)? = nil,
         accountLifecycleGenerationProvider: (() -> UInt64)? = nil,
         accountIsReadyProvider: (() -> Bool)? = nil,
+        providerWorkAllowedProvider: ((String) -> Bool)? = nil,
         sessionStoreEpochProvider: (() -> PracticeSessionStoreEpoch?)? = nil,
         executionAuthorizationProvider: (() -> ForwardPlanExecutionAuthorization)? = nil
     ) {
@@ -336,6 +338,9 @@ final class ForwardPlanStore: ObservableObject {
         self.accountIsReadyProvider = accountIsReadyProvider ?? {
             AuthManager.shared.isSignedIn
                 && AuthManager.shared.initialAccountHydrationState == .ready
+        }
+        self.providerWorkAllowedProvider = providerWorkAllowedProvider ?? {
+            AuthManager.shared.isProviderWorkAllowed(for: $0)
         }
         self.sessionStoreEpochProvider = sessionStoreEpochProvider ?? {
             PracticeSessionStore.shared.loadedAccountEpoch
@@ -378,6 +383,7 @@ final class ForwardPlanStore: ObservableObject {
     ) -> ForwardPlanGenerationRequest? {
         guard accountIsReadyProvider(),
               let accountID = currentAccountID,
+              providerWorkAllowedProvider(accountID),
               loadedAccountScope == accountID,
               let sessionStoreEpoch = sessionStoreEpochProvider(),
               sessionStoreEpoch.accountScope == accountID,
@@ -411,6 +417,7 @@ final class ForwardPlanStore: ObservableObject {
     ) -> Bool {
         guard accountIsReadyProvider(),
               currentAccountID == token.accountScope,
+              providerWorkAllowedProvider(token.accountScope),
               loadedAccountScope == token.accountScope,
               accountLifecycleGenerationProvider()
                 == token.accountLifecycleGeneration,
@@ -423,6 +430,19 @@ final class ForwardPlanStore: ObservableObject {
             return false
         }
         return true
+    }
+
+    /// Close the synchronous Forward Plan mutation boundary as soon as account
+    /// deletion is admitted. An already-installed plan stays in memory and on
+    /// disk until remote deletion succeeds so a recoverable pre-remote failure
+    /// does not erase user data. Only pending provider authority is revoked.
+    func suspendProviderWorkForDeletion(accountID: String) {
+        let normalized = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty,
+              loadedAccountScope == normalized || currentAccountID == normalized else {
+            return
+        }
+        invalidateGenerationRequests()
     }
 
     /// Compare-and-save boundary for async generation. `announce` executes

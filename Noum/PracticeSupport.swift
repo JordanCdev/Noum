@@ -10660,11 +10660,15 @@ final class RecommendationLearningStore: ObservableObject {
 
     func syncCurrentState() {
         immediateConflictRetries[currentRevisionScope] = 0
-        guard let accountID = KeychainHelper.load(key: accountKey),
-              AuthManager.shouldSyncBackend(accountID: accountID) else {
-            if let accountID = KeychainHelper.load(key: accountKey) {
-                clearRemoteSyncBookkeeping(for: accountID)
-            }
+        guard let accountID = KeychainHelper.load(key: accountKey) else { return }
+        guard AuthManager.shouldSyncBackend(accountID: accountID) else {
+            clearRemoteSyncBookkeeping(for: accountID)
+            return
+        }
+        // Backend eligibility alone is not deletion admission. The durable
+        // fence survives relaunch, while BackendSyncManager's closed-account
+        // set intentionally does not.
+        guard AuthManager.shared.isProviderWorkAllowed(for: accountID) else {
             return
         }
         UserDefaults.standard.set(
@@ -10682,6 +10686,7 @@ final class RecommendationLearningStore: ObservableObject {
         remoteRevision: Int
     ) -> Bool {
         guard KeychainHelper.load(key: accountKey) == accountID,
+              AuthManager.shared.isProviderWorkAllowed(for: accountID),
               remoteRevision >= 0 else { return false }
         if !hasUnconfirmedDestructiveReset {
             let reconciledOutcomes = Self.mergedOutcomes(
@@ -10731,6 +10736,10 @@ final class RecommendationLearningStore: ObservableObject {
     ) {
         if let accountID,
            KeychainHelper.load(key: accountKey) != accountID {
+            return
+        }
+        if let resolvedAccountID = accountID ?? KeychainHelper.load(key: accountKey),
+           !AuthManager.shared.isProviderWorkAllowed(for: resolvedAccountID) {
             return
         }
         if let remoteRevision { persistRemoteRevision(remoteRevision) }
@@ -11008,6 +11017,7 @@ final class RecommendationLearningStore: ObservableObject {
     private func syncIfPossible() {
         guard let accountID = KeychainHelper.load(key: accountKey),
               AuthManager.shouldSyncBackend(accountID: accountID),
+              AuthManager.shared.isProviderWorkAllowed(for: accountID),
               let providerRawValue = KeychainHelper.load(key: providerKey) else { return }
         let mutationID = ensurePendingMutation()
         let pendingExposure = pendingExposure
@@ -11017,6 +11027,12 @@ final class RecommendationLearningStore: ObservableObject {
         let previousTask = scheduledSyncTask
         let task = Task {
             await previousTask?.value
+            // A task can wait behind an older account lane for several
+            // seconds. Re-read the durable authority immediately before the
+            // backend actor receives the snapshot.
+            guard AuthManager.shared.isProviderWorkAllowed(for: accountID) else {
+                return
+            }
             await BackendSyncManager.shared.syncRecommendationState(
                 pendingExposure: pendingExposure,
                 outcomes: outcomes,
@@ -11042,10 +11058,14 @@ final class RecommendationLearningStore: ObservableObject {
     ) {
         stateRevisions[currentRevisionScope, default: 0] &+= 1
         if markSyncUnconfirmed {
-            if let accountID = KeychainHelper.load(key: accountKey),
-               !AuthManager.shouldSyncBackend(accountID: accountID) {
-                clearRemoteSyncBookkeeping(for: accountID)
-                return
+            if let accountID = KeychainHelper.load(key: accountKey) {
+                guard AuthManager.shouldSyncBackend(accountID: accountID) else {
+                    clearRemoteSyncBookkeeping(for: accountID)
+                    return
+                }
+                guard AuthManager.shared.isProviderWorkAllowed(for: accountID) else {
+                    return
+                }
             }
             persistPendingMutation(UUID())
             if resetsConflictRetry {

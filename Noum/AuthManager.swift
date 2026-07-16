@@ -72,30 +72,46 @@ enum AccountUpgradeConflict: LocalizedError, Equatable, Identifiable {
 
 enum AccountDeletionError: LocalizedError, Equatable {
     case noActiveAccount
+    case safeToRetry
     case requiresRecentAuthentication
     case appleRevocationUnavailable
+    case secureDataUpgradeIncomplete
     case serviceUnavailable
     case remoteRejected
     case localCleanupFailed
+    case completionUncertain
+    case completionUncertainRequiresReauthentication
 
     var errorDescription: String? {
         switch self {
         case .noActiveAccount:
             return "No active account was found."
+        case .safeToRetry:
+            return "Noum paused before contacting the account service. Your account and local data are unchanged. You can retry account deletion."
         case .requiresRecentAuthentication:
             return "Sign in again, then retry account deletion. Your data has not been cleared from this device."
         case .appleRevocationUnavailable:
             return "Deletion is not available for this Apple-linked account until Noum can revoke its Apple authorization safely. Your data is unchanged."
+        case .secureDataUpgradeIncomplete:
+            return "Account deletion is temporarily unavailable while Noum finishes a secure account-data upgrade. Nothing was deleted and your data is unchanged. Try again later."
         case .serviceUnavailable:
             return "Noum couldn't reach the account service. Your account and local data are unchanged. Try again when you're connected."
         case .remoteRejected:
             return "Noum couldn't complete account deletion. Your local data is unchanged and you can retry."
         case .localCleanupFailed:
-            return "Noum removed the remote account but couldn't finish clearing this device. Retry to complete local cleanup."
+            return "Noum reached the device-cleanup step but couldn't finish clearing this device. Retry to finish local cleanup. Only local cleanup will run again."
+        case .completionUncertain:
+            return "Noum couldn't confirm that account deletion finished. Ask Noum, Forward Plan, and recommendation sync stay paused for this account. Contact deletion support so the account's status can be verified before you sign in or create another account."
+        case .completionUncertainRequiresReauthentication:
+            return "Noum couldn't confirm that account deletion finished. Ask Noum, Forward Plan, and recommendation sync stay paused for this account. Contact deletion support so the account's status can be verified; a new account cannot replace this pending deletion."
         }
     }
 
     var requiresReauthentication: Bool {
+        // Once a remote request may have crossed the boundary, authentication
+        // is not completion evidence and the UI must not present retry as the
+        // recovery action. Same-account authentication remains accepted at the
+        // identity boundary if support needs it, but is never prompted here.
         self == .requiresRecentAuthentication
     }
 }
@@ -236,6 +252,7 @@ class AuthManager: ObservableObject {
     private let installInitializedKey = "NoumHasInitializedInstallState"
     private let accountDataRegistry: AccountDataRegistry
     private let accountDataExportService: AccountDataExportService
+    private let accountDeletionFenceRepository: AccountDeletionFenceRepository
     private var activeGuestBootstrapGeneration: UUID?
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
@@ -362,6 +379,9 @@ class AuthManager: ObservableObject {
         let registry = AccountDataRegistry.production()
         accountDataRegistry = registry
         accountDataExportService = AccountDataExportService(registry: registry)
+        accountDeletionFenceRepository = AccountDeletionFenceRepository(
+            storage: KeychainAccountDeletionFenceStorage()
+        )
         initializeInstallStateIfNeeded()
 #if canImport(GoogleSignIn)
         configureGoogleSignInIfAvailable()
@@ -419,6 +439,7 @@ class AuthManager: ObservableObject {
 
 #if canImport(GoogleSignIn) && canImport(UIKit)
     func startGoogleSignIn() {
+        guard allowPendingDeletionSignInIntent(provider: .google) else { return }
         guard let root = UIApplication.shared.connectedScenes
             .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
             .first?.rootViewController else {
@@ -430,7 +451,7 @@ class AuthManager: ObservableObject {
 
     private func signInWithGoogle(presenting controller: UIViewController) {
         accountUpgradeConflict = nil
-        accountDeletionState = .idle
+        resetDeletionStateForSignInIntent()
         signInError = nil
         guard let config = googleConfig else {
             signInError = "Google sign-in is temporarily unavailable for this build. Please try again later."
@@ -497,8 +518,14 @@ class AuthManager: ObservableObject {
 #if canImport(AuthenticationServices)
     func prepareAppleSignIn(_ request: ASAuthorizationAppleIDRequest) {
         accountUpgradeConflict = nil
-        accountDeletionState = .idle
+        resetDeletionStateForSignInIntent()
         signInError = nil
+        guard allowPendingDeletionSignInIntent(provider: .apple) else {
+            #if canImport(FirebaseAuth)
+            currentNonce = nil
+            #endif
+            return
+        }
         request.requestedScopes = [.fullName]
 #if canImport(FirebaseAuth) && canImport(CryptoKit)
         let nonce = randomNonceString()
@@ -512,11 +539,20 @@ class AuthManager: ObservableObject {
         loadCredentialsAndAccount()
     }
 
+    /// The durable deletion-admission authority for provider work. Missing is
+    /// the only allowing state; an unreadable, corrupt, or other-account active
+    /// fence fails closed globally. Transient UI state is not sufficient here.
+    func isProviderWorkAllowed(for accountID: String) -> Bool {
+        accountDeletionFenceRepository.isProviderWorkAllowed(for: accountID)
+    }
+
     /// Establishes the initial durable guest identity before app-level
     /// onboarding is allowed to save a profile. Firebase anonymous auth is the
     /// preferred production path; a bounded failure/timeout falls back to a
     /// Keychain-backed local guest so first run never depends on the network.
     func bootstrapInitialAccountIfNeeded() async {
+        guard !restorePendingDeletionIdentityIfNeeded() else { return }
+
         if Self.hasDurableIdentity(
             accountID: currentAccountID,
             providerRawValue: currentAuthProviderRawValue
@@ -685,6 +721,18 @@ class AuthManager: ObservableObject {
     }
 
     private func loadCredentialsAndAccount() {
+        // The fixed pending-deletion record is authoritative over ordinary
+        // identity keys. Generic sign-out may clear those keys, and a stale
+        // Firebase session may belong to another account, but neither may
+        // orphan or replace the account whose deletion is unresolved.
+        if restorePendingDeletionIdentityIfNeeded() {
+            if let creds = Self.loadCredentials() {
+                self.credentialIdentity = creds.identity
+                self.region = creds.region
+            }
+            return
+        }
+
         guard
             let accountID = KeychainHelper.load(key: accountKey),
             let providerRawValue = KeychainHelper.load(key: accountProviderKey),
@@ -851,6 +899,8 @@ class AuthManager: ObservableObject {
             try? Auth.auth().signOut()
         }
 #endif
+        // Deliberately does not clear an account-deletion fence. A generic
+        // sign-out cannot prove whether a remote deletion request committed.
         clearStoredSession()
         isSignedIn = false
         authProvider = nil
@@ -875,51 +925,271 @@ class AuthManager: ObservableObject {
     }
 #endif
 
-    /// Deletes the remote account before touching local state. Every failure
-    /// is retryable and preserves the Keychain identity plus account-scoped
-    /// stores, preventing the old "looked deleted locally" false success.
+    /// Deletes one account behind a durable admission fence. The fence and its
+    /// stable request ID survive sign-out, relaunch, and reauthentication. Only
+    /// a verified pre-remote failure may reopen provider work; an ambiguous
+    /// remote outcome remains fail-closed. The checked-in callable has no
+    /// durable completion receipt or unauthenticated post-deletion recovery
+    /// route, so this client state must not be described as backend resumability.
     func deleteCurrentAccount() async throws {
+        _ = restorePendingDeletionIdentityIfNeeded()
         guard let accountID = currentAccountID,
               let providerRawValue = currentAuthProviderRawValue else {
             accountDeletionState = .failed(.noActiveAccount)
             throw AccountDeletionError.noActiveAccount
         }
 
-        accountDeletionState = .deleting
-        let backendSync = BackendSyncManager.shared
-        var recommendationSyncSuspended = false
-        var remoteDeletionCommitted = false
+        let admittedFence: AccountDeletionFence
         do {
-            guard await backendSync.suspendRecommendationSyncForDeletion(
-                accountID: accountID
-            ) else {
-                throw AccountDeletionError.serviceUnavailable
-            }
-            recommendationSyncSuspended = true
-            if Self.shouldSyncBackend(accountID: accountID) {
-                let outcome = try await backendSync.deleteAccount(
-                    accountID: accountID,
+            admittedFence = try accountDeletionFenceRepository
+                .beginOrResume(
+                    for: accountID,
                     providerRawValue: providerRawValue
                 )
-                remoteDeletionCommitted = true
-                if outcome == .dataDeleted {
-                    try await deleteFirebaseUserIfNeeded(expectedAccountID: accountID)
+                .get()
+        } catch {
+            // A definitively missing key means admission never happened and
+            // the unchanged-data recovery remains honest. A present or
+            // unreadable key is ambiguous: close process-local work as well as
+            // the repository's durable admission check, but make no backend
+            // call and do not advance deletion.
+            if accountDeletionFenceRepository.lookup(for: accountID) == .missing {
+                accountDeletionState = .failed(.serviceUnavailable)
+                throw AccountDeletionError.serviceUnavailable
+            }
+            accountDeletionState = .failed(.completionUncertain)
+            accountLifecycleGeneration &+= 1
+            cancelActiveAccountHydration()
+            AskNoumStore.shared.suspendProviderWorkForDeletion(accountID: accountID)
+            ForwardPlanStore.shared.suspendProviderWorkForDeletion(accountID: accountID)
+            await ForwardPlanService.shared.suspendProviderWorkForDeletion(
+                accountID: accountID
+            )
+            throw AccountDeletionError.completionUncertain
+        }
+
+        // No suspension occurs between publishing deletion, rotating the
+        // lifecycle epoch, and closing the two MainActor mutation boundaries.
+        accountDeletionState = .deleting
+        accountLifecycleGeneration &+= 1
+        cancelActiveAccountHydration()
+        AskNoumStore.shared.suspendProviderWorkForDeletion(accountID: accountID)
+        ForwardPlanStore.shared.suspendProviderWorkForDeletion(accountID: accountID)
+
+        let backendSync = BackendSyncManager.shared
+        var fence = admittedFence
+        // A preflight rejection may safely reopen admission only when this
+        // invocation created the remote-request phase. A fence resumed in that
+        // phase could represent an earlier ambiguous or partially destructive
+        // attempt, so a later preflight response cannot clear it retroactively.
+        var preparedRemoteRequestInCurrentAttempt = false
+        var recommendationSyncWasClosed = false
+        do {
+            // Actor-owned transport admission closes only after the synchronous
+            // store leases above have already been invalidated.
+            await ForwardPlanService.shared.suspendProviderWorkForDeletion(
+                accountID: accountID
+            )
+
+            guard await backendSync.suspendRecommendationSyncForDeletion(accountID: accountID) else {
+                throw AccountDeletionError.serviceUnavailable
+            }
+            recommendationSyncWasClosed = true
+
+            guard currentAccountID == accountID,
+                  currentAuthProviderRawValue == providerRawValue else {
+                throw AccountDeletionError.serviceUnavailable
+            }
+
+            if fence.phase == .admissionClosed {
+                // A verified remoteRequested phase is the final local action
+                // before transport. If this write cannot be read back, no
+                // backend method is invoked.
+                fence = try accountDeletionFenceRepository
+                    .advance(fence, to: .remoteRequested)
+                    .get()
+                preparedRemoteRequestInCurrentAttempt = true
+            }
+
+            if fence.phase == .remoteRequested {
+                if Self.shouldSyncBackend(accountID: accountID) {
+                    guard currentAccountID == accountID,
+                          currentAuthProviderRawValue == providerRawValue else {
+                        throw AccountDeletionError.serviceUnavailable
+                    }
+                    let outcome = try await backendSync.deleteAccount(
+                        accountID: accountID,
+                        providerRawValue: providerRawValue,
+                        requestID: fence.requestID
+                    )
+                    if outcome == .dataDeleted {
+                        try await deleteFirebaseUserIfNeeded(expectedAccountID: accountID)
+                    }
                 }
+
+                // Reusing this UUID preserves correlation across authenticated
+                // calls only. The callable overwrites and finally removes its
+                // deletion state, then deletes Auth; it exposes no durable
+                // status receipt or unauthenticated resume route. A lost reply
+                // therefore remains fail-closed, not proven backend recovery.
+                fence = try accountDeletionFenceRepository
+                    .advance(fence, to: .remoteCommitted)
+                    .get()
+            }
+
+            guard currentAccountID == accountID,
+                  currentAuthProviderRawValue == providerRawValue else {
+                throw AccountDeletionError.completionUncertain
+            }
+
+            if fence.phase == .remoteCommitted {
+                fence = try accountDeletionFenceRepository
+                    .advance(fence, to: .localCleanupStarted)
+                    .get()
+            }
+
+            guard fence.phase == .localCleanupStarted else {
+                throw AccountDeletionError.completionUncertain
             }
 
             try accountDataRegistry.deleteAllData(for: accountID)
+            // Clear every published account projection synchronously while the
+            // Keychain identity still names the deleted account. `signOut()`'s
+            // deferred reset is now only an idempotent backstop.
+            accountDataRegistry.endSession()
             signOut()
+
+            try accountDeletionFenceRepository.clearVerified(fence).get()
             accountDeletionState = .completed
+            await ForwardPlanService.shared.finishProviderWorkDeletion(
+                accountID: accountID
+            )
         } catch {
-            if recommendationSyncSuspended && !remoteDeletionCommitted {
-                await backendSync.resumeRecommendationSyncAfterFailedDeletion(
-                    accountID: accountID
-                )
-                RecommendationLearningStore.shared.syncCurrentState()
-            }
             let mapped = Self.mapAccountDeletionError(error)
-            accountDeletionState = .failed(mapped)
-            throw mapped
+            let persistedRecovery = persistedDeletionRecovery(
+                expectedRequestID: fence.requestID,
+                accountID: accountID
+            )
+            let persistedPhase: AccountDeletionFencePhase?
+            if case .present(let persistedFence) = persistedRecovery {
+                persistedPhase = persistedFence.phase
+            } else {
+                persistedPhase = nil
+            }
+
+            var disposition: AccountDeletionFailureDisposition =
+                .retainFenceAndKeepProviderWorkSuspended
+            if case .present(let persistedFence) = persistedRecovery {
+                disposition = Self.accountDeletionFailureDisposition(
+                    for: error,
+                    persistedPhase: persistedFence.phase,
+                    preparedRemoteRequestInCurrentAttempt:
+                        preparedRemoteRequestInCurrentAttempt
+                )
+            }
+            if case .present(let persistedFence) = persistedRecovery,
+               disposition == .clearFenceAndResumeProviderWork {
+                if case .success = accountDeletionFenceRepository.clearVerified(persistedFence) {
+                    await ForwardPlanService.shared.resumeProviderWorkAfterSafeDeletionFailure(
+                        accountID: accountID
+                    )
+                    if recommendationSyncWasClosed {
+                        await backendSync.resumeRecommendationSyncAfterFailedDeletion(
+                            accountID: accountID
+                        )
+                    }
+                    if currentAccountID == accountID,
+                       currentAuthProviderRawValue == providerRawValue {
+                        RecommendationLearningStore.shared.syncCurrentState()
+                    }
+                } else {
+                    // Failure to verify fence removal turns an otherwise safe
+                    // error into an ambiguous, still-closed deletion.
+                    disposition = .retainFenceAndKeepProviderWorkSuspended
+                }
+            }
+
+            let surfaced = Self.accountDeletionError(
+                for: mapped,
+                disposition: disposition,
+                persistedPhase: persistedPhase
+            )
+            accountDeletionState = .failed(surfaced)
+            throw surfaced
+        }
+    }
+
+    private func persistedDeletionRecovery(
+        expectedRequestID: UUID,
+        accountID: String
+    ) -> AccountDeletionFenceLookup {
+        let lookup = accountDeletionFenceRepository.lookup(for: accountID)
+        guard case .present(let fence) = lookup else { return lookup }
+        guard fence.requestID == expectedRequestID else { return .ambiguous }
+        return .present(fence)
+    }
+
+    nonisolated static func accountDeletionError(
+        for underlying: AccountDeletionError,
+        disposition: AccountDeletionFailureDisposition,
+        persistedPhase: AccountDeletionFencePhase? = nil
+    ) -> AccountDeletionError {
+        switch disposition {
+        case .clearFenceAndResumeProviderWork:
+            return underlying
+        case .retainFenceAndKeepProviderWorkSuspended:
+            switch persistedPhase {
+            case .admissionClosed:
+                return .safeToRetry
+            case .remoteCommitted, .localCleanupStarted:
+                return .localCleanupFailed
+            case .remoteRequested, nil:
+                return underlying == .requiresRecentAuthentication
+                    ? .completionUncertainRequiresReauthentication
+                    : .completionUncertain
+            }
+        }
+    }
+
+    /// A valid durable phase is stronger recovery evidence than transient UI
+    /// state. Pre-remote admission can safely retry; committed phases can run
+    /// only local cleanup; only a remote-request phase has an unknown outcome.
+    nonisolated static func accountDeletionRecoveryError(
+        for phase: AccountDeletionFencePhase
+    ) -> AccountDeletionError {
+        switch phase {
+        case .admissionClosed:
+            return .safeToRetry
+        case .remoteRequested:
+            return .completionUncertain
+        case .remoteCommitted, .localCleanupStarted:
+            return .localCleanupFailed
+        }
+    }
+
+    /// Exact typed preflight responses are known to occur before deletion
+    /// state is created or destructive work begins. They can reopen admission
+    /// only for a remote-request phase prepared by this same invocation. Every
+    /// transport/service error, legacy REST 401, and resumed request remains
+    /// fenced because none is durable completion evidence.
+    nonisolated static func accountDeletionFailureDisposition(
+        for error: Error,
+        persistedPhase: AccountDeletionFencePhase,
+        preparedRemoteRequestInCurrentAttempt: Bool
+    ) -> AccountDeletionFailureDisposition {
+        guard persistedPhase == .remoteRequested,
+              preparedRemoteRequestInCurrentAttempt,
+              let backendError = error as? BackendAccountDeletionError else {
+            return AccountDeletionFailureDisposition.after(persistedPhase)
+        }
+        switch backendError {
+        case .appleRevocationUnavailable,
+             .socialReferenceCutoverIncomplete,
+             .verifiedPreflightRequiresRecentAuthentication:
+            return .clearFenceAndResumeProviderWork
+        case .notConfigured, .requiresRecentAuthentication,
+             .serviceUnavailable, .rejected, .invalidResponse:
+            return .retainFenceAndKeepProviderWorkSuspended
         }
     }
 
@@ -1001,10 +1271,13 @@ class AuthManager: ObservableObject {
             return .remoteRejected
         }
         switch backendError {
-        case .requiresRecentAuthentication:
+        case .verifiedPreflightRequiresRecentAuthentication,
+             .requiresRecentAuthentication:
             return .requiresRecentAuthentication
         case .appleRevocationUnavailable:
             return .appleRevocationUnavailable
+        case .socialReferenceCutoverIncomplete:
+            return .secureDataUpgradeIncomplete
         case .notConfigured, .serviceUnavailable:
             return .serviceUnavailable
         case .rejected, .invalidResponse:
@@ -1030,15 +1303,37 @@ class AuthManager: ObservableObject {
         #endif
     }
 
+    var accountDeletionSupportURL: URL {
+        let context = pendingDeletionSupportContext
+        return NoumWebURLs.deletionSupportMail(
+            requestReference: context?.requestReference,
+            phase: context?.phase
+        )
+    }
+
+    private var pendingDeletionSupportContext: (
+        requestReference: String,
+        phase: String
+    )? {
+        guard case .present(let fence) =
+                accountDeletionFenceRepository.pendingLookup() else {
+            return nil
+        }
+        return (fence.requestID.uuidString, fence.phase.rawValue)
+    }
+
     func supportReportPayload() -> String {
         let provider = currentAuthProviderTitle ?? "Signed out"
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let issue = signInError ?? "Unknown sign-in error"
+        let deletionContext = pendingDeletionSupportContext
         return """
         Noum Sign-In Report
         Timestamp: \(timestamp)
         Active provider: \(provider)
         Google configured: \(isGoogleSignInAvailable ? "yes" : "no")
+        Deletion reference: \(deletionContext?.requestReference ?? "none")
+        Local deletion phase: \(deletionContext?.phase ?? "none")
         Error: \(issue)
         """
     }
@@ -1051,6 +1346,12 @@ class AuthManager: ObservableObject {
         fetchRemote: Bool = true
     ) -> Bool {
         cancelActiveGuestBootstrap()
+        guard admitSignInAgainstPendingDeletion(
+            accountID: accountID,
+            provider: provider
+        ) else {
+            return false
+        }
         guard persistIdentity(accountID: accountID, name: name, provider: provider) else {
             let message = "Noum couldn't save this account on this device. Try again."
             signInError = message
@@ -1062,7 +1363,11 @@ class AuthManager: ObservableObject {
         print("Saved \(provider.title) user ID: \(accountID)")
         #endif
         accountUpgradeConflict = nil
-        accountDeletionState = .idle
+        if let deletionError = pendingDeletionRecoveryError(for: accountID) {
+            accountDeletionState = .failed(deletionError)
+        } else {
+            accountDeletionState = .idle
+        }
         signInError = nil
         signIn()
         authProvider = provider
@@ -1080,6 +1385,19 @@ class AuthManager: ObservableObject {
         providerRawValue: String,
         fetchRemote: Bool
     ) {
+        guard isProviderWorkAllowed(for: accountID) else {
+            // Exact-account authentication may be needed for support-assisted
+            // verification, but it cannot hydrate, sync, or republish account
+            // data while the durable fence remains ambiguous.
+            cancelActiveAccountHydration()
+            accountDeletionState = .failed(
+                pendingDeletionRecoveryError(for: accountID)
+                    ?? .completionUncertain
+            )
+            initialAccountHydrationState = .ready
+            deferFencedStoreSessionReset(accountID: accountID)
+            return
+        }
         cancelActiveAccountHydration()
         let generation = UUID()
         activeAccountHydrationGeneration = generation
@@ -1469,6 +1787,176 @@ class AuthManager: ObservableObject {
         activeInitialRemoteProfileHydrationRace = nil
     }
 
+    /// Provider choice is the only identity fact available before an OAuth UI
+    /// returns. A matching provider may proceed to reauthenticate, but the
+    /// resulting account is checked exactly before any durable identity write.
+    private func allowPendingDeletionSignInIntent(provider: AuthProvider) -> Bool {
+        switch accountDeletionFenceRepository.pendingLookup() {
+        case .missing:
+            return true
+        case .present(let fence) where fence.providerRawValue == provider.rawValue:
+            accountDeletionState = .failed(
+                Self.accountDeletionRecoveryError(for: fence.phase)
+            )
+            return true
+        case .present:
+            accountDeletionState = .failed(.completionUncertain)
+            signInError = "A different account cannot replace an unresolved deletion. Contact deletion support."
+            return false
+        case .ambiguous:
+            accountDeletionState = .failed(.completionUncertain)
+            signInError = "Noum couldn't read the pending deletion securely. Contact deletion support before signing in."
+            return false
+        }
+    }
+
+    /// Exact post-authentication admission. A same-account reauthentication is
+    /// allowed to restore credentials, but a second account is never persisted
+    /// over the durable deletion identity.
+    private func admitSignInAgainstPendingDeletion(
+        accountID: String,
+        provider: AuthProvider
+    ) -> Bool {
+        switch accountDeletionFenceRepository.pendingLookup() {
+        case .missing:
+            return true
+        case .present(let fence)
+            where fence.accountID == accountID
+                && fence.providerRawValue == provider.rawValue:
+            return true
+        case .present(let fence):
+            signOutAttemptedFirebaseIdentity(accountID: accountID)
+            _ = restorePendingDeletionIdentity(fence)
+            signInError = "Noum kept the account with a pending deletion isolated. Contact deletion support before using another account."
+            return false
+        case .ambiguous:
+            signOutAttemptedFirebaseIdentity(accountID: accountID)
+            presentUnreadablePendingDeletion()
+            return false
+        }
+    }
+
+    /// Recovers the pending account after generic sign-out or relaunch. This is
+    /// local identity recovery only; it does not claim the backend completed,
+    /// resume provider work, or issue a deletion retry.
+    @discardableResult
+    private func restorePendingDeletionIdentityIfNeeded() -> Bool {
+        switch accountDeletionFenceRepository.pendingLookup() {
+        case .missing:
+            return false
+        case .present(let fence):
+            _ = restorePendingDeletionIdentity(fence)
+            return true
+        case .ambiguous:
+            presentUnreadablePendingDeletion()
+            return true
+        }
+    }
+
+    @discardableResult
+    private func restorePendingDeletionIdentity(
+        _ fence: AccountDeletionFence
+    ) -> Bool {
+        guard let provider = AuthProvider(rawValue: fence.providerRawValue) else {
+            presentUnreadablePendingDeletion()
+            return false
+        }
+
+        #if canImport(FirebaseAuth)
+        if isFirebaseAuthConfigured,
+           let firebaseUID = Auth.auth().currentUser?.uid,
+           firebaseUID != fence.accountID {
+            // A stale or newly authenticated B session is not deletion
+            // authority for A. Signing B out is non-destructive.
+            try? Auth.auth().signOut()
+        }
+        #endif
+
+        let retainedName = currentAccountID == fence.accountID
+            ? currentAccountName
+            : nil
+        guard persistIdentity(
+            accountID: fence.accountID,
+            name: retainedName,
+            provider: provider
+        ) else {
+            presentUnreadablePendingDeletion()
+            return false
+        }
+
+        accountLifecycleGeneration &+= 1
+        cancelActiveGuestBootstrap()
+        cancelActiveAccountHydration()
+        isSignedIn = true
+        authProvider = provider
+        accountDeletionState = .failed(
+            Self.accountDeletionRecoveryError(for: fence.phase)
+        )
+        initialAccountHydrationState = .ready
+        deferPendingDeletionStoreSessionReset()
+        return true
+    }
+
+    private func signOutAttemptedFirebaseIdentity(accountID: String) {
+        #if canImport(FirebaseAuth)
+        guard isFirebaseAuthConfigured,
+              Auth.auth().currentUser?.uid == accountID else { return }
+        try? Auth.auth().signOut()
+        #endif
+    }
+
+    private func presentUnreadablePendingDeletion() {
+        cancelActiveGuestBootstrap()
+        cancelActiveAccountHydration()
+        accountDeletionState = .failed(.completionUncertain)
+        signInError = "Noum couldn't read the pending deletion securely. Contact deletion support before signing in."
+        initialAccountHydrationState = .ready
+        if let accountID = currentAccountID,
+           let providerRawValue = currentAuthProviderRawValue,
+           let provider = AuthProvider(rawValue: providerRawValue) {
+            isSignedIn = true
+            authProvider = provider
+            deferFencedStoreSessionReset(accountID: accountID)
+        } else {
+            isSignedIn = false
+            authProvider = nil
+            deferPendingDeletionStoreSessionReset()
+        }
+    }
+
+    private func resetDeletionStateForSignInIntent() {
+        if let accountID = currentAccountID,
+           let deletionError = pendingDeletionRecoveryError(for: accountID) {
+            accountDeletionState = .failed(deletionError)
+        } else {
+            accountDeletionState = .idle
+        }
+    }
+
+    private func pendingDeletionRecoveryError(
+        for accountID: String
+    ) -> AccountDeletionError? {
+        switch accountDeletionFenceRepository.lookup(for: accountID) {
+        case .missing:
+            return nil
+        case .present(let fence):
+            return Self.accountDeletionRecoveryError(for: fence.phase)
+        case .ambiguous:
+            return .completionUncertain
+        }
+    }
+
+    private func deferFencedStoreSessionReset(accountID: String) {
+        Task { @MainActor in
+            await Task.yield()
+            guard self.currentAccountID == accountID,
+                  !self.isProviderWorkAllowed(for: accountID) else {
+                return
+            }
+            self.accountDataRegistry.endSession()
+        }
+    }
+
     private func deferStoreSessionReset() {
         Task { @MainActor in
             await Task.yield()
@@ -1476,6 +1964,19 @@ class AuthManager: ObservableObject {
             // next actor turn. Never let a stale signed-out reset erase the
             // newly active account's hydrated stores.
             guard self.currentAccountID == nil else { return }
+            NotificationPrePromptManager.shared.pendingPrompt = false
+            DeferredProfileCaptureManager.shared.pendingPrompt = nil
+            GoalRefreshManager.shared.shouldPresent = false
+            self.accountDataRegistry.endSession()
+        }
+    }
+
+    private func deferPendingDeletionStoreSessionReset() {
+        Task { @MainActor in
+            await Task.yield()
+            guard self.accountDeletionFenceRepository.pendingLookup() != .missing else {
+                return
+            }
             NotificationPrePromptManager.shared.pendingPrompt = false
             DeferredProfileCaptureManager.shared.pendingPrompt = nil
             GoalRefreshManager.shared.shouldPresent = false
@@ -2080,6 +2581,86 @@ struct BackendAuthHeaders: Equatable, Sendable {
             providerRawValue: providerRawValue
         )
         headers.apply(to: &request)
+    }
+
+    /// Builds deletion headers from one captured Firebase user and verifies
+    /// ambient auth still names that exact account after token refresh. Unlike
+    /// ordinary headers, this never falls back to client identity headers when
+    /// Firebase is configured but the expected user cannot be proven.
+    static func deletionBound(
+        accountID: String,
+        providerRawValue: String,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        configValue: (String) -> String? = { key in
+            LocalConfigLoader.value(forKey: key, plistNamed: "BackendConfig")
+        }
+    ) async -> BackendAuthHeaders? {
+        let normalizedAccountID = cleaned(accountID)
+        let normalizedProvider = cleaned(providerRawValue)
+        guard normalizedAccountID == accountID,
+              normalizedProvider == providerRawValue else {
+            return nil
+        }
+
+        #if canImport(FirebaseAuth) && canImport(FirebaseCore)
+        if FirebaseApp.app() != nil {
+            guard let user = Auth.auth().currentUser,
+                  deletionIdentityMatches(
+                    expectedAccountID: accountID,
+                    capturedUserID: user.uid,
+                    currentUserID: user.uid
+                  ) else {
+                return nil
+            }
+            let token: String
+            do {
+                token = try await withCheckedThrowingContinuation { continuation in
+                    user.getIDTokenForcingRefresh(true) { token, error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                        } else if let token {
+                            continuation.resume(returning: token)
+                        } else {
+                            continuation.resume(throwing: URLError(.userAuthenticationRequired))
+                        }
+                    }
+                }
+            } catch {
+                return nil
+            }
+            guard let currentUserID = Auth.auth().currentUser?.uid,
+                  deletionIdentityMatches(
+                    expectedAccountID: accountID,
+                    capturedUserID: user.uid,
+                    currentUserID: currentUserID
+                  ), cleaned(token) != nil else {
+                return nil
+            }
+            return BackendAuthHeaders(
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                apiKey: configuredAPIKey(env: env, configValue: configValue),
+                firebaseIDToken: token
+            )
+        }
+        #endif
+
+        return BackendAuthHeaders(
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            apiKey: configuredAPIKey(env: env, configValue: configValue),
+            firebaseIDToken: nil
+        )
+    }
+
+    nonisolated static func deletionIdentityMatches(
+        expectedAccountID: String,
+        capturedUserID: String?,
+        currentUserID: String?
+    ) -> Bool {
+        guard let expected = cleaned(expectedAccountID),
+              expected == expectedAccountID else { return false }
+        return capturedUserID == expected && currentUserID == expected
     }
 
     static func configuredAPIKey(

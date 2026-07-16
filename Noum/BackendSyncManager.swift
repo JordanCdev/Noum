@@ -26,20 +26,37 @@ enum BackendAccountDeletionOutcome: Equatable {
 
 enum BackendAccountDeletionError: Error, Equatable {
     case notConfigured
+    /// Authentication failed before account-deletion transport could begin,
+    /// or the checked callable rejected authentication before creating any
+    /// deletion state. This is safe to surface as a normal reauthentication
+    /// prompt only for the request prepared by the current invocation.
+    case verifiedPreflightRequiresRecentAuthentication
+    /// A legacy REST server returned 401 after receiving the DELETE request.
+    /// Because that response is not durable completion evidence, it remains
+    /// ambiguous and must keep the deletion fence closed.
     case requiresRecentAuthentication
     case appleRevocationUnavailable
+    /// The checked callable proved that the guarded social-reference cutover
+    /// is incomplete before it created deletion state or mutated account data.
+    /// This may reopen admission only for the request started by the current
+    /// deletion invocation; a resumed request remains ambiguous.
+    case socialReferenceCutoverIncomplete
     case serviceUnavailable
     case rejected
     case invalidResponse
 }
 
-private struct DeleteAccountCallableRequest: Codable, Sendable {
-    static let schemaVersion = 1
+struct DeleteAccountCallableRequest: Codable, Sendable {
+    static let schemaVersion = 2
     let schemaVersion: Int
+    /// A request binding, never authority. The callable compares it with the
+    /// verified `request.auth.uid` before performing any account work.
+    let expectedAccountID: String
     let requestID: String
 
-    init(requestID: UUID = UUID()) {
+    init(expectedAccountID: String, requestID: UUID) {
         self.schemaVersion = Self.schemaVersion
+        self.expectedAccountID = expectedAccountID
         self.requestID = requestID.uuidString
     }
 }
@@ -324,6 +341,7 @@ actor BackendSyncManager {
     static let listFriendLinksFunctionName = SocialAuthorityCallable.listFriendLinks
     static let removeFriendLinkFunctionName = SocialAuthorityCallable.removeFriendLink
     static let appleRevocationUnavailableReason = "apple-revocation-unavailable"
+    static let socialReferenceCutoverIncompleteReason = "social-reference-cutover-incomplete"
     static let recommendationSyncWaitNanoseconds: UInt64 = 4_000_000_000
 
     private var recommendationSyncLanes: [String: RecommendationSyncLane] = [:]
@@ -332,6 +350,17 @@ actor BackendSyncManager {
     private var recommendationHydrationPending: [String: RecommendationSyncSnapshot] = [:]
 
     private init() {}
+
+    /// BackendSyncManager's process-local lane state is intentionally not
+    /// durable. Every recommendation admission therefore reuses AuthManager's
+    /// Keychain-backed deletion authority so relaunch cannot reopen transport.
+    private func durableRecommendationProviderWorkAllowed(
+        for accountID: String
+    ) async -> Bool {
+        await MainActor.run {
+            AuthManager.shared.isProviderWorkAllowed(for: accountID)
+        }
+    }
 
     nonisolated static func authorizedChallengeParticipantID(
         requestedID: String,
@@ -470,6 +499,7 @@ actor BackendSyncManager {
         mutationID: UUID
     ) async {
         guard AuthManager.shouldSyncBackend(accountID: accountID),
+              await durableRecommendationProviderWorkAllowed(for: accountID),
               !recommendationSyncClosedAccounts.contains(accountID) else { return }
         let snapshot = RecommendationSyncSnapshot(
             pendingExposure: pendingExposure,
@@ -497,7 +527,8 @@ actor BackendSyncManager {
         revision: Int,
         hydrationToken: UUID
     ) async -> Bool {
-        guard !recommendationSyncClosedAccounts.contains(accountID) else { return false }
+        guard await durableRecommendationProviderWorkAllowed(for: accountID),
+              !recommendationSyncClosedAccounts.contains(accountID) else { return false }
         guard recommendationHydrationTokens[accountID] == hydrationToken else { return false }
         let lane = recommendationSyncLane(for: accountID)
         return await Self.boundedRecommendationSyncWait {
@@ -508,8 +539,9 @@ actor BackendSyncManager {
     func beginRecommendationHydration(
         accountID: String,
         hydrationToken: UUID
-    ) -> Bool {
-        guard !recommendationSyncClosedAccounts.contains(accountID) else { return false }
+    ) async -> Bool {
+        guard await durableRecommendationProviderWorkAllowed(for: accountID),
+              !recommendationSyncClosedAccounts.contains(accountID) else { return false }
         recommendationHydrationTokens[accountID] = hydrationToken
         return true
     }
@@ -520,7 +552,8 @@ actor BackendSyncManager {
     ) async {
         guard recommendationHydrationTokens[accountID] == hydrationToken else { return }
         recommendationHydrationTokens.removeValue(forKey: accountID)
-        guard !recommendationSyncClosedAccounts.contains(accountID),
+        guard await durableRecommendationProviderWorkAllowed(for: accountID),
+              !recommendationSyncClosedAccounts.contains(accountID),
               let pending = recommendationHydrationPending.removeValue(forKey: accountID) else {
             recommendationHydrationPending.removeValue(forKey: accountID)
             return
@@ -542,6 +575,14 @@ actor BackendSyncManager {
         }
         if didClose {
             recommendationSyncLanes.removeValue(forKey: accountID)
+        } else {
+            // `closeAndWait` marks the old lane closed before waiting for an
+            // in-flight writer. A bounded timeout occurs before deletion has
+            // advanced beyond local admission, so detach that closed lane and
+            // reopen only the process-local gate. The durable Auth fence still
+            // denies new work until the caller verifies safe rollback.
+            recommendationSyncLanes.removeValue(forKey: accountID)
+            recommendationSyncClosedAccounts.remove(accountID)
         }
         return didClose
     }
@@ -580,6 +621,10 @@ actor BackendSyncManager {
     private func writeRecommendationState(
         _ snapshot: RecommendationSyncSnapshot
     ) async -> Bool {
+        guard await durableRecommendationProviderWorkAllowed(for: snapshot.accountID),
+              !recommendationSyncClosedAccounts.contains(snapshot.accountID) else {
+            return false
+        }
 #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth) && canImport(FirebaseSharedSwift)
         if firebaseIsConfigured {
             do {
@@ -594,6 +639,14 @@ actor BackendSyncManager {
                 let response = try await callable.call(
                     RecommendationSyncCallableRequest(snapshot: snapshot)
                 )
+                // The callable suspension can overlap deletion admission. Do
+                // not acknowledge or reconcile that response once the durable
+                // fence has closed, even if the remote write won the race.
+                guard await durableRecommendationProviderWorkAllowed(
+                    for: snapshot.accountID
+                ), !recommendationSyncClosedAccounts.contains(snapshot.accountID) else {
+                    return false
+                }
                 return await applyRecommendationSyncResponse(response, to: snapshot)
             } catch {
                 return false
@@ -667,22 +720,29 @@ actor BackendSyncManager {
 
     func deleteAccount(
         accountID: String,
-        providerRawValue: String
+        providerRawValue: String,
+        requestID: UUID = UUID()
     ) async throws -> BackendAccountDeletionOutcome {
         #if canImport(FirebaseCore) && canImport(FirebaseFunctions)
         if firebaseIsConfigured {
-            return try await deleteFirebaseAccountThroughCallable()
+            return try await deleteFirebaseAccountThroughCallable(
+                expectedAccountID: accountID,
+                requestID: requestID
+            )
         }
         #endif
 
         // REST backend path: send a DELETE request to remove server-side data
-        guard let request = await request(
+        let request: URLRequest
+        do {
+            request = try await deletionRequest(
             path: "/v1/me",
             method: "DELETE",
             accountID: accountID,
             providerRawValue: providerRawValue
-        ) else {
-            throw BackendAccountDeletionError.notConfigured
+            )
+        } catch let error as BackendAccountDeletionError {
+            throw error
         }
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
@@ -704,13 +764,21 @@ actor BackendSyncManager {
     }
 
     #if canImport(FirebaseCore) && canImport(FirebaseFunctions)
-    private func deleteFirebaseAccountThroughCallable() async throws -> BackendAccountDeletionOutcome {
+    private func deleteFirebaseAccountThroughCallable(
+        expectedAccountID: String,
+        requestID: UUID
+    ) async throws -> BackendAccountDeletionOutcome {
         guard FirebaseApp.app() != nil else {
             throw BackendAccountDeletionError.notConfigured
         }
         #if canImport(FirebaseAuth)
         guard let user = Auth.auth().currentUser else {
-            throw BackendAccountDeletionError.requiresRecentAuthentication
+            throw BackendAccountDeletionError.verifiedPreflightRequiresRecentAuthentication
+        }
+        guard user.uid == expectedAccountID else {
+            // Never let a sign-out/sign-in interleave redirect account A's
+            // durable deletion request through account B's Firebase token.
+            throw BackendAccountDeletionError.verifiedPreflightRequiresRecentAuthentication
         }
         do {
             _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
@@ -720,19 +788,39 @@ actor BackendSyncManager {
                     } else if let token {
                         continuation.resume(returning: token)
                     } else {
-                        continuation.resume(throwing: BackendAccountDeletionError.requiresRecentAuthentication)
+                        continuation.resume(
+                            throwing: BackendAccountDeletionError
+                                .verifiedPreflightRequiresRecentAuthentication
+                        )
                     }
                 }
             }
         } catch {
-            throw BackendAccountDeletionError.requiresRecentAuthentication
+            throw BackendAccountDeletionError.verifiedPreflightRequiresRecentAuthentication
         }
         #endif
-        let request = DeleteAccountCallableRequest()
+        #if canImport(FirebaseAuth)
+        guard Auth.auth().currentUser?.uid == expectedAccountID else {
+            // This is intentionally adjacent to callable construction and
+            // dispatch. The versioned server request also binds and verifies
+            // the expected UID because client checks alone are not atomic with
+            // Firebase Functions attaching ambient auth.
+            throw BackendAccountDeletionError.verifiedPreflightRequiresRecentAuthentication
+        }
+        #endif
+        let request = DeleteAccountCallableRequest(
+            expectedAccountID: expectedAccountID,
+            requestID: requestID
+        )
         do {
             let functions = Functions.functions(region: Self.functionsRegion)
             let callable: Callable<DeleteAccountCallableRequest, DeleteAccountCallableResponse> = functions
                 .httpsCallable(Self.deleteAccountFunctionName)
+            #if canImport(FirebaseAuth)
+            guard Auth.auth().currentUser?.uid == expectedAccountID else {
+                throw BackendAccountDeletionError.verifiedPreflightRequiresRecentAuthentication
+            }
+            #endif
             let response = try await callable.call(request)
             guard response.deleted, response.requestID == request.requestID else {
                 throw BackendAccountDeletionError.invalidResponse
@@ -753,12 +841,18 @@ actor BackendSyncManager {
         }
         switch code {
         case .unauthenticated:
-            return .requiresRecentAuthentication
+            // The checked function performs every unauthenticated/recent-auth
+            // rejection before it creates deletion state or starts work.
+            return .verifiedPreflightRequiresRecentAuthentication
         case .failedPrecondition:
-            guard functionsFailureReason(from: nsError) == appleRevocationUnavailableReason else {
+            switch functionsFailureReason(from: nsError) {
+            case appleRevocationUnavailableReason:
+                return .appleRevocationUnavailable
+            case socialReferenceCutoverIncompleteReason:
+                return .socialReferenceCutoverIncomplete
+            default:
                 return .rejected
             }
-            return .appleRevocationUnavailable
         case .unavailable, .deadlineExceeded, .cancelled:
             return .serviceUnavailable
         default:
@@ -1225,6 +1319,29 @@ actor BackendSyncManager {
             accountID: accountID,
             providerRawValue: providerRawValue
         )
+        return request
+    }
+
+    private func deletionRequest(
+        path: String,
+        method: String,
+        accountID: String,
+        providerRawValue: String
+    ) async throws -> URLRequest {
+        guard let baseURL else {
+            throw BackendAccountDeletionError.notConfigured
+        }
+        guard let headers = await BackendAuthHeaders.deletionBound(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else {
+            throw BackendAccountDeletionError.verifiedPreflightRequiresRecentAuthentication
+        }
+        let endpoint = baseURL.appending(path: path)
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        headers.apply(to: &request)
         return request
     }
 

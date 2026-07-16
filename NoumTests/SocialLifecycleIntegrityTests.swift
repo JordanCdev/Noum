@@ -241,8 +241,8 @@ struct SocialLifecycleIntegrityTests {
     }
 
     #if canImport(FirebaseFunctions)
-    @Test("Only the explicit Apple detail maps deletion to revocation unavailable")
-    func deletionFailedPreconditionRequiresExplicitAppleReason() {
+    @Test("Only exact safe preflight details get typed deletion errors")
+    func deletionFailedPreconditionRequiresExactSafeReason() {
         let generic = NSError(
             domain: FunctionsErrorDomain,
             code: FunctionsErrorCode.failedPrecondition.rawValue
@@ -263,12 +263,25 @@ struct SocialLifecycleIntegrityTests {
                 ]
             ]
         )
+        let socialCutover = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.failedPrecondition.rawValue,
+            userInfo: [
+                FunctionsErrorDetailsKey: [
+                    "reason": BackendSyncManager.socialReferenceCutoverIncompleteReason
+                ]
+            ]
+        )
 
         #expect(BackendSyncManager.accountDeletionError(from: generic) == .rejected)
         #expect(BackendSyncManager.accountDeletionError(from: unrelated) == .rejected)
         #expect(
             BackendSyncManager.accountDeletionError(from: apple)
                 == .appleRevocationUnavailable
+        )
+        #expect(
+            BackendSyncManager.accountDeletionError(from: socialCutover)
+                == .socialReferenceCutoverIncomplete
         )
     }
     #endif

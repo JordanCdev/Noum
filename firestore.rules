@@ -24,14 +24,16 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == accountID;
     }
 
-    function deletionPending(accountID) {
+    // Both pending and retained completed tombstones are write fences. The
+    // expiresAt field is operational cleanup metadata, never client authority.
+    function deletionFenceExists(accountID) {
       return exists(
         /databases/$(database)/documents/_accountDeletionState/$(accountID)
       );
     }
 
     function isWritableOwner(accountID) {
-      return isOwner(accountID) && !deletionPending(accountID);
+      return isOwner(accountID) && !deletionFenceExists(accountID);
     }
 
     function validDisplayName(value) {

@@ -747,9 +747,13 @@ struct LiveCoachCallView: View {
         // send all route here). Without this, two pending rows + two
         // CoachReplyPipeline runs race and completeCoachTurn clears
         // isAwaitingReply when EITHER lands, leaving the other stuck.
-        guard !store.isAwaitingReply else { return }
+        guard !store.isAwaitingReply,
+              let sendAdmission = store.sendAdmission(),
+              let dispatch = store.appendUserTurn(
+                  text,
+                  expected: sendAdmission
+              ) else { return }
         hasLiveExchange = true
-        let ids = store.appendUserTurn(text)
         Task {
             let speechSetup = IMConversationSetup(
                 scenario: .workUpdate,
@@ -764,8 +768,9 @@ struct LiveCoachCallView: View {
             // whatever screen the user moved to after Leave/Type. Same
             // TTS-when-it-must-not class the auto-rearm removal closed.
             let outcome = await CoachReplyPipeline.generate(
-                coachID: ids.coachID,
+                coachID: dispatch.coachID,
                 surface: .live,
+                expectedReplyLease: dispatch.lease,
                 onProvisionalCoachReadVisible: { provisionalRead in
                     provisionalSpeechStarted = speakLiveCoachReplyText(
                         provisionalRead,
@@ -775,6 +780,7 @@ struct LiveCoachCallView: View {
                     )
                 }
             )
+            guard store.replyLeaseScopeIsCurrent(dispatch.lease) else { return }
             guard loopActive else { return }
             guard Self.shouldSpeakFinalCoachOutcome(
                 provisionalSpeechStarted: provisionalSpeechStarted

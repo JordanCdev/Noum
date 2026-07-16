@@ -1372,11 +1372,15 @@ actor AICoachChatService {
         assessment: CoachAssessment? = nil,
         surface: CoachReplySurface = .text,
         preferredTier: CoachProviderTier? = nil,
+        providerWorkAllowed: @escaping () async -> Bool = { true },
         onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil,
         onProviderChosen: (@MainActor (CoachTurnProviderChoice) -> Void)? = nil,
         onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)? = nil,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
+        }
         // UI harness only: lets simulator tests verify send -> pipeline ->
         // store -> system-notice rendering without depending on live provider
         // latency or keys. Runtime-gated by `UI_TESTING` rather than
@@ -1436,6 +1440,9 @@ actor AICoachChatService {
             recordChatDiagnostic(.skipped, "Cloud processing not allowed")
             return .failure(.consentRequired)
         }
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
+        }
 
         // M13: AI surfaces are English-only. Non-English chat now resolves as
         // a typed notice rather than an English local coach substitute.
@@ -1448,6 +1455,9 @@ actor AICoachChatService {
         guard localeSupportsAI else {
             recordChatDiagnostic(.skipped, "Locale not AI-supported")
             return .failure(.localeUnsupported)
+        }
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
         }
 
         #if DEBUG
@@ -1466,6 +1476,7 @@ actor AICoachChatService {
                         assessment: assessment,
                         surface: surface,
                         preferredTier: preferredTier,
+                        providerWorkAllowed: providerWorkAllowed,
                         onStreamedPartialVisible: nil,
                         onProviderChosen: nil,
                         onProviderAttemptEvent: nil,
@@ -1493,6 +1504,7 @@ actor AICoachChatService {
                 turnDepth: turnDepth,
                 surface: surface,
                 preferredTier: preferredTier,
+                providerWorkAllowed: providerWorkAllowed,
                 onStreamedPartialVisible: onStreamedPartialVisible,
                 onProviderChosen: onProviderChosen,
                 onProviderAttemptEvent: onProviderAttemptEvent,
@@ -1518,6 +1530,7 @@ actor AICoachChatService {
                 turnDepth: turnDepth,
                 surface: surface,
                 preferredTier: preferredTier,
+                providerWorkAllowed: providerWorkAllowed,
                 onStreamedPartialVisible: onStreamedPartialVisible,
                 onProviderChosen: onProviderChosen,
                 onProviderAttemptEvent: onProviderAttemptEvent,
@@ -1541,6 +1554,7 @@ actor AICoachChatService {
             assessment: assessment,
             surface: surface,
             preferredTier: preferredTier,
+            providerWorkAllowed: providerWorkAllowed,
             onStreamedPartialVisible: onStreamedPartialVisible,
             onProviderChosen: onProviderChosen,
             onProviderAttemptEvent: onProviderAttemptEvent,
@@ -1557,11 +1571,15 @@ actor AICoachChatService {
         assessment: CoachAssessment?,
         surface: CoachReplySurface,
         preferredTier: CoachProviderTier?,
+        providerWorkAllowed: @escaping () async -> Bool,
         onStreamedPartialVisible: (@MainActor (String) -> Void)?,
         onProviderChosen: (@MainActor (CoachTurnProviderChoice) -> Void)?,
         onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)?,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)?
     ) async -> ChatOutcome {
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
+        }
         let keyed = keyedProvidersOverride?() ?? Self.keyedProviders()
         guard !keyed.isEmpty else {
             Self.log.error("no chat provider has a key")
@@ -1599,6 +1617,9 @@ actor AICoachChatService {
         Self.log.debug("chat provider chain=\(Self.providerChainDescription(chain), privacy: .public) depth=\(turnDepth.rawValue, privacy: .public) tier=\(routingTier.rawValue, privacy: .public)")
         var sawContentRejection = false
         for provider in chain {
+            guard !Task.isCancelled, await providerWorkAllowed() else {
+                return .failure(.unauthenticated)
+            }
             guard let endpoint = provider.endpoint else {
                 Self.log.error("\(provider.displayName, privacy: .public) skipped: missing endpoint")
                 recordChatDiagnostic(.skipped, "Missing provider endpoint", provider: provider)
@@ -1623,10 +1644,14 @@ actor AICoachChatService {
                 turnDepth: turnDepth,
                 assessment: assessment,
                 surface: surface,
+                providerWorkAllowed: providerWorkAllowed,
                 onStreamedPartialVisible: onStreamedPartialVisible,
                 onProviderAttemptEvent: onProviderAttemptEvent,
                 onQualityGateEvent: onQualityGateEvent
             )
+            guard !Task.isCancelled, await providerWorkAllowed() else {
+                return .failure(.unauthenticated)
+            }
             switch outcome {
             case .reply(let text):
                 providerCooldowns[provider] = nil
@@ -1728,11 +1753,15 @@ actor AICoachChatService {
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface,
         preferredTier: CoachProviderTier?,
+        providerWorkAllowed: @escaping () async -> Bool,
         onStreamedPartialVisible: (@MainActor (String) -> Void)?,
         onProviderChosen: (@MainActor (CoachTurnProviderChoice) -> Void)?,
         onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)?,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)?
     ) async -> ChatOutcome {
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
+        }
         let transport = transportOverride ?? secureTransport
         switch await transport.availability() {
         case .available:
@@ -1746,6 +1775,9 @@ actor AICoachChatService {
         case .checking, .unavailable(.service):
             recordChatDiagnostic(.skipped, "Secure coach service unavailable")
             return .failure(.network)
+        }
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
         }
 
         let trimmed = Array(history.suffix(Self.maxReplayMessages))
@@ -1783,6 +1815,9 @@ actor AICoachChatService {
             model: "Server configured"
         )
         await onProviderAttemptEvent?(.started(providerChoice))
+        guard !Task.isCancelled, await providerWorkAllowed() else {
+            return .failure(.unauthenticated)
+        }
 
         do {
             var completion: CoachChatCompletion?
@@ -2102,6 +2137,7 @@ actor AICoachChatService {
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
         surface: CoachReplySurface,
+        providerWorkAllowed: @escaping () async -> Bool,
         onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil,
         onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)? = nil,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
@@ -2114,6 +2150,9 @@ actor AICoachChatService {
         do {
             Self.log.debug("attempting chat provider \(provider.displayName, privacy: .public)")
             await onProviderAttemptEvent?(.started(providerChoice))
+            guard !Task.isCancelled, await providerWorkAllowed() else {
+                return .refused(.transient)
+            }
             let streamEndpoint = provider.streamingEndpoint
             let usesProviderStream = Self.providerStreamingShouldRun(
                 turnDepth: turnDepth,
@@ -7817,6 +7856,7 @@ actor AICoachChatService {
         body: [String: Any],
         onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil
     ) async throws -> ProviderTextTransportResult {
+        guard !Task.isCancelled else { throw CancellationError() }
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -7914,6 +7954,7 @@ actor AICoachChatService {
         key: String,
         body: [String: Any]
     ) async throws -> ProviderHTTPResult {
+        guard !Task.isCancelled else { throw CancellationError() }
         if let providerHTTPOverride {
             return try await providerHTTPOverride(provider, endpoint, key, body)
         }

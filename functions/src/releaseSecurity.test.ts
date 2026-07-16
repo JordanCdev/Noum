@@ -1,17 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS,
+  ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS,
   ACCOUNT_DELETION_STEPS,
   AccountDeletionPartialError,
+  FIREBASE_ID_TOKEN_MAX_LIFETIME_MS,
   type AccountDeletionStep,
   type AccountDeletionWork,
   accountDeletionLogMetadata,
+  accountDeletionStateAdmission,
   assertAppleRevocationSupported,
+  assertDeleteAccountRequestIdentity,
   assertRecentAuthentication,
+  completedAccountDeletionTombstone,
   deletionAuthenticationTime,
   executeAccountDeletionPlan,
   grantDeepgramTranscriptionToken,
   nextWindowRateState,
+  pendingAccountDeletionReconciliationCandidate,
   ProviderGrantError,
   TRANSCRIPTION_TOKEN_HOUR_LIMIT,
   TRANSCRIPTION_TOKEN_MINUTE_LIMIT,
@@ -25,6 +32,8 @@ const requestID = "2cb446d8-4f39-43a6-a95c-2486e47155bc";
 const managementKey = "server-management-key-fixture-123";
 const accessToken = ["a".repeat(32), "b".repeat(32), "c".repeat(32)]
   .join(".");
+const dateMilliseconds = (value: unknown): number | null =>
+  value instanceof Date ? value.getTime() : null;
 
 test("transcription token input rejects client authority fields", () => {
   assert.doesNotThrow(() => validateTranscriptionTokenRequest({
@@ -41,19 +50,196 @@ test("transcription token input rejects client authority fields", () => {
   }
 });
 
-test("deletion input requires one UUID request ID and no account ID", () => {
-  assert.equal(validateDeleteAccountRequest({
-    schemaVersion: 1,
+test("deletion input requires an exact versioned identity binding", () => {
+  assert.deepEqual(validateDeleteAccountRequest({
+    schemaVersion: 2,
+    expectedAccountID: "account-alpha",
     requestID,
-  }), requestID);
+  }), {requestID, expectedAccountID: "account-alpha"});
   for (const value of [
-    {schemaVersion: 1},
-    {schemaVersion: 1, requestID: "not-a-uuid"},
-    {schemaVersion: 1, requestID, accountID: "another-user"},
+    {schemaVersion: 1, expectedAccountID: "account-alpha", requestID},
+    {schemaVersion: 2},
+    {
+      schemaVersion: 2,
+      expectedAccountID: "account-alpha",
+      requestID: "not-a-uuid",
+    },
+    {schemaVersion: 2, expectedAccountID: "", requestID},
+    {schemaVersion: 2, expectedAccountID: " account-alpha", requestID},
+    {
+      schemaVersion: 2,
+      expectedAccountID: "account-alpha",
+      requestID,
+      accountID: "another-user",
+    },
   ]) {
     assert.throws(() => validateDeleteAccountRequest(value));
   }
 });
+
+test("deletion identity binding must equal verified callable auth", () => {
+  assert.doesNotThrow(() => assertDeleteAccountRequestIdentity(
+    "account-alpha",
+    "account-alpha"
+  ));
+  assert.throws(
+    () => assertDeleteAccountRequestIdentity("account-alpha", "account-beta"),
+    (error: unknown) => (error as {code?: string}).code === "permission-denied"
+  );
+});
+
+test(
+  "completed deletion tombstone is minimal and outlives stale tokens",
+  () => {
+    const completedAtMs = Date.parse("2026-07-16T12:00:00.000Z");
+    const marker = completedAccountDeletionTombstone(
+      "account-alpha",
+      requestID,
+      completedAtMs
+    );
+    assert.deepEqual(Object.keys(marker).sort(), [
+      "accountID",
+      "completedAt",
+      "expiresAt",
+      "requestID",
+      "schemaVersion",
+      "status",
+    ]);
+    assert.equal(marker.schemaVersion, 2);
+    assert.equal(marker.status, "complete");
+    assert.equal(marker.completedAt.getTime(), completedAtMs);
+    assert.equal(
+      marker.expiresAt.getTime() - marker.completedAt.getTime(),
+      ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS
+    );
+    assert.equal(
+      ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS >=
+        FIREBASE_ID_TOKEN_MAX_LIFETIME_MS,
+      true
+    );
+    assert.equal(JSON.stringify(marker).includes("transcript"), false);
+    assert.equal(JSON.stringify(marker).includes("coaching"), false);
+  }
+);
+
+test("deletion state admission preserves exact terminal markers", () => {
+  const completed = completedAccountDeletionTombstone(
+    "account-alpha",
+    requestID,
+    1_720_000_000_000
+  );
+  assert.equal(accountDeletionStateAdmission(
+    completed,
+    "account-alpha",
+    requestID,
+    dateMilliseconds
+  ), "alreadyCompleted");
+  assert.equal(accountDeletionStateAdmission(
+    {...completed, requestID: "3cb446d8-4f39-43a6-a95c-2486e47155bc"},
+    "account-alpha",
+    requestID,
+    dateMilliseconds
+  ), "invalid");
+  assert.equal(accountDeletionStateAdmission(
+    {...completed, accountID: "account-beta"},
+    "account-alpha",
+    requestID,
+    dateMilliseconds
+  ), "invalid");
+  assert.equal(accountDeletionStateAdmission(
+    {...completed, coachingContext: "must never persist"},
+    "account-alpha",
+    requestID,
+    dateMilliseconds
+  ), "invalid");
+  assert.equal(accountDeletionStateAdmission(
+    {...completed, expiresAt: new Date(completed.expiresAt.getTime() - 1)},
+    "account-alpha",
+    requestID,
+    dateMilliseconds
+  ), "invalid");
+});
+
+test(
+  "deletion state admission resumes only the same exact pending request",
+  () => {
+    const pending = {
+      schemaVersion: 2,
+      status: "pending",
+      accountID: "account-alpha",
+      requestID,
+      startedAt: new Date(1_720_000_000_000),
+      updatedAt: new Date(1_720_000_001_000),
+    };
+    assert.equal(accountDeletionStateAdmission(
+      undefined,
+      "account-alpha",
+      requestID,
+      dateMilliseconds
+    ), "createPending");
+    assert.equal(accountDeletionStateAdmission(
+      pending,
+      "account-alpha",
+      requestID,
+      dateMilliseconds
+    ), "resumePending");
+    for (const invalid of [
+      {...pending, requestID: "3cb446d8-4f39-43a6-a95c-2486e47155bc"},
+      {...pending, unexpected: true},
+      {...pending, updatedAt: new Date(pending.startedAt.getTime() - 1)},
+    ]) {
+      assert.equal(accountDeletionStateAdmission(
+        invalid,
+        "account-alpha",
+        requestID,
+        dateMilliseconds
+      ), "invalid");
+    }
+  }
+);
+
+test(
+  "pending reconciliation requires exact stale state before work resumes",
+  () => {
+    const nowMs = 1_720_010_000_000;
+    const pending = {
+      schemaVersion: 2,
+      status: "pending",
+      accountID: "account-alpha",
+      requestID,
+      startedAt: new Date(
+        nowMs - ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS - 2_000
+      ),
+      updatedAt: new Date(
+        nowMs - ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS
+      ),
+    };
+    assert.deepEqual(pendingAccountDeletionReconciliationCandidate(
+      pending,
+      "account-alpha",
+      nowMs,
+      dateMilliseconds
+    ), {accountID: "account-alpha", requestID});
+    assert.equal(pendingAccountDeletionReconciliationCandidate(
+      {...pending, updatedAt: new Date(nowMs - 1)},
+      "account-alpha",
+      nowMs,
+      dateMilliseconds
+    ), null);
+    assert.equal(pendingAccountDeletionReconciliationCandidate(
+      pending,
+      "account-beta",
+      nowMs,
+      dateMilliseconds
+    ), null);
+    assert.equal(pendingAccountDeletionReconciliationCandidate(
+      {...pending, unexpected: true},
+      "account-alpha",
+      nowMs,
+      dateMilliseconds
+    ), null);
+  }
+);
 
 test("transcription rate limit rejects minute and hour overflow", () => {
   const minuteStart = 6 * 3_600_000;
@@ -277,7 +463,7 @@ test("deletion plan finalizes references, Auth, then tombstone", async () => {
   assert.deepEqual(calls.slice(-3), [
     "socialReferenceManifest",
     "authUser",
-    "deletionTombstone",
+    "completedTombstone",
   ]);
   assert.equal(
     calls.indexOf("competitiveObservations") < calls.indexOf("authUser"),
@@ -305,7 +491,7 @@ test(
     assert.deepEqual(calls, ACCOUNT_DELETION_STEPS.slice(0, -3));
     assert.equal(calls.includes("socialReferenceManifest"), false);
     assert.equal(calls.includes("authUser"), false);
-    assert.equal(calls.includes("deletionTombstone"), false);
+    assert.equal(calls.includes("completedTombstone"), false);
   }
 );
 
@@ -320,7 +506,7 @@ test("manifest finalization failure keeps Auth and tombstone", async () => {
       error.failedSteps[0] === "socialReferenceManifest"
   );
   assert.equal(calls.includes("authUser"), false);
-  assert.equal(calls.includes("deletionTombstone"), false);
+  assert.equal(calls.includes("completedTombstone"), false);
 });
 
 test(
@@ -334,15 +520,22 @@ test(
         error.failedSteps[0] === "authUser"
     );
     assert.deepEqual(calls, ACCOUNT_DELETION_STEPS.slice(0, -1));
-    assert.equal(calls.includes("deletionTombstone"), false);
+    assert.equal(calls.includes("completedTombstone"), false);
   }
 );
 
-test("tombstone cleanup is best effort after Auth deletion", async () => {
-  const calls: AccountDeletionStep[] = [];
-  await executeAccountDeletionPlan(deletionWork(
-    calls,
-    ["deletionTombstone"]
-  ));
-  assert.deepEqual(calls, ACCOUNT_DELETION_STEPS);
-});
+test(
+  "completed tombstone failure is reported while pending remains durable",
+  async () => {
+    const calls: AccountDeletionStep[] = [];
+    await assert.rejects(
+      () => executeAccountDeletionPlan(deletionWork(
+        calls,
+        ["completedTombstone"]
+      )),
+      (error: unknown) => error instanceof AccountDeletionPartialError &&
+        error.failedSteps[0] === "completedTombstone"
+    );
+    assert.deepEqual(calls, ACCOUNT_DELETION_STEPS);
+  }
+);

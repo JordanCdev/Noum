@@ -4,20 +4,64 @@ Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 
 Audit date: 2026-07-16
 
-Committed implementation inspected through `8f0107df1`. This audit also covers
-the current Forward Plan metric-qualification source developed above that
+Committed implementation inspected through `ea667cfd4`. This audit also covers
+the current account-deletion admission/recovery source developed above that
 baseline.
 
-The newest bounded slice closes the Forward Plan provider-input evidence gap.
-Recent filler context uses the shared historical quantity projection, so only
-20-word / 15-second, confidence-qualified, current-schema, non-fixture samples
-can expose a normalized rate; every other sample is `not measured`. Filler and
-pace baselines now use the current-comparison accessors and fail closed for
-stale or insufficient aggregates. Independent score evidence is unchanged.
-The preceding account/source/authorization lease still binds the fully hydrated
-loaded account, lifecycle, latest intent, plan/session generations, exact
-source input, locale, consent, and provider through transport and the final
-plan/Ask compare-and-save.
+The newest bounded slice makes deletion a durable input to scoped asynchronous
+coaching work. One Keychain-backed schema-v2 record owns account/provider/
+request identity and monotonic phase across relaunch; corrupt, unreadable, or
+other-account state fails closed. Ask Noum replies and auxiliary provider work,
+Forward Plan admission/registration/active transports, and recommendation
+local/backend sync paths close and revalidate against that authority. Recovery
+copy and actions are phase-derived, and an unknown remote result exposes only
+opaque-reference support rather than a destructive retry.
+
+The checked callable binds expected account identity to the verified Firebase
+UID and gives the content-free completed server marker an expiry two hours
+after completion. Firestore private writes are denied on marker existence until
+TTL deletes it, so a cached ID token cannot recreate account data; TTL is
+source-declared cleanup metadata.
+
+The caller reports success only after exact completed-marker finalization, and
+failure leaves the pending marker intact. Exact completed duplicates preserve
+their original marker; mismatched or malformed state fails closed. Every 15
+minutes the scheduled reconciler scans exact pending rows at least 30 minutes
+old, paginates past malformed rows, and replays the same full deletion worklist
+whether the Auth user exists or was already removed. Cleanup, Auth removal, and
+exact marker identity are revalidated before completion; unchanged failures
+stay pending and rotate through a refreshed `updatedAt`. Exact safe Apple,
+recent-auth, and social-cutover preflights can clear only a current-attempt
+remote-request fence. Generic failed-precondition, legacy REST, resumed, and
+transport failures remain ambiguous.
+
+Local evidence is green: **70/70** focused iOS tests, **55/55** adjacent
+regressions, a final frozen-source policy/recovery selection at **23/23**, and
+**4,402 unique tests / 4,421 device-configuration executions** in the complete
+unsigned `NoumTests` target. The final result bundle is
+`/private/tmp/noum-account-deletion-full-final-20260716.xcresult`. Functions
+passes **115/115** unit tests, **7/7** deploy-lock tests, **18/18** cloud-
+operations validator tests, and **28/28** full Auth/Firestore/Functions
+emulator tests including a stale-token 403 and direct scheduled-callback
+recovery after deletion. The current-source unsigned Release simulator build
+succeeds. A light five-tab simulator sweep is recorded in
+`.screenshots/2026-07-16_account-deletion-fence/HANDOFF.md`; it does not
+exercise deletion or recovery. No production deployment, live scheduler or
+TTL evidence, durable post-Auth completion receipt, unauthenticated recovery,
+or signed-device evidence exists; no required external artifact passes.
+Production readiness remains **NO-GO at 18/100 with 0/5 required external
+artifacts**.
+
+The preceding bounded slice closes the Forward Plan provider-input evidence
+gap. Recent filler context uses the shared historical quantity projection, so
+only 20-word / 15-second, confidence-qualified, current-schema, non-fixture
+samples can expose a normalized rate; every other sample is `not measured`.
+Filler and pace baselines use the current-comparison accessors and fail closed
+for stale or insufficient aggregates. Independent score evidence is unchanged.
+The account/source/authorization lease still binds the fully hydrated loaded
+account, lifecycle, latest intent, plan/session generations, exact source
+input, locale, consent, and provider through transport and the final plan/Ask
+compare-and-save.
 
 Focused metric verification passes **7/7**, the combined metric and Forward
 Plan regression selection passes **134/134**, and the complete unsigned target
@@ -887,6 +931,7 @@ coach.
 | Cloud transcription on/off | **Proved** | The existing consent control changes Release provider construction and revocation behavior. |
 | Export ZIP entry point | **Proved** | `AccountDataExportServiceTests` validate manifest/data entries, exclusions, CRC-readable ZIP output, safe paths, and cleanup. |
 | Account deletion entry point | **Proved** | The account card shows deletion only when signed in, requires typed confirmation, and routes through the existing callable contract. |
+| Account deletion admission, stale-token fence, and recovery | **Partially proved locally** | The current source makes one Keychain-backed schema-v2 account/provider/request/phase record authoritative across relaunch and sign-out. Ask Noum replies/auxiliary calls, Forward Plan admission/registration/transport, and recommendation local/backend sync close and revalidate against it. Settings exposes phase-safe retry, local-cleanup-only, or support-only recovery. The checked callable binds expected account identity to verified Firebase auth, and a minimal completed server marker with an expiry two hours after completion keeps Firestore private writes denied until TTL deletion, beyond the declared one-hour stale-token window. Success requires exact marker finalization; exact duplicates preserve the marker, while mismatch, malformed state, and finalization failure fail closed. The 28/28 emulator gate proves a cached token receives 403 and directly exercises the every-15-minute stale-pending reconciler replaying the full deletion worklist with Auth present or absent. Focused iOS is 70/70, adjacent regression is 55/55, final frozen-source policy/recovery is 23/23, full unsigned unit is 4,402 unique tests / 4,421 executions, Functions unit/deploy-lock are 115/115 + 7/7, and the cloud-operations validator is 18/18. Functions, scheduler identity, rules, index, and TTL are undeployed; live scheduler/TTL behavior, a durable completion receipt/unauthenticated post-Auth recovery route, other backend-work audit, signed device behavior, and external evidence remain missing. |
 | Notifications/privacy summary | **Proved** | Both are present in Settings, using existing notification and consent owners. |
 | Transient Timed prompt isolation | **Proved** | `TimedPracticePromptHandoff` keeps one bounded prompt in process, binds it to the active account and exact opaque route token, consumes it once, and clears it during account teardown. A mismatched token cannot steal a newer prompt; navigation carries no user text/account ID, and the former unscoped prompt/word defaults keys are purged rather than migrated. App termination naturally drops the in-memory value. |
 | A single `PrivacyCentreView` | **Contradicted** | The user-facing trust story deliberately stays within the established Settings privacy card, Your Data, Account, and Notifications owners. A new named centre would duplicate navigation and state ownership without adding a missing control. |
@@ -1023,7 +1068,7 @@ Historical results are not treated as proof for later behavior.
 | Roleplay terminal continuation guidance | **Proved locally** | At `5987636f`, feedback and completion share one cached engine transition. A real next turn retains its exact adaptive promise; the fourth attempt becomes future-practice guidance; and a missing transition fails closed without claiming a rung or objection. Four pure tests pass inside a focused 38/38 selection, 3/3 deterministic UI flows pass including Accessibility XXXL terminal feedback/completion, and the complete target passes 4,188 unique tests / 4,205 device executions. The UI fixture bypasses microphone capture and is not physical-device, effectiveness, or launch evidence. |
 | Standalone Pace earned-result integrity | **Proved locally** | At `8e7af9d9`, the provider's terminal receipt owns final speech eligibility, the recorder owns duration, and existing live samples own the Pace result. The shared recording gate plus three-word / three-finite-second floor prevents thin or unusable capture from presenting a score or awarding XP; eligible capture preserves the exact result and awards once. The focused engine/result/integrity selection passes 34/34, and the insufficient and eligible rendered fixtures pass individually, including Accessibility XXXL and accessible retry/exit actions. The complete unit target was not rerun at this commit; the latest complete target remains 4,188 unique tests / 4,205 device executions at `5987636f`. Fixtures bypass microphone/provider timing, and no durable Pace attribution or effectiveness evidence exists. |
 | Standalone Cut the Crutch earned-result integrity | **Proved locally** | At `bb155866`, live engine evidence owns avoided-word violations and the candidate result, while the terminal provider receipt and recorder duration own minimum speech eligibility. The shared completion gate plus three-word / three-finite-second floor prevents thin or unusable capture from presenting a score, awarding XP, or committing Daily Goal/streak progress; eligible capture preserves the exact live candidate and commits once. Focused verification passes 36 parameterized executions across three suites, and both UI branches pass with Reduce Motion enabled, including Accessibility XXXL, accessible retry/exit actions, and exact +150 eligible copy. The complete unit target passes 4,200 unique tests / 4,219 device executions. Fixtures bypass microphone/provider timing; terminal text cannot reconstruct or independently reconcile live avoided-word timing; and no durable Cut the Crutch attribution or effectiveness evidence exists. |
-| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. Local app-path, real-pipeline, score, trace-quality, Roleplay fairness, retry continuity, attempted-pressure and continuation truthfulness, speech-notice wiring, unsupported-locale recovery, rendered Train and Summary Pressure capability loss, mixed Review/Profile history, deterministic Summary metric provenance, premium Coach Read mechanic quarantine/save-token/quote/replay protection, the focused Proof Moment account/source P0 boundary, the Forward Plan async ownership/authorization and metric-input boundaries, Path integrity, duration provenance, Pace/Cut the Crutch earned-result integrity, all-route mini-drill completion/history plus representative standard rendering, and Lesson Apply earned-progress integrity pass locally, but they earn no external readiness points; the readiness artifact predates these closures. The current Forward Plan metric lane passes 7/7 focused and 134/134 combined related checks; the complete unsigned target passes 4,355 unique tests / 4,374 device-configuration executions with zero failures or skips, and the current-source unsigned Release simulator build succeeds. The clean signed full-scheme, optimized Release scan, complete UI, manual VoiceOver, physical-device, deployed-backend, and external gates were not rerun at this source. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. |
+| Production readiness | **Missing** | The clean detached `ac664112` readiness rerun remains NO-GO, 18/100, local target shape 85/100, maximum allowed 20/100, claim `localEvaluationSubstrateOnly`. The newer durable deletion fence, scoped Ask Noum/Forward Plan/recommendation admission, phase-aware recovery, exact callable identity binding, retained stale-token marker, and full-worklist stale-pending reconciler join the existing local coaching/recommendation/speech closures, but earn no external readiness points and postdate that readiness artifact. Current deletion/security verification passes 70/70 focused iOS tests, 55/55 adjacent regressions, 23/23 final frozen-source policy/recovery tests, 115/115 Functions tests, 7/7 deploy-lock tests, 18/18 cloud-operations validator tests, and 28/28 full local emulator tests; the complete unsigned target passes 4,402 unique tests / 4,421 device-configuration executions with zero failures or skips, and the current-source unsigned Release simulator build succeeds. Functions, scheduler identity, rules, index, and TTL are not deployed; direct local callback invocation proves neither live scheduler delivery nor TTL cleanup. The lost-reply post-Auth recovery gap remains, and clean signed full-scheme, complete UI, manual VoiceOver, physical-device, deployed-backend, and external gates were not rerun at this source. One historical live artifact is present and invalid; zero of five required external artifacts passes, no validated attachment-backed release run is available, and no current-source hosted privacy-body proof exists. |
 
 ## External proof gates
 

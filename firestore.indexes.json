@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "_accountDeletionState",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "challenges",
       "queryScope": "COLLECTION",
       "fields": [
@@ -16,6 +30,12 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "_accountDeletionState",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
     {
       "collectionGroup": "captureIntents",
       "fieldPath": "expiresAt",

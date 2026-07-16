@@ -221,7 +221,7 @@ struct PrivacyProductionContractTests {
             repositoryRoot.appendingPathComponent("public/privacy.html"),
         ]
         let requiredDisclosures = [
-            "July 14, 2026",
+            "July 16, 2026",
             "Noum itself does not store your email address, phone number, or password in Noum profile or session records.",
             "Guest access normally uses anonymous Firebase Authentication when it is available and completes during the bounded launch window.",
             "When Firebase Authentication is unconfigured, unavailable, or cannot complete during that window, Noum creates a local-only guest account identifier and stores it in the iOS Keychain instead of creating a Firebase Authentication user.",
@@ -241,6 +241,10 @@ struct PrivacyProductionContractTests {
             "Required Google Sign-In, Firebase Authentication, Firestore, Remote Config, and Firebase Installations SDKs carry vendor-declared analytics-purpose processing as described above.",
             "Noum does not use that processing for advertising or cross-app tracking.",
             "Noum does not share data with advertising networks or data brokers.",
+            "A minimal deletion-security record contains only the account identifier, opaque request identifier, deletion status, and timestamps; it contains no audio, transcript, session, or coaching content.",
+            "A completed deletion-security record is scheduled for automatic cleanup after two hours; that cleanup depends on the Firestore TTL policy being deployed and working.",
+            "If finalization or earlier cleanup is interrupted, the pending write fence remains; the scheduled server reconciler retries the full deletion work for the exact request and only then converts it to a fresh completed record.",
+            "If TTL is unavailable, the completed record remains until authorized cleanup.",
         ]
 
         for policyFile in policyFiles {

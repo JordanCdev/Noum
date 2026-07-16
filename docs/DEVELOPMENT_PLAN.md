@@ -7,6 +7,64 @@ production-evidence closure in progress
 code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
 define the implemented state.
 
+## Current production-closure slice — deletion admission and recovery
+
+The current source developed above `ea667cfd4` extends the existing account
+deletion flow into a durable, monotonic lifecycle boundary. One Keychain-backed
+fence owns account/provider/request identity and phase. Auth lifecycle rotation,
+Ask Noum, Forward Plan, and recommendation-sync admission all consume that
+authority; active or not-yet-registered provider work is cancelled or rejected,
+and delayed completion cannot mutate a reopened or different account. Phase-
+aware Settings recovery presents retry, local-cleanup-only, or support-only
+actions without claiming an uncertain remote result.
+
+The schema-v2 callable binds the request to the verified Firebase UID. Exact
+current-attempt safe preflights can reopen the client fence, while generic or
+resumed failures remain ambiguous. Successful deletion retains a content-free
+server marker with an expiry two hours after completion; Firestore private
+writes are denied while either a pending or completed marker exists, and
+source-declared TTL removes only the completed marker after the stale-token
+window. The caller reports success only
+after exact completed-marker finalization; failure leaves the pending write
+fence intact. Exact duplicates preserve the original completed marker, while
+mismatched or malformed state fails closed. A scheduled function scans every
+15 minutes for exact pending rows at least 30 minutes old, paginates past
+malformed rows, and replays the same complete deletion worklist whether Auth
+still contains the user or deletion had already removed it. Failed unchanged
+rows stay pending and rotate fairly through a refreshed `updatedAt`.
+
+Local verification passes **70/70** focused iOS tests, **55/55** adjacent
+regressions, a final frozen-source policy/recovery selection at **23/23**, and
+**4,402 unique tests / 4,421 device-configuration executions** for the complete
+unsigned `NoumTests` target. The final result bundle is
+`/private/tmp/noum-account-deletion-full-final-20260716.xcresult`. Functions
+passes **115/115** unit tests, **7/7** deploy-lock tests, **18/18** cloud-
+operations validator tests, and a **28/28** full local emulator gate that
+includes stale-token denial and direct scheduled-callback recovery after
+deletion. The current-source unsigned Release simulator build succeeds. A
+light five-tab simulator sweep is recorded in
+`.screenshots/2026-07-16_account-deletion-fence/HANDOFF.md`; it does not
+exercise deletion or recovery. These results prove the local source boundary
+only.
+
+The next production-closure work is ordered:
+
+- deploy the reviewed Functions, rules, scheduler identity, composite index,
+  and `_accountDeletionState.expiresAt` TTL policy together, then capture live
+  scheduler delivery, stale-token denial, reconciliation, and TTL evidence;
+- add a durable completion receipt or authenticated/unauthenticated recovery
+  protocol so a lost successful callable response does not require support;
+- audit remaining backend work and device-global AI diagnostics against the
+  same account lifecycle and deletion registry;
+- run signed physical-device deletion/relaunch/accessibility cases without
+  weakening the support-only ambiguous state; and
+- collect the five externally required readiness artifacts.
+
+This does not establish production readiness. Deployment, live scheduler and
+TTL behavior, post-Auth client recovery, signed device behavior, and every
+required external artifact remain unproved. The authoritative gate remains
+**NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## Current production-closure slice — Forward Plan evidence boundary
 
 The current source developed above baseline `8f0107df1` extends the existing

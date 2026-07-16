@@ -1,6 +1,6 @@
 # Noum Privacy Policy
 
-**Last updated:** July 14, 2026
+**Last updated:** July 16, 2026
 
 Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.
 
@@ -153,7 +153,7 @@ Production Deepgram transcription uses a short-lived provider credential obtaine
 ## 5. Data Retention
 
 - **On-device data** is retained until you delete it (via session deletion, account deletion, or app uninstall)
-- **Noum-controlled Firebase data** is retained while your account is active and is submitted for deletion when you delete your account. Shared records and operational backups may follow different deletion windows
+- **Noum-controlled Firebase data** is retained while your account is active and is submitted for deletion when you delete your account. A minimal deletion-security record contains only the account identifier, opaque request identifier, deletion status, and timestamps; it contains no audio, transcript, session, or coaching content. A completed deletion-security record is scheduled for automatic cleanup after two hours; that cleanup depends on the Firestore TTL policy being deployed and working. If finalization or earlier cleanup is interrupted, the pending write fence remains; the scheduled server reconciler retries the full deletion work for the exact request and only then converts it to a fresh completed record. If TTL is unavailable, the completed record remains until authorized cleanup. Shared records and operational backups may follow different deletion windows
 - **Streamed audio** is not retained by Noum as an audio file. Production Deepgram requests set `mip_opt_out=true`; Deepgram says opted-out data is retained only as needed to process the request. Apple handles any Speech Recognition fallback under its own terms
 - **Competitive observation metadata** contains hashes, counts, practice-mode and prompt-binding provenance, provider/model identifiers, status, server timestamps, and an expiry timestamp—not raw audio or the full server transcript. An account-unlinked, domain-separated exact-audio replay digest is retained for seven days and is not removed with account deletion, so deleting one account cannot make the same recording reusable through another account. It contains no account or session identifier. Automatic removal at expiry depends on the corresponding Firestore TTL policies being configured and verified; account deletion removes the account-linked intent and observation records independently
 - **Mutual connection records** contain account IDs, bounded display names, a token digest, pair identifier, status, and timestamps. Pending and terminal invite receipts carry an expiry timestamp; automatic removal depends on Firestore TTL being configured and verified. Disconnecting removes both active link directions, and account deletion removes or revokes invite/link state independently
@@ -169,7 +169,7 @@ Go to **Settings > Your Data** in the app to see a summary of the principal data
 ### Export Your Data
 In **Settings > Your Data > Export account data**, Noum creates `Noum-export-YYYY-MM-DD.zip`. The archive contains a versioned manifest, one JSON snapshot for every registered local account-data participant, residual account-scoped records that are not yet owned by a named participant, and app-managed files under `Documents/Recordings` when present. Legacy records or recordings that were not stamped with an account ID are explicitly labelled as device-local and unattributed. Recordings saved to Photos, Keychain authentication material, provider credentials, and data retained by third-party processors are not included.
 
-Because competitive capture intents, observation receipts, and authoritative mutual-connection receipts are server processing records rather than local account-data participants, they are not included in the device-built archive. The local friend snapshot is included. Account deletion removes the server records Noum controls, and disconnecting removes an active reciprocal link. You may contact Noum to request access to any such server record still within its retention window.
+Because competitive capture intents, observation receipts, authoritative mutual-connection receipts, and the minimal deletion-security record are server processing records rather than local account-data participants, they are not included in the device-built archive. The local friend snapshot is included. Account deletion removes active server records Noum controls and retains only the temporary content-free write fence described above; disconnecting removes an active reciprocal link. You may contact Noum to request access to any such server record still within its retention window.
 
 ### Delete Individual Sessions
 Long-press any session in your Session History to delete it.
@@ -182,7 +182,7 @@ Go to **Settings > Delete Account**. This will:
 - Delete your Firebase Authentication account, if one exists
 - Sign you out
 
-Account deletion is irreversible once completed. Noum performs deletion through an authenticated, idempotent account service and does not clear local state or claim success when the remote request fails. The service may require you to sign in again. For Sign in with Apple accounts, Noum stops before mutation unless it can safely revoke the Apple authorization; the app explains the blocker and leaves local and remote data unchanged. Deleting a Noum account does not cancel an App Store subscription, which you manage through your Apple account.
+Account deletion is irreversible once completed. Noum performs deletion through an authenticated, idempotent account service and does not clear local state or claim success when the remote request fails. During deletion, the service uses the temporary, content-free deletion-security record described above to reject stale authenticated writes and to recover safely if finalization is interrupted. The service may require you to sign in again. For Sign in with Apple accounts, Noum stops before mutation unless it can safely revoke the Apple authorization; the app explains the blocker and leaves local and remote data unchanged. Deleting a Noum account does not cancel an App Store subscription, which you manage through your Apple account.
 
 Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.
 

@@ -1,5 +1,78 @@
 # Noum — Current state
 
+## 2026-07-16 — Account deletion now closes scoped provider admission
+
+The current source developed above `ea667cfd4` closes the verified deletion-
+time admission gap through the existing authentication, Ask Noum, Forward
+Plan, recommendation-sync, and account-data owners. A single Keychain-backed
+schema-v2 fence records the exact account, provider, request UUID, and
+monotonic phase before remote deletion begins. Missing is the only allowing
+state: corrupt, unreadable, or other-account fence state fails closed across
+relaunch, generic sign-out cannot clear it, and a different account cannot
+replace the pending deletion identity.
+
+Deletion rotates the account lifecycle and synchronously closes Ask Noum and
+Forward Plan store admission before actor-owned transports can start. Ask
+reply, context-chip, starter, and live-call work now use checked leases and
+owned cancellation. Forward Plan has pending-admission and active-transport
+registries that close the creation/registration race and drain cancellation-
+ignoring work before final release. Recommendation admission, delayed
+bookkeeping, hydration, conflicts, acknowledgement, and transport recheck the
+same durable Auth fence rather than relying on process-local lane state.
+
+Recovery is phase-aware. Pre-remote admission can retry; a committed remote
+phase can only finish local cleanup; an unknown remote result stays support-
+only and keeps scoped provider work suspended. Settings restores that durable
+state whenever its sheet is rebuilt, does not ask the user to retype for local
+cleanup, and includes only an opaque request reference and phase in support
+mail. Exact current-attempt Apple, recent-auth, and social-cutover preflights
+may reopen admission; resumed requests, legacy REST responses, generic failed-
+precondition errors, and transport ambiguity remain fenced.
+
+The checked callable now binds schema-v2 input to the verified Firebase UID.
+After Auth deletion, the deletion plan reports success only after it writes an
+exact completed `_accountDeletionState` marker; a failed finalization reports
+failure and leaves the pending write fence intact. The content-free completed
+marker becomes TTL-eligible two hours after completion, twice the declared
+one-hour Firebase ID-token lifetime, and remains fenced until TTL deletes it.
+An exact duplicate returns the same completed marker without extending it;
+mismatched or malformed state fails closed. Firestore rules deny private writes
+on marker existence, not its timestamp, so TTL remains cleanup metadata only.
+
+The scheduled `reconcileAccountDeletionTombstones` function scans every 15
+minutes for exact pending rows at least 30 minutes old. It paginates past
+malformed rows and replays the same complete deletion worklist whether the Auth
+user still exists or was already removed. Cleanup, Auth removal, and the exact
+request marker are revalidated before completion; an unchanged failed pending
+row receives a fresh `updatedAt` so retries rotate fairly. The local Functions
+gate passes **115/115** unit tests, **7/7** deploy-lock tests, **18/18** cloud-
+operations validator tests, and **28/28** Auth/Firestore/Functions emulator
+tests, including a stale-token private write denied with HTTP 403 and direct
+invocation of the scheduled callback against the emulators. The focused iOS
+deletion/security lane passes **70/70**, the adjacent regression lane passes
+**55/55**, and a final frozen-source policy/recovery selection passes
+**23/23**. The complete unsigned `NoumTests` target passes **4,402 unique tests
+/ 4,421 device-configuration executions** with zero failures or skips. Its
+result bundle is
+`/private/tmp/noum-account-deletion-full-final-20260716.xcresult`. The current-
+source unsigned Release simulator build succeeds. A light simulator
+sweep renders the expected five tab tops and is recorded in
+`.screenshots/2026-07-16_account-deletion-fence/HANDOFF.md`; it does not cover
+the deletion sheet, relaunch recovery, support-only recovery, accessibility,
+or a live backend.
+
+This is scoped local boundary proof, not production deletion proof. The
+Functions, rules, index, and TTL policy are not deployed or operationally
+verified, and direct local callback invocation does not prove live scheduler
+delivery or TTL cleanup. The callable still has no durable client completion
+receipt or unauthenticated
+recovery route after Auth removal, so a lost successful reply remains support-
+only. Device-global AI-call diagnostics and backend work outside Ask Noum,
+Forward Plan, and recommendation sync still need a lifecycle/registry audit.
+No physical-device deletion, live-provider, professional, longitudinal,
+operational, or required external artifact was collected. Production
+readiness remains **NO-GO at 18/100 with 0/5 required external artifacts**.
+
 ## 2026-07-16 — Forward Plan provider context is metric-qualified
 
 The current source, developed above baseline `8f0107df1`, closes the bounded

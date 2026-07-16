@@ -13,18 +13,29 @@ import {
 } from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {setGlobalOptions} from "firebase-functions/v2";
-import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {
+  type CallableRequest,
+  HttpsError,
+  onCall,
+} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import {
+  ACCOUNT_DELETION_RECONCILIATION_BATCH_SIZE,
+  ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS,
   AccountDeletionPartialError,
   type AccountDeletionWork,
   accountDeletionLogMetadata,
+  accountDeletionStateAdmission,
   assertAppleRevocationSupported,
+  assertDeleteAccountRequestIdentity,
   assertRecentAuthentication,
+  completedAccountDeletionTombstone,
   deletionAuthenticationTime,
   executeAccountDeletionPlan,
   grantDeepgramTranscriptionToken,
   nextWindowRateState,
+  pendingAccountDeletionReconciliationCandidate,
   ProviderGrantError,
   TRANSCRIPTION_TOKEN_HOUR_LIMIT,
   TRANSCRIPTION_TOKEN_MINUTE_LIMIT,
@@ -2759,28 +2770,104 @@ function isAuthUserNotFound(error: unknown): boolean {
   return isRecord(error) && error.code === "auth/user-not-found";
 }
 
-export const deleteAccount = onCall(
-  {
-    enforceAppCheck: true,
-    timeoutSeconds: 540,
-    memory: "512MiB",
-    serviceAccount: ACCOUNT_RUNTIME_SERVICE_ACCOUNT,
-  },
-  async (request) => {
+type VerifiedAccountDeletionStateAdmission =
+  | "createPending"
+  | "resumePending"
+  | "alreadyCompleted";
+
+/**
+ * Converts exact stored deletion state into a safe request disposition.
+ * @param {unknown} data Stored server-owned marker, or undefined when absent.
+ * @param {string} accountID Verified Firebase UID and document ID.
+ * @param {string} requestID Validated durable deletion request UUID.
+ * @return {VerifiedAccountDeletionStateAdmission} Safe admission decision.
+ */
+function verifiedAccountDeletionStateAdmission(
+  data: unknown,
+  accountID: string,
+  requestID: string
+): VerifiedAccountDeletionStateAdmission {
+  const admission = accountDeletionStateAdmission(
+    data,
+    accountID,
+    requestID,
+    socialDateMilliseconds
+  );
+  if (admission === "invalid") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Account deletion state could not be verified.",
+      {reason: "account-deletion-state-mismatch"}
+    );
+  }
+  return admission;
+}
+
+type AccountDeletionExecutionResult =
+  | "deleted"
+  | "alreadyCompleted"
+  | "stateChanged";
+
+/**
+ * Executes the one shared deletion worklist for a callable or reconciliation.
+ * @param {CallableRequest<unknown>|null} request Verified callable request.
+ * @param {PendingAccountDeletionReconciliationCandidate|null} reconciliation
+ * Exact stale pending row selected by the server-only scheduled path.
+ * @return {Promise<AccountDeletionExecutionResult>} Safe terminal disposition.
+ */
+async function executeAccountDeletion(
+  request: CallableRequest<unknown> | null,
+  reconciliation: {
+    accountID: string;
+    requestID: string;
+  } | null = null
+): Promise<AccountDeletionExecutionResult> {
+  const startedAt = Date.now();
+  const firestore = getFirestore();
+  const auth = getAuth();
+  let uid: string;
+  let requestID: string;
+  let authUserExists: boolean;
+
+  if (request) {
     assertTrustedCaller(request.auth, request.app);
-    const uid = request.auth?.uid;
-    if (!uid) {
+    const authenticatedUID = request.auth?.uid;
+    if (!authenticatedUID) {
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
-    const requestID = validateDeleteAccountRequest(request.data);
-    const startedAt = Date.now();
+    const deletionRequest = validateDeleteAccountRequest(request.data);
+    assertDeleteAccountRequestIdentity(
+      deletionRequest.expectedAccountID,
+      authenticatedUID
+    );
+    uid = authenticatedUID;
+    requestID = deletionRequest.requestID;
     assertRecentAuthentication(
       deletionAuthenticationTime(request.auth?.token),
       startedAt
     );
 
-    const auth = getAuth();
-    let authUserExists = true;
+    const deletionStateRef = firestore.collection("_accountDeletionState")
+      .doc(uid);
+    const initialDeletionState = await deletionStateRef.get();
+    const initialAdmission = verifiedAccountDeletionStateAdmission(
+      initialDeletionState.exists ? initialDeletionState.data() : undefined,
+      uid,
+      requestID
+    );
+    if (initialAdmission === "alreadyCompleted") {
+      logger.info(
+        "deleteAccount already completed",
+        accountDeletionLogMetadata(
+          requestID,
+          "already-completed",
+          Date.now() - startedAt
+        )
+      );
+      return "alreadyCompleted";
+    }
+
+    authUserExists = true;
     let providerIDs: string[] = [];
     try {
       const user = await auth.getUser(uid);
@@ -2805,172 +2892,242 @@ export const deleteAccount = onCall(
     }
 
     assertAppleRevocationSupported(providerIDs);
-    const firestore = getFirestore();
-    const cutoverSnapshot = await firestore
-      .collection("_socialReferenceCutover").doc("current").get();
-    assertSocialReferenceCutoverComplete(cutoverSnapshot.data());
-
+  } else {
+    if (!reconciliation) {
+      throw new Error("Missing account deletion reconciliation candidate.");
+    }
+    uid = reconciliation.accountID;
+    requestID = reconciliation.requestID;
     const deletionStateRef = firestore.collection("_accountDeletionState")
       .doc(uid);
-    await firestore.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(deletionStateRef);
-      const existingStartedAt = socialDateMilliseconds(
-        snapshot.data()?.startedAt
-      );
-      transaction.set(deletionStateRef, {
-        schemaVersion: 1,
-        status: "pending",
-        accountID: uid,
-        requestID,
-        startedAt: Timestamp.fromMillis(existingStartedAt ?? startedAt),
-        updatedAt: Timestamp.now(),
-      });
-    });
+    const pendingState = await deletionStateRef.get();
+    const currentCandidate = pendingState.exists ?
+      pendingAccountDeletionReconciliationCandidate(
+        pendingState.data(),
+        pendingState.id,
+        startedAt,
+        socialDateMilliseconds
+      ) : null;
+    if (!currentCandidate ||
+          currentCandidate.accountID !== reconciliation.accountID ||
+          currentCandidate.requestID !== reconciliation.requestID) {
+      return "stateChanged";
+    }
+    let providerIDs: string[] = [];
+    try {
+      const user = await auth.getUser(uid);
+      providerIDs = user.providerData.map((provider) => provider.providerId);
+      authUserExists = true;
+    } catch (error) {
+      if (!isAuthUserNotFound(error)) throw error;
+      authUserExists = false;
+    }
+    assertAppleRevocationSupported(providerIDs);
+  }
 
-    const work: AccountDeletionWork = {
-      userTree: async () => {
-        await firestore.recursiveDelete(
-          firestore.collection("users").doc(uid)
+  const cutoverSnapshot = await firestore
+    .collection("_socialReferenceCutover").doc("current").get();
+  assertSocialReferenceCutoverComplete(cutoverSnapshot.data());
+
+  const deletionStateRef = firestore.collection("_accountDeletionState")
+    .doc(uid);
+  if (request) {
+    const pendingAdmission = await firestore.runTransaction(
+      async (transaction) => {
+        const snapshot = await transaction.get(deletionStateRef);
+        const admission = verifiedAccountDeletionStateAdmission(
+          snapshot.exists ? snapshot.data() : undefined,
+          uid,
+          requestID
         );
-      },
-      publicProfile: async () => {
-        await firestore.collection("profiles_public").doc(uid).delete();
-      },
-      leagueMemberships: async () => {
-        const snapshot = await firestore.collection("_socialReferences")
-          .doc(uid).get();
-        const references = validateSocialReferenceManifest(
-          snapshot.data(),
-          uid
-        );
-        const batch = firestore.batch();
-        for (const path of references.leagueMembershipPaths) {
-          batch.delete(firestore.doc(path));
+        if (admission === "createPending") {
+          transaction.set(deletionStateRef, {
+            schemaVersion: 2,
+            status: "pending",
+            accountID: uid,
+            requestID,
+            startedAt: Timestamp.fromMillis(startedAt),
+            updatedAt: Timestamp.now(),
+          });
+        } else if (admission === "resumePending") {
+          transaction.update(deletionStateRef, {updatedAt: Timestamp.now()});
         }
-        await batch.commit();
-      },
-      challenges: async () => {
-        const snapshot = await firestore.collection("_socialReferences")
-          .doc(uid).get();
-        const references = validateSocialReferenceManifest(
-          snapshot.data(),
-          uid
-        );
-        for (const challengeID of references.challengeIDs) {
-          const challengeRef = firestore.collection("challenges")
-            .doc(challengeID);
-          const challengeSnapshot = await challengeRef.get();
-          let otherAccountID: string | null = null;
-          if (challengeSnapshot.exists) {
-            const challenge = validateStoredChallenge(
-              challengeSnapshot.data(),
-              challengeID
-            );
-            const side = challengeSide(challenge, uid);
-            const otherSide = side === "creator" ? "opponent" : "creator";
-            const candidate = challenge[`${otherSide}AccountID`];
-            otherAccountID = typeof candidate === "string" ? candidate : null;
-          }
-          if (otherAccountID) {
-            const otherReferencesRef = firestore
-              .collection("_socialReferences").doc(otherAccountID);
-            await firestore.runTransaction(async (transaction) => {
-              const otherReferencesSnapshot = await transaction.get(
-                otherReferencesRef
-              );
-              if (!otherReferencesSnapshot.exists) return;
-              const otherReferences = validateSocialReferenceManifest(
-                otherReferencesSnapshot.data(),
-                otherAccountID
-              );
-              transaction.set(otherReferencesRef, {
-                ...otherReferences,
-                challengeIDs: otherReferences.challengeIDs.filter(
-                  (candidate) => candidate !== challengeID
-                ),
-              });
-            });
-          }
-          await firestore.recursiveDelete(challengeRef);
+        return admission;
+      }
+    );
+    if (pendingAdmission === "alreadyCompleted") {
+      logger.info(
+        "deleteAccount concurrently completed",
+        accountDeletionLogMetadata(
+          requestID,
+          "already-completed",
+          Date.now() - startedAt
+        )
+      );
+      return "alreadyCompleted";
+    }
+  } else {
+    const stillPending = await firestore.runTransaction(
+      async (transaction) => {
+        const current = await transaction.get(deletionStateRef);
+        const candidate = current.exists ?
+          pendingAccountDeletionReconciliationCandidate(
+            current.data(),
+            current.id,
+            Date.now(),
+            socialDateMilliseconds
+          ) : null;
+        return candidate?.accountID === uid &&
+            candidate.requestID === requestID;
+      }
+    );
+    if (!stillPending) return "stateChanged";
+  }
+
+  const work: AccountDeletionWork = {
+    userTree: async () => {
+      await firestore.recursiveDelete(
+        firestore.collection("users").doc(uid)
+      );
+    },
+    publicProfile: async () => {
+      await firestore.collection("profiles_public").doc(uid).delete();
+    },
+    leagueMemberships: async () => {
+      const snapshot = await firestore.collection("_socialReferences")
+        .doc(uid).get();
+      const references = validateSocialReferenceManifest(
+        snapshot.data(),
+        uid
+      );
+      const batch = firestore.batch();
+      for (const path of references.leagueMembershipPaths) {
+        batch.delete(firestore.doc(path));
+      }
+      await batch.commit();
+    },
+    challenges: async () => {
+      const snapshot = await firestore.collection("_socialReferences")
+        .doc(uid).get();
+      const references = validateSocialReferenceManifest(
+        snapshot.data(),
+        uid
+      );
+      for (const challengeID of references.challengeIDs) {
+        const challengeRef = firestore.collection("challenges")
+          .doc(challengeID);
+        const challengeSnapshot = await challengeRef.get();
+        let otherAccountID: string | null = null;
+        if (challengeSnapshot.exists) {
+          const challenge = validateStoredChallenge(
+            challengeSnapshot.data(),
+            challengeID
+          );
+          const side = challengeSide(challenge, uid);
+          const otherSide = side === "creator" ? "opponent" : "creator";
+          const candidate = challenge[`${otherSide}AccountID`];
+          otherAccountID = typeof candidate === "string" ? candidate : null;
         }
-      },
-      friendInvites: async () => {
-        const inviteCollection = firestore.collection("_socialFriendInvites");
-        const [inviteReferences, invited, accepted] = await Promise.all([
-          firestore.collection("_socialReferences").doc(uid)
-            .collection("friendInvites").get(),
-          inviteCollection.where("inviterAccountID", "==", uid).get(),
-          inviteCollection.where("acceptedAccountID", "==", uid).get(),
-        ]);
-        const inviteDigests = new Set<string>();
-        const participantIDs = new Map<string, Set<string>>();
-        const addParticipant = (digest: string, candidate: unknown) => {
-          if (typeof candidate !== "string" || candidate === uid ||
-              candidate.length < 1 || candidate.length > 128 ||
-              candidate.includes("/")) return;
-          const participants = participantIDs.get(digest) ?? new Set<string>();
-          participants.add(candidate);
-          participantIDs.set(digest, participants);
-        };
-        for (const document of inviteReferences.docs) {
-          inviteDigests.add(document.id);
-          try {
-            const reference = validateStoredFriendInviteReference(
-              document.data(),
-              uid,
-              document.id,
-              socialDateMilliseconds
-            );
-            addParticipant(document.id, reference.counterpartAccountID);
-          } catch {
-            addParticipant(
-              document.id,
-              document.data().counterpartAccountID
-            );
-          }
-        }
-        for (const document of [...invited.docs, ...accepted.docs]) {
-          inviteDigests.add(document.id);
-          addParticipant(document.id, document.data().inviterAccountID);
-          addParticipant(document.id, document.data().acceptedAccountID);
-        }
-        for (const digest of inviteDigests) {
+        if (otherAccountID) {
+          const otherReferencesRef = firestore
+            .collection("_socialReferences").doc(otherAccountID);
           await firestore.runTransaction(async (transaction) => {
-            transaction.delete(inviteCollection.doc(digest));
-            transaction.delete(
-              firestore.collection("_socialReferences").doc(uid)
-                .collection("friendInvites").doc(digest)
+            const otherReferencesSnapshot = await transaction.get(
+              otherReferencesRef
             );
-            for (const participantID of participantIDs.get(digest) ?? []) {
-              transaction.delete(
-                firestore.collection("_socialReferences")
-                  .doc(participantID)
-                  .collection("friendInvites").doc(digest)
-              );
-            }
+            if (!otherReferencesSnapshot.exists) return;
+            const otherReferences = validateSocialReferenceManifest(
+              otherReferencesSnapshot.data(),
+              otherAccountID
+            );
+            transaction.set(otherReferencesRef, {
+              ...otherReferences,
+              challengeIDs: otherReferences.challengeIDs.filter(
+                (candidate) => candidate !== challengeID
+              ),
+            });
           });
         }
-      },
-      friendLinks: async () => {
-        const snapshot = await firestore.collection("_socialReferences")
-          .doc(uid).get();
-        const safeAccountID = (candidate: unknown): candidate is string =>
-          typeof candidate === "string" && candidate !== uid &&
+        await firestore.recursiveDelete(challengeRef);
+      }
+    },
+    friendInvites: async () => {
+      const inviteCollection = firestore.collection("_socialFriendInvites");
+      const [inviteReferences, invited, accepted] = await Promise.all([
+        firestore.collection("_socialReferences").doc(uid)
+          .collection("friendInvites").get(),
+        inviteCollection.where("inviterAccountID", "==", uid).get(),
+        inviteCollection.where("acceptedAccountID", "==", uid).get(),
+      ]);
+      const inviteDigests = new Set<string>();
+      const participantIDs = new Map<string, Set<string>>();
+      const addParticipant = (digest: string, candidate: unknown) => {
+        if (typeof candidate !== "string" || candidate === uid ||
+              candidate.length < 1 || candidate.length > 128 ||
+              candidate.includes("/")) return;
+        const participants = participantIDs.get(digest) ?? new Set<string>();
+        participants.add(candidate);
+        participantIDs.set(digest, participants);
+      };
+      for (const document of inviteReferences.docs) {
+        inviteDigests.add(document.id);
+        try {
+          const reference = validateStoredFriendInviteReference(
+            document.data(),
+            uid,
+            document.id,
+            socialDateMilliseconds
+          );
+          addParticipant(document.id, reference.counterpartAccountID);
+        } catch {
+          addParticipant(
+            document.id,
+            document.data().counterpartAccountID
+          );
+        }
+      }
+      for (const document of [...invited.docs, ...accepted.docs]) {
+        inviteDigests.add(document.id);
+        addParticipant(document.id, document.data().inviterAccountID);
+        addParticipant(document.id, document.data().acceptedAccountID);
+      }
+      for (const digest of inviteDigests) {
+        await firestore.runTransaction(async (transaction) => {
+          transaction.delete(inviteCollection.doc(digest));
+          transaction.delete(
+            firestore.collection("_socialReferences").doc(uid)
+              .collection("friendInvites").doc(digest)
+          );
+          for (const participantID of participantIDs.get(digest) ?? []) {
+            transaction.delete(
+              firestore.collection("_socialReferences")
+                .doc(participantID)
+                .collection("friendInvites").doc(digest)
+            );
+          }
+        });
+      }
+    },
+    friendLinks: async () => {
+      const snapshot = await firestore.collection("_socialReferences")
+        .doc(uid).get();
+      const safeAccountID = (candidate: unknown): candidate is string =>
+        typeof candidate === "string" && candidate !== uid &&
           candidate.length >= 1 && candidate.length <= 128 &&
           !candidate.includes("/");
-        const manifestFriendIDs = new Set<string>();
-        const rawFriendIDs = snapshot.data()?.friendAccountIDs;
-        if (Array.isArray(rawFriendIDs)) {
-          for (const candidate of rawFriendIDs.slice(
-            0, MAX_ACTIVE_FRIENDS + 1
-          )) {
-            if (safeAccountID(candidate)) manifestFriendIDs.add(candidate);
-          }
+      const manifestFriendIDs = new Set<string>();
+      const rawFriendIDs = snapshot.data()?.friendAccountIDs;
+      if (Array.isArray(rawFriendIDs)) {
+        for (const candidate of rawFriendIDs.slice(
+          0, MAX_ACTIVE_FRIENDS + 1
+        )) {
+          if (safeAccountID(candidate)) manifestFriendIDs.add(candidate);
         }
-        let includeManifest = true;
-        let discoveringLinks = true;
-        while (discoveringLinks) {
-          const discoveryResults: [QuerySnapshot, QuerySnapshot] =
+      }
+      let includeManifest = true;
+      let discoveringLinks = true;
+      while (discoveringLinks) {
+        const discoveryResults: [QuerySnapshot, QuerySnapshot] =
             await Promise.all([
               firestore.collectionGroup("friends")
                 .where("accountID", "==", uid)
@@ -2979,149 +3136,299 @@ export const deleteAccount = onCall(
                 .where("friendAccountID", "==", uid)
                 .limit(MAX_ACTIVE_FRIENDS + 1).get(),
             ]);
-          const [ownedLinks, incomingLinks] = discoveryResults;
-          const linkDocuments = new Map<string, QueryDocumentSnapshot>(
-            [...ownedLinks.docs, ...incomingLinks.docs]
-              .map((document) => [document.ref.path, document] as const)
-          );
-          const friendAccountIDs = new Set<string>(
-            includeManifest ? manifestFriendIDs : []
-          );
-          includeManifest = false;
-          for (const document of linkDocuments.values()) {
-            const data = document.data();
-            if (data.accountID === uid && safeAccountID(data.friendAccountID)) {
-              friendAccountIDs.add(data.friendAccountID);
-            }
-            if (data.friendAccountID === uid && safeAccountID(data.accountID)) {
-              friendAccountIDs.add(data.accountID);
-            }
-            const ownerID = document.ref.parent.parent?.id;
-            if (ownerID === uid && safeAccountID(document.id)) {
-              friendAccountIDs.add(document.id);
-            } else if (document.id === uid && safeAccountID(ownerID)) {
-              friendAccountIDs.add(ownerID);
-            }
-          }
-          if (linkDocuments.size === 0 && friendAccountIDs.size === 0) {
-            discoveringLinks = false;
-            continue;
-          }
-          const friendReferences = [...friendAccountIDs].map(
-            (friendAccountID) => firestore.collection("_socialReferences")
-              .doc(friendAccountID)
-          );
-          const referenceSnapshots = await Promise.all(
-            friendReferences.map((reference) => reference.get())
-          );
-          const deleteReferences = new Map<string, DocumentReference>();
-          for (const document of linkDocuments.values()) {
-            deleteReferences.set(document.ref.path, document.ref);
-          }
-          for (const friendAccountID of friendAccountIDs) {
-            const ownLinkRef = firestore.collection("_socialFriendLinks")
-              .doc(uid).collection("friends").doc(friendAccountID);
-            const reciprocalLinkRef = firestore.collection("_socialFriendLinks")
-              .doc(friendAccountID).collection("friends").doc(uid);
-            deleteReferences.set(ownLinkRef.path, ownLinkRef);
-            deleteReferences.set(reciprocalLinkRef.path, reciprocalLinkRef);
-          }
-          const batch = firestore.batch();
-          for (const reference of deleteReferences.values()) {
-            batch.delete(reference);
-          }
-          for (const referenceSnapshot of referenceSnapshots) {
-            if (referenceSnapshot.exists) {
-              batch.update(referenceSnapshot.ref, {
-                friendAccountIDs: FieldValue.arrayRemove(uid),
-              });
-            }
-          }
-          await batch.commit();
-        }
-      },
-      competitiveObservations: async () => {
-        await Promise.all([
-          firestore.recursiveDelete(
-            firestore.collection("_competitiveCaptureIntents").doc(uid)
-          ),
-          firestore.recursiveDelete(
-            firestore.collection("_competitiveObservations").doc(uid)
-          ),
-        ]);
-      },
-      rateLimits: async () => {
-        await Promise.all([
-          firestore.collection("_serverRateLimits").doc(uid).delete(),
-          firestore.recursiveDelete(
-            firestore.collection("_socialState").doc(uid)
-          ),
-          firestore.recursiveDelete(
-            firestore.collection("_verifiedSessionEvidence").doc(uid)
-          ),
-          firestore.recursiveDelete(
-            firestore.collection("_socialFriendLinks").doc(uid)
-          ),
-        ]);
-      },
-      socialReferenceManifest: async () => {
-        await firestore.recursiveDelete(
-          firestore.collection("_socialReferences").doc(uid)
+        const [ownedLinks, incomingLinks] = discoveryResults;
+        const linkDocuments = new Map<string, QueryDocumentSnapshot>(
+          [...ownedLinks.docs, ...incomingLinks.docs]
+            .map((document) => [document.ref.path, document] as const)
         );
-      },
-      authUser: async () => {
-        if (!authUserExists) return;
-        try {
-          await auth.deleteUser(uid);
-        } catch (error) {
-          if (!isAuthUserNotFound(error)) throw error;
+        const friendAccountIDs = new Set<string>(
+          includeManifest ? manifestFriendIDs : []
+        );
+        includeManifest = false;
+        for (const document of linkDocuments.values()) {
+          const data = document.data();
+          if (data.accountID === uid && safeAccountID(data.friendAccountID)) {
+            friendAccountIDs.add(data.friendAccountID);
+          }
+          if (data.friendAccountID === uid && safeAccountID(data.accountID)) {
+            friendAccountIDs.add(data.accountID);
+          }
+          const ownerID = document.ref.parent.parent?.id;
+          if (ownerID === uid && safeAccountID(document.id)) {
+            friendAccountIDs.add(document.id);
+          } else if (document.id === uid && safeAccountID(ownerID)) {
+            friendAccountIDs.add(ownerID);
+          }
         }
-      },
-      deletionTombstone: async () => {
-        try {
-          await deletionStateRef.delete();
-        } catch (error) {
-          logger.warn(
-            "deleteAccount tombstone cleanup deferred",
-            accountDeletionLogMetadata(
-              requestID,
-              "tombstone-cleanup-deferred",
-              Date.now() - startedAt,
-              ["deletionTombstone"]
-            )
+        if (linkDocuments.size === 0 && friendAccountIDs.size === 0) {
+          discoveringLinks = false;
+          continue;
+        }
+        const friendReferences = [...friendAccountIDs].map(
+          (friendAccountID) => firestore.collection("_socialReferences")
+            .doc(friendAccountID)
+        );
+        const referenceSnapshots = await Promise.all(
+          friendReferences.map((reference) => reference.get())
+        );
+        const deleteReferences = new Map<string, DocumentReference>();
+        for (const document of linkDocuments.values()) {
+          deleteReferences.set(document.ref.path, document.ref);
+        }
+        for (const friendAccountID of friendAccountIDs) {
+          const ownLinkRef = firestore.collection("_socialFriendLinks")
+            .doc(uid).collection("friends").doc(friendAccountID);
+          const reciprocalLinkRef = firestore.collection("_socialFriendLinks")
+            .doc(friendAccountID).collection("friends").doc(uid);
+          deleteReferences.set(ownLinkRef.path, ownLinkRef);
+          deleteReferences.set(reciprocalLinkRef.path, reciprocalLinkRef);
+        }
+        const batch = firestore.batch();
+        for (const reference of deleteReferences.values()) {
+          batch.delete(reference);
+        }
+        for (const referenceSnapshot of referenceSnapshots) {
+          if (referenceSnapshot.exists) {
+            batch.update(referenceSnapshot.ref, {
+              friendAccountIDs: FieldValue.arrayRemove(uid),
+            });
+          }
+        }
+        await batch.commit();
+      }
+    },
+    competitiveObservations: async () => {
+      await Promise.all([
+        firestore.recursiveDelete(
+          firestore.collection("_competitiveCaptureIntents").doc(uid)
+        ),
+        firestore.recursiveDelete(
+          firestore.collection("_competitiveObservations").doc(uid)
+        ),
+      ]);
+    },
+    rateLimits: async () => {
+      await Promise.all([
+        firestore.collection("_serverRateLimits").doc(uid).delete(),
+        firestore.recursiveDelete(
+          firestore.collection("_socialState").doc(uid)
+        ),
+        firestore.recursiveDelete(
+          firestore.collection("_verifiedSessionEvidence").doc(uid)
+        ),
+        firestore.recursiveDelete(
+          firestore.collection("_socialFriendLinks").doc(uid)
+        ),
+      ]);
+    },
+    socialReferenceManifest: async () => {
+      await firestore.recursiveDelete(
+        firestore.collection("_socialReferences").doc(uid)
+      );
+    },
+    authUser: async () => {
+      if (!authUserExists) return;
+      try {
+        await auth.deleteUser(uid);
+      } catch (error) {
+        if (!isAuthUserNotFound(error)) throw error;
+      }
+    },
+    completedTombstone: async () => {
+      try {
+        await firestore.runTransaction(async (transaction) => {
+          const current = await transaction.get(deletionStateRef);
+          const admission = verifiedAccountDeletionStateAdmission(
+            current.exists ? current.data() : undefined,
+            uid,
+            requestID
           );
-          throw error;
-        }
-      },
-    };
+          if (admission === "alreadyCompleted") return;
+          if (admission !== "resumePending") {
+            throw new Error("Deletion fence was not pending at completion.");
+          }
+          transaction.set(deletionStateRef, completedAccountDeletionTombstone(
+            uid,
+            requestID,
+            Date.now()
+          ));
+        });
+      } catch (error) {
+        logger.warn(
+          "deleteAccount tombstone finalization deferred",
+          accountDeletionLogMetadata(
+            requestID,
+            "tombstone-finalization-deferred",
+            Date.now() - startedAt,
+            ["completedTombstone"]
+          )
+        );
+        throw error;
+      }
+    },
+  };
 
-    try {
-      await executeAccountDeletionPlan(work);
-      logger.info(
-        "deleteAccount completed",
-        accountDeletionLogMetadata(
-          requestID,
-          "ok",
-          Date.now() - startedAt
-        )
-      );
-      return {deleted: true, requestID};
-    } catch (error) {
-      const failedSteps = error instanceof AccountDeletionPartialError ?
-        error.failedSteps : [];
-      logger.error(
-        "deleteAccount failed",
-        accountDeletionLogMetadata(
-          requestID,
-          "partial-failure",
-          Date.now() - startedAt,
-          failedSteps
-        )
-      );
+  try {
+    await executeAccountDeletionPlan(work);
+    logger.info(
+      "deleteAccount completed",
+      accountDeletionLogMetadata(
+        requestID,
+        "ok",
+        Date.now() - startedAt
+      )
+    );
+    return "deleted";
+  } catch (error) {
+    const failedSteps = error instanceof AccountDeletionPartialError ?
+      error.failedSteps : [];
+    logger.error(
+      "deleteAccount failed",
+      accountDeletionLogMetadata(
+        requestID,
+        "partial-failure",
+        Date.now() - startedAt,
+        failedSteps
+      )
+    );
+    throw new HttpsError(
+      "internal",
+      "Account deletion did not complete. Try again."
+    );
+  }
+}
+
+export const deleteAccount = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 540,
+    memory: "512MiB",
+    serviceAccount: ACCOUNT_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateDeleteAccountRequest(request.data);
+    assertDeleteAccountRequestIdentity(input.expectedAccountID, uid);
+    const result = await executeAccountDeletion(request);
+    if (result !== "deleted" && result !== "alreadyCompleted") {
       throw new HttpsError(
         "internal",
         "Account deletion did not complete. Try again."
       );
     }
+    return {deleted: true, requestID: input.requestID};
+  }
+);
+
+export const reconcileAccountDeletionTombstones = onSchedule(
+  {
+    schedule: "every 15 minutes",
+    timeZone: "Etc/UTC",
+    timeoutSeconds: 300,
+    memory: "256MiB",
+    serviceAccount: ACCOUNT_RUNTIME_SERVICE_ACCOUNT,
+    retryCount: 3,
+    minBackoffSeconds: 60,
+    maxBackoffSeconds: 600,
+  },
+  async () => {
+    const startedAt = Date.now();
+    const firestore = getFirestore();
+    const cutoff = Timestamp.fromMillis(
+      startedAt - ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS
+    );
+    const pendingQuery = firestore.collection("_accountDeletionState")
+      .where("status", "==", "pending")
+      .where("updatedAt", "<=", cutoff)
+      .orderBy("updatedAt", "asc");
+    const candidates: Array<{accountID: string; requestID: string}> = [];
+    let cursor: QueryDocumentSnapshot | null = null;
+    let scanned = 0;
+    let reconciled = 0;
+    let retained = 0;
+    let superseded = 0;
+    let failures = 0;
+
+    while (candidates.length <
+        ACCOUNT_DELETION_RECONCILIATION_BATCH_SIZE) {
+      let pageQuery = pendingQuery.limit(
+        ACCOUNT_DELETION_RECONCILIATION_BATCH_SIZE
+      );
+      if (cursor) pageQuery = pageQuery.startAfter(cursor);
+      const page = await pageQuery.get();
+      scanned += page.size;
+      for (const document of page.docs) {
+        const candidate = pendingAccountDeletionReconciliationCandidate(
+          document.data(),
+          document.id,
+          startedAt,
+          socialDateMilliseconds
+        );
+        if (candidate) {
+          candidates.push(candidate);
+          if (candidates.length ===
+              ACCOUNT_DELETION_RECONCILIATION_BATCH_SIZE) break;
+        } else {
+          retained += 1;
+        }
+      }
+      cursor = page.docs.at(-1) ?? null;
+      if (page.empty || page.size <
+          ACCOUNT_DELETION_RECONCILIATION_BATCH_SIZE) break;
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const result = await executeAccountDeletion(null, candidate);
+        switch (result) {
+        case "deleted":
+        case "alreadyCompleted":
+          reconciled += 1;
+          break;
+        case "stateChanged":
+          superseded += 1;
+          break;
+        }
+      } catch {
+        failures += 1;
+        try {
+          await firestore.runTransaction(async (transaction) => {
+            const reference = firestore.collection("_accountDeletionState")
+              .doc(candidate.accountID);
+            const current = await transaction.get(reference);
+            const admission = verifiedAccountDeletionStateAdmission(
+              current.exists ? current.data() : undefined,
+              candidate.accountID,
+              candidate.requestID
+            );
+            if (admission === "resumePending") {
+              transaction.update(reference, {updatedAt: Timestamp.now()});
+            }
+          });
+        } catch {
+          // The original failed attempt is already counted and retried.
+        }
+      }
+    }
+
+    const metadata = {
+      operation: "reconcileAccountDeletionTombstones",
+      status: failures === 0 ? "ok" : "partial-failure",
+      scanned,
+      reconciled,
+      retained,
+      superseded,
+      failures,
+      latencyMs: Date.now() - startedAt,
+    };
+    if (failures > 0) {
+      logger.error("Account deletion reconciliation incomplete", metadata);
+      throw new Error("Account deletion reconciliation incomplete.");
+    }
+    logger.info("Account deletion reconciliation completed", metadata);
   }
 );

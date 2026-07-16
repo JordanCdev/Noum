@@ -4,10 +4,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {createHash} from "node:crypto";
 import {initializeApp} from "firebase-admin/app";
+import {getAuth as getAdminAuth} from "firebase-admin/auth";
 import {
   getFirestore as getAdminFirestore,
   Timestamp as AdminTimestamp,
 } from "firebase-admin/firestore";
+import {reconcileAccountDeletionTombstones} from "./index.js";
+import {ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS} from "./releaseSecurity.js";
 
 const projectID = process.env.GCLOUD_PROJECT ?? "noum-d0b6f";
 const productionProjectID = "noum-d0b6f";
@@ -50,6 +53,7 @@ const removeFriendLinkURL =
   `http://${functionsHost}/${projectID}/${region}/removeFriendLink`;
 const adminApp = initializeApp({projectId: projectID}, "social-emulator-tests");
 const adminFirestore = getAdminFirestore(adminApp);
+const adminAuth = getAdminAuth(adminApp);
 
 interface EmulatorIdentity {
   idToken: string;
@@ -579,11 +583,13 @@ test(
       {
         url: deletionURL,
         validShape: {
-          schemaVersion: 1,
+          schemaVersion: 2,
+          expectedAccountID: identity.localId,
           requestID: "783ab966-e91b-4ca4-8f7a-7e50113fa2c6",
         },
         invalidShape: {
-          schemaVersion: 1,
+          schemaVersion: 2,
+          expectedAccountID: identity.localId,
           requestID: "783ab966-e91b-4ca4-8f7a-7e50113fa2c6",
           accountID: identity.localId,
         },
@@ -752,6 +758,25 @@ test(
     }
   }
 );
+
+test("account deletion rejects a wrong expected UID before mutation", async () => {
+  const identity = await anonymousIdentity();
+  const response = await callable(
+    deletionURL,
+    {
+      schemaVersion: 2,
+      expectedAccountID: "different-account",
+      requestID: "193ab966-e91b-4ca4-8f7a-7e50113fa2c6",
+    },
+    identity,
+    true
+  );
+
+  assert.equal(response.status, 403);
+  assert.equal(await authAccountExists(identity), true);
+  assert.equal((await adminFirestore.collection("_accountDeletionState")
+    .doc(identity.localId).get()).exists, false);
+});
 
 test("social callables require the exact complete cutover marker", async () => {
   const identity = await anonymousIdentity();
@@ -1293,7 +1318,8 @@ test("friendship authority creates, validates, revokes, and deletes reciprocal s
   const deletion = await callable(
     deletionURL,
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      expectedAccountID: deleteOwner.localId,
       requestID: "6713738e-d9ed-4337-986e-09205089d42e",
     },
     deleteOwner,
@@ -2410,7 +2436,8 @@ test("legacy social data fails closed until exact cutover is backfilled", async 
     displayName: "Legacy User",
   });
   const request = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    expectedAccountID: identity.localId,
     requestID: "0713738e-d9ed-4337-986e-09205089d42e",
   };
   const blocked = await callable(deletionURL, request, identity, true);
@@ -2457,7 +2484,7 @@ test("legacy social data fails closed until exact cutover is backfilled", async 
     assert.equal((await adminFirestore.doc(path).get()).exists, false);
   }
   assert.equal((await adminFirestore.collection("_accountDeletionState")
-    .doc(identity.localId).get()).exists, false);
+    .doc(identity.localId).get()).data()?.status, "complete");
 });
 
 test("intermediate deletion failure preserves worklist and retries", async () => {
@@ -2499,7 +2526,8 @@ test("intermediate deletion failure preserves worklist and retries", async () =>
       friendAccountIDs: [identity.localId],
     }));
   const request = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    expectedAccountID: identity.localId,
     requestID: "A813738E-D9ED-4337-986E-09205089D42E",
   };
   const failed = await callable(deletionURL, request, identity, true);
@@ -2546,7 +2574,7 @@ test("intermediate deletion failure preserves worklist and retries", async () =>
   assert.equal((await adminFirestore.collection("_socialReferences")
     .doc(identity.localId).get()).exists, false);
   assert.equal((await adminFirestore.collection("_accountDeletionState")
-    .doc(identity.localId).get()).exists, false);
+    .doc(identity.localId).get()).data()?.status, "complete");
   const opponentReferences = await adminFirestore
     .collection("_socialReferences").doc(opponent.localId).get();
   assert.deepEqual(opponentReferences.data()?.challengeIDs, []);
@@ -2615,9 +2643,11 @@ test("anonymous deletion is complete and retry-safe", async () => {
     ),
   });
   const request = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    expectedAccountID: identity.localId,
     requestID: "a713738e-d9ed-4337-986e-09205089d42e",
   };
+  let retainedCompletedMarker: Record<string, unknown> | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await callable(
       deletionURL,
@@ -2636,8 +2666,39 @@ test("anonymous deletion is complete and retry-safe", async () => {
         .doc(identity.localId).get()).exists, false);
       assert.equal((await adminFirestore.collection("_socialReferences")
         .doc(identity.localId).get()).exists, false);
-      assert.equal((await adminFirestore.collection("_accountDeletionState")
-        .doc(identity.localId).get()).exists, false);
+      const completedDeletion = await adminFirestore
+        .collection("_accountDeletionState").doc(identity.localId).get();
+      const completedData = completedDeletion.data();
+      assert.equal(completedDeletion.exists, true);
+      assert.deepEqual(Object.keys(completedData ?? {}).sort(), [
+        "accountID",
+        "completedAt",
+        "expiresAt",
+        "requestID",
+        "schemaVersion",
+        "status",
+      ]);
+      assert.equal(completedData?.schemaVersion, 2);
+      assert.equal(completedData?.status, "complete");
+      assert.equal(completedData?.accountID, identity.localId);
+      assert.equal(completedData?.requestID, request.requestID);
+      const completedAt = completedData?.completedAt;
+      const expiresAt = completedData?.expiresAt;
+      assert.equal(completedAt instanceof AdminTimestamp, true);
+      assert.equal(expiresAt instanceof AdminTimestamp, true);
+      if (!(completedAt instanceof AdminTimestamp) ||
+          !(expiresAt instanceof AdminTimestamp)) {
+        throw new Error("Completed deletion timestamps were not retained.");
+      }
+      assert.equal(
+        expiresAt.toMillis() - completedAt.toMillis(),
+        ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS
+      );
+      assert.equal((await writeFirestoreDocument(
+        `users/${identity.localId}/sessions/${challengeID}`,
+        socialSessionFields(challengeID, Date.now() / 1_000),
+        identity
+      )).status, 403);
       assert.equal((await captureIntentRef.get()).exists, false);
       assert.equal((await observationRef.get()).exists, false);
       assert.equal((await replayClaimRef.get()).exists, true);
@@ -2647,8 +2708,152 @@ test("anonymous deletion is complete and retry-safe", async () => {
       const opponentReferences = await adminFirestore
         .collection("_socialReferences").doc(opponent.localId).get();
       assert.deepEqual(opponentReferences.data()?.challengeIDs, []);
+      retainedCompletedMarker = {
+        ...completedData,
+        completedAt: completedAt.toMillis(),
+        expiresAt: expiresAt.toMillis(),
+      };
+    } else {
+      const replayedData = (await adminFirestore
+        .collection("_accountDeletionState").doc(identity.localId).get()).data();
+      const replayedCompletedAt = replayedData?.completedAt;
+      const replayedExpiresAt = replayedData?.expiresAt;
+      assert.equal(replayedCompletedAt instanceof AdminTimestamp, true);
+      assert.equal(replayedExpiresAt instanceof AdminTimestamp, true);
+      if (!(replayedCompletedAt instanceof AdminTimestamp) ||
+          !(replayedExpiresAt instanceof AdminTimestamp)) {
+        throw new Error("Replayed deletion timestamps were not retained.");
+      }
+      assert.deepEqual({
+        ...replayedData,
+        completedAt: replayedCompletedAt.toMillis(),
+        expiresAt: replayedExpiresAt.toMillis(),
+      }, retainedCompletedMarker);
     }
   }
+
+  const mismatched = await callable(
+    deletionURL,
+    {...request, requestID: "b713738e-d9ed-4337-986e-09205089d42e"},
+    identity,
+    true
+  );
+  assert.equal(mismatched.status, 400);
+  assert.equal(
+    await callableFailureReason(mismatched),
+    "account-deletion-state-mismatch"
+  );
+  const unchangedData = (await adminFirestore
+    .collection("_accountDeletionState").doc(identity.localId).get()).data();
+  const unchangedCompletedAt = unchangedData?.completedAt;
+  const unchangedExpiresAt = unchangedData?.expiresAt;
+  assert.equal(unchangedCompletedAt instanceof AdminTimestamp, true);
+  assert.equal(unchangedExpiresAt instanceof AdminTimestamp, true);
+  if (!(unchangedCompletedAt instanceof AdminTimestamp) ||
+      !(unchangedExpiresAt instanceof AdminTimestamp)) {
+    throw new Error("Mismatched deletion altered retained timestamps.");
+  }
+  assert.deepEqual({
+    ...unchangedData,
+    completedAt: unchangedCompletedAt.toMillis(),
+    expiresAt: unchangedExpiresAt.toMillis(),
+  }, retainedCompletedMarker);
+});
+
+test("scheduled deletion reconciliation resumes and rotates durable work", async () => {
+  await seedSocialReferenceCutover();
+  const active = await anonymousIdentity();
+  const missing = await anonymousIdentity();
+  const failing = await anonymousIdentity();
+  const staleAt = AdminTimestamp.fromMillis(Date.now() - 31 * 60 * 1_000);
+  const pending = (identity: EmulatorIdentity, requestID: string) => ({
+    schemaVersion: 2,
+    status: "pending",
+    accountID: identity.localId,
+    requestID,
+    startedAt: staleAt,
+    updatedAt: staleAt,
+  });
+  const activeRequestID = "c713738e-d9ed-4337-986e-09205089d42e";
+  const missingRequestID = "d713738e-d9ed-4337-986e-09205089d42e";
+  const failingRequestID = "e713738e-d9ed-4337-986e-09205089d42e";
+  const activeStateRef = adminFirestore.collection("_accountDeletionState")
+    .doc(active.localId);
+  const missingStateRef = adminFirestore.collection("_accountDeletionState")
+    .doc(missing.localId);
+  const failingStateRef = adminFirestore.collection("_accountDeletionState")
+    .doc(failing.localId);
+  await Promise.all([
+    activeStateRef.set(pending(active, activeRequestID)),
+    missingStateRef.set(pending(missing, missingRequestID)),
+    failingStateRef.set(pending(failing, failingRequestID)),
+  ]);
+
+  const activeUserRef = adminFirestore.collection("users").doc(active.localId);
+  const missingUserRef = adminFirestore.collection("users").doc(missing.localId);
+  const failingUserRef = adminFirestore.collection("users").doc(failing.localId);
+  const missingLeaguePath =
+    `leagues/silver_2026-W29/members/${missing.localId}`;
+  await Promise.all([
+    activeUserRef.set({accountID: active.localId}),
+    missingUserRef.set({accountID: missing.localId}),
+    missingUserRef.collection("sessions").doc(missingRequestID)
+      .set({deletionFixture: true}),
+    failingUserRef.set({accountID: failing.localId}),
+    adminFirestore.collection("profiles_public").doc(missing.localId)
+      .set({accountID: missing.localId}),
+    adminFirestore.doc(missingLeaguePath).set({accountID: missing.localId}),
+    adminFirestore.collection("_socialReferences").doc(active.localId)
+      .set(socialManifest(active.localId)),
+    adminFirestore.collection("_socialReferences").doc(missing.localId)
+      .set(socialManifest(missing.localId, {
+        leagueMembershipPaths: [missingLeaguePath],
+      })),
+    adminFirestore.collection("_socialReferences").doc(failing.localId)
+      .set({...socialManifest(failing.localId), injected: true}),
+  ]);
+  await Promise.all([
+    adminAuth.deleteUser(missing.localId),
+    adminAuth.deleteUser(failing.localId),
+  ]);
+
+  await assert.rejects(async () => {
+    await reconcileAccountDeletionTombstones.run({
+      jobName: "noum-deletion-reconciliation-emulator",
+      scheduleTime: new Date().toISOString(),
+    });
+  });
+
+  assert.equal(await authAccountExists(active), false);
+  assert.equal((await activeUserRef.get()).exists, false);
+  assert.equal((await activeStateRef.get()).data()?.status, "complete");
+  assert.equal((await missingUserRef.get()).exists, false);
+  assert.equal((await adminFirestore.doc(missingLeaguePath).get()).exists, false);
+  const missingCompleted = (await missingStateRef.get()).data();
+  assert.equal(missingCompleted?.status, "complete");
+  assert.equal(missingCompleted?.requestID, missingRequestID);
+  const missingCompletedAt = missingCompleted?.completedAt;
+  const missingExpiresAt = missingCompleted?.expiresAt;
+  assert.equal(missingCompletedAt instanceof AdminTimestamp, true);
+  assert.equal(missingExpiresAt instanceof AdminTimestamp, true);
+  if (!(missingCompletedAt instanceof AdminTimestamp) ||
+      !(missingExpiresAt instanceof AdminTimestamp)) {
+    throw new Error("Reconciled deletion timestamps were not retained.");
+  }
+  assert.equal(
+    missingExpiresAt.toMillis() - missingCompletedAt.toMillis(),
+    ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS
+  );
+
+  assert.equal((await failingUserRef.get()).exists, false);
+  const deferred = (await failingStateRef.get()).data();
+  assert.equal(deferred?.status, "pending");
+  const deferredUpdatedAt = deferred?.updatedAt;
+  assert.equal(deferredUpdatedAt instanceof AdminTimestamp, true);
+  if (!(deferredUpdatedAt instanceof AdminTimestamp)) {
+    throw new Error("Failed deletion retry timestamp was not retained.");
+  }
+  assert.equal(deferredUpdatedAt.toMillis() > staleAt.toMillis(), true);
 });
 
 test("coach emulator rejects oversized input early", async () => {

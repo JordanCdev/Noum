@@ -41,11 +41,22 @@ EXPECTED_CALLABLES = {
     "syncRecommendationState": "RECOMMENDATION_RUNTIME_SERVICE_ACCOUNT",
     "deleteAccount": "ACCOUNT_RUNTIME_SERVICE_ACCOUNT",
 }
+EXPECTED_SCHEDULED_FUNCTIONS = {
+    "reconcileAccountDeletionTombstones": "ACCOUNT_RUNTIME_SERVICE_ACCOUNT",
+}
+EXPECTED_FUNCTIONS = {
+    **EXPECTED_CALLABLES,
+    **EXPECTED_SCHEDULED_FUNCTIONS,
+}
 
 BROAD_RUNTIME_ROLES = {"roles/owner", "roles/editor"}
 VERTEX_RUNTIME_ROLE = "roles/aiplatform.user"
 CALLABLE_PATTERN = re.compile(
     r"^export const (?P<name>[A-Za-z][A-Za-z0-9]*) = onCall\(",
+    re.MULTILINE,
+)
+SCHEDULE_PATTERN = re.compile(
+    r"^export const (?P<name>[A-Za-z][A-Za-z0-9]*) = onSchedule\(",
     re.MULTILINE,
 )
 
@@ -63,8 +74,8 @@ def runtime_email(constant: str, project: str = PRODUCTION_PROJECT) -> str:
     return f"{RUNTIME_IDENTITIES[constant]}@{project}.iam.gserviceaccount.com"
 
 
-def _call_block(source: str, match: re.Match[str]) -> str:
-    """Return one complete onCall expression using a small lexical scanner."""
+def _trigger_block(source: str, match: re.Match[str]) -> str:
+    """Return one complete function expression using a small lexical scanner."""
     start = match.end() - 1
     depth = 0
     quote: str | None = None
@@ -116,7 +127,7 @@ def _call_block(source: str, match: re.Match[str]) -> str:
             if depth == 0:
                 return source[match.start() : index + 1]
         index += 1
-    raise ContractError([f"{match.group('name')} has an unterminated onCall expression."])
+    raise ContractError([f"{match.group('name')} has an unterminated trigger expression."])
 
 
 def validate_source_contract(source: str) -> list[str]:
@@ -152,7 +163,7 @@ def validate_source_contract(source: str) -> list[str]:
         expected_constant = EXPECTED_CALLABLES.get(name)
         if expected_constant is None:
             continue
-        block = _call_block(source, match)
+        block = _trigger_block(source, match)
         if not re.search(r"\benforceAppCheck\s*:\s*true\b", block):
             failures.append(f"{name} must enforce App Check in its onCall options.")
         service_account = re.search(
@@ -169,12 +180,52 @@ def validate_source_contract(source: str) -> list[str]:
         ):
             failures.append(f"{name} must call the shared trusted-caller boundary.")
 
+    schedule_matches = list(SCHEDULE_PATTERN.finditer(source))
+    schedule_names = [match.group("name") for match in schedule_matches]
+    actual_schedules = set(schedule_names)
+    expected_schedules = set(EXPECTED_SCHEDULED_FUNCTIONS)
+    duplicate_schedules = sorted(
+        name for name in actual_schedules if schedule_names.count(name) > 1
+    )
+    missing_schedules = sorted(expected_schedules - actual_schedules)
+    unexpected_schedules = sorted(actual_schedules - expected_schedules)
+    if duplicate_schedules:
+        failures.append(
+            "Duplicate scheduled exports: " + ", ".join(duplicate_schedules)
+        )
+    if missing_schedules:
+        failures.append(
+            "Missing scheduled exports: " + ", ".join(missing_schedules)
+        )
+    if unexpected_schedules:
+        failures.append(
+            "Unexpected scheduled exports: " + ", ".join(unexpected_schedules)
+        )
+    for match in schedule_matches:
+        name = match.group("name")
+        expected_constant = EXPECTED_SCHEDULED_FUNCTIONS.get(name)
+        if expected_constant is None:
+            continue
+        block = _trigger_block(source, match)
+        service_account = re.search(
+            r"\bserviceAccount\s*:\s*([A-Z][A-Z0-9_]*)\b", block
+        )
+        if service_account is None or service_account.group(1) != expected_constant:
+            failures.append(
+                f"{name} must use {expected_constant}, not "
+                f"{service_account.group(1) if service_account else 'an absent identity'}."
+            )
+        if not re.search(r'\bschedule\s*:\s*"every 15 minutes"', block):
+            failures.append(f"{name} must retain the reviewed 15-minute schedule.")
+
     if failures:
         raise ContractError(failures)
     return [
         f"Source exports exactly {len(EXPECTED_CALLABLES)} reviewed callables",
+        f"Source exports exactly {len(EXPECTED_SCHEDULED_FUNCTIONS)} "
+        "server-only schedule",
         "Every callable enforces App Check and the shared trusted-caller boundary",
-        "Every callable uses its reviewed dedicated runtime identity",
+        "Every function uses its reviewed dedicated runtime identity",
     ]
 
 
@@ -232,15 +283,15 @@ def validate_cloud_snapshot(
         failures.append("Functions inventory contains malformed or duplicate names.")
 
     actual = set(deployed)
-    expected = set(EXPECTED_CALLABLES)
+    expected = set(EXPECTED_FUNCTIONS)
     missing = sorted(expected - actual)
     unexpected = sorted(actual - expected)
     if missing:
-        failures.append("Missing deployed callables: " + ", ".join(missing))
+        failures.append("Missing deployed functions: " + ", ".join(missing))
     if unexpected:
-        failures.append("Unexpected deployed callables: " + ", ".join(unexpected))
+        failures.append("Unexpected deployed functions: " + ", ".join(unexpected))
 
-    for name, constant in EXPECTED_CALLABLES.items():
+    for name, constant in EXPECTED_FUNCTIONS.items():
         entry = deployed.get(name)
         if entry is None:
             continue
@@ -360,8 +411,8 @@ def validate_cloud_snapshot(
     if failures:
         raise ContractError(failures)
     return [
-        f"All {len(EXPECTED_CALLABLES)} reviewed callables are ACTIVE in {region}",
-        "Every callable uses its reviewed dedicated runtime identity",
+        f"All {len(EXPECTED_FUNCTIONS)} reviewed functions are ACTIVE in {region}",
+        "Every function uses its reviewed dedicated runtime identity",
         "Dedicated runtimes have no Owner/Editor grants or unauthorized Vertex access",
         "Only the transcription runtime can read the Deepgram secret",
         "Default compute identities retain no reviewed broad role",

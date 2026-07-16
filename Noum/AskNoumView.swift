@@ -519,6 +519,7 @@ struct AskNoumView: View {
     @State private var revealTask: Task<Void, Never>? = nil
     @State private var replyTask: Task<Void, Never>? = nil
     @State private var pendingReplyCoachID: UUID? = nil
+    @State private var pendingReplyLease: AskNoumReplyLease? = nil
 
     // Voice input wrapper — shipped in `AskNoumVoiceInput.swift`. Single
     // instance per view so the tap-to-toggle lifecycle owns the audio
@@ -811,9 +812,17 @@ struct AskNoumView: View {
             // stack). The store hands back the matching coachID once
             // and clears its own signal — so re-mounts of this view
             // won't fire a second reply for the same opener.
-            if let coachID = store.consumePendingInjectedCoachID() {
+            if let coachID = store.consumePendingInjectedCoachID(),
+               let replyLease = store.replyLease(for: coachID) {
                 replyTask?.cancel()
-                replyTask = Task { await runInjectedReplyAfterPreflight(coachID: coachID) }
+                pendingReplyCoachID = coachID
+                pendingReplyLease = replyLease
+                replyTask = Task {
+                    await runInjectedReplyAfterPreflight(
+                        coachID: coachID,
+                        expected: replyLease
+                    )
+                }
             }
         }
         .task {
@@ -835,9 +844,13 @@ struct AskNoumView: View {
             // Never let a half-written reveal mutate state after we've left.
             revealTask?.cancel()
             replyTask?.cancel()
-            if let pendingReplyCoachID {
-                store.cancelPendingCoachTurn(id: pendingReplyCoachID)
+            if let pendingReplyCoachID, let pendingReplyLease {
+                _ = store.cancelPendingCoachTurn(
+                    id: pendingReplyCoachID,
+                    expected: pendingReplyLease
+                )
                 self.pendingReplyCoachID = nil
+                self.pendingReplyLease = nil
             }
         }
     }
@@ -1490,6 +1503,7 @@ struct AskNoumView: View {
         // Skip if we already have chips for this reply — view rebuilds
         // must not re-roll generation.
         if store.aiChips(for: coachID) != nil { return }
+        guard let sendAdmission = store.sendAdmission() else { return }
         // Find the coach reply + the user turn that preceded it. The
         // generation request needs both for context-tailoring.
         guard let coachIdx = store.messages.firstIndex(where: { $0.id == coachID }) else { return }
@@ -1520,20 +1534,45 @@ struct AskNoumView: View {
             sessions: sessionStore.sessions,
             baseline: baselineStore.baseline
         )
-        Task {
+        guard let providerLease = store.auxiliaryProviderLease(
+            expected: sendAdmission
+        ) else { return }
+        let providerTask = Task { @MainActor in
+            defer {
+                store.unregisterAuxiliaryProviderWork(expected: providerLease)
+            }
+            guard store.auxiliaryProviderWorkIsCurrent(providerLease),
+                  !Task.isCancelled else {
+                return
+            }
             let generated = await CoachContextBuilder.generateAIFollowUpChips(
                 lastUserTurn: lastUserTurn,
                 lastCoachReply: coachReply,
                 voice: voiceCapture,
-                recentSessionDigest: digestCapture
+                recentSessionDigest: digestCapture,
+                performRequest: { request in
+                    try await store.performAuxiliaryProviderRequest(
+                        request,
+                        expected: providerLease
+                    )
+                }
             )
             // Cache only on success — nil means no chip row. Deterministic
             // suggestions stay eligibility-only and are not user-visible.
             if let chips = generated, !chips.isEmpty {
-                await MainActor.run {
-                    store.setAIChips(chips, for: coachID)
-                }
+                _ = store.setAIChips(
+                    chips,
+                    for: coachID,
+                    expected: sendAdmission
+                )
             }
+        }
+        guard store.registerAuxiliaryProviderWorkCancellation(
+            expected: providerLease,
+            cancel: { providerTask.cancel() }
+        ) else {
+            providerTask.cancel()
+            return
         }
     }
 
@@ -1591,6 +1630,7 @@ struct AskNoumView: View {
         let signature = starterSignature
         // Skip if we already have starters for this signature.
         if store.starterChips(for: signature) != nil { return }
+        guard let sendAdmission = store.sendAdmission() else { return }
         let voiceCapture = voice
         let momentCapture = bigMomentStore.activeMoment
         let baselineCapture = baselineStore.baseline
@@ -1601,19 +1641,52 @@ struct AskNoumView: View {
             sessions: sessionStore.sessions,
             baseline: baselineCapture
         )
-        let generated = await CoachContextBuilder.generateAIStarterPrompts(
-            voice: voiceCapture,
-            bigMoment: momentCapture,
-            baseline: baselineCapture,
-            profile: profileCapture,
-            weeklyCheckInDue: weeklyCheckInDueCapture,
-            recentSessionDigest: digestCapture
+        guard let providerLease = store.auxiliaryProviderLease(
+            expected: sendAdmission
+        ) else { return }
+        let providerTask = Task { @MainActor in
+            defer {
+                store.unregisterAuxiliaryProviderWork(expected: providerLease)
+            }
+            guard store.auxiliaryProviderWorkIsCurrent(providerLease),
+                  !Task.isCancelled else {
+                return nil as [String]?
+            }
+            return await CoachContextBuilder.generateAIStarterPrompts(
+                voice: voiceCapture,
+                bigMoment: momentCapture,
+                baseline: baselineCapture,
+                profile: profileCapture,
+                weeklyCheckInDue: weeklyCheckInDueCapture,
+                recentSessionDigest: digestCapture,
+                performRequest: { request in
+                    try await store.performAuxiliaryProviderRequest(
+                        request,
+                        expected: providerLease
+                    )
+                }
+            )
+        }
+        guard store.registerAuxiliaryProviderWorkCancellation(
+            expected: providerLease,
+            cancel: { providerTask.cancel() }
+        ) else {
+            providerTask.cancel()
+            return
+        }
+        let generated = await withTaskCancellationHandler(
+            operation: { await providerTask.value },
+            onCancel: { providerTask.cancel() }
         )
         // Cache only on success — nil leaves no suggested ask. That is
         // quieter and more honest than showing canned coach copy.
         if let chips = generated, !chips.isEmpty {
             await MainActor.run {
-                store.setStarterChips(chips, for: signature)
+                _ = store.setStarterChips(
+                    chips,
+                    for: signature,
+                    expected: sendAdmission
+                )
             }
         }
     }
@@ -2615,20 +2688,28 @@ struct AskNoumView: View {
     }
 
     private func retryLastTurn() {
-        guard !isPreparingSend else { return }
+        guard !isPreparingSend,
+              let sendAdmission = store.sendAdmission() else { return }
         isPreparingSend = true
         replyTask?.cancel()
         replyTask = Task { @MainActor in
             defer { isPreparingSend = false }
             liveCoachAvailability = .checking
             let availability = await AICoachChatService.shared.availability()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  store.sendAdmissionIsCurrent(sendAdmission) else { return }
             liveCoachAvailability = availability
             guard availability == .available,
-                  let coachID = store.prepareRetry() else { return }
-            pendingReplyCoachID = coachID
-            await runReply(coachID: coachID)
-            if pendingReplyCoachID == coachID { pendingReplyCoachID = nil }
+                  let retry = store.prepareRetry(expected: sendAdmission) else {
+                return
+            }
+            pendingReplyCoachID = retry.coachID
+            pendingReplyLease = retry.lease
+            await runReply(
+                coachID: retry.coachID,
+                expected: retry.lease
+            )
+            clearPendingReplyTracking(coachID: retry.coachID)
         }
     }
 
@@ -2989,14 +3070,17 @@ struct AskNoumView: View {
         // paths call send() directly, so a rapid second chip or an already-open
         // menu could mint a second pending row + a second CoachReplyPipeline run
         // (double Gemini spend, racing replies). Guard once at the funnel.
-        guard !store.isAwaitingReply, !isPreparingSend else { return }
+        guard !store.isAwaitingReply,
+              !isPreparingSend,
+              let sendAdmission = store.sendAdmission() else { return }
         isPreparingSend = true
         replyTask?.cancel()
         replyTask = Task { @MainActor in
             defer { isPreparingSend = false }
             liveCoachAvailability = .checking
             let availability = await AICoachChatService.shared.availability()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  store.sendAdmissionIsCurrent(sendAdmission) else { return }
             liveCoachAvailability = availability
             guard availability == .available else {
                 if preserveAsDraftWhenUnavailable { draft = text }
@@ -3008,17 +3092,31 @@ struct AskNoumView: View {
             if detectIntent {
                 pendingGoalIntent = CoachContextBuilder.detectGoalIntent(text, currentVoice: voice)
             }
-            let ids = store.appendUserTurn(text)
-            pendingReplyCoachID = ids.coachID
-            await runReply(coachID: ids.coachID)
-            if pendingReplyCoachID == ids.coachID { pendingReplyCoachID = nil }
+            guard let dispatch = store.appendUserTurn(
+                text,
+                expected: sendAdmission
+            ) else { return }
+            pendingReplyCoachID = dispatch.coachID
+            pendingReplyLease = dispatch.lease
+            await runReply(
+                coachID: dispatch.coachID,
+                expected: dispatch.lease
+            )
+            clearPendingReplyTracking(coachID: dispatch.coachID)
         }
     }
 
     @MainActor
     private func refreshAvailability() async {
+        guard let sendAdmission = store.sendAdmission() else {
+            liveCoachAvailability = .unavailable(.authenticationPending)
+            return
+        }
         liveCoachAvailability = .checking
-        liveCoachAvailability = await AICoachChatService.shared.availability()
+        let availability = await AICoachChatService.shared.availability()
+        guard !Task.isCancelled,
+              store.sendAdmissionIsCurrent(sendAdmission) else { return }
+        liveCoachAvailability = availability
     }
 
     private var isCoachAvailable: Bool {
@@ -3026,30 +3124,55 @@ struct AskNoumView: View {
     }
 
     @MainActor
-    private func runInjectedReplyAfterPreflight(coachID: UUID) async {
-        pendingReplyCoachID = coachID
-        await refreshAvailability()
+    private func runInjectedReplyAfterPreflight(
+        coachID: UUID,
+        expected replyLease: AskNoumReplyLease
+    ) async {
+        guard store.replyLeaseIsCurrent(replyLease) else {
+            clearPendingReplyTracking(coachID: coachID)
+            return
+        }
+        liveCoachAvailability = .checking
+        let availability = await AICoachChatService.shared.availability()
+        guard store.replyLeaseIsCurrent(replyLease) else {
+            clearPendingReplyTracking(coachID: coachID)
+            return
+        }
+        liveCoachAvailability = availability
         guard !Task.isCancelled else {
-            store.cancelPendingCoachTurn(id: coachID)
+            _ = store.cancelPendingCoachTurn(
+                id: coachID,
+                expected: replyLease
+            )
+            clearPendingReplyTracking(coachID: coachID)
             return
         }
-        guard isCoachAvailable else {
-            store.completeCoachTurn(id: coachID, outcome: .failure(.network))
-            if pendingReplyCoachID == coachID { pendingReplyCoachID = nil }
+        guard availability == .available else {
+            _ = store.completeCoachTurn(
+                id: coachID,
+                outcome: .failure(.network),
+                expected: replyLease
+            )
+            clearPendingReplyTracking(coachID: coachID)
             return
         }
-        await runReply(coachID: coachID)
-        if pendingReplyCoachID == coachID { pendingReplyCoachID = nil }
+        await runReply(coachID: coachID, expected: replyLease)
+        clearPendingReplyTracking(coachID: coachID)
     }
 
-    private func runReply(coachID: UUID) async {
+    private func runReply(
+        coachID: UUID,
+        expected replyLease: AskNoumReplyLease
+    ) async {
         // Context assembly + model call + row hydration is shared with the live
         // call view via `CoachReplyPipeline` (one brain for both surfaces). The
         // spoken-reply decision stays here because it differs by surface.
         let outcome = await CoachReplyPipeline.generate(
             coachID: coachID,
-            pendingGoalIntent: pendingGoalIntent
+            pendingGoalIntent: pendingGoalIntent,
+            expectedReplyLease: replyLease
         )
+        guard store.replyLeaseScopeIsCurrent(replyLease) else { return }
         let route = AskNoumSpokenMode.spokenRoute(
             outcome: outcome,
             spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
@@ -3073,6 +3196,12 @@ struct AskNoumView: View {
             allowOnDeviceFallback: true,
             onDeviceOnly: false
         )
+    }
+
+    private func clearPendingReplyTracking(coachID: UUID) {
+        guard pendingReplyCoachID == coachID else { return }
+        pendingReplyCoachID = nil
+        pendingReplyLease = nil
     }
 
     /// Progressively reveal a just-landed coach reply, word by word, so the

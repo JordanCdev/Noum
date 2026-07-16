@@ -4944,7 +4944,8 @@ enum CoachContextBuilder {
         profile: CoachingProfile? = nil,
         weeklyCheckInDue: Bool = false,
         recentSessionDigest: String? = nil,
-        count: Int = 3
+        count: Int = 3,
+        performRequest: (URLRequest) async throws -> (Data, URLResponse)
     ) async -> [String]? {
         func record(
             _ outcome: AICallDiagnosticOutcome,
@@ -4963,14 +4964,19 @@ enum CoachContextBuilder {
             )
         }
 
+        guard !Task.isCancelled else { return nil }
+
         // Locale + provider gates first — match `generateAIFollowUpChips`,
         // `AICoachChatService`, and `AIPromptGeneratorService`. Reading
         // state on the main actor since both stores live there.
-        guard await activeLocaleSupportsAI() else {
+        let localeSupported = await activeLocaleSupportsAI()
+        guard !Task.isCancelled else { return nil }
+        guard localeSupported else {
             record(.skipped, "Locale not AI-supported")
             return nil
         }
         let configuredProvider = await currentProvider()
+        guard !Task.isCancelled else { return nil }
         guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
@@ -5029,7 +5035,8 @@ enum CoachContextBuilder {
             }
 
             let startedAt = Date()
-            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled else { return nil }
+            let (data, response) = try await performRequest(request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode
                 record(
@@ -5054,7 +5061,10 @@ enum CoachContextBuilder {
             }
             record(.success, "Starter chips accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             return chips
+        } catch is CancellationError {
+            return nil
         } catch {
+            guard !Task.isCancelled else { return nil }
             record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
@@ -5727,7 +5737,8 @@ enum CoachContextBuilder {
         lastCoachReply: String,
         voice: SpeakingStyleGoal?,
         recentSessionDigest: String? = nil,
-        count: Int = 3
+        count: Int = 3,
+        performRequest: (URLRequest) async throws -> (Data, URLResponse)
     ) async -> [String]? {
         func record(
             _ outcome: AICallDiagnosticOutcome,
@@ -5748,6 +5759,7 @@ enum CoachContextBuilder {
 
         let trimmedReply = lastCoachReply.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTurn = lastUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !Task.isCancelled else { return nil }
         guard !trimmedReply.isEmpty, !trimmedTurn.isEmpty else {
             record(.skipped, "Missing conversation context")
             return nil
@@ -5756,11 +5768,14 @@ enum CoachContextBuilder {
         // Locale + provider gates first — match what AICoachChatService
         // and AIPromptGeneratorService do. Reading state on the main
         // actor since both stores live there.
-        guard await activeLocaleSupportsAI() else {
+        let localeSupported = await activeLocaleSupportsAI()
+        guard !Task.isCancelled else { return nil }
+        guard localeSupported else {
             record(.skipped, "Locale not AI-supported")
             return nil
         }
         let configuredProvider = await currentProvider()
+        guard !Task.isCancelled else { return nil }
         guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
@@ -5819,7 +5834,8 @@ enum CoachContextBuilder {
             }
 
             let startedAt = Date()
-            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled else { return nil }
+            let (data, response) = try await performRequest(request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode
                 record(
@@ -5846,7 +5862,10 @@ enum CoachContextBuilder {
             }
             record(.success, "Follow-up chips accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             return chips
+        } catch is CancellationError {
+            return nil
         } catch {
+            guard !Task.isCancelled else { return nil }
             record(.failure, "Transport or decode error", provider: provider)
             return nil
         }

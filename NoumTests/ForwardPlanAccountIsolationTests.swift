@@ -39,6 +39,7 @@ struct ForwardPlanAccountIsolationTests {
                 accountIDProvider: { self.accountID },
                 accountLifecycleGenerationProvider: { self.lifecycle },
                 accountIsReadyProvider: { self.isReady },
+                providerWorkAllowedProvider: { _ in true },
                 sessionStoreEpochProvider: { self.sessionStoreEpoch },
                 executionAuthorizationProvider: {
                     self.executionAuthorization

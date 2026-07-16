@@ -171,6 +171,7 @@ struct ReleaseIdentityPrivacyTests {
         #expect(AccountDeletionError.requiresRecentAuthentication.requiresReauthentication)
         #expect(!AccountDeletionError.serviceUnavailable.requiresReauthentication)
         #expect(AccountDeletionError.appleRevocationUnavailable.localizedDescription.contains("unchanged"))
+        #expect(AccountDeletionError.secureDataUpgradeIncomplete.localizedDescription.contains("unchanged"))
         #expect(AccountDeletionError.serviceUnavailable.localizedDescription.contains("unchanged"))
     }
 

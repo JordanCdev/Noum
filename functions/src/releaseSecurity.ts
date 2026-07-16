@@ -3,6 +3,13 @@ import {HttpsError} from "firebase-functions/v2/https";
 export const TRANSCRIPTION_TOKEN_MINUTE_LIMIT = 6;
 export const TRANSCRIPTION_TOKEN_HOUR_LIMIT = 60;
 export const RECENT_AUTH_MAX_AGE_MS = 5 * 60 * 1_000;
+/** Maximum lifetime of a Firebase Auth ID token after issuance. */
+export const FIREBASE_ID_TOKEN_MAX_LIFETIME_MS = 60 * 60 * 1_000;
+/** Two full token windows keep deletion fenced through clock skew and retry. */
+export const ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS =
+  2 * FIREBASE_ID_TOKEN_MAX_LIFETIME_MS;
+export const ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS = 30 * 60 * 1_000;
+export const ACCOUNT_DELETION_RECONCILIATION_BATCH_SIZE = 100;
 
 const DEEPGRAM_GRANT_URL = "https://api.deepgram.com/v1/auth/grant";
 const MAX_CLOCK_SKEW_MS = 60_000;
@@ -66,7 +73,7 @@ export interface DeepgramGrantDependencies {
 /**
  * Ordered deletion steps. The exact social worklist is a data finalizer: it
  * runs only after every dependent cleanup succeeds. Auth follows it, while
- * the pending-deletion tombstone remains until Auth is gone.
+ * the deletion fence remains and is finalized as a retained completed marker.
  */
 const ACCOUNT_DELETION_DEPENDENT_STEPS = [
   "userTree",
@@ -83,7 +90,7 @@ export const ACCOUNT_DELETION_STEPS = [
   ...ACCOUNT_DELETION_DEPENDENT_STEPS,
   "socialReferenceManifest",
   "authUser",
-  "deletionTombstone",
+  "completedTombstone",
 ] as const;
 
 export type AccountDeletionStep = typeof ACCOUNT_DELETION_STEPS[number];
@@ -113,6 +120,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * True only when a stored server record has exactly the allowed fields.
+ * @param {Record<string, unknown>} value Stored server record.
+ * @param {string[]} expected Allowed field names.
+ * @return {boolean} Whether the record has exactly the allowed fields.
+ */
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[]
+): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index]);
+}
+
+/**
  * Validates a no-argument, versioned callable request.
  * Extra fields are rejected so a client-supplied account ID can never become
  * an accidental source of authority.
@@ -129,23 +151,194 @@ export function validateTranscriptionTokenRequest(data: unknown): void {
   }
 }
 
+/** Versioned destructive request bound to one expected authenticated UID. */
+export interface DeleteAccountRequest {
+  requestID: string;
+  expectedAccountID: string;
+}
+
+/** Minimal server-owned marker retained beyond any stale Firebase ID token. */
+export interface CompletedAccountDeletionTombstone {
+  schemaVersion: 2;
+  status: "complete";
+  accountID: string;
+  requestID: string;
+  completedAt: Date;
+  expiresAt: Date;
+}
+
+/** Admission decision for one server-owned deletion-fence snapshot. */
+export type AccountDeletionStateAdmission =
+  | "createPending"
+  | "resumePending"
+  | "alreadyCompleted"
+  | "invalid";
+
+/** Exact stale pending row eligible for scheduled full-worklist resumption. */
+export interface PendingAccountDeletionReconciliationCandidate {
+  accountID: string;
+  requestID: string;
+}
+
+/** Timestamp projection shared by Firestore and deterministic tests. */
+export type AccountDeletionTimestampMilliseconds =
+  (value: unknown) => number | null;
+
 /**
- * Validates the idempotency identifier on destructive account requests.
- * @param {unknown} data Raw callable payload.
- * @return {string} Validated request UUID.
+ * Builds the content-free terminal deletion fence stored for TTL cleanup.
+ * Firestore rules intentionally gate on existence, not expiresAt, so deletion
+ * stays denied until TTL or an authorized operator actually removes the row.
+ * @param {string} accountID Deleted Firebase Auth UID.
+ * @param {string} requestID Client correlation identifier.
+ * @param {number} completedAtMs Trusted server completion time.
+ * @return {CompletedAccountDeletionTombstone} Minimal retained marker.
  */
-export function validateDeleteAccountRequest(data: unknown): string {
-  if (!isRecord(data) || data.schemaVersion !== 1 ||
-      typeof data.requestID !== "string") {
+export function completedAccountDeletionTombstone(
+  accountID: string,
+  requestID: string,
+  completedAtMs: number
+): CompletedAccountDeletionTombstone {
+  if (!Number.isFinite(completedAtMs) || completedAtMs < 0) {
+    throw new Error("Invalid account deletion completion time.");
+  }
+  return {
+    schemaVersion: 2,
+    status: "complete",
+    accountID,
+    requestID,
+    completedAt: new Date(completedAtMs),
+    expiresAt: new Date(
+      completedAtMs + ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS
+    ),
+  };
+}
+
+/**
+ * Validates the exact persisted fence for one authenticated deletion request.
+ * A coherent completed marker is terminal; any different request, account,
+ * schema, status, timestamp interval, or extra field fails closed.
+ * @param {unknown} data Stored Firestore document, or undefined when absent.
+ * @param {string} accountID Verified Firebase Auth UID and document ID.
+ * @param {string} requestID Validated durable request UUID.
+ * @param {AccountDeletionTimestampMilliseconds} dateMilliseconds
+ * Firestore timestamp projection seam.
+ * @return {AccountDeletionStateAdmission} Safe request disposition.
+ */
+export function accountDeletionStateAdmission(
+  data: unknown,
+  accountID: string,
+  requestID: string,
+  dateMilliseconds: AccountDeletionTimestampMilliseconds
+): AccountDeletionStateAdmission {
+  if (data === undefined) return "createPending";
+  if (!isRecord(data) || data.schemaVersion !== 2 ||
+      data.accountID !== accountID || data.requestID !== requestID) {
+    return "invalid";
+  }
+  if (data.status === "pending") {
+    if (!hasExactKeys(data, [
+      "accountID", "requestID", "schemaVersion", "startedAt", "status",
+      "updatedAt",
+    ])) return "invalid";
+    const startedAtMs = dateMilliseconds(data.startedAt);
+    const updatedAtMs = dateMilliseconds(data.updatedAt);
+    return startedAtMs !== null && updatedAtMs !== null &&
+      startedAtMs <= updatedAtMs ? "resumePending" : "invalid";
+  }
+  if (data.status === "complete") {
+    if (!hasExactKeys(data, [
+      "accountID", "completedAt", "expiresAt", "requestID", "schemaVersion",
+      "status",
+    ])) return "invalid";
+    const completedAtMs = dateMilliseconds(data.completedAt);
+    const expiresAtMs = dateMilliseconds(data.expiresAt);
+    return completedAtMs !== null && expiresAtMs !== null &&
+      expiresAtMs - completedAtMs ===
+        ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS ?
+      "alreadyCompleted" : "invalid";
+  }
+  return "invalid";
+}
+
+/**
+ * Selects a stale exact pending row for scheduled full-worklist resumption.
+ * Age only limits overlap with an active callable; the accepted server marker,
+ * not age or current Auth existence, carries the durable deletion authority.
+ * @param {unknown} data Stored pending marker.
+ * @param {string} documentID Firestore document ID.
+ * @param {number} nowMs Trusted server time.
+ * @param {AccountDeletionTimestampMilliseconds} dateMilliseconds
+ * Firestore timestamp projection seam.
+ * @return {PendingAccountDeletionReconciliationCandidate|null} Safe candidate.
+ */
+export function pendingAccountDeletionReconciliationCandidate(
+  data: unknown,
+  documentID: string,
+  nowMs: number,
+  dateMilliseconds: AccountDeletionTimestampMilliseconds
+): PendingAccountDeletionReconciliationCandidate | null {
+  if (!Number.isFinite(nowMs) || !isRecord(data) ||
+      typeof data.accountID !== "string" ||
+      typeof data.requestID !== "string" ||
+      data.accountID !== documentID || !UUID_PATTERN.test(data.requestID) ||
+      accountDeletionStateAdmission(
+        data,
+        documentID,
+        data.requestID,
+        dateMilliseconds
+      ) !== "resumePending") return null;
+  const updatedAtMs = dateMilliseconds(data.updatedAt);
+  if (updatedAtMs === null ||
+      nowMs - updatedAtMs < ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS) {
+    return null;
+  }
+  return {accountID: documentID, requestID: data.requestID};
+}
+
+/**
+ * Validates the correlation identifier and expected-user binding on a
+ * destructive account request. The expected ID is not authority; callers must
+ * compare it exactly with the verified callable auth UID before any work.
+ * @param {unknown} data Raw callable payload.
+ * @return {DeleteAccountRequest} Validated request binding.
+ */
+export function validateDeleteAccountRequest(
+  data: unknown
+): DeleteAccountRequest {
+  if (!isRecord(data) || data.schemaVersion !== 2 ||
+      typeof data.requestID !== "string" ||
+      typeof data.expectedAccountID !== "string") {
     throw new HttpsError("invalid-argument", "Invalid deletion request.");
   }
   const requestID = data.requestID.trim();
+  const expectedAccountID = data.expectedAccountID;
   const keys = Object.keys(data).sort();
-  if (keys.length !== 2 || keys[0] !== "requestID" ||
-      keys[1] !== "schemaVersion" || !UUID_PATTERN.test(requestID)) {
+  if (keys.length !== 3 || keys[0] !== "expectedAccountID" ||
+      keys[1] !== "requestID" || keys[2] !== "schemaVersion" ||
+      !UUID_PATTERN.test(requestID) || expectedAccountID.length < 1 ||
+      expectedAccountID.length > 128 ||
+      expectedAccountID !== expectedAccountID.trim()) {
     throw new HttpsError("invalid-argument", "Invalid deletion request.");
   }
-  return requestID;
+  return {requestID, expectedAccountID};
+}
+
+/**
+ * Requires the client binding to name the verified callable identity exactly.
+ * @param {string} expectedAccountID Validated request binding.
+ * @param {string} authenticatedUID Verified callable auth UID.
+ * @return {void}
+ */
+export function assertDeleteAccountRequestIdentity(
+  expectedAccountID: string,
+  authenticatedUID: string
+): void {
+  if (expectedAccountID !== authenticatedUID) {
+    throw new HttpsError(
+      "permission-denied",
+      "Account deletion identity did not match the secure session."
+    );
+  }
 }
 
 /**
@@ -348,7 +541,7 @@ export function transcriptionTokenLogMetadata(
 
 /**
  * Builds content-free deletion metadata. No UID or SDK error is included.
- * @param {string} requestID Client idempotency identifier.
+ * @param {string} requestID Client correlation identifier.
  * @param {string} status Safe operation status.
  * @param {number} latencyMs End-to-end latency.
  * @param {AccountDeletionStep[]} failedSteps Incomplete groups.
@@ -372,8 +565,8 @@ export function accountDeletionLogMetadata(
 /**
  * Runs all dependent cleanup steps even when one fails. The exact worklist
  * and Auth user finalize strictly in that order after every dependent cleanup
- * succeeds. Tombstone removal is best effort because Auth deletion is
- * irreversible and a deleted user cannot authenticate a retry.
+ * succeeds. Completed-marker finalization remains a required reported step;
+ * when it fails, the pending fence stays durable for scheduled reconciliation.
  * @param {AccountDeletionWork} work Injected deletion operations.
  * @return {Promise<void>} Resolves only after complete deletion.
  */
@@ -399,9 +592,8 @@ export async function executeAccountDeletionPlan(
     }
   }
   try {
-    await work.deletionTombstone();
+    await work.completedTombstone();
   } catch {
-    // A retained tombstone safely denies stale tokens and can be purged by an
-    // operational cleanup. The account and its Noum data are already gone.
+    throw new AccountDeletionPartialError(["completedTombstone"]);
   }
 }

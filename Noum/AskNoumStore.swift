@@ -461,6 +461,36 @@ struct CoachMessage: Identifiable, Codable, Equatable {
     }
 }
 
+/// A synchronous admission captured before an availability or other async
+/// preflight. It proves which hydrated account authorized the eventual send;
+/// callers must revalidate it before appending text captured before an await.
+struct AskNoumSendAdmission: Equatable, Sendable {
+    let accountScope: String
+    let accountLifecycleGeneration: UInt64
+    let threadStoreGeneration: UInt64
+}
+
+/// Authority for one pending coach row. Provider work and every provisional,
+/// final, or cancellation mutation carry this exact value so a UUID alone can
+/// never hydrate a row after sign-out, deletion, reload, or account switch.
+struct AskNoumReplyLease: Equatable, Sendable {
+    let accountScope: String
+    let accountLifecycleGeneration: UInt64
+    let threadStoreGeneration: UInt64
+    let coachID: UUID
+}
+
+/// Authority for one account-scoped provider request that does not own a
+/// pending coach row, such as starter or follow-up chip generation. These
+/// requests still carry conversation context, so deletion must revoke them at
+/// the same boundary as a full coach reply.
+struct AskNoumAuxiliaryProviderLease: Equatable, Sendable {
+    let accountScope: String
+    let accountLifecycleGeneration: UInt64
+    let threadStoreGeneration: UInt64
+    let workID: UUID
+}
+
 /// Persisted thread + send / replay surface for the Ask-Noum chat.
 @available(iOS 17.0, macOS 12.0, *)
 @MainActor
@@ -558,15 +588,37 @@ final class AskNoumStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
+    private let accountLifecycleGenerationProvider: () -> UInt64
+    private let accountIsReadyProvider: () -> Bool
+    private let providerWorkAllowedProvider: (String) -> Bool
     private let diagnosticsStore: AICallDiagnosticsStore?
     /// Account whose thread is actually resident in `messages`. This must not
     /// be inferred from the current Keychain identity during an account switch;
     /// registry hydration owns when a newly identified account is loaded.
     private(set) var loadedAccountScope: String? = nil
+    private var threadStoreGeneration: UInt64 = 0
+
+    private struct ActiveProviderWork {
+        let lease: AskNoumReplyLease
+        let cancel: @MainActor () -> Void
+    }
+
+    private struct ActiveAuxiliaryProviderWork {
+        let lease: AskNoumAuxiliaryProviderLease
+        let cancel: @MainActor () -> Void
+    }
+
+    /// Best-effort transport cancellation. Lease checks remain authoritative:
+    /// a request can already have reached a provider before cancellation lands.
+    private var activeProviderWorkByCoachID: [UUID: ActiveProviderWork] = [:]
+    private var activeAuxiliaryProviderWorkByID: [UUID: ActiveAuxiliaryProviderWork] = [:]
 
     init(
         defaults: UserDefaults = .standard,
         accountIDProvider: (() -> String?)? = nil,
+        accountLifecycleGenerationProvider: (() -> UInt64)? = nil,
+        accountIsReadyProvider: (() -> Bool)? = nil,
+        providerWorkAllowedProvider: ((String) -> Bool)? = nil,
         diagnosticsStore: AICallDiagnosticsStore? = nil
     ) {
         self.defaults = defaults
@@ -576,8 +628,34 @@ final class AskNoumStore: ObservableObject {
         } else {
             self.accountIDProvider = { Self.defaultAccountIDProvider() }
         }
-        loadFromDisk()
-        loadedAccountScope = Self.normalizedAccountScope(self.accountIDProvider())
+        self.accountLifecycleGenerationProvider = accountLifecycleGenerationProvider ?? {
+            AuthManager.shared.accountLifecycleGeneration
+        }
+        if let accountIsReadyProvider {
+            self.accountIsReadyProvider = accountIsReadyProvider
+        } else if accountIDProvider != nil {
+            // Existing isolated stores predate AuthManager injection. Their
+            // explicit identity closure is their complete test lifecycle.
+            self.accountIsReadyProvider = { true }
+        } else {
+            self.accountIsReadyProvider = {
+                AuthManager.shared.isSignedIn
+                    && AuthManager.shared.initialAccountHydrationState == .ready
+            }
+        }
+        if let providerWorkAllowedProvider {
+            self.providerWorkAllowedProvider = providerWorkAllowedProvider
+        } else if accountIDProvider != nil {
+            self.providerWorkAllowedProvider = { _ in true }
+        } else {
+            self.providerWorkAllowedProvider = { accountID in
+                AuthManager.shared.isProviderWorkAllowed(for: accountID)
+            }
+        }
+        loadedAccountScope = currentAccountScope
+        if let loadedAccountScope {
+            loadFromDisk(accountScope: loadedAccountScope)
+        }
     }
 
     /// Append a user-authored message + a pending coach row. Returns
@@ -585,6 +663,24 @@ final class AskNoumStore: ObservableObject {
     /// the service returns.
     @discardableResult
     func appendUserTurn(_ text: String) -> (userID: UUID, coachID: UUID) {
+        guard let admission = sendAdmission(),
+              let dispatch = appendUserTurn(text, expected: admission) else {
+            // Source-compatible rejection for legacy synchronous callers. No
+            // row is appended and the detached IDs cannot acquire a lease.
+            return (UUID(), UUID())
+        }
+        return (dispatch.userID, dispatch.coachID)
+    }
+
+    /// Checked send boundary used after async availability work. The admission
+    /// was captured before suspension and is revalidated on this actor turn;
+    /// the returned reply lease is inseparable from the pending row it owns.
+    @discardableResult
+    func appendUserTurn(
+        _ text: String,
+        expected admission: AskNoumSendAdmission
+    ) -> (userID: UUID, coachID: UUID, lease: AskNoumReplyLease)? {
+        guard sendAdmissionIsCurrent(admission) else { return nil }
         lastFailure = nil
         markImmediatePushbackIfNeeded(for: text)
         let userMsg = CoachMessage(role: .user, text: text)
@@ -593,7 +689,16 @@ final class AskNoumStore: ObservableObject {
         messages.append(coachMsg)
         isAwaitingReply = true
         trimAndPersist()
-        return (userMsg.id, coachMsg.id)
+        return (
+            userMsg.id,
+            coachMsg.id,
+            AskNoumReplyLease(
+                accountScope: admission.accountScope,
+                accountLifecycleGeneration: admission.accountLifecycleGeneration,
+                threadStoreGeneration: admission.threadStoreGeneration,
+                coachID: coachMsg.id
+            )
+        )
     }
 
     /// Hydrate the pending coach row once the service returns. Only a live
@@ -605,7 +710,30 @@ final class AskNoumStore: ObservableObject {
         outcome: ChatOutcome,
         metadata: CoachTurnMetadata? = nil
     ) {
-        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        guard let lease = replyLease(for: id) else { return }
+        _ = completeCoachTurn(
+            id: id,
+            outcome: outcome,
+            metadata: metadata,
+            expected: lease
+        )
+    }
+
+    /// Compare-and-complete boundary for async replies. Persistence targets the
+    /// account embedded in the lease and never re-derives a destination from a
+    /// mutable Keychain identity.
+    @discardableResult
+    func completeCoachTurn(
+        id: UUID,
+        outcome: ChatOutcome,
+        metadata: CoachTurnMetadata? = nil,
+        expected lease: AskNoumReplyLease
+    ) -> Bool {
+        guard id == lease.coachID,
+              replyLeaseIsCurrent(lease),
+              let idx = messages.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
         let resolvedMetadata = Self.metadataByPreservingMutableFlags(
             incoming: metadata,
             existing: messages[idx].metadata
@@ -641,7 +769,8 @@ final class AskNoumStore: ObservableObject {
             resolveFailure(at: idx, failure: failure)
         }
         isAwaitingReply = false
-        trimAndPersist()
+        trimAndPersist(accountScope: lease.accountScope)
+        return true
     }
 
     /// Hydrate the pending coach row with a local deterministic read while the
@@ -654,10 +783,30 @@ final class AskNoumStore: ObservableObject {
         text: String,
         metadata: CoachTurnMetadata? = nil
     ) -> Bool {
+        guard let lease = replyLease(for: id) else { return false }
+        return setProvisionalCoachRead(
+            id: id,
+            text: text,
+            metadata: metadata,
+            expected: lease
+        )
+    }
+
+    /// Checked provisional mutation. The row remains pending so the same lease
+    /// can authorize a later streamed partial or final completion.
+    @discardableResult
+    func setProvisionalCoachRead(
+        id: UUID,
+        text: String,
+        metadata: CoachTurnMetadata? = nil,
+        expected lease: AskNoumReplyLease
+    ) -> Bool {
         let trimmed = CoachDisplayCopy.normalized(
             CoachReplyTextSanitizer.coachReplyText(from: text)
         )
-        guard !trimmed.isEmpty,
+        guard id == lease.coachID,
+              replyLeaseIsCurrent(lease),
+              !trimmed.isEmpty,
               let idx = messages.firstIndex(where: { $0.id == id }),
               messages[idx].role == .coach,
               messages[idx].isPending else {
@@ -862,10 +1011,189 @@ final class AskNoumStore: ObservableObject {
         }
     }
 
+    // MARK: - Async account ownership
+
+    /// Capture account authority before an async preflight. Readiness proves
+    /// registry hydration has completed; the provider-work gate additionally
+    /// closes immediately when account deletion begins.
+    func sendAdmission() -> AskNoumSendAdmission? {
+        guard accountIsReadyProvider(),
+              let accountScope = currentAccountScope,
+              loadedAccountScope == accountScope,
+              providerWorkAllowedProvider(accountScope) else {
+            return nil
+        }
+        return AskNoumSendAdmission(
+            accountScope: accountScope,
+            accountLifecycleGeneration: accountLifecycleGenerationProvider(),
+            threadStoreGeneration: threadStoreGeneration
+        )
+    }
+
+    func sendAdmissionIsCurrent(_ admission: AskNoumSendAdmission) -> Bool {
+        guard accountIsReadyProvider(),
+              currentAccountScope == admission.accountScope,
+              loadedAccountScope == admission.accountScope,
+              accountLifecycleGenerationProvider()
+                == admission.accountLifecycleGeneration,
+              threadStoreGeneration == admission.threadStoreGeneration,
+              providerWorkAllowedProvider(admission.accountScope) else {
+            return false
+        }
+        return true
+    }
+
+    /// Bind provider work to the exact pending row after a synchronous append.
+    func replyLease(for coachID: UUID) -> AskNoumReplyLease? {
+        guard let admission = sendAdmission(),
+              messages.contains(where: {
+                  $0.id == coachID && $0.role == .coach && $0.isPending
+              }) else {
+            return nil
+        }
+        return AskNoumReplyLease(
+            accountScope: admission.accountScope,
+            accountLifecycleGeneration: admission.accountLifecycleGeneration,
+            threadStoreGeneration: admission.threadStoreGeneration,
+            coachID: coachID
+        )
+    }
+
+    /// Scope check remains useful immediately after a successful completion,
+    /// when the row is intentionally no longer pending but UI speech still
+    /// must not cross an account/lifecycle boundary.
+    func replyLeaseScopeIsCurrent(_ lease: AskNoumReplyLease) -> Bool {
+        sendAdmissionIsCurrent(AskNoumSendAdmission(
+            accountScope: lease.accountScope,
+            accountLifecycleGeneration: lease.accountLifecycleGeneration,
+            threadStoreGeneration: lease.threadStoreGeneration
+        ))
+    }
+
+    func replyLeaseIsCurrent(_ lease: AskNoumReplyLease) -> Bool {
+        replyLeaseScopeIsCurrent(lease)
+            && messages.contains(where: {
+                $0.id == lease.coachID && $0.role == .coach && $0.isPending
+            })
+    }
+
+    /// Register the explicit provider task only while its pending-row lease is
+    /// current. The closure is actor-isolated because Task cancellation and the
+    /// registry's deletion hook both originate on MainActor.
+    @discardableResult
+    func registerProviderWorkCancellation(
+        expected lease: AskNoumReplyLease,
+        cancel: @escaping @MainActor () -> Void
+    ) -> Bool {
+        guard replyLeaseIsCurrent(lease),
+              activeProviderWorkByCoachID[lease.coachID] == nil else {
+            return false
+        }
+        activeProviderWorkByCoachID[lease.coachID] = ActiveProviderWork(
+            lease: lease,
+            cancel: cancel
+        )
+        return true
+    }
+
+    func unregisterProviderWorkCancellation(expected lease: AskNoumReplyLease) {
+        guard activeProviderWorkByCoachID[lease.coachID]?.lease == lease else {
+            return
+        }
+        activeProviderWorkByCoachID.removeValue(forKey: lease.coachID)
+    }
+
+    /// Capture a distinct lease for provider work that has no pending coach
+    /// row. Registration must still happen synchronously before the child task
+    /// gets an actor turn.
+    func auxiliaryProviderLease(
+        expected admission: AskNoumSendAdmission
+    ) -> AskNoumAuxiliaryProviderLease? {
+        guard sendAdmissionIsCurrent(admission) else { return nil }
+        return AskNoumAuxiliaryProviderLease(
+            accountScope: admission.accountScope,
+            accountLifecycleGeneration: admission.accountLifecycleGeneration,
+            threadStoreGeneration: admission.threadStoreGeneration,
+            workID: UUID()
+        )
+    }
+
+    @discardableResult
+    func registerAuxiliaryProviderWorkCancellation(
+        expected lease: AskNoumAuxiliaryProviderLease,
+        cancel: @escaping @MainActor () -> Void
+    ) -> Bool {
+        guard auxiliaryProviderScopeIsCurrent(lease),
+              activeAuxiliaryProviderWorkByID[lease.workID] == nil else {
+            return false
+        }
+        activeAuxiliaryProviderWorkByID[lease.workID] = ActiveAuxiliaryProviderWork(
+            lease: lease,
+            cancel: cancel
+        )
+        return true
+    }
+
+    func unregisterAuxiliaryProviderWork(
+        expected lease: AskNoumAuxiliaryProviderLease
+    ) {
+        guard activeAuxiliaryProviderWorkByID[lease.workID]?.lease == lease else {
+            return
+        }
+        activeAuxiliaryProviderWorkByID.removeValue(forKey: lease.workID)
+    }
+
+    func auxiliaryProviderWorkIsCurrent(
+        _ lease: AskNoumAuxiliaryProviderLease
+    ) -> Bool {
+        auxiliaryProviderScopeIsCurrent(lease)
+            && activeAuxiliaryProviderWorkByID[lease.workID]?.lease == lease
+    }
+
+    /// The final gate and actual URLSession start share one MainActor turn.
+    /// Deletion cannot interleave between the lease check and invocation; once
+    /// suspended, cancelling the registered child task propagates to the
+    /// async URLSession operation as a best-effort transport cancellation.
+    func performAuxiliaryProviderRequest(
+        _ request: URLRequest,
+        expected lease: AskNoumAuxiliaryProviderLease,
+        transport: @MainActor (URLRequest) async throws -> (Data, URLResponse) = {
+            try await URLSession.shared.data(for: $0)
+        }
+    ) async throws -> (Data, URLResponse) {
+        guard auxiliaryProviderWorkIsCurrent(lease),
+              !Task.isCancelled else {
+            throw CancellationError()
+        }
+        return try await transport(request)
+    }
+
+    private func auxiliaryProviderScopeIsCurrent(
+        _ lease: AskNoumAuxiliaryProviderLease
+    ) -> Bool {
+        sendAdmissionIsCurrent(AskNoumSendAdmission(
+            accountScope: lease.accountScope,
+            accountLifecycleGeneration: lease.accountLifecycleGeneration,
+            threadStoreGeneration: lease.threadStoreGeneration
+        ))
+    }
+
     /// Re-arm the latest unanswered user turn without appending it again.
     /// Returns the pending coach row ID the existing reply pipeline should
     /// hydrate.
     func prepareRetry() -> UUID? {
+        guard let admission = sendAdmission(),
+              let retry = prepareRetry(expected: admission) else {
+            return nil
+        }
+        return retry.coachID
+    }
+
+    /// Checked retry admission for callers returning from availability work.
+    func prepareRetry(
+        expected admission: AskNoumSendAdmission
+    ) -> (coachID: UUID, lease: AskNoumReplyLease)? {
+        guard sendAdmissionIsCurrent(admission) else { return nil }
         guard !isAwaitingReply,
               lastFailure != nil,
               messages.last(where: { $0.role == .user }) != nil else {
@@ -876,22 +1204,45 @@ final class AskNoumStore: ObservableObject {
         lastFailure = nil
         isAwaitingReply = true
         trimAndPersist()
-        return coach.id
+        return (
+            coach.id,
+            AskNoumReplyLease(
+                accountScope: admission.accountScope,
+                accountLifecycleGeneration: admission.accountLifecycleGeneration,
+                threadStoreGeneration: admission.threadStoreGeneration,
+                coachID: coach.id
+            )
+        )
     }
 
     /// Cancel an in-flight coach reply (user navigated away, etc.).
     /// Drops the pending row entirely so the thread doesn't show a
     /// stuck typing indicator.
     func cancelPendingCoachTurn(id: UUID) {
+        guard let lease = replyLease(for: id) else { return }
+        _ = cancelPendingCoachTurn(id: id, expected: lease)
+    }
+
+    @discardableResult
+    func cancelPendingCoachTurn(
+        id: UUID,
+        expected lease: AskNoumReplyLease
+    ) -> Bool {
+        guard id == lease.coachID, replyLeaseIsCurrent(lease) else {
+            return false
+        }
+        activeProviderWorkByCoachID.removeValue(forKey: id)?.cancel()
         messages.removeAll { $0.id == id }
         isAwaitingReply = false
-        trimAndPersist()
+        trimAndPersist(accountScope: lease.accountScope)
+        return true
     }
 
     /// Clear the entire thread. Used by Settings → "Reset Ask Noum
     /// thread" + by account sign-out paths. UI confirms first; this
     /// is a one-button wipe.
     func clearThread() {
+        invalidateReplyLeases(cancelActiveProviderWork: true)
         messages.removeAll()
         lastFailure = nil
         pendingInjectedCoachID = nil
@@ -915,8 +1266,10 @@ final class AskNoumStore: ObservableObject {
     /// Reload: drop the in-memory thread, then read the NEW account's key.
     func reloadForCurrentAccount() {
         clearInMemoryState()
-        loadFromDisk()
-        loadedAccountScope = Self.normalizedAccountScope(accountIDProvider())
+        loadedAccountScope = currentAccountScope
+        if let loadedAccountScope {
+            loadFromDisk(accountScope: loadedAccountScope)
+        }
     }
 
     /// Session reset (sign-out): clear the in-memory thread. Disk is left
@@ -929,6 +1282,7 @@ final class AskNoumStore: ObservableObject {
     /// Empty all in-memory thread state without touching disk. Shared by the
     /// reload (before re-reading the new account) and the session-reset paths.
     private func clearInMemoryState() {
+        invalidateReplyLeases(cancelActiveProviderWork: true)
         messages.removeAll()
         aiChipsCache.removeAll()
         starterChipsCache.removeAll()
@@ -938,6 +1292,28 @@ final class AskNoumStore: ObservableObject {
         loadedAccountScope = nil
     }
 
+    /// Called synchronously at deletion initiation, before any remote await.
+    /// It revokes every lease, best-effort cancels active provider work, drops
+    /// transient pending coach rows, and writes only completed/non-system rows
+    /// back to the explicitly named originating account. A failed remote delete
+    /// can therefore recover the completed conversation without ever creating a
+    /// `askNoum.thread.guest` destination.
+    func suspendProviderWorkForDeletion(accountID: String) {
+        guard let accountScope = Self.normalizedAccountScope(accountID) else {
+            return
+        }
+        invalidateReplyLeases(
+            cancelActiveProviderWork: true,
+            matchingAccountScope: accountScope
+        )
+        guard loadedAccountScope == accountScope else { return }
+        messages.removeAll { $0.isPending }
+        pendingInjectedCoachID = nil
+        isAwaitingReply = false
+        lastFailure = nil
+        persist(accountScope: accountScope)
+    }
+
     /// Cache an AI-generated chip set for a specific coach reply. Called
     /// by AskNoumView once the chip-generation request returns successfully.
     /// Idempotent — overwriting is a no-op if the chips match; we don't
@@ -945,6 +1321,22 @@ final class AskNoumStore: ObservableObject {
     /// the request that produced it.
     func setAIChips(_ chips: [String], for coachID: UUID) {
         aiChipsCache[coachID] = normalizedVisibleChips(chips)
+    }
+
+    @discardableResult
+    func setAIChips(
+        _ chips: [String],
+        for coachID: UUID,
+        expected admission: AskNoumSendAdmission
+    ) -> Bool {
+        guard sendAdmissionIsCurrent(admission),
+              messages.contains(where: {
+                  $0.id == coachID && $0.role == .coach && !$0.isPending
+              }) else {
+            return false
+        }
+        aiChipsCache[coachID] = normalizedVisibleChips(chips)
+        return true
     }
 
     /// Read cached chips for a coach reply, if any. Returns nil when the
@@ -959,6 +1351,17 @@ final class AskNoumStore: ObservableObject {
     /// generation request returns successfully.
     func setStarterChips(_ chips: [String], for signature: String) {
         starterChipsCache[signature] = normalizedVisibleChips(chips)
+    }
+
+    @discardableResult
+    func setStarterChips(
+        _ chips: [String],
+        for signature: String,
+        expected admission: AskNoumSendAdmission
+    ) -> Bool {
+        guard sendAdmissionIsCurrent(admission) else { return false }
+        starterChipsCache[signature] = normalizedVisibleChips(chips)
+        return true
     }
 
     /// Read cached starter prompts for a given input signature, if any.
@@ -993,7 +1396,9 @@ final class AskNoumStore: ObservableObject {
     @discardableResult
     func injectUserTurn(_ text: String) -> UUID? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty, let admission = sendAdmission() else {
+            return nil
+        }
 
         // Idempotency guard — if the last user turn IS this opener AND
         // its coach reply is still pending, return that same coachID
@@ -1014,9 +1419,11 @@ final class AskNoumStore: ObservableObject {
             // fall through, append a fresh pair.
         }
 
-        let ids = appendUserTurn(trimmed)
-        pendingInjectedCoachID = ids.coachID
-        return ids.coachID
+        guard let dispatch = appendUserTurn(trimmed, expected: admission) else {
+            return nil
+        }
+        pendingInjectedCoachID = dispatch.coachID
+        return dispatch.coachID
     }
 
     /// One-shot consumer. AskNoumView calls this on appear; if the
@@ -1056,9 +1463,10 @@ final class AskNoumStore: ObservableObject {
         expectedAccountScope: String
     ) -> UUID? {
         let expected = Self.normalizedAccountScope(expectedAccountScope)
-        guard expected != nil,
-              expected == Self.normalizedAccountScope(accountIDProvider()),
-              expected == loadedAccountScope else {
+        guard let expected,
+              expected == currentAccountScope,
+              expected == loadedAccountScope,
+              providerWorkAllowedProvider(expected) else {
             return nil
         }
         return appendInjectedCoachTurn(text)
@@ -1090,13 +1498,13 @@ final class AskNoumStore: ObservableObject {
 
     // MARK: - Persistence
 
-    private var currentKey: String {
-        let id = accountIDProvider() ?? "guest"
-        return "\(Self.storagePrefix).\(id)"
+    private func storageKey(accountScope: String) -> String {
+        "\(Self.storagePrefix).\(accountScope)"
     }
 
-    private func loadFromDisk() {
-        guard let data = defaults.data(forKey: currentKey),
+    private func loadFromDisk(accountScope: String) {
+        guard loadedAccountScope == accountScope,
+              let data = defaults.data(forKey: storageKey(accountScope: accountScope)),
               let decoded = try? JSONDecoder().decode([CoachMessage].self, from: data) else {
             return
         }
@@ -1129,7 +1537,7 @@ final class AskNoumStore: ObservableObject {
             return nil
         }
         if didCleanLegacyCoachNotes {
-            persist()
+            persist(accountScope: accountScope)
         }
     }
 
@@ -1150,29 +1558,43 @@ final class AskNoumStore: ObservableObject {
         }
     }
 
-    private func trimAndPersist() {
+    private func trimAndPersist(accountScope: String? = nil) {
         if messages.count > Self.maxStoredMessages {
             messages.removeFirst(messages.count - Self.maxStoredMessages)
         }
-        persist()
+        if let accountScope {
+            persist(accountScope: accountScope)
+        } else {
+            persist()
+        }
     }
 
     private func persist() {
+        guard let loadedAccountScope else { return }
+        persist(accountScope: loadedAccountScope)
+    }
+
+    private func persist(accountScope: String) {
+        guard Self.normalizedAccountScope(accountScope) == accountScope,
+              loadedAccountScope == accountScope else {
+            return
+        }
         // Don't persist the pending placeholder rows — they're
         // transient. If the user backgrounds the app mid-reply the
         // pending row will reappear from memory but won't be written
         // to disk, so a relaunch starts clean.
         let persistable = messages.filter { !$0.isPending && $0.role != .systemNotice }
         guard let data = try? JSONEncoder().encode(persistable) else { return }
-        defaults.set(data, forKey: currentKey)
+        defaults.set(data, forKey: storageKey(accountScope: accountScope))
     }
 
     // MARK: - Account ID
 
     /// Default account-ID resolver. Mirrors the convention every other
     /// per-account store uses (`AuthManager` → keychain `NoumAccountID`).
-    /// Returns nil when signed-out / anonymous; the storage key falls
-    /// back to `"guest"` so pre-sign-in chat survives.
+    /// Returns nil when signed-out. Production guest sessions have a durable,
+    /// nonempty local account ID before account-scoped stores hydrate; there is
+    /// deliberately no shared literal guest persistence bucket.
     private static func defaultAccountIDProvider() -> String? {
         #if canImport(Security)
         return KeychainHelper.load(key: "NoumAccountID")
@@ -1185,6 +1607,38 @@ final class AskNoumStore: ObservableObject {
         let trimmed = accountID?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var currentAccountScope: String? {
+        Self.normalizedAccountScope(accountIDProvider())
+    }
+
+    private func invalidateReplyLeases(
+        cancelActiveProviderWork: Bool,
+        matchingAccountScope: String? = nil
+    ) {
+        threadStoreGeneration &+= 1
+        guard cancelActiveProviderWork else { return }
+        let workToCancel = activeProviderWorkByCoachID.values.filter { work in
+            matchingAccountScope == nil
+                || work.lease.accountScope == matchingAccountScope
+        }
+        let auxiliaryWorkToCancel = activeAuxiliaryProviderWorkByID.values.filter { work in
+            matchingAccountScope == nil
+                || work.lease.accountScope == matchingAccountScope
+        }
+        for work in workToCancel {
+            activeProviderWorkByCoachID.removeValue(forKey: work.lease.coachID)
+        }
+        for work in auxiliaryWorkToCancel {
+            activeAuxiliaryProviderWorkByID.removeValue(forKey: work.lease.workID)
+        }
+        for work in workToCancel {
+            work.cancel()
+        }
+        for work in auxiliaryWorkToCancel {
+            work.cancel()
+        }
     }
 }
 

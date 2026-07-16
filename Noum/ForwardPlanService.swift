@@ -236,14 +236,77 @@ actor ForwardPlanService {
 
     static let shared = ForwardPlanService()
 
+    private enum ProviderWorkDeletionState: Equatable {
+        case suspended
+        case finishing
+    }
+
+    private struct ActiveProviderTransport {
+        let accountScope: String
+        let handle: ForwardPlanTransportHandle
+    }
+
+    private struct PendingProviderTransportAdmission {
+        let accountScope: String
+        var isRevoked = false
+    }
+
     private let apiKeyProvider: (AIProvider) -> String?
+    private let transportCreatedHook: (@Sendable () async -> Void)?
+    private var providerWorkDeletionStates: [String: ProviderWorkDeletionState] = [:]
+    private var pendingProviderTransportAdmissions: [
+        UUID: PendingProviderTransportAdmission
+    ] = [:]
+    private var activeProviderTransports: [UUID: ActiveProviderTransport] = [:]
 
     init(
         apiKeyProvider: @escaping (AIProvider) -> String? = {
             AIProviderCredential.apiKey(for: $0)
-        }
+        },
+        transportCreatedHook: (@Sendable () async -> Void)? = nil
     ) {
         self.apiKeyProvider = apiKeyProvider
+        self.transportCreatedHook = transportCreatedHook
+    }
+
+    /// Close provider admission for one account and cancel every registered
+    /// transport for it. Auth calls this at deletion admission, before any
+    /// remote suspension. Cancellation is best effort; the closed-account
+    /// checks below remain the authoritative postflight fence.
+    func suspendProviderWorkForDeletion(accountID: String) {
+        guard let accountScope = Self.normalizedAccountScope(accountID) else {
+            return
+        }
+        if providerWorkDeletionStates[accountScope] != .finishing {
+            providerWorkDeletionStates[accountScope] = .suspended
+        }
+        revokePendingProviderTransportAdmissions(for: accountScope)
+        cancelActiveProviderTransports(for: accountScope)
+    }
+
+    /// Reopen provider admission only for the explicit recoverable path where
+    /// deletion failed before any destructive remote work began. Generic or
+    /// post-remote failures must not call this method.
+    func resumeProviderWorkAfterSafeDeletionFailure(accountID: String) {
+        guard let accountScope = Self.normalizedAccountScope(accountID),
+              providerWorkDeletionStates[accountScope] == .suspended else {
+            return
+        }
+        providerWorkDeletionStates.removeValue(forKey: accountScope)
+    }
+
+    /// Complete service-local teardown after account deletion. The fence is
+    /// retained while a cancellation-ignoring transport is still draining and
+    /// released only after the registry is empty; the durable Auth gate remains
+    /// closed after that point and rejects any stale store lease.
+    func finishProviderWorkDeletion(accountID: String) {
+        guard let accountScope = Self.normalizedAccountScope(accountID) else {
+            return
+        }
+        providerWorkDeletionStates[accountScope] = .finishing
+        revokePendingProviderTransportAdmissions(for: accountScope)
+        cancelActiveProviderTransports(for: accountScope)
+        removeFinishedFenceIfDrained(for: accountScope)
     }
 
     /// Generate from one inseparable account-owned request. The provider and
@@ -258,7 +321,7 @@ actor ForwardPlanService {
         isCurrent: @escaping @MainActor () -> Bool
     ) async -> ForwardPlan? {
         let input = request.input
-        let fallback = Self.deterministicPlan(input: input)
+        let accountScope = request.saveToken.accountScope
         func record(
             _ outcome: AICallDiagnosticOutcome,
             _ reason: String,
@@ -276,6 +339,11 @@ actor ForwardPlanService {
             )
         }
 
+        guard !providerWorkIsClosed(for: accountScope) else {
+            record(.skipped, "Account deletion closed provider work")
+            return nil
+        }
+        let fallback = Self.deterministicPlan(input: input)
         let authorization = request.saveToken.executionAuthorization
         guard authorization.locale.aiSupported else {
             record(.skipped, "Locale not AI-supported")
@@ -289,29 +357,71 @@ actor ForwardPlanService {
             return fallback
         }
 
-        do {
-            let body = requestBody(for: provider, input: input)
-            var request = URLRequest(url: endpoint)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.timeoutInterval = 18
-            switch provider {
-            case .openAI, .deepSeek:
-                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            case .gemini:
-                request.setGoogleAPIKey(key)
-            case .none:
-                record(.skipped, "Provider set to off", provider: provider)
-                return fallback
-            }
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let body = requestBody(for: provider, input: input)
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 18
+        switch provider {
+        case .openAI, .deepSeek:
+            urlRequest.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .gemini:
+            urlRequest.setGoogleAPIKey(key)
+        case .none:
+            record(.skipped, "Provider set to off", provider: provider)
+            return fallback
+        }
 
-            guard !Task.isCancelled,
-                  let transport = await startTransportIfCurrent(request) else {
-                record(.skipped, "Request authority changed before transport", provider: provider)
+        do {
+            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            guard !providerWorkIsClosed(for: accountScope) else {
+                record(.skipped, "Account deletion closed provider work", provider: provider)
                 return nil
             }
-            let startedAt = Date()
+            record(.failure, "Request encoding failed", provider: provider)
+            return fallback
+        }
+
+        guard !Task.isCancelled,
+              beginProviderTransportAdmission(
+                requestID: request.saveToken.requestID,
+                accountScope: accountScope
+              ) else {
+            record(.skipped, "Request authority changed before transport", provider: provider)
+            return nil
+        }
+        guard let transport = await startTransportIfCurrent(urlRequest) else {
+            endPendingProviderTransportAdmission(
+                requestID: request.saveToken.requestID,
+                accountScope: accountScope
+            )
+            record(.skipped, "Request authority changed before transport", provider: provider)
+            return nil
+        }
+        // A nil production hook adds no suspension. Tests use the injected hook
+        // to deterministically exercise a deletion close that wins after the
+        // MainActor has created a handle but before actor-owned registration.
+        if let transportCreatedHook {
+            await transportCreatedHook()
+        }
+        guard registerActiveProviderTransport(
+            transport,
+            requestID: request.saveToken.requestID,
+            accountScope: accountScope
+        ) else {
+            record(.skipped, "Account deletion closed provider work before registration", provider: provider)
+            return nil
+        }
+        defer {
+            unregisterActiveProviderTransport(
+                requestID: request.saveToken.requestID,
+                accountScope: accountScope
+            )
+        }
+
+        let startedAt = Date()
+        do {
             let (data, response) = try await withTaskCancellationHandler(
                 operation: {
                     try await transport.value()
@@ -320,7 +430,10 @@ actor ForwardPlanService {
                     transport.cancel()
                 }
             )
-            guard !Task.isCancelled, await isCurrent() else {
+            guard !Task.isCancelled,
+                  !providerWorkIsClosed(for: accountScope),
+                  await isCurrent(),
+                  !providerWorkIsClosed(for: accountScope) else {
                 record(.skipped, "Request authority changed during transport", provider: provider, startedAt: startedAt)
                 return nil
             }
@@ -351,14 +464,133 @@ actor ForwardPlanService {
             record(.skipped, "Request cancelled", provider: provider)
             return nil
         } catch {
-            guard !Task.isCancelled else {
-                record(.skipped, "Request cancelled", provider: provider)
+            guard !Task.isCancelled,
+                  !providerWorkIsClosed(for: accountScope) else {
+                record(.skipped, "Request cancelled or deletion-fenced", provider: provider)
                 return nil
             }
             record(.failure, "Transport or decode error", provider: provider)
-            guard await isCurrent() else { return nil }
+            guard await isCurrent(),
+                  !providerWorkIsClosed(for: accountScope) else {
+                return nil
+            }
             return fallback
         }
+    }
+
+    private func providerWorkIsClosed(for accountScope: String) -> Bool {
+        providerWorkDeletionStates[accountScope] != nil
+    }
+
+    /// A pending admission makes the MainActor handle-creation await visible to
+    /// deletion teardown. Suspension permanently revokes the entry, even if a
+    /// later safe resume reopens admission for newly-created requests.
+    private func beginProviderTransportAdmission(
+        requestID: UUID,
+        accountScope: String
+    ) -> Bool {
+        guard !providerWorkIsClosed(for: accountScope),
+              pendingProviderTransportAdmissions[requestID] == nil,
+              activeProviderTransports[requestID] == nil else {
+            return false
+        }
+        pendingProviderTransportAdmissions[requestID] =
+            PendingProviderTransportAdmission(accountScope: accountScope)
+        return true
+    }
+
+    /// Registration is actor-atomic with the closed-account check. A close
+    /// that wins before this method cancels the newly created transport; a
+    /// close that wins after registration finds it in the central registry.
+    private func registerActiveProviderTransport(
+        _ transport: ForwardPlanTransportHandle,
+        requestID: UUID,
+        accountScope: String
+    ) -> Bool {
+        guard let pending = pendingProviderTransportAdmissions[requestID],
+              pending.accountScope == accountScope else {
+            transport.cancel()
+            return false
+        }
+        guard !Task.isCancelled,
+              !pending.isRevoked,
+              !providerWorkIsClosed(for: accountScope),
+              activeProviderTransports[requestID] == nil else {
+            pendingProviderTransportAdmissions.removeValue(forKey: requestID)
+            transport.cancel()
+            removeFinishedFenceIfDrained(for: accountScope)
+            return false
+        }
+        // Transfer ownership in one actor turn: finishing can never observe a
+        // false-empty gap between pending creation and active registration.
+        pendingProviderTransportAdmissions.removeValue(forKey: requestID)
+        activeProviderTransports[requestID] = ActiveProviderTransport(
+            accountScope: accountScope,
+            handle: transport
+        )
+        return true
+    }
+
+    private func endPendingProviderTransportAdmission(
+        requestID: UUID,
+        accountScope: String
+    ) {
+        guard pendingProviderTransportAdmissions[requestID]?.accountScope
+                == accountScope else {
+            return
+        }
+        pendingProviderTransportAdmissions.removeValue(forKey: requestID)
+        removeFinishedFenceIfDrained(for: accountScope)
+    }
+
+    private func unregisterActiveProviderTransport(
+        requestID: UUID,
+        accountScope: String
+    ) {
+        guard activeProviderTransports[requestID]?.accountScope == accountScope else {
+            return
+        }
+        activeProviderTransports.removeValue(forKey: requestID)
+        removeFinishedFenceIfDrained(for: accountScope)
+    }
+
+    private func cancelActiveProviderTransports(for accountScope: String) {
+        let transports = activeProviderTransports.values
+            .filter { $0.accountScope == accountScope }
+            .map(\.handle)
+        transports.forEach { $0.cancel() }
+    }
+
+    private func revokePendingProviderTransportAdmissions(
+        for accountScope: String
+    ) {
+        let requestIDs = pendingProviderTransportAdmissions.compactMap {
+            requestID, admission in
+            admission.accountScope == accountScope ? requestID : nil
+        }
+        for requestID in requestIDs {
+            pendingProviderTransportAdmissions[requestID]?.isRevoked = true
+        }
+    }
+
+    private func removeFinishedFenceIfDrained(for accountScope: String) {
+        guard providerWorkDeletionStates[accountScope] == .finishing,
+              !pendingProviderTransportAdmissions.values.contains(where: {
+                  $0.accountScope == accountScope
+              }),
+              !activeProviderTransports.values.contains(where: {
+                  $0.accountScope == accountScope
+              }) else {
+            return
+        }
+        providerWorkDeletionStates.removeValue(forKey: accountScope)
+    }
+
+    private nonisolated static func normalizedAccountScope(
+        _ accountID: String
+    ) -> String? {
+        let trimmed = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: - Deterministic plan (pure, exposed for tests)
