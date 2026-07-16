@@ -10,8 +10,8 @@ import SwiftUI
 // moment, trends, drill history) without per-view threading.
 //
 // One method, two effects:
-//   1. Calls `ForwardPlanService.shared.generate(...)` with a fully
-//      assembled input snapshot.
+//   1. Calls `ForwardPlanService.shared.generate(...)` with an inseparable
+//      input + account authorization snapshot and a live lease preflight.
 //   2. On the returned plan: persists to `ForwardPlanStore.shared` AND
 //      injects a coach-voice rendering into the Ask Noum thread via
 //      `AskNoumStore.injectCoachTurn(_:)`.
@@ -61,22 +61,80 @@ enum ForwardPlanCoordinator {
         )
     }
 
-    /// Generate (or regenerate) the active plan and drop the rendered
-    /// coach message into the Ask Noum thread. Returns the new plan so
-    /// the caller can present feedback (e.g. toast / nav push).
+    /// Generate (or regenerate) the active plan and drop the rendered coach
+    /// message into the Ask Noum thread. Nil means the request lost its account,
+    /// lifecycle, source, latest-request, or cancellation lease while suspended;
+    /// stale work is deliberately invisible and non-persistent.
     @discardableResult
-    static func generateAndAnnounce() async -> ForwardPlan {
+    static func generateAndAnnounce() async -> ForwardPlan? {
+        guard !Task.isCancelled else { return nil }
         let input = buildInput()
-        let plan = await ForwardPlanService.shared.generate(input: input)
-        ForwardPlanStore.shared.replace(plan)
-        let voice = input.profile?.chosenStyleGoal
+        guard let request = ForwardPlanStore.shared.generationRequest(
+            for: input
+        ) else {
+            return nil
+        }
+        guard let plan = await ForwardPlanService.shared.generate(
+            request: request,
+            startTransportIfCurrent: { urlRequest in
+                guard ForwardPlanStore.shared.tokenIsCurrent(
+                    request.saveToken,
+                    currentInput: buildInput()
+                ) else {
+                    return nil
+                }
+                return ForwardPlanTransportHandle.start(urlRequest)
+            },
+            isCurrent: {
+                ForwardPlanStore.shared.tokenIsCurrent(
+                    request.saveToken,
+                    currentInput: buildInput()
+                )
+            }
+        ) else {
+            return nil
+        }
+        guard !Task.isCancelled else { return nil }
+        let currentInput = buildInput()
+        guard commit(
+            plan,
+            request: request,
+            currentInput: currentInput,
+            planStore: .shared,
+            askStore: .shared
+        ) else {
+            return nil
+        }
+        return plan
+    }
+
+    /// One synchronous MainActor commit boundary for the two user-visible effects.
+    /// The plan store owns the authoritative compare-and-save; its announcement
+    /// closure uses Ask Noum's independently checked loaded-account boundary.
+    /// No actor hop can interleave another account event during validation and
+    /// the two in-process writes; the separate durable writes are not crash-atomic.
+    static func commit(
+        _ plan: ForwardPlan,
+        request: ForwardPlanGenerationRequest,
+        currentInput: ForwardPlanInput,
+        planStore: ForwardPlanStore,
+        askStore: AskNoumStore
+    ) -> Bool {
         let message = ForwardPlanRenderer.coachMessage(
             for: plan,
-            voice: voice,
-            bigMoment: input.bigMoment
+            voice: request.input.profile?.chosenStyleGoal,
+            bigMoment: request.input.bigMoment
         )
-        AskNoumStore.shared.injectCoachTurn(message)
-        return plan
+        return planStore.commit(
+            plan,
+            currentInput: currentInput,
+            expected: request.saveToken
+        ) {
+            askStore.injectCoachTurn(
+                message,
+                expectedAccountScope: request.saveToken.accountScope
+            ) != nil
+        }
     }
 
     /// True when the user has enough qualifying sessions to merit

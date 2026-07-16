@@ -1,5 +1,41 @@
 # M15 — "A coach who's actually present" — Handoff
 
+## Current production-closure continuation — 2026-07-16
+
+This handoff covers the Forward Plan async-ownership source developed on
+`ux-overhaul` above baseline `c869b5aef`. It reuses the existing authentication,
+plan, session, provider-consent, and Ask Noum owners. A generation lease is
+available only for a fully hydrated loaded account and binds account lifecycle,
+latest intent, plan-store generation, session epoch, exact plan input, and the
+captured locale, consent record, and active provider.
+
+The final validity check and actual data-task start occur synchronously in one
+MainActor turn. Provider, deterministic, and fallback outcomes revalidate after
+suspension, and the final compare-and-save requires the source,
+authorization, plan owner, and Ask Noum loaded account to remain exact.
+Lifecycle, reload, completed local deletion, assignment, and
+phrase-reconciliation mutations invalidate stale requests. Focused
+verification passes **17/17**, the related
+selection passes **128/128**, and the complete unsigned target passes **4,348
+unique tests / 4,367 device-configuration executions** with zero failures or
+skips. The current-source unsigned Release simulator build succeeds.
+
+Do not broaden this into full Forward Plan completion. The prompt still uses
+raw recent-session filler counts rather than metric-qualified filler-rate
+evidence; first-plan generation is runtime-unreachable because the Profile card
+is unmounted, Home suppresses `.prompt`, and Ask Noum has no entry; legitimate
+fail-closed results are not explained by the mounted Home navigation path, which
+also does not retain the task for proactive cancellation; deletion initiation
+is not a lease input, so provider work can start or continue until local
+teardown;
+device-global AI-call diagnostics can retain provider/outcome/timing metadata
+across account lifecycle boundaries; repeated full-history hashing may cost
+MainActor time; and the Ask/plan durable writes are not crash-atomic. No UI
+changed, and no Forward-Plan-specific rendered, physical-device, live-provider,
+professional, longitudinal, operational, or required external evidence was
+added. The authoritative gate remains **NO-GO at 18/100, with 0/5 required
+external artifacts**.
+
 ## Current production-closure continuation — 2026-07-15
 
 This handoff covers the bounded production-closure source developed on
@@ -70,7 +106,8 @@ This is not product-wide metric or Coach Read closure. Next audit the
 qualitative Summary delivery line, durable CoachMemory/derived delivery reads,
 IM baseline comparison, Ask Noum session opener, share/request-feedback WPM,
 Proof Moment metric qualification plus the P1/P2 lifecycle/replay gaps above,
-Forward Plan inputs, and remaining durable narrative/reward consumers.
+Forward Plan metric qualification and first-plan reachability, and remaining
+durable narrative/reward consumers.
 Standalone Pace attribution and wider Roleplay routing remain product/schema
 decisions. No Proof-Moment-specific rendered, physical-device, provider,
 professional, longitudinal, operational, or required external evidence was

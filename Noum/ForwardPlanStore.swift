@@ -230,6 +230,70 @@ enum ForwardPlanProgress {
 
 // MARK: - ForwardPlanStore
 
+/// Account-owned authorization captured on the same MainActor turn as the
+/// Forward Plan input. Provider services must use this snapshot rather than
+/// re-reading live settings after suspension, or one account's context could
+/// inherit another account's cloud-processing permission.
+struct ForwardPlanExecutionAuthorization: Equatable {
+    let locale: PracticeLocale
+    let cloudProcessingConsent: CloudProcessingConsent?
+    let activeProviderRawValue: String?
+
+    init(
+        locale: PracticeLocale,
+        cloudProcessingConsent: CloudProcessingConsent?,
+        activeProvider: AIProvider?
+    ) {
+        self.locale = locale
+        self.cloudProcessingConsent = cloudProcessingConsent
+        activeProviderRawValue = activeProvider?.rawValue
+    }
+
+    var activeProvider: AIProvider? {
+        activeProviderRawValue.flatMap(AIProvider.init(rawValue:))
+    }
+
+    var allowsRemoteRequest: Bool {
+        locale.aiSupported && activeProvider != nil
+    }
+
+    @MainActor
+    static func captureCurrent() -> ForwardPlanExecutionAuthorization {
+        ForwardPlanExecutionAuthorization(
+            locale: LocaleSettingsManager.shared.current,
+            cloudProcessingConsent: AISettingsManager.shared.cloudProcessingConsent,
+            activeProvider: AISettingsManager.shared.activeProvider
+        )
+    }
+
+    static func == (
+        lhs: ForwardPlanExecutionAuthorization,
+        rhs: ForwardPlanExecutionAuthorization
+    ) -> Bool {
+        lhs.locale.rawValue == rhs.locale.rawValue
+            && lhs.cloudProcessingConsent == rhs.cloudProcessingConsent
+            && lhs.activeProviderRawValue == rhs.activeProviderRawValue
+    }
+}
+
+/// Account-, lifecycle-, store-, source-, and authorization-scoped lease for
+/// one asynchronous Forward Plan request. The request ID also makes the most
+/// recent user intent authoritative when two provider calls finish out of order.
+struct ForwardPlanSaveToken: Equatable {
+    let requestID: UUID
+    let accountScope: String
+    let accountLifecycleGeneration: UInt64
+    let planStoreGeneration: UInt64
+    let sessionStoreEpoch: PracticeSessionStoreEpoch
+    let inputIdentity: String
+    let executionAuthorization: ForwardPlanExecutionAuthorization
+}
+
+struct ForwardPlanGenerationRequest {
+    let input: ForwardPlanInput
+    let saveToken: ForwardPlanSaveToken
+}
+
 /// Per-account persistent store for the active forward plan. Mirrors
 /// the singleton + reload/end-session pattern every other per-account
 /// store follows.
@@ -239,45 +303,178 @@ final class ForwardPlanStore: ObservableObject {
 
     @Published private(set) var activePlan: ForwardPlan?
 
-    private let accountKey = "NoumAccountID"
-    private let planKeyPrefix = "forwardPlan."
+    /// The account whose plan is actually loaded in memory. Keychain identity
+    /// can change before registry hydration completes; keeping this separate
+    /// prevents a stale row from being relabelled as the new account's state.
+    private(set) var loadedAccountScope: String?
 
-    private init() {}
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
+    private let accountLifecycleGenerationProvider: () -> UInt64
+    private let accountIsReadyProvider: () -> Bool
+    private let sessionStoreEpochProvider: () -> PracticeSessionStoreEpoch?
+    private let executionAuthorizationProvider: () -> ForwardPlanExecutionAuthorization
+    private let planKeyPrefix = "forwardPlan."
+    private var planStoreGeneration: UInt64 = 0
+    private var latestGenerationRequestID: UUID?
+
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: (() -> String?)? = nil,
+        accountLifecycleGenerationProvider: (() -> UInt64)? = nil,
+        accountIsReadyProvider: (() -> Bool)? = nil,
+        sessionStoreEpochProvider: (() -> PracticeSessionStoreEpoch?)? = nil,
+        executionAuthorizationProvider: (() -> ForwardPlanExecutionAuthorization)? = nil
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider ?? {
+            KeychainHelper.load(key: "NoumAccountID")
+        }
+        self.accountLifecycleGenerationProvider = accountLifecycleGenerationProvider ?? {
+            AuthManager.shared.accountLifecycleGeneration
+        }
+        self.accountIsReadyProvider = accountIsReadyProvider ?? {
+            AuthManager.shared.isSignedIn
+                && AuthManager.shared.initialAccountHydrationState == .ready
+        }
+        self.sessionStoreEpochProvider = sessionStoreEpochProvider ?? {
+            PracticeSessionStore.shared.loadedAccountEpoch
+        }
+        self.executionAuthorizationProvider = executionAuthorizationProvider ?? {
+            ForwardPlanExecutionAuthorization.captureCurrent()
+        }
+        activePlan = nil
+        loadedAccountScope = nil
+    }
 
     // MARK: - Lifecycle
 
     func reloadForCurrentAccount() {
-        guard let accountID = currentAccountID else {
-            activePlan = nil
-            return
-        }
-        activePlan = Self.loadPlan(forKey: planKey(for: accountID))
+        invalidateGenerationRequests()
+        loadedAccountScope = nil
+        activePlan = nil
+        guard let accountID = currentAccountID else { return }
+        loadedAccountScope = accountID
+        activePlan = Self.loadPlan(
+            forKey: planKey(for: accountID),
+            defaults: defaults
+        )
     }
 
     func endSession() {
+        invalidateGenerationRequests()
+        loadedAccountScope = nil
         activePlan = nil
     }
 
     // MARK: - API
 
-    /// Replace the active plan and persist. Triggered by `ForwardPlanService`
-    /// after a successful generation (AI or deterministic fallback).
-    func replace(_ plan: ForwardPlan) {
-        guard let accountID = currentAccountID else { return }
+    /// Capture an inseparable request + lease before provider work can suspend.
+    /// Auth readiness and the session-store epoch prove that every live store
+    /// has completed account hydration rather than merely observing a newly
+    /// written Keychain identity.
+    func generationRequest(
+        for input: ForwardPlanInput
+    ) -> ForwardPlanGenerationRequest? {
+        guard accountIsReadyProvider(),
+              let accountID = currentAccountID,
+              loadedAccountScope == accountID,
+              let sessionStoreEpoch = sessionStoreEpochProvider(),
+              sessionStoreEpoch.accountScope == accountID,
+              let inputIdentity = input.generationIdentity else {
+            return nil
+        }
+        let executionAuthorization = executionAuthorizationProvider()
+        let requestID = UUID()
+        latestGenerationRequestID = requestID
+        return ForwardPlanGenerationRequest(
+            input: input,
+            saveToken: ForwardPlanSaveToken(
+                requestID: requestID,
+                accountScope: accountID,
+                accountLifecycleGeneration: accountLifecycleGenerationProvider(),
+                planStoreGeneration: planStoreGeneration,
+                sessionStoreEpoch: sessionStoreEpoch,
+                inputIdentity: inputIdentity,
+                executionAuthorization: executionAuthorization
+            )
+        )
+    }
+
+    /// Revalidate the complete lease immediately before committing. Callers
+    /// rebuild `currentInput` from the same existing state owners; any profile,
+    /// baseline, session, trend, drill, recommendation, transfer, streak,
+    /// rating, or Big Moment drift rejects the stale result.
+    func tokenIsCurrent(
+        _ token: ForwardPlanSaveToken,
+        currentInput: ForwardPlanInput
+    ) -> Bool {
+        guard accountIsReadyProvider(),
+              currentAccountID == token.accountScope,
+              loadedAccountScope == token.accountScope,
+              accountLifecycleGenerationProvider()
+                == token.accountLifecycleGeneration,
+              planStoreGeneration == token.planStoreGeneration,
+              latestGenerationRequestID == token.requestID,
+              sessionStoreEpochProvider() == token.sessionStoreEpoch,
+              executionAuthorizationProvider()
+                == token.executionAuthorization,
+              currentInput.generationIdentity == token.inputIdentity else {
+            return false
+        }
+        return true
+    }
+
+    /// Compare-and-save boundary for async generation. `announce` executes
+    /// synchronously on the same MainActor turn after every guard and after the
+    /// plan has encoded successfully. If the checked Ask Noum write rejects,
+    /// no plan state changes; if it succeeds, the non-throwing UserDefaults
+    /// write and published plan land before another account event can run.
+    @discardableResult
+    func commit(
+        _ plan: ForwardPlan,
+        currentInput: ForwardPlanInput,
+        expected token: ForwardPlanSaveToken,
+        announce: () -> Bool
+    ) -> Bool {
+        guard tokenIsCurrent(token, currentInput: currentInput),
+              plan.bigMomentID == currentInput.bigMoment?.id,
+              plan.voiceAtGeneration == currentInput.profile?.chosenStyleGoal,
+              let data = try? JSONEncoder().encode(plan),
+              announce() else {
+            return false
+        }
+        latestGenerationRequestID = nil
         activePlan = plan
-        persist(plan, accountID: accountID)
+        defaults.set(data, forKey: planKey(for: token.accountScope))
+        return true
     }
 
     /// Drop the active plan entirely. Used by Settings → "Reset plan" and
     /// the implicit invalidation path when the user clears their Big Moment.
     func clearPlan() {
-        guard let accountID = currentAccountID else {
+        invalidateGenerationRequests()
+        guard let accountID = currentAccountID,
+              loadedAccountScope == accountID else {
             activePlan = nil
             return
         }
         activePlan = nil
-        UserDefaults.standard.removeObject(forKey: planKey(for: accountID))
+        defaults.removeObject(forKey: planKey(for: accountID))
     }
+
+    #if DEBUG
+    /// Explicit fixture-only bypass. Production generation must use the leased
+    /// compare-and-save path above; screenshot fixtures still need a direct,
+    /// deterministic way to install an authored plan after account hydration.
+    func replaceForDebug(_ plan: ForwardPlan) {
+        invalidateGenerationRequests()
+        guard let accountID = currentAccountID,
+              loadedAccountScope == accountID else { return }
+        activePlan = plan
+        persist(plan, accountID: accountID)
+    }
+    #endif
 
     /// Attach one explicitly saved Phrase Bank entry to a specific week of the
     /// currently rendered plan. `expectedPlanID` prevents a delayed sheet tap
@@ -289,6 +486,7 @@ final class ForwardPlanStore: ObservableObject {
         expectedPlanID: UUID
     ) -> Bool {
         guard let accountID = currentAccountID,
+              loadedAccountScope == accountID,
               let plan = activePlan,
               plan.id == expectedPlanID,
               let updated = plan.assigningPracticePhrase(
@@ -297,6 +495,7 @@ final class ForwardPlanStore: ObservableObject {
               ) else {
             return false
         }
+        invalidateGenerationRequests()
         activePlan = updated
         persist(updated, accountID: accountID)
         return true
@@ -306,11 +505,13 @@ final class ForwardPlanStore: ObservableObject {
     /// text owner; the plan owner only removes its identifier reference.
     fileprivate func removePracticePhraseReference(entryID: UUID) {
         guard let accountID = currentAccountID,
+              loadedAccountScope == accountID,
               let plan = activePlan,
               plan.practicePhraseEntryIDsByWeek?.values.contains(entryID) == true else {
             return
         }
         let updated = plan.removingPracticePhrase(entryID: entryID)
+        invalidateGenerationRequests()
         activePlan = updated
         persist(updated, accountID: accountID)
     }
@@ -320,6 +521,7 @@ final class ForwardPlanStore: ObservableObject {
     /// the same account registry before this callback runs.
     func reconcilePracticePhraseReferences(validEntryIDs: Set<UUID>) {
         guard let accountID = currentAccountID,
+              loadedAccountScope == accountID,
               let plan = activePlan else {
             return
         }
@@ -327,6 +529,7 @@ final class ForwardPlanStore: ObservableObject {
             validEntryIDs: validEntryIDs
         )
         guard updated != plan else { return }
+        invalidateGenerationRequests()
         activePlan = updated
         persist(updated, accountID: accountID)
     }
@@ -362,8 +565,10 @@ final class ForwardPlanStore: ObservableObject {
     // MARK: - Auth wipe
 
     func deleteAllData(for accountID: String) {
-        UserDefaults.standard.removeObject(forKey: planKey(for: accountID))
-        if currentAccountID == accountID {
+        defaults.removeObject(forKey: planKey(for: accountID))
+        if currentAccountID == accountID || loadedAccountScope == accountID {
+            invalidateGenerationRequests()
+            loadedAccountScope = nil
             activePlan = nil
         }
     }
@@ -372,7 +577,7 @@ final class ForwardPlanStore: ObservableObject {
 
     private func persist(_ plan: ForwardPlan, accountID: String) {
         guard let data = try? JSONEncoder().encode(plan) else { return }
-        UserDefaults.standard.set(data, forKey: planKey(for: accountID))
+        defaults.set(data, forKey: planKey(for: accountID))
     }
 
     private func planKey(for accountID: String) -> String {
@@ -380,13 +585,23 @@ final class ForwardPlanStore: ObservableObject {
     }
 
     private var currentAccountID: String? {
-        KeychainHelper.load(key: accountKey)
+        let trimmed = accountIDProvider()?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func loadPlan(forKey key: String) -> ForwardPlan? {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    private static func loadPlan(
+        forKey key: String,
+        defaults: UserDefaults
+    ) -> ForwardPlan? {
+        guard let data = defaults.data(forKey: key),
               let plan = try? JSONDecoder().decode(ForwardPlan.self, from: data) else { return nil }
         return plan
+    }
+
+    private func invalidateGenerationRequests() {
+        planStoreGeneration &+= 1
+        latestGenerationRequestID = nil
     }
 }
 

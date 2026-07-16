@@ -1,14 +1,14 @@
 import Foundation
+import CryptoKit
 
 // MARK: - Forward Plan Service
 //
 // Generates a 4-week coaching program from the user's actual state.
-// Always returns a `ForwardPlan` — when no AI provider is configured,
-// when the locale is non-English, or when the network fails, the
-// deterministic rule-based path runs instead. The deterministic path
-// is honest about being rule-based (`isAIBacked: false`) so the UI
-// can label it accurately rather than passing template copy off as
-// AI insight.
+// Returns a deterministic `ForwardPlan` when no AI provider is authorized,
+// the captured locale is unsupported, or an authorized provider fails. It
+// returns nil only when the account/source/authorization lease expires while
+// work is suspended, so stale private context never crosses the transport
+// boundary and stale fallback copy never becomes durable coaching.
 //
 // Reuses the same provider plumbing (OpenAI / DeepSeek / Gemini) as
 // `AIInsightsService` and `AICoachChatService`. JSON-mode response so
@@ -69,17 +69,195 @@ struct ForwardPlanInput {
     }
 }
 
+/// Stable, content-free identity for the exact state snapshot that shaped one
+/// asynchronous Forward Plan request. The digest is never persisted or logged;
+/// it exists only so a completion can prove that every input family is still
+/// current before it becomes durable coaching or conversation history.
+extension ForwardPlanInput {
+    var generationIdentity: String? {
+        let payload = ForwardPlanInputIdentityPayload(input: self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: "+infinity",
+            negativeInfinity: "-infinity",
+            nan: "nan"
+        )
+        guard let data = try? encoder.encode(payload) else { return nil }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
+/// `SkillTrend` intentionally remains a lightweight analysis value rather than
+/// a persistence model. This projection lets the generation identity include
+/// every trend field without changing that architectural boundary.
+private struct ForwardPlanTrendIdentity: Encodable {
+    let id: String
+    let skillArea: String
+    let direction: String
+    let confidence: String
+    let windowSize: Int
+    let currentLevel: String
+    let recentDelta: String?
+
+    init(_ trend: SkillTrend) {
+        id = trend.id
+        skillArea = trend.skillArea.rawValue
+        direction = trend.direction.rawValue
+        confidence = trend.confidence.rawValue
+        windowSize = trend.windowSize
+        currentLevel = trend.currentLevel.rawValue
+        recentDelta = trend.recentDelta
+    }
+}
+
+/// Codable projection of all current and future-facing inputs owned by the
+/// existing stores. Including the full value snapshots (rather than only the
+/// fields used by today's prompt) makes source drift fail closed if generation
+/// logic later begins reading another already-present field.
+private struct ForwardPlanInputIdentityPayload: Encodable {
+    let profile: CoachingProfile?
+    let baseline: CommunicationBaseline
+    let sessions: [PracticeSession]
+    let weeklyDelta: Int
+    let weeklyReps: Int
+    let currentStreak: Int
+    let bigMoment: BigMoment?
+    let bigMomentDaysUntil: Int?
+    let trends: [ForwardPlanTrendIdentity]
+    let recentDrills: [DrillHistoryStore.Entry]
+    let recommendationOutcomes: [RecommendationOutcome]
+    let transferOutcomes: [BigMomentOutcomeReport]
+
+    init(input: ForwardPlanInput) {
+        profile = input.profile
+        baseline = input.baseline
+        sessions = input.sessions
+        weeklyDelta = input.weeklyDelta
+        weeklyReps = input.weeklyReps
+        currentStreak = input.currentStreak
+        bigMoment = input.bigMoment
+        bigMomentDaysUntil = input.bigMomentDaysUntil
+        trends = input.trends.map(ForwardPlanTrendIdentity.init)
+        recentDrills = input.recentDrills
+        recommendationOutcomes = input.recommendationOutcomes
+        transferOutcomes = input.transferOutcomes
+    }
+}
+
+/// One already-started provider request. Production creates and resumes the
+/// `URLSessionDataTask` synchronously inside the MainActor lease check, so an
+/// account or consent mutation cannot slip into an actor-hop gap between
+/// authorization and transmission.
+struct ForwardPlanTransportHandle: @unchecked Sendable {
+    typealias Response = (Data, URLResponse)
+
+    private let response: () async throws -> Response
+    private let cancellation: () -> Void
+
+    init(
+        response: @escaping () async throws -> Response,
+        cancellation: @escaping () -> Void = {}
+    ) {
+        self.response = response
+        self.cancellation = cancellation
+    }
+
+    func value() async throws -> Response {
+        try await response()
+    }
+
+    func cancel() {
+        cancellation()
+    }
+
+    @MainActor
+    static func start(
+        _ request: URLRequest,
+        session: URLSession = .shared
+    ) -> ForwardPlanTransportHandle {
+        let responseState = ForwardPlanURLSessionResponseState()
+        let task = session.dataTask(with: request) { data, response, error in
+            Task {
+                await responseState.complete(
+                    data: data,
+                    response: response,
+                    error: error
+                )
+            }
+        }
+        let handle = ForwardPlanTransportHandle(
+            response: {
+                try await responseState.value()
+            },
+            cancellation: {
+                task.cancel()
+            }
+        )
+        task.resume()
+        return handle
+    }
+}
+
+private actor ForwardPlanURLSessionResponseState {
+    typealias Response = ForwardPlanTransportHandle.Response
+
+    private var result: Result<Response, Error>?
+    private var continuation: CheckedContinuation<Response, Error>?
+
+    func value() async throws -> Response {
+        if let result {
+            return try result.get()
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func complete(data: Data?, response: URLResponse?, error: Error?) {
+        let resolved: Result<Response, Error>
+        if let error {
+            resolved = .failure(error)
+        } else if let data, let response {
+            resolved = .success((data, response))
+        } else {
+            resolved = .failure(URLError(.badServerResponse))
+        }
+        result = resolved
+        continuation?.resume(with: resolved)
+        continuation = nil
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 actor ForwardPlanService {
 
     static let shared = ForwardPlanService()
 
-    private init() {}
+    private let apiKeyProvider: (AIProvider) -> String?
 
-    /// Generate a plan. Always returns something — the deterministic
-    /// fallback is the safety net so the caller never has to handle
-    /// nil. Use `plan.isAIBacked` to know which path ran.
-    func generate(input: ForwardPlanInput) async -> ForwardPlan {
+    init(
+        apiKeyProvider: @escaping (AIProvider) -> String? = {
+            AIProviderCredential.apiKey(for: $0)
+        }
+    ) {
+        self.apiKeyProvider = apiKeyProvider
+    }
+
+    /// Generate from one inseparable account-owned request. The provider and
+    /// locale come only from the captured authorization snapshot. `isCurrent`
+    /// revalidates that lease immediately before transport and immediately
+    /// after it returns; nil means the result no longer has authority to exist.
+    func generate(
+        request: ForwardPlanGenerationRequest,
+        startTransportIfCurrent: @escaping @MainActor (
+            URLRequest
+        ) -> ForwardPlanTransportHandle?,
+        isCurrent: @escaping @MainActor () -> Bool
+    ) async -> ForwardPlan? {
+        let input = request.input
         let fallback = Self.deterministicPlan(input: input)
         func record(
             _ outcome: AICallDiagnosticOutcome,
@@ -98,15 +276,16 @@ actor ForwardPlanService {
             )
         }
 
-        guard await activeLocaleSupportsAI() else {
+        let authorization = request.saveToken.executionAuthorization
+        guard authorization.locale.aiSupported else {
             record(.skipped, "Locale not AI-supported")
             return fallback
         }
-        let configuredProvider = await currentProvider()
-        guard let provider = configuredProvider,
+        let capturedProvider = authorization.activeProvider
+        guard let provider = capturedProvider,
               let endpoint = provider.endpoint,
-              let key = apiKey(for: provider) else {
-            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
+              let key = apiKeyProvider(provider) else {
+            record(.skipped, capturedProvider == nil ? "No active provider" : "Missing key or endpoint", provider: capturedProvider)
             return fallback
         }
 
@@ -127,8 +306,24 @@ actor ForwardPlanService {
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+            guard !Task.isCancelled,
+                  let transport = await startTransportIfCurrent(request) else {
+                record(.skipped, "Request authority changed before transport", provider: provider)
+                return nil
+            }
             let startedAt = Date()
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await withTaskCancellationHandler(
+                operation: {
+                    try await transport.value()
+                },
+                onCancel: {
+                    transport.cancel()
+                }
+            )
+            guard !Task.isCancelled, await isCurrent() else {
+                record(.skipped, "Request authority changed during transport", provider: provider, startedAt: startedAt)
+                return nil
+            }
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode
                 record(
@@ -152,8 +347,16 @@ actor ForwardPlanService {
                 voiceAtGeneration: input.profile?.chosenStyleGoal,
                 isAIBacked: true
             )
+        } catch is CancellationError {
+            record(.skipped, "Request cancelled", provider: provider)
+            return nil
         } catch {
+            guard !Task.isCancelled else {
+                record(.skipped, "Request cancelled", provider: provider)
+                return nil
+            }
             record(.failure, "Transport or decode error", provider: provider)
+            guard await isCurrent() else { return nil }
             return fallback
         }
     }
@@ -672,20 +875,6 @@ actor ForwardPlanService {
     }
 
     // MARK: - Provider plumbing (shared with AICoachChatService / AIInsightsService)
-
-    @MainActor
-    private func currentProvider() -> AIProvider? {
-        AISettingsManager.shared.activeProvider
-    }
-
-    @MainActor
-    private func activeLocaleSupportsAI() -> Bool {
-        LocaleSettingsManager.shared.current.aiSupported
-    }
-
-    private func apiKey(for provider: AIProvider) -> String? {
-        AIProviderCredential.apiKey(for: provider)
-    }
 
     private func extractContent(from data: Data, provider: AIProvider) -> String? {
         switch provider {

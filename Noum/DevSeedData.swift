@@ -152,7 +152,7 @@ enum DevSeedData {
         let plan = ForwardPlanService.deterministicPlan(
             input: ForwardPlanCoordinator.buildInput()
         )
-        planStore.replace(plan)
+        planStore.replaceForDebug(plan)
 
         guard let entry = phraseBank.save(
             text: forwardPlanPhraseUITestText,

@@ -1,5 +1,54 @@
 # Noum — Current state
 
+## 2026-07-16 — Forward Plan async work is account/source/authorization leased
+
+The current source, developed above baseline `c869b5aef`, closes the verified
+P0 cross-account, stale-source, and consent-borrowing races in asynchronous
+Forward Plan generation through the existing authentication, plan, session,
+provider-consent, and Ask Noum owners. A request can be leased only while the
+signed-in account is fully hydrated and owns the loaded plan and session-store
+epochs. Its token binds the account lifecycle, latest request, plan-store
+generation, session epoch, exact plan-shaping input identity, and captured
+locale, consent record, and active provider.
+
+`ForwardPlanService` uses only that captured execution authorization. The
+final authorization check and `URLSessionDataTask.resume()` occur in one
+synchronous MainActor turn, and cancellation stops an owned in-flight data
+task. Provider, deterministic, and fallback results are revalidated after any
+suspension. The final in-process commit rechecks source and authorization,
+requires Ask Noum's independently loaded account to match, writes the coach
+turn, and then persists the plan without allowing another account event to
+interleave. Reload, lifecycle, completed local deletion, phrase assignment,
+and phrase reconciliation mutations invalidate outstanding leases. These two
+durable writes are deliberately not described as crash-atomic.
+
+Focused account/source/authorization verification passes **17/17**. The
+related Forward Plan, Ask Noum, provider, and account regression selection
+passes **128/128**. The complete unsigned `NoumTests` target passes **4,348
+unique tests / 4,367 device-configuration executions** with zero failures or
+skips; the local result bundle is
+`/private/tmp/noum-forward-plan-atomic-full-20260716-0108.xcresult`. The
+current-source unsigned Release simulator build succeeds.
+
+This closes only the asynchronous ownership and authorization boundary. The
+provider prompt still exposes raw recent-session filler counts rather than the
+20-word / 15-second, confidence-, schema-, and fixture-qualified filler-rate
+projection. First-plan generation is currently runtime-unreachable: the
+Profile `CoachingPlanCard` is not mounted, Home suppresses `.prompt` and only
+generates for `.stale`, and Ask Noum has no first-plan entry. The mounted Home
+path navigates to Ask immediately and does not explain a legitimate fail-closed
+result; it also does not retain the task handle for proactive cancellation.
+Account deletion initiation is not yet part of the lease, so a pending request
+may start or continue provider processing during remote deletion; completed
+local teardown and postflight still prevent plan/thread persistence. AI-call
+diagnostics also remain device-global metadata outside the account registry,
+so provider/outcome/timing rows can survive account switch or deletion even
+though they contain no prompt or response content. No Forward-Plan-specific
+rendered, physical-device, live-provider, professional, longitudinal,
+operational, or required external
+evidence was collected. Production readiness remains **NO-GO at 18/100 with
+0/5 required external artifacts**.
+
 ## 2026-07-15 — Proof Moment writes are account/source leased end to end
 
 The current source, developed above baseline `8fbdbab6e`, closes the
@@ -90,8 +139,9 @@ succeeds. This is still a
 bounded trust closure: the qualitative Summary delivery line, durable
 CoachMemory/derived delivery reads, IM baseline comparison, Ask Noum session
 opener, share/request-feedback WPM, Proof Moment metric qualification and
-remaining lifecycle/replay gaps, Forward Plan inputs, other durable
-narrative/reward consumers, rendered/device behavior,
+remaining lifecycle/replay gaps, Forward Plan metric qualification and
+first-plan reachability, other durable narrative/reward consumers,
+rendered/device behavior,
 live-provider quality, and all external evidence gates remain open. Production
 readiness therefore remains **NO-GO at 18/100 with 0/5 required external
 artifacts**.

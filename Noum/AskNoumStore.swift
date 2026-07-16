@@ -559,6 +559,10 @@ final class AskNoumStore: ObservableObject {
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
     private let diagnosticsStore: AICallDiagnosticsStore?
+    /// Account whose thread is actually resident in `messages`. This must not
+    /// be inferred from the current Keychain identity during an account switch;
+    /// registry hydration owns when a newly identified account is loaded.
+    private(set) var loadedAccountScope: String? = nil
 
     init(
         defaults: UserDefaults = .standard,
@@ -573,6 +577,7 @@ final class AskNoumStore: ObservableObject {
             self.accountIDProvider = { Self.defaultAccountIDProvider() }
         }
         loadFromDisk()
+        loadedAccountScope = Self.normalizedAccountScope(self.accountIDProvider())
     }
 
     /// Append a user-authored message + a pending coach row. Returns
@@ -911,6 +916,7 @@ final class AskNoumStore: ObservableObject {
     func reloadForCurrentAccount() {
         clearInMemoryState()
         loadFromDisk()
+        loadedAccountScope = Self.normalizedAccountScope(accountIDProvider())
     }
 
     /// Session reset (sign-out): clear the in-memory thread. Disk is left
@@ -929,6 +935,7 @@ final class AskNoumStore: ObservableObject {
         pendingInjectedCoachID = nil
         isAwaitingReply = false
         lastFailure = nil
+        loadedAccountScope = nil
     }
 
     /// Cache an AI-generated chip set for a specific coach reply. Called
@@ -1037,6 +1044,27 @@ final class AskNoumStore: ObservableObject {
     /// hydrated, non-pending `.coach` row immediately.
     @discardableResult
     func injectCoachTurn(_ text: String) -> UUID? {
+        appendInjectedCoachTurn(text)
+    }
+
+    /// Async-derived artifacts use this explicit overload. The expected
+    /// account must be both the current identity and the thread actually loaded
+    /// in memory; there is intentionally no optional/defaulted safety token.
+    @discardableResult
+    func injectCoachTurn(
+        _ text: String,
+        expectedAccountScope: String
+    ) -> UUID? {
+        let expected = Self.normalizedAccountScope(expectedAccountScope)
+        guard expected != nil,
+              expected == Self.normalizedAccountScope(accountIDProvider()),
+              expected == loadedAccountScope else {
+            return nil
+        }
+        return appendInjectedCoachTurn(text)
+    }
+
+    private func appendInjectedCoachTurn(_ text: String) -> UUID? {
         let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
         guard !trimmed.isEmpty else { return nil }
         let msg = CoachMessage(role: .coach, text: trimmed, isPending: false)
@@ -1151,6 +1179,12 @@ final class AskNoumStore: ObservableObject {
         #else
         return nil
         #endif
+    }
+
+    private static func normalizedAccountScope(_ accountID: String?) -> String? {
+        let trimmed = accountID?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
