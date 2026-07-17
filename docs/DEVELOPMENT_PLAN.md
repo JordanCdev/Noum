@@ -164,9 +164,10 @@ qualified filler provenance. Longitudinal reads require two to five unique
 exact-comparator reps and emit only complete supported metric cohorts. iOS and
 Functions bind metric kind, value, and direction; keep provenance IDs out of
 visible/model prose; and return exact/trend briefs without a model call or
-invented drill. Unsupported claims remain restrained. This source closure does
-not make the feature live: the current production roster still lacks the app-
-required `coachChatV2` callable.
+invented drill. Unsupported claims remain restrained. The capability closure is
+now live: `coachChatV2` and the updated availability handshake read back active
+from `europe-west2`. A generated App Check-valid conversation and human wording
+acceptance remain open.
 
 The next Ask Noum core-loop closure work is ordered:
 
@@ -176,11 +177,9 @@ The next Ask Noum core-loop closure work is ordered:
 - exercise exact-stat and longitudinal questions through the real composer and
   current capability client, including unavailable, retry, relaunch, and
   supported-account states;
-- reconcile the four-function production roster with the reviewed source roster
-  of **18 callables plus one scheduled function (19 total)**; deploy and read
-  back both `coachChatV2` and the updated `coachChatAvailability` capability
-  contract before distributing the v2 app, only after the intentional deploy
-  lock and release prerequisites are resolved;
+- preserve the verified active `coachChatV2` plus updated
+  `coachChatAvailability` deployment while keeping the remaining reviewed
+  source roster behind the combined-backend lock;
 - smoke mixed v1/v2 clients, measure v2 adoption, and prove rollback before any
   legacy retirement decision;
 - capture current-source App Check-valid generated conversations for the

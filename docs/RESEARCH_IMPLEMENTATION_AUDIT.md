@@ -39,9 +39,10 @@ transport failures remain ambiguous.
 The current Ask Noum audit records a failed user-acceptance boundary. The app
 usually reported that coaching was unavailable; replies that did land were
 rejected as repetitive, unnatural, and unlike a human expert communication
-coach. The read-only production inventory exposes only `coachChat`,
-`coachChatAvailability`, `deleteAccount`, and `transcriptionToken`; the app's
-required `coachChatV2` callable is absent. Production admission also accepted
+coach. Before the 2026-07-17 repair, the read-only production inventory exposed
+only `coachChat`, `coachChatAvailability`, `deleteAccount`, and
+`transcriptionToken`; the app's required `coachChatV2` callable was absent.
+Production admission also accepted
 Auth/App Check while the next five observed legacy `coachChat` generations
 failed `data-loss`, so silently falling back to v1 would hide one broken
 contract behind another. The earlier five-case Vertex run is a synthetic
@@ -50,8 +51,22 @@ A fresh read-only inventory on 2026-07-17 reconfirmed that same four-function
 roster after the simulator displayed the backend-version banner. The attached
 console excerpt contains only simulator keyboard-haptics library noise, not a
 coach/Firebase error. User copy now states that the required service is not live
-and that updating the app will not fix it; no readiness credit is earned until
-the backend is deployed and read back.
+and that updating the app will not fix it.
+
+That availability blocker is now repaired, but quality acceptance is not. An
+explicitly authorized, source-bound scoped release from commit `86334ed45`
+deployed only `coachChatV2` and `coachChatAvailability` to `noum-d0b6f` in
+`europe-west2`. Both read back `ACTIVE` on Node 22 with source hash
+`f5c8c1a1b509fb519a749a48b79337357cbf6634` and the dedicated
+`noum-coach-runtime@noum-d0b6f.iam.gserviceaccount.com` identity. The build
+required least-privilege restoration for the default build identity: source-
+bucket `roles/storage.objectViewer`, regional `gcf-artifacts`
+`roles/artifactregistry.writer`, and project `roles/logging.logWriter`; no
+Editor/Owner role was restored. Unauthenticated probes fail closed with
+401/403, and the installed simulator build clears the backend-version banner
+and enables the composer. No generated message has yet been sent through that
+composer, so this earns availability evidence only—not live wording quality,
+reporter acceptance, professional review, rollback, or production readiness.
 
 The current working tree adds the normal `coachChatV2` route and one versioned
 server policy. Typed personal-evidence, general-coaching, memory-handoff, and
@@ -195,8 +210,9 @@ has a score. Exact and trend replies use the vetted direct brief without a model
 call or drill, omit provenance IDs from prose, and are rejected on both sides if
 metric kind, value, rounded direction, or visible direction wording diverges.
 The rate parser no longer mistakes “fillers per minute” for a filler count.
-Unsupported evidence remains restrained. This is a source contract, not live
-availability: production still lacks `coachChatV2`.
+Unsupported evidence remains restrained. The v2 callable and exact capability
+handshake are now live, but an App Check-valid generated conversation and
+human quality acceptance remain unproved.
 
 For the preceding deletion slice, local evidence is green: **70/70** focused
 iOS tests, **55/55** adjacent
@@ -1217,6 +1233,7 @@ Historical results are not treated as proof for later behavior.
 | Legacy endpoint, cloud-probe, and TestFlight preflight contracts | **Proved** | 7 status-only endpoint-probe tests, 4 no-network cloud-probe scenarios, and 31 signing/TestFlight preflight tests passed. The preflight forwards and independently requires the explicit attachment-backed run accepted by readiness. These results prove local tooling behavior only. |
 | Current app-path dump preflight | **Proved** | The documented source-bound evidence-refresh wrapper produced 53 conversations/109 turns from detached clean commit `ac664112`. Fail-closed preflight passed with zero blockers or warnings, zero missing trace commits/fingerprints, and exact coach fingerprint `sha256:adfcd7bce86a2e248a923865aa4d014f93ab564670acc42e690585a14cbae2f4`. The harness explicitly supplies no prior case memory rather than reading an arbitrary signed-in simulator account. |
 | Committed canonical app-path baseline | **Proved** | The refreshed local canonical report embeds `ac664112` / `sha256:adfcd7bc…cbae2f4`, scores all 50 required fixtures at 79.78, and passes its local score/coverage and trace-shape gates with zero fixture failures or placeholder leaks. It is scripted-gold post-generation wiring evidence: each authored target reply is injected through the pipeline. It does not exercise production generation, Auth/App Check, callable availability, human-coach quality, physical-device behavior, or launch readiness. |
+| Ask Noum v2 production capability readback (2026-07-17) | **Partially proved live** | Source-bound commit `86334ed45` added a checked-in two-function release path and deployed only `coachChatV2` plus updated `coachChatAvailability` to `noum-d0b6f` in `europe-west2`. Both read back `ACTIVE`, Node 22, identical source hash `f5c8c1a1b509fb519a749a48b79337357cbf6634`, and the dedicated `noum-coach-runtime` identity. The default build identity has only source-bucket object viewer, regional `gcf-artifacts` writer, and project log writer for this build path; no Editor/Owner grant was restored. Unauthenticated endpoints return 401/403, and the installed iPhone 17 simulator build clears the backend-version banner and enables the composer. This row supersedes later historical statements that v2 is absent, undeployed, or that no scoped execute path exists. It does not prove an App Check-valid generated completion, acceptable visible copy, mixed-client behavior, rollback, independent review, or production readiness. |
 | Ask Noum supported-identity availability | **Incomplete** | Production logs show nominal admission followed by five consecutive `data-loss` model failures. The current source replaces the false boolean echo with one service-owned exact remote capability preflight per attempted turn, distinguishes incomplete generation from network failure, preserves typed limitation reasons, and requires exact Firebase UID/durable account, hydration, backend eligibility, and deletion-fence authority. A `local-guest-*` owner now has one bounded automatic/explicit path to a new anonymous Firebase UID through a journaled exact-data copy, after which Ask refreshes on target hydration. The retained-intervention rewrite/fallback deadlock is closed locally and the focused provider-chain result passes 31/31. This is not an existing-account merge or complete recovery system: lost same-UID Firebase sessions, Apple/Google link-success-before-Keychain, deployed anonymous-provider configuration, and physical/TestFlight relaunch remain gaps. The historical signed Ask selection passed 224/224 and the preceding broader local selection passed 252/252 before the newest continuity edit, but the route is undeployed and no App Check-valid current-source conversation proves service availability or acceptable output. |
 | Production coaching-policy parity | **Incomplete** | The prior secure path dropped the detailed client prompt. The current source instead sends validated voice, turn depth, turn intent, a typed coaching brief, and short verified proof quotes; it keeps the full transcript local, derives the concise anti-invention/anti-redundancy/trust-repair contract on the server, and returns policy plus generation-mode provenance. Known greetings, off-topic probes, reply preferences, and vulnerable disclosures cannot receive deterministic coaching briefs or short prescriptions; iOS also suppresses its provisional assessment for those turns. A bounded server/client gate removes stored drills from personal explanation and judgement turns that did not request action. When an action-seeking turn deliberately retains the recent intervention, exact or synonym-swapped restatement remains rejected and only a current-evidence-led continuity reference is accepted. Typed proof is bound to the selected rubric dimension and quantity floor, and unclassified hedge semantics stay neutral. Direct evaluations and natural exact-stat requests use personal evidence; action targets and attributed self-reports remain distinct. Bounded latest-rep metrics and exact-comparable longitudinal trends now survive the secure wire, keep IDs out of prose, validate kind/value/rounded direction on both sides, and return vetted evidence-only copy without a model call or invented drill. Coach-quality repair, explicit state changes, and vulnerable disclosures outrank a simultaneous metric ask, while a bare ambiguous broad-data fragment does not authorize telemetry. Current Functions lint/build plus 161/161 policy and 7/7 deploy-lock tests pass; current iOS typed-evidence and reply-reliability selections pass 124/124 and 133/133. Deployment revision, real transmitted request capture, App Check-valid context survival, live semantic paraphrases, reporter acceptance, professional review, and production-output parity remain unproved. |
 | Live generated reply quality | **Missing** | The reporter's real acceptance failed: replies were described as weird, redundant, and unlike a human expert communication coach. Earlier synthetic production-policy probes repeated advice and invented numbers, settings, mechanisms, promises, and future exercises. The latest five-case Vertex probe predates the current response-kind isolation and is only a synthetic model-boundary diagnostic; it is not current-source generated-quality evidence. No current-source deployed conversation set passes the full directness, specificity, concision, fairness, adaptation, and human-tone boundary, and no independent professional review or reporter re-acceptance exists. |

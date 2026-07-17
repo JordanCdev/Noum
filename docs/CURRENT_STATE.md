@@ -20,7 +20,20 @@ functions after the simulator surfaced the backend-version banner. The attached
 console excerpt contains only missing simulator keyboard-haptics library noise;
 it has no Ask Noum, Firebase, or callable failure. The banner now says explicitly
 that this build's Ask Noum service is not live and that updating the app will not
-fix it; the real closure remains a backend deployment and readback.
+fix it.
+
+Later on 2026-07-17, that availability blocker was repaired from source-bound
+commit `86334ed45`. A capability-scoped Firebase release deployed only
+`coachChatV2` and the updated `coachChatAvailability` to `noum-d0b6f` in
+`europe-west2`. Both read back `ACTIVE` on Node 22 with identical source hash
+`f5c8c1a1b509fb519a749a48b79337357cbf6634` and the dedicated coach runtime
+identity. The Cloud Build identity received only the documented build grants:
+source-bucket object viewer, writer on the regional `gcf-artifacts` repository,
+and project log writer; no broad project role was restored. Unauthenticated
+probes return 401/403, and the installed iPhone 17 simulator build now clears
+the backend-version banner and enables the composer. A generated live reply has
+not yet been sent or accepted, so wording quality and production readiness stay
+open.
 
 The dirty working tree targets the identified path through the existing Ask
 Noum transport, context, and reply-pipeline owners. The additive normal app
@@ -4270,14 +4283,15 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
   contract so a future refactor that drops `relativeTo:` fails the test
   suite.
-- **Firebase tooling exists; the recorded authentication is no longer trusted** —
-  Node 22, Java 21, npm, and Firebase CLI are installed, but the two CLI sessions
-  exposed during the 2026-07-13 inspection must be revoked before any authenticated
-  use. Functions lint, build, and the current local transport/schema suites pass.
+- **Firebase tooling exists; the previously exposed sessions were revoked** —
+  Node 22, Java 21, npm, and Firebase CLI are installed. Both CLI sessions
+  exposed during the 2026-07-13 inspection were revoked on 2026-07-17 before a
+  fresh `jordancoaten98@gmail.com` authentication performed the scoped coach-v2
+  release. Functions lint, build, and the current local transport/schema suites pass.
   The canonical `demo-noum` Auth/Firestore/Functions emulator gate passed all
-  22 integration tests with pinned Firebase CLI 15.19.1. Deployment remains a
-  deliberate, newly authenticated release action rather than part of local UI
-  verification.
+  22 integration tests with pinned Firebase CLI 15.19.1. Broader deployment
+  remains a deliberate, independently reviewed release action rather than part
+  of local UI verification.
 
 ## 2026-07-17 — Ask Noum gains a capability-scoped release path
 
@@ -4289,9 +4303,11 @@ checked-in release owner now has one narrow path that can deploy only
 committed backend inputs and binds a ten-minute authorization to the exact Git
 commit, tracked Functions digest, project, and two-function selector after the
 Functions and static source-contract gates pass. Ordinary Functions/Firestore
-deployments remain closed. A successful scoped deployment will restore only the
-client capability boundary; it will not prove live wording quality, App Check,
-mixed-client compatibility, rollback, or production readiness.
+deployments remain closed. That scoped deployment succeeded for source-bound
+commit `86334ed45`; both functions read back active with the dedicated coach
+runtime identity, and the simulator cleared the unavailable banner. This
+restores only the client capability boundary; it does not prove live wording
+quality, mixed-client compatibility, rollback, or production readiness.
 
 ## 2026-07-11 — cohesive UI, language, and journey pass
 
