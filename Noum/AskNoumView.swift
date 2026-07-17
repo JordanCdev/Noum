@@ -71,7 +71,7 @@ struct AskNoumAvailabilityPresentation: Equatable {
             )
         case .backendVersionMissing:
             return AskNoumAvailabilityPresentation(
-                message: "Ask Noum needs its coaching service update before this build can reply.",
+                message: "This build’s Ask Noum service isn’t live yet. Updating the app won’t fix it.",
                 showsCheckAgain: true,
                 connectsLocalGuest: false
             )

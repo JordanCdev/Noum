@@ -1026,7 +1026,7 @@ final class AskNoumStore: ObservableObject {
             case .secureSessionMissing:
                 return "Ask Noum needs its secure session reconnected. Your practice is unchanged."
             case .backendVersionMissing:
-                return "Ask Noum needs its coaching service update before this build can reply. Your message is still here."
+                return "This build’s Ask Noum service isn’t live yet. Updating the app won’t fix it. Your message is still here."
             case .debugProviderMissing:
                 return "Live coaching isn’t connected in this build."
             case .service:
@@ -1047,7 +1047,7 @@ final class AskNoumStore: ObservableObject {
         case .permissionDenied:
             return "Noum couldn’t verify access to coaching. Your message is still here."
         case .backendVersionMissing:
-            return "Ask Noum needs its coaching service update before this build can reply. Your message is still here."
+            return "This build’s Ask Noum service isn’t live yet. Updating the app won’t fix it. Your message is still here."
         }
     }
 

@@ -487,14 +487,21 @@ struct CoachChatWireContractTests {
         ) == .unavailable(.service))
     }
 
+    @MainActor
     @Test func missingV2BackendUsesSpecificRecoverableCopy() {
         let presentation = AskNoumAvailabilityPresentation.resolve(
             .backendVersionMissing
         )
         #expect(presentation.message ==
-            "Ask Noum needs its coaching service update before this build can reply.")
+            "This build’s Ask Noum service isn’t live yet. Updating the app won’t fix it.")
         #expect(presentation.showsCheckAgain)
         #expect(!presentation.connectsLocalGuest)
+        let retainedDraftCopy = "This build’s Ask Noum service isn’t live yet. Updating the app won’t fix it. Your message is still here."
+        #expect(AskNoumStore.noticeCopy(for: .backendVersionMissing) ==
+            retainedDraftCopy)
+        #expect(AskNoumStore.noticeCopy(for: .coachUnavailable(
+            .backendVersionMissing
+        )) == retainedDraftCopy)
     }
 
     @Test func personalProviderContextDoesNotRepeatTheCaseFile() {

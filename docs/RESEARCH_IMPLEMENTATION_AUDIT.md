@@ -46,6 +46,12 @@ Auth/App Check while the next five observed legacy `coachChat` generations
 failed `data-loss`, so silently falling back to v1 would hide one broken
 contract behind another. The earlier five-case Vertex run is a synthetic
 model-boundary diagnostic, not current-source live generated quality proof.
+A fresh read-only inventory on 2026-07-17 reconfirmed that same four-function
+roster after the simulator displayed the backend-version banner. The attached
+console excerpt contains only simulator keyboard-haptics library noise, not a
+coach/Firebase error. User copy now states that the required service is not live
+and that updating the app will not fix it; no readiness credit is earned until
+the backend is deployed and read back.
 
 The current working tree adds the normal `coachChatV2` route and one versioned
 server policy. Typed personal-evidence, general-coaching, memory-handoff, and

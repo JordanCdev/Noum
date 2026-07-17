@@ -15,6 +15,13 @@ and it does not carry the v2 evidence and response contract. The last five-case
 Vertex probe is a synthetic model-boundary diagnostic, not current-source live
 generated conversation or quality acceptance.
 
+A fresh read-only inventory on 2026-07-17 reconfirmed the same four active
+functions after the simulator surfaced the backend-version banner. The attached
+console excerpt contains only missing simulator keyboard-haptics library noise;
+it has no Ask Noum, Firebase, or callable failure. The banner now says explicitly
+that this build's Ask Noum service is not live and that updating the app will not
+fix it; the real closure remains a backend deployment and readback.
+
 The dirty working tree targets the identified path through the existing Ask
 Noum transport, context, and reply-pipeline owners. The additive normal app
 route is `coachChatV2`, with one versioned `noum-coach-v2` server policy and
