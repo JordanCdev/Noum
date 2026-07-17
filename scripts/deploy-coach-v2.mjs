@@ -3,8 +3,10 @@
 import {spawnSync} from "node:child_process";
 
 import {
+  COACH_V2_CLOUD_RUN_SERVICES,
   COACH_V2_DEPLOY_SCOPE,
   COACH_V2_FUNCTION_SELECTOR,
+  COACH_V2_REGION,
   PRODUCTION_PROJECT,
   backendReleaseInputsAreClean,
   currentSourceCommit,
@@ -79,3 +81,23 @@ run("npx", [
   PRODUCTION_PROJECT,
   "--non-interactive",
 ], authorizationEnvironment);
+
+// Generation-2 callable services must admit the Firebase callable protocol at
+// Cloud Run before the Functions framework can verify Firebase Auth and App
+// Check. A missing invoker binding makes Cloud Run interpret a Firebase ID
+// token as a Google IAM token and reject every signed-in app request with 401.
+// This transport binding is intentionally limited to the exact two reviewed
+// callables; both functions still fail closed on Auth and App Check in source.
+for (const service of COACH_V2_CLOUD_RUN_SERVICES) {
+  run("gcloud", [
+    "run",
+    "services",
+    "add-iam-policy-binding",
+    service,
+    `--region=${COACH_V2_REGION}`,
+    `--project=${PRODUCTION_PROJECT}`,
+    "--member=allUsers",
+    "--role=roles/run.invoker",
+    "--quiet",
+  ]);
+}

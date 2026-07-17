@@ -8,10 +8,15 @@ import path from "node:path";
 
 export const PRODUCTION_RUNBOOK = "docs/PRODUCTION_READINESS_RUNBOOK.md";
 export const PRODUCTION_PROJECT = "noum-d0b6f";
+export const COACH_V2_REGION = "europe-west2";
 export const COACH_V2_DEPLOY_SCOPE = "coach-v2";
 export const COACH_V2_FUNCTIONS = Object.freeze([
   "coachChatV2",
   "coachChatAvailability",
+]);
+export const COACH_V2_CLOUD_RUN_SERVICES = Object.freeze([
+  "coachchatv2",
+  "coachchatavailability",
 ]);
 export const COACH_V2_FUNCTION_SELECTOR = COACH_V2_FUNCTIONS
   .map((name) => `functions:${name}`)

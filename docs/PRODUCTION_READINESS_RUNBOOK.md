@@ -413,6 +413,13 @@ The wrapper refuses dirty backend release inputs, runs Functions lint/tests and
 the static source-contract validator, binds a ten-minute predeploy authorization
 to the exact project, exact two-function selector, Git commit, and tracked
 Functions SHA-256 digest, then invokes the checked-in Firebase configuration.
+After deployment it idempotently restores `roles/run.invoker` for `allUsers` on
+only the two matching generation-2 Cloud Run services. That transport binding
+is required for the Firebase callable protocol: the Functions framework still
+requires and verifies Firebase Auth and App Check before either handler runs.
+Without the Cloud Run binding, signed-in iOS requests are rejected at the
+platform edge because their Firebase ID token is not a Google IAM identity
+token.
 The ordinary `firebase deploy`, `npm --prefix functions run deploy`, all
 Firestore deployments, expanded function selectors, wrong projects, stale
 authorization, and modified source remain blocked. Successful deployment is

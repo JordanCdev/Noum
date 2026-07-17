@@ -4,8 +4,10 @@ import test from "node:test";
 
 import {
   BackendDeployUnavailableError,
+  COACH_V2_CLOUD_RUN_SERVICES,
   COACH_V2_DEPLOY_SCOPE,
   COACH_V2_FUNCTION_SELECTOR,
+  COACH_V2_REGION,
   DEPLOYMENT_BLOCKERS,
   PRODUCTION_PROJECT,
   PRODUCTION_RUNBOOK,
@@ -169,6 +171,22 @@ test("functions deploy and CI test scripts route through the blocker", async () 
     /node --test \.\.\/scripts\/release-backend-deploy\.test\.mjs/
   );
   assert.doesNotMatch(packageJSON.scripts.deploy, /firebase|npx|--execute/);
+});
+
+test("scoped coach deployment restores only the callable transport bindings", async () => {
+  assert.equal(COACH_V2_REGION, "europe-west2");
+  assert.deepEqual([...COACH_V2_CLOUD_RUN_SERVICES], [
+    "coachchatv2",
+    "coachchatavailability",
+  ]);
+  const source = await readFile(
+    new URL("./deploy-coach-v2.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(source, /add-iam-policy-binding/);
+  assert.match(source, /--member=allUsers/);
+  assert.match(source, /--role=roles\/run\.invoker/);
+  assert.doesNotMatch(source, /roles\/(owner|editor)/i);
 });
 
 test("every checked-in Firebase Functions and Firestore deploy stops at the blocker", async () => {

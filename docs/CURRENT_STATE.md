@@ -35,6 +35,19 @@ the backend-version banner and enables the composer. A generated live reply has
 not yet been sent or accepted, so wording quality and production readiness stay
 open.
 
+The first real streamed requests then exposed a narrower deployment defect:
+`coachchatv2` had no Cloud Run invoker binding even though
+`coachchatavailability` did. Cloud Run rejected the Firebase ID token with HTTP
+401 before the Functions framework or `assertTrustedCaller` ran; the keyboard-
+haptics warnings remained unrelated. The production service now has the
+standard `allUsers` `roles/run.invoker` transport binding, while the handler's
+Firebase Auth and App Check enforcement remains unchanged. A direct
+unauthenticated probe now reaches the callable framework and returns its JSON
+`UNAUTHENTICATED` response instead of Cloud Run's IAM-token rejection. The
+scoped deploy wrapper also restores this exact binding for both reviewed
+services so a later redeploy cannot silently recreate the outage. An App Check-
+valid generated reply and wording acceptance are still unproved.
+
 The dirty working tree targets the identified path through the existing Ask
 Noum transport, context, and reply-pipeline owners. The additive normal app
 route is `coachChatV2`, with one versioned `noum-coach-v2` server policy and

@@ -68,6 +68,19 @@ and enables the composer. No generated message has yet been sent through that
 composer, so this earns availability evidence only—not live wording quality,
 reporter acceptance, professional review, rollback, or production readiness.
 
+The first two real stream attempts subsequently failed at the Cloud Run edge,
+not in coach generation: `coachchatv2` lacked `roles/run.invoker` for
+`allUsers`, while `coachchatavailability` already had it. Cloud Run therefore
+treated the Firebase ID token as an unverifiable Google IAM token and returned
+HTTP 401 before the Functions framework could validate Firebase Auth or App
+Check. The exact missing transport binding is now restored on `coachchatv2`;
+in-function Auth/App Check enforcement is unchanged. A fresh unauthenticated
+probe reaches the callable framework and returns the expected JSON
+`UNAUTHENTICATED` response. The source-bound wrapper now idempotently restores
+the binding on exactly the two reviewed Cloud Run services after Firebase
+deployment. This closes the observed platform-admission defect only; no App
+Check-valid generated completion or wording acceptance is yet recorded.
+
 The current working tree adds the normal `coachChatV2` route and one versioned
 server policy. Typed personal-evidence, general-coaching, memory-handoff, and
 conversational response kinds isolate prompt, history, assessment, fallback,
