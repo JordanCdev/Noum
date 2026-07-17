@@ -269,7 +269,16 @@ enum AskNoumCoachVisibleText {
 /// It names only inputs the user can inspect and stays silent when either side
 /// of the claim is missing.
 enum AskNoumEvidenceMetadata {
-    static func line(hasCurrentFocus: Bool, recentRepCount: Int) -> String? {
+    static func line(
+        responseKind: CoachChatResponseKind?,
+        hasCurrentFocus: Bool,
+        recentRepCount: Int
+    ) -> String? {
+        // Only this lane is contractually allowed to transmit personal
+        // assessment/history evidence. General, conversational, memory-only,
+        // and legacy unknown replies must not borrow a global account count to
+        // imply that their visible wording came from recent reps.
+        guard responseKind == .personalEvidenceRead else { return nil }
         guard hasCurrentFocus, recentRepCount > 0 else { return nil }
         let boundedCount = min(recentRepCount, 12)
         let noun = boundedCount == 1 ? "rep" : "reps"
@@ -2392,8 +2401,9 @@ struct AskNoumView: View {
 
     // MARK: - Message rows
 
-    private var latestResponseEvidenceMetadata: String? {
+    private func responseEvidenceMetadata(for message: CoachMessage) -> String? {
         AskNoumEvidenceMetadata.line(
+            responseKind: message.metadata?.responseKind,
             hasCurrentFocus: Self.currentFocusValue(
                 caseFile: coachMemoryStore.currentMemory?.caseFile
             ) != nil,
@@ -2514,7 +2524,7 @@ struct AskNoumView: View {
 
                     if !message.isOffline,
                        message.id == latestLandedCoachID,
-                       let metadata = latestResponseEvidenceMetadata {
+                       let metadata = responseEvidenceMetadata(for: message) {
                         HStack(spacing: 5) {
                             Image(systemName: "checkmark.circle")
                                 .font(Typography.captionSmall)

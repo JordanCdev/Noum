@@ -195,24 +195,44 @@ struct CohesiveSummaryAskCopyTests {
 
     @Test func evidenceMetadataIsBoundedAndHonest() {
         #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .personalEvidenceRead,
             hasCurrentFocus: true,
             recentRepCount: 3
         ) == "Based on your current focus and 3 recent reps")
         #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .personalEvidenceRead,
             hasCurrentFocus: true,
             recentRepCount: 1
         ) == "Based on your current focus and 1 recent rep")
         #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .personalEvidenceRead,
             hasCurrentFocus: true,
             recentRepCount: 30
         ) == "Based on your current focus and 12 recent reps")
         #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .personalEvidenceRead,
             hasCurrentFocus: false,
             recentRepCount: 3
         ) == nil)
         #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .personalEvidenceRead,
             hasCurrentFocus: true,
             recentRepCount: 0
+        ) == nil)
+        #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .conversational,
+            hasCurrentFocus: true,
+            recentRepCount: 12
+        ) == nil)
+        #expect(AskNoumEvidenceMetadata.line(
+            responseKind: .generalCoaching,
+            hasCurrentFocus: true,
+            recentRepCount: 12
+        ) == nil)
+        #expect(AskNoumEvidenceMetadata.line(
+            responseKind: nil,
+            hasCurrentFocus: true,
+            recentRepCount: 12
         ) == nil)
     }
 }

@@ -438,6 +438,7 @@ enum CoachReplyPipeline {
                 )
                 let provisionalMetadata = CoachTurnMetadata(
                     turnDepth: turnDepth,
+                    responseKind: responseKind,
                     providerTier: preferredTier,
                     semanticGateOutcome: .notEvaluated,
                     evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
@@ -583,6 +584,7 @@ enum CoachReplyPipeline {
                     let streamedFirstVisibleSource = firstVisibleSource ?? CoachFirstVisibleTokenSource.streamedProviderPartial
                     let streamedMetadata = CoachTurnMetadata(
                         turnDepth: turnDepth,
+                        responseKind: responseKind,
                         providerTier: preferredTier,
                         semanticGateOutcome: .notEvaluated,
                         evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
@@ -802,6 +804,7 @@ enum CoachReplyPipeline {
         }()
         let finalMetadata = CoachTurnMetadata(
             turnDepth: turnDepth,
+            responseKind: responseKind,
             providerTier: preferredTier,
             providerTierChosen: Self.providerTierChosen(
                 for: providerChoice,

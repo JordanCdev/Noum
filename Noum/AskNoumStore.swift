@@ -274,6 +274,9 @@ enum CoachFirstVisibleTokenSource: String, Codable, Equatable {
 /// prompt.
 struct CoachTurnMetadata: Codable, Equatable {
     var turnDepth: CoachTurnDepth?
+    /// The existing pipeline policy lane that actually produced this reply.
+    /// Optional for persisted rows written before response-scoped provenance.
+    var responseKind: CoachChatResponseKind?
     var providerTier: CoachProviderTier?
     var providerTierChosen: CoachProviderTier?
     var semanticGateOutcome: CoachTurnSemanticGateOutcome?
@@ -328,6 +331,7 @@ struct CoachTurnMetadata: Codable, Equatable {
 
     init(
         turnDepth: CoachTurnDepth? = nil,
+        responseKind: CoachChatResponseKind? = nil,
         providerTier: CoachProviderTier? = nil,
         providerTierChosen: CoachProviderTier? = nil,
         semanticGateOutcome: CoachTurnSemanticGateOutcome? = nil,
@@ -373,6 +377,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         reliabilityFallbackApplied: Bool? = nil
     ) {
         self.turnDepth = turnDepth
+        self.responseKind = responseKind
         self.providerTier = providerTier
         self.providerTierChosen = providerTierChosen
         self.semanticGateOutcome = semanticGateOutcome

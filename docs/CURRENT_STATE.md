@@ -31,9 +31,8 @@ identity. The Cloud Build identity received only the documented build grants:
 source-bucket object viewer, writer on the regional `gcf-artifacts` repository,
 and project log writer; no broad project role was restored. Unauthenticated
 probes return 401/403, and the installed iPhone 17 simulator build now clears
-the backend-version banner and enables the composer. A generated live reply has
-not yet been sent or accepted, so wording quality and production readiness stay
-open.
+the backend-version banner and enables the composer. That first readback proved
+availability only; wording quality and production readiness stayed open.
 
 The first real streamed requests then exposed a narrower deployment defect:
 `coachchatv2` had no Cloud Run invoker binding even though
@@ -45,8 +44,23 @@ Firebase Auth and App Check enforcement remains unchanged. A direct
 unauthenticated probe now reaches the callable framework and returns its JSON
 `UNAUTHENTICATED` response instead of Cloud Run's IAM-token rejection. The
 scoped deploy wrapper also restores this exact binding for both reviewed
-services so a later redeploy cannot silently recreate the outage. An App Check-
-valid generated reply and wording acceptance are still unproved.
+services so a later redeploy cannot silently recreate the outage.
+
+An operator-confirmed retry at 21:16 UTC then completed the real installed-app
+route. Production recorded HTTP 200, valid Firebase Auth, valid App Check,
+verified account binding, model generation through `gemini-2.5-flash`, finish
+reason `STOP`, policy `noum-coach-v2`, and a two-token visible reply: `Hello.`
+The simulator removed the unavailable banner and rendered that reply. This is
+bounded live transport evidence for one greeting, not a representative quality
+sweep or acceptance of Noum as an expert coach. It also exposed a trust defect:
+the greeting displayed `Based on your current focus and 12 recent reps` even
+though conversational turns intentionally transmit no personal evidence. The
+current client source now persists the existing response-kind lane per coach
+turn and shows that provenance line only for `personalEvidenceRead`; legacy,
+conversational, general-coaching, and memory-handoff rows fail closed without
+the claim. The focused `CohesiveSummaryAskCopyTests` suite passes 4/4, Debug and
+Release simulator builds succeed, and a fresh iPhone 17 capture of the persisted
+greeting shows neither the unavailable banner nor the false evidence line.
 
 The dirty working tree targets the identified path through the existing Ask
 Noum transport, context, and reply-pipeline owners. The additive normal app

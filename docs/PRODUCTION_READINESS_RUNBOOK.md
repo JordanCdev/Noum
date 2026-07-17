@@ -17,9 +17,17 @@ the current dirty source.**
 
 - Ask Noum has failed product acceptance. The reporter usually saw it as
   unavailable and rejected replies that landed as repetitive, unnatural, and
-  unlike a human expert communication coach. No current-source App Check-valid
-  generated five-case conversation set or independent professional review
-  reverses that result.
+  unlike a human expert communication coach. After the callable IAM repair, one
+  installed-simulator greeting completed with valid Auth and App Check and
+  rendered `Hello.` That proves the live route for one trivial turn only. No
+  current-source five-case conversation set or independent professional review
+  reverses the failed quality result.
+- The same greeting initially borrowed a global account count and claimed it
+  was based on 12 recent reps even though the conversational lane transmits no
+  personal evidence. Current client source persists response kind per turn and
+  renders that provenance only for `personalEvidenceRead`. Focused copy tests
+  pass 4/4 and a rebuilt iPhone 17 capture verifies the legacy greeting fails
+  closed without the claim.
 - Current source adds `coachChatV2` as the normal app route, isolates personal-
   evidence, general-coaching, memory-handoff, and conversational response kinds,
   gives only supported quality-rejected general turns a bounded intent-specific
