@@ -3036,6 +3036,53 @@ struct CoachSemanticGateDryRunTests {
 @Suite("CoachTypedFallbackTests", .serialized)
 struct CoachTypedFallbackTests {
 
+    @Test func statementShapedGeneralCoachingAcceptsAUsefulExplanationWithoutRepEvidence() {
+        let userTurn = "I really struggle to say witty things on the spot"
+        let reply = "Wit is usually recognition, not invention. A quick, honest reaction often sounds sharper than trying to manufacture the perfect line."
+
+        #expect(CoachChatTurnIntent.classify(userTurn) == .coaching)
+        #expect(CoachChatResponseKind.classify(userTurn) == .generalCoaching)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: userTurn,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+    }
+
+    @Test func explicitGeneralCoachingRequestStillRequiresAConcreteAnchor() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Practice responding faster.",
+            latestUserTurn: "How can I get wittier on the spot?",
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        )
+
+        #expect(issue == .unanchoredCoaching)
+    }
+
+    @Test func wittySelfDisclosureHasABoundedQualitySafeRecovery() throws {
+        let userTurn = "I really struggle to say witty things on the spot"
+        let fallback = try #require(
+            CoachReliabilityGate.generalCoachingFailureFallback(
+                turnDepth: .quickMove,
+                surface: .text,
+                latestUserTurn: userTurn,
+                previousCoachReply: nil,
+                recentCoachReplies: []
+            )
+        )
+
+        #expect(fallback.contains("noticing"))
+        #expect(fallback.contains("specific detail"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: fallback,
+            latestUserTurn: userTurn,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+    }
+
     @Test func trustRepairRubricUsesDepthAwareBudget() {
         let reply = """
         You’re right—the formatting broke in speech, and the answer sounded robotic.

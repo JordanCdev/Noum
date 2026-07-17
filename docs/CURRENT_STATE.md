@@ -1,5 +1,47 @@
 # Noum — Current state
 
+## 2026-07-17 — Ask Noum statement turns no longer self-reject locally; live re-acceptance remains open
+
+The reporter's next installed-simulator attempt exposed a different failure
+from the earlier authentication outage. Production completed two calls at
+22:02 UTC with HTTP 200, Firebase Auth and App Check `VALID`, verified account
+binding, and `gemini-2.5-flash` output. The substantive call generated 33
+tokens. One second later the simulator recorded
+`failure=contentRejected`: the iOS secure landing gate discarded the successful
+server answer before it could render. The pasted `unauthenticated` line belonged
+to an older turn; network-endpoint and audio/haptics warnings were not causal.
+
+The verified source mismatch was between two acceptance contracts. Functions
+requires a concrete action/bridge on a `generalCoaching` turn only when the
+current user message explicitly requests a move. iOS instead treated every
+non-greeting general turn as requiring a rep-style observable anchor. An
+ordinary self-disclosure such as “I really struggle to say witty things on the
+spot” could therefore pass server policy and still fail locally. The current
+dirty source now matches the server boundary: statement-shaped general
+coaching may land as a concise useful explanation after all common safety,
+overclaim, length, repetition, and style gates pass; explicit action requests
+still require a prescribed move, observable communication anchor, and insight
+bridge. Client action detection now includes `how can/could/should/would I` so
+that alignment does not weaken real how-to questions.
+
+The existing deterministic reliability owner also has two bounded wit/on-the-
+spot variants, preventing this exact supported intent from falling through to
+an empty fallback. Secure-call diagnostics now retain the stable local gate
+label without recording user or draft text, so another rejection will no longer
+collapse into an anonymous `contentRejected` diagnosis.
+
+The exact regression failed before the production edit and then passed 3/3
+serially. The full reply-quality, wire-routing, and reliability-gate selection
+passes 331/331 with zero failures or skips in
+`/private/tmp/NoumWittyFix/Logs/Test/Test-Noum-2026.07.17_23-41-13-+0100.xcresult`.
+A current Debug simulator build succeeds and was
+installed over `com.jordancoaten.noum` on the booted iPhone 17 with account and
+chat state preserved; the Ask composer is enabled. No post-install live message
+was submitted in this slice, so generated wording quality and reporter
+re-acceptance remain unproved. This local client repair earns no external
+readiness artifact: production remains **NO-GO at 18/100 with 0/5 required
+external artifacts**.
+
 ## 2026-07-17 — Ask Noum failed acceptance; local reply contract repaired, source still NO-GO
 
 The latest user acceptance is a product failure, not an external-evidence-only

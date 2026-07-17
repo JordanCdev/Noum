@@ -1500,6 +1500,14 @@ enum CoachReliabilityGate {
                 "You’re not imagining it: fix the pause, not your natural pace. Hold one silent beat after each full stop; that restores a boundary between ideas without forcing every word slower.",
                 "Keep your natural pace and add one silent beat between sentences. That gives each idea a clean boundary without flattening your voice."
             ]
+        } else if containsAny(turn, ["witty", "wit", "funny", "comeback"]),
+                  containsAny(turn, [
+                    "on the spot", "in the moment", "quickly", "fast enough"
+                  ]) {
+            variants = [
+                "Wit on demand is mostly noticing, not inventing. Name one specific detail and give it a light twist; that is easier to retrieve than a perfect comeback.",
+                "Do not chase a perfect joke in real time. Pick one specific detail and react to it lightly; specificity sounds quicker and more natural than a prepared line."
+            ]
         } else if turn.contains("networking") {
             variants = [
                 "Use a hard stop: who you help, one example, then one question. The question closes the introduction before a second thread starts.",

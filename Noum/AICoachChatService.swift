@@ -2002,7 +2002,11 @@ actor AICoachChatService {
                 coachingBrief: coachingBrief
             ) {
                 await onQualityGateEvent?(.rejected(String(describing: issue)))
-                recordChatDiagnostic(.failure, "Secure coach reply failed quality gate")
+                Self.log.notice("Secure coach reply rejected by local gate (\(issue.auditLabel, privacy: .public))")
+                recordChatDiagnostic(
+                    .failure,
+                    "Secure coach reply failed quality gate: \(issue.auditLabel)"
+                )
                 return .failure(.contentRejected)
             }
 
@@ -4086,15 +4090,21 @@ actor AICoachChatService {
             return .missingInsightBridge
         }
         if responseKind == .generalCoaching {
-            if turnExpectsPrescribedAction(latestUserTurn),
+            let actionRequested = turnExpectsPrescribedAction(latestUserTurn)
+            if actionRequested,
                !replyPrescribesAction(lower) {
                 return .missingPrescribedAction
             }
-            if turnExpectsCoaching(latestUserTurn),
+            // Match the server contract: an ordinary self-disclosure can land
+            // as a concise, useful explanation without pretending Noum read a
+            // rep or prescribing work the user did not request. Explicit
+            // how-to turns still require an observable communication anchor
+            // and an explanation that connects it to the prescribed move.
+            if actionRequested,
                !replyHasObservableAnchor(lower) {
                 return .unanchoredCoaching
             }
-            if turnExpectsCoaching(latestUserTurn),
+            if actionRequested,
                replyHasObservableAnchor(lower),
                replyPrescribesAction(lower),
                !replyHasInsightBridge(lower) {
@@ -6118,6 +6128,7 @@ actor AICoachChatService {
         return containsAny(lower, [
             "what next", "next move", "what should", "continue", "implement",
             "develop", "work on", "focus", "how do i", "help me", "coach me",
+            "how can i", "how could i", "how should i", "how would i",
             "practice", "prepare", "fix", "improve", "replace", "go for",
             "make a bigger stride", "what do i run", "what is the exact rep",
             "what's the exact rep", "what test", "which test"
