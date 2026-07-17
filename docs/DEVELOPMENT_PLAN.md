@@ -41,6 +41,18 @@ is deliberately no silent v1 fallback because production v1 has five
 consecutive post-admission `data-loss` failures and lacks the v2 coaching
 contract.
 
+The release mechanism now separates this additive compatibility repair from the
+still-closed combined backend cutover. A checked-in `deploy-coach-v2.mjs`
+wrapper can authorize exactly `coachChatV2` plus `coachChatAvailability` for
+project `noum-d0b6f` when the backend inputs are committed and clean. It binds
+the predeploy authorization to the exact commit, tracked Functions SHA-256,
+two-function selector, and a ten-minute expiry, and it runs the Functions and
+static source-contract gates first. Blanket Functions, Firestore, social, and
+competitive deployments remain blocked. This is a deployment mechanism, not
+production-quality evidence; live App Check-valid conversations, mixed-client
+smoke, rollback, reporter acceptance, and independent professional review
+remain required after deployment.
+
 The current changes target the failed wording path at its structural sources.
 Text chat shows one vetted final answer instead of a local provisional read
 followed by a restatement; live voice alone keeps the bounded provisional read.

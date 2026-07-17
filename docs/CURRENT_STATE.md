@@ -4279,6 +4279,20 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   deliberate, newly authenticated release action rather than part of local UI
   verification.
 
+## 2026-07-17 — Ask Noum gains a capability-scoped release path
+
+The prior Firebase predeploy lock correctly prevented an unfinished combined
+backend release, but it also blocked the additive `coachChatV2` compatibility
+repair behind unrelated disabled social and competitive capabilities. The
+checked-in release owner now has one narrow path that can deploy only
+`coachChatV2` and `coachChatAvailability` to `noum-d0b6f`. It requires clean,
+committed backend inputs and binds a ten-minute authorization to the exact Git
+commit, tracked Functions digest, project, and two-function selector after the
+Functions and static source-contract gates pass. Ordinary Functions/Firestore
+deployments remain closed. A successful scoped deployment will restore only the
+client capability boundary; it will not prove live wording quality, App Check,
+mixed-client compatibility, rollback, or production readiness.
+
 ## 2026-07-11 — cohesive UI, language, and journey pass
 
 - Home now resolves one evidence-backed next action, then exposes Ask Noum and

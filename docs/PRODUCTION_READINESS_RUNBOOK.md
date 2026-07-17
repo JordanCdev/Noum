@@ -394,6 +394,31 @@ contract. This probe does not prove installed-client compatibility, mixed-client
 behavior, or production rollback; capture those after the authorized backend-
 first deployment and before distributing the v2 client.
 
+### Additive coach-v2 scoped deployment
+
+The blanket backend lock remains authoritative for Firestore, social,
+competitive-observation, account, recommendation, and full Functions releases.
+It no longer forces the additive Ask Noum compatibility repair to wait on
+unrelated disabled social capabilities. An operator who has explicitly
+authorized the exact source commit may deploy only `coachChatV2` and the
+matching `coachChatAvailability` capability response with:
+
+```bash
+node scripts/deploy-coach-v2.mjs --execute \
+  --confirm-project=noum-d0b6f \
+  --confirm-source="$(git rev-parse HEAD)"
+```
+
+The wrapper refuses dirty backend release inputs, runs Functions lint/tests and
+the static source-contract validator, binds a ten-minute predeploy authorization
+to the exact project, exact two-function selector, Git commit, and tracked
+Functions SHA-256 digest, then invokes the checked-in Firebase configuration.
+The ordinary `firebase deploy`, `npm --prefix functions run deploy`, all
+Firestore deployments, expanded function selectors, wrong projects, stale
+authorization, and modified source remain blocked. Successful deployment is
+only availability evidence; it does not close live coaching quality, mixed-
+client, rollback, App Check, IAM, or product-readiness gates.
+
 The command is pinned to Firebase project `noum-d0b6f`, Functions region
 `europe-west2`, and the documented production operations channel. Environment
 overrides that name any other contract fail before credential discovery or a
@@ -448,8 +473,8 @@ Do not run a blanket Firestore-rules or Functions deployment from the current
 repository while this gate is open. The social contract is a coordinated data
 migration and server-authority change, not an independent rules update.
 
-The repository-supported npm entry point and every checked-in Firebase
-Functions/Firestore target are deliberately closed:
+The repository-supported blanket npm entry point and every ordinary checked-in
+Firebase Functions/Firestore target are deliberately closed:
 
 ```bash
 npm --prefix functions run deploy
@@ -462,7 +487,9 @@ The npm command performs no deployment. The exact blocker is also the first
 `predeploy` hook on every Functions codebase and Firestore database in
 `firebase.json`, so scoped or unscoped deployment through that checked-in
 configuration refuses before lint, build, target preparation, or network
-mutation. It exits nonzero with four exact missing requirements. Eligible
+mutation unless it carries the source-bound, two-function Ask Noum authorization
+created by the wrapper above. It otherwise exits nonzero with four exact missing
+requirements. Eligible
 competitive evidence production is missing because the
 local server-observation substrate remains disabled and ineligible, has no
 calibrated deterministic evaluator, and its bounded exact-audio replay and
@@ -472,7 +499,7 @@ disabled and lacks production cutover, deployed index/rules/functions, TTL,
 and two-device evidence. Independently trusted authorization evidence and an
 immutable source-bound deployment artifact are also missing.
 `npm --prefix functions run deploy -- --help` explains the boundary. There is
-no `--execute` flag or authorization-file escape hatch. Hosting intentionally
+no blanket `--execute` flag or authorization-file escape hatch. Hosting intentionally
 does not inherit this social-backend lock so an independently authorized privacy
 body correction remains possible. Direct gcloud/Cloud Console mutation or a
 different Firebase config file remains outside repository enforcement and is
