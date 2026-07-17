@@ -164,9 +164,13 @@ enum BackendAsyncChallengeFetchResult: Equatable, Sendable {
 }
 
 struct RecommendationSyncCallableRequest: Codable, Sendable {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
 
     let schemaVersion: Int
+    /// Request binding only. The callable must compare this with verified Auth
+    /// before writing so an ambient Auth switch cannot redirect another
+    /// account's recommendation state.
+    let expectedAccountID: String
     let mutationID: UUID
     let expectedRemoteRevision: Int
     let pendingExposure: RecommendationExposure?
@@ -174,6 +178,7 @@ struct RecommendationSyncCallableRequest: Codable, Sendable {
 
     init(snapshot: RecommendationSyncSnapshot) {
         schemaVersion = Self.schemaVersion
+        expectedAccountID = snapshot.accountID
         mutationID = snapshot.mutationID
         expectedRemoteRevision = snapshot.expectedRemoteRevision
         pendingExposure = snapshot.pendingExposure
@@ -188,6 +193,8 @@ enum RecommendationSyncCallableStatus: String, Codable, Sendable {
 }
 
 struct RecommendationSyncRemoteState: Codable, Equatable, Sendable {
+    static let schemaVersion = 1
+
     let schemaVersion: Int
     let remoteRevision: Int
     let lastMutationID: UUID?
@@ -208,6 +215,7 @@ struct RecommendationSyncSnapshot: Equatable, Sendable {
     let revision: Int
     let expectedRemoteRevision: Int
     let mutationID: UUID
+    let sourceLifecycleGeneration: UInt64
 }
 
 /// One lane per account keeps whole-state recommendation writes ordered while
@@ -323,6 +331,32 @@ actor RecommendationSyncWaitRace {
     }
 }
 
+private struct CoachingContentSyncLease: Equatable, Sendable {
+    let accountID: String
+    let providerRawValue: String
+    let accountLifecycleGeneration: UInt64
+    let consentReceipt: CloudProcessingConsent
+    let allowsRecommendationHydration: Bool
+}
+
+private struct CoachingContentDrainAuthority: Equatable, Sendable {
+    let providerRawValue: String
+    let sourceLifecycleGeneration: UInt64
+}
+
+private enum CoachingContentMutationWriteOutcome {
+    case committed
+    /// The local source document disappeared or is a forbidden fixture. There
+    /// is no payload left to retry; deletion sync remains a separate contract.
+    case discard
+    /// Identity, hydration, consent, deletion, or promotion admission is not
+    /// currently open. Retain every journal entry for an explicit later retry.
+    case paused
+    /// The transport or encoding failed. Retain this exact entry, but allow a
+    /// different document in the same pass to make progress.
+    case retry
+}
+
 actor BackendSyncManager {
     static let shared = BackendSyncManager()
     static let functionsRegion = SocialAuthorityCallable.region
@@ -343,13 +377,25 @@ actor BackendSyncManager {
     static let appleRevocationUnavailableReason = "apple-revocation-unavailable"
     static let socialReferenceCutoverIncompleteReason = "social-reference-cutover-incomplete"
     static let recommendationSyncWaitNanoseconds: UInt64 = 4_000_000_000
+    static let coachingContentSyncWaitNanoseconds: UInt64 = 4_000_000_000
 
     private var recommendationSyncLanes: [String: RecommendationSyncLane] = [:]
     private var recommendationSyncClosedAccounts: Set<String> = []
     private var recommendationHydrationTokens: [String: UUID] = [:]
     private var recommendationHydrationPending: [String: RecommendationSyncSnapshot] = [:]
+    nonisolated private let coachingContentSyncJournal: CoachingContentSyncJournal
+    private var activeCoachingContentDrainAccounts: Set<String> = []
+    private var coachingContentSyncClosedAccounts: Set<String> = []
+    private var coachingContentDrainIdleWaiters: [
+        String: [CheckedContinuation<Void, Never>]
+    ] = [:]
+    private var requestedCoachingContentDrainAuthority: [
+        String: CoachingContentDrainAuthority
+    ] = [:]
 
-    private init() {}
+    private init() {
+        coachingContentSyncJournal = CoachingContentSyncJournal()
+    }
 
     /// BackendSyncManager's process-local lane state is intentionally not
     /// durable. Every recommendation admission therefore reuses AuthManager's
@@ -393,7 +439,7 @@ actor BackendSyncManager {
         let versionedKeys = legacyKeys.union(metadataKeys).union(["updatedAt"])
         guard presentMetadataCount == metadataKeys.count,
               Set(data.keys).isSubset(of: versionedKeys),
-              integerValue(data["schemaVersion"]) == RecommendationSyncCallableRequest.schemaVersion,
+              integerValue(data["schemaVersion"]) == RecommendationSyncRemoteState.schemaVersion,
               let remoteRevision = integerValue(data["remoteRevision"]),
               remoteRevision > 0,
               let mutation = data["lastMutationID"] as? String,
@@ -456,37 +502,174 @@ actor BackendSyncManager {
         }
     }
 
-    func syncProfile(_ profile: CoachingProfile, accountID: String, providerRawValue: String) async {
-        guard AuthManager.shouldSyncBackend(accountID: accountID) else { return }
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebaseProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
-            return
-        }
-#endif
-        try? await send(profile, path: "/v1/me/profile", accountID: accountID, providerRawValue: providerRawValue)
+    /// Persists retry intent synchronously before scheduling transport. The
+    /// profile store remains the content owner; this records only its document
+    /// identity and exact acknowledgement token.
+    @discardableResult
+    nonisolated func enqueueProfileSync(
+        _ profile: CoachingProfile,
+        accountID: String,
+        providerRawValue: String,
+        sourceLifecycleGeneration: UInt64
+    ) -> Bool {
+        _ = profile
+        return enqueueCoachingContentSync(
+            .profile,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
     }
 
-    func syncXP(_ xp: Int, accountID: String, providerRawValue: String) async {
-        guard AuthManager.shouldSyncBackend(accountID: accountID) else { return }
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebaseXP(xp, accountID: accountID, providerRawValue: providerRawValue)
-            return
-        }
-#endif
-        try? await send(["xp": xp], path: "/v1/me/progression", accountID: accountID, providerRawValue: providerRawValue)
+    @discardableResult
+    nonisolated func enqueueXPSync(
+        _ xp: Int,
+        accountID: String,
+        providerRawValue: String,
+        sourceLifecycleGeneration: UInt64
+    ) -> Bool {
+        guard xp >= 0 else { return false }
+        return enqueueCoachingContentSync(
+            .progression,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
     }
 
-    func syncSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
-        guard AuthManager.shouldSyncBackend(accountID: accountID) else { return }
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebaseSession(session, accountID: accountID, providerRawValue: providerRawValue)
-            return
+    @discardableResult
+    nonisolated func enqueueSessionSync(
+        _ session: PracticeSession,
+        accountID: String,
+        providerRawValue: String,
+        sourceLifecycleGeneration: UInt64
+    ) -> Bool {
+        guard !session.isEvaluationFixture else { return false }
+        return enqueueCoachingContentSync(
+            .session(session.id),
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
+    }
+
+    nonisolated func coachingContentSyncJournalStatus(
+        for accountID: String
+    ) -> CoachingContentSyncJournalStatus {
+        coachingContentSyncJournal.status(for: accountID)
+    }
+
+    /// Relaunch, hydration completion, foreground activation, and consent
+    /// enablement all use this same retry trigger. Authority is reacquired by
+    /// the actor; no persisted lifecycle or consent value is future authority.
+    nonisolated func resumeCoachingContentSync(
+        accountID: String,
+        providerRawValue: String,
+        sourceLifecycleGeneration: UInt64
+    ) {
+        guard Self.coachingContentSyncEnvelopeIsWellFormed(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else { return }
+        Task {
+            await requestCoachingContentDrain(
+                accountID: accountID,
+                authority: CoachingContentDrainAuthority(
+                    providerRawValue: providerRawValue,
+                    sourceLifecycleGeneration: sourceLifecycleGeneration
+                )
+            )
         }
-#endif
-        try? await send(session, path: "/v1/me/sessions", accountID: accountID, providerRawValue: providerRawValue)
+    }
+
+    @discardableResult
+    nonisolated private func enqueueCoachingContentSync(
+        _ documentID: CoachingContentDocumentID,
+        accountID: String,
+        providerRawValue: String,
+        sourceLifecycleGeneration: UInt64
+    ) -> Bool {
+        guard Self.coachingContentSyncEnvelopeIsWellFormed(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ), coachingContentSyncJournal.enqueue(
+            documentID,
+            accountID: accountID
+        ) != nil else {
+            return false
+        }
+        resumeCoachingContentSync(
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
+        return true
+    }
+
+    nonisolated private static func coachingContentSyncEnvelopeIsWellFormed(
+        accountID: String,
+        providerRawValue: String
+    ) -> Bool {
+        let normalizedAccountID = accountID.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        return !normalizedAccountID.isEmpty
+            && !providerRawValue.isEmpty
+            && AuthManager.shouldSyncBackend(accountID: normalizedAccountID)
+    }
+
+    /// Consent-gated synchronization reserved for the proved-empty anonymous
+    /// target created by local-guest promotion. Every document enters the same
+    /// durable queue as ordinary writes; this method succeeds only after the
+    /// account queue is empty. Existing accounts must never call this as a
+    /// blind whole-state consent flush.
+    func syncCoachingContentSnapshot(
+        profile: CoachingProfile?,
+        xp: Int,
+        sessions: [PracticeSession],
+        accountID: String,
+        providerRawValue: String,
+        sourceLifecycleGeneration: UInt64
+    ) async -> Bool {
+        guard await acquireCoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            expectedLifecycleGeneration: sourceLifecycleGeneration
+        ) != nil,
+              !Task.isCancelled else { return false }
+
+        var documentIDs: [CoachingContentDocumentID] = [.progression]
+        if profile != nil { documentIDs.append(.profile) }
+        documentIDs.append(contentsOf: sessions.compactMap { session in
+            session.isEvaluationFixture ? nil : .session(session.id)
+        })
+        let enqueued = coachingContentSyncJournal.enqueue(
+            documentIDs,
+            accountID: accountID
+        )
+        guard enqueued.count == Set(documentIDs).count else { return false }
+
+        let race = RecommendationSyncWaitRace()
+        let authority = CoachingContentDrainAuthority(
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
+        Task {
+            await requestCoachingContentDrain(
+                accountID: accountID,
+                authority: authority
+            )
+            await race.resolve(
+                coachingContentSyncJournal.status(for: accountID) == .clean
+            )
+        }
+        Task {
+            try? await Task.sleep(
+                nanoseconds: Self.coachingContentSyncWaitNanoseconds
+            )
+            await race.resolve(false)
+        }
+        return await race.wait()
     }
 
     func syncRecommendationState(
@@ -496,10 +679,16 @@ actor BackendSyncManager {
         providerRawValue: String,
         revision: Int,
         expectedRemoteRevision: Int,
-        mutationID: UUID
+        mutationID: UUID,
+        sourceLifecycleGeneration: UInt64
     ) async {
-        guard AuthManager.shouldSyncBackend(accountID: accountID),
-              await durableRecommendationProviderWorkAllowed(for: accountID),
+        let hydrationAdmission = recommendationHydrationTokens[accountID] != nil
+        guard await acquireCoachingContentSyncLease(
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                expectedLifecycleGeneration: sourceLifecycleGeneration,
+                allowsRecommendationHydration: hydrationAdmission
+              ) != nil,
               !recommendationSyncClosedAccounts.contains(accountID) else { return }
         let snapshot = RecommendationSyncSnapshot(
             pendingExposure: pendingExposure,
@@ -508,7 +697,8 @@ actor BackendSyncManager {
             providerRawValue: providerRawValue,
             revision: revision,
             expectedRemoteRevision: expectedRemoteRevision,
-            mutationID: mutationID
+            mutationID: mutationID,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
         )
         if recommendationHydrationTokens[accountID] != nil {
             if let existing = recommendationHydrationPending[accountID],
@@ -522,14 +712,358 @@ actor BackendSyncManager {
         await lane.enqueue(snapshot)
     }
 
+    nonisolated static func shouldSyncCoachingContent(
+        accountID: String,
+        cloudProcessingAllowed: Bool
+    ) -> Bool {
+        cloudProcessingAllowed
+            && AuthManager.shouldSyncBackend(accountID: accountID)
+    }
+
+    private func coachingContentSyncAllowed(
+        for accountID: String
+    ) async -> Bool {
+        let providerRawValue: String? = await MainActor.run { () -> String? in
+            let auth = AuthManager.shared
+            guard auth.currentAccountID == accountID else { return nil }
+            return auth.currentAuthProviderRawValue
+        }
+        guard let providerRawValue else { return false }
+        return await acquireCoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) != nil
+    }
+
+    nonisolated static func coachingContentSyncAuthorityMatches(
+        requestedAccountID: String,
+        requestedProviderRawValue: String,
+        sourceLifecycleGeneration: UInt64?,
+        currentAccountID: String?,
+        currentProviderRawValue: String?,
+        currentLifecycleGeneration: UInt64,
+        hydrationReady: Bool,
+        providerWorkAllowed: Bool,
+        cloudProcessingAllowed: Bool,
+        firebaseIsConfigured: Bool,
+        firebaseUID: String?
+    ) -> Bool {
+        shouldSyncCoachingContent(
+            accountID: requestedAccountID,
+            cloudProcessingAllowed: cloudProcessingAllowed
+        )
+            && !requestedProviderRawValue.isEmpty
+            && currentAccountID == requestedAccountID
+            && currentProviderRawValue == requestedProviderRawValue
+            && (sourceLifecycleGeneration == nil
+                || sourceLifecycleGeneration == currentLifecycleGeneration)
+            && hydrationReady
+            && providerWorkAllowed
+            && (!firebaseIsConfigured || firebaseUID == requestedAccountID)
+    }
+
+    private func acquireCoachingContentSyncLease(
+        accountID: String,
+        providerRawValue: String,
+        expectedLifecycleGeneration: UInt64? = nil,
+        allowsRecommendationHydration: Bool = false
+    ) async -> CoachingContentSyncLease? {
+        let state = await MainActor.run { () -> (
+            currentAccountID: String?,
+            currentProviderRawValue: String?,
+            hydrationState: InitialAccountHydrationState,
+            providerWorkAllowed: Bool,
+            lifecycleGeneration: UInt64,
+            consentReceipt: CloudProcessingConsent?
+        ) in
+            let auth = AuthManager.shared
+            return (
+                currentAccountID: auth.currentAccountID,
+                currentProviderRawValue: auth.currentAuthProviderRawValue,
+                hydrationState: auth.initialAccountHydrationState,
+                providerWorkAllowed: auth.isProviderWorkAllowed(for: accountID),
+                lifecycleGeneration: auth.accountLifecycleGeneration,
+                consentReceipt: AISettingsManager.shared
+                    .currentCloudProcessingReceipt(for: accountID)
+            )
+        }
+        #if canImport(FirebaseAuth)
+        let firebaseUID = firebaseIsConfigured ? Auth.auth().currentUser?.uid : nil
+        #else
+        let firebaseUID: String? = nil
+        #endif
+        let hydrationReady = state.hydrationState == .ready
+            || (allowsRecommendationHydration
+                && state.hydrationState == .hydratingStores
+                && recommendationHydrationTokens[accountID] != nil)
+        guard let consentReceipt = state.consentReceipt,
+              Self.coachingContentSyncAuthorityMatches(
+                requestedAccountID: accountID,
+                requestedProviderRawValue: providerRawValue,
+                sourceLifecycleGeneration: expectedLifecycleGeneration,
+                currentAccountID: state.currentAccountID,
+                currentProviderRawValue: state.currentProviderRawValue,
+                currentLifecycleGeneration: state.lifecycleGeneration,
+                hydrationReady: hydrationReady,
+                providerWorkAllowed: state.providerWorkAllowed,
+                cloudProcessingAllowed: true,
+                firebaseIsConfigured: firebaseIsConfigured,
+                firebaseUID: firebaseUID
+              ) else {
+            return nil
+        }
+        return CoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            accountLifecycleGeneration: state.lifecycleGeneration,
+            consentReceipt: consentReceipt,
+            allowsRecommendationHydration: allowsRecommendationHydration
+        )
+    }
+
+    private func coachingContentSyncLeaseIsCurrent(
+        _ lease: CoachingContentSyncLease
+    ) async -> Bool {
+        await acquireCoachingContentSyncLease(
+            accountID: lease.accountID,
+            providerRawValue: lease.providerRawValue,
+            expectedLifecycleGeneration: lease.accountLifecycleGeneration,
+            allowsRecommendationHydration: lease.allowsRecommendationHydration
+        ) == lease
+    }
+
+    private func requestCoachingContentDrain(
+        accountID: String,
+        authority: CoachingContentDrainAuthority
+    ) async {
+        guard !coachingContentSyncClosedAccounts.contains(accountID) else {
+            return
+        }
+        if let existing = requestedCoachingContentDrainAuthority[accountID],
+           existing.sourceLifecycleGeneration > authority.sourceLifecycleGeneration {
+            return
+        }
+        requestedCoachingContentDrainAuthority[accountID] = authority
+        guard activeCoachingContentDrainAccounts.insert(accountID).inserted else {
+            return
+        }
+        defer { finishCoachingContentDrain(accountID: accountID) }
+
+        var attemptedMutationIDs: Set<UUID> = []
+        while !Task.isCancelled {
+            guard !coachingContentSyncClosedAccounts.contains(accountID) else {
+                return
+            }
+            guard let mutations = coachingContentSyncJournal.pendingMutations(
+                for: accountID,
+                excluding: attemptedMutationIDs
+            ) else {
+                print("[BackendSync] Coaching-content journal is unreadable for this account.")
+                return
+            }
+            guard let mutation = mutations.first,
+                  let currentAuthority = requestedCoachingContentDrainAuthority[
+                    accountID
+                  ] else {
+                return
+            }
+            attemptedMutationIDs.insert(mutation.mutationID)
+
+            switch await writePendingCoachingContentMutation(
+                mutation,
+                accountID: accountID,
+                authority: currentAuthority
+            ) {
+            case .committed, .discard:
+                _ = coachingContentSyncJournal.acknowledge(
+                    mutation,
+                    accountID: accountID
+                )
+            case .paused:
+                return
+            case .retry:
+                continue
+            }
+        }
+    }
+
+    private func writePendingCoachingContentMutation(
+        _ mutation: PendingCoachingContentMutation,
+        accountID: String,
+        authority: CoachingContentDrainAuthority
+    ) async -> CoachingContentMutationWriteOutcome {
+        guard !coachingContentSyncClosedAccounts.contains(accountID),
+              let lease = await acquireCoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: authority.providerRawValue,
+            expectedLifecycleGeneration: authority.sourceLifecycleGeneration
+        ) else {
+            return .paused
+        }
+
+        do {
+            switch mutation.documentID {
+            case .profile:
+                guard let profile = CoachingProfileStore.persistedProfile(
+                    for: accountID
+                ) else {
+                    return .discard
+                }
+                #if canImport(FirebaseFirestore)
+                if firebaseIsConfigured {
+                    try await writeFirebaseProfile(profile, lease: lease)
+                } else {
+                    try await send(
+                        profile,
+                        path: "/v1/me/profile",
+                        lease: lease
+                    )
+                }
+                #else
+                try await send(profile, path: "/v1/me/profile", lease: lease)
+                #endif
+            case .progression:
+                let xp = ProfileManager.persistedXP(for: accountID)
+                #if canImport(FirebaseFirestore)
+                if firebaseIsConfigured {
+                    try await writeFirebaseXP(xp, lease: lease)
+                } else {
+                    try await send(
+                        ["xp": xp],
+                        path: "/v1/me/progression",
+                        lease: lease
+                    )
+                }
+                #else
+                try await send(
+                    ["xp": xp],
+                    path: "/v1/me/progression",
+                    lease: lease
+                )
+                #endif
+            case .session(let sessionID):
+                guard let session = PracticeSessionStore.persistedSession(
+                    id: sessionID,
+                    accountID: accountID
+                ), !session.isEvaluationFixture else {
+                    return .discard
+                }
+                #if canImport(FirebaseFirestore)
+                if firebaseIsConfigured {
+                    try await writeFirebaseSession(session, lease: lease)
+                } else {
+                    try await send(
+                        session,
+                        path: "/v1/me/sessions",
+                        lease: lease
+                    )
+                }
+                #else
+                try await send(
+                    session,
+                    path: "/v1/me/sessions",
+                    lease: lease
+                )
+                #endif
+            }
+            // Account deletion waits for this drain to become idle before it
+            // advances to remote destruction. A write that was already in
+            // flight may finish, but it must not be acknowledged after the
+            // durable deletion fence has closed.
+            guard !coachingContentSyncClosedAccounts.contains(accountID),
+                  await coachingContentSyncLeaseIsCurrent(lease) else {
+                return .paused
+            }
+            return .committed
+        } catch {
+            print("[BackendSync] Coaching-content retry retained: \(error.localizedDescription)")
+            return .retry
+        }
+    }
+
+    private func finishCoachingContentDrain(accountID: String) {
+        activeCoachingContentDrainAccounts.remove(accountID)
+        let waiters = coachingContentDrainIdleWaiters.removeValue(
+            forKey: accountID
+        ) ?? []
+        waiters.forEach { $0.resume() }
+    }
+
+    private func waitUntilCoachingContentDrainIsIdle(
+        accountID: String
+    ) async {
+        guard activeCoachingContentDrainAccounts.contains(accountID) else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            if activeCoachingContentDrainAccounts.contains(accountID) {
+                coachingContentDrainIdleWaiters[
+                    accountID,
+                    default: []
+                ].append(continuation)
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Closes local admission and waits for any direct content write to
+    /// settle before account deletion is allowed to reach its remote phase.
+    /// Pending journal metadata is retained until the account registry owns
+    /// verified local cleanup.
+    func suspendCoachingContentSyncForDeletion(
+        accountID: String
+    ) async -> Bool {
+        coachingContentSyncClosedAccounts.insert(accountID)
+        requestedCoachingContentDrainAuthority.removeValue(forKey: accountID)
+        guard activeCoachingContentDrainAccounts.contains(accountID) else {
+            return true
+        }
+        let didClose = await Self.boundedRecommendationSyncWait {
+            await self.waitUntilCoachingContentDrainIsIdle(
+                accountID: accountID
+            )
+            return true
+        }
+        if !didClose {
+            // Deletion has not advanced beyond local admission. Reopen only
+            // this process-local gate; the durable Auth fence still denies
+            // transport until verified rollback or a later deletion retry.
+            coachingContentSyncClosedAccounts.remove(accountID)
+        }
+        return didClose
+    }
+
+    func resumeCoachingContentSyncAfterFailedDeletion(accountID: String) {
+        coachingContentSyncClosedAccounts.remove(accountID)
+    }
+
     func fenceRecommendationSync(
         accountID: String,
         revision: Int,
         hydrationToken: UUID
     ) async -> Bool {
-        guard await durableRecommendationProviderWorkAllowed(for: accountID),
-              !recommendationSyncClosedAccounts.contains(accountID) else { return false }
-        guard recommendationHydrationTokens[accountID] == hydrationToken else { return false }
+        guard recommendationHydrationTokens[accountID] == hydrationToken,
+              !recommendationSyncClosedAccounts.contains(accountID) else {
+            return false
+        }
+        let identity = await MainActor.run { () -> (String, UInt64)? in
+            let auth = AuthManager.shared
+            guard auth.currentAccountID == accountID,
+                  let provider = auth.currentAuthProviderRawValue else {
+                return nil
+            }
+            return (provider, auth.accountLifecycleGeneration)
+        }
+        guard let identity,
+              await acquireCoachingContentSyncLease(
+                accountID: accountID,
+                providerRawValue: identity.0,
+                expectedLifecycleGeneration: identity.1,
+                allowsRecommendationHydration: true
+              ) != nil else {
+            return false
+        }
         let lane = recommendationSyncLane(for: accountID)
         return await Self.boundedRecommendationSyncWait {
             await lane.fence(at: revision)
@@ -540,9 +1074,28 @@ actor BackendSyncManager {
         accountID: String,
         hydrationToken: UUID
     ) async -> Bool {
-        guard await durableRecommendationProviderWorkAllowed(for: accountID),
-              !recommendationSyncClosedAccounts.contains(accountID) else { return false }
+        guard !recommendationSyncClosedAccounts.contains(accountID) else {
+            return false
+        }
+        let identity = await MainActor.run { () -> (String, UInt64)? in
+            let auth = AuthManager.shared
+            guard auth.currentAccountID == accountID,
+                  let provider = auth.currentAuthProviderRawValue else {
+                return nil
+            }
+            return (provider, auth.accountLifecycleGeneration)
+        }
+        guard let identity else { return false }
         recommendationHydrationTokens[accountID] = hydrationToken
+        guard await acquireCoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: identity.0,
+            expectedLifecycleGeneration: identity.1,
+            allowsRecommendationHydration: true
+        ) != nil else {
+            recommendationHydrationTokens.removeValue(forKey: accountID)
+            return false
+        }
         return true
     }
 
@@ -551,17 +1104,36 @@ actor BackendSyncManager {
         hydrationToken: UUID
     ) async {
         guard recommendationHydrationTokens[accountID] == hydrationToken else { return }
-        recommendationHydrationTokens.removeValue(forKey: accountID)
-        guard await durableRecommendationProviderWorkAllowed(for: accountID),
-              !recommendationSyncClosedAccounts.contains(accountID),
-              let pending = recommendationHydrationPending.removeValue(forKey: accountID) else {
+        guard !recommendationSyncClosedAccounts.contains(accountID),
+              let pending = recommendationHydrationPending.removeValue(
+                forKey: accountID
+              ) else {
+            recommendationHydrationTokens.removeValue(forKey: accountID)
             recommendationHydrationPending.removeValue(forKey: accountID)
             return
         }
-        await recommendationSyncLane(for: accountID).enqueue(
+        guard await acquireCoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: pending.providerRawValue,
+            expectedLifecycleGeneration: pending.sourceLifecycleGeneration,
+            allowsRecommendationHydration: true
+        ) != nil else {
+            recommendationHydrationTokens.removeValue(forKey: accountID)
+            recommendationHydrationPending[accountID] = pending
+            return
+        }
+        let lane = recommendationSyncLane(for: accountID)
+        await lane.enqueue(
             pending,
             allowAtWatermark: true
         )
+        let drained = await Self.boundedRecommendationSyncWait {
+            await lane.fence(at: pending.revision)
+        }
+        recommendationHydrationTokens.removeValue(forKey: accountID)
+        if !drained {
+            recommendationHydrationPending[accountID] = pending
+        }
     }
 
     func suspendRecommendationSyncForDeletion(accountID: String) async -> Bool {
@@ -621,7 +1193,16 @@ actor BackendSyncManager {
     private func writeRecommendationState(
         _ snapshot: RecommendationSyncSnapshot
     ) async -> Bool {
-        guard await durableRecommendationProviderWorkAllowed(for: snapshot.accountID),
+        let hydrationAdmission = recommendationHydrationTokens[
+            snapshot.accountID
+        ] != nil
+        guard let lease = await acquireCoachingContentSyncLease(
+                accountID: snapshot.accountID,
+                providerRawValue: snapshot.providerRawValue,
+                expectedLifecycleGeneration:
+                    snapshot.sourceLifecycleGeneration,
+                allowsRecommendationHydration: hydrationAdmission
+              ),
               !recommendationSyncClosedAccounts.contains(snapshot.accountID) else {
             return false
         }
@@ -642,9 +1223,8 @@ actor BackendSyncManager {
                 // The callable suspension can overlap deletion admission. Do
                 // not acknowledge or reconcile that response once the durable
                 // fence has closed, even if the remote write won the race.
-                guard await durableRecommendationProviderWorkAllowed(
-                    for: snapshot.accountID
-                ), !recommendationSyncClosedAccounts.contains(snapshot.accountID) else {
+                guard await coachingContentSyncLeaseIsCurrent(lease),
+                      !recommendationSyncClosedAccounts.contains(snapshot.accountID) else {
                     return false
                 }
                 return await applyRecommendationSyncResponse(response, to: snapshot)
@@ -663,7 +1243,7 @@ actor BackendSyncManager {
         _ response: RecommendationSyncCallableResponse,
         to snapshot: RecommendationSyncSnapshot
     ) async -> Bool {
-        guard response.state.schemaVersion == RecommendationSyncCallableRequest.schemaVersion,
+        guard response.state.schemaVersion == RecommendationSyncRemoteState.schemaVersion,
               response.state.remoteRevision >= 0,
               response.state.outcomes.count <= 40 else {
             return false
@@ -1277,19 +1857,24 @@ actor BackendSyncManager {
     private func send<Payload: Encodable>(
         _ payload: Payload,
         path: String,
-        accountID: String,
-        providerRawValue: String
+        lease: CoachingContentSyncLease
     ) async throws {
-        guard var request = await request(
-            path: path,
-            method: "POST",
-            accountID: accountID,
-            providerRawValue: providerRawValue
-        ) else {
+        guard await coachingContentSyncLeaseIsCurrent(lease),
+              let baseURL,
+              let headers = await BackendAuthHeaders.identityBound(
+                accountID: lease.accountID,
+                providerRawValue: lease.providerRawValue
+              ) else {
             throw URLError(.unsupportedURL)
         }
-
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        headers.apply(to: &request)
         request.httpBody = try JSONEncoder().encode(payload)
+        guard await coachingContentSyncLeaseIsCurrent(lease) else {
+            throw URLError(.userAuthenticationRequired)
+        }
         let (_, response) = try await URLSession.shared.data(for: request)
         guard Self.restWriteResponseIsSuccessful(response) else {
             throw URLError(.badServerResponse)
@@ -1439,37 +2024,40 @@ private extension BackendSyncManager {
         }
     }
 
-    func syncFirebaseProfile(_ profile: CoachingProfile, accountID: String, providerRawValue: String) async {
-        do {
-            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
-            let data = try encodeDocument(profile)
-            try await setDocument(
-                userDocument(accountID: accountID).collection("profile").document("main"),
-                data: data,
-                merge: true
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    private func writeFirebaseProfile(
+        _ profile: CoachingProfile,
+        lease: CoachingContentSyncLease
+    ) async throws {
+        try await ensureFirebaseUserDocument(lease: lease)
+        guard await coachingContentSyncLeaseIsCurrent(lease) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        let data = try encodeDocument(profile)
+        try await setDocument(
+            userDocument(accountID: lease.accountID)
+                .collection("profile").document("main"),
+            data: data,
+            // Whole-profile replacement is intentional: Codable omits nil
+            // optionals, and merge writes would otherwise preserve a voice,
+            // goal reference, or coaching brief the user explicitly cleared.
+            merge: false
+        )
     }
 
-    func syncFirebaseXP(_ xp: Int, accountID: String, providerRawValue: String) async {
-        do {
-            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
-            try await setDocument(
-                userDocument(accountID: accountID).collection("progress").document("main"),
-                data: ["xp": xp],
-                merge: true
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
-    }
-
-    func syncFirebaseSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
-        do {
-            try await syncFirebaseSessionForAuthority(
-                session,
-                accountID: accountID,
-                providerRawValue: providerRawValue
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    private func writeFirebaseXP(
+        _ xp: Int,
+        lease: CoachingContentSyncLease
+    ) async throws {
+        try await ensureFirebaseUserDocument(lease: lease)
+        guard await coachingContentSyncLeaseIsCurrent(lease) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        try await setDocument(
+            userDocument(accountID: lease.accountID)
+                .collection("progress").document("main"),
+            data: ["xp": max(0, xp)],
+            merge: false
+        )
     }
 
     /// Throwing form reserved for a server-authority callable that must not
@@ -1479,36 +2067,60 @@ private extension BackendSyncManager {
         accountID: String,
         providerRawValue: String
     ) async throws {
+        guard let lease = await acquireCoachingContentSyncLease(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        try await writeFirebaseSession(session, lease: lease)
+    }
+
+    private func writeFirebaseSession(
+        _ session: PracticeSession,
+        lease: CoachingContentSyncLease
+    ) async throws {
+        guard await coachingContentSyncLeaseIsCurrent(lease) else {
+            throw URLError(.userAuthenticationRequired)
+        }
         try await setDocument(
-            userDocument(accountID: accountID),
+            userDocument(accountID: lease.accountID),
             data: [
-                "accountID": accountID,
-                "provider": providerRawValue,
+                "accountID": lease.accountID,
+                "provider": lease.providerRawValue,
                 "updatedAt": Date().timeIntervalSince1970
             ],
             merge: true
         )
+        guard await coachingContentSyncLeaseIsCurrent(lease) else {
+            throw URLError(.userAuthenticationRequired)
+        }
         let data = try encodeDocument(session)
         try await setDocument(
-            userDocument(accountID: accountID).collection("sessions").document(session.id.uuidString),
+            userDocument(accountID: lease.accountID)
+                .collection("sessions").document(session.id.uuidString),
             data: data,
-            merge: true
+            // Session annotations intentionally replace the complete row so a
+            // cleared optional field cannot be resurrected by merge semantics.
+            merge: false
         )
     }
 
-    func ensureFirebaseUserDocument(accountID: String, providerRawValue: String) async {
-        let userRef = userDocument(accountID: accountID)
-        do {
-            try await setDocument(
-                userRef,
-                data: [
-                    "accountID": accountID,
-                    "provider": providerRawValue,
-                    "updatedAt": Date().timeIntervalSince1970
-                ],
-                merge: true
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    func ensureFirebaseUserDocument(
+        lease: CoachingContentSyncLease
+    ) async throws {
+        guard await coachingContentSyncLeaseIsCurrent(lease) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        try await setDocument(
+            userDocument(accountID: lease.accountID),
+            data: [
+                "accountID": lease.accountID,
+                "provider": lease.providerRawValue,
+                "updatedAt": Date().timeIntervalSince1970
+            ],
+            merge: true
+        )
     }
 
     func userDocument(accountID: String) -> DocumentReference {

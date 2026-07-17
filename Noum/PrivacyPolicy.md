@@ -1,6 +1,6 @@
 # Noum Privacy Policy
 
-**Last updated:** July 16, 2026
+**Last updated:** July 17, 2026
 
 Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.
 
@@ -13,7 +13,9 @@ Noum ("we", "us", "our") is a speaking practice app that helps you improve your 
 - **Display name** (from Apple or Google Sign-In, if provided) — for personalization
 - **Authentication provider** (Apple, Google, or Guest) — to manage your sign-in method
 
-Noum itself does not store your email address, phone number, or password in Noum profile or session records. Apple and Google account sign-in is handled through those providers and Firebase Authentication. Guest access normally uses anonymous Firebase Authentication when it is available and completes during the bounded launch window. When Firebase Authentication is unconfigured, unavailable, or cannot complete during that window, Noum creates a local-only guest account identifier and stores it in the iOS Keychain instead of creating a Firebase Authentication user. This fallback applies to account sign-in and persistence only; cloud-backed features you choose to use may still contact the processors described in this policy.
+Noum itself does not store your email address, phone number, or password in Noum profile or session records. Apple and Google account sign-in is handled through those providers and Firebase Authentication. Guest access first attempts anonymous Firebase Authentication during a bounded launch window. If that attempt cannot complete, Noum creates a Keychain-backed local-only guest so practice can continue on this device. When Firebase later becomes available, Noum may automatically retry anonymous authentication and replace the local identifier with a newly created anonymous Firebase UID. The identity transfer is copy-first and keeps the original on-device namespace until the new identity is verified.
+
+Creating the Firebase identity does not by itself upload the local guest's coaching profile, transcripts, sessions, XP, or recommendation state. Noum sends the supported account-data subset to Firebase only after the current account has allowed cloud processing. If permission is declined, missing, or stale, that content remains on the device. Ask Noum and other speech or generative-AI requests remain separately subject to the same current permission and their secure-service admission checks.
 
 When Google Sign-In is used, Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types. Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. The data available to that SDK depends on the Google account and sign-in flow.
 
@@ -42,7 +44,7 @@ Noum does not save the streamed microphone audio as an audio file on your device
 
 If you start a server-observed competitive rep after that capability is enabled, the app sends one bounded in-memory PCM recording through an authenticated Firebase Function. Noum's backend derives the byte count, audio hash, and duration, sends those same bytes to Deepgram with `mip_opt_out=true`, and releases the audio buffer after the request. Noum does not persist the recording or full server transcript. It keeps an account-bound observation receipt containing hashes, word count, practice-mode and prompt-binding provenance, provider/model identifiers, request status, server timestamps, and an expiry timestamp. An observation receipt is not a rated result; competitive eligibility remains disabled until the exact evaluator and provider version have independent calibration evidence.
 
-Before Noum sends live audio, transcripts, coaching-profile fields, session context, or selected video frames to cloud speech or AI providers, the app asks for account-scoped cloud-processing permission. The disclosure identifies the data categories, purposes, and processor categories involved. If you choose **Not now** or later revoke permission, Noum does not start those cloud requests. Deterministic coaching remains available where supported, while cloud-dependent transcription, conversation, voice, and generated-coaching features may be unavailable. You can review or change this choice in **Settings > Cloud Processing**. A materially changed disclosure or processor manifest requires a new decision.
+Before Noum sends live audio, transcripts, coaching-profile fields, session context, XP, recommendation state, or selected video frames to Firebase, cloud speech, or AI providers, the app asks for account-scoped cloud-processing permission. The disclosure identifies the data categories, purposes, and processor categories involved. If you choose **Not now** or later revoke permission, Noum does not start new account-content, speech, or generated-coaching uploads. Deterministic coaching remains available where supported, while cloud-dependent transcription, conversation, voice, generated coaching, and account-content sync may be unavailable. You can review or change this choice in **Settings > Cloud Processing**. A materially changed disclosure or processor manifest requires a new decision.
 
 ### AI Coaching Feedback
 When you use a production cloud AI coaching feature, Noum sends the information needed to answer that request to **Google Vertex AI (Gemini)** through a protected Firebase callable. Developer-only provider configurations are excluded from the Release bundle and are not production processors.
@@ -103,7 +105,7 @@ The app requests:
 | Conversation weather context | A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API |
 | Practice reminders | Notification preferences, coaching context (not user-authored text) |
 | Mutual account connections | A short-lived bearer invite deliberately shared with the recipient you choose; Firebase account IDs, bounded display names, token digests, pair identifiers, connection status, and timestamps used to create and remove reciprocal links when secure connections are enabled |
-| Account management and sync reliability | Firebase UID or a generated local guest UUID, auth provider, and optional sync data; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, security, and analytics-purpose processing described below |
+| Account management and sync reliability | Firebase UID or generated local guest UUID and auth provider for identity; after current cloud-processing consent, the supported coaching profile, XP, practice-session, transcript/session-evidence, and recommendation subset for Firebase account sync; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, security, and analytics-purpose processing described below |
 
 We do **not** use your data for advertising, user profiling for marketing purposes, or sale to third parties.
 
@@ -119,7 +121,7 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 | **Apple Core Location / MapKit** | Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists | Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Google Vertex AI (Gemini)** | Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback | Production generated coaching and conversation responses | [Google Cloud Terms](https://cloud.google.com/terms) |
 | **Google Sign-In** | The SDK vendor declaration covers linked account and device data when Google Sign-In is used | Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking | [Google Privacy Policy](https://policies.google.com/privacy) |
-| **Firebase (Google)** | Bounded production coaching requests, Authentication and App Check proof, bounded competitive-rep PCM held in invocation memory with server-derived observation metadata and an account-unlinked seven-day exact-audio replay digest, and short-lived mutual-connection invite secrets handled in invocation memory with digest-addressed account, display-name, pair, and timestamp records; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality | Protected callable transport and abuse protection for cloud coaching, competitive observation, and mutual account connections, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
+| **Firebase (Google)** | Bounded production coaching requests, Authentication and App Check proof, and—only after current cloud-processing consent—coaching profile, XP, practice-session content including transcripts and session evidence, and recommendation state for account sync; bounded competitive-rep PCM held in invocation memory with server-derived observation metadata and an account-unlinked seven-day exact-audio replay digest, and short-lived mutual-connection invite secrets handled in invocation memory with digest-addressed account, display-name, pair, and timestamp records; account identity, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality | Protected callable transport and abuse protection for cloud coaching, consent-gated account-content sync, competitive observation, and mutual account connections, plus authentication, first-run configuration, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
 | **Open-Meteo** | A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself | Conversation weather context; Noum does not send a Core Location coordinate or account identifier | [Open-Meteo Terms](https://open-meteo.com/en/terms) |
 <!-- PROCESSOR-MANIFEST:END -->
 
@@ -134,8 +136,8 @@ Most of your data is stored locally on your device using:
 - **iOS Keychain** — account credentials (encrypted by iOS)
 - **UserDefaults** — coaching profile, session history, saved Phrase Bank entries, friend names, XP, settings
 
-### Cloud Storage (Optional)
-If Firebase is configured, the following may be synced:
+### Cloud Storage (When Allowed)
+If Firebase is configured and the current account has allowed cloud processing, the following may be synced:
 - Coaching profile
 - Practice session history
 - XP and progression data
@@ -143,7 +145,7 @@ If Firebase is configured, the following may be synced:
 - Expiry-stamped competitive capture intents and observation receipts when server observation is enabled; raw audio and full server transcripts are not stored
 - Expiry-stamped mutual-connection invite digests and reciprocal friend-link records when secure account connections are enabled. The raw invite is handled in memory and is not stored by Noum's server
 
-Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.
+Cloud-synced data is stored in Firebase Firestore and is associated with your account ID. Firebase Authentication may establish an anonymous account identifier before this choice, but the coaching-content items above are not uploaded until current permission exists.
 
 ### Temporary Credentials
 Production Deepgram transcription uses a short-lived provider credential obtained from Noum's backend. The app keeps the temporary credential in memory for the active service window and does not intentionally persist it to disk.
@@ -153,6 +155,7 @@ Production Deepgram transcription uses a short-lived provider credential obtaine
 ## 5. Data Retention
 
 - **On-device data** is retained until you delete it (via session deletion, account deletion, or app uninstall)
+- **Local guest identity transfer data** can temporarily exist under both the original local identifier and the new Firebase UID while Noum copies and verifies the on-device namespace. The original namespace is removed after the local identity transaction completes. A separate local marker can retain consent-gated cloud-sync work for retry without blocking account controls
 - **Noum-controlled Firebase data** is retained while your account is active and is submitted for deletion when you delete your account. A minimal deletion-security record contains only the account identifier, opaque request identifier, deletion status, and timestamps; it contains no audio, transcript, session, or coaching content. A completed deletion-security record is scheduled for automatic cleanup after two hours; that cleanup depends on the Firestore TTL policy being deployed and working. If finalization or earlier cleanup is interrupted, the pending write fence remains; the scheduled server reconciler retries the full deletion work for the exact request and only then converts it to a fresh completed record. If TTL is unavailable, the completed record remains until authorized cleanup. Shared records and operational backups may follow different deletion windows
 - **Streamed audio** is not retained by Noum as an audio file. Production Deepgram requests set `mip_opt_out=true`; Deepgram says opted-out data is retained only as needed to process the request. Apple handles any Speech Recognition fallback under its own terms
 - **Competitive observation metadata** contains hashes, counts, practice-mode and prompt-binding provenance, provider/model identifiers, status, server timestamps, and an expiry timestamp—not raw audio or the full server transcript. An account-unlinked, domain-separated exact-audio replay digest is retained for seven days and is not removed with account deletion, so deleting one account cannot make the same recording reusable through another account. It contains no account or session identifier. Automatic removal at expiry depends on the corresponding Firestore TTL policies being configured and verified; account deletion removes the account-linked intent and observation records independently
@@ -182,7 +185,7 @@ Go to **Settings > Delete Account**. This will:
 - Delete your Firebase Authentication account, if one exists
 - Sign you out
 
-Account deletion is irreversible once completed. Noum performs deletion through an authenticated, idempotent account service and does not clear local state or claim success when the remote request fails. During deletion, the service uses the temporary, content-free deletion-security record described above to reject stale authenticated writes and to recover safely if finalization is interrupted. The service may require you to sign in again. For Sign in with Apple accounts, Noum stops before mutation unless it can safely revoke the Apple authorization; the app explains the blocker and leaves local and remote data unchanged. Deleting a Noum account does not cancel an App Store subscription, which you manage through your Apple account.
+Account deletion is irreversible once completed. A brief copy-and-verify identity transfer pauses account mutation so Noum cannot delete the wrong namespace; a later content-sync failure does not keep deletion or linking behind a network request. If the secure identity record itself cannot be verified, Noum preserves the practice data and requires recovery before mutation. Noum performs remote deletion through an authenticated, idempotent account service and does not clear local state or claim success when the remote request fails. During deletion, the service uses the temporary, content-free deletion-security record described above to reject stale authenticated writes and to recover safely if finalization is interrupted. The service may require you to sign in again. For Sign in with Apple accounts, Noum stops before mutation unless it can safely revoke the Apple authorization; the app explains the blocker and leaves local and remote data unchanged. Deleting a Noum account does not cancel an App Store subscription, which you manage through your Apple account.
 
 Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.
 
@@ -199,7 +202,7 @@ Noum is not directed at children under 13. We do not knowingly collect personal 
 
 ## 8. Security
 
-- Apple and Google account sign-in is handled through Firebase Authentication using industry-standard OAuth flows; guest access uses anonymous Firebase Authentication when it completes during the bounded launch window or a Keychain-backed local identifier when Firebase is unconfigured, unavailable, or cannot complete during that window
+- Apple and Google account sign-in is handled through Firebase Authentication using industry-standard OAuth flows; guest access uses bounded anonymous-authentication attempts with a Keychain-backed local fallback, and a later copy-first promotion verifies the new Firebase UID before retiring the local namespace
 - Cloud-speech credentials intended for client use are short-lived and are not intentionally persisted; broader provider secrets are not intended to be distributed in the app
 - Mutual-connection invite codes are high-entropy bearer secrets shared only at your direction. Noum handles the raw code in memory and stores only a digest; do not post a code publicly
 - All network communication uses HTTPS/TLS

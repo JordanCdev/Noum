@@ -1,6 +1,9 @@
 import Foundation
 import Testing
 @testable import Noum
+#if canImport(FirebaseFunctions)
+import FirebaseFunctions
+#endif
 
 @Suite("Production app shell routing")
 struct ProductionAppShellRoutingTests {
@@ -221,11 +224,15 @@ struct PrivacyProductionContractTests {
             repositoryRoot.appendingPathComponent("public/privacy.html"),
         ]
         let requiredDisclosures = [
-            "July 16, 2026",
+            "July 17, 2026",
             "Noum itself does not store your email address, phone number, or password in Noum profile or session records.",
-            "Guest access normally uses anonymous Firebase Authentication when it is available and completes during the bounded launch window.",
-            "When Firebase Authentication is unconfigured, unavailable, or cannot complete during that window, Noum creates a local-only guest account identifier and stores it in the iOS Keychain instead of creating a Firebase Authentication user.",
-            "This fallback applies to account sign-in and persistence only; cloud-backed features you choose to use may still contact the processors described in this policy.",
+            "Guest access first attempts anonymous Firebase Authentication during a bounded launch window.",
+            "If that attempt cannot complete, Noum creates a Keychain-backed local-only guest so practice can continue on this device.",
+            "Noum may automatically retry anonymous authentication and replace the local identifier with a newly created anonymous Firebase UID.",
+            "The identity transfer is copy-first and keeps the original on-device namespace until the new identity is verified.",
+            "Creating the Firebase identity does not by itself upload the local guest's coaching profile, transcripts, sessions, XP, or recommendation state.",
+            "Noum sends the supported account-data subset to Firebase only after the current account has allowed cloud processing.",
+            "If permission is declined, missing, or stale, that content remains on the device.",
             "Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types.",
             "Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics.",
             "It declares no tracking",
@@ -253,6 +260,9 @@ struct PrivacyProductionContractTests {
                 #expect(policy.contains(disclosure))
             }
             #expect(!policy.contains("No data is shared with analytics providers"))
+            #expect(!policy.contains(
+                "This fallback applies to account sign-in and persistence only"
+            ))
         }
     }
 
@@ -359,6 +369,186 @@ struct UIAutomationAccountIsolationTests {
 
 @Suite("Coach chat wire contract")
 struct CoachChatWireContractTests {
+    @Test func strictClientUsesAdditiveV2Callable() {
+        #expect(FirebaseCoachChatTransport.region == "europe-west2")
+        #expect(FirebaseCoachChatTransport.functionName == "coachChatV2")
+    }
+
+    @Test func composerAdmissionUsesLocalSecureSessionNotAFalseHealthProbe() {
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: "firebase-guest",
+            durableAccountID: "firebase-guest",
+            accountIsHydrated: true,
+            providerWorkAllowed: true
+        ) == .available)
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: false,
+            firebaseUID: "firebase-guest",
+            durableAccountID: "firebase-guest",
+            accountIsHydrated: true,
+            providerWorkAllowed: true
+        ) == .unavailable(.service))
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: nil,
+            durableAccountID: "firebase-guest",
+            accountIsHydrated: true,
+            providerWorkAllowed: true
+        ) == .unavailable(.secureSessionMissing))
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: "firebase-b",
+            durableAccountID: "firebase-a",
+            accountIsHydrated: true,
+            providerWorkAllowed: true
+        ) == .unavailable(.secureSessionMissing))
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: "local-guest-a",
+            durableAccountID: "local-guest-a",
+            accountIsHydrated: true,
+            providerWorkAllowed: true
+        ) == .unavailable(.localOnlyGuest))
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: "firebase-guest",
+            durableAccountID: nil,
+            accountIsHydrated: true,
+            providerWorkAllowed: true
+        ) == .unavailable(.authenticationPending))
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: "firebase-guest",
+            durableAccountID: "firebase-guest",
+            accountIsHydrated: false,
+            providerWorkAllowed: true
+        ) == .unavailable(.authenticationPending))
+        #expect(FirebaseCoachChatTransport.localAvailability(
+            firebaseConfigured: true,
+            firebaseUID: "firebase-guest",
+            durableAccountID: "firebase-guest",
+            accountIsHydrated: true,
+            providerWorkAllowed: false
+        ) == .unavailable(.authenticationPending))
+        #expect(FirebaseCoachChatTransport.requestIdentityMatches(
+            requestAccountID: "firebase-a",
+            firebaseUID: "firebase-a",
+            durableAccountID: "firebase-a"
+        ))
+        #expect(!FirebaseCoachChatTransport.requestIdentityMatches(
+            requestAccountID: "firebase-a",
+            firebaseUID: "firebase-b",
+            durableAccountID: "firebase-b"
+        ))
+    }
+
+    @Test func localGuestHasTruthfulConnectionAction() {
+        let localGuest = AskNoumAvailabilityPresentation.resolve(.localOnlyGuest)
+        #expect(localGuest.message == "Connect this guest once to use live coaching. Your practice stays on this device if the connection fails.")
+        #expect(!localGuest.showsCheckAgain)
+        #expect(localGuest.connectsLocalGuest)
+
+        let missingSession = AskNoumAvailabilityPresentation.resolve(.secureSessionMissing)
+        #expect(missingSession.message == "Your coaching history is loaded, but Ask Noum needs its secure session reconnected. Your practice is unchanged.")
+        #expect(missingSession.showsCheckAgain)
+        #expect(!missingSession.connectsLocalGuest)
+
+        #expect(AskNoumAvailabilityPresentation.resolve(
+            .authenticationPending
+        ).showsCheckAgain)
+        #expect(AskNoumAvailabilityPresentation.resolve(.service).showsCheckAgain)
+    }
+
+    @Test func coachCapabilityMustAdvertiseTheExactV2Contract() {
+        #expect(FirebaseCoachChatTransport.capabilityAvailability(
+            available: true,
+            functionName: "coachChatV2",
+            requestSchemaVersion: 2,
+            policyVersion: "noum-coach-v2"
+        ) == .available)
+        #expect(FirebaseCoachChatTransport.capabilityAvailability(
+            available: true,
+            functionName: nil,
+            requestSchemaVersion: nil,
+            policyVersion: nil
+        ) == .unavailable(.backendVersionMissing))
+        #expect(FirebaseCoachChatTransport.capabilityAvailability(
+            available: true,
+            functionName: "coachChat",
+            requestSchemaVersion: 1,
+            policyVersion: nil
+        ) == .unavailable(.backendVersionMissing))
+        #expect(FirebaseCoachChatTransport.capabilityAvailability(
+            available: false,
+            functionName: "coachChatV2",
+            requestSchemaVersion: 2,
+            policyVersion: "noum-coach-v2"
+        ) == .unavailable(.service))
+    }
+
+    @Test func missingV2BackendUsesSpecificRecoverableCopy() {
+        let presentation = AskNoumAvailabilityPresentation.resolve(
+            .backendVersionMissing
+        )
+        #expect(presentation.message ==
+            "Ask Noum needs its coaching service update before this build can reply.")
+        #expect(presentation.showsCheckAgain)
+        #expect(!presentation.connectsLocalGuest)
+    }
+
+    @Test func personalProviderContextDoesNotRepeatTheCaseFile() {
+        let context = CoachContextBuilder.personalTurnContext(
+            profile: nil,
+            coachingExpertise: [],
+            hasCoachingBrief: true
+        )
+        #expect(context.contains("complete personal evidence allowance"))
+        #expect(context.contains("State its useful decision once"))
+        #expect(!context.contains("CASE FORMULATION"))
+        #expect(!context.contains("ACTIVE PRESCRIPTION"))
+        #expect(!context.contains("FORWARD PLAN"))
+        #expect(!context.contains("COACH JUDGEMENT PASS"))
+    }
+
+    @Test func settingsDoesNotPresentLocalGuestAsRecoverableCloudAccount() {
+        let localGuest = SettingsAccountPresentation.resolve(
+            accountID: "local-guest-a",
+            displayName: "Your profile",
+            providerTitle: "Guest",
+            providerRawValue: AuthProvider.guest.rawValue
+        )
+        #expect(localGuest.identityTitle == "Account")
+        #expect(localGuest.identityValue == "On-device guest")
+        #expect(localGuest.providerTitle == nil)
+        #expect(localGuest.isOnDeviceGuest)
+        #expect(!localGuest.showsSignOut)
+        #expect(localGuest.showsConnectCoaching)
+        #expect(localGuest.deletionAccessibilityHint.contains("local practice data"))
+
+        let firebaseGuest = SettingsAccountPresentation.resolve(
+            accountID: "firebase-guest",
+            displayName: "Your profile",
+            providerTitle: "Guest",
+            providerRawValue: AuthProvider.guest.rawValue
+        )
+        #expect(firebaseGuest.identityTitle == "Signed in as")
+        #expect(firebaseGuest.identityValue == "Your profile")
+        #expect(firebaseGuest.providerTitle == "Guest")
+        #expect(!firebaseGuest.isOnDeviceGuest)
+        #expect(!firebaseGuest.showsSignOut)
+        #expect(!firebaseGuest.showsConnectCoaching)
+        #expect(firebaseGuest.deletionAccessibilityHint.contains("remote account service"))
+
+        let linkedAccount = SettingsAccountPresentation.resolve(
+            accountID: "firebase-apple",
+            displayName: "Jordan",
+            providerTitle: "Apple",
+            providerRawValue: AuthProvider.apple.rawValue
+        )
+        #expect(linkedAccount.showsSignOut)
+    }
+
     @Test func requestBoundsContextHistoryAndTotalMessageCharacters() throws {
         var messages: [CoachChatWireMessage] = []
         for index in 0..<14 {
@@ -368,14 +558,21 @@ struct CoachChatWireContractTests {
             ))
         }
         let request = CoachChatRequest(
+            accountID: "firebase-guest",
             surface: "text",
             qualityTier: "fast",
             coachingContext: String(repeating: "c", count: 14_000),
             messages: messages
         )
 
-        #expect(request.schemaVersion == 1)
+        #expect(request.schemaVersion == 2)
+        #expect(request.accountID == "firebase-guest")
         #expect(UUID(uuidString: request.requestID) != nil)
+        #expect(request.coachVoice == nil)
+        #expect(request.turnDepth == CoachTurnDepth.groundedRead.rawValue)
+        #expect(request.turnIntent == CoachChatTurnIntent.unknown.rawValue)
+        #expect(request.responseKind == CoachChatResponseKind.generalCoaching.rawValue)
+        #expect(request.verifiedQuoteSources.isEmpty)
         #expect(request.coachingContext.count == CoachChatRequest.maxContextCharacters)
         #expect(request.messages.count <= 12)
         #expect(request.messages.allSatisfy {
@@ -386,6 +583,556 @@ struct CoachChatWireContractTests {
         #expect(request.messages.last?.role == .user)
     }
 
+    @Test func coachingBriefIsBoundedInsideTheSharedRequestEnvelope() {
+        let long = String(repeating: "e", count: 1_000)
+        let brief = CoachChatBrief(assessment: CoachAssessment(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            questionRestatement: "How am I doing?",
+            directVerdict: long,
+            confidence: 0.61,
+            evidenceUsed: ["latest rep: \(long)"],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.61,
+                confidence: 0.61,
+                evidence: [long],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
+            missingEvidence: [long],
+            nextProofTest: long,
+            responseMode: .expandable,
+            repairFocus: long
+        ))
+        let request = CoachChatRequest(
+            accountID: "firebase-guest",
+            surface: "text",
+            qualityTier: "ultra",
+            coachingBrief: brief,
+            verifiedQuoteSources: Array(
+                repeating: String(repeating: "q", count: 5_000),
+                count: 5
+            ),
+            coachingContext: String(repeating: "c", count: 12_000),
+            messages: Array(repeating: CoachChatWireMessage(
+                role: .user,
+                content: String(repeating: "m", count: 4_000)
+            ), count: 12)
+        )
+
+        #expect(brief.directVerdict.count <= CoachChatBrief.maxFieldCharacters)
+        #expect(brief.decisiveEvidence?.count == CoachChatBrief.maxFieldCharacters)
+        #expect(request.verifiedQuoteSources.count == CoachChatRequest.maxQuoteSources)
+        #expect(request.verifiedQuoteSources.allSatisfy {
+            $0.count == CoachChatRequest.maxQuoteSourceCharacters
+        })
+        #expect(request.messages.last?.role == .user)
+        #expect(request.coachingContext.count + brief.characterCount +
+            request.verifiedQuoteSources.reduce(0) { $0 + $1.count } +
+            request.messages.reduce(0) { $0 + $1.content.count } <=
+            CoachChatRequest.totalRequestCharacterBudget)
+    }
+
+    @Test func coachingBriefRejectsAbsenceEvidenceForItsActualMove() {
+        let brief = CoachChatBrief(assessment: CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: "What should I fix first?",
+            directVerdict: "The opening is the next lever.",
+            confidence: 0.62,
+            evidenceUsed: [
+                "latest rep: Timed, 7/10, 60s",
+                "filler evidence was not quantity-qualified"
+            ],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.42,
+                confidence: 0.62,
+                evidence: [
+                    "the available excerpt did not clearly put the answer first"
+                ],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
+            missingEvidence: [],
+            nextProofTest: "Put the recommendation in sentence one.",
+            responseMode: .immediateOnly
+        ))
+
+        #expect(brief.decisiveEvidence == nil)
+        #expect(brief.evidenceStrength == .missing)
+    }
+
+    @Test func turnIntentClassificationKeepsSocialAndSensitiveTurnsOutOfDrills() {
+        #expect(CoachChatTurnIntent.classify("hi") == .greeting)
+        #expect(CoachChatTurnIntent.classify("banana") == .offTopic)
+        #expect(CoachChatTurnIntent.classify("Keep the coaching concise") == .preference)
+        let reporterStyleFeedback = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        #expect(CoachChatTurnIntent.classify(reporterStyleFeedback) == .preference)
+        #expect(CoachChatTurnIntent.classify("You're repeating yourself.") == .preference)
+        #expect(CoachChatTurnIntent.classify("That's not informative.") == .preference)
+        #expect(CoachChatTurnIntent.classify("That wasn't helpful.") == .preference)
+        #expect(CoachChatTurnIntent.classify("You missed the point.") == .preference)
+        #expect(CoachChatTurnIntent.classify("Stop telling me to practice.") == .preference)
+        #expect(CoachChatTurnIntent.classify("I keep repeating myself.") == .coaching)
+        #expect(CoachChatTurnIntent.classify("My answer is not informative.") == .coaching)
+        #expect(CoachChatTurnIntent.classify("I'm nervous about this") == .vulnerable)
+        #expect(CoachChatTurnIntent.classify("What should I fix first?") == .coaching)
+        #expect(CoachChatTurnIntent.classify(
+            "How do I read aloud more naturally?"
+        ) == .coaching)
+        #expect(CoachChatResponseKind.classify(
+            "How do I read aloud more naturally?"
+        ) == .generalCoaching)
+        #expect(CoachChatTurnIntent.classify(
+            "Please don't use markdown in your replies."
+        ) == .preference)
+        #expect(CoachChatTurnIntent.classify(
+            "How do I sound more authoritative in tomorrow’s update?"
+        ) == .coaching)
+        #expect(CoachChatTurnIntent.classify("I’m nervous—how should I open?") == .coaching)
+        #expect(CoachChatTurnIntent.classify(nil) == .unknown)
+    }
+
+    @Test func responseKindSeparatesCraftPersonalMemoryAndConversation() {
+        #expect(CoachChatResponseKind.classify(
+            "How do I structure a presentation?"
+        ) == .generalCoaching)
+        #expect(CoachChatResponseKind.classify(
+            "How can I cut filler words without sounding stiff?"
+        ) == .generalCoaching)
+        #expect(CoachChatResponseKind.classify(
+            "How did I do?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "How am I doing?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "Am I improving?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What were my exact stats?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "How many fillers did I use?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "How did I do that?"
+        ) == .generalCoaching)
+        #expect(CoachChatResponseKind.classify(
+            "What is a good speaking pace?"
+        ) == .generalCoaching)
+        #expect(CoachChatResponseKind.classify(
+            "What should I fix first?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What is the one move?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What do you know about me?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What have you noticed about me?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What pattern do you see?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "Based on my reps, what should I change?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What stands out for me in my answers?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "Am I afraid to disagree?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "You counted 'like', but I meant it as a comparison."
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "Did I actually say that?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "This week felt harder even though my score improved."
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "Is 7/10 bad?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "How should a coach explain a ten-point scale?"
+        ) == .generalCoaching)
+        #expect(CoachChatResponseKind.classify(
+            "My interview answer landed better than practice. What do we learn?"
+        ) == .personalEvidenceRead)
+        #expect(CoachChatResponseKind.classify(
+            "What should Noum remember?"
+        ) == .memoryHandoff)
+        #expect(CoachChatResponseKind.classify("hi") == .conversational)
+        #expect(CoachChatResponseKind.classify(
+            "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        ) == .conversational)
+        #expect(CoachChatResponseKind.classify("You're repeating yourself.") == .conversational)
+        #expect(CoachChatResponseKind.classify("That's not informative.") == .conversational)
+        #expect(CoachChatResponseKind.classify("That wasn't helpful.") == .conversational)
+        #expect(CoachChatResponseKind.classify("You missed the point.") == .conversational)
+        #expect(CoachChatResponseKind.classify("Stop telling me to practice.") == .conversational)
+        #expect(CoachChatResponseKind.classify("I keep repeating myself.") == .generalCoaching)
+
+        let directEvaluationKind = CoachChatResponseKind.classify("How did I do?")
+        #expect(CoachReplyPipeline.shouldBuildAssessment(
+            judgementPassEnabled: true,
+            turnIntent: .coaching,
+            responseKind: directEvaluationKind
+        ))
+    }
+
+    @Test func typedBriefWithdrawsOnlyUngroundedGeneralAssessment() throws {
+        let ungrounded = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "How do I structure a presentation?",
+            directVerdict: "The opening is the next lever.",
+            confidence: 0.62,
+            evidenceUsed: ["latest rep: no usable transcript signal"],
+            rubricScores: [],
+            nextProofDimensionID: nil,
+            missingEvidence: ["A quantity-qualified transcript is missing."],
+            nextProofTest: "Open with the decision.",
+            responseMode: .immediateOnly
+        )
+        let personalBrief = try #require(CoachChatBrief.applicable(
+            assessment: ungrounded,
+            responseKind: .personalEvidenceRead
+        ))
+        let generalBrief = CoachChatBrief.applicable(
+            assessment: ungrounded,
+            responseKind: .generalCoaching
+        )
+        let unrelatedGroundedAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "How do I structure a presentation?",
+            directVerdict: "The last answer delayed its recommendation.",
+            confidence: 0.68,
+            evidenceUsed: ["latest rep: the recommendation followed setup"],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.42,
+                confidence: 0.68,
+                evidence: ["the recommendation followed setup"],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
+            missingEvidence: [],
+            nextProofTest: "Put the recommendation in sentence one.",
+            responseMode: .immediateOnly
+        )
+        #expect(personalBrief.nextMove == nil)
+        #expect(generalBrief == nil)
+        #expect(CoachChatBrief.applicable(
+            assessment: unrelatedGroundedAssessment,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(CoachChatBrief.applicable(
+            assessment: ungrounded,
+            responseKind: .conversational
+        ) == nil)
+        #expect(CoachReplyPipeline.assessmentForProvider(
+            ungrounded,
+            coachingBrief: generalBrief,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(CoachReplyPipeline.assessmentForProvider(
+            ungrounded,
+            coachingBrief: personalBrief,
+            responseKind: .personalEvidenceRead
+        ) != nil)
+
+        let memoryAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should Noum remember?",
+            directVerdict: "What I’d carry forward for now is one possible pattern, not a fixed label.",
+            confidence: 0.62,
+            evidenceUsed: [
+                "conversation hypothesis: the point may arrive after setup"
+            ],
+            rubricScores: [],
+            nextProofDimensionID: nil,
+            missingEvidence: [],
+            nextProofTest: "Use two pressure reps to check it; drop this read if the point lands first.",
+            responseMode: .immediateOnly
+        )
+        let memoryBrief = try #require(CoachChatBrief.applicable(
+            assessment: memoryAssessment,
+            responseKind: .memoryHandoff
+        ))
+        #expect(memoryBrief.directVerdict == memoryAssessment.directVerdict)
+        #expect(memoryBrief.decisiveEvidence == memoryAssessment.evidenceUsed.first)
+        #expect(memoryBrief.nextMove == memoryAssessment.nextProofTest)
+        #expect(CoachReplyPipeline.assessmentForProvider(
+            memoryAssessment,
+            coachingBrief: memoryBrief,
+            responseKind: .memoryHandoff
+        ) != nil)
+
+        let firstTurnMemoryAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should Noum remember?",
+            directVerdict: "I don't have a clear pattern to carry forward yet.",
+            confidence: 0.20,
+            evidenceUsed: ["latest rep: an ordinary unconsented observation"],
+            rubricScores: [],
+            nextProofDimensionID: nil,
+            missingEvidence: ["No consent-bound conversation hypothesis."],
+            nextProofTest: "Run another rep.",
+            responseMode: .immediateOnly
+        )
+        let incompleteMemoryBrief = CoachChatBrief.applicable(
+            assessment: firstTurnMemoryAssessment,
+            responseKind: .memoryHandoff
+        )
+        #expect(incompleteMemoryBrief == nil)
+        #expect(CoachReplyPipeline.assessmentForProvider(
+            firstTurnMemoryAssessment,
+            coachingBrief: incompleteMemoryBrief,
+            responseKind: .memoryHandoff
+        ) == nil)
+    }
+
+    @Test func clientGateRejectsPrescriptionsOnNonCoachingTurns() {
+        for turn in [
+            "hi",
+            "banana",
+            "Keep the coaching concise",
+            "I'm nervous about this"
+        ] {
+            for reply in [
+                "Because the recommendation matters, you should put it first.",
+                "You should pause.",
+                "You can start."
+            ] {
+                #expect(AICoachChatService.replyQualityIssue(
+                    in: reply,
+                    latestUserTurn: turn
+                ) == .nonCoachingPrescription)
+            }
+        }
+    }
+
+    @Test func personalEvidenceReadDoesNotLeakAStoredMoveIntoAnObservationTurn() throws {
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What have you noticed about me?",
+            directVerdict: "The recommendation arrived after the setup.",
+            confidence: 0.68,
+            evidenceUsed: ["latest rep: the recommendation followed setup"],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.42,
+                confidence: 0.68,
+                evidence: ["the recommendation followed setup"],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
+            missingEvidence: [],
+            nextProofTest: "Put the recommendation in sentence one.",
+            responseMode: .immediateOnly
+        )
+        let brief = try #require(CoachChatBrief.applicable(
+            assessment: assessment,
+            responseKind: .personalEvidenceRead
+        ))
+        #expect(brief.nextMove == assessment.nextProofTest)
+
+        let observationTurn = "What have you noticed about me?"
+        let descriptiveRead = "Your last rep put the recommendation after the setup, which softened the opening."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: descriptiveRead,
+            latestUserTurn: observationTurn,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == nil)
+
+        let prescribedMove = "Your last rep put the recommendation after the setup, which softened the opening. Put the recommendation first in the next rep."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: prescribedMove,
+            latestUserTurn: observationTurn,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .nonCoachingPrescription)
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: prescribedMove,
+            latestUserTurn: "Based on my reps, what should I change?",
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: prescribedMove,
+            latestUserTurn: observationTurn,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: nil
+        ) != .nonCoachingPrescription)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: prescribedMove,
+            latestUserTurn: "What should Noum remember?",
+            responseKind: .memoryHandoff,
+            coachingBrief: brief
+        ) != .nonCoachingPrescription)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "Open with the decision, then give one reason and one example; that order separates the point from its support.",
+            latestUserTurn: "How do I structure a presentation?",
+            responseKind: .generalCoaching,
+            coachingBrief: brief
+        ) != .nonCoachingPrescription)
+    }
+
+    @Test func clientGateUsesTheTypedResponseLane() {
+        let general = "Open with the decision, then give one reason and one example; that order separates the point from its support."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: general,
+            latestUserTurn: "How do I structure a presentation?",
+            systemContext: "RECENT (most-recent first): setup came first",
+            responseKind: .generalCoaching,
+            coachingBrief: nil
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "Your recent reps show the setup before the recommendation.",
+            latestUserTurn: "How do I structure a presentation?",
+            systemContext: "RECENT (most-recent first): setup came first",
+            responseKind: .generalCoaching,
+            coachingBrief: nil
+        ) == .overclaimsEvidence)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language.",
+            latestUserTurn: "Your wording is too redundant and robotic.",
+            turnDepth: .trustRepair,
+            responseKind: .conversational,
+            coachingBrief: nil
+        ) == nil)
+        let reporterTurn = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        let coachCommitment = "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: coachCommitment,
+            latestUserTurn: reporterTurn,
+            recentCoachReplies: [coachCommitment],
+            turnDepth: .trustRepair,
+            responseKind: .conversational,
+            coachingBrief: nil
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: CoachChatBrief.insufficientEvidenceVerdict,
+            latestUserTurn: "How do I structure a presentation?",
+            responseKind: .generalCoaching,
+            coachingBrief: nil
+        ) != nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: CoachChatBrief.insufficientEvidenceVerdict,
+            latestUserTurn: "What should I fix first?",
+            responseKind: .personalEvidenceRead,
+            coachingBrief: nil
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "That sounds hard. We can slow this down.",
+            latestUserTurn: "I'm nervous about this.",
+            responseKind: .conversational,
+            coachingBrief: nil
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "I don't have enough evidence to answer that honestly yet. What did you say first in the answer you want me to read?",
+            latestUserTurn: "What should I fix first?",
+            systemContext: "RECENT (most-recent first): no typed observation",
+            responseKind: .personalEvidenceRead,
+            coachingBrief: nil
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "I don't have a clear pattern to carry forward yet.",
+            latestUserTurn: "What should Noum remember?",
+            responseKind: .memoryHandoff,
+            coachingBrief: nil
+        ) == nil)
+
+        let alternateMemoryAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should Noum remember?",
+            directVerdict: "What I’d carry forward for now is that fillers may cluster after the close.",
+            confidence: 0.60,
+            evidenceUsed: [
+                "conversation hypothesis: fillers may cluster after the close"
+            ],
+            rubricScores: [],
+            nextProofDimensionID: nil,
+            missingEvidence: [],
+            nextProofTest: "Use two comparable reps to check whether that still happens; drop this read if it does not.",
+            responseMode: .immediateOnly
+        )
+        let alternateMemoryBrief = CoachChatBrief.applicable(
+            assessment: alternateMemoryAssessment,
+            responseKind: .memoryHandoff
+        )
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "What I’d carry forward for now is one possible pattern: fillers may cluster after the close. Use two comparable reps to check whether that still happens; drop this read if it does not.",
+            latestUserTurn: "What should Noum remember?",
+            responseKind: .memoryHandoff,
+            coachingBrief: alternateMemoryBrief
+        ) == nil)
+    }
+
+    @Test func nonPersonalContextCannotLeakRepHistory() {
+        let general = CoachContextBuilder.nonPersonalContext(
+            profile: nil,
+            responseKind: .generalCoaching,
+            coachingExpertise: []
+        )
+        #expect(general.contains("Answer the communication craft question directly"))
+        #expect(general.contains("Coaching voice: Neutral"))
+        #expect(!general.contains("RECENT"))
+        #expect(!general.lowercased().contains("transcript"))
+        #expect(!general.lowercased().contains("filler"))
+        #expect(!general.lowercased().contains("score"))
+    }
+
+    @Test func authorizedMoveVocabularyIsAcceptedAndRepeatableAcrossTheClientGate() {
+        let moves = [
+            "Advance the read: keep the prior target, but change the proof to the next observable sentence.",
+            "Repair the same answer in plain speech: no markdown, one specific read, one move.",
+            "Log the outcome as a field note, then repeat one pressure rep and check the same observable target.",
+            "Replay the answer once and replace one hedge with a direct recommendation.",
+            "Place one silent beat after the verdict, then finish the reason in one sentence.",
+            "Add one concrete example after the verdict, then stop before a second example.",
+            "Test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.",
+            "Keep the prior target and test it in the next pressure rep."
+        ]
+        for move in moves {
+            let rawReply = move + " This fits because the latest rep showed setup before the recommendation."
+            let reply = AICoachChatService.finalizedCoachReply(
+                from: rawReply,
+                latestUserTurn: "What should I fix first?",
+                turnDepth: .groundedRead
+            )
+            #expect(AICoachChatService.replyQualityIssue(
+                in: reply,
+                latestUserTurn: "What should I fix first?",
+                turnDepth: .groundedRead
+            ) == nil, Comment(rawValue: move))
+            #expect(AICoachChatService.replyQualityIssue(
+                in: reply,
+                latestUserTurn: "What should I fix first?",
+                recentCoachReplies: [reply],
+                turnDepth: .groundedRead
+            ) == .repeatedProofTest, Comment(rawValue: move))
+        }
+    }
+
     @Test func completionMetadataRoundTripsThroughTheWire() throws {
         let completion = CoachChatCompletion(
             requestID: UUID().uuidString,
@@ -394,10 +1141,67 @@ struct CoachChatWireContractTests {
             qualityTier: "fast",
             finishReason: "STOP",
             inputTokens: 120,
-            outputTokens: 18
+            outputTokens: 18,
+            policyVersion: "noum-coach-v2",
+            generationMode: .deterministicBrief
         )
         let data = try JSONEncoder().encode(completion)
         #expect(try JSONDecoder().decode(CoachChatCompletion.self, from: data) == completion)
+        #expect(try JSONDecoder().decode(
+            CoachChatCompletion.self,
+            from: data
+        ).policyVersion == "noum-coach-v2")
+        #expect(try JSONDecoder().decode(
+            CoachChatCompletion.self,
+            from: data
+        ).generationMode == .deterministicBrief)
+    }
+
+    @Test func legacyCompletionAndPromptTraceRemainDecodable() throws {
+        let legacyCompletion = try JSONSerialization.data(withJSONObject: [
+            "requestID": UUID().uuidString,
+            "text": "Lead with the answer.",
+            "model": "gemini-2.5-flash",
+            "qualityTier": "fast",
+            "finishReason": "STOP"
+        ])
+        #expect(try JSONDecoder().decode(
+            CoachChatCompletion.self,
+            from: legacyCompletion
+        ).policyVersion == nil)
+        #expect(try JSONDecoder().decode(
+            CoachChatCompletion.self,
+            from: legacyCompletion
+        ).generationMode == nil)
+
+        let legacyTrace = try JSONSerialization.data(withJSONObject: [
+            "moduleCount": 1,
+            "cacheableModuleCount": 0,
+            "totalCharacterCount": 4,
+            "modules": [[
+                "name": "userContext",
+                "cachePolicy": "none",
+                "characterCount": 4,
+                "nonEmptyLineCount": 1
+            ]]
+        ])
+        let trace = try JSONDecoder().decode(CoachPromptTrace.self, from: legacyTrace)
+        #expect(trace.modules.first?.secureTransportTransmitted == nil)
+    }
+
+    @Test func promptTraceDoesNotClaimTheClientPolicyCrossesSecureWire() throws {
+        let trace = CoachPromptTrace.make(
+            systemPrompt: "Client direct-debug policy",
+            userContext: "Bounded user context"
+        )
+        let system = try #require(
+            trace.modules.first { $0.name == "coachSystemPrompt" }
+        )
+        let context = try #require(
+            trace.modules.first { $0.name == "userContext" }
+        )
+        #expect(system.secureTransportTransmitted == false)
+        #expect(context.secureTransportTransmitted == true)
     }
 
     @Test func providerTiersMapToFastAndUltraTransportModes() {
@@ -441,6 +1245,18 @@ struct CoachChatWireContractTests {
 
     @MainActor
     @Test func secureTransportCarriesFastAndUltraThroughLandedMetadata() async throws {
+        let assessment = CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: "What should I fix first?",
+            directVerdict: "The recommendation arrives after the setup.",
+            confidence: 0.68,
+            evidenceUsed: ["The latest practice opens with background."],
+            rubricScores: [],
+            missingEvidence: ["A comparable follow-up rep is missing."],
+            nextProofTest: "Put the recommendation first in the next practice.",
+            responseMode: .immediateOnly
+        )
         for tier in [CoachProviderTier.geminiFast, .claudeReasoning] {
             let transport = CapturingCoachTransport()
             let service = AICoachChatService(secureTransport: transport)
@@ -450,20 +1266,483 @@ struct CoachChatWireContractTests {
                 history: [CoachMessage(role: .user, text: "What should I fix first?")],
                 systemPrompt: "Coach the next observable move.",
                 userContext: "RECENT: latest rep 7/10, 1 filler.",
+                accountID: "firebase-guest",
+                grounding: ChatGroundingContext(
+                    recentTimedTranscript: "The risk is manageable. We should decide before we explain.",
+                    verifiedProofQuotes: ["The risk is manageable."]
+                ),
                 turnDepth: .quickMove,
+                assessment: assessment,
+                coachVoice: .executive,
                 preferredTier: tier,
                 onProviderChosen: { landedChoice = $0 }
             )
 
             let request = try #require(transport.capturedRequest())
+            #expect(request.accountID == "firebase-guest")
             #expect(request.qualityTier == tier.transportQualityTier)
+            #expect(request.coachVoice == SpeakingStyleGoal.executive.rawValue)
+            #expect(request.turnDepth == CoachTurnDepth.quickMove.rawValue)
+            #expect(request.turnIntent == CoachChatTurnIntent.coaching.rawValue)
+            #expect(request.responseKind ==
+                CoachChatResponseKind.personalEvidenceRead.rawValue)
+            #expect(request.coachingBrief?.evidenceStrength == .missing)
+            #expect(request.coachingBrief?.directVerdict ==
+                "I don’t have enough evidence to choose your next move yet.")
+            #expect(request.coachingBrief?.decisiveEvidence == nil)
+            #expect(request.coachingBrief?.nextMove == nil)
+            #expect(request.verifiedQuoteSources == [
+                "The risk is manageable."
+            ])
             guard case .reply = outcome else {
                 Issue.record("A valid secure reply did not land")
                 continue
             }
             #expect(landedChoice?.resolvedTier == tier)
             #expect(landedChoice?.model == transport.model(for: tier))
+            #expect(landedChoice?.policyVersion == "noum-coach-v2")
+            #expect(landedChoice?.generationMode == .model)
         }
+    }
+
+    @MainActor
+    @Test func typedLatestRepReadSurvivesSecureWireAndLandsWithoutADrill() async throws {
+        let sourceID = UUID()
+        let projection = try #require(CoachLatestRepMetricProjection(
+            evidencePack: LatestRepEvidencePack(
+                mode: "Ah Counter",
+                score: 8,
+                fillerCount: 3,
+                durationSeconds: 60,
+                wordsPerMinute: 120,
+                transcriptWordCount: 120,
+                transcriptConfidence: 0.90,
+                transcriptExcerpt: nil,
+                evidenceLines: [],
+                sourceSessionID: sourceID,
+                comparisonMetricSchemaVersion: 2,
+                isEvaluationFixture: false
+            )
+        ))
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "How many fillers did I use?",
+            directVerdict: "",
+            confidence: 0.60,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .latestRepMetrics,
+            requestedMetrics: [.fillerCount],
+            latestRepMetrics: projection,
+            missingEvidence: [],
+            nextProofTest: "A drill must not enter this evidence-only turn.",
+            responseMode: .immediateOnly
+        )
+        let expected = CoachChatBrief(assessment: assessment).directVerdict
+        let transport = CapturingCoachTransport(
+            completionText: expected,
+            generationMode: .deterministicBrief
+        )
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(
+                role: .user,
+                text: "How many fillers did I use?"
+            )],
+            systemPrompt: "Answer only from typed evidence.",
+            userContext: "The coaching brief is the complete personal allowance.",
+            accountID: "firebase-guest",
+            turnDepth: .groundedRead,
+            assessment: assessment,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.responseKind ==
+            CoachChatResponseKind.personalEvidenceRead.rawValue)
+        #expect(request.coachingBrief?.evidenceReadKind == .latestRepMetrics)
+        #expect(request.coachingBrief?.requestedMetrics == [.fillerCount])
+        #expect(request.coachingBrief?.latestRepMetrics?.sourceSessionID == sourceID)
+        #expect(request.coachingBrief?.nextMove == nil)
+        #expect(transport.callCounts().availability == 1)
+        #expect(transport.callCounts().stream == 1)
+        guard case .reply(let landed) = outcome else {
+            Issue.record("Typed latest-rep evidence did not land")
+            return
+        }
+        #expect(landed == expected)
+        #expect(!landed.lowercased().contains("drill"))
+        #expect(!landed.lowercased().contains("qualified"))
+    }
+
+    @MainActor
+    @Test func typedLongitudinalReadSurvivesSecureWireInPlainLanguage() async throws {
+        let sourceID = UUID()
+        let priorIDs = [UUID(), UUID()]
+        let trend = CoachLongitudinalTrendProjection(
+            sourceSessionID: sourceID,
+            comparisonMetricSchemaVersion: 2,
+            mode: "Ah Counter",
+            comparableSessionIDs: priorIDs,
+            metrics: [CoachLongitudinalMetricTrend(
+                metric: .score,
+                direction: .improving,
+                currentValue: 8,
+                priorAverage: 7
+            )]
+        )
+        let assessment = CoachAssessment(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            questionRestatement: "Am I improving?",
+            directVerdict: "",
+            confidence: 0.70,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .longitudinalTrend,
+            longitudinalTrend: trend,
+            missingEvidence: [],
+            nextProofTest: "A drill must not enter this evidence-only turn.",
+            responseMode: .expandable
+        )
+        let expected = CoachChatBrief(assessment: assessment).directVerdict
+        let transport = CapturingCoachTransport(
+            completionText: expected,
+            generationMode: .deterministicBrief
+        )
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "Am I improving?")],
+            systemPrompt: "Answer only from typed evidence.",
+            userContext: "The coaching brief is the complete personal allowance.",
+            accountID: "firebase-guest",
+            turnDepth: .deepAssessment,
+            assessment: assessment,
+            preferredTier: .claudeReasoning
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.coachingBrief?.evidenceReadKind == .longitudinalTrend)
+        #expect(request.coachingBrief?.longitudinalTrend?.sourceSessionID == sourceID)
+        #expect(request.coachingBrief?.longitudinalTrend?.comparableSessionIDs == priorIDs)
+        #expect(request.coachingBrief?.nextMove == nil)
+        guard case .reply(let landed) = outcome else {
+            Issue.record("Typed longitudinal evidence did not land")
+            return
+        }
+        #expect(landed == expected)
+        #expect(landed.contains("same setup"))
+        #expect(landed.contains("not proof"))
+        #expect(!landed.lowercased().contains("qualified"))
+        #expect(!landed.lowercased().contains("comparable"))
+    }
+
+    @MainActor
+    @Test func generalCraftQuestionReachesTransportWithoutPersonalBrief() async throws {
+        let reply = "Open with the decision, then give one reason and one example; that order separates the point from its support."
+        let transport = CapturingCoachTransport(completionText: reply)
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(
+                role: .user,
+                text: "How do I structure a presentation?"
+            )],
+            systemPrompt: "Answer the communication question directly.",
+            userContext: "COACHING EXPERTISE: decision, reason, example.",
+            turnDepth: .groundedRead,
+            assessment: nil,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.responseKind ==
+            CoachChatResponseKind.generalCoaching.rawValue)
+        #expect(request.coachingBrief == nil)
+        guard case .reply(let landed) = outcome else {
+            Issue.record("General coaching did not reach a usable provider reply")
+            return
+        }
+        #expect(landed == reply)
+    }
+
+    @MainActor
+    @Test func secureGeneralCoachingQualityRejectionHasPipelineRecovery() async throws {
+        let userTurn = "How do I add depth without rambling?"
+        let rejectedReply = "Based on your data, here are a few tips to communicate more clearly."
+        let transport = CapturingCoachTransport(completionText: rejectedReply)
+        let service = AICoachChatService(secureTransport: transport)
+
+        let secureOutcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "Answer the communication question directly.",
+            userContext: "GENERAL COACHING ONLY",
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching,
+            preferredTier: .geminiFast
+        )
+
+        guard case .failure(.contentRejected) = secureOutcome else {
+            Issue.record("The secure client gate did not reject the generic draft")
+            return
+        }
+        let fallback = try #require(CoachReplyPipeline.safeFailureFallbackText(
+            for: secureOutcome,
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: userTurn,
+            responseKind: .generalCoaching
+        ))
+        #expect(fallback.contains("one layer only"))
+        #expect(fallback.contains("one concrete example"))
+        #expect(!fallback.lowercased().contains("based on your data"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: fallback,
+            latestUserTurn: userTurn,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(AICoachChatService.semanticQualityIssue(
+            in: fallback,
+            latestUserTurn: userTurn,
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching
+        ) == nil)
+
+        // A malformed/empty transport result remains an explicit operational
+        // failure; this recovery is for rejected wording, not for hiding a
+        // broken backend contract.
+        #expect(CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.empty),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: userTurn,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.contentRejected),
+            assessment: nil,
+            turnDepth: .groundedRead,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "How should I communicate better?",
+            responseKind: .generalCoaching
+        ) == nil)
+    }
+
+    @MainActor
+    @Test func reporterStyleFeedbackGetsCoachOwnedRepairWithoutADrill() async throws {
+        let userTurn = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        let reply = "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language."
+        let transport = CapturingCoachTransport(completionText: reply)
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "Own coach-side style misses.",
+            userContext: "RECENT: personal metrics that must not enter this turn.",
+            turnDepth: .trustRepair,
+            assessment: nil,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.turnIntent == CoachChatTurnIntent.preference.rawValue)
+        #expect(request.responseKind == CoachChatResponseKind.conversational.rawValue)
+        #expect(request.coachingBrief == nil)
+        guard case .reply(let landed) = outcome else {
+            Issue.record("Coach-style feedback did not land as conversation repair")
+            return
+        }
+        #expect(landed == reply)
+    }
+
+    @MainActor
+    @Test func nonPersonalSecureLanesUseBoundedPurposeSpecificReplay() async throws {
+        struct Fixture {
+            let turn: String
+            let reply: String
+            let kind: CoachChatResponseKind
+            let depth: CoachTurnDepth
+        }
+        let fixtures = [
+            Fixture(
+                turn: "How do I structure a presentation?",
+                reply: "Open with the decision, then give one reason and one example; that order separates the point from its support.",
+                kind: .generalCoaching,
+                depth: .groundedRead
+            ),
+            Fixture(
+                turn: "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all",
+                reply: "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language.",
+                kind: .conversational,
+                depth: .trustRepair
+            ),
+            Fixture(
+                turn: "What should Noum remember?",
+                reply: "I don't have a clear pattern to carry forward yet.",
+                kind: .memoryHandoff,
+                depth: .groundedRead
+            )
+        ]
+
+        for fixture in fixtures {
+            let transport = CapturingCoachTransport(completionText: fixture.reply)
+            let service = AICoachChatService(secureTransport: transport)
+            let outcome = await service.reply(
+                history: [
+                    CoachMessage(role: .user, text: "What did my last rep show?"),
+                    CoachMessage(
+                        role: .coach,
+                        text: "Your recent rep was 7/10 with two fillers and a late recommendation."
+                    ),
+                    CoachMessage(role: .user, text: fixture.turn)
+                ],
+                systemPrompt: "Follow the typed response lane.",
+                userContext: "NON-PERSONAL CONTEXT",
+                grounding: ChatGroundingContext(
+                    recentTimedTranscript: "Personal transcript that must stay local.",
+                    verifiedProofQuotes: ["Personal proof quote that must stay local."]
+                ),
+                turnDepth: fixture.depth,
+                assessment: nil,
+                preferredTier: .geminiFast
+            )
+
+            let request = try #require(transport.capturedRequest())
+            #expect(request.responseKind == fixture.kind.rawValue)
+            let expectedMessages: [CoachChatWireMessage]
+            if fixture.kind == .conversational && fixture.depth == .trustRepair {
+                expectedMessages = [
+                    CoachChatWireMessage(
+                        role: .assistant,
+                        content: "Your recent rep was 7/10 with two fillers and a late recommendation."
+                    ),
+                    CoachChatWireMessage(role: .user, content: fixture.turn)
+                ]
+            } else {
+                expectedMessages = [
+                    CoachChatWireMessage(role: .user, content: fixture.turn)
+                ]
+            }
+            #expect(request.messages == expectedMessages)
+            #expect(request.verifiedQuoteSources.isEmpty)
+            guard case .reply(let landed) = outcome else {
+                Issue.record("\(fixture.kind.rawValue) did not land after replay filtering")
+                continue
+            }
+            #expect(landed == fixture.reply)
+        }
+
+        let personalReply = "I don’t have enough evidence to choose your next move yet."
+        let personalTransport = CapturingCoachTransport(completionText: personalReply)
+        let personalService = AICoachChatService(secureTransport: personalTransport)
+        let personalHistory = [
+            CoachMessage(role: .user, text: "What did my previous rep show?"),
+            CoachMessage(role: .coach, text: "The earlier read stayed evidence-bound."),
+            CoachMessage(role: .user, text: "What should I fix first?")
+        ]
+        _ = await personalService.reply(
+            history: personalHistory,
+            systemPrompt: "Use personal evidence only when authorized.",
+            userContext: "No typed observation is available.",
+            turnDepth: .quickMove,
+            assessment: nil,
+            preferredTier: .geminiFast
+        )
+        let personalRequest = try #require(personalTransport.capturedRequest())
+        #expect(personalRequest.responseKind ==
+            CoachChatResponseKind.personalEvidenceRead.rawValue)
+        #expect(personalRequest.messages.count == personalHistory.count)
+    }
+
+    @MainActor
+    @Test func memoryHandoffReachesTransportWithConsentBoundBrief() async throws {
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should Noum remember?",
+            directVerdict: "What I’d carry forward for now is that disagreement may be getting softened by setup.",
+            confidence: 0.62,
+            evidenceUsed: [
+                "prior coach read: the disagreement arrived after too much setup"
+            ],
+            rubricScores: [],
+            nextProofDimensionID: nil,
+            missingEvidence: [],
+            nextProofTest: "Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it.",
+            responseMode: .immediateOnly
+        )
+        let reply = "What I’d carry forward for now is one possible pattern: disagreement may be getting softened by setup. Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it."
+        let transport = CapturingCoachTransport(completionText: reply)
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(
+                role: .user,
+                text: "What should Noum remember?"
+            )],
+            systemPrompt: "Keep memory consent-bound.",
+            userContext: "The user asked what Noum should remember.",
+            turnDepth: .groundedRead,
+            assessment: assessment,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.responseKind ==
+            CoachChatResponseKind.memoryHandoff.rawValue)
+        #expect(request.coachingBrief?.directVerdict == assessment.directVerdict)
+        #expect(request.coachingBrief?.decisiveEvidence ==
+            assessment.evidenceUsed.first)
+        #expect(request.coachingBrief?.nextMove == assessment.nextProofTest)
+        guard case .reply(let landed) = outcome else {
+            Issue.record("Memory handoff did not reach a usable provider reply")
+            return
+        }
+        #expect(landed == reply)
+    }
+
+    @MainActor
+    @Test func ellipticalGeneralFollowUpKeepsOnePriorUserReferent() async throws {
+        let transport = CapturingCoachTransport(
+            completionText: "Check whether the decision is still in sentence one after the rehearsal."
+        )
+        let service = AICoachChatService(secureTransport: transport)
+        let priorUserTurn = "How do I structure a client update?"
+        let followUp = "What should I check after?"
+
+        _ = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: priorUserTurn),
+                CoachMessage(
+                    role: .coach,
+                    text: "Lead with the decision, give one reason, then stop."
+                ),
+                CoachMessage(role: .user, text: followUp)
+            ],
+            systemPrompt: "Answer the bounded follow-up.",
+            userContext: "GENERAL COACHING ONLY",
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.messages == [
+            CoachChatWireMessage(role: .user, content: priorUserTurn),
+            CoachChatWireMessage(role: .user, content: followUp)
+        ])
     }
 
     @MainActor
@@ -489,12 +1768,171 @@ struct CoachChatWireContractTests {
         #expect(landedChoice == nil)
     }
 
+    @MainActor
+    @Test func secureNoMoveVerdictUsesTheHonestEvidenceLane() async {
+        let reply = "I don’t have enough evidence to choose your next move yet."
+        let transport = CapturingCoachTransport(
+            completionText: reply,
+            generationMode: .deterministicBrief
+        )
+        let service = AICoachChatService(secureTransport: transport)
+        var landedChoice: CoachTurnProviderChoice?
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "What should I fix first?")],
+            systemPrompt: "Coach only from available evidence.",
+            userContext: "No comparable rep is available.",
+            turnDepth: .quickMove,
+            preferredTier: .geminiFast,
+            onProviderChosen: { landedChoice = $0 }
+        )
+
+        guard case .reply(let landed) = outcome else {
+            Issue.record("The honest no-move verdict was rejected by the client gate")
+            return
+        }
+        #expect(landed == reply)
+        #expect(landedChoice?.providerName == "Noum deterministic coach")
+        #expect(landedChoice?.generationMode == .deterministicBrief)
+    }
+
+    @MainActor
+    @Test func secureCompatibilityReplyKeepsGroundedMoveAfterPromiseRemoval() async {
+        let reply = "In your recent rep, the recommendation arrived after the setup, so put it first in the next practice."
+        let transport = CapturingCoachTransport(completionText: reply)
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "What should I fix first?")],
+            systemPrompt: "Coach only from available evidence.",
+            userContext: "RECENT (most-recent first)\nThe recommendation arrived after the setup.",
+            turnDepth: .quickMove,
+            preferredTier: .geminiFast
+        )
+
+        guard case .reply(let landed) = outcome else {
+            Issue.record("The grounded compatibility repair was rejected by the client gate")
+            return
+        }
+        #expect(landed == reply)
+    }
+
+    @MainActor
+    @Test func secureGroundedBriefFallbackPassesTheClientGate() async {
+        let reply = "Put the recommendation first in the next practice because the recent rep placed the setup before the recommendation."
+        let transport = CapturingCoachTransport(
+            completionText: reply,
+            generationMode: .deterministicBrief
+        )
+        let service = AICoachChatService(secureTransport: transport)
+        var landedChoice: CoachTurnProviderChoice?
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "What should I fix first?")],
+            systemPrompt: "Coach only from available evidence.",
+            userContext: "RECENT (most-recent first)\nThe recent rep placed the setup before the recommendation.",
+            turnDepth: .quickMove,
+            preferredTier: .geminiFast,
+            onProviderChosen: { landedChoice = $0 }
+        )
+
+        guard case .reply(let landed) = outcome else {
+            Issue.record("The deterministic grounded brief was rejected by the client gate")
+            return
+        }
+        #expect(landed == reply)
+        #expect(landedChoice?.providerName == "Noum deterministic coach")
+        #expect(landedChoice?.generationMode == .deterministicBrief)
+    }
+
     @Test func injectedAvailabilityPreservesTypedFailureReason() async {
         let service = AICoachChatService(secureTransport: StubCoachTransport(
             availabilityState: .unavailable(.service),
             events: []
         ))
         #expect(await service.availability() == .unavailable(.service))
+    }
+
+    @MainActor
+    @Test func secureTurnPerformsOneCapabilityPreflight() async {
+        let transport = CapturingCoachTransport()
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "What should I fix first?")],
+            systemPrompt: "Coach only from available evidence.",
+            userContext: "RECENT (most-recent first)\nThe setup came before the recommendation.",
+            turnDepth: .quickMove
+        )
+
+        guard case .reply = outcome else {
+            Issue.record("The counted secure turn did not complete")
+            return
+        }
+        let calls = transport.callCounts()
+        #expect(calls.availability == 1)
+        #expect(calls.stream == 1)
+    }
+
+    @MainActor
+    @Test func secureTurnPreservesCapabilityFailureReason() async {
+        let service = AICoachChatService(secureTransport: StubCoachTransport(
+            availabilityState: .unavailable(.backendVersionMissing),
+            events: []
+        ))
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "How do I structure an update?")],
+            systemPrompt: "Coach communication craft.",
+            userContext: "No personal evidence requested."
+        )
+
+        guard case .failure(.coachUnavailable(.backendVersionMissing)) = outcome else {
+            Issue.record("The capability reason was collapsed during send")
+            return
+        }
+    }
+
+    #if canImport(FirebaseFunctions)
+    @Test func callableContractFailuresDoNotMasqueradeAsNetworkOutages() {
+        #expect(FirebaseCoachChatTransport.mapFunctionsErrorCode(
+            .invalidArgument
+        ) == .invalidRequest)
+        #expect(FirebaseCoachChatTransport.mapFunctionsErrorCode(
+            .failedPrecondition,
+            reason: "coach-quality-rejected"
+        ) == .qualityRejected)
+        #expect(FirebaseCoachChatTransport.mapFunctionsErrorCode(
+            .failedPrecondition
+        ) == .network)
+        #expect(FirebaseCoachChatTransport.mapFunctionsErrorCode(
+            .permissionDenied
+        ) == .permissionDenied)
+        #expect(FirebaseCoachChatTransport.mapStreamError(
+            CoachChatTransportError.unauthenticated
+        ) == .unauthenticated)
+        #expect(FirebaseCoachChatTransport.mapStreamError(
+            CoachChatTransportError.invalidResponse
+        ) == .invalidResponse)
+    }
+    #endif
+
+    @MainActor
+    @Test func invalidSecureCompletionBecomesAnIncompleteRead() async {
+        let service = AICoachChatService(
+            secureTransport: FailingCoachTransport(error: .invalidResponse)
+        )
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "What should I fix first?")],
+            systemPrompt: "Coach the next observable move.",
+            userContext: "Evidence remains early."
+        )
+
+        guard case .failure(.empty) = outcome else {
+            Issue.record("Invalid secure output was mislabeled as a network outage")
+            return
+        }
+        #expect(AskNoumStore.noticeCopy(for: .empty).contains("couldn’t complete"))
     }
 
     #if DEBUG
@@ -506,6 +1944,18 @@ struct CoachChatWireContractTests {
         #expect(await transport.availability() == .unavailable(.debugProviderMissing))
     }
     #endif
+}
+
+private struct FailingCoachTransport: CoachChatTransport {
+    let error: CoachChatTransportError
+
+    func availability() async -> CoachChatTransportAvailability { .available }
+
+    func stream(_ request: CoachChatRequest) throws -> AsyncThrowingStream<CoachChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: error)
+        }
+    }
 }
 
 private struct StubCoachTransport: CoachChatTransport {
@@ -527,27 +1977,46 @@ private struct StubCoachTransport: CoachChatTransport {
 private final class CapturingCoachTransport: CoachChatTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var request: CoachChatRequest?
+    private var availabilityCalls = 0
+    private var streamCalls = 0
     private let completionTierOverride: String?
+    private let completionText: String
+    private let completionTextProvider: ((CoachChatRequest) -> String)?
+    private let generationMode: CoachChatGenerationMode?
 
-    init(completionTierOverride: String? = nil) {
+    init(
+        completionTierOverride: String? = nil,
+        completionText: String = "Put the recommendation first in the next practice, because it currently arrives after the setup.",
+        generationMode: CoachChatGenerationMode? = .model,
+        completionTextProvider: ((CoachChatRequest) -> String)? = nil
+    ) {
         self.completionTierOverride = completionTierOverride
+        self.completionText = completionText
+        self.completionTextProvider = completionTextProvider
+        self.generationMode = generationMode
     }
 
-    func availability() async -> CoachChatTransportAvailability { .available }
+    func availability() async -> CoachChatTransportAvailability {
+        recordAvailabilityCall()
+        return .available
+    }
 
     func stream(_ request: CoachChatRequest) throws -> AsyncThrowingStream<CoachChatEvent, Error> {
         lock.lock()
         self.request = request
+        streamCalls += 1
         lock.unlock()
         let model = request.qualityTier == "ultra" ? "gemini-2.5-pro" : "gemini-2.5-flash"
         let completion = CoachChatCompletion(
             requestID: request.requestID,
-            text: "Your last rep was 7/10 with 1 filler, so lead with the recommendation in sentence one and stop after one proof point. Run one 60-second rep with that shape.",
+            text: completionTextProvider?(request) ?? completionText,
             model: model,
             qualityTier: completionTierOverride ?? request.qualityTier,
             finishReason: "STOP",
             inputTokens: 40,
-            outputTokens: 12
+            outputTokens: 12,
+            policyVersion: "noum-coach-v2",
+            generationMode: generationMode
         )
         return AsyncThrowingStream { continuation in
             continuation.yield(.completion(completion))
@@ -561,8 +2030,164 @@ private final class CapturingCoachTransport: CoachChatTransport, @unchecked Send
         return request
     }
 
+    func callCounts() -> (availability: Int, stream: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (availabilityCalls, streamCalls)
+    }
+
+    private func recordAvailabilityCall() {
+        lock.lock()
+        availabilityCalls += 1
+        lock.unlock()
+    }
+
     func model(for tier: CoachProviderTier) -> String {
         tier == .claudeReasoning ? "gemini-2.5-pro" : "gemini-2.5-flash"
+    }
+}
+
+@MainActor
+@Suite("Typed coach evidence pipeline wire", .serialized)
+struct TypedCoachEvidencePipelineWireTests {
+    @Test func evidenceFlowsFromSessionsThroughPipelineAndSecureWire() async throws {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        func session(
+            id: UUID = UUID(),
+            daysAgo: Int,
+            score: Int,
+            fillers: Int
+        ) -> PracticeSession {
+            PracticeSession(
+                id: id,
+                transcript: Array(repeating: "word", count: 120)
+                    .joined(separator: " "),
+                fillerWordCount: fillers,
+                duration: 60,
+                date: now.addingTimeInterval(-Double(daysAgo) * 86_400),
+                mode: .ahCounter,
+                score: score,
+                transcriptConfidence: 0.90,
+                comparisonMetricSchemaVersion:
+                    PracticeSession.currentComparisonMetricSchemaVersion,
+                isEvaluationFixture: false
+            )
+        }
+
+        let latestID = UUID()
+        let firstPriorID = UUID()
+        let secondPriorID = UUID()
+        let latest = session(id: latestID, daysAgo: 0, score: 8, fillers: 3)
+        let firstPrior = session(
+            id: firstPriorID,
+            daysAgo: 1,
+            score: 7,
+            fillers: 4
+        )
+        let secondPrior = session(
+            id: secondPriorID,
+            daysAgo: 2,
+            score: 7,
+            fillers: 5
+        )
+
+        struct Fixture {
+            let turn: String
+            let sessions: [PracticeSession]
+            let expectedKind: CoachEvidenceReadKind
+        }
+        let fixtures = [
+            Fixture(
+                turn: "How many fillers did I use?",
+                sessions: [latest],
+                expectedKind: .latestRepMetrics
+            ),
+            Fixture(
+                turn: "Am I improving?",
+                sessions: [latest, firstPrior, secondPrior],
+                expectedKind: .longitudinalTrend
+            ),
+        ]
+
+        for fixture in fixtures {
+            let suiteName = "CoachTypedEvidencePipelineTests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.removePersistentDomain(forName: suiteName)
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            CoachAssessmentCache.shared.invalidate()
+            UserTrajectoryCache.shared.invalidate()
+
+            let store = AskNoumStore(
+                defaults: defaults,
+                accountIDProvider: { "pipeline-typed-evidence" }
+            )
+            let ids = store.appendUserTurn(fixture.turn)
+            let transport = CapturingCoachTransport(
+                generationMode: .deterministicBrief,
+                completionTextProvider: { request in
+                    request.coachingBrief?.directVerdict ?? "Missing typed brief."
+                }
+            )
+            let service = AICoachChatService(secureTransport: transport)
+
+            let outcome = await CoachReplyPipeline.generate(
+                coachID: ids.coachID,
+                store: store,
+                coachService: service,
+                judgementPassEnabled: true,
+                realtimeCoachModeEnabled: true,
+                sessionsOverride: fixture.sessions,
+                coachMemoryOverride: { nil }
+            )
+
+            let request = try #require(transport.capturedRequest())
+            let brief = try #require(request.coachingBrief)
+            #expect(request.responseKind ==
+                CoachChatResponseKind.personalEvidenceRead.rawValue)
+            #expect(brief.evidenceReadKind == fixture.expectedKind)
+            #expect(brief.nextMove == nil)
+            let encoded = try JSONEncoder().encode(request)
+            let object = try #require(JSONSerialization.jsonObject(
+                with: encoded
+            ) as? [String: Any])
+            let wireBrief = try #require(
+                object["coachingBrief"] as? [String: Any]
+            )
+            #expect(wireBrief["evidenceReadKind"] as? String ==
+                fixture.expectedKind.rawValue)
+
+            switch fixture.expectedKind {
+            case .latestRepMetrics:
+                #expect(brief.requestedMetrics == [.fillerCount])
+                #expect(brief.latestRepMetrics?.sourceSessionID == latestID)
+                #expect(brief.latestRepMetrics?.fillerCount == 3)
+                #expect(brief.longitudinalTrend == nil)
+                #expect(wireBrief["requestedMetrics"] as? [String] == [
+                    CoachMetricKind.fillerCount.rawValue
+                ])
+                #expect(wireBrief["latestRepMetrics"] != nil)
+                #expect(wireBrief["longitudinalTrend"] == nil)
+            case .longitudinalTrend:
+                #expect(brief.requestedMetrics == nil)
+                #expect(brief.latestRepMetrics == nil)
+                #expect(brief.longitudinalTrend?.sourceSessionID == latestID)
+                #expect(Set(
+                    brief.longitudinalTrend?.comparableSessionIDs ?? []
+                ) == Set([firstPriorID, secondPriorID]))
+                #expect(brief.longitudinalTrend?.metrics.isEmpty == false)
+                #expect(wireBrief["requestedMetrics"] == nil)
+                #expect(wireBrief["latestRepMetrics"] == nil)
+                #expect(wireBrief["longitudinalTrend"] != nil)
+            }
+
+            guard case .reply(let landed) = outcome else {
+                Issue.record("Typed evidence pipeline failed for \(fixture.turn)")
+                continue
+            }
+            #expect(landed == brief.directVerdict)
+            #expect(!landed.lowercased().contains("drill"))
+            #expect(!landed.lowercased().contains("qualified"))
+        }
     }
 }
 
@@ -572,7 +2197,8 @@ struct ProductionCopyContractTests {
     @Test func infrastructureFailuresNeverSendUsersToSettings() {
         let failures: [ChatFailure] = [
             .noProvider, .unauthenticated, .rateLimited, .network,
-            .empty, .contentRejected
+            .empty, .contentRejected, .invalidRequest, .permissionDenied,
+            .backendVersionMissing, .coachUnavailable(.backendVersionMissing)
         ]
         let copy = failures.map { AskNoumStore.noticeCopy(for: $0) }
         let banned = [

@@ -10530,6 +10530,20 @@ struct CoachReplyTextSanitizerTests {
 
         #expect(cleaned == reply)
     }
+
+    @Test func finalizedCoachReplyDoesNotTreatBroadEvaluationAsMetricRequest() {
+        let cleaned = AICoachChatService.finalizedCoachReply(
+            from: "The opening is the next lever. The signal I can use is Pressure Drill, 1/10, 0 fillers, 0s. The point arrived after the setup.",
+            latestUserTurn: "How did I do?",
+            turnDepth: .groundedRead
+        )
+        let lower = cleaned.lowercased()
+
+        #expect(!lower.contains("1/10"))
+        #expect(!lower.contains("0 fillers"))
+        #expect(!lower.contains("0s"))
+        #expect(lower.contains("point arrived after the setup"))
+    }
 }
 
 struct HomeAskNoumShortcutTests {
@@ -13097,7 +13111,8 @@ struct AskNoumStoreTests {
     @Test func allChatFailuresRemainTransient() {
         let failures: [ChatFailure] = [
             .network, .noProvider, .unauthenticated, .rateLimited,
-            .localeUnsupported, .empty, .contentRejected
+            .localeUnsupported, .empty, .contentRejected, .invalidRequest,
+            .permissionDenied, .backendVersionMissing
         ]
         for failure in failures {
             let store = freshStore()
@@ -15768,7 +15783,8 @@ struct RecommendationSyncLaneTests {
             providerRawValue: "apple",
             revision: revision,
             expectedRemoteRevision: 0,
-            mutationID: UUID()
+            mutationID: UUID(),
+            sourceLifecycleGeneration: 0
         )
     }
 
@@ -28840,7 +28856,8 @@ struct S5SpokenModeRouteTests {
     @Test func neverSpeaksAnyFailureCause() {
         let causes: [ChatFailure] = [
             .noProvider, .unauthenticated, .rateLimited, .localeUnsupported,
-            .network, .empty, .contentRejected
+            .network, .empty, .contentRejected, .invalidRequest,
+            .permissionDenied, .backendVersionMissing
         ]
         for cause in causes {
             #expect(AskNoumSpokenMode.spokenRoute(
@@ -29127,6 +29144,48 @@ struct MemorabilityAnalyzerTests {
     }
 }
 
+struct CoachChatResponseKindRoutingRegressionTests {
+
+    @Test func coachStyleFollowThroughStaysConversational() {
+        let turns = [
+            "The no-symbol version is easier to hear.",
+            "What was generic about it?",
+            "Okay, that’s cool. However, I don’t feel like that answered what I meant.",
+            "What did you miss?"
+        ]
+
+        for turn in turns {
+            #expect(
+                CoachChatTurnIntent.classify(turn) == .preference,
+                "Expected coach-style feedback routing for: \(turn)"
+            )
+            #expect(
+                CoachChatResponseKind.classify(turn) == .conversational,
+                "Expected conversational response kind for: \(turn)"
+            )
+        }
+    }
+
+    @Test func personalFollowThroughStaysInEvidenceLane() {
+        let turns = [
+            "What should I do with that filler count?",
+            "What do I run next?",
+            "Why the close instead of the opening?",
+            "What is the exact rep?",
+            "So not my whole speaking style yet?",
+            "What would make you change the diagnosis?",
+            "What test separates those?"
+        ]
+
+        for turn in turns {
+            #expect(
+                CoachChatResponseKind.classify(turn) == .personalEvidenceRead,
+                "Expected personal-evidence response kind for: \(turn)"
+            )
+        }
+    }
+}
+
 /// The model can have the right context and still draft a reply that feels like
 /// a generic AI assistant. These tests pin the pure gate the service uses before
 /// a live reply reaches the store: obvious menus, bare clarification, robotic
@@ -29354,7 +29413,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsAssistantSelfNarrationInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep had four fillers, so run a new sixty-second test with no symbols in my response.",
+            in: "That sounded robotic because it narrated what belongs in my response.",
             latestUserTurn: "The ** don't format and TTS reads them out."
         )
         #expect(issue == .roboticPhrase("in my response"))
@@ -29386,7 +29445,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsCutMarkersSelfNarrationInTTSRepair() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Fair push. I'll cut the markers and the report voice, so next time out, lead with your recommendation in the first sentence and stop there.",
+            in: "Fair push. I'll cut the markers and the report voice.",
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
         )
         #expect(issue == .roboticPhrase("i'll cut the markers"))
@@ -29402,31 +29461,31 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsPerformativeFluffNotCoachingTrustRepair() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Fair. That was fluff, not coaching. Your point arrived in sentence four, so say it first.",
+            in: "Fair. That was fluff, not coaching, and it hid the useful point.",
             latestUserTurn: "That's not informative."
         )
         #expect(issue == .roboticPhrase("fluff, not coaching"))
     }
 
-    @Test func rejectsTrustRepairThatOnlyPromisesAssistantBehavior() {
+    @Test func acceptsSpecificCoachSideTrustRepair() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Fair push. Formatting read aloud breaks trust, so I'll keep the next replies shorter, plain, and warmer.",
+            in: "You’re right—TTS read the formatting aloud, and the wording sounded robotic. I’ll use plain text and one direct point.",
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
         )
-        #expect(issue == .missingPrescribedAction)
+        #expect(issue == nil)
     }
 
-    @Test func acceptsTrustRepairThatChangesTheUserMove() {
+    @Test func rejectsTrustRepairThatAssignsAnotherUserMove() {
         let reply = "Fair push: TTS reading symbols breaks trust. Your last rep had one filler, so say the recommendation first, give one proof point, then stop."
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
-        ) == nil)
+        ) == .nonCoachingPrescription)
     }
 
     @Test func rejectsGenericBreakThisRegister() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep had six fillers under pressure. To break this, hold one second of silence before sentence two.",
+            in: "To break this, hold one second of silence before sentence two.",
             latestUserTurn: "How do I stop saying um under pressure?"
         )
         #expect(issue == .roboticPhrase("to break this"))
@@ -29434,7 +29493,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsCallThatOutTrustRepairTemplate() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "You're right to call that out. Your last rep had one filler, so make the next run shorter.",
+            in: "You're right to call that out. That wording was generic.",
             latestUserTurn: "This sounds robotic."
         )
         #expect(issue == .roboticPhrase("you're right to call that out"))
@@ -29442,7 +29501,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsMetaCoachingRepairNarration() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Fair push. From here the coaching drops the formatting markers and speaks to you directly, so run one cleaner rep.",
+            in: "Fair push. From here the coaching drops the formatting markers and speaks to you directly.",
             latestUserTurn: "The ** don't format and TTS reads them out."
         )
         #expect(issue == .roboticPhrase("from here the coaching"))
@@ -29490,7 +29549,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsPopPsychBrainRegisterInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep had five fillers, so give your brain more runway before sentence two.",
+            in: "Give your brain more runway before sentence two.",
             latestUserTurn: "How do I stop saying um under pressure?"
         )
         #expect(issue == .roboticPhrase("your brain"))
@@ -29506,7 +29565,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsCorpusEchoedFillerMechanismCliche() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep had five fillers, so slow the open to give yourself room to find the second sentence.",
+            in: "Slow the open to give yourself room to find the second sentence.",
             latestUserTurn: "What should I do with that filler count?"
         )
         #expect(issue == .roboticPhrase("give yourself room to find"))
@@ -29586,7 +29645,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func rejectsAppNavigationAsCoachMove() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Go to the practice tab and run a short rep, because your last answer had six fillers.",
+            in: "Go to the practice tab and run a short rep.",
             latestUserTurn: "How do I stop saying um?"
         )
         #expect(issue == .roboticPhrase("go to the practice tab"))
@@ -29628,8 +29687,8 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply) == .tooLong)
     }
 
-    @Test func normalTurnAcceptsCompactThreeSentenceReport() {
-        let reply = "Your last rep held the opening. The middle softened under pressure. Next rep, hold a beat before sentence two."
+    @Test func normalTurnAcceptsCompactTwoSentenceReply() {
+        let reply = "Your last rep held the opening but softened in the middle under pressure. Next rep, hold a beat before sentence two."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
     }
 
@@ -29667,13 +29726,13 @@ struct AICoachChatReplyQualityGateTests {
         ) == .roboticPhrase("trust-repair report voice"))
     }
 
-    @Test func acceptsTrustRepairPlainFillerAnchor() {
+    @Test func rejectsStyleRepairThatLeaksEvidenceAndAssignsPractice() {
         let reply = "Fair push. That was generic, not specific coaching. Your last rep had 4 fillers, so say the decision first, give one proof point, then stop."
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "This is generic.",
             turnDepth: .trustRepair
-        ) == nil)
+        ) == .nonCoachingPrescription)
     }
 
     @Test func rejectsGoalChangeRawMetricReadout() {
@@ -29685,7 +29744,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func rejectsGreetingRawMetricReadout() {
-        let reply = "Good to have you back. Today's rep hit 80, 3 fillers, tight and clean, so run one more."
+        let reply = "Good to have you back. Today's rep hit 80 with 3 fillers."
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "Hi"
@@ -29726,8 +29785,7 @@ struct AICoachChatReplyQualityGateTests {
     @Test func sanitizerTurnsLegacyMarkdownReplyIntoAcceptedPlainReply() {
         let raw = """
         **Read:** 5 fillers show the rush is happening near the close.
-        - **Move:** next rep, hold one beat before the final sentence.
-        - **Why:** that tests whether pace is driving the filler spike.
+        - **Move:** next rep, hold one beat before the final sentence; that tests whether pace is driving the filler spike.
         """
         let display = CoachReplyTextSanitizer.displayText(from: raw)
         let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
@@ -29736,8 +29794,7 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: display, latestUserTurn: "What next?") == .scaffoldLabel)
         #expect(normalized == """
         5 fillers show the rush is happening near the close.
-        - Next rep, hold one beat before the final sentence.
-        - That tests whether pace is driving the filler spike.
+        - Next rep, hold one beat before the final sentence; that tests whether pace is driving the filler spike.
         """)
         #expect(!normalized.lowercased().contains("read:"))
         #expect(!normalized.lowercased().contains("move:"))
@@ -29821,7 +29878,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func expandedPlanTurnAllowsLongerShape() {
-        let reply = "Day one, run one baseline rep and mark the rushed sentence. Day two, repeat the same prompt and hold a beat before sentence two. Day three, make the final line the ask. Day four, review the transcript for hedging. Day five, test it under Pressure Drill."
+        let reply = "Start your 7-day plan with a baseline, then repeat it with a beat before sentence two so you can test whether the pause clarifies the point. Midweek, make the final line the ask. Finish under pressure and compare the same two signals."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "Give me a 7-day plan.") == nil)
     }
 
@@ -29839,15 +29896,11 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "Be direct with me."
         )
 
-        #expect(issue == .missedTrustRepair)
+        #expect(issue == .nonCoachingPrescription)
     }
 
-    @Test func directnessRequestAcceptsCompactTargetAndRepShape() {
-        let reply = """
-        Fair push: I’ll keep it direct.
-        Answer first, proof second.
-        Next rep, give one 30-second update: recommendation, one proof point, stop. That tests whether the close can land without extra explanation.
-        """
+    @Test func directnessRequestAcceptsPreferenceAcknowledgement() {
+        let reply = "Got it. I’ll keep the coaching brief and direct from here."
 
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
@@ -29855,8 +29908,8 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
-    @Test func seniorCoachRubricAcceptsAttunedAnchoredAction() {
-        let reply = "Fair push: that answer read too generic. Your last rep already has the signal; next rep, hold one beat before sentence two and make the close the whole target."
+    @Test func seniorCoachRubricAcceptsSpecificStyleRepairWithoutDrill() {
+        let reply = "You’re right—that sounded templated. I’ll use plain, specific wording."
         let result = AICoachChatService.professionalCoachRubric(
             reply: reply,
             latestUserTurn: "This feels generic and not human enough."
@@ -29867,7 +29920,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func turnAwareGateRejectsCritiqueReplyWithoutTrustRepair() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Next rep, focus on making your close more direct.",
+            in: "The answer can be shorter.",
             latestUserTurn: "This sounds robotic and too much writing."
         )
         #expect(issue == .missedTrustRepair)
@@ -29948,22 +30001,22 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
-    @Test func turnAwareGateAcceptsTTSMarkupTrustRepair() {
+    @Test func turnAwareGateRejectsTTSRepairThatAssignsPractice() {
         let reply = "Fair push: markup read aloud breaks trust. Your last rep had 4 fillers, so say the recommendation first, hold one silent beat, then stop."
         let issue = AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
         )
-        #expect(issue == nil)
+        #expect(issue == .nonCoachingPrescription)
     }
 
-    @Test func turnAwareGateAcceptsFormattingTrustRepairWithPlainUserTerms() {
+    @Test func turnAwareGateRejectsFormattingRepairThatAssignsPractice() {
         let reply = "Good call: TTS reading symbols breaks trust. Your last rep had 4 fillers, so say the recommendation first, give one proof point, then stop."
         let issue = AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
         )
-        #expect(issue == nil)
+        #expect(issue == .nonCoachingPrescription)
     }
 
     @Test func turnAwareGateRejectsMetricAndActionWithoutInsightBridge() {
@@ -30008,7 +30061,7 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func turnAwareGateAcceptsPressureMechanicBridge() {
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.",
+            in: "Under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.",
             latestUserTurn: "Is it the pause or the close?"
         )
         #expect(issue == nil)
@@ -30025,7 +30078,8 @@ struct AICoachChatReplyQualityGateTests {
     @Test func turnAwareGateStillRejectsUsableSignalWithoutBridge() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep gives one usable signal. Next rep, hold one silent beat before the final sentence.",
-            latestUserTurn: "Is it the pause or the close?"
+            latestUserTurn: "Is it the pause or the close?",
+            responseKind: .personalEvidenceRead
         )
         #expect(issue == .missingInsightBridge)
     }
@@ -30064,20 +30118,20 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("your brain"))
     }
 
-    @Test func contextAwareGateAcceptsRecentSessionAnchor() {
+    @Test func generalTechniqueTurnRejectsPersonalHistoryFromBroadContext() {
         let context = "RECENT (most-recent first)\n- Timed rep: 6 fillers in 64 seconds."
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had 6 fillers, so the pressure cue is the gap before sentence two. Next rep, hold one silent pause before the next word.",
             latestUserTurn: "How do I stop saying um under pressure?",
             systemContext: context
         )
-        #expect(issue == nil)
+        #expect(issue == .overclaimsEvidence)
     }
 
     @Test func contextAwareGateRejectsExactRepDates() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your April 1st rep had four fillers, so state the recommendation first in the next rep.",
-            latestUserTurn: "The responses feel robotic and cold."
+            latestUserTurn: "What did you notice in my last rep?"
         )
         #expect(issue == .unanchoredCoaching)
     }
@@ -30085,7 +30139,7 @@ struct AICoachChatReplyQualityGateTests {
     @Test func critiqueReplyCannotClaimNoUsableRepsWhenRecentContextExists() {
         let context = "RECENT (most-recent first)\n- Timed rep: 1 filler in 66 seconds."
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Fair push — I don't have enough reps yet to give you something tailored, so do one rep now.",
+            in: "Fair push—I don't have enough reps yet to give you something tailored. I’ll answer when I have data.",
             latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
             systemContext: context
         )
@@ -30148,7 +30202,7 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
         )
         let issue = AICoachChatService.replyQualityIssue(
-            in: "You're right to call out the formatting. Your last rep buried the recommendation at the end, so say the decision first and stop.",
+            in: "You're right to call out the formatting. Your last rep buried the recommendation at the end.",
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold.",
             quoteGuard: guardContext
         )
@@ -30161,7 +30215,7 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
         )
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep gave me one real signal: the point didn't lead, so make your first sentence the recommendation itself.",
+            in: "Your last rep gave me one real signal: the point didn't lead.",
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold.",
             quoteGuard: guardContext
         )
@@ -30174,7 +30228,7 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
         )
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep had four fillers and the main point arrived late, so say the decision first.",
+            in: "Your last rep had four fillers and the main point arrived late.",
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold.",
             quoteGuard: guardContext
         )
@@ -30208,7 +30262,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func turnAwareGateAcceptsDrillFramedAsTestableHypothesis() {
-        let reply = "Your last update buried the recommendation at second 34 and ended soft. Record a 30-second update with the decision inside the first ten seconds. That tests whether leading with the recommendation lowers the rush without pretending the drill caused it."
+        let reply = "Your last update buried the recommendation at second 34 and ended soft. Record a 30-second update with the decision inside the first ten seconds; that tests whether answer-first structure lowers the rush without claiming causation."
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "What should I do next?"
@@ -30250,7 +30304,7 @@ struct AICoachChatReplyQualityGateTests {
             coachingExpertise: [card]
         )
         let issue = AICoachChatService.replyQualityIssue(
-            in: "Your last rep had 6 fillers, so practice speaking more clearly on the next rep.",
+            in: "Fillers need attention, so practice clearer phrasing on the next rep.",
             latestUserTurn: "How do I stop saying um under pressure?",
             systemContext: context
         )
@@ -30269,7 +30323,7 @@ struct AICoachChatReplyQualityGateTests {
             pathGatingPhrase: nil,
             coachingExpertise: [card]
         )
-        let reply = "Your last rep had 6 fillers, so hold one second of silence before sentence two and check whether the next rep lowers the count."
+        let reply = "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern."
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "How do I stop saying um under pressure?",
@@ -30293,10 +30347,10 @@ struct AICoachChatReplyQualityGateTests {
             system: system
         ))
 
-        #expect(shape.contains("6 fillers in 64 seconds (5.6 per minute)"))
-        #expect(shape.contains("one silent beat"))
+        #expect(!shape.contains("6 fillers in 64 seconds (5.6 per minute)"))
+        #expect(shape.contains("one-second silence"))
         #expect(shape.contains("compare fillers per minute"))
-        #expect(shape.contains(" so "))
+        #expect(shape.contains(" because "))
         #expect(AICoachChatService.replyQualityIssue(
             in: shape,
             latestUserTurn: turn,
@@ -30380,8 +30434,9 @@ struct AICoachChatReplyQualityGateTests {
             system: system
         ))
 
-        #expect(shape.contains("TTS reading symbols breaks trust"))
-        #expect(shape.contains("say the recommendation first"))
+        #expect(shape.contains("TTS read the formatting aloud"))
+        #expect(shape.contains("one direct point"))
+        #expect(!shape.lowercased().contains("next rep"))
         #expect(AICoachChatService.replyQualityIssue(
             in: shape,
             latestUserTurn: turn,
@@ -30389,7 +30444,7 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
-    @Test func repairReferenceForNotInformativeUsesLatePointEvidence() throws {
+    @Test func repairReferenceForNotInformativeDoesNotInventPersonalEvidence() throws {
         let turn = "That's not informative."
         let system = """
         RECENT (most-recent first)
@@ -30403,9 +30458,10 @@ struct AICoachChatReplyQualityGateTests {
             system: system
         ))
 
-        #expect(shape.contains("point arrived in sentence four"))
-        #expect(shape.contains("three warm-up sentences"))
-        #expect(shape.contains("say the point first"))
+        #expect(shape.contains("not informative enough"))
+        #expect(shape.contains("direct point"))
+        #expect(!shape.contains("point arrived in sentence four"))
+        #expect(!shape.lowercased().contains("next rep"))
         #expect(!shape.lowercased().contains("fluff"))
         #expect(!shape.lowercased().contains("score"))
         #expect(AICoachChatService.replyQualityIssue(
@@ -30432,8 +30488,9 @@ struct AICoachChatReplyQualityGateTests {
         ))
         let lower = repair.lowercased()
 
-        #expect(repair.contains("point arrived in sentence four"))
-        #expect(repair.contains("say the point first"))
+        #expect(repair.contains("not informative enough"))
+        #expect(repair.contains("direct point"))
+        #expect(!repair.contains("point arrived in sentence four"))
         #expect(!lower.contains("real read:"))
         #expect(!lower.contains("next rep:"))
         #expect(!lower.contains("score"))
@@ -30966,10 +31023,10 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == nil)
     }
 
-    @Test func dualGateIgnoresMetricRepMentionsWithoutSpeechClaim() {
-        // Citing rep METRICS is not a claim about the user's words — the
-        // system prompt explicitly endorses this shape, so the presence gate
-        // must not fire on it even with zero transcript overlap.
+    @Test func dualGateRejectsMetricRepMentionsWithoutTypedEvidence() {
+        // A metric is not a speech quote, but it still needs provenance. The
+        // transcript and a broad evaluation request do not authorize an
+        // invented filler count or chronology.
         let guardContext = CoachChatQuoteGuardContext(
             transcripts: ["We launched the product on Tuesday and handled the deadline well."],
             latestUserTurn: "How did I do?"
@@ -30980,7 +31037,70 @@ struct AICoachChatReplyQualityGateTests {
             quoteGuard: guardContext
         )
 
-        #expect(issue == nil)
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func personalMetricGateRequiresExactTypedKindAndValue() throws {
+        let brief = try #require(CoachChatBrief.applicable(
+            assessment: CoachAssessment(
+                turnDepth: .groundedRead,
+                surface: .text,
+                questionRestatement: "How did I do?",
+                directVerdict: "The filler result is an early signal, not a pattern.",
+                confidence: 0.62,
+                evidenceUsed: ["latest rep: 5 fillers in 60 seconds"],
+                rubricScores: [RubricScore(
+                    dimensionID: "filler_control",
+                    label: "Filler control",
+                    score: 0.62,
+                    confidence: 0.62,
+                    evidence: ["5 fillers in 60 seconds"],
+                    missingEvidence: nil
+                )],
+                nextProofDimensionID: "filler_control",
+                missingEvidence: ["A comparable rep is still missing."],
+                nextProofTest: "Repeat the same prompt once.",
+                responseMode: .immediateOnly
+            ),
+            responseKind: .personalEvidenceRead
+        ))
+
+        #expect(!AICoachChatService.replyUsesUnauthorizedPersonalMetric(
+            "The latest measured rep had 5 fillers in 60 seconds.",
+            latestUserTurn: "How did I do?",
+            quoteGuard: CoachChatQuoteGuardContext(latestUserTurn: "How did I do?"),
+            coachingBrief: brief
+        ))
+        #expect(AICoachChatService.replyUsesUnauthorizedPersonalMetric(
+            "Your score was 5/10.",
+            latestUserTurn: "How did I do?",
+            quoteGuard: CoachChatQuoteGuardContext(latestUserTurn: "How did I do?"),
+            coachingBrief: brief
+        ))
+        #expect(AICoachChatService.replyUsesUnauthorizedPersonalMetric(
+            "The latest measured rep had 6 fillers in 60 seconds.",
+            latestUserTurn: "How did I do?",
+            quoteGuard: CoachChatQuoteGuardContext(latestUserTurn: "How did I do?"),
+            coachingBrief: brief
+        ))
+    }
+
+    @Test func personalMetricGateKeepsUserNumbersAsSelfReport() {
+        let turn = "I counted 5 fillers. How did I do?"
+        let guardContext = CoachChatQuoteGuardContext(latestUserTurn: turn)
+
+        #expect(AICoachChatService.replyUsesUnauthorizedPersonalMetric(
+            "You had 5 fillers.",
+            latestUserTurn: turn,
+            quoteGuard: guardContext,
+            coachingBrief: nil
+        ))
+        #expect(!AICoachChatService.replyUsesUnauthorizedPersonalMetric(
+            "By your count, that answer had 5 fillers.",
+            latestUserTurn: turn,
+            quoteGuard: guardContext,
+            coachingBrief: nil
+        ))
     }
 
     @Test func dualGateRejectsSpeechClaimWhenNoSourcesExist() {

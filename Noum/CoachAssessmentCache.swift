@@ -97,6 +97,8 @@ final class CoachAssessmentCache {
 
     private static func trajectorySignature(_ trajectory: UserTrajectorySnapshot) -> String {
         let pack = trajectory.latestRepEvidencePack
+        let latestMetrics = pack?.metricProjection
+        let longitudinal = trajectory.qualifiedLongitudinalTrend
         let caseSummary = trajectory.coachCaseSummary
         let intervention = trajectory.activeInterventionState
         return [
@@ -111,6 +113,10 @@ final class CoachAssessmentCache {
             "latestDuration=\(pack?.durationSeconds ?? -1)",
             "latestWords=\(pack?.transcriptWordCount ?? -1)",
             "latestExcerpt=\(normalized(pack?.transcriptExcerpt ?? ""))",
+            "latestMetricSource=\(latestMetrics?.sourceSessionID.uuidString ?? "none")",
+            "latestMetricSchema=\(latestMetrics?.comparisonMetricSchemaVersion ?? -1)",
+            "longitudinal=\(normalized(longitudinal?.evidenceText ?? ""))",
+            "longitudinalSources=\(longitudinal?.comparableSessionIDs.map(\.uuidString).joined(separator: ",") ?? "none")",
             "caseHypothesis=\(normalized(caseSummary?.hypothesis ?? ""))",
             "caseFocus=\(normalized(caseSummary?.focus ?? ""))",
             "caseEvidence=\(normalized(caseSummary?.evidenceSummary ?? ""))",

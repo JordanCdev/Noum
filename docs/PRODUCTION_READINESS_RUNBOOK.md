@@ -8,10 +8,99 @@ TestFlight, and proof that Chat with Noum is ready for production use. A green
 local eval or smoke flow is evidence, but it is not enough to claim production
 readiness.
 
-## Current Recovery Status (2026-07-14)
+## Current Recovery Status (2026-07-17)
 
 **Release verdict: NO-GO for external TestFlight or App Store release. The
-authoritative score remains 18/100; 0/5 required external artifacts pass.**
+latest authoritative source-bound result remains the inherited `ac664112`
+18/100; 0/5 required external artifacts pass. It has not been freshly rerun for
+the current dirty source.**
+
+- Ask Noum has failed product acceptance. The reporter usually saw it as
+  unavailable and rejected replies that landed as repetitive, unnatural, and
+  unlike a human expert communication coach. No current-source App Check-valid
+  generated five-case conversation set or independent professional review
+  reverses that result.
+- Current source adds `coachChatV2` as the normal app route, isolates personal-
+  evidence, general-coaching, memory-handoff, and conversational response kinds,
+  gives only supported quality-rejected general turns a bounded intent-specific
+  repair, and keeps unsupported, empty, and malformed output as typed failure.
+  Server policy exhaustion is distinct from incomplete generation, trust repair
+  carries the challenged coach answer, and cold-start guards cover the general
+  lane. One service-owned capability preflight runs per attempted turn; the view
+  and Firebase stream do not repeat it, and typed limitation reasons survive.
+  A retained-intervention deadlock is also closed locally: exact and controlled-
+  synonym drill restatements remain rejected, while an explicit action request
+  may use a concise evidence-led continuity reference when the typed move really
+  matches recent coach history. Deterministic exhaustion keeps the focus without
+  reissuing the drill, and repair wording no longer forces `because` or `so`.
+  Audited style-feedback turns now produce a specific coach-owned correction
+  without user work; exact-rep, next-run, progress, diagnosis, and evidence-
+  separation follow-ups receive bounded direct answers with observable anchors
+  and requested actions. Memory handoff changes coach behavior rather than
+  manufacturing another practice assignment. The distinct schema-v1
+  `coachChat` route locally freezes its historical semantics.
+  That is local contract evidence only, not deployed v1 compatibility.
+- Current backend evidence passes TypeScript lint/build, **161/161** Functions
+  tests, **7/7** deploy-lock tests, **19/19** cloud-operations validator tests,
+  and **9/9** Coach Arena simulator-environment checks. Current-source iOS
+  evidence passes **124/124** typed routing/provenance/wire/pipeline tests in
+  `/private/tmp/NoumTypedEvidenceFinal8-20260717.xcresult` and **133/133** reply-
+  reliability tests in `/private/tmp/NoumReliabilityFinal3-20260717.xcresult`,
+  both with zero failures or skips. The earlier **164/164** provider-chain and
+  **251/251** wider Ask selections predate the final typed edits and remain
+  historical. These are deterministic simulator checks, not deployed generated-
+  quality evidence. The earlier **30/30** emulator contract, signed **224/224**
+  Ask bundle, signed Debug and unsigned Release builds, and light sweep also
+  remain historical. A post-edit unsigned Debug simulator build succeeds;
+  current emulator, signed Debug, unsigned Release, and visual evidence have not
+  been refreshed. Earlier local-guest promotion/privacy/authority **41/41**,
+  journal/promotion/registry **22/22**, and deletion-admission **4/4** results
+  remain bounded historical evidence for those assertions. Tool guards reduce
+  accidental shared-simulator replacement but do not prove simulator ownership
+  or disposability.
+- The personal-read routing and typed-projection gaps are closed locally.
+  Natural exact-stat asks and one-rep evaluations use grounded evidence;
+  longitudinal evaluations use exact comparable history. Latest and trend
+  values cross the secure wire with bounded provenance, metric/value/direction
+  validation, and no IDs in prose. These reads return a vetted direct answer
+  without a model call or unsolicited drill. Unsupported evidence remains
+  restrained. This does not bypass capability admission: production still lacks
+  `coachChatV2`, so the current v2 app must remain unavailable until backend-
+  first deployment and readback succeed.
+- Current source gives `local-guest-*` one bounded route to callable authority:
+  automatic/explicit creation of a new anonymous Firebase UID, a copy-first
+  three-phase Keychain journal, exact conflict-checked account-data copy, and
+  hydration-gated Ask availability. Post-commit recovery preserves the target,
+  and anonymous guests cannot sign out and strand the credential.
+- Firebase identity creation does not upload coaching content. Current consent
+  gates profile, XP, session/transcript/evidence, and recommendation writes.
+  Scheduling lifecycle, exact account/provider, hydration, transition fences,
+  durable consent, and Firebase UID are rechecked at transport; recommendation
+  mutations are also account-bound on the callable. A separate target marker
+  retries the newly minted empty target's snapshot through the same account-
+  scoped metadata-only journal as ordinary profile/progression/session work.
+  That journal drains serially, resolves the exact account store, exact-acks
+  pending work, retries after relaunch/hydration, foreground, and consent allow,
+  and fails closed if unreadable. Existing accounts no longer receive a blind
+  whole-state flush; bootstrap preserves dirty rows, snapshot tasks have exact
+  ownership, replacement writes clear removed optionals, and deletion waits for
+  in-flight content transport. This remains client-only recovery: server CAS/
+  mixed-client cutover, startup digest repair, XP award-event provenance,
+  session tombstones, immutable root provider metadata, existing-account merge,
+  complete cross-device restoration, the Apple/Google link-success-before-
+  Keychain crash window, same-UID anonymous-session recovery, production
+  anonymous-provider configuration, and physical/TestFlight promotion evidence
+  remain open. Current schema-2 session writes were denied by the checked-in
+  schema-1-only rule; source now admits schemas 1 and 2 and rejects unknown
+  schema 3, but no production deployment/readback proves that repair.
+- Source inventories **18** reviewed callable exports plus one reviewed
+  scheduled function, **19 Functions exports total**, while the 2026-07-17
+  read-only production inventory returned only four active functions. Before
+  distributing the v2 app, deploy and read back both `coachChatV2` and the
+  updated `coachChatAvailability` contract advertising function `coachChatV2`,
+  request schema 2, and policy `noum-coach-v2`. Mixed v1/v2 smoke, adoption
+  measurement, rollback proof, and legacy-retirement criteria are all
+  unperformed.
 
 - The production transcription route now exists: the iOS release path calls
   the authenticated, App Check-enforced Firebase `transcriptionToken` callable,
@@ -29,8 +118,9 @@ authoritative score remains 18/100; 0/5 required external artifacts pass.**
   does not revoke the exposed legacy credentials, disable every legacy route,
   or provide the missing usage and billing audit.
 - `https://noum-d0b6f.web.app/privacy` is reachable, but the last live exact-
-  body probe targeted an older source body. Current `public/privacy.html` is
-  29,606 bytes / `b0425f51…12bf68f`, and no current-source live comparison
+  body probe targeted an older source body. Processor manifest v7 makes current
+  `public/privacy.html` 32,420 bytes /
+  `c4422d8260a3a4c92b6504d918fb2c46ceeb9c93a52254b25fa743932ebe2da2`, and no current-source live comparison
   exists.
   Treat hosted-policy equivalence as missing. After safe release authentication
   is restored, redeploy the current body and require the exact-body probe to pass.
@@ -281,13 +371,28 @@ The probe is read-only. It verifies the production Firestore recovery settings
 and daily backup, required log metrics and routed alert policies, dedicated
 function identities, exclusive access to the Deepgram secret, removal of broad
 roles from the default compute identity, the hosted privacy page, and 401
-responses from all 17 reviewed callable exports when no Firebase Auth or App
-Check proof is supplied. The exact roster spans coach, transcription, account,
+responses from all 18 reviewed callable exports when no Firebase Auth or App
+Check proof is supplied. The source roster spans the schema-v1 `coachChat`
+route, the account-bound `coachChatV2` route, transcription, account,
 recommendation, two disabled competitive-observation, and ten social callables
 across five dedicated runtime identities; missing, unexpected, duplicate,
 wrongly located, wrongly assigned,
-or over-privileged identities fail the probe. It never reads the Deepgram
-secret value.
+or over-privileged identities fail the probe. Current source contains 18
+reviewed callable exports plus one reviewed scheduled function, 19 Functions
+exports total. The 2026-07-17 read-only production inventory returned only four
+active functions: `coachChat`, `coachChatAvailability`, `deleteAccount`, and
+`transcriptionToken`. A pre-deployment live snapshot therefore fails closed
+rather than pretending the source roster exists in production. Authorized
+backend-first closure must deploy and read back both the additive `coachChatV2`
+route and the updated `coachChatAvailability` response advertising function
+`coachChatV2`, request schema 2, and policy `noum-coach-v2`; deploying only one
+leaves the v2 client unavailable. The probe never reads the Deepgram secret
+value.
+
+The schema-v1 implementation is frozen against its historical local semantic
+contract. This probe does not prove installed-client compatibility, mixed-client
+behavior, or production rollback; capture those after the authorized backend-
+first deployment and before distributing the v2 client.
 
 The command is pinned to Firebase project `noum-d0b6f`, Functions region
 `europe-west2`, and the documented production operations channel. Environment
@@ -410,11 +515,15 @@ Before deploying the reviewed social rules and functions together:
    do not silently relax the reviewed write contract.
 7. Rerun Functions lint/build/unit tests and Firestore emulator tests for forged
    ratings, cross-user reads/writes, malformed challenges, replayed results,
-   deletion retries, invalid private-profile values, and pre-cutover failure
-   cleanup.
+   deletion retries, invalid private-profile values, pre-cutover failure
+   cleanup, acceptance of current `comparisonMetricSchemaVersion: 2`, and
+   rejection of unknown future comparison schemas. Also prove replacement
+   writes clear removed optional fields and dirty local rows survive bootstrap.
 8. Perform a dry-run inventory immediately before the coordinated deployment,
    deploy rules/functions, verify the cutover marker and callable-only reads,
-   then complete a rollback-aware production smoke test.
+   read back the production rule version, then complete a rollback-aware
+   production smoke plus mixed-build/two-device convergence test before enabling
+   ordinary cross-device content sync.
 
 Until every step passes, keep friendship, league, and challenge actions
 unavailable in the client. A disabled social surface is safer than accepting

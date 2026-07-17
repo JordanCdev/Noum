@@ -123,6 +123,27 @@ enum AccountDeletionState: Equatable {
     case completed
 }
 
+enum LocalGuestCloudConnectionState: Equatable {
+    case idle
+    case connecting
+    /// The Firebase UID is already the durable owner and Ask Noum may run;
+    /// retirement of the old local namespace is still completing locally.
+    /// Optional content sync is tracked separately and can never hold account
+    /// controls behind a network request.
+    case finalizing
+    case connected
+    case failed(message: String)
+
+    var blocksAccountMutation: Bool {
+        switch self {
+        case .connecting, .finalizing:
+            return true
+        case .idle, .connected, .failed:
+            return false
+        }
+    }
+}
+
 /// Initial identity + local-store readiness consumed by `NoumApp` before it
 /// chooses onboarding or the main shell. This is account lifecycle state, not
 /// a second onboarding flag.
@@ -228,6 +249,11 @@ final class InitialRemoteProfileHydrationRace {
     }
 }
 
+private struct CoachingContentSnapshotSyncHandle {
+    let requestID: UUID
+    let task: Task<Void, Never>
+}
+
 @MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
@@ -242,6 +268,8 @@ class AuthManager: ObservableObject {
     @Published private(set) var authProvider: AuthProvider?
     @Published private(set) var accountUpgradeConflict: AccountUpgradeConflict?
     @Published private(set) var accountDeletionState: AccountDeletionState = .idle
+    @Published private(set) var localGuestCloudConnectionState:
+        LocalGuestCloudConnectionState = .idle
     @Published private(set) var isGoogleSignInAvailable = false
     @Published private(set) var initialAccountHydrationState: InitialAccountHydrationState = .needsIdentity
     private var credentialIdentity: AWSCredentialIdentity?
@@ -253,17 +281,26 @@ class AuthManager: ObservableObject {
     private let accountDataRegistry: AccountDataRegistry
     private let accountDataExportService: AccountDataExportService
     private let accountDeletionFenceRepository: AccountDeletionFenceRepository
+    private let localGuestPromotionJournalRepository:
+        LocalGuestPromotionJournalRepository
     private var activeGuestBootstrapGeneration: UUID?
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
     private var activeInitialRemoteProfileHydrationRace: InitialRemoteProfileHydrationRace?
+    private var activeCoachingContentSnapshotSync:
+        CoachingContentSnapshotSyncHandle?
+    private var localGuestPromotionIsConnecting = false
+    private var lastLocalGuestPromotionAttemptAt: Date?
     /// Monotonic process-local identity epoch. Async consumers that handle
     /// sensitive transient data capture this value and reject completions
     /// after teardown or hydration, including a rapid sign-out/sign-in to the
     /// same Firebase UID.
     private(set) var accountLifecycleGeneration: UInt64 = 0
     private nonisolated static let localGuestPrefix = "local-guest-"
+    private nonisolated static let promotedGuestBackendSeedKeyPrefix =
+        "noum.localGuestBackendSeedPending."
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
+    private static let automaticGuestPromotionRetryInterval: TimeInterval = 30
     private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
@@ -382,6 +419,10 @@ class AuthManager: ObservableObject {
         accountDeletionFenceRepository = AccountDeletionFenceRepository(
             storage: KeychainAccountDeletionFenceStorage()
         )
+        localGuestPromotionJournalRepository =
+            LocalGuestPromotionJournalRepository(
+                storage: KeychainLocalGuestPromotionJournalStorage()
+            )
         initializeInstallStateIfNeeded()
 #if canImport(GoogleSignIn)
         configureGoogleSignInIfAvailable()
@@ -418,6 +459,7 @@ class AuthManager: ObservableObject {
             return
         }
         #endif
+        recoverLocalGuestPromotionBeforeCredentialHydration()
         loadCredentialsAndAccount()
         restoreFirebaseSessionIfAvailable()
     }
@@ -544,6 +586,201 @@ class AuthManager: ObservableObject {
     /// fence fails closed globally. Transient UI state is not sufficient here.
     func isProviderWorkAllowed(for accountID: String) -> Bool {
         accountDeletionFenceRepository.isProviderWorkAllowed(for: accountID)
+            && localGuestPromotionJournalRepository
+                .isProviderWorkAllowed(for: accountID)
+    }
+
+    var hasPendingLocalGuestPromotion: Bool {
+        localGuestPromotionJournalRepository.pendingLookup() != .missing
+    }
+
+    nonisolated static func shouldAttemptAutomaticGuestPromotion(
+        lastAttemptAt: Date?,
+        now: Date,
+        force: Bool
+    ) -> Bool {
+        guard !force, let lastAttemptAt else { return true }
+        return now.timeIntervalSince(lastAttemptAt)
+            >= automaticGuestPromotionRetryInterval
+    }
+
+    nonisolated static func localGuestPromotionTargetIsAuthoritative(
+        phase: LocalGuestPromotionPhase
+    ) -> Bool {
+        phase == .identityCommitted
+    }
+
+    /// Converts only a durable local guest into a newly minted anonymous
+    /// Firebase identity on the default app. The operation is single-flight,
+    /// bounded, and copy-first; any pre-commit failure keeps the original
+    /// account authoritative and its practice data untouched.
+    func connectLocalGuestToCloud(force: Bool = false) async {
+        resumeCoachingContentSyncIfReady()
+        guard !localGuestPromotionIsConnecting else { return }
+
+        if let accountID = currentAccountID,
+           !Self.isLocalOnlyAccountID(accountID),
+           localGuestPromotionJournalRepository.pendingLookup() == .missing,
+           hasPendingPromotedGuestBackendSeed(for: accountID) {
+            beginCoachingContentSnapshotSyncIfReady(
+                accountID: accountID,
+                clearsPromotedGuestSeedMarker: true
+            )
+        }
+
+        switch localGuestPromotionJournalRepository.pendingLookup() {
+        case .ambiguous:
+            localGuestCloudConnectionState = .failed(
+                message: "Noum couldn't verify the pending account connection. Your practice remains on this device."
+            )
+            return
+        case .present(let journal):
+            if journal.phase == .identityCommitted,
+               currentAccountID == journal.targetAccountID {
+                localGuestCloudConnectionState = .finalizing
+                beginLocalGuestPromotionFinalizationIfReady(
+                    accountID: journal.targetAccountID
+                )
+                return
+            }
+            recoverLocalGuestPromotionBeforeCredentialHydration()
+            if case .present(let recovered) =
+                localGuestPromotionJournalRepository.pendingLookup(),
+               recovered.phase == .identityCommitted,
+               currentAccountID == recovered.targetAccountID {
+                hydrateStoresForCurrentAccount(
+                    accountID: recovered.targetAccountID,
+                    providerRawValue: AuthProvider.guest.rawValue,
+                    fetchRemote: false
+                )
+                return
+            }
+        case .missing:
+            break
+        }
+
+        guard let sourceAccountID = currentAccountID,
+              Self.isLocalOnlyAccountID(sourceAccountID),
+              currentAuthProviderRawValue == AuthProvider.guest.rawValue,
+              initialAccountHydrationState == .ready else {
+            return
+        }
+        guard accountDeletionFenceRepository.pendingLookup() == .missing else {
+            localGuestCloudConnectionState = .failed(
+                message: "Noum can't connect this guest while account deletion is unresolved."
+            )
+            return
+        }
+        let now = Date()
+        guard Self.shouldAttemptAutomaticGuestPromotion(
+            lastAttemptAt: lastLocalGuestPromotionAttemptAt,
+            now: now,
+            force: force
+        ) else { return }
+        lastLocalGuestPromotionAttemptAt = now
+
+        #if canImport(FirebaseAuth)
+        guard isFirebaseAuthConfigured else {
+            localGuestCloudConnectionState = .failed(
+                message: "Live coaching isn't connected in this build. Your practice is still safe here."
+            )
+            return
+        }
+
+        localGuestPromotionIsConnecting = true
+        localGuestCloudConnectionState = .connecting
+        defer { localGuestPromotionIsConnecting = false }
+
+        if Auth.auth().currentUser != nil {
+            try? Auth.auth().signOut()
+        }
+        cancelActiveGuestBootstrap()
+        let generation = UUID()
+        activeGuestBootstrapGeneration = generation
+        let outcome = await boundedFirebaseAnonymousIdentity(
+            generation: generation
+        )
+        guard currentAccountID == sourceAccountID,
+              currentAuthProviderRawValue == AuthProvider.guest.rawValue,
+              accountDeletionFenceRepository.pendingLookup() == .missing else {
+            if case .account(let targetAccountID, _) = outcome,
+               Auth.auth().currentUser?.uid == targetAccountID {
+                try? Auth.auth().signOut()
+            }
+            localGuestCloudConnectionState = .failed(
+                message: "The account changed before Noum could connect coaching. No practice was moved."
+            )
+            return
+        }
+
+        guard case .account(let targetAccountID, _) = outcome,
+              let firebaseUser = Auth.auth().currentUser,
+              firebaseUser.uid == targetAccountID,
+              firebaseUser.isAnonymous else {
+            localGuestCloudConnectionState = .failed(
+                message: "Live coaching couldn't connect. Your practice is still safe on this device."
+            )
+            return
+        }
+
+        do {
+            // Persist the transition authority and close every synchronous
+            // source-account admission boundary before the actor hop below.
+            // Otherwise a new Forward Plan request could enter after a one-shot
+            // cancellation scan but before the journal existed.
+            _ = try localGuestPromotionJournalRepository
+                .beginOrResume(
+                    sourceAccountID: sourceAccountID,
+                    targetAccountID: targetAccountID
+                )
+                .get()
+            accountLifecycleGeneration &+= 1
+            cancelActiveAccountHydration()
+            AskNoumStore.shared.suspendProviderWorkForAccountTransition(
+                accountID: sourceAccountID
+            )
+            ForwardPlanStore.shared.suspendProviderWorkForAccountTransition(
+                accountID: sourceAccountID
+            )
+        } catch {
+            rollbackLocalGuestPromotionAfterFailure(
+                sourceAccountID: sourceAccountID,
+                targetAccountID: targetAccountID,
+                message: "Noum couldn't secure the account transfer. Your original practice is unchanged."
+            )
+            return
+        }
+
+        await ForwardPlanService.shared.invalidateProviderWorkForAccountTransition(
+            accountID: sourceAccountID
+        )
+        guard currentAccountID == sourceAccountID,
+              Auth.auth().currentUser?.uid == targetAccountID else {
+            rollbackLocalGuestPromotionAfterFailure(
+                sourceAccountID: sourceAccountID,
+                targetAccountID: targetAccountID,
+                message: "The account changed before Noum could connect coaching. No practice was moved."
+            )
+            return
+        }
+
+        do {
+            try commitLocalGuestPromotion(
+                sourceAccountID: sourceAccountID,
+                targetAccountID: targetAccountID
+            )
+        } catch {
+            rollbackLocalGuestPromotionAfterFailure(
+                sourceAccountID: sourceAccountID,
+                targetAccountID: targetAccountID,
+                message: "Noum couldn't verify the account transfer. Your original practice is unchanged."
+            )
+        }
+        #else
+        localGuestCloudConnectionState = .failed(
+            message: "Live coaching isn't connected in this build. Your practice is still safe here."
+        )
+        #endif
     }
 
     /// Establishes the initial durable guest identity before app-level
@@ -562,7 +799,9 @@ class AuthManager: ObservableObject {
                 hydrateStoresForCurrentAccount(
                     accountID: accountID,
                     providerRawValue: providerRawValue,
-                    fetchRemote: Self.shouldFetchRemoteForDurableIdentity(accountID: accountID)
+                    fetchRemote: shouldFetchRemoteForCurrentIdentity(
+                        accountID: accountID
+                    )
                 )
             }
             return
@@ -630,7 +869,9 @@ class AuthManager: ObservableObject {
             hydrateStoresForCurrentAccount(
                 accountID: accountID,
                 providerRawValue: providerRawValue,
-                fetchRemote: Self.shouldFetchRemoteForDurableIdentity(accountID: accountID)
+                fetchRemote: shouldFetchRemoteForCurrentIdentity(
+                    accountID: accountID
+                )
             )
             return
         }
@@ -758,7 +999,9 @@ class AuthManager: ObservableObject {
         hydrateStoresForCurrentAccount(
             accountID: accountID,
             providerRawValue: provider.rawValue,
-            fetchRemote: Self.shouldFetchRemoteForDurableIdentity(accountID: accountID)
+            fetchRemote: shouldFetchRemoteForCurrentIdentity(
+                accountID: accountID
+            )
         )
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
@@ -886,6 +1129,21 @@ class AuthManager: ObservableObject {
     }
 
     func signOut() {
+        performSignOut(allowAnonymousGuest: false)
+    }
+
+    private func performSignOut(allowAnonymousGuest: Bool) {
+        guard allowAnonymousGuest
+                || currentAuthProviderRawValue != AuthProvider.guest.rawValue else {
+            signInError = "Connect Apple or Google before signing out, or delete this guest account. Signing out now would make its history unrecoverable."
+            return
+        }
+        guard !localGuestPromotionIsConnecting,
+              localGuestPromotionJournalRepository.pendingLookup() == .missing else {
+            signInError = "Noum is still securing this account transfer. Sign out will be available when it finishes."
+            return
+        }
+        cancelActiveCoachingContentSnapshotSync()
         cancelActiveGuestBootstrap()
         cancelActiveAccountHydration()
         AutoGuidedFirstRep.cancelPendingLaunch()
@@ -933,6 +1191,12 @@ class AuthManager: ObservableObject {
     /// route, so this client state must not be described as backend resumability.
     func deleteCurrentAccount() async throws {
         _ = restorePendingDeletionIdentityIfNeeded()
+        guard !localGuestPromotionIsConnecting,
+              localGuestPromotionJournalRepository.pendingLookup() == .missing else {
+            accountDeletionState = .failed(.secureDataUpgradeIncomplete)
+            throw AccountDeletionError.secureDataUpgradeIncomplete
+        }
+        cancelActiveCoachingContentSnapshotSync()
         guard let accountID = currentAccountID,
               let providerRawValue = currentAuthProviderRawValue else {
             accountDeletionState = .failed(.noActiveAccount)
@@ -984,12 +1248,20 @@ class AuthManager: ObservableObject {
         // attempt, so a later preflight response cannot clear it retroactively.
         var preparedRemoteRequestInCurrentAttempt = false
         var recommendationSyncWasClosed = false
+        var coachingContentSyncWasClosed = false
         do {
             // Actor-owned transport admission closes only after the synchronous
             // store leases above have already been invalidated.
             await ForwardPlanService.shared.suspendProviderWorkForDeletion(
                 accountID: accountID
             )
+
+            guard await backendSync.suspendCoachingContentSyncForDeletion(
+                accountID: accountID
+            ) else {
+                throw AccountDeletionError.serviceUnavailable
+            }
+            coachingContentSyncWasClosed = true
 
             guard await backendSync.suspendRecommendationSyncForDeletion(accountID: accountID) else {
                 throw AccountDeletionError.serviceUnavailable
@@ -1057,7 +1329,7 @@ class AuthManager: ObservableObject {
             // Keychain identity still names the deleted account. `signOut()`'s
             // deferred reset is now only an idempotent backstop.
             accountDataRegistry.endSession()
-            signOut()
+            performSignOut(allowAnonymousGuest: true)
 
             try accountDeletionFenceRepository.clearVerified(fence).get()
             accountDeletionState = .completed
@@ -1098,9 +1370,15 @@ class AuthManager: ObservableObject {
                             accountID: accountID
                         )
                     }
+                    if coachingContentSyncWasClosed {
+                        await backendSync.resumeCoachingContentSyncAfterFailedDeletion(
+                            accountID: accountID
+                        )
+                    }
                     if currentAccountID == accountID,
                        currentAuthProviderRawValue == providerRawValue {
                         RecommendationLearningStore.shared.syncCurrentState()
+                        resumeCoachingContentSyncIfReady()
                     }
                 } else {
                     // Failure to verify fence removal turns an otherwise safe
@@ -1386,6 +1664,29 @@ class AuthManager: ObservableObject {
         fetchRemote: Bool
     ) {
         guard isProviderWorkAllowed(for: accountID) else {
+            if accountDeletionFenceRepository.isProviderWorkAllowed(
+                for: accountID
+            ) {
+                // A promotion journal can be ambiguous while the exact local
+                // owner is still readable. Keep offline practice available,
+                // but publish no provider admission until recovery verifies or
+                // rolls back the journal.
+                cancelActiveAccountHydration()
+                localGuestCloudConnectionState = .failed(
+                    message: "Noum couldn't verify the pending account connection. Live account work is paused; your on-device practice remains available."
+                )
+                initialAccountHydrationState = .hydratingStores
+                Task { @MainActor in
+                    await Task.yield()
+                    guard self.currentAccountID == accountID,
+                          self.currentAuthProviderRawValue == providerRawValue else {
+                        return
+                    }
+                    self.reloadAccountScopedStores()
+                    self.initialAccountHydrationState = .ready
+                }
+                return
+            }
             // Exact-account authentication may be needed for support-assisted
             // verification, but it cannot hydrate, sync, or republish account
             // data while the durable fence remains ambiguous.
@@ -1412,6 +1713,8 @@ class AuthManager: ObservableObject {
             ) else { return }
 
             self.reloadAccountScopedStores()
+            let coachingContentJournalStatus = BackendSyncManager.shared
+                .coachingContentSyncJournalStatus(for: accountID)
             let recommendationStore = RecommendationLearningStore.shared
             let expectedRecommendationRevision = recommendationStore.stateRevision
             let recommendationHydrationRequiresMerge =
@@ -1502,6 +1805,7 @@ class AuthManager: ObservableObject {
                         providerRawValue: providerRawValue,
                         generation: generation,
                         expectedProfile: nil,
+                        coachingContentJournalStatus: coachingContentJournalStatus,
                         expectedRecommendationRevision: expectedRecommendationRevision,
                         recommendationHydrationIsSafe: recommendationHydrationIsSafe,
                         recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
@@ -1546,6 +1850,7 @@ class AuthManager: ObservableObject {
                         providerRawValue: providerRawValue,
                         generation: generation,
                         expectedProfile: expectedProfile,
+                        coachingContentJournalStatus: coachingContentJournalStatus,
                         expectedRecommendationRevision: expectedRecommendationRevision,
                         recommendationHydrationIsSafe: recommendationHydrationIsSafe,
                         recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
@@ -1559,6 +1864,9 @@ class AuthManager: ObservableObject {
                 providerRawValue: providerRawValue
             ) else { return }
             self.initialAccountHydrationState = .ready
+            self.beginLocalGuestPromotionFinalizationIfReady(
+                accountID: accountID
+            )
         }
     }
 
@@ -1584,6 +1892,457 @@ class AuthManager: ObservableObject {
             provider: .guest,
             fetchRemote: false
         )
+    }
+
+    private func commitLocalGuestPromotion(
+        sourceAccountID: String,
+        targetAccountID: String
+    ) throws {
+        var journal = try localGuestPromotionJournalRepository
+            .beginOrResume(
+                sourceAccountID: sourceAccountID,
+                targetAccountID: targetAccountID
+            )
+            .get()
+
+        // Rotate every async lease before copying. The remaining copy/identity
+        // operations are synchronous on MainActor, so no store writer can
+        // interleave between the source snapshot and the durable switch.
+        accountLifecycleGeneration &+= 1
+        cancelActiveAccountHydration()
+        AskNoumStore.shared.suspendProviderWorkForAccountTransition(
+            accountID: sourceAccountID
+        )
+        ForwardPlanStore.shared.suspendProviderWorkForAccountTransition(
+            accountID: sourceAccountID
+        )
+
+        _ = try accountDataRegistry.copyAccountScopedDefaultsForPromotion(
+            from: sourceAccountID,
+            to: targetAccountID
+        )
+        guard markPromotedGuestBackendSeedPending(for: targetAccountID) else {
+            throw LocalGuestPromotionJournalError.persistenceFailed
+        }
+        journal = try localGuestPromotionJournalRepository
+            .advance(journal, to: .dataCopied)
+            .get()
+
+        guard persistIdentity(
+            accountID: targetAccountID,
+            name: currentAccountName,
+            provider: .guest
+        ) else {
+            throw LocalGuestPromotionJournalError.persistenceFailed
+        }
+        journal = try localGuestPromotionJournalRepository
+            .advance(journal, to: .identityCommitted)
+            .get()
+
+        accountUpgradeConflict = nil
+        accountDeletionState = .idle
+        signInError = nil
+        signIn()
+        authProvider = .guest
+        isSignedIn = true
+        localGuestCloudConnectionState = .finalizing
+        hydrateStoresForCurrentAccount(
+            accountID: targetAccountID,
+            providerRawValue: AuthProvider.guest.rawValue,
+            // The newly minted remote is empty until the explicit seed below;
+            // fetching it here could replace the migrated local projection.
+            fetchRemote: false
+        )
+    }
+
+    /// Runs before ordinary credential hydration so a crash cannot let the
+    /// generic Firebase restore logic sign out the request-owned target UID.
+    /// The source namespace remains intact through every journal phase, which
+    /// makes a missing/mismatched Firebase session safely rollbackable.
+    private func recoverLocalGuestPromotionBeforeCredentialHydration() {
+        guard accountDeletionFenceRepository.pendingLookup() == .missing else {
+            return
+        }
+        switch localGuestPromotionJournalRepository.pendingLookup() {
+        case .missing:
+            return
+        case .ambiguous:
+            localGuestCloudConnectionState = .failed(
+                message: "Noum couldn't verify the pending account connection. Your practice remains protected."
+            )
+            return
+        case .present(var journal):
+            #if canImport(FirebaseAuth)
+            if Self.localGuestPromotionTargetIsAuthoritative(
+                phase: journal.phase
+            ) {
+                // The target became authoritative before this phase was
+                // persisted. It may already contain a new rep or chat written
+                // after the switch, so recovery must never recopy the stale
+                // source over it and must never delete it during rollback.
+                guard persistIdentity(
+                    accountID: journal.targetAccountID,
+                    name: currentAccountName,
+                    provider: .guest
+                ) else {
+                    localGuestCloudConnectionState = .failed(
+                        message: "Noum couldn't verify the connected account identity. Your copied practice remains protected."
+                    )
+                    return
+                }
+                guard isFirebaseAuthConfigured,
+                      let firebaseUser = Auth.auth().currentUser,
+                      firebaseUser.uid == journal.targetAccountID,
+                      firebaseUser.isAnonymous else {
+                    localGuestCloudConnectionState = .failed(
+                        message: "Your practice is safe, but the secure guest session needs recovery before live coaching can reconnect."
+                    )
+                    return
+                }
+                localGuestCloudConnectionState = .finalizing
+                return
+            }
+
+            guard isFirebaseAuthConfigured,
+                  let firebaseUser = Auth.auth().currentUser,
+                  firebaseUser.uid == journal.targetAccountID,
+                  firebaseUser.isAnonymous else {
+                rollbackLocalGuestPromotionBeforeHydration(
+                    journal,
+                    message: "Noum restored your on-device guest because the secure session was no longer available."
+                )
+                return
+            }
+
+            do {
+                // Re-copying is the readback verification path after a crash.
+                // Identical destination values are accepted; conflicts close
+                // the transition while the source stays authoritative.
+                _ = try accountDataRegistry.copyAccountScopedDefaultsForPromotion(
+                    from: journal.sourceAccountID,
+                    to: journal.targetAccountID
+                )
+                guard markPromotedGuestBackendSeedPending(
+                    for: journal.targetAccountID
+                ) else {
+                    throw LocalGuestPromotionJournalError.persistenceFailed
+                }
+                if journal.phase == .authorityAcquired {
+                    journal = try localGuestPromotionJournalRepository
+                        .advance(journal, to: .dataCopied)
+                        .get()
+                }
+                if currentAccountID != journal.targetAccountID
+                    || currentAuthProviderRawValue != AuthProvider.guest.rawValue {
+                    guard persistIdentity(
+                        accountID: journal.targetAccountID,
+                        name: currentAccountName,
+                        provider: .guest
+                    ) else {
+                        throw LocalGuestPromotionJournalError.persistenceFailed
+                    }
+                }
+                if journal.phase == .dataCopied {
+                    journal = try localGuestPromotionJournalRepository
+                        .advance(journal, to: .identityCommitted)
+                        .get()
+                }
+                localGuestCloudConnectionState = .finalizing
+            } catch {
+                rollbackLocalGuestPromotionBeforeHydration(
+                    journal,
+                    message: "Noum couldn't verify the account transfer, so it kept your original on-device practice."
+                )
+            }
+            #else
+            rollbackLocalGuestPromotionBeforeHydration(
+                journal,
+                message: "Noum kept your original on-device practice because this build cannot restore the secure session."
+            )
+            #endif
+        }
+    }
+
+    private func rollbackLocalGuestPromotionBeforeHydration(
+        _ journal: LocalGuestPromotionJournal,
+        message: String
+    ) {
+        #if canImport(FirebaseAuth)
+        if isFirebaseAuthConfigured,
+           Auth.auth().currentUser?.uid == journal.targetAccountID {
+            try? Auth.auth().signOut()
+        }
+        #endif
+        let retainedName = currentAccountName
+        guard persistIdentity(
+            accountID: journal.sourceAccountID,
+            name: retainedName,
+            provider: .guest
+        ) else {
+            localGuestCloudConnectionState = .failed(
+                message: "Noum couldn't finish recovering the account identity. Your practice remains protected."
+            )
+            return
+        }
+        do {
+            try accountDataRegistry.removeRetiredAccountDefaults(
+                for: journal.targetAccountID
+            )
+            try localGuestPromotionJournalRepository
+                .clearVerified(journal)
+                .get()
+            localGuestCloudConnectionState = .failed(message: message)
+        } catch {
+            localGuestCloudConnectionState = .failed(
+                message: "Noum couldn't finish recovering the account transfer. Your original practice remains protected."
+            )
+        }
+    }
+
+    private func rollbackLocalGuestPromotionAfterFailure(
+        sourceAccountID: String,
+        targetAccountID: String,
+        message: String
+    ) {
+        #if canImport(FirebaseAuth)
+        if isFirebaseAuthConfigured,
+           Auth.auth().currentUser?.uid == targetAccountID {
+            try? Auth.auth().signOut()
+        }
+        #endif
+        let retainedName = currentAccountName
+        guard persistIdentity(
+            accountID: sourceAccountID,
+            name: retainedName,
+            provider: .guest
+        ) else {
+            localGuestCloudConnectionState = .failed(
+                message: "Noum couldn't restore the original guest identity. Your practice remains protected."
+            )
+            return
+        }
+        do {
+            try accountDataRegistry.removeRetiredAccountDefaults(
+                for: targetAccountID
+            )
+            if case .present(let journal) =
+                localGuestPromotionJournalRepository.pendingLookup() {
+                try localGuestPromotionJournalRepository
+                    .clearVerified(journal)
+                    .get()
+            }
+        } catch {
+            localGuestCloudConnectionState = .failed(
+                message: "Noum restored your original guest, but secure transfer cleanup still needs attention. Your practice remains protected."
+            )
+            hydrateStoresForCurrentAccount(
+                accountID: sourceAccountID,
+                providerRawValue: AuthProvider.guest.rawValue,
+                fetchRemote: false
+            )
+            return
+        }
+        authProvider = .guest
+        isSignedIn = true
+        localGuestCloudConnectionState = .failed(message: message)
+        hydrateStoresForCurrentAccount(
+            accountID: sourceAccountID,
+            providerRawValue: AuthProvider.guest.rawValue,
+            fetchRemote: false
+        )
+    }
+
+    private func beginLocalGuestPromotionFinalizationIfReady(
+        accountID: String
+    ) {
+        guard initialAccountHydrationState == .ready,
+              case .present(let journal) =
+                localGuestPromotionJournalRepository.pendingLookup(),
+              journal.phase == .identityCommitted,
+              journal.targetAccountID == accountID,
+              currentAccountID == accountID,
+              currentAuthProviderRawValue == AuthProvider.guest.rawValue else {
+            return
+        }
+
+        #if canImport(FirebaseAuth)
+        guard isFirebaseAuthConfigured,
+              let firebaseUser = Auth.auth().currentUser,
+              firebaseUser.uid == accountID,
+              firebaseUser.isAnonymous else {
+            localGuestCloudConnectionState = .failed(
+                message: "Your practice is safe, but the secure guest session needs recovery before live coaching can reconnect."
+            )
+            return
+        }
+        #else
+        localGuestCloudConnectionState = .failed(
+            message: "Your practice is safe, but this build cannot finish the secure guest connection."
+        )
+        return
+        #endif
+
+        localGuestCloudConnectionState = .finalizing
+        do {
+            // Local ownership is already verified under the target namespace.
+            // Finish this identity transaction without waiting on Firestore so
+            // an offline or stalled sync can never remove sign-out, linking, or
+            // deletion controls indefinitely.
+            try accountDataRegistry.removeRetiredAccountDefaults(
+                for: journal.sourceAccountID
+            )
+            try localGuestPromotionJournalRepository
+                .clearVerified(journal)
+                .get()
+            localGuestCloudConnectionState = .connected
+            beginCoachingContentSnapshotSyncIfReady(
+                accountID: accountID,
+                clearsPromotedGuestSeedMarker: true
+            )
+        } catch {
+            localGuestCloudConnectionState = .finalizing
+        }
+    }
+
+    /// Called by the existing account-scoped consent owner after every explicit
+    /// decision. A current allow decision may flush locally retained coaching
+    /// content; decline/revoke cancels the tracked bulk sync. Identity bootstrap
+    /// itself remains independent of cloud-content consent.
+    func cloudProcessingConsentDidChange() {
+        guard AISettingsManager.shared.isCloudProcessingAllowed else {
+            cancelActiveCoachingContentSnapshotSync()
+            return
+        }
+        guard let accountID = currentAccountID,
+              initialAccountHydrationState == .ready,
+              Self.shouldSyncBackend(accountID: accountID) else {
+            return
+        }
+        resumeCoachingContentSyncIfReady()
+        // A whole local snapshot is safe only for the newly minted anonymous
+        // promotion target whose remote namespace is proved empty. Existing
+        // accounts retry their durable dirty-document journal instead.
+        guard hasPendingPromotedGuestBackendSeed(for: accountID) else { return }
+        beginCoachingContentSnapshotSyncIfReady(
+            accountID: accountID,
+            clearsPromotedGuestSeedMarker: true
+        )
+    }
+
+    private func beginCoachingContentSnapshotSyncIfReady(
+        accountID: String,
+        clearsPromotedGuestSeedMarker: Bool
+    ) {
+        guard initialAccountHydrationState == .ready,
+              activeCoachingContentSnapshotSync == nil,
+              currentAccountID == accountID,
+              Self.shouldSyncBackend(accountID: accountID),
+              AISettingsManager.shared.isCloudProcessingAllowed,
+              localGuestPromotionJournalRepository.pendingLookup() == .missing,
+              !clearsPromotedGuestSeedMarker
+                || hasPendingPromotedGuestBackendSeed(for: accountID) else {
+            return
+        }
+
+        let providerRawValue = currentAuthProviderRawValue
+        guard let providerRawValue else { return }
+        let profile = CoachingProfileStore.shared.profile
+        let xp = ProfileManager.shared.xp
+        let sessions = PracticeSessionStore.shared.sessions
+        let sourceLifecycleGeneration = accountLifecycleGeneration
+        let requestID = UUID()
+        let task = Task { @MainActor [weak self] in
+            let synced = await BackendSyncManager.shared.syncCoachingContentSnapshot(
+                profile: profile,
+                xp: xp,
+                sessions: sessions,
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                sourceLifecycleGeneration: sourceLifecycleGeneration
+            )
+            guard let self else { return }
+            guard self.activeCoachingContentSnapshotSync?.requestID == requestID else {
+                return
+            }
+            self.activeCoachingContentSnapshotSync = nil
+            guard synced,
+                  self.currentAccountID == accountID,
+                  self.currentAuthProviderRawValue == providerRawValue,
+                  AISettingsManager.shared.isCloudProcessingAllowed else {
+                return
+            }
+            if clearsPromotedGuestSeedMarker {
+                guard self.clearPromotedGuestBackendSeedMarker(
+                    for: accountID
+                ) else { return }
+            }
+            RecommendationLearningStore.shared.syncCurrentState()
+        }
+        activeCoachingContentSnapshotSync = CoachingContentSnapshotSyncHandle(
+            requestID: requestID,
+            task: task
+        )
+    }
+
+    private func cancelActiveCoachingContentSnapshotSync() {
+        activeCoachingContentSnapshotSync?.task.cancel()
+        activeCoachingContentSnapshotSync = nil
+    }
+
+    private func resumeCoachingContentSyncIfReady() {
+        guard initialAccountHydrationState == .ready,
+              let accountID = currentAccountID,
+              let providerRawValue = currentAuthProviderRawValue,
+              Self.shouldSyncBackend(accountID: accountID),
+              isProviderWorkAllowed(for: accountID),
+              AISettingsManager.shared.isCloudProcessingAllowed else {
+            return
+        }
+        BackendSyncManager.shared.resumeCoachingContentSync(
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: accountLifecycleGeneration
+        )
+    }
+
+    private func hasPendingPromotedGuestBackendSeed(
+        for accountID: String
+    ) -> Bool {
+        guard let key = Self.promotedGuestBackendSeedKey(
+            for: accountID
+        ) else { return false }
+        return UserDefaults.standard.object(forKey: key) != nil
+    }
+
+    private func markPromotedGuestBackendSeedPending(
+        for accountID: String
+    ) -> Bool {
+        guard let key = Self.promotedGuestBackendSeedKey(
+            for: accountID
+        ) else { return false }
+        UserDefaults.standard.set(true, forKey: key)
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    private func clearPromotedGuestBackendSeedMarker(
+        for accountID: String
+    ) -> Bool {
+        guard let key = Self.promotedGuestBackendSeedKey(
+            for: accountID
+        ) else { return false }
+        UserDefaults.standard.removeObject(forKey: key)
+        return UserDefaults.standard.object(forKey: key) == nil
+    }
+
+    nonisolated static func promotedGuestBackendSeedKey(
+        for accountID: String
+    ) -> String? {
+        let normalized = accountID.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !normalized.isEmpty,
+              !isLocalOnlyAccountID(normalized) else { return nil }
+        return promotedGuestBackendSeedKeyPrefix + normalized
     }
 
     private func persistIdentity(
@@ -1689,6 +2448,27 @@ class AuthManager: ObservableObject {
         shouldFetchRemoteForGuestIdentity(accountID: accountID, origin: .restored)
     }
 
+    private func shouldFetchRemoteForCurrentIdentity(
+        accountID: String
+    ) -> Bool {
+        if hasPendingPromotedGuestBackendSeed(for: accountID) {
+            // A partial or not-yet-consented seed is not authoritative remote
+            // state. Keep the verified local projection until the complete
+            // idempotent snapshot has been acknowledged.
+            return false
+        }
+        switch localGuestPromotionJournalRepository.pendingLookup() {
+        case .present(let journal) where journal.targetAccountID == accountID:
+            return false
+        case .ambiguous:
+            return false
+        case .missing, .present:
+            return Self.shouldFetchRemoteForDurableIdentity(
+                accountID: accountID
+            )
+        }
+    }
+
     static func shouldFetchRemoteForGuestIdentity(
         accountID: String,
         origin: GuestIdentityHydrationOrigin
@@ -1791,6 +2571,10 @@ class AuthManager: ObservableObject {
     /// returns. A matching provider may proceed to reauthenticate, but the
     /// resulting account is checked exactly before any durable identity write.
     private func allowPendingDeletionSignInIntent(provider: AuthProvider) -> Bool {
+        guard localGuestPromotionJournalRepository.pendingLookup() == .missing else {
+            signInError = "Noum is still securing this guest account. Account linking will be available when the transfer finishes."
+            return false
+        }
         switch accountDeletionFenceRepository.pendingLookup() {
         case .missing:
             return true
@@ -1817,6 +2601,11 @@ class AuthManager: ObservableObject {
         accountID: String,
         provider: AuthProvider
     ) -> Bool {
+        guard localGuestPromotionJournalRepository.pendingLookup() == .missing else {
+            signOutAttemptedFirebaseIdentity(accountID: accountID)
+            signInError = "Noum kept the in-progress guest transfer isolated. Try account linking again after it finishes."
+            return false
+        }
         switch accountDeletionFenceRepository.pendingLookup() {
         case .missing:
             return true
@@ -2060,6 +2849,26 @@ class AuthManager: ObservableObject {
         expectedProfile == currentProfile
     }
 
+    nonisolated static func combinedCoachingContentJournalStatus(
+        _ first: CoachingContentSyncJournalStatus,
+        _ second: CoachingContentSyncJournalStatus
+    ) -> CoachingContentSyncJournalStatus {
+        if first == .unreadable || second == .unreadable {
+            return .unreadable
+        }
+        var documentIDs: Set<CoachingContentDocumentID> = []
+        if case .pending(let snapshot) = first {
+            documentIDs.formUnion(snapshot.documentIDs)
+        }
+        if case .pending(let snapshot) = second {
+            documentIDs.formUnion(snapshot.documentIDs)
+        }
+        guard !documentIDs.isEmpty else { return .clean }
+        return .pending(CoachingContentPendingSnapshot(
+            documentIDs: documentIDs
+        ))
+    }
+
     static func initialRemoteProfileHydrationDisposition(
         for outcome: InitialRemoteProfileHydrationOutcome
     ) -> InitialRemoteProfileHydrationDisposition {
@@ -2078,6 +2887,7 @@ class AuthManager: ObservableObject {
         providerRawValue: String,
         generation: UUID,
         expectedProfile: CoachingProfile?,
+        coachingContentJournalStatus: CoachingContentSyncJournalStatus,
         expectedRecommendationRevision: Int,
         recommendationHydrationIsSafe: Bool,
         recommendationHydrationRequiresMerge: Bool
@@ -2104,6 +2914,7 @@ class AuthManager: ObservableObject {
                 providerRawValue: providerRawValue,
                 generation: generation,
                 expectedProfile: expectedProfile,
+                coachingContentJournalStatus: coachingContentJournalStatus,
                 expectedRecommendationRevision: expectedRecommendationRevision,
                 recommendationHydrationIsSafe: recommendationHydrationIsSafe,
                 recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
@@ -2132,6 +2943,7 @@ class AuthManager: ObservableObject {
         providerRawValue: String,
         generation: UUID,
         expectedProfile: CoachingProfile?,
+        coachingContentJournalStatus: CoachingContentSyncJournalStatus,
         expectedRecommendationRevision: Int,
         recommendationHydrationIsSafe: Bool,
         recommendationHydrationRequiresMerge: Bool
@@ -2148,20 +2960,54 @@ class AuthManager: ObservableObject {
             return
         }
 
-        if let xp = bootstrap.xp {
-            ProfileManager.shared.replaceFromRemote(xp)
+        let currentJournalStatus = BackendSyncManager.shared
+            .coachingContentSyncJournalStatus(for: accountID)
+        let effectiveJournalStatus = Self.combinedCoachingContentJournalStatus(
+            coachingContentJournalStatus,
+            currentJournalStatus
+        )
+        let pendingContent: CoachingContentPendingSnapshot?
+        let journalIsUnreadable: Bool
+        switch effectiveJournalStatus {
+        case .clean:
+            pendingContent = nil
+            journalIsUnreadable = false
+        case .pending(let snapshot):
+            pendingContent = snapshot
+            journalIsUnreadable = false
+        case .unreadable:
+            pendingContent = nil
+            journalIsUnreadable = true
+        }
+
+        if let xp = bootstrap.xp, !journalIsUnreadable {
+            if pendingContent?.hasProgression == true {
+                ProfileManager.shared.mergePendingLocalXP(withRemote: xp)
+            } else {
+                ProfileManager.shared.replaceFromRemote(xp)
+            }
         }
         // If onboarding or Settings saved while this request was in flight,
         // that newer local profile owns the decision and must not be replaced.
         if let profile = bootstrap.profile,
+           !journalIsUnreadable,
+           pendingContent?.hasProfile != true,
            Self.shouldReplaceHydratedProfile(
                expectedProfile: expectedProfile,
                currentProfile: CoachingProfileStore.shared.profile
            ) {
             CoachingProfileStore.shared.replaceFromRemote(profile, for: accountID)
         }
-        if let sessions = bootstrap.sessions {
-            PracticeSessionStore.shared.replaceFromRemote(sessions)
+        if let sessions = bootstrap.sessions, !journalIsUnreadable {
+            let pendingSessionIDs = pendingContent?.sessionIDs ?? []
+            if pendingSessionIDs.isEmpty {
+                PracticeSessionStore.shared.replaceFromRemote(sessions)
+            } else {
+                PracticeSessionStore.shared.mergeFromRemote(
+                    sessions,
+                    preservingLocalSessionIDs: pendingSessionIDs
+                )
+            }
         }
         let recommendationStore = RecommendationLearningStore.shared
         if recommendationHydrationIsSafe,
@@ -2581,6 +3427,74 @@ struct BackendAuthHeaders: Equatable, Sendable {
             providerRawValue: providerRawValue
         )
         headers.apply(to: &request)
+    }
+
+    /// Builds ordinary content-write headers from one captured identity and
+    /// revalidates that exact Firebase user after token retrieval. This keeps a
+    /// queued account-A body from acquiring account B's bearer token after an
+    /// identity transition. Consent and hydration remain the caller's lease.
+    static func identityBound(
+        accountID: String,
+        providerRawValue: String,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        configValue: (String) -> String? = { key in
+            LocalConfigLoader.value(forKey: key, plistNamed: "BackendConfig")
+        }
+    ) async -> BackendAuthHeaders? {
+        guard cleaned(accountID) == accountID,
+              cleaned(providerRawValue) == providerRawValue else {
+            return nil
+        }
+
+        #if canImport(FirebaseAuth) && canImport(FirebaseCore)
+        if FirebaseApp.app() != nil {
+            guard let user = Auth.auth().currentUser,
+                  user.uid == accountID else {
+                return nil
+            }
+            let token: String
+            do {
+                token = try await withCheckedThrowingContinuation { continuation in
+                    user.getIDToken { token, error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                        } else if let token {
+                            continuation.resume(returning: token)
+                        } else {
+                            continuation.resume(
+                                throwing: URLError(.userAuthenticationRequired)
+                            )
+                        }
+                    }
+                }
+            } catch {
+                return nil
+            }
+            guard Auth.auth().currentUser?.uid == accountID,
+                  cleaned(token) != nil else {
+                return nil
+            }
+            return BackendAuthHeaders(
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                apiKey: configuredAPIKey(env: env, configValue: configValue),
+                firebaseIDToken: token
+            )
+        }
+        #endif
+
+        let durableIdentityMatches = await MainActor.run {
+            let auth = AuthManager.shared
+            return auth.currentAccountID == accountID
+                && auth.currentAuthProviderRawValue == providerRawValue
+        }
+        guard durableIdentityMatches else { return nil }
+        return BackendAuthHeaders(
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            apiKey: configuredAPIKey(env: env, configValue: configValue),
+            firebaseIDToken: nil
+        )
     }
 
     /// Builds deletion headers from one captured Firebase user and verifies

@@ -20,7 +20,10 @@ const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
 const region = "europe-west2";
 const preflightURL =
   `http://${functionsHost}/${projectID}/${region}/coachChatAvailability`;
-const coachURL = `http://${functionsHost}/${projectID}/${region}/coachChat`;
+const legacyCoachURL =
+  `http://${functionsHost}/${projectID}/${region}/coachChat`;
+const coachV2URL =
+  `http://${functionsHost}/${projectID}/${region}/coachChatV2`;
 const transcriptionURL =
   `http://${functionsHost}/${projectID}/${region}/transcriptionToken`;
 const beginCompetitiveObservationURL =
@@ -64,9 +67,14 @@ interface CallableStreamFrame {
   message?: {type?: string; requestID?: string; text?: string};
   result?: {
     requestID?: string;
+    text?: string;
     qualityTier?: string;
     model?: string;
     finishReason?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    policyVersion?: string;
+    generationMode?: string;
   };
 }
 
@@ -508,13 +516,24 @@ const validPreflight = {
   requestID: "2cb446d8-4f39-43a6-a95c-2486e47155bc",
 };
 
-const validCoachRequest = {
+const validLegacyCoachRequest = {
   ...validPreflight,
   surface: "text",
   qualityTier: "fast",
   coachingContext: "One recent rep. Evidence remains early.",
   messages: [{role: "user", content: "What should I fix first?"}],
 };
+
+/** Builds the strict v2 request bound to the authenticated emulator account. */
+function validV2CoachRequest(accountID: string) {
+  return {
+    ...validLegacyCoachRequest,
+    schemaVersion: 2,
+    accountID,
+    turnIntent: "coaching",
+    responseKind: "personalEvidenceRead",
+  };
+}
 
 test("callable emulator rejects missing Auth", async () => {
   const response = await callable(preflightURL, validPreflight);
@@ -536,7 +555,14 @@ test("callable emulator accepts verified Auth and App Check", async () => {
     true
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {result: {available: true}});
+  assert.deepEqual(await response.json(), {
+    result: {
+      available: true,
+      functionName: "coachChatV2",
+      requestSchemaVersion: 2,
+      policyVersion: "noum-coach-v2",
+    },
+  });
 });
 
 test(
@@ -655,14 +681,16 @@ test(
       {
         url: recommendationSyncURL,
         validShape: {
-          schemaVersion: 1,
+          schemaVersion: 2,
+          expectedAccountID: identity.localId,
           mutationID: "2CB446D8-4F39-43A6-A95C-2486E47155BC",
           expectedRemoteRevision: 0,
           pendingExposure: null,
           outcomes: [],
         },
         invalidShape: {
-          schemaVersion: 1,
+          schemaVersion: 2,
+          expectedAccountID: identity.localId,
           mutationID: "2CB446D8-4F39-43A6-A95C-2486E47155BC",
           expectedRemoteRevision: 0,
           pendingExposure: null,
@@ -922,7 +950,8 @@ test("social callables require the exact complete cutover marker", async () => {
   const recommendation = await callable(
     recommendationSyncURL,
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      expectedAccountID: identity.localId,
       mutationID: "5713738E-D9ED-4337-986E-09205089D42E",
       expectedRemoteRevision: 0,
       pendingExposure: null,
@@ -1392,7 +1421,8 @@ test("recommendation callable migrates, replays, and conflicts atomically", asyn
   await stateRef.set({pendingExposure: null, outcomes: []});
   const mutationID = "2CB446D8-4F39-43A6-A95C-2486E47155BC";
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    expectedAccountID: identity.localId,
     mutationID,
     expectedRemoteRevision: 0,
     pendingExposure: {
@@ -1407,6 +1437,18 @@ test("recommendation callable migrates, replays, and conflicts atomically", asyn
     },
     outcomes: [],
   };
+
+  const otherIdentity = await anonymousIdentity();
+  const mismatchedIdentity = await callable(
+    recommendationSyncURL,
+    payload,
+    otherIdentity,
+    true
+  );
+  assert.equal(mismatchedIdentity.status, 403);
+  assert.equal((await adminFirestore.collection("users")
+    .doc(otherIdentity.localId).collection("recommendations")
+    .doc("state").get()).exists, false);
 
   const committed = await callable(
     recommendationSyncURL,
@@ -1464,7 +1506,8 @@ test("recommendation callable migrates, replays, and conflicts atomically", asyn
 test("concurrent recommendation mutations commit exactly one revision", async () => {
   const identity = await anonymousIdentity();
   const base = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    expectedAccountID: identity.localId,
     expectedRemoteRevision: 0,
     pendingExposure: null,
     outcomes: [],
@@ -1632,6 +1675,17 @@ test("private session demand is mode-coupled and bounded", async () => {
     identity
   )).status, 200);
 
+  // Current iOS sessions use comparison schema 2 (exact microphone-stop
+  // duration). Keep legacy schema 1 readable/writable while admitting the
+  // current production payload; unknown future epochs still fail closed.
+  assert.equal((await writeFirestoreDocument(
+    path,
+    socialSessionFields(sessionID, now, 8, true, {
+      comparisonMetricSchemaVersion: {integerValue: "2"},
+    }),
+    identity
+  )).status, 200);
+
   const rejected: Array<Record<string, FirestoreValue>> = [
     {
       practiceDemand: demand({
@@ -1653,7 +1707,7 @@ test("private session demand is mode-coupled and bounded", async () => {
         speechProjectID: {stringValue: "unknown_project"},
       }),
     },
-    {comparisonMetricSchemaVersion: {integerValue: "2"}},
+    {comparisonMetricSchemaVersion: {integerValue: "3"}},
   ];
   for (const override of rejected) {
     assert.equal((await writeFirestoreDocument(
@@ -2859,7 +2913,7 @@ test("scheduled deletion reconciliation resumes and rotates durable work", async
 test("coach emulator rejects oversized input early", async () => {
   const identity = await anonymousIdentity();
   const response = await callable(
-    coachURL,
+    legacyCoachURL,
     {
       ...validPreflight,
       surface: "text",
@@ -2875,11 +2929,11 @@ test("coach emulator rejects oversized input early", async () => {
   assert.equal(body.includes("INVALID_ARGUMENT"), true);
 });
 
-test("callable streams Fast deltas and typed completion metadata", async () => {
+test("legacy schema-v1 coach callable remains compatible", async () => {
   const identity = await anonymousIdentity();
   const response = await callable(
-    coachURL,
-    validCoachRequest,
+    legacyCoachURL,
+    validLegacyCoachRequest,
     identity,
     true,
     true
@@ -2888,7 +2942,67 @@ test("callable streams Fast deltas and typed completion metadata", async () => {
   const frames = callableStreamFrames(await response.text());
   assert.deepEqual(frames[0]?.message, {
     type: "delta",
-    requestID: validCoachRequest.requestID,
+    requestID: validLegacyCoachRequest.requestID,
+    text: "Fast coaching route verified.",
+  });
+  assert.deepEqual(frames[1]?.result, {
+    requestID: validLegacyCoachRequest.requestID,
+    text: "Fast coaching route verified.",
+    model: "gemini-2.5-flash",
+    qualityTier: "fast",
+    finishReason: "STOP",
+    inputTokens: 1,
+    outputTokens: 1,
+  });
+  assert.deepEqual(Object.keys(frames[1]?.result ?? {}).sort(), [
+    "finishReason",
+    "inputTokens",
+    "model",
+    "outputTokens",
+    "qualityTier",
+    "requestID",
+    "text",
+  ]);
+});
+
+test("secure coach v2 rejects legacy and mismatched account envelopes", async () => {
+  const identity = await anonymousIdentity();
+  const legacy = await callable(
+    coachV2URL,
+    validLegacyCoachRequest,
+    identity,
+    true
+  );
+  assert.equal(legacy.status, 400);
+
+  const mismatched = await callable(
+    coachV2URL,
+    validV2CoachRequest("different-firebase-account"),
+    identity,
+    true
+  );
+  assert.equal(mismatched.status, 403);
+  assert.equal(
+    await callableFailureReason(mismatched),
+    "coach-account-binding-mismatch"
+  );
+});
+
+test("secure coach v2 streams Fast typed completion metadata", async () => {
+  const identity = await anonymousIdentity();
+  const coachRequest = validV2CoachRequest(identity.localId);
+  const response = await callable(
+    coachV2URL,
+    coachRequest,
+    identity,
+    true,
+    true
+  );
+  assert.equal(response.status, 200);
+  const frames = callableStreamFrames(await response.text());
+  assert.deepEqual(frames[0]?.message, {
+    type: "delta",
+    requestID: coachRequest.requestID,
     text: "Fast coaching route verified.",
   });
   assert.equal(frames[1]?.result?.qualityTier, "fast");
@@ -2896,11 +3010,15 @@ test("callable streams Fast deltas and typed completion metadata", async () => {
   assert.equal(frames[1]?.result?.finishReason, "STOP");
 });
 
-test("callable streams Ultra through its reasoning model", async () => {
+test("secure coach v2 streams Ultra through its reasoning model", async () => {
   const identity = await anonymousIdentity();
+  const coachRequest = {
+    ...validV2CoachRequest(identity.localId),
+    qualityTier: "ultra",
+  };
   const response = await callable(
-    coachURL,
-    {...validCoachRequest, qualityTier: "ultra"},
+    coachV2URL,
+    coachRequest,
     identity,
     true,
     true
@@ -2909,7 +3027,7 @@ test("callable streams Ultra through its reasoning model", async () => {
   const frames = callableStreamFrames(await response.text());
   assert.deepEqual(frames[0]?.message, {
     type: "delta",
-    requestID: validCoachRequest.requestID,
+    requestID: coachRequest.requestID,
     text: "Ultra coaching route verified.",
   });
   assert.equal(frames[1]?.result?.qualityTier, "ultra");
@@ -2920,8 +3038,8 @@ test("callable streams Ultra through its reasoning model", async () => {
 test("rate-limit rules deny every client", async () => {
   const identity = await anonymousIdentity();
   const adminWrite = await callable(
-    coachURL,
-    validCoachRequest,
+    coachV2URL,
+    validV2CoachRequest(identity.localId),
     identity,
     true
   );
@@ -2951,18 +3069,19 @@ test("rate-limit rules deny every client", async () => {
 
 test("callable enforces the per-minute UID rate limit", async () => {
   const identity = await anonymousIdentity();
+  const coachRequest = validV2CoachRequest(identity.localId);
   for (let count = 0; count < 5; count += 1) {
     const response = await callable(
-      coachURL,
-      validCoachRequest,
+      coachV2URL,
+      coachRequest,
       identity,
       true
     );
     assert.equal(response.status, 200);
   }
   const rejected = await callable(
-    coachURL,
-    validCoachRequest,
+    coachV2URL,
+    coachRequest,
     identity,
     true
   );

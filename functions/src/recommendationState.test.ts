@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertRecommendationMutationIdentity,
   decideRecommendationMutation,
   normalizeStoredRecommendationState,
   validateRecommendationMutation,
@@ -13,7 +14,8 @@ const secondMutationID = "783ab966-e91b-4ca4-8f7a-7e50113fa2c6";
 
 function request(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    expectedAccountID: "account-alpha",
     mutationID: firstMutationID,
     expectedRemoteRevision: 0,
     pendingExposure: null,
@@ -21,6 +23,17 @@ function request(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+test("mutation identity is exact and auth-bound", () => {
+  assert.doesNotThrow(() => assertRecommendationMutationIdentity(
+    "account-alpha",
+    "account-alpha"
+  ));
+  assert.throws(() => assertRecommendationMutationIdentity(
+    "account-alpha",
+    "account-beta"
+  ));
+});
 
 test("absent and exact legacy state normalize at revision zero", () => {
   assert.deepEqual(normalizeStoredRecommendationState(undefined), {

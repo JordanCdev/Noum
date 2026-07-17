@@ -89,7 +89,7 @@ final class UserTrajectoryCache {
         let memoryUpdated = coachMemory?.updatedAt.timeIntervalSince1970 ?? 0
         let recentEvidence = sessions
             .sorted { $0.date > $1.date }
-            .prefix(5)
+            .prefix(6)
             .map(sessionEvidenceSignature)
             .joined(separator: ";")
         let sessionAggregate = sessionAggregateSignature(sessions)
@@ -134,6 +134,7 @@ final class UserTrajectoryCache {
         }
 
         let trendLines = trendLines(from: sorted, baseline: baseline)
+        let qualifiedLongitudinalTrend = longitudinalTrendProjection(from: sorted)
 
         return UserTrajectorySnapshot(
             generatedAt: Date(),
@@ -144,7 +145,8 @@ final class UserTrajectoryCache {
             trendLines: trendLines,
             latestRepEvidencePack: sorted.first.map(latestRepPack),
             coachCaseSummary: coachMemory.map(caseSummary),
-            activeInterventionState: coachMemory.flatMap(activeIntervention)
+            activeInterventionState: coachMemory.flatMap(activeIntervention),
+            qualifiedLongitudinalTrend: qualifiedLongitudinalTrend
         )
     }
 
@@ -154,6 +156,9 @@ final class UserTrajectoryCache {
             .count
         let transcriptHash = stableHash(normalized(session.transcript))
         let confidence = session.transcriptConfidence.map { Int(($0 * 100).rounded()) } ?? -1
+        let imSetup = session.imConversationDetails.map {
+            "\($0.setup.scenario.rawValue):\($0.setup.targetTone.rawValue)"
+        } ?? "none"
         return [
             session.id.uuidString,
             "date=\(Int(session.date.timeIntervalSince1970))",
@@ -165,6 +170,10 @@ final class UserTrajectoryCache {
             "words=\(transcriptWords)",
             "confidence=\(confidence)",
             "rated=\(session.isRated)",
+            "metricSchema=\(session.comparisonMetricSchemaVersion ?? -1)",
+            "fixture=\(session.isEvaluationFixture)",
+            "demand=\(session.practiceDemand?.recommendationFingerprintComponent ?? "none")",
+            "imSetup=\(imSetup)",
             "intent=\(session.intentFocus?.rawValue ?? "none")",
             "transcript=\(transcriptHash)"
         ].joined(separator: "#")
@@ -311,19 +320,22 @@ final class UserTrajectoryCache {
     }
 
     private static func latestRepPack(_ session: PracticeSession) -> LatestRepEvidencePack {
-        let words = session.transcript
+        let excerptTokens = session.transcript
             .split { $0.isWhitespace || $0.isNewline }
             .map(String.init)
+        let wordCount = session.wordCount
         let fillerEvidence = QuantityQualifiedFillerEvidence.current(
             fillerCount: session.fillerWordCount,
             duration: session.duration,
-            wordCount: words.count,
+            wordCount: wordCount,
             transcriptConfidence: session.transcriptConfidence
         )
-        let wordsPerMinute: Int? = fillerEvidence.status == .qualified
-            ? Int((Double(words.count) / max(session.duration, 1)) * 60.0)
-            : nil
-        let excerpt = words.isEmpty ? nil : words.prefix(26).joined(separator: " ")
+        let canonicalWordsPerMinute = session.wordsPerMinute
+        let wordsPerMinute: Int? = fillerEvidence.status == .qualified &&
+            canonicalWordsPerMinute > 0 ? canonicalWordsPerMinute : nil
+        let excerpt = excerptTokens.isEmpty
+            ? nil
+            : excerptTokens.prefix(26).joined(separator: " ")
         var evidence: [String] = [
             "latest rep: \(session.mode.displayLabel), \(session.score.map { "\($0)/10" } ?? "no score"), \(Int(session.duration.rounded()))s",
             fillerEvidence.contextLine
@@ -342,10 +354,13 @@ final class UserTrajectoryCache {
             // up across the shared 15-second evidence boundary.
             durationSeconds: Int(session.duration.rounded(.down)),
             wordsPerMinute: wordsPerMinute,
-            transcriptWordCount: words.count,
+            transcriptWordCount: wordCount,
             transcriptConfidence: session.transcriptConfidence,
             transcriptExcerpt: excerpt,
-            evidenceLines: evidence
+            evidenceLines: evidence,
+            sourceSessionID: session.id,
+            comparisonMetricSchemaVersion: session.comparisonMetricSchemaVersion,
+            isEvaluationFixture: session.isEvaluationFixture
         )
     }
 
@@ -376,6 +391,131 @@ final class UserTrajectoryCache {
             lines.append("baseline hedging: \(String(format: "%.1f", baseline.hedgingRate.value))/min")
         }
         return Array(lines.prefix(4))
+    }
+
+    private static func longitudinalTrendProjection(
+        from sorted: [PracticeSession]
+    ) -> CoachLongitudinalTrendProjection? {
+        guard let latest = sorted.first else { return nil }
+        let comparison = RecommendationComparisonEngine.baseline(
+            for: latest,
+            previousSessions: Array(sorted.dropFirst())
+        )
+        guard comparison.sessionIDs.count >= RecommendationComparisonEngine.minimumComparisonSamples,
+              latest.comparisonMetricSchemaVersion == PracticeSession.currentComparisonMetricSchemaVersion,
+              !latest.isEvaluationFixture else {
+            return nil
+        }
+        let comparableSessions = comparison.sessionIDs.compactMap { sessionID in
+            sorted.dropFirst().first { $0.id == sessionID }
+        }
+        guard comparableSessions.count == comparison.sessionIDs.count else {
+            return nil
+        }
+
+        var metrics: [CoachLongitudinalMetricTrend] = []
+        // The projection has one shared comparator roster, so every emitted
+        // metric must use that complete roster. In particular, an optional score
+        // on only two of five comparable reps must not be described as a five-rep
+        // score comparison.
+        if comparableSessions.allSatisfy({ $0.score != nil }),
+           let score = latest.score,
+           let delta = comparison.scoreDelta,
+           let scoreTrend = longitudinalMetricTrend(
+            metric: .score,
+            currentValue: Double(score),
+            priorAverage: Double(score) - delta
+        ) {
+            metrics.append(scoreTrend)
+        }
+        if let fillerRate = QuantityQualifiedFillerEvidence.historical(latest).ratePerMinute,
+           let delta = comparison.fillerRateDelta,
+           let fillerTrend = longitudinalMetricTrend(
+            metric: .fillerRatePerMinute,
+            currentValue: fillerRate,
+            priorAverage: fillerRate - delta
+        ) {
+            metrics.append(fillerTrend)
+        }
+        if let pace = comparison.wordsPerMinute,
+           let delta = comparison.paceDelta,
+           let paceTrend = longitudinalMetricTrend(
+            metric: .paceWordsPerMinute,
+            currentValue: pace,
+            priorAverage: pace - delta
+        ) {
+            metrics.append(paceTrend)
+        }
+        guard !metrics.isEmpty else { return nil }
+        return CoachLongitudinalTrendProjection(
+            sourceSessionID: latest.id,
+            comparisonMetricSchemaVersion: PracticeSession.currentComparisonMetricSchemaVersion,
+            mode: latest.mode.displayLabel,
+            comparableSessionIDs: comparison.sessionIDs,
+            metrics: metrics
+        )
+    }
+
+    static func longitudinalMetricTrend(
+        metric: CoachMetricKind,
+        currentValue: Double,
+        priorAverage: Double
+    ) -> CoachLongitudinalMetricTrend? {
+        guard currentValue.isFinite,
+              priorAverage.isFinite else { return nil }
+        // Direction is part of the signed wire contract. Classify the same
+        // one-decimal values that are transmitted so the callable cannot
+        // disagree with the client at a movement threshold.
+        let transmittedCurrentValue = roundedOneDecimal(currentValue)
+        let transmittedPriorAverage = roundedOneDecimal(priorAverage)
+        let direction: CoachLongitudinalMetricTrend.Direction
+        switch metric {
+        case .score:
+            let improvement = transmittedCurrentValue - transmittedPriorAverage
+            if improvement >= RecommendationAdaptationAnalyzer.scoreSwing {
+                direction = .improving
+            } else if improvement <= -RecommendationAdaptationAnalyzer.scoreSwing {
+                direction = .declining
+            } else {
+                direction = .stable
+            }
+        case .fillerRatePerMinute:
+            let improvement = transmittedPriorAverage - transmittedCurrentValue
+            if improvement >= RecommendationAdaptationAnalyzer.fillerSwing {
+                direction = .improving
+            } else if improvement <= -RecommendationAdaptationAnalyzer.fillerSwing {
+                direction = .declining
+            } else {
+                direction = .stable
+            }
+        case .paceWordsPerMinute:
+            let currentDistance = ConversationalPaceBand.distanceFromTarget(
+                transmittedCurrentValue
+            )
+            let priorDistance = ConversationalPaceBand.distanceFromTarget(
+                transmittedPriorAverage
+            )
+            let improvement = priorDistance - currentDistance
+            if improvement >= RecommendationAdaptationAnalyzer.paceSwing {
+                direction = .improving
+            } else if improvement <= -RecommendationAdaptationAnalyzer.paceSwing {
+                direction = .declining
+            } else {
+                direction = .stable
+            }
+        case .fillerCount, .durationSeconds:
+            return nil
+        }
+        return CoachLongitudinalMetricTrend(
+            metric: metric,
+            direction: direction,
+            currentValue: transmittedCurrentValue,
+            priorAverage: transmittedPriorAverage
+        )
+    }
+
+    private static func roundedOneDecimal(_ value: Double) -> Double {
+        (value * 10).rounded() / 10
     }
 
     private static func caseSummary(_ memory: CoachMemory) -> CoachCaseSummary {

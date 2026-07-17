@@ -204,7 +204,7 @@ service cloud.firestore {
              && data.isRated is bool
              && (!('comparisonMetricSchemaVersion' in data)
                  || (data.comparisonMetricSchemaVersion is int
-                     && data.comparisonMetricSchemaVersion == 1))
+                     && data.comparisonMetricSchemaVersion in [1, 2]))
              && validPracticeDemand(data)
              && data.isEvaluationFixture == false;
     }

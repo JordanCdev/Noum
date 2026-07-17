@@ -436,13 +436,17 @@ final class ForwardPlanStore: ObservableObject {
     /// deletion is admitted. An already-installed plan stays in memory and on
     /// disk until remote deletion succeeds so a recoverable pre-remote failure
     /// does not erase user data. Only pending provider authority is revoked.
-    func suspendProviderWorkForDeletion(accountID: String) {
+    func suspendProviderWorkForAccountTransition(accountID: String) {
         let normalized = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty,
               loadedAccountScope == normalized || currentAccountID == normalized else {
             return
         }
         invalidateGenerationRequests()
+    }
+
+    func suspendProviderWorkForDeletion(accountID: String) {
+        suspendProviderWorkForAccountTransition(accountID: accountID)
     }
 
     /// Compare-and-save boundary for async generation. `announce` executes

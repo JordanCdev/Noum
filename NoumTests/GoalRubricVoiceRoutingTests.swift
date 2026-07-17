@@ -27,6 +27,7 @@
 //  No threshold or numeric-calibration assertion is made here; that remains in
 //  CoachReadCalibrationBaselineTests and stays human-gated.
 
+import Foundation
 import Testing
 @testable import Noum
 
@@ -73,6 +74,240 @@ struct GoalRubricVoiceRoutingTests {
         }
     }
 
+    @Test func askNoumUsesNeutralFundamentalsWithoutInferringAStyleGoal() {
+        let rubric = GoalRubricStore.coachingRubric(for: nil)
+        #expect(rubric.voice == nil)
+        #expect(rubric.rubric.goalID == "neutral_coaching")
+        #expect(rubric.rubric.displayName == "Communication fundamentals")
+    }
+
+    @Test func deepVerdictNamesTheSelectedRubricInsteadOfAuthority() {
+        let rubrics = [
+            GoalRubricStore.coachingRubric(for: nil),
+            ActiveGoalRubric(
+                rubric: GoalRubricStore.warmRubric,
+                voice: .warm
+            )
+        ]
+
+        for rubric in rubrics {
+            let assessment = CoachReasoningPass.assess(
+                turnDepth: .deepAssessment,
+                userQuestion: "Where do I stand overall?",
+                trajectory: Self.evidenceRichTrajectory,
+                rubric: rubric,
+                surface: .text
+            )
+            let verdict = assessment.directVerdict.lowercased()
+            #expect(verdict.contains(rubric.rubric.displayName.lowercased()))
+            #expect(!verdict.contains("sounding authoritative"))
+        }
+    }
+
+    @Test func contextualMovesKeepTheirTypedEvidenceDimension() {
+        let cases: [(question: String, expectedID: String)] = [
+            ("How should I answer interview questions?", "verdict_first"),
+            ("How do I disagree without sounding defensive?", "verdict_first"),
+            ("How should I handle a client concern in a sales pitch?", "salience")
+        ]
+        let rubric = GoalRubricStore.coachingRubric(for: nil)
+
+        for row in cases {
+            let assessment = CoachReasoningPass.assess(
+                turnDepth: .quickMove,
+                userQuestion: row.question,
+                trajectory: Self.evidenceRichTrajectory,
+                rubric: rubric,
+                surface: .text
+            )
+            #expect(assessment.nextProofDimensionID == row.expectedID)
+
+            let selectedEvidence = assessment.rubricScores
+                .first { $0.dimensionID == row.expectedID }?
+                .evidence.first
+            let brief = CoachChatBrief(assessment: assessment)
+            #expect(selectedEvidence != nil)
+            #expect(brief.decisiveEvidence?.contains(selectedEvidence ?? "") == true)
+        }
+    }
+
+    @Test func typedBriefFailsClosedWithoutUsableEvidenceForItsMove() {
+        let missingFact = Self.assessment(
+            evidenceUsed: [
+                "latest rep: Timed, 9/10, 0 fillers, 60s",
+                "case summary: the opening needs work"
+            ],
+            dimensionID: "verdict_first",
+            scoreEvidence: [
+                "the available excerpt did not clearly put the answer first"
+            ]
+        )
+        let internalFact = Self.assessment(
+            evidenceUsed: ["latest rep: Timed, 9/10, 0 fillers, 60s"],
+            dimensionID: "verdict_first",
+            scoreEvidence: ["case summary: the opening needs work"]
+        )
+        let mismatchedDimension = Self.assessment(
+            evidenceUsed: ["latest rep: Timed, 9/10, 0 fillers, 60s"],
+            dimensionID: "clean_close",
+            scoreEvidence: ["latest transcript leads with a decision word"]
+        )
+
+        for assessment in [missingFact, internalFact, mismatchedDimension] {
+            let brief = CoachChatBrief(assessment: assessment)
+            #expect(brief.decisiveEvidence == nil)
+            #expect(brief.evidenceStrength == .missing)
+            #expect(brief.directVerdict ==
+                "I don’t have enough evidence to choose your next move yet.")
+            #expect(brief.directVerdict != assessment.directVerdict)
+            #expect(brief.nextMove == nil)
+        }
+    }
+
+    @Test func untypedBriefRejectsInternalAndAbsenceMarkerEvidence() {
+        let assessment = Self.assessment(
+            evidenceUsed: [
+                "case summary: hypothesis: the opening needs work",
+                "active intervention: repeat the recommendation",
+                "no clear verdict-first proof in the available excerpt",
+                "filler evidence was not quantity-qualified"
+            ],
+            dimensionID: nil,
+            scoreEvidence: []
+        )
+
+        let brief = CoachChatBrief(assessment: assessment)
+        #expect(brief.decisiveEvidence == nil)
+        #expect(brief.evidenceStrength == .missing)
+        #expect(brief.directVerdict ==
+            "I don’t have enough evidence to choose your next move yet.")
+        #expect(brief.nextMove == nil)
+    }
+
+    @Test func nilProofDimensionCannotAuthorizeUsableLookingEvidenceOrAMove() {
+        let assessment = Self.assessment(
+            evidenceUsed: ["latest rep: Timed, 9/10, 0 fillers, 60s"],
+            dimensionID: nil,
+            scoreEvidence: ["latest transcript leads with a decision word"]
+        )
+
+        let brief = CoachChatBrief(assessment: assessment)
+        #expect(brief.evidenceStrength == .missing)
+        #expect(brief.decisiveEvidence == nil)
+        #expect(brief.nextMove == nil)
+        #expect(brief.directVerdict ==
+            "I don’t have enough evidence to choose your next move yet.")
+        #expect(!brief.provisionalCoachRead.contains(assessment.nextProofTest))
+    }
+
+    @Test func subFloorTranscriptCannotProveVerdictCloseOrSalience() throws {
+        var trajectory = Self.evidenceRichTrajectory
+        trajectory.latestRepEvidencePack = LatestRepEvidencePack(
+            mode: "Timed",
+            score: 10,
+            fillerCount: 0,
+            durationSeconds: 5,
+            wordsPerMinute: 145,
+            transcriptWordCount: 8,
+            transcriptExcerpt: "My recommendation matters because we should decide um",
+            evidenceLines: ["latest rep: Timed, 10/10, 0 fillers, 5s"]
+        )
+
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "What should I fix next?",
+            trajectory: trajectory,
+            rubric: GoalRubricStore.coachingRubric(for: nil),
+            surface: .text
+        )
+        let verdict = try #require(assessment.rubricScores.first {
+            $0.dimensionID == "verdict_first"
+        })
+        let close = try #require(assessment.rubricScores.first {
+            $0.dimensionID == "clean_close"
+        })
+        let salience = try #require(assessment.rubricScores.first {
+            $0.dimensionID == "salience"
+        })
+
+        #expect(verdict.score == 0.35)
+        #expect(close.score == 0.48)
+        #expect(salience.score == 0.38)
+        #expect(verdict.evidence.first?.contains("no clear") == true)
+        #expect(close.evidence.first?.contains("no duration-qualified") == true)
+        #expect(salience.evidence.first?.contains("no memorable") == true)
+        #expect(CoachChatBrief(assessment: assessment).decisiveEvidence == nil)
+    }
+
+    @Test func hedgeControlDoesNotInferMeaningFromWordsOrSubstrings() throws {
+        func assessment(transcript: String) -> CoachAssessment {
+            var trajectory = Self.evidenceRichTrajectory
+            trajectory.latestRepEvidencePack?.transcriptExcerpt = transcript
+            return CoachReasoningPass.assess(
+                turnDepth: .groundedRead,
+                userQuestion: "Did I hedge too much?",
+                trajectory: trajectory,
+                rubric: GoalRubricStore.coachingRubric(for: nil),
+                surface: .text
+            )
+        }
+
+        let substring = assessment(
+            transcript: "We should adjust the plan because one owner can decide."
+        )
+        let legitimateUncertainty = assessment(
+            transcript: "Maybe legal can confirm the threshold; my recommendation still stands."
+        )
+        let substringScore = try #require(substring.rubricScores.first {
+            $0.dimensionID == "hedge_control"
+        })
+        let uncertaintyScore = try #require(legitimateUncertainty.rubricScores.first {
+            $0.dimensionID == "hedge_control"
+        })
+
+        #expect(substringScore.score == 0.60)
+        #expect(uncertaintyScore.score == substringScore.score)
+        #expect(substringScore.evidence.first?.contains("not judged from wording") == true)
+        #expect(CoachChatBrief(assessment: substring).decisiveEvidence == nil)
+        #expect(CoachChatBrief(assessment: legitimateUncertainty).decisiveEvidence == nil)
+    }
+
+    @Test func cleanCloseUsesTheFinalWordInsteadOfAStringSuffix() throws {
+        func closeScore(for transcript: String) throws -> RubricScore {
+            var trajectory = Self.evidenceRichTrajectory
+            trajectory.latestRepEvidencePack?.transcriptExcerpt = transcript
+            let assessment = CoachReasoningPass.assess(
+                turnDepth: .groundedRead,
+                userQuestion: "Did I land the close?",
+                trajectory: trajectory,
+                rubric: GoalRubricStore.coachingRubric(for: nil),
+                surface: .text
+            )
+            return try #require(assessment.rubricScores.first {
+                $0.dimensionID == "clean_close"
+            })
+        }
+
+        let semanticallyValidCloses = [
+            "The team needs momentum.",
+            "The result should feel premium.",
+            "I also support it.",
+            "I believe so.",
+            "Yeah."
+        ]
+        for transcript in semanticallyValidCloses {
+            let score = try closeScore(for: transcript)
+            #expect(score.score > 0.35)
+            #expect(score.evidence.first?.contains("complete claim") == true)
+        }
+
+        let filler = try closeScore(
+            for: "My recommendation is one owner because we need a decision, um."
+        )
+        #expect(filler.score == 0.35)
+        #expect(filler.evidence.first?.contains("soft trailing close") == true)
+    }
+
     // MARK: - Dimension reuse (scorer stays single source of truth)
 
     @Test func allRubricsReuseTheSameScoredDimensionIDs() {
@@ -82,7 +317,8 @@ struct GoalRubricVoiceRoutingTests {
             GoalRubricStore.persuasiveRubric,
             GoalRubricStore.conciseRubric,
             GoalRubricStore.warmRubric,
-            GoalRubricStore.storytellingRubric
+            GoalRubricStore.storytellingRubric,
+            GoalRubricStore.neutralCoachingRubric
         ]
         for rubric in rubrics {
             let ids = Set(rubric.dimensions.map(\.id))
@@ -102,6 +338,7 @@ struct GoalRubricVoiceRoutingTests {
         #expect(GoalRubricStore.executiveRubric.dimensions == GoalRubricStore.coreDimensions)
         #expect(GoalRubricStore.persuasiveRubric.dimensions == GoalRubricStore.coreDimensions)
         #expect(GoalRubricStore.conciseRubric.dimensions == GoalRubricStore.coreDimensions)
+        #expect(GoalRubricStore.neutralCoachingRubric.dimensions == GoalRubricStore.coreDimensions)
     }
 
     // MARK: - Weight maps stay well-formed
@@ -113,7 +350,8 @@ struct GoalRubricVoiceRoutingTests {
             GoalRubricStore.persuasiveRubric,
             GoalRubricStore.conciseRubric,
             GoalRubricStore.warmRubric,
-            GoalRubricStore.storytellingRubric
+            GoalRubricStore.storytellingRubric,
+            GoalRubricStore.neutralCoachingRubric
         ]
         for rubric in rubrics {
             #expect(
@@ -148,5 +386,56 @@ struct GoalRubricVoiceRoutingTests {
         }
         // And it must not be judged verdict-first like authority is.
         #expect((weights["verdict_first"] ?? 1) < (GoalRubricStore.authoritativeRubric.defaultWeights["verdict_first"] ?? 0))
+    }
+
+    private static let evidenceRichTrajectory = UserTrajectorySnapshot(
+        generatedAt: Date(timeIntervalSince1970: 1_000),
+        sessionCount: 8,
+        ratedSessionCount: 8,
+        evidenceCoverage: 0.50,
+        recentSessionLines: ["Pressure Drill: 9/10, 0 fillers, 60s"],
+        trendLines: [],
+        latestRepEvidencePack: LatestRepEvidencePack(
+            mode: "Pressure Drill",
+            score: 9,
+            fillerCount: 0,
+            durationSeconds: 60,
+            wordsPerMinute: 145,
+            transcriptWordCount: 70,
+            transcriptExcerpt: "My recommendation is one owner because the team needs a decision",
+            evidenceLines: [
+                "latest rep: Pressure Drill, 9/10, 0 fillers, 60s",
+                "pace estimate: 145 WPM"
+            ]
+        ),
+        coachCaseSummary: nil,
+        activeInterventionState: nil
+    )
+
+    private static func assessment(
+        evidenceUsed: [String],
+        dimensionID: String?,
+        scoreEvidence: [String]
+    ) -> CoachAssessment {
+        CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: "What should I fix first?",
+            directVerdict: "The opening is the next lever.",
+            confidence: 0.62,
+            evidenceUsed: evidenceUsed,
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.42,
+                confidence: 0.62,
+                evidence: scoreEvidence,
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: dimensionID,
+            missingEvidence: [],
+            nextProofTest: "Put the recommendation in sentence one.",
+            responseMode: .immediateOnly
+        )
     }
 }

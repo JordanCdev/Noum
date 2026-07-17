@@ -25,6 +25,16 @@ enum GoalRubricStore {
         )
     }
 
+    /// Ask Noum still needs one coherent evidence-to-action judgement when the
+    /// speaker has not chosen a style goal. This reuses the existing rubric and
+    /// reasoning owners without pretending a voice preference exists.
+    static func coachingRubric(for profile: CoachingProfile?) -> ActiveGoalRubric {
+        activeRubric(for: profile) ?? ActiveGoalRubric(
+            rubric: neutralCoachingRubric,
+            voice: nil
+        )
+    }
+
     static func rubric(for voice: SpeakingStyleGoal) -> GoalRubric {
         switch voice {
         case .warm:
@@ -204,6 +214,24 @@ enum GoalRubricStore {
             "pressure_stability": 0.18,
             "controlled_pacing": 0.16,
             "salience": 0.08
+        ],
+        establishedEvidenceFloor: 0.70
+    )
+
+    /// Balanced fundamentals for Ask Noum before an explicit speaking-style
+    /// goal exists. It shares the exact scorer dimensions and therefore does
+    /// not create a second coaching system or infer a hidden identity.
+    static let neutralCoachingRubric = GoalRubric(
+        goalID: "neutral_coaching",
+        displayName: "Communication fundamentals",
+        dimensions: coreDimensions,
+        defaultWeights: [
+            "verdict_first": 0.18,
+            "hedge_control": 0.12,
+            "clean_close": 0.18,
+            "pressure_stability": 0.14,
+            "controlled_pacing": 0.18,
+            "salience": 0.20
         ],
         establishedEvidenceFloor: 0.70
     )

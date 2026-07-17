@@ -73,7 +73,7 @@ enum CoachPromptBundle {
             "- If the user asks for a plan, a big moment, interview prep, or leadership prep, a short sequence is allowed; otherwise keep one move only.",
             "- If the user wants to change voice/goal, propose the closest real option in coach speech and let the confirmation card handle UI. Do not tell them to tap, confirm, or lock it in, and do not say it is set unless app state already says so.",
             "- If evidence is weak, say what is missing. If evidence is strong, make the read specific enough that it would not fit another user.",
-            "- Length hard preference: \(live ? "one or two compact spoken beats" : "usually under 90 words unless the user explicitly asked for a plan or deep assessment")."
+            "- Length hard preference: \(live ? "one or two compact spoken beats, never over 35 words" : "usually no more than 50 words; explicit deep assessment may use 90")."
         ]
     }
 
@@ -85,22 +85,22 @@ enum CoachPromptBundle {
         switch depth {
         case .quickMove:
             return [
-                "- Depth instruction: answer directly, give one reason and one next move. No menu.",
+                "- Depth instruction: answer directly. Give one next move only when the user asked for action. No menu.",
                 "- If the turn is off-topic or a test, name it lightly and steer back without pretending it was a real coaching question. Offer a coaching choice; no score, filler, or duration recap on that turn.",
-                "- Length budget: \(live ? "under 60 spoken words" : "under 75 words")."
+                "- Length budget: \(live ? "35 spoken words" : "50 words and two sentences")."
             ]
         case .groundedRead:
             return [
-                "- Depth instruction: give a short evidence-backed read in human language: one observed signal, the real gap, and one move.",
+                "- Depth instruction: give one short evidence-backed read in human language. Add one move only when it answers the ask.",
                 "- Pushback rule: when the user's obstacle changes the advice, adapt the technique. Example: if pausing makes them lose the thread, give the pause a job rather than repeating 'pause more'.",
                 "- Transfer rule: when the user reports a real-world outcome, connect it to one observed lever as association, not causation, then ask for the one thing they noticed.",
-                "- Length budget: \(live ? "under 90 spoken words" : "under 95 words unless a plan was requested")."
+                "- Length budget: \(live ? "35 spoken words" : "50 words and two sentences")."
             ]
         case .deepAssessment:
             return [
                 "- Depth instruction: answer the distance-to-goal question first. Separate what improved in the answer from what remains unproven under pressure. Use concrete evidence, name missing evidence, and end with one concrete validation rep. Never infer overall closeness from one score.",
                 "- Prep rule: for interviews, leadership updates, speeches, or big moments, give a time-boxed sequence tied to the date and one observable target.",
-                "- Length budget: \(live ? "compact spoken verdict, under 110 words" : "up to 220 words if needed").",
+                "- Length budget: \(live ? "compact spoken verdict, under 35 words" : "up to 90 words").",
                 "- Required judgement shape: verdict first, observed answer control versus consistent authority, evidence, missing evidence, and one concrete validation rep."
             ]
         case .trustRepair:
@@ -108,7 +108,7 @@ enum CoachPromptBundle {
                 "- Depth instruction: acknowledge the specific miss briefly, name what the prior answer failed to establish, then repair with a better answer or the exact missing evidence.",
                 "- Emotional repair rule: if the user says it is hard, exhausting, cold, repetitive, or unhelpful, meet that feeling first. Advice comes second and must be smaller than the original ask.",
                 "- Do not give another drill until the repair focus has been named.",
-                "- Length budget: \(live ? "under 85 spoken words" : "under 95 words unless the user asked for a plan")."
+                "- Length budget: \(live ? "under 35 spoken words" : "under 45 words")."
             ]
         }
     }
@@ -135,14 +135,14 @@ enum CoachPromptBundle {
         surface: CoachReplySurface
     ) -> Int {
         switch (depth, surface) {
-        case (.quickMove, .live): return 120
-        case (.quickMove, .text): return 160
-        case (.groundedRead, .live): return 140
-        case (.groundedRead, .text): return 180
-        case (.deepAssessment, .live): return 220
-        case (.deepAssessment, .text): return 380
-        case (.trustRepair, .live): return 160
-        case (.trustRepair, .text): return 220
+        case (.quickMove, .live): return 80
+        case (.quickMove, .text): return 100
+        case (.groundedRead, .live): return 80
+        case (.groundedRead, .text): return 110
+        case (.deepAssessment, .live): return 80
+        case (.deepAssessment, .text): return 180
+        case (.trustRepair, .live): return 80
+        case (.trustRepair, .text): return 100
         }
     }
 }

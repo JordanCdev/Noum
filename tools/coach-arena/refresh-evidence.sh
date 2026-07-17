@@ -13,7 +13,18 @@ cd "$repo_root"
 dump_dir="${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}"
 derived_data="${NOUM_COACH_DERIVED_DATA:-/private/tmp/noum-derived-data-evidence}"
 source_packages="${NOUM_COACH_SPM_DIR:-$repo_root/.build/fast-lane-release/SourcePackages}"
-destination="${NOUM_COACH_XCODE_DESTINATION:-platform=iOS Simulator,name=iPhone 17 Pro}"
+if [[ -z "${NOUM_COACH_XCODE_DESTINATION:-}" ||
+      "${NOUM_COACH_DISPOSABLE_SIMULATOR:-}" != "1" ]]; then
+  echo "Coach Arena app-path evidence can replace the installed app and mutate simulator account state." >&2
+  echo "Set NOUM_COACH_XCODE_DESTINATION to a disposable simulator and NOUM_COACH_DISPOSABLE_SIMULATOR=1." >&2
+  exit 2
+fi
+destination_pattern='^platform=iOS Simulator,id=[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+if [[ ! "$NOUM_COACH_XCODE_DESTINATION" =~ $destination_pattern ]]; then
+  echo "NOUM_COACH_XCODE_DESTINATION must name one simulator by exact UDID; name-only destinations are unsafe." >&2
+  exit 2
+fi
+destination="$NOUM_COACH_XCODE_DESTINATION"
 source "$script_dir/simulator-evidence-environment.sh"
 
 trap noum_coach_simulator_environment_exit_trap EXIT
@@ -56,7 +67,6 @@ env \
   -parallel-testing-enabled NO \
   -maximum-parallel-testing-workers 1 \
   -only-testing:NoumTests/CoachChatConversationArtifactDumpXCTest \
-  CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES
 
 noum_coach_simulator_environment_cleanup

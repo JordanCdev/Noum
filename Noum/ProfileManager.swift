@@ -40,6 +40,15 @@ final class ProfileManager: ObservableObject {
         persist()
     }
 
+    /// A pending absolute XP mutation proves local progress has not yet been
+    /// acknowledged. Preserve that floor while still accepting a higher total
+    /// earned on another device. Award-level multi-device merge remains a
+    /// separate server-schema requirement.
+    func mergePendingLocalXP(withRemote remoteXP: Int) {
+        xp = max(xp, max(0, remoteXP))
+        persist()
+    }
+
     func endSession() {
         xp = 0
     }
@@ -106,12 +115,17 @@ final class ProfileManager: ObservableObject {
               AuthManager.shouldSyncBackend(accountID: accountID),
               let providerRawValue = currentProviderRawValue else { return }
         let value = xp
-        Task {
-            await BackendSyncManager.shared.syncXP(value, accountID: accountID, providerRawValue: providerRawValue)
-        }
+        let sourceLifecycleGeneration = AuthManager.shared
+            .accountLifecycleGeneration
+        BackendSyncManager.shared.enqueueXPSync(
+            value,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
     }
 
-    private static func storageKey(for accountID: String?) -> String {
+    nonisolated private static func storageKey(for accountID: String?) -> String {
         if let accountID, !accountID.isEmpty {
             return "profileXP.\(accountID)"
         }
@@ -120,6 +134,13 @@ final class ProfileManager: ObservableObject {
 
     private static func loadXP(forKey key: String) -> Int {
         UserDefaults.standard.integer(forKey: key)
+    }
+
+    nonisolated static func persistedXP(
+        for accountID: String,
+        defaults: UserDefaults = .standard
+    ) -> Int {
+        max(0, defaults.integer(forKey: storageKey(for: accountID)))
     }
 }
 #endif

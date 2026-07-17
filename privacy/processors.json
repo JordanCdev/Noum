@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 6,
-  "updatedAt": "2026-07-14",
+  "manifestVersion": 7,
+  "updatedAt": "2026-07-17",
   "processors": [
     {
       "id": "deepgram",
@@ -51,8 +51,8 @@
     {
       "id": "firebase",
       "name": "Firebase (Google)",
-      "data": "Bounded production coaching requests, Authentication and App Check proof, bounded competitive-rep PCM held in invocation memory with server-derived observation metadata and an account-unlinked seven-day exact-audio replay digest, and short-lived mutual-connection invite secrets handled in invocation memory with digest-addressed account, display-name, pair, and timestamp records; account identity, optional sync data, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
-      "purpose": "Protected callable transport and abuse protection for cloud coaching, competitive observation, and mutual account connections, plus authentication, optional sync, first-run configuration, and vendor-declared diagnostics",
+      "data": "Bounded production coaching requests, Authentication and App Check proof, and—only after current cloud-processing consent—coaching profile, XP, practice-session content including transcripts and session evidence, and recommendation state for account sync; bounded competitive-rep PCM held in invocation memory with server-derived observation metadata and an account-unlinked seven-day exact-audio replay digest, and short-lived mutual-connection invite secrets handled in invocation memory with digest-addressed account, display-name, pair, and timestamp records; account identity, Firebase installation data, and versioned Remote Config values are processed separately for account and configuration functionality",
+      "purpose": "Protected callable transport and abuse protection for cloud coaching, consent-gated account-content sync, competitive observation, and mutual account connections, plus authentication, first-run configuration, and vendor-declared diagnostics",
       "termsLabel": "Firebase Terms",
       "termsURL": "https://firebase.google.com/terms",
       "appearsInCloudProcessingDisclosure": true

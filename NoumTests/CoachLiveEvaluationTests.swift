@@ -2002,10 +2002,10 @@ struct CoachLiveEvaluationTests {
         let finalIssues: [CoachReliabilityIssue]
     }
 
-    /// Mirror the pipeline-owned recovery after every configured provider has
-    /// rejected a turn on content quality. The shipping path converts this one
-    /// failure class into a bounded deterministic assessment reply before the
-    /// final reliability/finalization step; live evidence must do the same.
+    /// Mirror the pipeline-owned safe recovery after every configured provider
+    /// returns unusable content. Coaching content rejection may use a bounded
+    /// assessment read; known non-coaching empty turns may use only their
+    /// intent-specific acknowledgement. Live evidence must do the same.
     private static func livePipelineOutcome(
         _ providerOutcome: ChatOutcome,
         assessment: CoachAssessment?,
@@ -2019,7 +2019,7 @@ struct CoachLiveEvaluationTests {
             .filter { $0.role == .coach }
             .map(\.text)
             .prefix(4))
-        guard let fallback = CoachReplyPipeline.contentRejectedFallbackText(
+        guard let fallback = CoachReplyPipeline.safeFailureFallbackText(
             for: providerOutcome,
             assessment: assessment,
             turnDepth: turnDepth,

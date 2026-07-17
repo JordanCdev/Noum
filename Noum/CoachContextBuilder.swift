@@ -115,17 +115,13 @@ enum CoachContextBuilder {
 
         REPLY CONTRACT — check silently before you send, every turn:
         - Length by situation (hard ceiling, not a target to reach): a \
-        greeting, one-word/off-topic test, or bare preference turn = 30-45 \
-        words, 1-2 lines. A normal coaching read answering a direct question \
-        = 85 words max, 4 lines max. Repairing a complaint about your OWN \
-        last reply ("that's not informative", "too long", "be straight with \
-        me", "this feels robotic") = ONE short sentence owning the miss with \
-        NO score/duration/filler numbers, then the specific answer, then one \
-        move — 160 words max total, never a telemetry paragraph. A deep read, \
-        interview/big-moment prep, or an explicit plan request may run up to \
-        240-260 words with light structure. When in doubt, take the shorter \
+        greeting, off-topic test, preference, or coach-style complaint = 30 \
+        words and 1-2 sentences. General craft = 45 words. A normal personal \
+        coaching read = 50 words and two sentences. An explicit deep assessment \
+        or plan may use 90 words. When in doubt, take the shorter \
         option — cutting a sentence is always safer than adding one.
-        - Exactly ONE next move, ever, in every reply that gives one. Never \
+        - Exactly ONE next move when the user's question asks for action. An \
+        explanation, reflection, or judgement does not need a drill. Never \
         bundle a second action, a mode choice plus a technique, a menu of \
         variants, or a closing question that reopens a decision you already \
         made. If you catch yourself writing "and" before a second instruction, \
@@ -1688,6 +1684,90 @@ enum CoachContextBuilder {
             lines.append(contentsOf: expertiseLines)
         }
 
+        lines.append("")
+        lines.append("=== END CONTEXT ===")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Bounded provider context for turns that do not authorize a personal
+    /// evidence read. It intentionally omits rep history, scores, transcripts,
+    /// trajectory state, and durable case memory. General craft may use only
+    /// curated technique reference; conversational turns need only the chosen
+    /// voice and the explicit no-diagnosis contract.
+    static func nonPersonalContext(
+        profile: CoachingProfile?,
+        responseKind: CoachChatResponseKind,
+        coachingExpertise: [CoachKnowledgeCard],
+        coachingBrief: CoachChatBrief? = nil
+    ) -> String {
+        var lines = [
+            "=== NON-PERSONAL COACH CONTEXT ===",
+            "TURN CONTRACT"
+        ]
+        switch responseKind {
+        case .generalCoaching:
+            lines.append("- Answer the communication craft question directly.")
+            lines.append("- No personal evidence is supplied; do not claim to have observed this speaker or a recent rep.")
+        case .conversational:
+            lines.append("- Respond to the conversation itself; do not diagnose the speaker or assign a practice move.")
+        case .memoryHandoff:
+            if coachingBrief == nil {
+                lines.append("- No consent-bound pattern is available to carry forward.")
+            } else {
+                lines.append("- Use only the separate typed memory brief; no broader personal history is supplied.")
+            }
+        case .personalEvidenceRead:
+            // These lanes use the full evidence context and should not normally
+            // call this helper. Keep the fallback contract fail-closed.
+            lines.append("- No personal evidence is supplied in this context.")
+        }
+        lines.append("STYLE PREFERENCE")
+        lines.append("- Coaching voice: \(profile?.chosenStyleGoal?.title ?? "Neutral")")
+        if responseKind == .generalCoaching {
+            let expertiseLines = CoachExpertiseFormatter.contextLines(
+                for: coachingExpertise
+            )
+            if !expertiseLines.isEmpty {
+                lines.append("")
+                lines.append(contentsOf: expertiseLines)
+            }
+        }
+        lines.append("")
+        lines.append("=== END CONTEXT ===")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Turn-scoped provider context for a personal evidence read. The typed
+    /// `CoachChatBrief` travels in its own request field and is the sole source
+    /// of personal claims; repeating the full plan, case file, active
+    /// prescription, ratings, and judgement prose here made the provider choose
+    /// between several versions of the same coaching decision.
+    static func personalTurnContext(
+        profile: CoachingProfile?,
+        coachingExpertise: [CoachKnowledgeCard],
+        hasCoachingBrief: Bool
+    ) -> String {
+        var lines = [
+            "=== TURN-SCOPED PERSONAL COACH CONTEXT ===",
+            "TURN CONTRACT"
+        ]
+        if hasCoachingBrief {
+            lines.append("- The separate typed coaching brief is the complete personal evidence allowance for this turn.")
+            lines.append("- State its useful decision once. Do not recap a plan, case file, assessment, or active prescription.")
+        } else {
+            lines.append("- No bounded personal evidence is available. Ask one question that would materially change the answer.")
+        }
+        lines.append("STYLE PREFERENCE")
+        lines.append("- Coaching voice: \(profile?.chosenStyleGoal?.title ?? "Neutral")")
+
+        let expertiseLines = CoachExpertiseFormatter.contextLines(
+            for: coachingExpertise
+        )
+        if !expertiseLines.isEmpty {
+            lines.append("")
+            lines.append(contentsOf: expertiseLines)
+            lines.append("- Use this only as communication craft. It is not another observation about the speaker.")
+        }
         lines.append("")
         lines.append("=== END CONTEXT ===")
         return lines.joined(separator: "\n")

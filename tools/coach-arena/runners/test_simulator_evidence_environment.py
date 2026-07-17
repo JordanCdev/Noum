@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 HELPER = Path(__file__).resolve().parents[1] / "simulator-evidence-environment.sh"
+COACH_ARENA_ROOT = HELPER.parent
 EXPLICIT_UDID = "BD2DE1AB-DAC7-4538-A5AD-BECC4D603C0E"
 LATEST_UDID = "LATEST-IOS-26-5-UDID"
 
@@ -64,6 +65,75 @@ raise SystemExit(64)
 
 
 class SimulatorEvidenceEnvironmentTests(unittest.TestCase):
+    def test_app_path_runners_require_disposable_simulator_and_preserve_signing(self):
+        for script_name in ["unblock-app-path.sh", "refresh-evidence.sh"]:
+            source = (COACH_ARENA_ROOT / script_name).read_text(encoding="utf-8")
+            self.assertNotIn("CODE_SIGNING_ALLOWED=NO", source, script_name)
+            self.assertNotIn(
+                "platform=iOS Simulator,name=iPhone 17 Pro",
+                source,
+                script_name,
+            )
+            self.assertIn(
+                '-z "${NOUM_COACH_XCODE_DESTINATION:-}"',
+                source,
+                script_name,
+            )
+            self.assertIn(
+                '"${NOUM_COACH_DISPOSABLE_SIMULATOR:-}" != "1"',
+                source,
+                script_name,
+            )
+            self.assertIn(
+                'destination="$NOUM_COACH_XCODE_DESTINATION"',
+                source,
+                script_name,
+            )
+            self.assertIn("destination_pattern=", source, script_name)
+            self.assertIn("must name one simulator by exact UDID", source, script_name)
+
+    def test_app_path_runners_fail_closed_without_both_disposable_inputs(self):
+        incomplete_environments = [
+            {},
+            {"NOUM_COACH_XCODE_DESTINATION": f"platform=iOS Simulator,id={EXPLICIT_UDID}"},
+            {"NOUM_COACH_DISPOSABLE_SIMULATOR": "1"},
+        ]
+        for script_name in ["unblock-app-path.sh", "refresh-evidence.sh"]:
+            script = COACH_ARENA_ROOT / script_name
+            for supplied in incomplete_environments:
+                environment = os.environ.copy()
+                environment.pop("NOUM_COACH_XCODE_DESTINATION", None)
+                environment.pop("NOUM_COACH_DISPOSABLE_SIMULATOR", None)
+                environment.update(supplied)
+                completed = subprocess.run(
+                    ["/bin/bash", str(script)],
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(completed.returncode, 2, script_name)
+                self.assertIn("NOUM_COACH_XCODE_DESTINATION", completed.stderr)
+                self.assertIn("NOUM_COACH_DISPOSABLE_SIMULATOR=1", completed.stderr)
+
+    def test_app_path_runners_reject_name_only_destination(self):
+        environment = os.environ.copy()
+        environment.update({
+            "NOUM_COACH_XCODE_DESTINATION":
+                "platform=iOS Simulator,name=iPhone 17 Pro",
+            "NOUM_COACH_DISPOSABLE_SIMULATOR": "1",
+        })
+        for script_name in ["unblock-app-path.sh", "refresh-evidence.sh"]:
+            completed = subprocess.run(
+                ["/bin/bash", str(COACH_ARENA_ROOT / script_name)],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 2, script_name)
+            self.assertIn("exact UDID", completed.stderr)
+
     def run_harness(
         self,
         destination,

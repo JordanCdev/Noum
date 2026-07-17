@@ -98,6 +98,22 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Missing callable exports: coachChat", message)
         self.assertIn("Unexpected callable exports: lookalikeCoach", message)
 
+    def test_additive_secure_coach_callable_is_required(self):
+        changed = self.source.replace(
+            "export const coachChatV2 = onCall(",
+            "const coachChatV2 = onCall(",
+            1,
+        )
+        with self.assertRaisesRegex(
+            validator.ContractError,
+            "Missing callable exports: coachChatV2",
+        ):
+            validator.validate_source_contract(changed)
+        self.assertEqual(
+            validator.EXPECTED_CALLABLES["coachChatV2"],
+            "COACH_RUNTIME_SERVICE_ACCOUNT",
+        )
+
     def test_missing_app_check_fails_closed(self):
         changed = self.source.replace("enforceAppCheck: true", "", 1)
         with self.assertRaisesRegex(

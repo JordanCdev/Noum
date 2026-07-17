@@ -24,6 +24,58 @@ struct ReleaseIdentityPrivacyTests {
         ) == .preserveLocalGuest)
     }
 
+    @Test("Automatic local guest promotion is bounded but user retry is immediate")
+    func localGuestPromotionRetryPolicy() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        #expect(AuthManager.shouldAttemptAutomaticGuestPromotion(
+            lastAttemptAt: nil,
+            now: now,
+            force: false
+        ))
+        #expect(!AuthManager.shouldAttemptAutomaticGuestPromotion(
+            lastAttemptAt: now.addingTimeInterval(-10),
+            now: now,
+            force: false
+        ))
+        #expect(AuthManager.shouldAttemptAutomaticGuestPromotion(
+            lastAttemptAt: now.addingTimeInterval(-10),
+            now: now,
+            force: true
+        ))
+        #expect(AuthManager.shouldAttemptAutomaticGuestPromotion(
+            lastAttemptAt: now.addingTimeInterval(-31),
+            now: now,
+            force: false
+        ))
+    }
+
+    @Test("Firebase coaching-content sync requires current cloud consent")
+    func coachingContentSyncRequiresConsent() {
+        #expect(!BackendSyncManager.shouldSyncCoachingContent(
+            accountID: "firebase-guest",
+            cloudProcessingAllowed: false
+        ))
+        #expect(BackendSyncManager.shouldSyncCoachingContent(
+            accountID: "firebase-guest",
+            cloudProcessingAllowed: true
+        ))
+        #expect(!BackendSyncManager.shouldSyncCoachingContent(
+            accountID: "local-guest-source",
+            cloudProcessingAllowed: true
+        ))
+    }
+
+    @Test("Promoted guest seed marker is target scoped and never local scoped")
+    func promotedGuestSeedMarkerScope() {
+        #expect(AuthManager.promotedGuestBackendSeedKey(
+            for: "firebase-guest"
+        ) == "noum.localGuestBackendSeedPending.firebase-guest")
+        #expect(AuthManager.promotedGuestBackendSeedKey(
+            for: "local-guest-source"
+        ) == nil)
+        #expect(AuthManager.promotedGuestBackendSeedKey(for: "  ") == nil)
+    }
+
     @Test("Existing authenticated accounts use normal sign in")
     func existingAccountUsesSignIn() {
         #expect(AuthManager.firebaseCredentialStrategy(
@@ -51,7 +103,7 @@ struct ReleaseIdentityPrivacyTests {
     @Test("One versioned manifest drives production processor disclosure")
     func processorManifestIsProductionScoped() {
         #expect(AISettingsManager.processorManifestVersion == CloudProcessorManifest.version)
-        #expect(CloudProcessorManifest.version == 6)
+        #expect(CloudProcessorManifest.version == 7)
         #expect(Set(CloudProcessorManifest.processors.map(\.id)) == Set([
             "deepgram",
             "apple-speech",
@@ -74,8 +126,11 @@ struct ReleaseIdentityPrivacyTests {
         #expect(firebase?.data.contains("Firebase installation data") == true)
         #expect(firebase?.data.contains("Remote Config") == true)
         #expect(firebase?.data.contains("mutual-connection invite secrets") == true)
+        #expect(firebase?.data.contains("practice-session content including transcripts") == true)
+        #expect(firebase?.data.contains("only after current cloud-processing consent") == true)
         #expect(firebase?.purpose.contains("first-run configuration") == true)
         #expect(firebase?.purpose.contains("mutual account connections") == true)
+        #expect(firebase?.purpose.contains("consent-gated account-content sync") == true)
     }
 
     @Test("Decline and stale disclosure versions keep cloud processing closed")

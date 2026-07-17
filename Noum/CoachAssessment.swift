@@ -23,6 +23,16 @@ struct CoachAssessment: Codable, Equatable {
     var confidence: Double
     var evidenceUsed: [String]
     var rubricScores: [RubricScore]
+    /// Exact evidence read requested on this turn. These projections are
+    /// non-prescriptive and remain separate from the selected rubric move.
+    var evidenceReadKind: CoachEvidenceReadKind? = nil
+    var requestedMetrics: [CoachMetricKind]? = nil
+    var latestRepMetrics: CoachLatestRepMetricProjection? = nil
+    var longitudinalTrend: CoachLongitudinalTrendProjection? = nil
+    /// Exact rubric dimension selected with `nextProofTest`. Keeping this
+    /// typed prevents downstream code from guessing intent from prose such as
+    /// "example", "ask", or "stop", which can belong to several dimensions.
+    var nextProofDimensionID: String? = nil
     var missingEvidence: [String]
     var nextProofTest: String
     var responseMode: ResponseMode

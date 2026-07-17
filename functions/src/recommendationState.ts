@@ -3,6 +3,7 @@
 import {HttpsError} from "firebase-functions/v2/https";
 
 export const RECOMMENDATION_STATE_SCHEMA_VERSION = 1;
+export const RECOMMENDATION_MUTATION_SCHEMA_VERSION = 2;
 export const RECOMMENDATION_OUTCOME_LIMIT = 40;
 export const RECOMMENDATION_STATE_MAX_BYTES = 256_000;
 const MIN_TIMESTAMP_SECONDS = 946_684_800; // 2000-01-01 UTC
@@ -43,7 +44,8 @@ export interface RecommendationStateBody {
 }
 
 export interface RecommendationMutationInput extends RecommendationStateBody {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  expectedAccountID: string;
   mutationID: string;
   expectedRemoteRevision: number;
 }
@@ -431,10 +433,18 @@ export function validateRecommendationMutation(
   value: unknown
 ): RecommendationMutationInput {
   if (!isRecord(value) || !hasOnlyKeys(value, [
-    "schemaVersion", "mutationID", "expectedRemoteRevision",
+    "schemaVersion", "expectedAccountID", "mutationID", "expectedRemoteRevision",
     "pendingExposure", "outcomes",
-  ]) || value.schemaVersion !== RECOMMENDATION_STATE_SCHEMA_VERSION) {
+  ]) || value.schemaVersion !== RECOMMENDATION_MUTATION_SCHEMA_VERSION) {
     throw new HttpsError("invalid-argument", "Unsupported recommendation schema.");
+  }
+  const expectedAccountID = requiredString(
+    value.expectedAccountID,
+    "expectedAccountID",
+    128
+  );
+  if (expectedAccountID !== expectedAccountID.trim()) {
+    throw new HttpsError("invalid-argument", "expectedAccountID is invalid.");
   }
   const mutationID = requiredString(value.mutationID, "mutationID", 64);
   if (!UUID_PATTERN.test(mutationID)) {
@@ -446,11 +456,25 @@ export function validateRecommendationMutation(
     throw new HttpsError("invalid-argument", "Remote revision is invalid.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: RECOMMENDATION_MUTATION_SCHEMA_VERSION,
+    expectedAccountID,
     mutationID,
     expectedRemoteRevision: value.expectedRemoteRevision as number,
     ...validatedBody(value.pendingExposure, value.outcomes),
   };
+}
+
+/** Requires a mutation request to name the verified callable identity. */
+export function assertRecommendationMutationIdentity(
+  expectedAccountID: string,
+  authenticatedUID: string
+): void {
+  if (expectedAccountID !== authenticatedUID) {
+    throw new HttpsError(
+      "permission-denied",
+      "Recommendation identity did not match the secure session."
+    );
+  }
 }
 
 /** Reads an absent, exact legacy, or current versioned document. */

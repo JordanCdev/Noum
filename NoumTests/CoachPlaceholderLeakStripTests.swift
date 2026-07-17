@@ -118,14 +118,14 @@ struct CoachPlaceholderLeakStripTests {
                 "Gate must flag a comma-joined scaffold label so the chain regenerates; got \(String(describing: issue))")
     }
 
-    @Test("A progress turn that legitimately cites the requested metric trend is NOT stripped")
+    @Test("An exact-stat turn that legitimately cites the requested trend is NOT stripped")
     func explicitMetricTurnIsNotStripped() {
-        // deepAssessment + the user explicitly asked about improvement, so the
-        // report-voice backstop must NOT fire — the finalize is turn-aware.
+        // Broad "am I improving?" is a coaching read, not numeric permission.
+        // This control explicitly asks for the exact filler-rate statistics.
         let reply = "Real improvement. Fillers dropped from 6.0 to 3.4 per minute over five weeks — that is not noise."
         let finalized = AICoachChatService.finalizedCoachReply(
             from: reply,
-            latestUserTurn: "Am I actually improving or am I just doing reps?",
+            latestUserTurn: "What were my exact filler rate stats?",
             turnDepth: .deepAssessment
         )
         #expect(finalized.contains("3.4 per minute"),

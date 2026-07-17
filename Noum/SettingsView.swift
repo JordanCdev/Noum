@@ -15,6 +15,55 @@ import AVFAudio
 
 // MARK: - Settings Screen
 
+/// Pure account-card policy. A `local-guest-*` identity owns data only on this
+/// device, so presenting it as a signed-in cloud account or offering Sign out
+/// would imply recovery guarantees the current lifecycle does not provide.
+struct SettingsAccountPresentation: Equatable {
+    let identityTitle: String
+    let identityValue: String
+    let providerTitle: String?
+    let isOnDeviceGuest: Bool
+    let showsSignOut: Bool
+    let showsConnectCoaching: Bool
+    let deletionAccessibilityHint: String
+
+    static func resolve(
+        accountID: String?,
+        displayName: String,
+        providerTitle: String?,
+        providerRawValue: String?,
+        hasPendingPromotion: Bool = false
+    ) -> SettingsAccountPresentation {
+        let isOnDeviceGuest = accountID.map {
+            !AuthManager.shouldSyncBackend(accountID: $0)
+        } ?? false
+        if isOnDeviceGuest {
+            return SettingsAccountPresentation(
+                identityTitle: "Account",
+                identityValue: "On-device guest",
+                providerTitle: nil,
+                isOnDeviceGuest: true,
+                showsSignOut: false,
+                showsConnectCoaching: true,
+                deletionAccessibilityHint: "Deletes this on-device guest and its local practice data after confirmation."
+            )
+        }
+        let isAnonymousGuest = providerRawValue == AuthProvider.guest.rawValue
+        return SettingsAccountPresentation(
+            identityTitle: "Signed in as",
+            identityValue: displayName,
+            providerTitle: providerTitle,
+            isOnDeviceGuest: false,
+            // An anonymous Firebase guest has no credential that can sign back
+            // into the same UID. Clearing it would strand both local history
+            // and backend-deletion authority; link or delete remains available.
+            showsSignOut: !isAnonymousGuest && !hasPendingPromotion,
+            showsConnectCoaching: false,
+            deletionAccessibilityHint: "Requests permanent deletion after a typed confirmation. Local data stays until the remote account service succeeds."
+        )
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -212,6 +261,7 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
+                isOnDeviceGuest: accountPresentation.isOnDeviceGuest,
                 initialError: AccountDeletionConfirmationPresentation.initialError(
                     from: authManager.accountDeletionState
                 ),
@@ -377,6 +427,21 @@ struct SettingsView: View {
 
     private var displayName: String {
         AuthManager.userFacingDisplayName(from: authManager.currentAccountName)
+    }
+
+    private var accountPresentation: SettingsAccountPresentation {
+        SettingsAccountPresentation.resolve(
+            accountID: authManager.currentAccountID,
+            displayName: displayName,
+            providerTitle: authManager.currentAuthProviderTitle,
+            providerRawValue: authManager.currentAuthProviderRawValue,
+            hasPendingPromotion: authManager.hasPendingLocalGuestPromotion
+        )
+    }
+
+    private var accountMutationIsBlocked: Bool {
+        authManager.hasPendingLocalGuestPromotion
+            || authManager.localGuestCloudConnectionState.blocksAccountMutation
     }
 
     /// Premium-tier presence tint for the hero avatar + ambient register.
@@ -1312,12 +1377,13 @@ struct SettingsView: View {
     private var accountCard: some View {
         cardContainer(spacing: Spacing.sm) {
             if authManager.isSignedIn {
+                let presentation = accountPresentation
                 SettingsStatusRow(
-                    title: "Signed in as",
-                    value: displayName,
+                    title: presentation.identityTitle,
+                    value: presentation.identityValue,
                     valueTint: .primary
                 )
-                if let provider = authManager.currentAuthProviderTitle {
+                if let provider = presentation.providerTitle {
                     SettingsStatusRow(
                         title: "Provider",
                         value: provider,
@@ -1327,14 +1393,48 @@ struct SettingsView: View {
 
                 Divider()
 
-                Button {
-                    showSignOutAlert = true
-                } label: {
-                    accountActionLabel(title: "Sign out", tint: AppColor.warning, icon: "arrow.right.square")
+                if presentation.showsConnectCoaching {
+                    Button {
+                        Task { @MainActor in
+                            await authManager.connectLocalGuestToCloud(
+                                force: true
+                            )
+                        }
+                    } label: {
+                        accountActionLabel(
+                            title: "Connect live coaching",
+                            tint: AppColor.brandBlue,
+                            icon: "bolt.horizontal.circle.fill"
+                        )
+                    }
+                    .buttonStyle(.pressable)
+                    .disabled(accountMutationIsBlocked)
+                    .accessibilityHint("Creates a secure guest connection and keeps your existing practice history on this device.")
+                    .accessibilityIdentifier("settings.account.connectCoaching")
+
+                    Divider()
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("Sign out")
-                .accessibilityHint("Signs you out on this device. Your data stays on your account.")
+
+                if accountMutationIsBlocked {
+                    SettingsStatusRow(
+                        title: "Account connection",
+                        value: "Finishing securely",
+                        valueTint: AppColor.caution,
+                        icon: "arrow.triangle.2.circlepath"
+                    )
+                    Divider()
+                }
+
+                if presentation.showsSignOut {
+                    Button {
+                        showSignOutAlert = true
+                    } label: {
+                        accountActionLabel(title: "Sign out", tint: AppColor.warning, icon: "arrow.right.square")
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Sign out")
+                    .accessibilityHint("Signs you out on this device. Your data stays on your account.")
+                }
 
                 Button {
                     showDeleteSheet = true
@@ -1342,8 +1442,13 @@ struct SettingsView: View {
                     accountActionLabel(title: "Delete account", tint: AppColor.warning, icon: "trash.fill")
                 }
                 .buttonStyle(.pressable)
+                .disabled(accountMutationIsBlocked)
                 .accessibilityLabel("Delete account")
-                .accessibilityHint("Requests permanent deletion after a typed confirmation. Local data stays until the remote account service succeeds.")
+                .accessibilityHint(
+                    accountMutationIsBlocked
+                        ? "Available after the secure account connection finishes."
+                        : presentation.deletionAccessibilityHint
+                )
                 .accessibilityIdentifier("settings.account.delete")
             } else {
                 SettingsStatusRow(
@@ -2181,7 +2286,7 @@ struct CloudProcessingConsentDisclosure: View {
                         Text("Cloud coaching, with your permission")
                             .font(Typography.bigStat)
                             .foregroundStyle(AppColor.textPrimary)
-                        Text("Noum can still show deterministic coaching when cloud processing is off. Some live transcription, conversation, and generated coaching features will be unavailable.")
+                        Text("Firebase Authentication may establish a secure guest identifier before you decide. Noum does not upload your coaching content until you allow cloud processing, and deterministic coaching stays available where supported.")
                             .font(Typography.body)
                             .foregroundStyle(AppColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -2189,6 +2294,11 @@ struct CloudProcessingConsentDisclosure: View {
 
                     CardView {
                         VStack(alignment: .leading, spacing: Spacing.md) {
+                            disclosureRow(
+                                icon: "cloud.fill",
+                                title: "Account-content storage",
+                                detail: "After you allow, Firebase may sync your coaching profile, XP, practice sessions—including transcripts and session evidence—and recommendation state. Missing, declined, or stale permission keeps that content on this device."
+                            )
                             disclosureRow(
                                 icon: "waveform",
                                 title: "Audio and transcripts",
@@ -2361,6 +2471,7 @@ enum AccountDeletionConfirmationPresentation: Equatable {
 
 @available(iOS 17.0, macOS 12.0, *)
 private struct DeleteAccountConfirmationSheet: View {
+    let isOnDeviceGuest: Bool
     let supportURLProvider: () -> URL
     let onConfirm: () async throws -> Void
     let onClose: () -> Void
@@ -2387,6 +2498,7 @@ private struct DeleteAccountConfirmationSheet: View {
     }
 
     init(
+        isOnDeviceGuest: Bool = false,
         initialError: AccountDeletionError? = nil,
         supportURLProvider: @escaping () -> URL = {
             NoumWebURLs.supportMail
@@ -2395,6 +2507,7 @@ private struct DeleteAccountConfirmationSheet: View {
         onClose: @escaping () -> Void,
         onReauthenticate: @escaping () -> Void
     ) {
+        self.isOnDeviceGuest = isOnDeviceGuest
         self.supportURLProvider = supportURLProvider
         self.onConfirm = onConfirm
         self.onClose = onClose
@@ -2413,7 +2526,11 @@ private struct DeleteAccountConfirmationSheet: View {
                         .foregroundStyle(AppColor.warning)
                     Text("Delete account")
                         .font(Typography.bigStat)
-                    Text("This permanently removes your account, account-scoped practice history, coaching data, and active cloud records. Noum keeps a content-free deletion-security record with account and request identifiers, status, and timestamps as a temporary write fence; automatic cleanup and server reconciliation manage that record. You can't undo a completed deletion.")
+                    Text(
+                        isOnDeviceGuest
+                            ? "This permanently removes this on-device guest and its account-scoped practice history and coaching data from this device. This guest does not have a Firebase-backed Noum account. You can't undo a completed deletion."
+                            : "This permanently removes your account, account-scoped practice history, coaching data, and active cloud records. Noum keeps a content-free deletion-security record with account and request identifiers, status, and timestamps as a temporary write fence; automatic cleanup and server reconciliation manage that record. You can't undo a completed deletion."
+                    )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2432,10 +2549,12 @@ private struct DeleteAccountConfirmationSheet: View {
                         .foregroundStyle(AppColor.brandBlue)
                         .frame(minHeight: 44)
                         .accessibilityHint("Opens an email to \(NoumWebURLs.supportEmail).")
-                    Text("For Sign in with Apple, Noum will stop before deleting anything unless its Apple authorization can also be revoked safely.")
-                        .font(.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !isOnDeviceGuest {
+                        Text("For Sign in with Apple, Noum will stop before deleting anything unless its Apple authorization can also be revoked safely.")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 if let deletionError {
@@ -2532,7 +2651,9 @@ private struct DeleteAccountConfirmationSheet: View {
                         .accessibilityLabel(presentation.primaryActionTitle)
                         .accessibilityHint(
                             actionIsEnabled
-                                ? presentation.primaryActionAccessibilityHint
+                                ? (isOnDeviceGuest && presentation == .confirmation
+                                    ? "Permanently deletes this on-device guest and its local practice data."
+                                    : presentation.primaryActionAccessibilityHint)
                                 : "Type delete first to enable."
                         )
                     }
@@ -2563,7 +2684,9 @@ private struct DeleteAccountConfirmationSheet: View {
                     Text(
                         presentation == .localCleanup
                             ? "Finishing device cleanup…"
-                            : "Removing your account…"
+                            : (isOnDeviceGuest
+                                ? "Removing this on-device guest…"
+                                : "Removing your account…")
                     )
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
@@ -2574,7 +2697,9 @@ private struct DeleteAccountConfirmationSheet: View {
                 .accessibilityLabel(
                     presentation == .localCleanup
                         ? "Finishing device cleanup"
-                        : "Removing your account"
+                        : (isOnDeviceGuest
+                            ? "Removing this on-device guest"
+                            : "Removing your account")
                 )
             }
         }
@@ -2674,7 +2799,7 @@ struct YourDataView: View {
             Text("Cloud processing")
                 .font(.headline)
 
-            Text("Permission: \(aiSettings.cloudProcessingStatusTitle). When allowed and you use a cloud feature, data may be sent to these services:")
+            Text("Permission: \(aiSettings.cloudProcessingStatusTitle). When allowed, account-content sync and cloud features may send the disclosed data to these services:")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 

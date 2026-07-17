@@ -284,6 +284,17 @@ actor ForwardPlanService {
         cancelActiveProviderTransports(for: accountScope)
     }
 
+    /// Account promotion changes the durable owner without deleting either
+    /// namespace. Revoke every old-account lease/transport but do not install
+    /// a deletion state that would need an unsafe generic resume.
+    func invalidateProviderWorkForAccountTransition(accountID: String) {
+        guard let accountScope = Self.normalizedAccountScope(accountID) else {
+            return
+        }
+        revokePendingProviderTransportAdmissions(for: accountScope)
+        cancelActiveProviderTransports(for: accountScope)
+    }
+
     /// Reopen provider admission only for the explicit recoverable path where
     /// deletion failed before any destructive remote work began. Generic or
     /// post-remote failures must not call this method.

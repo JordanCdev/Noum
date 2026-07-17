@@ -150,6 +150,126 @@ struct TurnDepthClassifierTests {
         ) == .groundedRead)
     }
 
+    @Test func directnessPreferenceUsesConversationalResponseLane() {
+        let turn = "Be direct with me."
+        let intent = CoachChatTurnIntent.classify(turn)
+
+        #expect(intent == .preference)
+        #expect(CoachChatResponseKind.classify(
+            turn,
+            intent: intent
+        ) == .conversational)
+    }
+
+    @Test func failedAnswerQuestionUsesGroundedPersonalEvidenceLane() {
+        let turn = "Why did that answer land badly?"
+        let intent = CoachChatTurnIntent.classify(turn)
+
+        #expect(TurnDepthClassifier.isSpecificAnswerLandingRead(turn))
+        #expect(TurnDepthClassifier.classify(userText: turn) == .groundedRead)
+        #expect(intent == .coaching)
+        #expect(CoachChatResponseKind.classify(
+            turn,
+            intent: intent
+        ) == .personalEvidenceRead)
+    }
+
+    @Test func broadPerformanceReadsUsePersonalEvidenceDepths() {
+        for turn in ["How did I do?", "How’d I do?", "How was my answer?"] {
+            #expect(TurnDepthClassifier.isBroadPerformanceRead(turn))
+            #expect(TurnDepthClassifier.classify(userText: turn) == .groundedRead)
+        }
+        for turn in [
+            "How am I doing?",
+            "Am I improving?",
+            "Am I actually improving or am I just doing reps?",
+            "Have I improved?"
+        ] {
+            #expect(TurnDepthClassifier.isBroadPerformanceRead(turn))
+            #expect(TurnDepthClassifier.classify(userText: turn) == .deepAssessment)
+        }
+    }
+
+    @Test func broadPerformanceReadMatchingDoesNotSwallowHowToQuestions() {
+        for turn in [
+            "How did I do that?",
+            "How am I doing this exercise?",
+            "How do I improve my close?"
+        ] {
+            #expect(!TurnDepthClassifier.isBroadPerformanceRead(turn))
+        }
+        #expect(TurnDepthClassifier.classify(
+            userText: "How do I improve my close?"
+        ) == .quickMove)
+    }
+
+    @Test func exactMetricsAreDistinctFromBroadEvaluation() {
+        for turn in [
+            "What were my exact stats?",
+            "What's my score?",
+            "Can you show me my stats?",
+            "Could you give me my filler count?",
+            "And my filler count?",
+            "My pace?",
+            "How many fillers did I use?"
+        ] {
+            #expect(TurnDepthClassifier.explicitlyRequestsMetrics(turn))
+            #expect(CoachChatTurnIntent.classify(turn) == .coaching)
+            #expect(CoachChatResponseKind.classify(turn) == .personalEvidenceRead)
+        }
+        #expect(!TurnDepthClassifier.explicitlyRequestsMetrics("How did I do?"))
+        #expect(!TurnDepthClassifier.explicitlyRequestsMetrics("Am I improving?"))
+        for turn in [
+            "What is a good speaking pace?",
+            "What should my score be?",
+            "Can you show me how to improve my score?",
+            "What is my best way to improve my score?",
+            "How many fillers is too many?"
+        ] {
+            #expect(!TurnDepthClassifier.explicitlyRequestsMetrics(turn))
+            #expect(CoachChatResponseKind.classify(turn) == .generalCoaching)
+        }
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "What were my exact stats?"
+        ) == CoachMetricKind.allCases)
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "What's my score?"
+        ) == [.score])
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "Can you show me my stats?"
+        ) == CoachMetricKind.allCases)
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "Could you give me my filler count?"
+        ) == [.fillerCount])
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "And my filler count?"
+        ) == [.fillerCount])
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "My pace?"
+        ) == [.paceWordsPerMinute])
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "How many fillers did I use?"
+        ) == [.fillerCount])
+        #expect(TurnDepthClassifier.requestedPersonalMetrics(
+            "What was my filler rate and pace?"
+        ) == [.fillerRatePerMinute, .paceWordsPerMinute])
+        #expect(!TurnDepthClassifier.explicitlyRequestsMetrics("My data?"))
+        #expect(CoachChatTurnIntent.classify("My data?") == .coaching)
+        #expect(CoachChatResponseKind.classify("My data?") == .generalCoaching)
+    }
+
+    @Test func mixedMetricTurnsHonorRepairAndStateChangeIntent() {
+        let styleRepair = "What's my score? Your wording is robotic."
+        #expect(TurnDepthClassifier.explicitlyRequestsMetrics(styleRepair))
+        #expect(CoachChatTurnIntent.classify(styleRepair) == .preference)
+        #expect(CoachChatResponseKind.classify(styleRepair) == .conversational)
+
+        let goalChange = "What's my score? Change my goal to concise."
+        #expect(TurnDepthClassifier.explicitlyRequestsMetrics(goalChange))
+        #expect(CoachChatTurnIntent.classify(goalChange) == .preference)
+        #expect(CoachChatResponseKind.classify(goalChange) == .conversational)
+    }
+
     @Test func coachPushbackIsTrustRepair() {
         #expect(TurnDepthClassifier.classify(
             userText: "That's not informative at all. You missed the point."
@@ -585,6 +705,222 @@ struct UserTrajectoryCacheTests {
         #expect(!withheld.trendLines.contains { $0.contains("recent filler rate:") })
     }
 
+    @Test func latestMetricProjectionRequiresCurrentQualifiedProvenance() throws {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        defer { cache.invalidate() }
+        let transcript = Array(repeating: "word", count: 120)
+            .joined(separator: " ")
+        let sessionID = UUID()
+        let qualified = Self.session(
+            id: sessionID,
+            date: Date(timeIntervalSince1970: 6_750),
+            fillerWordCount: 3,
+            transcript: transcript,
+            duration: 60,
+            score: 8,
+            confidence: 0.90,
+            mode: .ahCounter
+        )
+
+        let first = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [qualified],
+            coachMemory: nil
+        )
+        let projection = try #require(
+            first.snapshot.latestRepEvidencePack?.metricProjection
+        )
+        #expect(projection.sourceSessionID == sessionID)
+        #expect(projection.comparisonMetricSchemaVersion == 2)
+        #expect(projection.fillerCount == 3)
+        #expect(projection.fillerRatePerMinute == 3)
+        #expect(projection.paceWordsPerMinute == 120)
+
+        var staleSchema = qualified
+        staleSchema.comparisonMetricSchemaVersion = 1
+        let stale = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [staleSchema],
+            coachMemory: nil
+        )
+        #expect(stale.cacheHit == false)
+        #expect(stale.snapshot.latestRepEvidencePack?.metricProjection == nil)
+
+        let lowConfidence = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 6_800),
+            fillerWordCount: 3,
+            transcript: transcript,
+            duration: 60,
+            score: 8,
+            confidence: 0.49,
+            mode: .ahCounter
+        )
+        let lowConfidenceProjection = try #require(cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [lowConfidence],
+            coachMemory: nil
+        ).snapshot.latestRepEvidencePack?.metricProjection)
+        #expect(lowConfidenceProjection.score == 8)
+        #expect(lowConfidenceProjection.fillerCount == nil)
+        #expect(lowConfidenceProjection.fillerRatePerMinute == nil)
+        #expect(lowConfidenceProjection.paceWordsPerMinute == nil)
+
+        var fixture = qualified
+        fixture.id = UUID()
+        fixture.isEvaluationFixture = true
+        let fixtureSnapshot = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [fixture],
+            coachMemory: nil
+        ).snapshot
+        #expect(fixtureSnapshot.latestRepEvidencePack == nil)
+    }
+
+    @Test func latestMetricProjectionUsesCanonicalSessionWordAndPaceMetrics() throws {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        defer { cache.invalidate() }
+        let transcript = Array(repeating: "clear—point", count: 10)
+            .joined(separator: " ")
+        let session = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 6_900),
+            fillerWordCount: 0,
+            transcript: transcript,
+            duration: 15.4,
+            score: 7,
+            confidence: 0.90,
+            mode: .ahCounter
+        )
+
+        let projection = try #require(cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        ).snapshot.latestRepEvidencePack?.metricProjection)
+
+        #expect(session.wordCount == 20)
+        #expect(session.wordsPerMinute == 78)
+        #expect(projection.transcriptWordCount == session.wordCount)
+        #expect(projection.paceWordsPerMinute == session.wordsPerMinute)
+    }
+
+    @Test func longitudinalProjectionUsesTwoExactComparablePriorReps() throws {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        defer { cache.invalidate() }
+        let transcript = Array(repeating: "word", count: 120)
+            .joined(separator: " ")
+        let latest = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 9_000),
+            fillerWordCount: 2,
+            transcript: transcript,
+            duration: 60,
+            score: 8,
+            confidence: 0.90,
+            mode: .ahCounter
+        )
+        let firstPrior = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 8_900),
+            fillerWordCount: 4,
+            transcript: transcript,
+            duration: 60,
+            score: 6,
+            confidence: 0.90,
+            mode: .ahCounter
+        )
+        let secondPrior = Self.session(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 8_800),
+            fillerWordCount: 5,
+            transcript: transcript,
+            duration: 60,
+            score: 7,
+            confidence: 0.90,
+            mode: .ahCounter
+        )
+
+        let trend = try #require(cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [latest, firstPrior, secondPrior],
+            coachMemory: nil
+        ).snapshot.qualifiedLongitudinalTrend)
+        #expect(trend.sourceSessionID == latest.id)
+        #expect(Set(trend.comparableSessionIDs) == Set([
+            firstPrior.id,
+            secondPrior.id
+        ]))
+        #expect(trend.metrics.first { $0.metric == .score }?.direction == .improving)
+        #expect(trend.metrics.first {
+            $0.metric == .fillerRatePerMinute
+        }?.direction == .improving)
+
+        cache.invalidate()
+        var scorelessPrior = secondPrior
+        scorelessPrior.score = nil
+        let partialScoreTrend = try #require(cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [latest, firstPrior, scorelessPrior],
+            coachMemory: nil
+        ).snapshot.qualifiedLongitudinalTrend)
+        #expect(partialScoreTrend.metrics.contains { $0.metric == .score } == false)
+        #expect(partialScoreTrend.metrics.contains {
+            $0.metric == .fillerRatePerMinute
+        })
+
+        cache.invalidate()
+        let onePrior = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [latest, firstPrior],
+            coachMemory: nil
+        ).snapshot
+        #expect(onePrior.qualifiedLongitudinalTrend == nil)
+
+        var wrongPressure = secondPrior
+        wrongPressure.pressureLevel = .elevated
+        cache.invalidate()
+        let mismatched = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [latest, firstPrior, wrongPressure],
+            coachMemory: nil
+        ).snapshot
+        #expect(mismatched.qualifiedLongitudinalTrend == nil)
+    }
+
+    @Test func longitudinalDirectionUsesTheValuesSentAcrossTheWire() throws {
+        let trend = try #require(UserTrajectoryCache.longitudinalMetricTrend(
+            metric: .fillerRatePerMinute,
+            currentValue: 2.04,
+            priorAverage: 2.76
+        ))
+
+        #expect(trend.currentValue == 2.0)
+        #expect(trend.priorAverage == 2.8)
+        #expect(trend.direction == .improving)
+    }
+
     @Test @MainActor func practiceFinalizerPrewarmsCurrentStoreSnapshot() {
         let cache = UserTrajectoryCache.shared
         let sessionStore = PracticeSessionStore.shared
@@ -650,14 +986,15 @@ struct UserTrajectoryCacheTests {
         transcript: String = "We should make the decision now because the team needs a clear recommendation.",
         duration: TimeInterval = 60,
         score: Int? = 7,
-        confidence: Double? = nil
+        confidence: Double? = nil,
+        mode: PracticeMode = .timed
     ) -> PracticeSession {
         var session = PracticeSession(
             transcript: transcript,
             fillerWordCount: fillerWordCount,
             duration: duration,
             date: date,
-            mode: .timed,
+            mode: mode,
             score: score,
             transcriptConfidence: confidence
         )
@@ -847,7 +1184,116 @@ struct CoachAssessmentCacheTests {
 @Suite("CoachReasoningPassTests")
 struct CoachReasoningPassTests {
 
-    @Test func fillerRubricPenaltyNormalizesEqualCountsByDuration() throws {
+    @Test func exactStatReadCarriesTypedProjectionWithoutInventingAMove() throws {
+        let sourceID = UUID()
+        var trajectory = Self.singleRepTrajectory
+        trajectory.latestRepEvidencePack = LatestRepEvidencePack(
+            mode: "Ah Counter",
+            score: 8,
+            fillerCount: 3,
+            durationSeconds: 60,
+            wordsPerMinute: 120,
+            transcriptWordCount: 120,
+            transcriptConfidence: 0.90,
+            transcriptExcerpt: nil,
+            evidenceLines: ["latest rep: Ah Counter, 8/10, 3 fillers, 60s"],
+            sourceSessionID: sourceID,
+            comparisonMetricSchemaVersion: 2,
+            isEvaluationFixture: false
+        )
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "How many fillers did I use?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .authoritative
+            ),
+            surface: .text
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+
+        #expect(assessment.evidenceReadKind == .latestRepMetrics)
+        #expect(assessment.requestedMetrics == [.fillerCount])
+        #expect(assessment.latestRepMetrics?.sourceSessionID == sourceID)
+        #expect(brief.evidenceStrength == .weak)
+        #expect(brief.nextMove == nil)
+        #expect(brief.directVerdict ==
+            "Your latest Ah Counter rep had 3 fillers in 60 seconds.")
+        #expect(!brief.directVerdict.lowercased().contains("qualified"))
+
+        let object = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(brief)
+        ) as? [String: Any])
+        #expect(object["evidenceReadKind"] as? String == "latestRepMetrics")
+        #expect(object["requestedMetrics"] as? [String] == ["fillerCount"])
+        let projection = try #require(
+            object["latestRepMetrics"] as? [String: Any]
+        )
+        #expect(projection["sourceSessionID"] as? String == sourceID.uuidString)
+        #expect(projection["comparisonMetricSchemaVersion"] as? Int == 2)
+
+        let completeAssessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "Can you show me my stats?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .authoritative
+            ),
+            surface: .text
+        )
+        let completeBrief = CoachChatBrief(assessment: completeAssessment)
+        #expect(completeAssessment.requestedMetrics == CoachMetricKind.allCases)
+        #expect(completeBrief.directVerdict ==
+            "In your latest Ah Counter rep, you scored 8/10, had 3 fillers (3.0 per minute), averaged 120 WPM, and spoke for 60 seconds.")
+    }
+
+    @Test func longitudinalReadStaysMetricSpecificAndNonPrescriptive() throws {
+        var trajectory = Self.singleRepTrajectory
+        trajectory.qualifiedLongitudinalTrend = CoachLongitudinalTrendProjection(
+            sourceSessionID: UUID(),
+            comparisonMetricSchemaVersion: 2,
+            mode: "Ah Counter",
+            comparableSessionIDs: [UUID(), UUID()],
+            metrics: [
+                CoachLongitudinalMetricTrend(
+                    metric: .score,
+                    direction: .improving,
+                    currentValue: 8,
+                    priorAverage: 7
+                ),
+                CoachLongitudinalMetricTrend(
+                    metric: .fillerRatePerMinute,
+                    direction: .declining,
+                    currentValue: 4,
+                    priorAverage: 3
+                )
+            ]
+        )
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .deepAssessment,
+            userQuestion: "Am I improving?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .authoritative
+            ),
+            surface: .text
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+
+        #expect(assessment.evidenceReadKind == .longitudinalTrend)
+        #expect(brief.evidenceStrength == .repeated)
+        #expect(brief.nextMove == nil)
+        #expect(brief.directVerdict.lowercased().contains("rep is mixed"))
+        #expect(brief.directVerdict.lowercased().contains("same setup"))
+        #expect(brief.directVerdict.lowercased().contains("not proof"))
+        #expect(!brief.directVerdict.lowercased().contains("you are improving"))
+        #expect(!brief.directVerdict.lowercased().contains("practice again"))
+    }
+
+    @Test func pacingRubricPenaltyNormalizesEqualCountsByDuration() throws {
         func assessment(duration: Int) -> CoachAssessment {
             var trajectory = Self.singleRepTrajectory
             trajectory.latestRepEvidencePack = LatestRepEvidencePack(
@@ -872,11 +1318,15 @@ struct CoachReasoningPassTests {
             )
         }
 
-        let dense = try #require(assessment(duration: 15).rubricScores.first { $0.dimensionID == "hedge_control" })
-        let sparse = try #require(assessment(duration: 120).rubricScores.first { $0.dimensionID == "hedge_control" })
+        let dense = try #require(assessment(duration: 15).rubricScores.first {
+            $0.dimensionID == "controlled_pacing"
+        })
+        let sparse = try #require(assessment(duration: 120).rubricScores.first {
+            $0.dimensionID == "controlled_pacing"
+        })
         #expect(dense.score < sparse.score)
-        #expect(dense.evidence.first?.contains("8.0/min") == true)
-        #expect(sparse.evidence.first?.contains("1.0/min") == true)
+        #expect(dense.evidence.first?.contains("8.0 fillers/min") == true)
+        #expect(sparse.evidence.first?.contains("1.0 fillers/min") == true)
     }
 
     @Test func subFloorLatestRepCannotDemonstrateHedgeOrPaceControl() throws {
@@ -905,11 +1355,11 @@ struct CoachReasoningPassTests {
         )
         let hedge = try #require(assessment.rubricScores.first { $0.dimensionID == "hedge_control" })
         let pace = try #require(assessment.rubricScores.first { $0.dimensionID == "controlled_pacing" })
-        #expect(hedge.score == 0.45)
+        #expect(hedge.score == 0.60)
         #expect(pace.score == 0.42)
         #expect(hedge.missingEvidence != nil)
         #expect(pace.missingEvidence != nil)
-        #expect(hedge.evidence.first?.contains("not enough duration-qualified speech") == true)
+        #expect(hedge.evidence.first?.contains("not judged from wording") == true)
         #expect(pace.evidence.first?.contains("no duration-qualified pace estimate") == true)
     }
 
@@ -927,8 +1377,9 @@ struct CoachReasoningPassTests {
             surface: .text
         )
         let hedge = try #require(assessment.rubricScores.first { $0.dimensionID == "hedge_control" })
-        #expect(hedge.score == 0.45)
+        #expect(hedge.score == 0.60)
         #expect(hedge.missingEvidence != nil)
+        #expect(hedge.evidence.first?.contains("not judged from wording") == true)
     }
 
     @Test func genericQuickMoveDoesNotPrescribeFillersFromTinyRep() {
@@ -1021,7 +1472,7 @@ struct CoachReasoningPassTests {
             durationSeconds: 60,
             wordsPerMinute: 145,
             transcriptWordCount: 72,
-            transcriptExcerpt: "My recommendation is to prioritize the launch because the team needs one decision this week so",
+            transcriptExcerpt: "My recommendation is to prioritize the launch because the team needs one decision this week, um.",
             evidenceLines: [
                 "latest rep: Timed, 7/10, 1 fillers, 60s",
                 "pace estimate: 145 WPM"
@@ -1442,13 +1893,39 @@ struct CoachReasoningPassTests {
             previousCoachReply: "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner."
         )
 
-        #expect(assessment.directVerdict.contains("testable hypothesis only"))
+        #expect(assessment.directVerdict.contains("carry forward for now"))
         #expect(assessment.directVerdict.contains("disagreement may be getting softened by setup"))
-        #expect(assessment.nextProofTest == "Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.")
+        #expect(assessment.nextProofTest == "Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it.")
         #expect(assessment.evidenceUsed.first == "conversation hypothesis: disagreement may be getting softened by setup")
-        #expect(assessment.immediateCoachRead.lowercased().contains("testable hypothesis only"))
-        #expect(assessment.immediateCoachRead.lowercased().contains("drop it if verdict-first solves it"))
+        #expect(assessment.immediateCoachRead.lowercased().contains("carry forward for now"))
+        #expect(assessment.immediateCoachRead.lowercased().contains("drop this read if verdict-first solves it"))
         #expect(!assessment.immediateCoachRead.lowercased().contains("no maybe"))
+    }
+
+    @Test func memoryHandoffDoesNotPromoteAnArbitraryFirstSentence() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "What should Noum remember?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(
+                rubric: GoalRubricStore.rubric(for: .authoritative),
+                voice: .executive
+            ),
+            surface: .text,
+            previousCoachReply: "I hear you. One possible pattern is that warmth changes under pressure. Drop this read if the next two answers do not support it."
+        )
+
+        #expect(assessment.directVerdict ==
+            "I don't have a clear pattern to carry forward yet.")
+        #expect(assessment.nextProofTest.isEmpty)
+        #expect(!assessment.evidenceUsed.contains(where: {
+            $0.lowercased().hasPrefix("prior coach read:") ||
+                $0.lowercased().hasPrefix("conversation hypothesis:")
+        }))
+        #expect(CoachChatBrief.applicable(
+            assessment: assessment,
+            responseKind: .memoryHandoff
+        ) == nil)
     }
 
     private static let openEndedRubric = ActiveGoalRubric(
@@ -1499,6 +1976,147 @@ struct CoachReasoningPassTests {
 
 @Suite("CoachSemanticQualityGateTests")
 struct CoachSemanticQualityGateTests {
+
+    @Test func typedEvidenceReadsPassWithoutADrillAndRejectMetricRelabeling() {
+        let latestProjection = CoachLatestRepMetricProjection(evidencePack:
+            LatestRepEvidencePack(
+                mode: "Ah Counter",
+                score: 3,
+                fillerCount: 3,
+                durationSeconds: 60,
+                wordsPerMinute: 120,
+                transcriptWordCount: 120,
+                transcriptConfidence: 0.90,
+                transcriptExcerpt: nil,
+                evidenceLines: [],
+                sourceSessionID: UUID(),
+                comparisonMetricSchemaVersion: 2,
+                isEvaluationFixture: false
+            )
+        )
+        let exactAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "How many fillers did I use?",
+            directVerdict: "",
+            confidence: 0.60,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .latestRepMetrics,
+            requestedMetrics: [.fillerCount],
+            latestRepMetrics: latestProjection,
+            missingEvidence: [],
+            nextProofTest: "Record another rep.",
+            responseMode: .immediateOnly
+        )
+        let exactBrief = CoachChatBrief(assessment: exactAssessment)
+        let exactIssue = AICoachChatService.replyQualityIssue(
+            in: exactBrief.directVerdict,
+            latestUserTurn: "How many fillers did I use?",
+            turnDepth: .groundedRead,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: exactBrief
+        )
+        let relabeledIssue = AICoachChatService.replyQualityIssue(
+            in: "Your latest rep scored 3/10.",
+            latestUserTurn: "How many fillers did I use?",
+            turnDepth: .groundedRead,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: exactBrief
+        )
+        let inventedDrillIssue = AICoachChatService.replyQualityIssue(
+            in: exactBrief.directVerdict + " Record another rep now.",
+            latestUserTurn: "How many fillers did I use?",
+            turnDepth: .groundedRead,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: exactBrief
+        )
+        let rateAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What was my filler rate?",
+            directVerdict: "",
+            confidence: 0.60,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .latestRepMetrics,
+            requestedMetrics: [.fillerRatePerMinute],
+            latestRepMetrics: latestProjection,
+            missingEvidence: [],
+            nextProofTest: "Record another rep.",
+            responseMode: .immediateOnly
+        )
+        let rateBrief = CoachChatBrief(assessment: rateAssessment)
+        let rateIssue = AICoachChatService.replyQualityIssue(
+            in: rateBrief.directVerdict,
+            latestUserTurn: "What was my filler rate?",
+            turnDepth: .groundedRead,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: rateBrief
+        )
+
+        #expect(exactIssue == nil)
+        #expect(relabeledIssue == .overclaimsEvidence)
+        #expect(inventedDrillIssue == .nonCoachingPrescription)
+        #expect(rateBrief.directVerdict ==
+            "You averaged 3.0 fillers per minute in your latest Ah Counter rep.")
+        #expect(rateIssue == nil)
+    }
+
+    @Test func typedLongitudinalReplyRequiresComparableBoundedLanguage() {
+        let trend = CoachLongitudinalTrendProjection(
+            sourceSessionID: UUID(),
+            comparisonMetricSchemaVersion: 2,
+            mode: "Ah Counter",
+            comparableSessionIDs: [UUID(), UUID()],
+            metrics: [CoachLongitudinalMetricTrend(
+                metric: .score,
+                direction: .improving,
+                currentValue: 8,
+                priorAverage: 7
+            )]
+        )
+        let assessment = CoachAssessment(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            questionRestatement: "Am I improving?",
+            directVerdict: "",
+            confidence: 0.70,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .longitudinalTrend,
+            longitudinalTrend: trend,
+            missingEvidence: [],
+            nextProofTest: "Record another rep.",
+            responseMode: .expandable
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+        let groundedIssue = AICoachChatService.replyQualityIssue(
+            in: brief.directVerdict,
+            latestUserTurn: "Am I improving?",
+            turnDepth: .deepAssessment,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        )
+        let broadIssue = AICoachChatService.replyQualityIssue(
+            in: "You are definitely improving overall.",
+            latestUserTurn: "Am I improving?",
+            turnDepth: .deepAssessment,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        )
+        let invertedDirectionIssue = AICoachChatService.replyQualityIssue(
+            in: "Your latest Ah Counter rep moved in the wrong direction. Compared with 2 earlier reps using the same setup, score was 8.0/10 versus 7.0/10. This is a signal, not a broad verdict.",
+            latestUserTurn: "Am I improving?",
+            turnDepth: .deepAssessment,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        )
+
+        #expect(groundedIssue == nil)
+        #expect(broadIssue != nil)
+        #expect(invertedDirectionIssue == .overclaimsEvidence)
+    }
 
     @Test func deepAssessmentRejectsScoreOnlyTip() {
         let issue = AICoachChatService.semanticQualityIssue(
@@ -1721,7 +2339,7 @@ struct CoachSemanticQualityGateTests {
     }
 
     @Test func memoryHandoffHypothesisClearsProfessionalAndSemanticGates() {
-        let reply = "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it."
+        let reply = "What I’d carry forward for now is one possible pattern: disagreement may be getting softened by setup. Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it."
         let previousCoachReply = "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner."
         let assessment = CoachReasoningPass.assess(
             turnDepth: .groundedRead,
@@ -2420,9 +3038,8 @@ struct CoachTypedFallbackTests {
 
     @Test func trustRepairRubricUsesDepthAwareBudget() {
         let reply = """
-        Fair push. The symbols and the report-style layout are on me.
-        Your last rep gives one real signal to work: the recommendation arrived late, and the close was the softest part. So the one move is this: lead with your verdict in the first sentence, then give one reason or implication, and stop there.
-        Test it in the next rep under a 60-second timer. That's the pressure condition that will tell us something real.
+        You’re right—the formatting broke in speech, and the answer sounded robotic.
+        I’ll use plain text and one specific point.
         """
 
         let rubric = AICoachChatService.professionalCoachRubric(
@@ -2561,8 +3178,11 @@ struct CoachTypedFallbackTests {
 
         switch outcome {
         case .reply(let text):
-            #expect(text.contains("so use"))
-            #expect(!text.contains("so Run"))
+            let lower = text.lowercased()
+            #expect(lower.contains("one layer only"))
+            #expect(lower.contains("concrete example"))
+            #expect(lower.contains("that creates depth"))
+            #expect(!lower.contains("based on your data"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,
@@ -2586,8 +3206,8 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Can you give me an example of me doing this in sessions?",
                 depth: .groundedRead,
-                expectedFragments: ["safe example", "latest rep", "concrete scene", "add one example"],
-                rejectedFragments: ["fabricated quote"]
+                expectedFragments: ["verified session example", "won’t invent one", "which rep or transcript", "exact moment"],
+                rejectedFragments: ["latest rep", "fabricated quote", "add one example"]
             ),
             Spec(
                 userTurn: "The room seemed engaged. Did the drill cause that?",
@@ -2604,19 +3224,19 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "I ramble when introducing myself at networking events.",
                 depth: .quickMove,
-                expectedFragments: ["20-second test", "who you help", "one question", "ramble starts"],
+                expectedFragments: ["hard stop", "who you help", "one example", "one question", "second thread"],
                 rejectedFragments: ["memorable phrase"]
             ),
             Spec(
                 userTurn: "My presentation sounds polished but flat. What is missing?",
                 depth: .groundedRead,
-                expectedFragments: ["cannot prove vocal energy", "hypothesis", "mark the consequence", "deliberate emphasis"],
+                expectedFragments: ["vocal energy", "hypothesis", "mark the consequence", "deliberate emphasis", "without inventing an audio read"],
                 rejectedFragments: ["silent beat"]
             ),
             Spec(
                 userTurn: "My sales pitch loses people after the first minute.",
                 depth: .quickMove,
-                expectedFragments: ["likely gap is salience", "customer example", "first claim", "return to the ask"],
+                expectedFragments: ["first claim", "customer example", "return to the ask", "tests salience", "another thread"],
                 rejectedFragments: ["memorable phrase"]
             ),
             Spec(
@@ -2646,7 +3266,7 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "It sounds correct but not like me. What do I change?",
                 depth: .groundedRead,
-                expectedFragments: ["trust that signal", "keep the structure", "actually say", "check how it feels"],
+                expectedFragments: ["keep the structure", "one polished phrase", "actually say", "tests naturalness", "already clear"],
                 rejectedFragments: ["be authentic"]
             ),
             Spec(
@@ -2694,14 +3314,14 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "I think I want to sound more engaging.",
                 depth: .groundedRead,
-                expectedFragments: ["engaging maps closest to storytelling", "warm", "what changed"],
-                rejectedFragments: ["tap to confirm", "lock it in", "3 fillers"]
+                expectedFragments: ["engaging maps closest to storytelling", "warm", "connection"],
+                rejectedFragments: ["tap to confirm", "lock it in", "latest rep", "test storytelling", "3 fillers"]
             ),
             Spec(
                 userTurn: "Why can't you just give me a straight answer?",
                 depth: .trustRepair,
-                expectedFragments: ["straight answer", "yes on fillers", "no on pace under pressure", "one silent beat"],
-                rejectedFragments: ["hit 3 in 60 seconds", "score"]
+                expectedFragments: ["you’re right", "did not answer directly", "answer first"],
+                rejectedFragments: ["fillers", "pace under pressure", "silent beat", "hit 3 in 60 seconds", "score"]
             ),
             Spec(
                 userTurn: "What is the one move?",
@@ -2726,13 +3346,88 @@ struct CoachTypedFallbackTests {
                 depth: spec.depth,
                 userTurn: spec.userTurn
             )
+            let responseKind = CoachChatResponseKind.classify(spec.userTurn)
+            let providerAssessment: CoachAssessment?
+            switch responseKind {
+            case .personalEvidenceRead, .memoryHandoff:
+                providerAssessment = assessment
+            case .generalCoaching, .conversational:
+                providerAssessment = nil
+            }
+
+            if responseKind == .generalCoaching {
+                let typedFallback = try #require(
+                    CoachReliabilityGate.generalCoachingFailureFallback(
+                    turnDepth: spec.depth,
+                    surface: .text,
+                    latestUserTurn: spec.userTurn,
+                    previousCoachReply: nil,
+                    recentCoachReplies: []
+                    )
+                )
+                #expect(AICoachChatService.replyQualityIssue(
+                    in: typedFallback,
+                    latestUserTurn: spec.userTurn,
+                    systemContext: context,
+                    turnDepth: spec.depth,
+                    surface: .text,
+                    responseKind: responseKind
+                ) == nil, "\(spec.userTurn) typed fallback failed reply quality: \(typedFallback)")
+                #expect(AICoachChatService.semanticQualityIssue(
+                    in: typedFallback,
+                    latestUserTurn: spec.userTurn,
+                    systemContext: context,
+                    turnDepth: spec.depth,
+                    assessment: nil,
+                    responseKind: responseKind
+                ) == nil, "\(spec.userTurn) typed fallback failed semantic quality: \(typedFallback)")
+                #expect(AICoachChatService.visionQualityIssue(
+                    in: typedFallback,
+                    latestUserTurn: spec.userTurn,
+                    systemContext: context,
+                    turnDepth: spec.depth,
+                    assessment: nil,
+                    surface: .text,
+                    responseKind: responseKind
+                ) == nil, "\(spec.userTurn) typed fallback failed vision quality: \(typedFallback)")
+            } else if let typedFallback = AICoachChatService.deterministicIntentOverrideReply(
+                latestUserTurn: spec.userTurn,
+                systemContext: context
+            ) {
+                #expect(AICoachChatService.replyQualityIssue(
+                    in: typedFallback,
+                    latestUserTurn: spec.userTurn,
+                    systemContext: context,
+                    turnDepth: spec.depth,
+                    surface: .text,
+                    responseKind: responseKind
+                ) == nil, "\(spec.userTurn) intent fallback failed reply quality: \(typedFallback)")
+                #expect(AICoachChatService.semanticQualityIssue(
+                    in: typedFallback,
+                    latestUserTurn: spec.userTurn,
+                    systemContext: context,
+                    turnDepth: spec.depth,
+                    assessment: providerAssessment,
+                    responseKind: responseKind
+                ) == nil, "\(spec.userTurn) intent fallback failed semantic quality: \(typedFallback)")
+                #expect(AICoachChatService.visionQualityIssue(
+                    in: typedFallback,
+                    latestUserTurn: spec.userTurn,
+                    systemContext: context,
+                    turnDepth: spec.depth,
+                    assessment: providerAssessment,
+                    surface: .text,
+                    responseKind: responseKind
+                ) == nil, "\(spec.userTurn) intent fallback failed vision quality: \(typedFallback)")
+            }
 
             let outcome = await service.reply(
                 history: [CoachMessage(role: .user, text: spec.userTurn)],
                 systemPrompt: "You are Noum.",
                 userContext: context,
                 turnDepth: spec.depth,
-                assessment: assessment,
+                assessment: providerAssessment,
+                responseKind: responseKind,
                 surface: .text,
                 preferredTier: .claudeReasoning
             )
@@ -2751,14 +3446,16 @@ struct CoachTypedFallbackTests {
                     latestUserTurn: spec.userTurn,
                     systemContext: context,
                     turnDepth: spec.depth,
-                    surface: .text
+                    surface: .text,
+                    responseKind: responseKind
                 ) == nil, "\(spec.userTurn) should pass reply quality: \(text)")
                 #expect(AICoachChatService.semanticQualityIssue(
                     in: text,
                     latestUserTurn: spec.userTurn,
                     systemContext: context,
                     turnDepth: spec.depth,
-                    assessment: assessment
+                    assessment: providerAssessment,
+                    responseKind: responseKind
                 ) == nil, "\(spec.userTurn) should pass semantic quality: \(text)")
             case .failure(let failure):
                 #expect(Bool(false), "\(spec.userTurn) typed fallback should prevent content rejection, got \(failure)")
@@ -2854,11 +3551,13 @@ struct CoachTypedFallbackTests {
         case .reply(let text):
             let lower = text.lowercased()
             #expect(lower.contains("tiny test"))
-            #expect(lower.contains("send the moment"))
-            #expect(lower.contains("one clean read"))
+            #expect(lower.contains("communication moment"))
+            #expect(lower.contains("work through"))
             #expect(!lower.contains("hit 80"))
             #expect(!lower.contains("timed rep"))
             #expect(!lower.contains("fillers"))
+            #expect(!lower.contains("send "))
+            #expect(!lower.contains("practice"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,
@@ -2913,10 +3612,11 @@ struct CoachTypedFallbackTests {
         case .reply(let text):
             let lower = text.lowercased()
             #expect(lower.contains("hey"))
-            #expect(lower.contains("pick up with the close"))
-            #expect(lower.contains("land the final sentence flat"))
+            #expect(lower.contains("good to see you"))
+            #expect(lower.contains("something specific on your mind"))
             #expect(!lower.contains("timed rep"))
             #expect(!lower.contains("hit 3 fillers"))
+            #expect(!lower.contains("pick up with the close"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,
@@ -2965,11 +3665,12 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(lower.contains("no, it is not easy"))
-            #expect(lower.contains("held composure through an interruption"))
-            #expect(lower.contains("first hard sentence"))
+            #expect(lower.contains("sounds hard"))
+            #expect(lower.contains("slow this down"))
+            #expect(lower.contains("do not need to prove"))
             #expect(!lower.contains("just be confident"))
-            #expect(!lower.contains("sentence one carries the social risk"))
+            #expect(!lower.contains("held composure through an interruption"))
+            #expect(!lower.contains("first hard sentence"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,
@@ -2997,12 +3698,12 @@ struct CoachTypedFallbackTests {
         ))
         let lower = shape.lowercased()
 
-        #expect(lower.contains("fair. i was too vague"))
+        #expect(lower.contains("you’re right—i was too vague"))
         #expect(lower.contains("point arrived in sentence four"))
-        #expect(lower.contains("say the point first"))
+        #expect(lower.contains("i’ll lead with that specific read"))
         #expect(!lower.contains("real read:"))
         #expect(!lower.contains("score"))
-        #expect(!lower.contains("cut the"))
+        #expect(!lower.contains("next rep"))
     }
 
     @Test func providerQualityFailureFallsBackToPaceSelfFrustrationRead() async throws {
@@ -3039,10 +3740,12 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(lower.contains("you're not imagining it"))
-            #expect(lower.contains("215 wpm"))
-            #expect(lower.contains("0.09 pause rate"))
+            #expect(lower.contains("you’re not imagining it"))
             #expect(lower.contains("fix the pause"))
+            #expect(lower.contains("natural pace"))
+            #expect(lower.contains("boundary between ideas"))
+            #expect(!lower.contains("215 wpm"))
+            #expect(!lower.contains("0.09 pause rate"))
             #expect(!lower.contains("scored 71"))
             #expect(!lower.contains("just slow down"))
             #expect(AICoachChatService.replyQualityIssue(
@@ -3091,9 +3794,9 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(lower.contains("kept the thread"))
-            #expect(lower.contains("weaker repeat"))
             #expect(lower.contains("hard stop"))
+            #expect(lower.contains("one support line"))
+            #expect(lower.contains("one thread"))
             #expect(!lower.contains("next rep:"))
             #expect(!lower.contains("be more concise"))
             #expect(AICoachChatService.replyQualityIssue(
@@ -3251,7 +3954,7 @@ struct CoachTypedFallbackTests {
             #expect(lower.contains("sound like yourself"))
             #expect(lower.contains("pace baseline around 170 wpm"))
             #expect(lower.contains("12-day streak"))
-            #expect(lower.contains("wait on a next drill"))
+            #expect(lower.contains("won’t prescribe another drill"))
             #expect(!lower.contains("so the thing to test"))
             #expect(!lower.contains("next rep"))
             #expect(AICoachChatService.replyQualityIssue(
@@ -3346,11 +4049,13 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(text.contains("Fair push"))
+            #expect(lower.contains("you’re right"))
             #expect(lower.contains("robotic"))
-            #expect(lower.contains("last rep"))
-            #expect(lower.contains("one clean opener"))
-            #expect(lower.contains("stop"))
+            #expect(lower.contains("too long"))
+            #expect(lower.contains("one specific point"))
+            #expect(lower.contains("plain language"))
+            #expect(!lower.contains("last rep"))
+            #expect(!lower.contains("next rep"))
             #expect(!lower.contains("let us"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
@@ -3360,7 +4065,8 @@ struct CoachTypedFallbackTests {
             #expect(AICoachChatService.semanticQualityIssue(
                 in: text,
                 turnDepth: .trustRepair,
-                assessment: Self.trustRepairAssessment
+                assessment: Self.trustRepairAssessment,
+                responseKind: .conversational
             ) == nil)
         case .failure(let failure):
             #expect(Bool(false), "typed trust fallback should prevent content rejection, got \(failure)")
@@ -3394,6 +4100,10 @@ struct CoachTypedFallbackTests {
             #expect(lower.contains("tts"))
             #expect(lower.contains("formatting"))
             #expect(lower.contains("robotic") || lower.contains("cold"))
+            #expect(lower.contains("plain text"))
+            #expect(lower.contains("one direct point"))
+            #expect(!lower.contains("run one"))
+            #expect(!lower.contains("next rep"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,
@@ -3402,7 +4112,8 @@ struct CoachTypedFallbackTests {
             #expect(AICoachChatService.semanticQualityIssue(
                 in: text,
                 turnDepth: .trustRepair,
-                assessment: Self.trustRepairAssessment
+                assessment: Self.trustRepairAssessment,
+                responseKind: .conversational
             ) == nil)
         case .failure(let failure):
             #expect(Bool(false), "typed markdown/TTS trust fallback should prevent content rejection, got \(failure)")
@@ -3468,7 +4179,9 @@ struct CoachTypedFallbackTests {
             #expect(lower.contains("tts"))
             #expect(lower.contains("formatting") || lower.contains("symbols"))
             #expect(lower.contains("robotic") || lower.contains("cold"))
-            #expect(lower.contains("run one"))
+            #expect(lower.contains("plain text"))
+            #expect(!lower.contains("run one"))
+            #expect(!lower.contains("next rep"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: fixture.latestUserTurn,
@@ -3488,7 +4201,8 @@ struct CoachTypedFallbackTests {
             #expect(AICoachChatService.semanticQualityIssue(
                 in: text,
                 turnDepth: turnDepth,
-                assessment: assessment
+                assessment: assessment,
+                responseKind: .conversational
             ) == nil)
         case .failure(let failure):
             #expect(Bool(false), "typed markdown/TTS fixture fallback should prevent content rejection, got \(failure)")
@@ -4041,14 +4755,14 @@ struct CoachProviderRoutingByDepthTests {
 @Suite("CoachProvisionalReadEligibilityTests")
 struct CoachProvisionalReadEligibilityTests {
 
-    @Test func quickTextTurnShowsLocalReadWhenRawPartialsAreWithheld() {
+    @Test func quickTextTurnWaitsForOneFinalReply() {
         #expect(CoachReplyPipeline.shouldShowProvisionalCoachRead(
             turnDepth: .quickMove,
             surface: .text,
             responseMode: .immediateOnly,
             realtimeCoachModeEnabled: true,
             streamRawPartialsToUI: false
-        ))
+        ) == false)
     }
 
     @Test func quickTextTurnCanUseVisibleProviderStreamWhenExplicitlyEnabled() {
@@ -4061,13 +4775,13 @@ struct CoachProvisionalReadEligibilityTests {
         ) == false)
     }
 
-    @Test func deepTextTurnCanShowLocalProvisionalRead() {
+    @Test func deepTextTurnWaitsForOneFinalReply() {
         #expect(CoachReplyPipeline.shouldShowProvisionalCoachRead(
             turnDepth: .deepAssessment,
             surface: .text,
             responseMode: .expandable,
             realtimeCoachModeEnabled: true
-        ))
+        ) == false)
     }
 
     @Test func liveTurnCanShowLocalProvisionalReadEvenWhenImmediateOnly() {
@@ -4103,7 +4817,51 @@ struct CoachProvisionalReadEligibilityTests {
         #expect(first != different)
     }
 
-    @Test func contentRejectedFallbackUsesCleanAssessmentReadOnlyForQualityGateFailure() {
+    @Test func provisionalReadUsesBriefAbstentionWhenEvidenceWithdrawsTheMove() {
+        let unsupportedMove = "Put the recommendation in sentence one."
+        let assessment = CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: "What should I fix?",
+            directVerdict: "The opening is the next lever.",
+            confidence: 0.62,
+            evidenceUsed: ["latest rep: Timed, 7/10, 60s"],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.42,
+                confidence: 0.62,
+                evidence: [
+                    "no clear verdict-first proof in a quantity-qualified transcript"
+                ],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
+            missingEvidence: ["A quantity-qualified transcript is missing."],
+            nextProofTest: unsupportedMove,
+            responseMode: .immediateOnly
+        )
+
+        let provisional = CoachReplyPipeline.provisionalCoachReadText(
+            for: assessment
+        )
+        let rejectedFallback = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.contentRejected),
+            assessment: assessment,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "What should I fix?"
+        )
+        #expect(provisional ==
+            "I don’t have enough evidence to choose your next move yet.")
+        #expect(rejectedFallback == provisional)
+        #expect(!provisional.contains(unsupportedMove))
+        #expect(rejectedFallback?.contains(unsupportedMove) == false)
+        #expect(!provisional.contains(assessment.directVerdict))
+    }
+
+    @Test func safeFailureFallbackUsesOneTypedEvidenceBoundPrescription() {
         let assessment = CoachAssessment(
             turnDepth: .quickMove,
             surface: .text,
@@ -4111,28 +4869,66 @@ struct CoachProvisionalReadEligibilityTests {
             directVerdict: "Practice the boundary sentence only.",
             confidence: 0.70,
             evidenceUsed: ["latest rep: disagreement arrived after setup"],
-            rubricScores: [],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.45,
+                confidence: 0.70,
+                evidence: [
+                    "transcript signal: a setup before the disagreement"
+                ],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
             missingEvidence: [],
             nextProofTest: "Say the disagreement in sentence one, give one calm reason, then stop.",
             responseMode: .immediateOnly,
             toneMode: .prescribe
         )
 
-        let fallback = CoachReplyPipeline.contentRejectedFallbackText(
+        let fallback = CoachReplyPipeline.safeFailureFallbackText(
             for: .failure(.contentRejected),
             assessment: assessment,
             turnDepth: .quickMove,
             surface: .text,
             previousCoachReply: nil
         )
-        let noProviderFallback = CoachReplyPipeline.contentRejectedFallbackText(
-            for: .failure(.noProvider),
+        let provisional = CoachReplyPipeline.provisionalCoachReadText(
+            for: assessment
+        )
+        let coachingEmptyFallback = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.empty),
             assessment: assessment,
             turnDepth: .quickMove,
             surface: .text,
-            previousCoachReply: nil
+            previousCoachReply: nil,
+            latestUserTurn: "What should I practice?"
         )
-        let missingAssessmentFallback = CoachReplyPipeline.contentRejectedFallbackText(
+        let unknownEmptyFallback = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.empty),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: nil
+        )
+        let noProviderFallback = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.noProvider),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "hi"
+        )
+        let networkFallback = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.network),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "I'm nervous about this"
+        )
+        let missingAssessmentFallback = CoachReplyPipeline.safeFailureFallbackText(
             for: .failure(.contentRejected),
             assessment: nil,
             turnDepth: .quickMove,
@@ -4140,11 +4936,94 @@ struct CoachProvisionalReadEligibilityTests {
             previousCoachReply: nil
         )
 
-        #expect(fallback?.contains("Practice the boundary sentence only") == true)
-        #expect(fallback?.contains("Say the disagreement") == true)
+        #expect(fallback == provisional)
+        #expect(fallback ==
+            "Say the disagreement in sentence one, give one calm reason, then stop because the latest transcript showed a setup before the disagreement.")
+        #expect(fallback?.contains("Practice the boundary sentence only") == false)
+        #expect(fallback?.components(separatedBy: "Say the disagreement").count == 2)
+        #expect(fallback?.components(separatedBy: "because").count == 2)
+        #expect(CoachChatBrief.maxProvisionalCharacters == 420)
+        #expect((fallback?.count ?? 0) <= 420)
         #expect(fallback?.contains("Try this next:") == false)
+        #expect(coachingEmptyFallback == nil)
+        #expect(unknownEmptyFallback == nil)
         #expect(noProviderFallback == nil)
+        #expect(networkFallback == nil)
         #expect(missingAssessmentFallback == nil)
+    }
+
+    @Test func nonCoachingUnusableResponseUsesIntentFallbackWithoutAssessment() {
+        #expect(CoachReplyPipeline.shouldBuildAssessment(
+            judgementPassEnabled: true,
+            turnIntent: .coaching,
+            responseKind: .personalEvidenceRead
+        ))
+        #expect(CoachReplyPipeline.shouldBuildAssessment(
+            judgementPassEnabled: true,
+            turnIntent: .unknown,
+            responseKind: .memoryHandoff
+        ))
+        for intent in [
+            CoachChatTurnIntent.greeting,
+            .offTopic,
+            .preference,
+            .vulnerable
+        ] {
+            #expect(!CoachReplyPipeline.shouldBuildAssessment(
+                judgementPassEnabled: true,
+                turnIntent: intent,
+                responseKind: .conversational
+            ))
+        }
+        #expect(!CoachReplyPipeline.shouldBuildAssessment(
+            judgementPassEnabled: true,
+            turnIntent: .coaching,
+            responseKind: .generalCoaching
+        ))
+        #expect(!CoachReplyPipeline.shouldBuildAssessment(
+            judgementPassEnabled: false,
+            turnIntent: .coaching,
+            responseKind: .personalEvidenceRead
+        ))
+
+        let preference = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.contentRejected),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "Keep the coaching concise"
+        )
+        let vulnerable = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.contentRejected),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "I'm nervous about this"
+        )
+
+        #expect(preference == "Got it. I’ll keep the coaching brief and direct from here.")
+        #expect(vulnerable?.contains("another drill") == true)
+        #expect(vulnerable?.contains("should") == false)
+
+        let emptyFallbacks: [(turn: String, expected: String)] = [
+            ("hi", "good to see you back"),
+            ("banana", "Tiny test, all good."),
+            ("Keep the coaching concise", "brief and direct"),
+            ("I'm nervous about this", "do not need to prove anything")
+        ]
+        for row in emptyFallbacks {
+            let fallback = CoachReplyPipeline.safeFailureFallbackText(
+                for: .failure(.empty),
+                assessment: nil,
+                turnDepth: .quickMove,
+                surface: .text,
+                previousCoachReply: nil,
+                latestUserTurn: row.turn
+            )
+            #expect(fallback?.contains(row.expected) == true)
+        }
     }
 
     @Test func pipelineFinalizedOutcomeStripsFallbackMetricResidue() {
@@ -4236,7 +5115,7 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(!store.isAwaitingReply)
     }
 
-    @Test func successfulTextTurnsUsePriorAssessmentToVaryNextProofTest() async {
+    @Test func successfulGeneralTextTurnsShowOneFinalReply() async {
         let suiteName = "CoachReplyPipelineHistoryProgressionTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
@@ -4257,10 +5136,10 @@ struct CoachReplyPipelineProvisionalReadTests {
 
         let scriptedHTTP = CoachReplyPipelineScriptedHTTP(replies: [
             """
-            Your latest rep points at pacing: the structure is there, but it needs one planned pause. Next rep, put the verdict first, hold one silent beat, then give one reason and stop. That tests whether control comes from silence instead of extra wording.
+            Start with the decision, then pause before the reason. That separates control from hesitation without making every word slower.
             """,
             """
-            Your latest rep still makes pacing the useful lever, but the proof should change now. Next rep, place one beat after the verdict, then finish the reason in one sentence. That tests whether the pause holds without adding more setup.
+            Use shorter clauses instead of slowing every word. That creates space between ideas while keeping your pace natural.
             """
         ])
         let service = AICoachChatService(
@@ -4289,14 +5168,13 @@ struct CoachReplyPipelineProvisionalReadTests {
         }
 
         let firstCoach = store.messages.first { $0.id == firstIDs.coachID }
-        let firstProof = firstCoach?.metadata?.assessment?.nextProofTest
         #expect(firstCoach?.role == .coach)
         #expect(firstCoach?.metadata?.turnDepth == .quickMove)
-        #expect(firstCoach?.metadata?.assessmentCacheHit == false)
-        #expect(firstCoach?.metadata?.immediateCoachReadShown == true)
-        #expect(firstCoach?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
+        #expect(firstCoach?.metadata?.assessment == nil)
+        #expect(firstCoach?.metadata?.assessmentCacheHit == nil)
+        #expect(firstCoach?.metadata?.immediateCoachReadShown == false)
+        #expect(firstCoach?.metadata?.timeToFirstVisibleTokenSource == .finalReplyCommit)
         #expect(firstCoach?.metadata?.qualityGateEvents?.isEmpty == false)
-        #expect(firstProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
 
         let secondIDs = store.appendUserTurn("How do I slow down without sounding unsure?")
         let secondOutcome = await CoachReplyPipeline.generate(
@@ -4313,16 +5191,14 @@ struct CoachReplyPipelineProvisionalReadTests {
         }
 
         let secondCoach = store.messages.first { $0.id == secondIDs.coachID }
-        let secondProof = secondCoach?.metadata?.assessment?.nextProofTest
         #expect(secondCoach?.role == .coach)
         #expect(secondCoach?.metadata?.turnDepth == .quickMove)
-        #expect(secondCoach?.metadata?.assessmentCacheHit == false)
-        #expect(secondCoach?.metadata?.immediateCoachReadShown == true)
-        #expect(secondCoach?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
-        #expect(secondCoach?.metadata?.proofTestRecentlyRepeated == false)
+        #expect(secondCoach?.metadata?.assessment == nil)
+        #expect(secondCoach?.metadata?.assessmentCacheHit == nil)
+        #expect(secondCoach?.metadata?.immediateCoachReadShown == false)
+        #expect(secondCoach?.metadata?.timeToFirstVisibleTokenSource == .finalReplyCommit)
+        #expect(secondCoach?.metadata?.proofTestRecentlyRepeated == nil)
         #expect(secondCoach?.metadata?.qualityGateEvents?.isEmpty == false)
-        #expect(secondProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-        #expect(secondProof != firstProof)
         #expect(await scriptedHTTP.callCount == 2)
     }
 

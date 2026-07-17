@@ -14,6 +14,14 @@ enum CoachReasoningPass {
         previousCoachReply: String? = nil
     ) -> CoachAssessment {
         let isMemoryHandoff = TurnDepthClassifier.isMemoryHandoff(userQuestion.lowercased())
+        let requestedMetrics = TurnDepthClassifier.requestedPersonalMetrics(userQuestion)
+        let evidenceReadKind: CoachEvidenceReadKind? = if !requestedMetrics.isEmpty {
+            .latestRepMetrics
+        } else if TurnDepthClassifier.isLongitudinalPerformanceRead(userQuestion) {
+            .longitudinalTrend
+        } else {
+            nil
+        }
         let repairFocus = repairFocus(
             for: userQuestion,
             previousCoachReply: previousCoachReply,
@@ -59,9 +67,12 @@ enum CoachReasoningPass {
             previousCoachReply: previousCoachReply
         )
         let missing = missingEvidence(from: scores, trajectory: trajectory, depth: turnDepth)
-        let proofTest = isMemoryHandoff
-            ? memoryHandoffProofTest(previousCoachReply: previousCoachReply)
-            : nextProofTest(
+        let proofSelection = isMemoryHandoff
+            ? ProofTestSelection(
+                text: memoryHandoffProofTest(previousCoachReply: previousCoachReply),
+                dimensionID: nil
+            )
+            : nextProofSelection(
                 userQuestion: userQuestion,
                 turnDepth: turnDepth,
                 trajectory: trajectory,
@@ -87,8 +98,17 @@ enum CoachReasoningPass {
             ),
             evidenceUsed: evidence,
             rubricScores: scores,
+            evidenceReadKind: evidenceReadKind,
+            requestedMetrics: requestedMetrics.isEmpty ? nil : requestedMetrics,
+            latestRepMetrics: evidenceReadKind == .latestRepMetrics
+                ? trajectory.latestRepEvidencePack?.metricProjection
+                : nil,
+            longitudinalTrend: evidenceReadKind == .longitudinalTrend
+                ? trajectory.qualifiedLongitudinalTrend
+                : nil,
+            nextProofDimensionID: proofSelection.dimensionID,
             missingEvidence: missing,
-            nextProofTest: proofTest,
+            nextProofTest: proofSelection.text,
             responseMode: responseMode(depth: turnDepth, surface: surface),
             toneMode: toneMode(depth: turnDepth, repairFocus: repairFocus),
             repairFocus: repairFocus
@@ -100,7 +120,9 @@ enum CoachReasoningPass {
         trajectory: UserTrajectorySnapshot
     ) -> RubricScore {
         let pack = trajectory.latestRepEvidencePack
-        let transcript = (pack?.transcriptExcerpt ?? "").lowercased()
+        let transcript = pack?.meetsQuantityFloor == true
+            ? (pack?.transcriptExcerpt ?? "").lowercased()
+            : ""
         let wpm = pack?.wordsPerMinute
         let score = pack?.score
         let sessionCount = trajectory.sessionCount
@@ -115,28 +137,38 @@ enum CoachReasoningPass {
                 "recommend", "recommendation", "decision", "the answer",
                 "my answer", "the point", "i would", "we should"
             ])
-            raw = hasVerdict ? 0.72 : (score.map { Double($0) / 12.0 } ?? 0.35)
-            evidence = hasVerdict ? ["latest transcript appears to lead with a decision word"] : ["no clear verdict-first proof in the available excerpt"]
+            raw = hasVerdict ? 0.72 : 0.35
+            evidence = hasVerdict
+                ? ["latest transcript appears to lead with a decision word"]
+                : ["no clear verdict-first proof in a quantity-qualified transcript"]
         case "hedge_control":
-            let hedgeHits = countOccurrences(in: transcript, needles: [
-                "maybe", "probably", "kind of", "sort of", "just", "i think"
-            ])
-            if let pack, let fillerRate {
-                raw = max(
-                    0.20,
-                    min(0.92, 0.88 - Double(hedgeHits) * 0.16 - fillerRate * 0.03)
-                )
-                evidence = [
-                    "latest rep had \(pack.fillerCount) fillers across \(pack.durationSeconds)s (\(formattedRate(fillerRate))/min) and \(hedgeHits) hedge markers in the available excerpt"
-                ]
-            } else {
-                raw = 0.45
-                evidence = ["not enough duration-qualified speech to judge filler or hedge control in the latest rep"]
-            }
+            // Word matching cannot tell a timid hedge from legitimate
+            // uncertainty, and substring checks misread words such as
+            // "adjust" as "just". Stay neutral until semantic intent is typed.
+            raw = 0.60
+            evidence = [
+                "semantic intent is not classified, so hedge control is not judged from wording alone"
+            ]
         case "clean_close":
-            let trailing = transcript.hasSuffix("yeah") || transcript.hasSuffix("so") || transcript.hasSuffix("um") || transcript.hasSuffix("uh")
-            raw = trailing ? 0.35 : (score.map { min(0.82, Double($0) / 10.0) } ?? 0.48)
-            evidence = trailing ? ["available excerpt suggests a soft trailing close"] : ["no trailing close problem visible in the available excerpt"]
+            guard !transcript.isEmpty else {
+                raw = 0.48
+                evidence = ["no duration-qualified transcript is available to judge the close"]
+                break
+            }
+            // Match the final spoken token, not an arbitrary string suffix.
+            // The suffix form misclassified words such as "also", "premium",
+            // and "momentum", while punctuation let a genuine "um." escape.
+            // "I believe so" and "yeah" can be semantically complete; without
+            // intent or prosody evidence, only unambiguous filler tokens count.
+            let trailing = finalSpokenWord(in: transcript).map {
+                ["um", "uh"].contains($0)
+            } ?? false
+            raw = trailing
+                ? 0.35
+                : (score.map { min(0.82, Double($0) / 10.0) } ?? 0.48)
+            evidence = trailing
+                ? ["latest transcript suggests a soft trailing close"]
+                : ["latest transcript ends on a complete claim"]
         case "pressure_stability":
             let hasPressureEvidence = trajectory.recentSessionLines.contains {
                 let lower = $0.lowercased()
@@ -170,7 +202,9 @@ enum CoachReasoningPass {
         case "salience":
             let hasSalience = containsAny(transcript, ["because", "so ", "therefore", "means", "matters"])
             raw = hasSalience ? 0.64 : 0.38
-            evidence = hasSalience ? ["available excerpt has a reason or implication marker"] : ["no memorable point or implication proof in the available excerpt"]
+            evidence = hasSalience
+                ? ["latest transcript has a reason or implication marker"]
+                : ["no memorable point or implication proof in a quantity-qualified transcript"]
         default:
             raw = 0.45
             evidence = ["no dimension-specific evidence available"]
@@ -185,6 +219,14 @@ enum CoachReasoningPass {
             evidence: evidence,
             missingEvidence: raw >= 0.70 ? nil : dimension.missingIfAbsent
         )
+    }
+
+    private static func finalSpokenWord(in transcript: String) -> String? {
+        transcript
+            .lowercased()
+            .split(whereSeparator: { !$0.isLetter })
+            .last
+            .map(String.init)
     }
 
     private static func verdict(
@@ -220,7 +262,7 @@ enum CoachReasoningPass {
                 return "I do not have enough evidence for an overall \(rubricName.lowercased()) verdict yet."
             }
             if mechanics >= 0.68 && goalReadiness < 0.62 {
-                return "You are closer mechanically than you are to fully sounding authoritative."
+                return "You are closer mechanically than you are to fully meeting the \(rubricName.lowercased()) standard."
             }
             if goalReadiness >= 0.72 && coverage >= 0.70 {
                 return "You are approaching the \(rubricName.lowercased()) standard, but it still needs pressure proof."
@@ -392,33 +434,63 @@ enum CoachReasoningPass {
     }
 
     private static func memoryHandoffVerdict(previousCoachReply: String?) -> String {
-        if previousCoachReplyContainsDisagreementSetup(previousCoachReply) {
-            return "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup."
+        guard let source = memoryHandoffSource(previousCoachReply) else {
+            return "I don't have a clear pattern to carry forward yet."
         }
-        return "Use this memory as a testable hypothesis only, not a label."
+        switch source {
+        case .disagreementAfterSetup:
+            return "What I’d carry forward for now is that disagreement may be getting softened by setup."
+        }
     }
 
     private static func memoryHandoffEvidenceLine(previousCoachReply: String?) -> String? {
-        guard let previousCoachReply,
-              !previousCoachReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        if previousCoachReplyContainsDisagreementSetup(previousCoachReply) {
+        guard let source = memoryHandoffSource(previousCoachReply) else { return nil }
+        switch source {
+        case .disagreementAfterSetup:
             return "conversation hypothesis: disagreement may be getting softened by setup"
         }
-        let first = previousCoachReply
-            .components(separatedBy: CharacterSet(charactersIn: ".!?"))
-            .first?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first, !first.isEmpty else { return nil }
-        return "prior coach read: \(first)"
     }
 
     private static func memoryHandoffProofTest(previousCoachReply: String?) -> String {
-        if previousCoachReplyContainsDisagreementSetup(previousCoachReply) {
-            return "Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it."
+        guard let source = memoryHandoffSource(previousCoachReply) else { return "" }
+        switch source {
+        case .disagreementAfterSetup:
+            return "Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it."
         }
-        return "Keep it only if two more reps show the same pattern; drop it if the targeted rep solves it."
+    }
+
+    /// A memory handoff can only be built from an explicitly recognized,
+    /// revisable observation. Free-form coach prose is never promoted by taking
+    /// its first sentence; if no typed source can be recovered, the memory lane
+    /// stays empty and the server returns the deterministic no-memory response.
+    private enum MemoryHandoffSource {
+        case disagreementAfterSetup
+    }
+
+    private static func memoryHandoffSource(
+        _ previousCoachReply: String?
+    ) -> MemoryHandoffSource? {
+        guard previousCoachReplyIsConsentBoundRead(previousCoachReply),
+              previousCoachReplyContainsDisagreementSetup(previousCoachReply) else {
+            return nil
+        }
+        return .disagreementAfterSetup
+    }
+
+    private static func previousCoachReplyIsConsentBoundRead(
+        _ previousCoachReply: String?
+    ) -> Bool {
+        guard let previousCoachReply else { return false }
+        let lower = previousCoachReply.lowercased()
+        let isConditional = [
+            "possible pattern", "carry forward for now", "hypothesis",
+            "not a label", "not a fixed label"
+        ].contains(where: lower.contains)
+        let isRevisable = [
+            "drop this read", "drop it if", "reject", "change this read",
+            "keep it if"
+        ].contains(where: lower.contains)
+        return isConditional && isRevisable
     }
 
     private static func previousCoachReplyContainsDisagreementSetup(_ previousCoachReply: String?) -> Bool {
@@ -459,7 +531,12 @@ enum CoachReasoningPass {
         return Array(unique(priority + pressureGaps + otherGaps).prefix(3))
     }
 
-    private static func nextProofTest(
+    private struct ProofTestSelection {
+        let text: String
+        let dimensionID: String?
+    }
+
+    private static func nextProofSelection(
         userQuestion: String,
         turnDepth: CoachTurnDepth,
         trajectory: UserTrajectorySnapshot,
@@ -470,7 +547,7 @@ enum CoachReasoningPass {
         preferredProofTest: String?,
         repairFocus: String?,
         recentProofTests: [String]
-    ) -> String {
+    ) -> ProofTestSelection {
         let sortedIDs = scores.sorted {
             if $0.score != $1.score { return $0.score < $1.score }
             return $0.dimensionID < $1.dimensionID
@@ -485,7 +562,10 @@ enum CoachReasoningPass {
         if let preferredProofTest,
            !preferredProofTest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            !recentKeys.contains(proofTestKey(preferredProofTest)) {
-            return surface == .live ? liveVersion(of: preferredProofTest) : preferredProofTest
+            return ProofTestSelection(
+                text: surface == .live ? liveVersion(of: preferredProofTest) : preferredProofTest,
+                dimensionID: preferredDimensionID
+            )
         }
         for candidate in contextualProofTestCandidates(
             userQuestion: userQuestion,
@@ -496,18 +576,27 @@ enum CoachReasoningPass {
         ) {
             let rendered = surface == .live ? liveVersion(of: candidate) : candidate
             if !recentKeys.contains(proofTestKey(rendered)) {
-                return rendered
+                return ProofTestSelection(
+                    text: rendered,
+                    dimensionID: preferredDimensionID
+                )
             }
         }
         for id in orderedIDs {
             guard let dimension = rubric.dimensions.first(where: { $0.id == id }) else { continue }
             for candidate in proofTestCandidates(for: dimension, surface: surface) where !recentKeys.contains(proofTestKey(candidate)) {
-                return candidate
+                return ProofTestSelection(text: candidate, dimensionID: id)
             }
         }
         let fallbackID = orderedIDs.first ?? rubric.dimensions[0].id
         let fallbackDimension = rubric.dimensions.first { $0.id == fallbackID } ?? rubric.dimensions[0]
-        return proofTestCandidates(for: fallbackDimension, surface: surface).first ?? fallbackDimension.proofTest
+        return ProofTestSelection(
+            text: proofTestCandidates(
+                for: fallbackDimension,
+                surface: surface
+            ).first ?? fallbackDimension.proofTest,
+            dimensionID: fallbackDimension.id
+        )
     }
 
     private static func contextualProofTestCandidates(
@@ -688,7 +777,7 @@ enum CoachReasoningPass {
 
     private static func liveVersion(of test: String) -> String {
         if test.lowercased().contains("75-second") {
-            return "Do one 60-second answer: verdict first, one reason, clean stop."
+            return "Run one 60-second answer: verdict first, one reason, clean stop."
         }
         if test.lowercased().contains("60-90") {
             return "Repeat it under a 60-second pressure timer and keep the verdict first."
@@ -1003,12 +1092,6 @@ enum CoachReasoningPass {
 
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
-    }
-
-    private static func countOccurrences(in value: String, needles: [String]) -> Int {
-        needles.reduce(0) { count, needle in
-            count + (value.contains(needle) ? 1 : 0)
-        }
     }
 
     private static func unique(_ values: [String]) -> [String] {

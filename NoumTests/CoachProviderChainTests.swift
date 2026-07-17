@@ -214,7 +214,7 @@ struct CoachProviderChainTests {
     @Test func acceptedReplyWritesPersistentDiagnostic() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let userTurn = "Give me one move for the next rep."
-        let acceptedReply = "Your message asks for one move, so keep the test narrow. In the next rep, answer first, give one proof point, then stop. That tests whether structure holds when the timer is tight."
+        let acceptedReply = "Keep the next rep narrow: answer first, give one proof point, then stop. That tests whether the structure stays clear under time pressure."
         #expect(AICoachChatService.replyQualityIssue(in: acceptedReply, latestUserTurn: userTurn) == nil)
 
         let service = AICoachChatService(
@@ -264,7 +264,7 @@ struct CoachProviderChainTests {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let bodyProbe = CoachBodyProbe()
         let userTurn = "Give me one move for the next rep."
-        let acceptedReply = "Your message asks for one move, so keep the test narrow. Next rep, answer first and stop after one proof point. That tests whether pressure is making you over-explain."
+        let acceptedReply = "Keep the next rep narrow: answer first, give one proof point, then stop. That tests whether the structure stays clear under time pressure."
         #expect(AICoachChatService.replyQualityIssue(in: acceptedReply, latestUserTurn: userTurn) == nil)
 
         let service = AICoachChatService(
@@ -307,7 +307,7 @@ struct CoachProviderChainTests {
         #expect(captured.provider == .agentPlatform)
         #expect(captured.endpointHost == "aiplatform.googleapis.com")
         #expect(captured.thinkingBudget == 0)
-        #expect(captured.maxOutputTokens == 180)
+        #expect(captured.maxOutputTokens == 110)
 
         #expect(diagnostics.records.contains { record in
             record.surface == "Ask Noum chat" &&
@@ -321,7 +321,7 @@ struct CoachProviderChainTests {
     @Test func transientProviderTimeoutRetriesOnceBeforeFailover() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let userTurn = "Give me one move for the next rep."
-        let acceptedReply = "Your message asks for one move, so keep the test narrow. Next rep, answer first and stop after one proof point. That tests whether pressure is making you over-explain."
+        let acceptedReply = "Keep the next rep narrow: answer first, give one proof point, then stop. That tests whether the structure stays clear under time pressure."
         let scripted = TransientThenSuccessCoachHTTP(
             success: .success(Self.geminiData(acceptedReply))
         )
@@ -381,8 +381,8 @@ struct CoachProviderChainTests {
         ))
     }
 
-    @Test func providerStreamingSkipsTurnsAlreadyCoveredByLocalRead() {
-        #expect(!AICoachChatService.providerStreamingShouldRun(
+    @Test func providerStreamingSkipsOnlyTurnsWithVisibleLocalRead() {
+        #expect(AICoachChatService.providerStreamingShouldRun(
             turnDepth: .trustRepair,
             surface: .text,
             responseMode: .expandable,
@@ -398,7 +398,7 @@ struct CoachProviderChainTests {
             realtimeCoachModeEnabled: true,
             streamRawPartialsToUI: false
         ))
-        #expect(!AICoachChatService.providerStreamingShouldRun(
+        #expect(AICoachChatService.providerStreamingShouldRun(
             turnDepth: .quickMove,
             surface: .text,
             responseMode: .immediateOnly,
@@ -627,14 +627,14 @@ struct CoachProviderChainTests {
             systemContext: context,
             turnDepth: .trustRepair,
             surface: .text
-        ) == nil)
+        ) == .nonCoachingPrescription)
         #expect(AICoachChatService.semanticQualityIssue(
             in: weakDraft,
             latestUserTurn: turn,
             systemContext: context,
             turnDepth: .trustRepair,
             assessment: assessment
-        ) == .missingRepairInsight)
+        ) == nil)
 
         let scripted = ScriptedCoachHTTP(results: [
             .success(Self.openAIData(weakDraft))
@@ -814,18 +814,15 @@ struct CoachProviderChainTests {
         })
     }
 
-    @Test func repairPromptIncludesExpertReferenceShape() async throws {
+    @Test func styleComplaintUsesSpecificSafeRepairWithoutProviderRewrite() async throws {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let turn = "The ** don't format and TTS reads them out. The responses feel robotic and cold."
-        let repaired = "Fair push: TTS reading symbols breaks trust. Your last rep had one filler, so say the recommendation first, give one proof point, then stop."
-        #expect(AICoachChatService.replyQualityIssue(
-            in: repaired,
-            latestUserTurn: turn,
-            systemContext: "RECENT (most-recent first)\n- Your last rep had 1 filler."
-        ) == nil)
+        let repaired = CoachReliabilityGate.preferenceAcknowledgementFallback(
+            surface: .text,
+            latestUserTurn: turn
+        )
         let scripted = ScriptedCoachHTTP(results: [
-            .success(Self.openAIData("Fair push. Formatting read aloud breaks trust, so I'll keep the next replies shorter, plain, and warmer.")),
-            .success(Self.openAIData(repaired))
+            .success(Self.openAIData("Fair push. Formatting read aloud breaks trust, so I'll keep the next replies shorter, plain, and warmer."))
         ])
         let service = AICoachChatService(
             keyedProviders: { [.openAI] },
@@ -862,26 +859,14 @@ struct CoachProviderChainTests {
         }
         #expect(text == repaired)
 
-        let systemMessages = await scripted.systemMessages
-        #expect(systemMessages.count == 2)
-        let systemMessage = try #require(systemMessages.last)
-
-        #expect(systemMessage.contains("Expert reference shape"))
-        #expect(systemMessage.contains("TTS reading symbols breaks trust"))
-        #expect(systemMessage.contains("say the recommendation first"))
-
-        #expect(diagnostics.records.contains { record in
-            record.surface == "Ask Noum chat" &&
-            record.provider == "OpenAI" &&
-            record.outcome == .fallback &&
-            record.reason.contains("attempting repair") &&
-            record.reason.contains("missingPrescribedAction")
-        })
+        #expect(await scripted.callCount == 1)
+        #expect(!text.lowercased().contains("filler"))
+        #expect(!text.lowercased().contains("practice"))
         #expect(diagnostics.records.contains { record in
             record.surface == "Ask Noum chat" &&
             record.provider == "OpenAI" &&
             record.outcome == .success &&
-            record.reason == "Repair reply accepted"
+            record.reason == "Safe reference repair accepted before provider rewrite"
         })
     }
 
@@ -1507,26 +1492,30 @@ struct CoachProviderChainTests {
                     return .missingInsightBridge
                 }
             }()
-            let expected = try #require(
-                AICoachChatService.directFollowThroughRepairReferenceShape(
-                    for: testCase.turn,
-                    system: testCase.system
-                )
-            )
+            guard let expected = AICoachChatService.directFollowThroughRepairReferenceShape(
+                for: testCase.turn,
+                system: testCase.system
+            ) else {
+                Issue.record("Missing direct follow-through reference for: \(testCase.turn)")
+                continue
+            }
+            let responseKind = CoachChatResponseKind.classify(testCase.turn)
             let expectedQualityIssue = AICoachChatService.replyQualityIssue(
                 in: expected,
                 latestUserTurn: testCase.turn,
                 systemContext: testCase.system,
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
-                surface: .text
+                surface: .text,
+                responseKind: responseKind
             )
             let expectedSemanticIssue = AICoachChatService.semanticQualityIssue(
                 in: expected,
                 latestUserTurn: testCase.turn,
                 systemContext: testCase.system,
                 turnDepth: turnDepth,
-                assessment: assessment
+                assessment: assessment,
+                responseKind: responseKind
             )
             let expectedVision = AICoachChatService.coachVisionEvaluation(
                 reply: expected,
@@ -1535,13 +1524,14 @@ struct CoachProviderChainTests {
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
                 assessment: assessment,
-                surface: .text
+                surface: .text,
+                responseKind: responseKind
             )
 
             #expect(expectedQualityIssue == nil, "\(testCase.turn): \(String(describing: expectedQualityIssue))")
             #expect(expectedSemanticIssue == nil, "\(testCase.turn): \(String(describing: expectedSemanticIssue))")
             #expect(expectedVision.passesProductionFloor, "\(testCase.turn): \(expectedVision)")
-            let repaired = try #require(AICoachChatService.safeReferenceRepairReply(
+            guard let repaired = AICoachChatService.safeReferenceRepairReply(
                 issue: repairIssue,
                 latestUserTurn: testCase.turn,
                 system: testCase.system,
@@ -1549,8 +1539,14 @@ struct CoachProviderChainTests {
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
                 assessment: assessment,
-                surface: .text
-            ))
+                surface: .text,
+                responseKind: responseKind
+            ) else {
+                Issue.record(
+                    "Safe reference repair rejected for \(testCase.turn); quality=\(String(describing: expectedQualityIssue)); semantic=\(String(describing: expectedSemanticIssue)); vision=\(expectedVision)"
+                )
+                continue
+            }
 
             #expect(repaired == expected)
             #expect(AICoachChatService.replyQualityIssue(
@@ -1559,14 +1555,16 @@ struct CoachProviderChainTests {
                 systemContext: testCase.system,
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
-                surface: .text
+                surface: .text,
+                responseKind: responseKind
             ) == nil)
             #expect(AICoachChatService.semanticQualityIssue(
                 in: repaired,
                 latestUserTurn: testCase.turn,
                 systemContext: testCase.system,
                 turnDepth: turnDepth,
-                assessment: assessment
+                assessment: assessment,
+                responseKind: responseKind
             ) == nil)
             #expect(AICoachChatService.coachVisionEvaluation(
                 reply: repaired,
@@ -1575,7 +1573,8 @@ struct CoachProviderChainTests {
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
                 assessment: assessment,
-                surface: .text
+                surface: .text,
+                responseKind: responseKind
             ).passesProductionFloor)
         }
 
@@ -1676,11 +1675,73 @@ struct CoachProviderChainTests {
         ) != .repeatedProofTest)
     }
 
+    @Test func retainedInterventionUsesEvidenceLedContinuationInsteadOfParaphrase() {
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should I fix now?",
+            directVerdict: "The recommendation still arrives after the setup.",
+            confidence: 0.61,
+            evidenceUsed: ["latest rep: setup came before the recommendation"],
+            rubricScores: [RubricScore(
+                dimensionID: "verdict_first",
+                label: "Verdict-first structure",
+                score: 0.54,
+                confidence: 0.61,
+                evidence: ["setup came before the recommendation"],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "verdict_first",
+            missingEvidence: [],
+            nextProofTest: "Put the recommendation first, then give one reason.",
+            responseMode: .immediateOnly,
+            toneMode: .prescribe,
+            repairFocus: nil
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+        let prior = "Lead with the decision, then give one reason."
+        let evidence = "The latest rep showed setup came before the recommendation."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "\(evidence) Put the recommendation first, then give one reason.",
+            latestUserTurn: "What should I fix now?",
+            recentCoachReplies: [prior],
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .repeatedProofTest)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "\(evidence) Stay with that focus for the next rep.",
+            latestUserTurn: "What should I fix now?",
+            recentCoachReplies: [prior],
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "Stay with that focus for the next rep.",
+            latestUserTurn: "What should I fix now?",
+            recentCoachReplies: [prior],
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) != nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "\(evidence) Stay with that focus for the next rep.",
+            latestUserTurn: "Why did that answer feel repetitive?",
+            recentCoachReplies: [prior],
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .nonCoachingPrescription)
+    }
+
     @Test func providerRepairCannotRepeatRecentProofTest() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
-        let priorCoachReply = "Last rep had 6 fillers, so run the same 60-second proof test."
-        let repeatedDraft = "The close is still leaking pressure, so run the same 60-second proof test."
+        let priorCoachReply = "Repeat the same prompt and check the close."
+        let repeatedDraft = "Repeat the same prompt and check the close."
         let advancedRepair = "Your last rep already has that proof test set, so vary the check: keep the same prompt and judge only whether the final sentence lands cleanly."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repeatedDraft,
+            latestUserTurn: "What next?",
+            recentCoachReplies: [priorCoachReply]
+        ) == .repeatedProofTest)
         #expect(AICoachChatService.replyQualityIssue(
             in: advancedRepair,
             latestUserTurn: "What next?",
@@ -1733,7 +1794,7 @@ struct CoachProviderChainTests {
             record.provider == "OpenAI" &&
             record.outcome == .fallback &&
             record.reason.contains("repeatedProofTest")
-        })
+        }, "Diagnostics: \(diagnostics.records.map(\.reason))")
         #expect(diagnostics.records.contains { record in
             record.surface == "Ask Noum chat" &&
             record.provider == "OpenAI" &&
@@ -1745,13 +1806,13 @@ struct CoachProviderChainTests {
     @Test func critiqueRepairMustNameTheUserFriction() {
         let turn = "This still sounds cold and overexplained, like generic AI tips."
         let vagueRepair = "Fair push. Your last rep had one filler, so say the recommendation first, then stop."
-        let specificRepair = "Fair push: that was advice, not coaching. Your last rep had one filler, so say the recommendation first, then soften it with one reassurance."
+        let specificRepair = "You’re right—I overexplained and sounded generic. I’ll answer with one specific point in plain language."
 
         #expect(AICoachChatService.replyQualityIssue(
             in: vagueRepair,
             latestUserTurn: turn,
             systemContext: "RECENT (most-recent first)\n- Your last rep had 1 filler."
-        ) == .missedTrustRepair)
+        ) == .nonCoachingPrescription)
         #expect(AICoachChatService.professionalCoachRubric(
             reply: vagueRepair,
             latestUserTurn: turn
@@ -1964,7 +2025,7 @@ struct CoachProviderChainTests {
 
     @Test func paymentRequiredProviderCoolsBehindNextProvider() async {
         let userTurn = "Give me one move for the next rep."
-        let acceptedReply = "Your message asks for one move, so keep the test narrow. In the next rep, answer first, give one proof point, then stop. That tests whether structure holds when the timer is tight."
+        let acceptedReply = "Keep the next rep narrow: answer first, give one proof point, then stop. That tests whether the structure stays clear under time pressure."
         #expect(AICoachChatService.replyQualityIssue(in: acceptedReply, latestUserTurn: userTurn) == nil)
 
         let scripted = ScriptedCoachHTTP(results: [

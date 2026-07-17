@@ -175,7 +175,7 @@ final class AccountDataRegistryTests: XCTestCase {
         XCTAssertEqual(registry.participantIDs, [
             "ai-consent", "coaching-profile", "practice-sessions",
             "skill-trends", "baseline", "rating", "profile-progress",
-            "im-relationships", "recommendation-learning", "flow-observability", "big-moments",
+            "coaching-content-sync", "im-relationships", "recommendation-learning", "flow-observability", "big-moments",
             "forward-plan", "session-intent", "session-reflections",
             "coach-check-ins", "coach-letters", "post-rep-notes",
             "coach-memory", "proof-moments", "phrase-bank", "ask-noum", "pressure-history",

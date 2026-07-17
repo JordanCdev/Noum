@@ -72,18 +72,25 @@ struct RecommendationDeletionAdmissionTests {
         ], in: acknowledgement)
     }
 
-    @Test("Backend queue, hydration, and transport all reuse Auth deletion authority")
+    @Test("Backend queue, hydration, and transport reuse exact content authority")
     func backendBoundariesUseDurableFence() throws {
         let source = try source(named: "BackendSyncManager.swift")
 
         let authority = try sourceSlice(
             in: source,
-            from: "    private func durableRecommendationProviderWorkAllowed(",
-            to: "    nonisolated static func authorizedChallengeParticipantID("
+            from: "    private func acquireCoachingContentSyncLease(",
+            to: "    private func coachingContentSyncLeaseIsCurrent("
         )
-        #expect(authority.contains(
-            "AuthManager.shared.isProviderWorkAllowed(for: accountID)"
-        ))
+        try expectOrdered([
+            "auth.currentAccountID",
+            "auth.currentAuthProviderRawValue",
+            "auth.initialAccountHydrationState",
+            "auth.isProviderWorkAllowed(for: accountID)",
+            "auth.accountLifecycleGeneration",
+            "currentCloudProcessingReceipt(for: accountID)",
+            "firebaseUID",
+            "coachingContentSyncAuthorityMatches(",
+        ], in: authority)
 
         let admission = try sourceSlice(
             in: source,
@@ -91,7 +98,7 @@ struct RecommendationDeletionAdmissionTests {
             to: "    func fenceRecommendationSync("
         )
         try expectOrdered([
-            "await durableRecommendationProviderWorkAllowed(for: accountID)",
+            "await acquireCoachingContentSyncLease(",
             "!recommendationSyncClosedAccounts.contains(accountID)",
             "let snapshot = RecommendationSyncSnapshot(",
             "await lane.enqueue(snapshot)",
@@ -108,7 +115,7 @@ struct RecommendationDeletionAdmissionTests {
                 range: start.upperBound..<source.endIndex
             ))
             let body = String(source[start.lowerBound..<nextMethod.lowerBound])
-            #expect(body.contains("durableRecommendationProviderWorkAllowed"))
+            #expect(body.contains("acquireCoachingContentSyncLease"))
         }
 
         let transport = try sourceSlice(
@@ -117,9 +124,9 @@ struct RecommendationDeletionAdmissionTests {
             to: "    private func applyRecommendationSyncResponse("
         )
         try expectOrdered([
-            "await durableRecommendationProviderWorkAllowed(for: snapshot.accountID)",
+            "let lease = await acquireCoachingContentSyncLease(",
             "callable.call(",
-            "await durableRecommendationProviderWorkAllowed(",
+            "await coachingContentSyncLeaseIsCurrent(lease)",
             "applyRecommendationSyncResponse(response, to: snapshot)",
         ], in: transport)
 
@@ -136,6 +143,58 @@ struct RecommendationDeletionAdmissionTests {
             "recommendationSyncLanes.removeValue(forKey: accountID)",
             "recommendationSyncClosedAccounts.remove(accountID)",
         ], in: suspension)
+    }
+
+    @Test("Account deletion drains coaching content before remote destruction")
+    func coachingContentDeletionBoundary() throws {
+        let backend = try source(named: "BackendSyncManager.swift")
+        let drain = try sourceSlice(
+            in: backend,
+            from: "    private func requestCoachingContentDrain(",
+            to: "    private func writePendingCoachingContentMutation("
+        )
+        #expect(drain.contains(
+            "!coachingContentSyncClosedAccounts.contains(accountID)"
+        ))
+
+        let write = try sourceSlice(
+            in: backend,
+            from: "    private func writePendingCoachingContentMutation(",
+            to: "    private func finishCoachingContentDrain("
+        )
+        try expectOrdered([
+            "let lease = await acquireCoachingContentSyncLease(",
+            "switch mutation.documentID",
+            "!coachingContentSyncClosedAccounts.contains(accountID)",
+            "await coachingContentSyncLeaseIsCurrent(lease)",
+            "return .committed",
+        ], in: write)
+
+        let suspension = try sourceSlice(
+            in: backend,
+            from: "    func suspendCoachingContentSyncForDeletion(",
+            to: "    func resumeCoachingContentSyncAfterFailedDeletion("
+        )
+        try expectOrdered([
+            "coachingContentSyncClosedAccounts.insert(accountID)",
+            "requestedCoachingContentDrainAuthority.removeValue(forKey: accountID)",
+            "await self.waitUntilCoachingContentDrainIsIdle(",
+            "if !didClose",
+            "coachingContentSyncClosedAccounts.remove(accountID)",
+        ], in: suspension)
+
+        let auth = try source(named: "AuthManager.swift")
+        let deletion = try sourceSlice(
+            in: auth,
+            from: "    func deleteCurrentAccount() async throws {",
+            to: "    private func persistedDeletionRecovery("
+        )
+        try expectOrdered([
+            "accountLifecycleGeneration &+= 1",
+            "backendSync.suspendCoachingContentSyncForDeletion(",
+            "backendSync.suspendRecommendationSyncForDeletion(",
+            "let outcome = try await backendSync.deleteAccount(",
+        ], in: deletion)
     }
 
     private func source(named name: String) throws -> String {

@@ -187,7 +187,8 @@ struct RecommendationSyncVersioningTests {
             providerRawValue: "apple",
             revision: 2,
             expectedRemoteRevision: 1,
-            mutationID: UUID()
+            mutationID: UUID(),
+            sourceLifecycleGeneration: 7
         ))
         let encoded = try BackendSyncManager.recommendationCallableEncoder()
             .encode(request)
@@ -195,6 +196,8 @@ struct RecommendationSyncVersioningTests {
             .decode(RecommendationSyncCallableRequest.self, from: encoded)
 
         #expect(decoded.pendingExposure?.shownAt == shownAt)
+        #expect(decoded.schemaVersion == 2)
+        #expect(decoded.expectedAccountID == "account-a")
         let payload = try #require(encoded as? [String: Any])
         let pending = try #require(payload["pendingExposure"] as? [String: Any])
         #expect(pending["shownAt"] as? Double == shownAt.timeIntervalSince1970)

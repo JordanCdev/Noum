@@ -131,15 +131,46 @@ enum CoachReplyPipeline {
         streamRawPartialsToUI: Bool = CoachBrainFlags.streamRawPartialsToUI
     ) -> Bool {
         guard realtimeCoachModeEnabled else { return false }
-        if surface == .live { return true }
-        // Raw provider partials are withheld by default because they have not
-        // passed the coaching, semantic, or reliability gates. In that shipping
-        // posture every text turn needs the already-computed local read; without
-        // it a quick turn can leave a blank pending row for the whole provider
-        // request (and for a bounded retry after a dropped stream).
-        if !streamRawPartialsToUI { return true }
-        if responseMode == .expandable { return true }
-        return turnDepth == .deepAssessment || turnDepth == .trustRepair
+        // Ordinary text chat must have one visible answer. The former local
+        // provisional sentence and final model reply verbalised the same brief
+        // twice, so even a good final answer felt repetitive. Live mode keeps
+        // the bounded immediate read for spoken latency; text waits for the
+        // single vetted final reply.
+        return surface == .live
+    }
+
+    nonisolated static func provisionalCoachReadText(
+        for assessment: CoachAssessment
+    ) -> String {
+        CoachChatBrief(assessment: assessment).provisionalCoachRead
+    }
+
+    nonisolated static func applicableCoachBrief(
+        for assessment: CoachAssessment,
+        responseKind: CoachChatResponseKind
+    ) -> CoachChatBrief? {
+        CoachChatBrief.applicable(
+            assessment: assessment,
+            responseKind: responseKind
+        )
+    }
+
+    /// A general craft question can still trigger the deterministic judgement
+    /// pass while the user has no usable personal rep. Do not let that raw
+    /// assessment re-enter provider context, semantic gates, metadata, or
+    /// fallback selection after the typed brief has correctly withdrawn it.
+    nonisolated static func assessmentForProvider(
+        _ assessment: CoachAssessment?,
+        coachingBrief: CoachChatBrief?,
+        responseKind: CoachChatResponseKind
+    ) -> CoachAssessment? {
+        if responseKind == .generalCoaching || responseKind == .conversational {
+            return nil
+        }
+        if responseKind == .memoryHandoff, coachingBrief == nil {
+            return nil
+        }
+        return assessment
     }
 
     nonisolated static func shouldUseSemanticKnowledgeRerank(
@@ -195,15 +226,12 @@ enum CoachReplyPipeline {
             replyLease = capturedLease
         }
         let profileStore = CoachingProfileStore.shared
+        let coachVoiceSnapshot = profileStore.profile?.chosenStyleGoal
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
             structuredReplyShapeEnabled: CoachContextBuilder.structuredAskNoumReplyShapeEnabled(),
             judgmentLayerRuleEnabled: CoachContextBuilder.judgmentLayerRuleEnabled()
         )
-
-        // Trend analysis at call time — cheap pure work over the snapshot store.
-        let snapshots = SkillTrendStore.shared.snapshots
-        let trends = TrendAnalyzer.analyze(snapshots: snapshots)
 
         let sessions = PracticeProgressEligibility.eligibleSessions(
             in: sessionsOverride ?? PracticeSessionStore.shared.sessions
@@ -214,7 +242,6 @@ enum CoachReplyPipeline {
         } else {
             coachMemory = CoachMemoryStore.shared.currentMemory
         }
-        let weeklyCheckInDue = !sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
         let recentProofs = ProofMomentStore.shared.recent(
             limit: 3,
             compatibleWith: profileStore.profile?.chosenStyleGoal
@@ -222,6 +249,11 @@ enum CoachReplyPipeline {
         let history = store.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
         let latestUserTurn = latestUserIndex.map { history[$0].text }
+        let turnIntent = CoachChatTurnIntent.classify(latestUserTurn)
+        let responseKind = CoachChatResponseKind.classify(
+            latestUserTurn,
+            intent: turnIntent
+        )
         let turnDepth = judgementPassEnabled
             ? TurnDepthClassifier.classify(
                 userText: latestUserTurn ?? "",
@@ -266,7 +298,8 @@ enum CoachReplyPipeline {
         // in. Text chat can use the optional semantic rerank; live mode stays
         // on pure BM25 so it never kicks embedding warmup or waits on the actor
         // path inside a spoken-response budget.
-        let activeLever = coachMemory?.currentLever
+        let activeLever = responseKind == .personalEvidenceRead ||
+            responseKind == .memoryHandoff ? coachMemory?.currentLever : nil
         let hasDiagnosis = activeLever != nil
         let retrievalQuery = knowledgeRetrievalQuery(
             latestUserTurn: latestUserTurn,
@@ -330,14 +363,19 @@ enum CoachReplyPipeline {
             coachMemory: coachMemory
         )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
+        let coachingRubric = GoalRubricStore.coachingRubric(for: profileStore.profile)
         let reasoningStartedAt = Date()
         let assessmentResult: CoachAssessmentCacheResult? = {
-            guard judgementPassEnabled, let activeRubric else { return nil }
+            guard Self.shouldBuildAssessment(
+                judgementPassEnabled: judgementPassEnabled,
+                turnIntent: turnIntent,
+                responseKind: responseKind
+            ) else { return nil }
             return CoachAssessmentCache.shared.assessment(
                 turnDepth: turnDepth,
                 userQuestion: latestUserTurn ?? "",
                 trajectory: trajectoryResult.snapshot,
-                rubric: activeRubric,
+                rubric: coachingRubric,
                 surface: surface,
                 recentProofTests: recentProofTests,
                 previousCoachReply: previousCoachReply,
@@ -346,7 +384,7 @@ enum CoachReplyPipeline {
                         turnDepth: turnDepth,
                         userQuestion: latestUserTurn ?? "",
                         trajectory: trajectoryResult.snapshot,
-                        rubric: activeRubric,
+                        rubric: coachingRubric,
                         surface: surface,
                         recentProofTests: recentProofTests,
                         previousCoachReply: previousCoachReply
@@ -355,7 +393,15 @@ enum CoachReplyPipeline {
             )
         }()
         let assessment = assessmentResult?.assessment
-        let assessmentProofTestHash = assessment.map {
+        let coachingBrief = assessment.flatMap {
+            Self.applicableCoachBrief(for: $0, responseKind: responseKind)
+        }
+        let providerAssessment = Self.assessmentForProvider(
+            assessment,
+            coachingBrief: coachingBrief,
+            responseKind: responseKind
+        )
+        let assessmentProofTestHash = providerAssessment.map {
             Self.proofTestHash(for: $0.nextProofTest)
         }
         let proofTestRecentlyRepeated = assessmentProofTestHash.map {
@@ -377,7 +423,8 @@ enum CoachReplyPipeline {
                 reason: "turnDepth=\(turnDepth.rawValue) trajectoryCacheHit=\(trajectoryResult.cacheHit) assessmentCacheHit=\(assessmentResult?.cacheHit ?? false) assessmentCacheAgeMs=\(assessmentCacheAgeAtReasoning ?? -1) reasoningEvidence=\(assessment.evidenceReferenceCount)",
                 startedAt: reasoningStartedAt
             )
-            if Self.shouldShowProvisionalCoachRead(
+            if let coachingBrief,
+               Self.shouldShowProvisionalCoachRead(
                 turnDepth: turnDepth,
                 surface: surface,
                 responseMode: assessment.responseMode,
@@ -386,7 +433,7 @@ enum CoachReplyPipeline {
                 let provisionalVisibleAt = Date()
                 let immediateCoachRead = CoachDisplayCopy.normalized(
                     CoachReplyTextSanitizer.coachReplyText(
-                        from: assessment.immediateCoachRead
+                        from: coachingBrief.provisionalCoachRead(for: responseKind)
                     )
                 )
                 let provisionalMetadata = CoachTurnMetadata(
@@ -394,8 +441,8 @@ enum CoachReplyPipeline {
                     providerTier: preferredTier,
                     semanticGateOutcome: .notEvaluated,
                     evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
-                    assessment: assessment,
-                    assessmentConfidence: assessment.confidence,
+                    assessment: providerAssessment,
+                    assessmentConfidence: providerAssessment?.confidence,
                     proofTestHash: assessmentProofTestHash,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                     retrievalTrace: retrievalTrace,
@@ -422,17 +469,24 @@ enum CoachReplyPipeline {
                 AICallDiagnostics.record(
                     surface: "Coach immediate read",
                     providerName: "On-device coach brain",
-                    model: "CoachAssessment",
+                    model: "CoachChatBrief",
                     outcome: .success,
                     reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) timeToFirstVisibleToken=local",
                     startedAt: turnStartedAt
                 )
             }
         } else {
-            let skipReason = Self.judgementPassSkipReason(
-                judgementPassEnabled: judgementPassEnabled,
-                hasActiveRubric: activeRubric != nil
-            ) ?? "assessment-unavailable"
+            let skipReason: String
+            if responseKind == .generalCoaching || responseKind == .conversational {
+                skipReason = "response-kind-\(responseKind.rawValue)"
+            } else if turnIntent != .coaching && turnIntent != .unknown {
+                skipReason = "non-coaching-intent-\(turnIntent.rawValue)"
+            } else {
+                skipReason = Self.judgementPassSkipReason(
+                    judgementPassEnabled: judgementPassEnabled,
+                    hasActiveRubric: activeRubric != nil
+                ) ?? "assessment-unavailable"
+            }
             AICallDiagnostics.record(
                 surface: "Coach judgement pass",
                 providerName: "On-device coach brain",
@@ -443,45 +497,21 @@ enum CoachReplyPipeline {
         }
         var providerChoice: CoachTurnProviderChoice?
 
-        let activeBigMoment = BigMomentStore.shared.activeMoment
-        let currentForwardPlan = ForwardPlanStore.shared.currentPlan(
-            activeBigMomentID: activeBigMoment?.id,
-            chosenStyleGoal: profileStore.profile?.chosenStyleGoal
-        )
-        var context = CoachContextBuilder.userContext(
-            profile: profileStore.profile,
-            baseline: BaselineStore.shared.baseline,
-            rating: RatingStore.shared.rating,
-            sessions: sessions,
-            currentStreak: StreakFreezeManager.shared.currentStreak,
-            pathStatus: PathProgressManager.shared.currentNode,
-            pathGatingPhrase: PathProgressManager.shared.currentNodeGatingPhrase,
-            recentProofs: recentProofs,
-            bigMoment: activeBigMoment,
-            recentMomentOutcomes: BigMomentStore.shared.recentOutcomeReports(limit: BigMomentStore.outcomeReportCap),
-            forwardPlan: currentForwardPlan,
-            latestRepNote: PostRepCoachNoteStore.shared.latestNote(
-                chosenStyleGoal: profileStore.profile?.chosenStyleGoal
-            ),
-            coachMemory: coachMemory,
-            pendingRecommendation: RecommendationLearningStore.shared.pendingExposure,
-            recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
-            trends: trends,
-            latestSnapshot: snapshots.last,
-            snapshotsForTrends: snapshots,
-            pendingGoalIntent: pendingGoalIntent,
-            recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2),
-            weeklyCheckInDue: weeklyCheckInDue,
-            latestUserTurn: latestUserTurn,
-            previousCoachReply: previousCoachReply,
-            recentUserTurns: recentUserTurns,
-            coachingExpertise: coachingExpertise
-        )
-        if let assessment, let activeRubric {
-            context += "\n" + CoachPromptBundle.contextBlock(
-                assessment: assessment,
-                rubric: activeRubric,
-                surface: surface
+        let context: String
+        if responseKind == .generalCoaching ||
+            responseKind == .conversational ||
+            responseKind == .memoryHandoff {
+            context = CoachContextBuilder.nonPersonalContext(
+                profile: profileStore.profile,
+                responseKind: responseKind,
+                coachingExpertise: responseKind == .generalCoaching ? coachingExpertise : [],
+                coachingBrief: coachingBrief
+            )
+        } else {
+            context = CoachContextBuilder.personalTurnContext(
+                profile: profileStore.profile,
+                coachingExpertise: coachingExpertise,
+                hasCoachingBrief: coachingBrief != nil
             )
         }
         // Context enrichment is complete before provider work begins. Capture
@@ -512,7 +542,7 @@ enum CoachReplyPipeline {
 
         var qualityGateEvents: [CoachTurnQualityGateEvent] = []
         var providerAttemptEvents: [CoachProviderAttemptEvent] = []
-        Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
+        Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public)")
         guard store.replyLeaseIsCurrent(replyLease) else {
             return .failure(.unauthenticated)
         }
@@ -528,9 +558,12 @@ enum CoachReplyPipeline {
                 history: history,
                 systemPrompt: systemPrompt,
                 userContext: contextSnapshot,
+                accountID: replyLease.accountScope,
                 grounding: groundingContext,
                 turnDepth: turnDepth,
-                assessment: assessment,
+                assessment: providerAssessment,
+                responseKind: responseKind,
+                coachVoice: coachVoiceSnapshot,
                 surface: surface,
                 preferredTier: preferredTier,
                 providerWorkAllowed: {
@@ -553,8 +586,8 @@ enum CoachReplyPipeline {
                         providerTier: preferredTier,
                         semanticGateOutcome: .notEvaluated,
                         evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
-                        assessment: assessment,
-                        assessmentConfidence: assessment?.confidence,
+                        assessment: providerAssessment,
+                        assessmentConfidence: providerAssessment?.confidence,
                         proofTestHash: assessmentProofTestHash,
                         proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                         retrievalTrace: retrievalTrace,
@@ -643,53 +676,66 @@ enum CoachReplyPipeline {
                 recentCoachReplies: recentCoachReplies,
                 latestUserTurn: latestUserTurn,
                 turnDepth: turnDepth,
-                assessment: assessment,
+                assessment: providerAssessment,
                 evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated ?? false,
-                surface: surface
+                surface: surface,
+                responseKind: responseKind,
+                coachingBrief: coachingBrief
             )
         } else {
             reliabilityVerdict = .clean
         }
-        let contentRejectedFallback = Self.contentRejectedFallbackText(
+        let safeFailureFallback = Self.safeFailureFallbackText(
             for: outcome,
-            assessment: assessment,
+            assessment: providerAssessment,
             turnDepth: turnDepth,
             surface: surface,
             previousCoachReply: previousCoachReply,
             recentCoachReplies: recentCoachReplies,
-            latestUserTurn: latestUserTurn
+            latestUserTurn: latestUserTurn,
+            responseKind: responseKind,
+            coachingBrief: coachingBrief
         )
-        if contentRejectedFallback != nil {
-            qualityGateEvents.append(.fallback("deterministicAssessmentAfterContentRejected"))
+        if safeFailureFallback != nil {
+            let gate: String
+            switch outcome {
+            case .failure(.empty):
+                gate = "deterministicIntentFallbackAfterEmpty"
+            case .failure(.contentRejected):
+                gate = "deterministicSafeFallbackAfterContentRejected"
+            case .reply, .failure:
+                gate = "deterministicSafeFailureFallback"
+            }
+            qualityGateEvents.append(.fallback(gate))
             AICallDiagnostics.record(
-                surface: "Coach content rejection fallback",
+                surface: "Coach safe failure fallback",
                 providerName: "CoachReplyPipeline",
                 model: "CoachReliabilityGate",
                 outcome: .fallback,
-                reason: "turnDepth=\(turnDepth.rawValue) surface=\(surface.rawValue)"
+                reason: "gate=\(gate) turnDepth=\(turnDepth.rawValue) surface=\(surface.rawValue)"
             )
         }
         let effectiveOutcome: ChatOutcome = reliabilityVerdict.fallbackText.map { .reply($0) } ??
-            contentRejectedFallback.map { .reply($0) } ??
+            safeFailureFallback.map { .reply($0) } ??
             outcome
         let finalizedOutcome = Self.finalizedOutcome(
             effectiveOutcome,
             latestUserTurn: latestUserTurn,
             turnDepth: turnDepth
         )
-        // Observability: record whether the reply the user finally sees is the
-        // streamed one or a gate substitution — this is what makes the
-        // "rich draft quietly replaced by a shorter final" incident legible.
-        let draftWasReplaced = reliabilityVerdict.fallbackText != nil || contentRejectedFallback != nil
+        // Observability: record whether the provider outcome commits unchanged
+        // or a safe gate substitution becomes the final user-visible reply.
+        let finalOutcomeSubstituted = reliabilityVerdict.fallbackText != nil ||
+            safeFailureFallback != nil
         FlowLog.log(
             correlationId: coachID,
             flow: .chatTurn,
-            stage: draftWasReplaced ? "chat.finalSubstituted" : "chat.finalCommitted",
-            outcome: draftWasReplaced ? .fallback : .success,
-            reason: draftWasReplaced
-                ? "a downstream gate replaced the streamed reply the user already saw"
-                : "streamed reply committed unchanged",
+            stage: finalOutcomeSubstituted ? "chat.finalSubstituted" : "chat.finalCommitted",
+            outcome: finalOutcomeSubstituted ? .fallback : .success,
+            reason: finalOutcomeSubstituted
+                ? "a downstream gate replaced the provider outcome"
+                : "provider outcome committed unchanged",
             numerics: ["blocked": reliabilityVerdict.blocked ? 1 : 0]
         )
         if reliabilityVerdict.blocked {
@@ -727,8 +773,9 @@ enum CoachReplyPipeline {
                 systemContext: contextSnapshot,
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
-                assessment: assessment,
-                surface: surface
+                assessment: providerAssessment,
+                surface: surface,
+                responseKind: responseKind
             )
         }()
         let finalReplyWordCount: Int? = {
@@ -739,7 +786,8 @@ enum CoachReplyPipeline {
             for: finalizedOutcome,
             latestUserTurn: latestUserTurn,
             turnDepth: turnDepth,
-            assessment: assessment
+            assessment: providerAssessment,
+            responseKind: responseKind
         )
         let finalTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? completionAt)
         let finalLatency = Self.latencyMs(from: turnStartedAt, to: completionAt)
@@ -765,12 +813,14 @@ enum CoachReplyPipeline {
                 qualityGateEvents: qualityGateEvents
             ),
             evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
-            assessment: assessment,
-            assessmentConfidence: assessment?.confidence,
+            assessment: providerAssessment,
+            assessmentConfidence: providerAssessment?.confidence,
             proofTestHash: assessmentProofTestHash,
             proofTestRecentlyRepeated: proofTestRecentlyRepeated,
             retrievalTrace: retrievalTrace,
             promptTrace: promptTrace,
+            serverPolicyVersion: providerChoice?.policyVersion,
+            serverGenerationMode: providerChoice?.generationMode,
             visionScore: finalVision?.score,
             visionCriticalMisses: finalVision?.criticalMisses,
             visionPassesProductionFloor: finalVision?.passesProductionFloor,
@@ -824,7 +874,7 @@ enum CoachReplyPipeline {
                 "timeToFirstVisibleTokenSource=\(finalMetadata.timeToFirstVisibleTokenSource?.rawValue ?? "none")",
                 "timeToCompleteReplyMs=\(finalMetadata.timeToCompleteReplyMs ?? -1)",
                 "assessmentCacheHit=\(assessmentResult.map { "\($0.cacheHit)" } ?? "unknown")",
-                "assessmentConfidence=\(assessment.map { String(format: "%.2f", $0.confidence) } ?? "none")",
+                "assessmentConfidence=\(providerAssessment.map { String(format: "%.2f", $0.confidence) } ?? "none")",
                 "proofTestHash=\(finalMetadata.proofTestHash ?? "none")",
                 "proofTestRepeated=\(finalMetadata.proofTestRecentlyRepeated.map { "\($0)" } ?? "unknown")",
                 "visionScore=\(finalMetadata.visionScore.map { "\($0)" } ?? "none")",
@@ -884,7 +934,8 @@ enum CoachReplyPipeline {
         for outcome: ChatOutcome,
         latestUserTurn: String?,
         turnDepth: CoachTurnDepth,
-        assessment: CoachAssessment?
+        assessment: CoachAssessment?,
+        responseKind: CoachChatResponseKind
     ) -> CoachTurnSemanticGateOutcome {
         guard let assessment else { return .notEvaluated }
         switch outcome {
@@ -895,7 +946,8 @@ enum CoachReplyPipeline {
                 in: normalized,
                 latestUserTurn: latestUserTurn,
                 turnDepth: turnDepth,
-                assessment: assessment
+                assessment: assessment,
+                responseKind: responseKind
             ) {
                 return .failed(issue.rawValue)
             }
@@ -905,17 +957,72 @@ enum CoachReplyPipeline {
         }
     }
 
-    nonisolated static func contentRejectedFallbackText(
+    nonisolated static func safeFailureFallbackText(
         for outcome: ChatOutcome,
         assessment: CoachAssessment?,
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface,
         previousCoachReply: String?,
         recentCoachReplies: [String] = [],
-        latestUserTurn: String? = nil
+        latestUserTurn: String? = nil,
+        responseKind explicitResponseKind: CoachChatResponseKind? = nil,
+        coachingBrief: CoachChatBrief? = nil
     ) -> String? {
-        guard case .failure(.contentRejected) = outcome,
-              let assessment else {
+        let turnIntent = CoachChatTurnIntent.classify(latestUserTurn)
+        let responseKind: CoachChatResponseKind
+        if let explicitResponseKind {
+            responseKind = explicitResponseKind
+        } else if latestUserTurn == nil,
+                  assessment != nil || coachingBrief != nil {
+            responseKind = .personalEvidenceRead
+        } else {
+            responseKind = CoachChatResponseKind.classify(
+                latestUserTurn,
+                intent: turnIntent
+            )
+        }
+        let isKnownNonCoachingIntent: Bool
+        switch turnIntent {
+        case .greeting, .offTopic, .preference, .vulnerable:
+            isKnownNonCoachingIntent = true
+        case .coaching, .unknown:
+            isKnownNonCoachingIntent = false
+        }
+        switch outcome {
+        case .failure(.contentRejected):
+            // Personal coaching can use its typed assessment read. General
+            // craft questions have no assessment by design, but they still
+            // have bounded, turn-specific expert fallbacks; without this lane
+            // a secure-provider quality rejection surfaced as "couldn't
+            // complete" even when the same local fallback already passed every
+            // quality gate on the direct-provider path.
+            if responseKind == .generalCoaching {
+                guard let fallback = CoachReliabilityGate.generalCoachingFailureFallback(
+                    turnDepth: turnDepth,
+                    surface: surface,
+                    latestUserTurn: latestUserTurn,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                ), CoachReliabilityGate.isCleanCandidate(
+                    fallback,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                ) else {
+                    return nil
+                }
+                return fallback
+            }
+            if assessment == nil,
+               coachingBrief == nil,
+               !isKnownNonCoachingIntent {
+                return nil
+            }
+        case .failure(.empty):
+            // Empty is safe to recover only when the user's turn already tells
+            // us exactly how to respond without inventing coaching. A coaching
+            // or unknown turn still needs a real provider result.
+            guard isKnownNonCoachingIntent else { return nil }
+        case .reply, .failure:
             return nil
         }
         let fallback = CoachReliabilityGate.truthfulFallback(
@@ -924,13 +1031,28 @@ enum CoachReplyPipeline {
             surface: surface,
             previousCoachReply: previousCoachReply,
             recentCoachReplies: recentCoachReplies,
-            latestUserTurn: latestUserTurn
+            latestUserTurn: latestUserTurn,
+            responseKind: responseKind,
+            coachingBrief: coachingBrief
         )
         return CoachReliabilityGate.isCleanCandidate(
             fallback,
             previousCoachReply: previousCoachReply,
             recentCoachReplies: recentCoachReplies
         ) ? fallback : nil
+    }
+
+    nonisolated static func shouldBuildAssessment(
+        judgementPassEnabled: Bool,
+        turnIntent: CoachChatTurnIntent,
+        responseKind: CoachChatResponseKind
+    ) -> Bool {
+        guard judgementPassEnabled else { return false }
+        guard turnIntent == .coaching || turnIntent == .unknown else {
+            return false
+        }
+        return responseKind == .personalEvidenceRead ||
+            responseKind == .memoryHandoff
     }
 
     nonisolated static func qualityGateOutcome(

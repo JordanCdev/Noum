@@ -129,7 +129,8 @@ enum TurnDepthClassifier {
         return !containsAny(normalized, [
             "score", "filler", "voice", "rate", "plan", "help", "practice",
             "interview", "meeting", "presentation", "pitch", "better",
-            "improve", "why", "what", "how"
+            "improve", "why", "what", "how", "data", "stats", "metrics",
+            "numbers", "pace", "wpm", "duration", "rating"
         ])
     }
 
@@ -181,6 +182,9 @@ enum TurnDepthClassifier {
         if isHowToSoundMoreIntent(lower) {
             return false
         }
+        if isLongitudinalPerformanceRead(lower) {
+            return true
+        }
         return containsAny(lower, [
             "how far off", "how close am i", "am i close",
             "am i far", "where am i really", "how far away",
@@ -223,6 +227,11 @@ enum TurnDepthClassifier {
         if isHowToSoundMoreIntent(lower) {
             return false
         }
+        if isBroadPerformanceRead(lower) ||
+            explicitlyRequestsMetrics(lower) ||
+            isSpecificAnswerLandingRead(lower) {
+            return true
+        }
         return containsAny(lower, [
             "what happened", "what did you notice", "what do you notice",
             "read this rep", "read my rep", "last rep",
@@ -234,6 +243,139 @@ enum TurnDepthClassifier {
             "how does this sound", "do i come across",
             "how do i come across"
         ])
+    }
+
+    /// A question about why one specific answer failed is a request to read
+    /// that answer, not generic communication advice. Requiring both "why" and
+    /// a bounded landing phrase avoids turning "How did I do that?" into an
+    /// unsupported personal evaluation.
+    static func isSpecificAnswerLandingRead(_ userText: String) -> Bool {
+        let lower = normalized(userText)
+        guard lower.contains("why") else { return false }
+        return containsAny(lower, [
+            "that answer landed badly", "that answer land badly",
+            "that answer landed bad", "that answer did not land",
+            "that answer didn't land", "that answer didn’t land",
+            "that answer not land", "that answer did not work",
+            "that answer didn't work", "that answer didn’t work",
+            "that answer fell flat", "that answer came across wrong"
+        ])
+    }
+
+    /// A bounded personal evaluation ask, distinct from both a how-to question
+    /// and a request for telemetry. Exact matching is intentional: substring
+    /// matching would turn "How did I do that?" into a claimed performance read.
+    static func isBroadPerformanceRead(_ userText: String) -> Bool {
+        let turn = canonicalQuestion(userText)
+        let latestRepReads: Set<String> = [
+            "how did i do", "how'd i do", "how did i do overall",
+            "honestly how did i do", "how was my answer", "how was that",
+            "was that any good", "what did you think of my answer",
+            "what do you think of my answer"
+        ]
+        return latestRepReads.contains(turn) || isLongitudinalPerformanceRead(turn)
+    }
+
+    /// Longitudinal evaluation needs the deeper evidence-calibration path. It
+    /// still does not ask for raw statistics or implicitly request another drill.
+    static func isLongitudinalPerformanceRead(_ userText: String) -> Bool {
+        let turn = canonicalQuestion(userText)
+        let exact: Set<String> = [
+            "how am i doing", "how am i doing overall",
+            "am i improving", "am i actually improving", "am i really improving",
+            "have i improved", "have i actually improved",
+            "am i getting better", "am i actually getting better",
+            "am i making progress", "what progress am i making"
+        ]
+        if exact.contains(turn) { return true }
+        let boundedProgressPattern =
+            #"^am i (?:actually |really )?improving or am i just (?:doing|repeating) reps$"#
+        return turn.range(of: boundedProgressPattern, options: .regularExpression) != nil
+    }
+
+    /// True only for an explicit personal readout request. Mentioning progress,
+    /// improvement, a score concept, or metrics in a craft question is not
+    /// permission to dump dashboard telemetry into the coaching conversation.
+    static func explicitlyRequestsMetrics(_ userText: String) -> Bool {
+        !requestedPersonalMetrics(userText).isEmpty
+    }
+
+    /// Returns the exact metric kinds the user authorized. A broad "stats" ask
+    /// requests the complete bounded rep projection; a filler-count question
+    /// does not silently authorize score, pace, or duration narration.
+    static func requestedPersonalMetrics(_ userText: String) -> [CoachMetricKind] {
+        let turn = canonicalQuestion(userText)
+        let metricNounPattern =
+            #"(?:words per minute|filler count|filler rate|statistics|metrics?|stats|numbers|duration|rating|score|data|wpm|pace)"#
+        let readoutSubjectPattern = #"(?:my (?:exact )?|the exact |exact )"#
+        let readoutLeadPatterns = [
+            #"^what(?:'s|s| is| was| were| are) "#,
+            #"^(?:please )?(?:show|give|report)(?: me)? "#,
+            #"^(?:please )?tell me "#,
+            #"^(?:can|could|would|will) you (?:please )?(?:show|give|report)(?: me)? "#,
+            #"^(?:can|could|would|will) you (?:please )?tell me "#,
+            #"^(?:can|could) i (?:see|get) "#
+        ]
+        let readoutLead = readoutLeadPatterns.contains { lead in
+            let pattern = lead + readoutSubjectPattern + metricNounPattern + #"(?:$| )"#
+            return turn.range(of: pattern, options: .regularExpression) != nil
+        }
+        let trimmedQuestion = userText.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        // A bare "My data?" could mean privacy or account data. Only concrete
+        // speech measures are safe to resolve as an elliptical personal read;
+        // broad telemetry nouns require an explicit readout verb.
+        let ellipticalMetricNounPattern =
+            #"(?:words per minute|filler count|filler rate|duration|rating|score|wpm|pace)"#
+        let ellipticalPattern = #"^(?:and |what about )?my (?:exact )?"# +
+            ellipticalMetricNounPattern + #"$"#
+        let ellipticalMetricQuestion = trimmedQuestion.hasSuffix("?") &&
+            turn.range(
+                of: ellipticalPattern,
+                options: .regularExpression
+            ) != nil
+        let personalCountQuestion = [
+            "how many fillers did i", "how many filler words did i",
+            "how many ums did i", "how many uhs did i",
+            "how many fillers were in my", "how many filler words were in my"
+        ].contains(where: turn.contains)
+
+        guard readoutLead || ellipticalMetricQuestion ||
+                personalCountQuestion else {
+            return []
+        }
+
+        let asksForCompleteReadout = [
+            "stats", "statistics", "numbers", "data", "metrics", "metric"
+        ].contains(where: turn.contains) &&
+            ![
+                "filler", "pace", "wpm", "words per minute", "duration",
+                "score", "rating"
+            ].contains(where: turn.contains)
+        if asksForCompleteReadout {
+            return CoachMetricKind.allCases
+        }
+
+        var requested: [CoachMetricKind] = []
+        if ["score", "rating"].contains(where: turn.contains) {
+            requested.append(.score)
+        }
+        if personalCountQuestion ||
+            ["filler count", "how many fillers", "how many filler words", "how many ums", "how many uhs"]
+                .contains(where: turn.contains) {
+            requested.append(.fillerCount)
+        }
+        if turn.contains("filler rate") {
+            requested.append(.fillerRatePerMinute)
+        }
+        if ["pace", "wpm", "words per minute"].contains(where: turn.contains) {
+            requested.append(.paceWordsPerMinute)
+        }
+        if turn.contains("duration") {
+            requested.append(.durationSeconds)
+        }
+        return requested.isEmpty ? CoachMetricKind.allCases : requested
     }
 
     static func isMemoryHandoff(_ lower: String) -> Bool {
@@ -264,6 +406,17 @@ enum TurnDepthClassifier {
             .replacingOccurrences(of: "\u{201c}", with: "\"")
             .replacingOccurrences(of: "\u{201d}", with: "\"")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func canonicalQuestion(_ value: String) -> String {
+        normalized(value)
+            .replacingOccurrences(
+                of: #"[^a-z0-9'\s]"#,
+                with: " ",
+                options: .regularExpression
+            )
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {

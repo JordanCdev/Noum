@@ -163,15 +163,21 @@ struct CoachTurnProviderChoice: Equatable, Sendable {
     let providerName: String
     let model: String
     let resolvedTier: CoachProviderTier?
+    let policyVersion: String?
+    let generationMode: CoachChatGenerationMode?
 
     init(
         providerName: String,
         model: String,
-        resolvedTier: CoachProviderTier? = nil
+        resolvedTier: CoachProviderTier? = nil,
+        policyVersion: String? = nil,
+        generationMode: CoachChatGenerationMode? = nil
     ) {
         self.providerName = providerName
         self.model = model
         self.resolvedTier = resolvedTier
+        self.policyVersion = policyVersion
+        self.generationMode = generationMode
     }
 }
 
@@ -198,6 +204,9 @@ struct CoachPromptModuleTrace: Codable, Equatable {
     let cachePolicy: CoachPromptCachePolicy
     let characterCount: Int
     let nonEmptyLineCount: Int
+    /// True only when this exact module crosses the normal secure wire.
+    /// Nil means legacy trace data recorded before secure-wire provenance.
+    let secureTransportTransmitted: Bool?
 }
 
 struct CoachPromptTrace: Codable, Equatable {
@@ -214,12 +223,14 @@ struct CoachPromptTrace: Codable, Equatable {
             moduleTrace(
                 name: "coachSystemPrompt",
                 text: systemPrompt,
-                cachePolicy: .ephemeral
+                cachePolicy: .ephemeral,
+                secureTransportTransmitted: false
             ),
             moduleTrace(
                 name: "userContext",
                 text: userContext,
-                cachePolicy: .none
+                cachePolicy: .none,
+                secureTransportTransmitted: true
             )
         ]
         return CoachPromptTrace(
@@ -233,7 +244,8 @@ struct CoachPromptTrace: Codable, Equatable {
     private static func moduleTrace(
         name: String,
         text: String,
-        cachePolicy: CoachPromptCachePolicy
+        cachePolicy: CoachPromptCachePolicy,
+        secureTransportTransmitted: Bool
     ) -> CoachPromptModuleTrace {
         CoachPromptModuleTrace(
             name: name,
@@ -242,7 +254,8 @@ struct CoachPromptTrace: Codable, Equatable {
             nonEmptyLineCount: text
                 .split(separator: "\n")
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .count
+                .count,
+            secureTransportTransmitted: secureTransportTransmitted
         )
     }
 }
@@ -272,6 +285,8 @@ struct CoachTurnMetadata: Codable, Equatable {
     var proofTestRecentlyRepeated: Bool?
     var retrievalTrace: CoachRetrievalTrace?
     var promptTrace: CoachPromptTrace?
+    var serverPolicyVersion: String?
+    var serverGenerationMode: CoachChatGenerationMode?
     var visionScore: Int?
     var visionCriticalMisses: [CoachVisionCriterion]?
     var visionPassesProductionFloor: Bool?
@@ -324,6 +339,8 @@ struct CoachTurnMetadata: Codable, Equatable {
         proofTestRecentlyRepeated: Bool? = nil,
         retrievalTrace: CoachRetrievalTrace? = nil,
         promptTrace: CoachPromptTrace? = nil,
+        serverPolicyVersion: String? = nil,
+        serverGenerationMode: CoachChatGenerationMode? = nil,
         visionScore: Int? = nil,
         visionCriticalMisses: [CoachVisionCriterion]? = nil,
         visionPassesProductionFloor: Bool? = nil,
@@ -367,6 +384,8 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.proofTestRecentlyRepeated = proofTestRecentlyRepeated
         self.retrievalTrace = retrievalTrace
         self.promptTrace = promptTrace
+        self.serverPolicyVersion = serverPolicyVersion
+        self.serverGenerationMode = serverGenerationMode
         self.visionScore = visionScore
         self.visionCriticalMisses = visionCriticalMisses
         self.visionPassesProductionFloor = visionPassesProductionFloor
@@ -998,6 +1017,21 @@ final class AskNoumStore: ObservableObject {
             return "Cloud coaching is off. Your message is still here. You can allow it in Settings > Cloud Processing."
         case .unauthenticated:
             return "Noum is temporarily unavailable. Your message is still here."
+        case .coachUnavailable(let reason):
+            switch reason {
+            case .authenticationPending:
+                return "Noum is temporarily unavailable. Your message is still here."
+            case .localOnlyGuest:
+                return "Connect this guest once to use live coaching. Your practice stays on this device if the connection fails."
+            case .secureSessionMissing:
+                return "Ask Noum needs its secure session reconnected. Your practice is unchanged."
+            case .backendVersionMissing:
+                return "Ask Noum needs its coaching service update before this build can reply. Your message is still here."
+            case .debugProviderMissing:
+                return "Live coaching isn’t connected in this build."
+            case .service:
+                return "Noum is temporarily unavailable. Your message is still here."
+            }
         case .rateLimited:
             return "Noum is taking a short pause. Your message is still here. Try again in a moment."
         case .localeUnsupported:
@@ -1008,6 +1042,12 @@ final class AskNoumStore: ObservableObject {
             return "Noum couldn’t complete that coaching read. Your message is still here."
         case .contentRejected:
             return "Noum couldn’t complete that coaching read. Your message is still here."
+        case .invalidRequest:
+            return "Noum couldn’t accept that coaching request. Your message is still here."
+        case .permissionDenied:
+            return "Noum couldn’t verify access to coaching. Your message is still here."
+        case .backendVersionMissing:
+            return "Ask Noum needs its coaching service update before this build can reply. Your message is still here."
         }
     }
 
@@ -1298,7 +1338,7 @@ final class AskNoumStore: ObservableObject {
     /// back to the explicitly named originating account. A failed remote delete
     /// can therefore recover the completed conversation without ever creating a
     /// `askNoum.thread.guest` destination.
-    func suspendProviderWorkForDeletion(accountID: String) {
+    func suspendProviderWorkForAccountTransition(accountID: String) {
         guard let accountScope = Self.normalizedAccountScope(accountID) else {
             return
         }
@@ -1312,6 +1352,10 @@ final class AskNoumStore: ObservableObject {
         isAwaitingReply = false
         lastFailure = nil
         persist(accountScope: accountScope)
+    }
+
+    func suspendProviderWorkForDeletion(accountID: String) {
+        suspendProviderWorkForAccountTransition(accountID: accountID)
     }
 
     /// Cache an AI-generated chip set for a specific coach reply. Called
@@ -1550,7 +1594,8 @@ final class AskNoumStore: ObservableObject {
                 .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence,
                 .unengagedUserSpeechClaim, .missingVerifiedExampleQuote,
                 .ignoredCoachingExpertise,
-                .visionGate, .semanticJudgement, .repeatedProofTest:
+                .visionGate, .semanticJudgement, .repeatedProofTest,
+                .nonCoachingPrescription:
             // These need per-turn source / RAG / vision / recent-reply context;
             // this legacy sweep has none of that, so it never rewrites history
             // on that basis.

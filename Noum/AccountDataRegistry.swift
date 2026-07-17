@@ -39,6 +39,11 @@ enum AccountDataRegistryError: LocalizedError, Equatable {
     case duplicateParticipantID(String)
     case duplicateExportPath(String)
     case deletionFailed([String])
+    case promotionTargetConflict(String)
+    case promotionKeyTranslationFailed(String)
+    case promotionValueTransformationFailed(String)
+    case promotionCopyVerificationFailed(String)
+    case promotionCleanupFailed([String])
 
     var errorDescription: String? {
         switch self {
@@ -50,8 +55,22 @@ enum AccountDataRegistryError: LocalizedError, Equatable {
             return "Account-data export path '\(path)' is registered more than once."
         case .deletionFailed:
             return "Noum couldn't finish clearing local account data. You can retry."
+        case .promotionTargetConflict:
+            return "Noum found existing data under the new account and kept both accounts unchanged."
+        case .promotionKeyTranslationFailed,
+             .promotionValueTransformationFailed,
+             .promotionCopyVerificationFailed:
+            return "Noum couldn't verify the account-data transfer. Your original practice is unchanged."
+        case .promotionCleanupFailed:
+            return "Noum connected the account but couldn't finish retiring the old local copy. It will retry safely."
         }
     }
+}
+
+struct AccountDataPromotionReport: Equatable {
+    let discoveredSourceKeys: Int
+    let copiedKeys: Int
+    let skippedDerivedKeys: Int
 }
 
 @MainActor
@@ -305,6 +324,93 @@ final class AccountDataRegistry {
         }
     }
 
+    /// Idempotently copies one local guest's exact account-scoped defaults
+    /// namespace to a newly minted Firebase UID. The source remains untouched
+    /// until AuthManager has committed and hydrated the new durable identity.
+    ///
+    /// This deliberately supports only an empty/new target. An identical
+    /// target value is accepted for crash recovery; a different value fails
+    /// closed instead of inventing a merge policy. Device-unattributed data is
+    /// excluded because it never contains the source account token.
+    func copyAccountScopedDefaultsForPromotion(
+        from sourceAccountID: String,
+        to targetAccountID: String
+    ) throws -> AccountDataPromotionReport {
+        let source = try Self.validatedAccountID(sourceAccountID)
+        let target = try Self.validatedAccountID(targetAccountID)
+        guard source != target else {
+            throw AccountDataRegistryError.invalidAccountID
+        }
+
+        let values = defaults.dictionaryRepresentation()
+        let sourceKeys = values.keys.filter {
+            Self.isAccountScopedDefaultsKey($0, accountID: source)
+        }.sorted()
+        var migrations: [(sourceKey: String, targetKey: String, value: Any)] = []
+        var skippedDerivedKeys = 0
+
+        for sourceKey in sourceKeys {
+            guard !Self.shouldDiscardDuringNewGuestPromotion(sourceKey) else {
+                skippedDerivedKeys += 1
+                continue
+            }
+            guard let targetKey = Self.promotionTargetKey(
+                for: sourceKey,
+                sourceAccountID: source,
+                targetAccountID: target
+            ) else {
+                throw AccountDataRegistryError
+                    .promotionKeyTranslationFailed(sourceKey)
+            }
+            guard let sourceValue = values[sourceKey] else { continue }
+            let migratedValue = try Self.promotionValue(
+                sourceValue,
+                sourceKey: sourceKey,
+                sourceAccountID: source,
+                targetAccountID: target
+            )
+            if let existing = defaults.object(forKey: targetKey),
+               !Self.defaultsValuesAreEqual(existing, migratedValue) {
+                throw AccountDataRegistryError
+                    .promotionTargetConflict(targetKey)
+            }
+            migrations.append((sourceKey, targetKey, migratedValue))
+        }
+
+        for migration in migrations {
+            defaults.set(migration.value, forKey: migration.targetKey)
+            guard let persisted = defaults.object(forKey: migration.targetKey),
+                  Self.defaultsValuesAreEqual(persisted, migration.value) else {
+                throw AccountDataRegistryError
+                    .promotionCopyVerificationFailed(migration.targetKey)
+            }
+        }
+
+        return AccountDataPromotionReport(
+            discoveredSourceKeys: sourceKeys.count,
+            copiedKeys: migrations.count,
+            skippedDerivedKeys: skippedDerivedKeys
+        )
+    }
+
+    /// Removes only UserDefaults keys carrying the exact retired account token.
+    /// Unlike `deleteAllData`, this never invokes participant deletion hooks,
+    /// so legacy device data and app-managed recordings cannot be swept into a
+    /// local-guest promotion cleanup.
+    func removeRetiredAccountDefaults(for accountID: String) throws {
+        let accountID = try Self.validatedAccountID(accountID)
+        let keys = defaults.dictionaryRepresentation().keys.filter {
+            Self.isAccountScopedDefaultsKey($0, accountID: accountID)
+        }
+        keys.forEach(defaults.removeObject(forKey:))
+        let remaining = defaults.dictionaryRepresentation().keys.filter {
+            Self.isAccountScopedDefaultsKey($0, accountID: accountID)
+        }.sorted()
+        guard remaining.isEmpty else {
+            throw AccountDataRegistryError.promotionCleanupFailed(remaining)
+        }
+    }
+
     nonisolated static func isAccountScopedDefaultsKey(
         _ key: String,
         accountID: String
@@ -313,6 +419,90 @@ final class AccountDataRegistry {
         guard !trimmed.isEmpty else { return false }
         let token = ".\(trimmed)"
         return key.hasSuffix(token) || key.contains(token + ".")
+    }
+
+    nonisolated static func promotionTargetKey(
+        for key: String,
+        sourceAccountID: String,
+        targetAccountID: String
+    ) -> String? {
+        let source = sourceAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = targetAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !target.isEmpty, source != target else { return nil }
+        let token = ".\(source)"
+        var matches: [Range<String.Index>] = []
+        var searchStart = key.startIndex
+        while searchStart < key.endIndex,
+              let range = key.range(of: token, range: searchStart..<key.endIndex) {
+            let boundaryIsValid = range.upperBound == key.endIndex
+                || key[range.upperBound] == "."
+            if boundaryIsValid { matches.append(range) }
+            searchStart = range.upperBound
+        }
+        guard matches.count == 1, let match = matches.first else { return nil }
+        var translated = key
+        translated.replaceSubrange(match, with: ".\(target)")
+        return translated
+    }
+
+    nonisolated private static func shouldDiscardDuringNewGuestPromotion(
+        _ sourceKey: String
+    ) -> Bool {
+        let derivedOrRemoteBookkeepingPrefixes = [
+            "homeRecommendation.",
+            "recommendation.resetPending.",
+            "recommendation.syncPending.",
+            "recommendation.remoteRevision.",
+            "recommendation.pendingMutationID.",
+            CoachingContentSyncJournal.storageKeyPrefix,
+            "NoumAsyncChallengeArmedRep.",
+            "league.lastSeenTier.",
+            "league.lastSeenTierInitialized.",
+            "league.pendingPromotion.",
+            "league.dailyChallenges.isoWeek.",
+            "league.dailyChallenges.count.",
+        ]
+        return derivedOrRemoteBookkeepingPrefixes.contains {
+            sourceKey.hasPrefix($0)
+        }
+    }
+
+    nonisolated private static func promotionValue(
+        _ value: Any,
+        sourceKey: String,
+        sourceAccountID: String,
+        targetAccountID: String
+    ) throws -> Any {
+        guard sourceKey.hasPrefix("NoumAsyncChallenges.") else { return value }
+        guard let data = value as? Data,
+              var challenges = try? JSONDecoder().decode(
+                [AsyncChallenge].self,
+                from: data
+              ) else {
+            throw AccountDataRegistryError
+                .promotionValueTransformationFailed(sourceKey)
+        }
+        for index in challenges.indices {
+            if challenges[index].creatorAccountID == sourceAccountID {
+                challenges[index].creatorAccountID = targetAccountID
+            }
+            if challenges[index].opponentAccountID == sourceAccountID {
+                challenges[index].opponentAccountID = targetAccountID
+            }
+        }
+        guard let encoded = try? JSONEncoder().encode(challenges) else {
+            throw AccountDataRegistryError
+                .promotionValueTransformationFailed(sourceKey)
+        }
+        return encoded
+    }
+
+    nonisolated private static func defaultsValuesAreEqual(
+        _ lhs: Any,
+        _ rhs: Any
+    ) -> Bool {
+        guard let lhs = lhs as? NSObject else { return false }
+        return lhs.isEqual(rhs)
     }
 
     nonisolated private static func validatedAccountID(_ value: String) throws -> String {
@@ -388,6 +578,7 @@ extension AccountDataRegistry {
             participant("baseline", [.accountKey(prefix: "communicationBaseline."), .accountKey(prefix: "pressureProfile.")], reload: { BaselineStore.shared.reloadForCurrentAccount() }, end: { BaselineStore.shared.endSession() }),
             participant("rating", [.accountKey(prefix: "speakingRating."), .accountKey(prefix: "speakingRating.lastShownWeekPeak.")], reload: { RatingStore.shared.reloadForCurrentAccount() }, end: { RatingStore.shared.endSession() }),
             participant("profile-progress", [.accountKey(prefix: "profileXP."), .accountKey(prefix: "noumCharacter.peakStage.")], reload: { ProfileManager.shared.reloadForCurrentAccount() }, end: { ProfileManager.shared.endSession() }),
+            participant("coaching-content-sync", [.accountKey(prefix: CoachingContentSyncJournal.storageKeyPrefix)], reload: {}, end: {}),
             participant("im-relationships", [.accountKey(prefix: "imRelationshipProfiles.")], reload: { IMRelationshipStore.shared.reloadForCurrentAccount() }, end: { IMRelationshipStore.shared.endSession() }),
             participant("recommendation-learning", [.accountKey(prefix: "recommendation.pending."), .accountKey(prefix: "recommendation.outcomes."), .accountKey(prefix: "recommendation.resetPending."), .accountKey(prefix: "recommendation.syncPending."), .accountKey(prefix: "recommendation.remoteRevision."), .accountKey(prefix: "recommendation.pendingMutationID.")], reload: { RecommendationLearningStore.shared.reloadForCurrentAccount() }, end: { RecommendationLearningStore.shared.reloadForCurrentAccount() }),
             participant("flow-observability", [.accountKey(prefix: "flowEvents.recent.")], reload: { FlowEventLog.shared.reloadForCurrentAccount() }, end: { FlowEventLog.shared.endSession() }),

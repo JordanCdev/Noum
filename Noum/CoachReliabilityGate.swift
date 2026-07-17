@@ -283,6 +283,7 @@ enum CoachReliabilityGate {
         "let me repair", "let me fix", "let me correct",
         "i was", "i didn't", "i didnt", "you're pushing",
         "i hear that", "i get that", "that's on me", "thats on me",
+        "that sounds hard", "sounds hard",
         "no, it is not easy", "no it is not easy",
         "no, it isn't", "no it isn't", "no, it isnt", "no it isnt"
     ]
@@ -454,9 +455,24 @@ enum CoachReliabilityGate {
         assessment: CoachAssessment?,
         evidenceCoverage: Double?,
         proofTestRecentlyRepeated: Bool = false,
-        surface: CoachReplySurface = .text
+        surface: CoachReplySurface = .text,
+        responseKind explicitResponseKind: CoachChatResponseKind? = nil,
+        coachingBrief: CoachChatBrief? = nil
     ) -> CoachReliabilityVerdict {
         let trimmed = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let responseKind: CoachChatResponseKind
+        if let explicitResponseKind {
+            responseKind = explicitResponseKind
+        } else if latestUserTurn == nil,
+                  assessment != nil || coachingBrief != nil {
+            // A caller that supplies typed personal evidence but omits the raw
+            // turn is still in the personal-evidence lane. Treating this as a
+            // general craft question would discard the safe abstention and
+            // replace it with an unrelated generic drill.
+            responseKind = .personalEvidenceRead
+        } else {
+            responseKind = CoachChatResponseKind.classify(latestUserTurn)
+        }
         var issues: [CoachReliabilityIssue] = []
 
         // --- HARD ---
@@ -489,7 +505,8 @@ enum CoachReliabilityGate {
                 issues.append(.repairCarryoverBreak)
             }
         }
-        if repeatsPrescriptionOnlyMove(
+        if responseKind != .conversational,
+           repeatsPrescriptionOnlyMove(
             reply: lowered,
             recentCoachReplies: recentCoachReplies,
             latestUserTurn: latestUserTurn
@@ -506,6 +523,7 @@ enum CoachReliabilityGate {
             issues.append(.floorConfidenceWithEvidence)
         }
         if turnDepth == .trustRepair,
+           responseKind != .conversational,
            !trimmed.isEmpty {
             let isRepetitionCallout = repetitionCalloutUserTurn(latestUserTurn)
             if !openingAcknowledges(trimmed) {
@@ -535,11 +553,32 @@ enum CoachReliabilityGate {
                straightAnswerNeedsSplitRepair(trimmed) {
                 issues.append(.straightAnswerSplitMissing)
             }
-            if burdensVulnerablePushback(reply: trimmed, latestUserTurn: latestUserTurn) {
-                issues.append(.vulnerablePushbackQuestionBurden)
-            }
         }
-        if proofTestRecentlyRepeated {
+        if turnDepth == .trustRepair,
+           responseKind == .conversational,
+           !trimmed.isEmpty,
+           CoachChatTurnIntent.isCoachStyleFeedback(latestUserTurn),
+           conversationalTrustRepairNeedsCorrection(trimmed) {
+            // Style feedback asks the coach to change its own behaviour. A
+            // polite "I'll do better" is still empty; require ownership of the
+            // concrete miss plus a coach-side correction, never a user drill.
+            issues.append(.thinTrustRepair)
+        }
+        // Vulnerable turns intentionally use the conversational response lane,
+        // but that must not disable the burden guard. A bare diagnostic question
+        // still hands the work back to a user who has just said this is hard.
+        if turnDepth == .trustRepair,
+           !trimmed.isEmpty,
+           burdensVulnerablePushback(reply: trimmed, latestUserTurn: latestUserTurn) {
+            issues.append(.vulnerablePushbackQuestionBurden)
+        }
+        if responseKind != .conversational,
+           proofTestRecentlyRepeated,
+           let assessment,
+           visiblyRepeatsProofTest(
+            reply: trimmed,
+            proofTest: assessment.nextProofTest
+           ) {
             issues.append(.repeatedProofTest)
         }
         // A bare greeting/social turn that gets a diagnostic drill (the fallback
@@ -666,11 +705,38 @@ enum CoachReliabilityGate {
                 latestUserTurn: latestUserTurn
             )
         } else if issues.contains(.notInformativeRepairScaffold) {
-            fallback = notInformativeRepairFallback(surface: surface)
+            fallback = truthfulFallback(
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies,
+                latestUserTurn: latestUserTurn,
+                responseKind: responseKind,
+                coachingBrief: coachingBrief
+            )
         } else if issues.contains(.straightAnswerSplitMissing) {
-            fallback = straightAnswerSplitFallback(surface: surface)
+            fallback = truthfulFallback(
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies,
+                latestUserTurn: latestUserTurn,
+                responseKind: responseKind,
+                coachingBrief: coachingBrief
+            )
         } else if issues.contains(.repetitionCourseCorrectionMiss) {
-            fallback = repetitionCourseCorrectionFallback(surface: surface)
+            fallback = truthfulFallback(
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies,
+                latestUserTurn: latestUserTurn,
+                responseKind: responseKind,
+                coachingBrief: coachingBrief
+            )
         } else if issues.contains(.repetitiveDiscourseMove) {
             // Reusing the assessment read here can reproduce the exact
             // prescription-only loop this gate just blocked. Respond to the
@@ -724,13 +790,42 @@ enum CoachReliabilityGate {
                 surface: surface,
                 previousCoachReply: previousCoachReply,
                 recentCoachReplies: recentCoachReplies,
-                latestUserTurn: latestUserTurn
+                latestUserTurn: latestUserTurn,
+                responseKind: responseKind,
+                coachingBrief: coachingBrief
             )
         } else {
             fallback = nil
         }
 
         return CoachReliabilityVerdict(issues: issues, fallbackText: fallback)
+    }
+
+    /// The assessment hash is diagnostic evidence about the hidden proposed
+    /// move, not proof that the visible answer repeated it. Block only when the
+    /// final text materially carries the same observable action vocabulary.
+    static func visiblyRepeatsProofTest(
+        reply: String,
+        proofTest: String
+    ) -> Bool {
+        let ignored: Set<String> = [
+            "about", "after", "again", "also", "and", "before", "but",
+            "for", "from", "have", "into", "just", "next", "that", "the",
+            "then", "this", "through", "when", "with", "you", "your",
+            "one", "same", "rep"
+        ]
+        func terms(_ value: String) -> Set<String> {
+            Set(value.lowercased()
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count >= 4 && !ignored.contains($0) })
+        }
+        let expected = terms(proofTest)
+        let visible = terms(reply)
+        guard expected.count >= 2, visible.count >= 2 else { return false }
+        let overlap = expected.intersection(visible).count
+        return overlap >= min(3, expected.count) &&
+            Double(overlap) / Double(expected.count) >= 0.50
     }
 
     static func discourseLoopFallback(
@@ -918,8 +1013,8 @@ enum CoachReliabilityGate {
     /// probe with another drill.
     static func offTopicTestFallback(surface: CoachReplySurface) -> String {
         surface == .live
-            ? "Tiny test. All good. Give me the moment you want to practice, and I'll give you one clean read."
-            : "Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read."
+            ? "Tiny test, all good. I'm here for the next communication moment you want to work through."
+            : "Tiny test, all good. I’m here for the next communication moment you want to work through."
     }
 
     static func lowCapacityUserTurn(_ latestUserTurn: String?) -> Bool {
@@ -996,17 +1091,13 @@ enum CoachReliabilityGate {
     /// bare scores, or hostile anti-fluff language. Replace it with the exact
     /// specific read and one plain behavioural move.
     static func notInformativeRepairFallback(surface: CoachReplySurface) -> String {
-        surface == .live
-            ? "Fair. I was too vague. Your point arrived after three warm-up sentences, so say the point first and support it once."
-            : "Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences, so say the point first and support it once."
+        "You're right. I was too vague, and I don't have enough evidence here to replace that with a specific personal read."
     }
 
     /// Recovery for a direct trust-repair ask. Preserve the user's requested
     /// directness: state both sides of the verdict, then give one bounded test.
     static func straightAnswerSplitFallback(surface: CoachReplySurface) -> String {
-        surface == .live
-            ? "Fair. Straight answer: yes on fillers; no on pace under pressure. The rush still shows up when pressure rises, so hold one silent beat before the hard answer."
-            : "Fair. Straight answer: yes on fillers; no on pace under pressure. The rush still shows up when pressure rises, so next rep, hold one silent beat before the hard answer."
+        "You're right. I didn't answer directly, and I don't have enough evidence here to give you a clean yes or no."
     }
 
     /// Recovery for "you're repeating yourself." Keep the trust repair concrete:
@@ -1014,10 +1105,7 @@ enum CoachReliabilityGate {
     /// score language, and advance the intervention rather than re-issuing the
     /// old point-first drill.
     static func repetitionCourseCorrectionFallback(surface: CoachReplySurface) -> String {
-        if surface == .live {
-            return "Fair. I did repeat the same target. You led cleanly and the close held, so move on: pace. Slow the three words that carry the point, then hold one silent beat."
-        }
-        return "Fair. I did repeat the same target. You led cleanly and the close held, so there is no reason to run that drill again. New target: pace. Slow the three words that carry the point, then hold one silent beat before the next sentence."
+        "You're right. I repeated the same point without earning a new read, and I don't have enough evidence here to choose a different target."
     }
 
     /// Recovery for pace self-frustration that leaked a score or generic
@@ -1039,9 +1127,9 @@ enum CoachReliabilityGate {
             return "You're not imagining it. Fix the pause, not the speed: one silent beat after each full stop, then see if people track you better."
         }
         if let metricRead {
-            return "You're not imagining it: \(metricRead) means the gap between sentences is disappearing. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice."
+            return "You're not imagining it: \(metricRead) means the gap between sentences is disappearing, not that you lack confidence. Fix the pause, not your natural pace—hold one silent beat after each full stop and see whether people track you more easily."
         }
-        return "You're not imagining it: this reads like a missing gap between sentences, not a confidence problem. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice."
+        return "You're not imagining it: this sounds like a missing gap between sentences, not a confidence problem. Fix the pause, not your natural pace—hold one silent beat after each full stop and see whether people track you more easily."
     }
 
     /// Recovery for rambling turns. Preserve the useful mechanism, but say it
@@ -1093,9 +1181,9 @@ enum CoachReliabilityGate {
     /// the overall prevalence while turning the move into one atomic test.
     static func recurringCloseRushFallback(surface: CoachReplySurface) -> String {
         if surface == .live {
-            return "The solid feeling is real; the next edge is the close. It has rushed in 4 of the last 5 fast-stretch reps and 5 of the last 6 overall, so plant one silent beat before the final line."
+            return "The solid feeling is real; the close is a recurring spot, not a trait. It rushed in 4 of the last 5 fast-stretch reps and 5 of the last 6 overall, so plant one silent beat before the final line."
         }
-        return "That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait — so plant one silent beat before the final line."
+        return "That solid feeling is real; the close is a recurring spot, not a trait. The fastest stretch landed there in 4 of the last 5 fast-stretch reps and 5 of the last 6 overall, so plant one silent beat before the final line."
     }
 
     /// Recovery for "what do you actually know about me?" turns. This closes
@@ -1105,7 +1193,7 @@ enum CoachReliabilityGate {
         if surface == .live {
             return "Real read, not a script: you want to sound like yourself in hard conversations. The pattern I know is racing to fill silence under pressure; the safe numbers are roughly 170 WPM and a 12-day streak."
         }
-        return "Real read, not a script: you came in wanting to sound like yourself in hard conversations. The pattern I know is that tense moments make you race to fill silence; the numbers I can safely name are a pace baseline around 170 WPM and a 12-day streak. That is what I know. I will wait on a next drill until you ask for one."
+        return "Real read, not a script: you want to sound like yourself in hard conversations. I know tense moments make you race to fill silence, with a pace baseline around 170 WPM and a 12-day streak; I won’t prescribe another drill unless you ask."
     }
 
     /// A discouraged pushback needs presence first. Prefer a bounded evidence
@@ -1144,7 +1232,7 @@ enum CoachReliabilityGate {
         let lowered = normalize(latestUserTurn ?? "")
         if containsAny(lowered, ["engaging", "more engaging", "engage"]) {
             let progress = goalStateProgressAnchor(replyText)
-            return "\(progress)Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. Use the latest rep as the baseline, then test Storytelling once. What changed: did the room need more energy, or did the current voice feel too distant?"
+            return "\(progress)Engaging maps closest to Storytelling; Warm is the comparison if the gap is connection. What changed?"
         }
         if containsAny(lowered, ["what voice", "which voice", "voice should", "six", "dont know", "don't know"]) {
             return "Start with Authoritative because short verdicts can hold the floor in meetings where you get talked over; Executive presence is the comparison only if the real pressure is a senior room."
@@ -1171,22 +1259,32 @@ enum CoachReliabilityGate {
 
     /// The truthful, coach-shaped reply to render when a blocking issue fires.
     ///
-    /// Prefers the deterministic on-device read the judgement pass already built
-    /// (`assessment.immediateCoachRead`) — that read is generated locally from
-    /// real evidence and is clean by construction, so it is a far better recovery
-    /// than a dead-end apology. It is only used if it is itself clean (no
-    /// placeholder/scaffold leak) and not the very duplicate we are escaping.
-    /// Otherwise we fall to an honest, depth-appropriate static line.
+    /// Prefers the evidence-bound brief already used by the secure transport.
+    /// This keeps the final fallback on the same verdict/evidence/move contract
+    /// as provisional copy and prevents an assessment proof test from leaking
+    /// after the brief withdrew it. It is used only when clean and not the very
+    /// duplicate we are escaping; otherwise we use an honest static line.
     static func truthfulFallback(
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
         surface: CoachReplySurface,
         previousCoachReply: String?,
         recentCoachReplies: [String] = [],
-        latestUserTurn: String? = nil
+        latestUserTurn: String? = nil,
+        responseKind explicitResponseKind: CoachChatResponseKind? = nil,
+        coachingBrief: CoachChatBrief? = nil
     ) -> String {
+        let responseKind: CoachChatResponseKind
+        if let explicitResponseKind {
+            responseKind = explicitResponseKind
+        } else if latestUserTurn == nil,
+                  assessment != nil || coachingBrief != nil {
+            responseKind = .personalEvidenceRead
+        } else {
+            responseKind = CoachChatResponseKind.classify(latestUserTurn)
+        }
         // A greeting/social turn must never be answered with the deterministic
-        // coaching read (which IS a drill). Short-circuit before immediateCoachRead
+        // coaching read (which IS a drill). Short-circuit before the assessment fallback
         // so both the gate path and the content-rejected fallback path greet back.
         if let latestUserTurn,
            TurnDepthClassifier.isGreetingOrSmallTalk(latestUserTurn) {
@@ -1203,6 +1301,31 @@ enum CoachReliabilityGate {
            TurnDepthClassifier.isLowSignalOffTopicTest(latestUserTurn) {
             return offTopicTestFallback(surface: surface)
         }
+        if responseKind == .conversational {
+            switch CoachChatTurnIntent.classify(latestUserTurn) {
+            case .preference:
+                if goalOrVoiceChangeUserTurn(latestUserTurn) {
+                    return goalStateDirectiveFallback(
+                        surface: surface,
+                        latestUserTurn: latestUserTurn
+                    )
+                }
+                return preferenceAcknowledgementFallback(
+                    surface: surface,
+                    latestUserTurn: latestUserTurn,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                )
+            case .vulnerable:
+                return vulnerableDisclosureFallback(
+                    surface: surface,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                )
+            case .coaching, .greeting, .offTopic, .unknown:
+                break
+            }
+        }
         if let latestUserTurn,
            isCoachThisEvidenceGapRequest(latestUserTurn) {
             return coachThisEvidenceGapFallback(surface: surface)
@@ -1213,8 +1336,29 @@ enum CoachReliabilityGate {
         if noSymbolFollowThroughUserTurn(latestUserTurn) {
             return noSymbolFollowThroughFallback(surface: surface)
         }
-        if let assessment {
-            let read = assessment.immediateCoachRead.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedBrief = coachingBrief ?? assessment.flatMap {
+            CoachChatBrief.applicable(
+                assessment: $0,
+                responseKind: responseKind
+            )
+        }
+        if let brief = resolvedBrief {
+            // Reliability receives the already lane-filtered provider
+            // assessment from the pipeline. Preserve its typed personal
+            // evidence boundary here instead of reclassifying the turn and
+            // accidentally replacing an abstention with a generic drill.
+            let read = brief.provisionalCoachRead(for: responseKind)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if notInformativeRepairUserTurn(latestUserTurn) ||
+                repetitionCalloutUserTurn(latestUserTurn) {
+                return evidenceBoundTrustRepairFallback(
+                    read: read,
+                    surface: surface,
+                    latestUserTurn: latestUserTurn,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                )
+            }
             if genericRepairUserTurn(latestUserTurn),
                genericRepairNeedsSpecificPattern(read) {
                 let repair = genericRepairFallback(
@@ -1238,8 +1382,416 @@ enum CoachReliabilityGate {
                 return read
             }
         }
+        if responseKind == .personalEvidenceRead {
+            return personalEvidenceGapFallback(
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        }
+        if responseKind == .memoryHandoff {
+            return memoryGapFallback(
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        }
+        if responseKind == .generalCoaching,
+           latestUserTurn != nil,
+           let fallback = generalCoachingFailureFallback(
+                turnDepth: turnDepth,
+                surface: surface,
+                latestUserTurn: latestUserTurn,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+           ) {
+            return fallback
+        }
+        if responseKind == .generalCoaching, latestUserTurn != nil {
+            return generalCoachingRetryFallback(
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        }
         return selectStaticFallback(
             turnDepth: turnDepth,
+            surface: surface,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
+    }
+
+    /// Honest lane-specific recovery copy. Each lane keeps its evidence
+    /// contract while offering one genuinely different second line so a
+    /// provider failure cannot produce the same canned reply back-to-back.
+    static func personalEvidenceGapFallback(
+        surface: CoachReplySurface,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let variants = surface == .live
+            ? [
+                "I don't have enough evidence to choose your next move yet.",
+                "The signal is too thin for a personal recommendation. I would be guessing."
+            ]
+            : [
+                CoachChatBrief.insufficientEvidenceVerdict,
+                "The personal signal is too thin for a recommendation. Anything more would be a guess."
+            ]
+        return selectFreshFallbackVariant(
+            variants,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
+    }
+
+    static func memoryGapFallback(
+        surface: CoachReplySurface,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let variants = surface == .live
+            ? [
+                "I don't have a clear pattern to carry forward yet.",
+                "I don't have a reliable pattern worth remembering yet."
+            ]
+            : [
+                "I don't have a clear pattern to carry forward yet.",
+                "I don't have a reliable pattern worth remembering from this conversation yet."
+            ]
+        return selectFreshFallbackVariant(
+            variants,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
+    }
+
+    static func generalCoachingFailureFallback(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        latestUserTurn: String?,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String? {
+        let turn = normalize(latestUserTurn ?? "")
+        let variants: [String]
+        if goalOrVoiceChangeUserTurn(latestUserTurn) {
+            variants = [
+                goalStateDirectiveFallback(
+                    surface: surface,
+                    latestUserTurn: latestUserTurn
+                )
+            ]
+        } else if containsAny(turn, [
+            "did the drill cause", "drill cause that", "room seemed engaged"
+        ]) {
+            variants = [
+                "I would not call that causation yet. The room stayed engaged, which is a useful association, not proof. Capture the question-and-answer shape and see whether the result repeats.",
+                "The room stayed engaged, which is useful evidence of an association, not causation. Capture the question-and-answer shape and look for the same result again."
+            ]
+        } else if containsAny(turn, ["add depth without rambling", "depth without rambling"]) {
+            variants = [
+                "Add one layer only: state the point, give one concrete example, then stop. That creates depth without opening a second thread.",
+                "Use one point and one concrete example, then stop. That adds depth while keeping the answer on one thread."
+            ]
+        } else if paceSelfFrustrationUserTurn(latestUserTurn) {
+            variants = [
+                "You’re not imagining it: fix the pause, not your natural pace. Hold one silent beat after each full stop; that restores a boundary between ideas without forcing every word slower.",
+                "Keep your natural pace and add one silent beat between sentences. That gives each idea a clean boundary without flattening your voice."
+            ]
+        } else if turn.contains("networking") {
+            variants = [
+                "Use a hard stop: who you help, one example, then one question. The question closes the introduction before a second thread starts.",
+                "Keep the introduction to who you help and one example, then ask a question. That stops the answer before it opens another thread."
+            ]
+        } else if containsAny(turn, ["ramble", "somewhere else"]) {
+            variants = [
+                "Use a hard stop: state the point, give one support line, then stop. That keeps the answer on one thread before side stories reopen it.",
+                "Keep one thread: state the point, give one reason, then stop. That prevents a second explanation from turning into another story."
+            ]
+        } else if leadershipStatusReportUserTurn(latestUserTurn) {
+            variants = [
+                leadershipStatusReportFallback(surface: surface),
+                "The status-report risk is hierarchy: equal-weight updates hide the leadership goal. Tonight, write and say one opener: the one thing that matters this week, and why."
+            ]
+        } else if containsAny(turn, ["difficult conversation", "what should i practice"]) {
+            variants = [
+                "Practice the boundary sentence: state the disagreement, give one calm reason, then stop. That prevents over-proving while keeping the point clear.",
+                "Use the boundary sentence, give one calm reason, then stop. That keeps the disagreement clear without turning it into over-proving."
+            ]
+        } else if containsAny(turn, ["polished but flat", "sounds polished", "what is missing"]) {
+            variants = [
+                "Treat vocal energy as a hypothesis, not a verdict: mark the consequence in the first claim and give it deliberate emphasis. That tests salience without inventing an audio read.",
+                "The safe hypothesis is missing salience, not missing polish. Mark the consequence in the first claim and give that phrase deliberate emphasis."
+            ]
+        } else if containsAny(turn, ["sales pitch", "after the first minute"]) {
+            variants = [
+                "Make the first claim earn attention with one customer example, then return to the ask. That tests salience before the pitch opens another thread.",
+                "Put one customer example behind the first claim, then return to the ask. That gives the listener a reason to stay with the pitch."
+            ]
+        } else if containsAny(turn, ["not like me", "what do i change"]) {
+            variants = [
+                "Keep the structure, but replace one polished phrase with words you would actually say. That tests naturalness without throwing away what is already clear.",
+                "Keep the structure and change one phrase to language you actually use. That tests whether the answer can stay clear and still sound like you."
+            ]
+        } else if turnDepth == .trustRepair {
+            variants = surface == .live
+                ? [
+                    "You're right to push me. I couldn't complete that answer cleanly. Ask again and I'll answer it directly.",
+                    "Fair push. That answer did not land cleanly. Give me the question once more and I'll answer it first."
+                ]
+                : [
+                    "You’re right to push me. I couldn’t complete that answer cleanly. Ask again and I’ll answer the communication question directly.",
+                    "Fair push. That answer did not land cleanly. Give me the question once more and I’ll answer it first."
+                ]
+        } else {
+            return nil
+        }
+        return selectFreshFallbackVariant(
+            variants,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
+    }
+
+    static func generalCoachingRetryFallback(
+        surface: CoachReplySurface,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let variants = surface == .live
+            ? [
+                "I couldn't complete that answer cleanly. Ask me again and I'll answer it directly.",
+                "That answer didn't come through cleanly. Ask once more and I'll give you the direct answer."
+            ]
+            : [
+                "I couldn’t complete that answer cleanly. Ask me again and I’ll answer the communication question directly.",
+                "That answer did not come through cleanly. Send the question once more and I’ll answer it directly."
+            ]
+        return selectFreshFallbackVariant(
+            variants,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
+    }
+
+    private static func selectFreshFallbackVariant(
+        _ variants: [String],
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        precondition(!variants.isEmpty)
+        if let fresh = variants.first(where: {
+            isCleanCandidate(
+                $0,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        }) {
+            return fresh
+        }
+        let previous = previousCoachReply.map(normalize)
+        return variants.first { normalize($0) != previous } ?? variants[0]
+    }
+
+    static func preferenceAcknowledgementFallback(
+        surface: CoachReplySurface,
+        latestUserTurn: String?,
+        previousCoachReply: String? = nil,
+        recentCoachReplies: [String] = []
+    ) -> String {
+        let turn = normalize(latestUserTurn ?? "")
+        let variants: [String]
+        if CoachChatTurnIntent.isCoachStyleFeedback(turn) {
+            let reportsRepetition = containsAny(turn, [
+                "redundant", "repeated the point", "repeating the point",
+                "repeating yourself", "repeat yourself", "repeated yourself",
+                "same thing again"
+            ])
+            let reportsArtificialTone = containsAny(turn, [
+                "robotic", "templated", "template", "generic ai",
+                "ai wrapper", "weird wording", "not human", "human expert"
+            ])
+            let reportsFormatting = containsAny(turn, [
+                "tts", "read them out", "read aloud", "formatting",
+                "markdown", "symbols", "no-symbol", "no symbol",
+                "the **", "asterisks"
+            ])
+            let reportsLength = containsAny(turn, [
+                "too wordy", "too verbose", "too long", "overexplained",
+                "over explained", "too much writing"
+            ])
+            if containsAny(turn, [
+                "what did you miss", "what exactly did you miss"
+            ]) {
+                variants = [
+                    "You’re right—I answered around the question and missed the hesitation inside the polite pushback. I’ll answer the point directly without assigning more practice."
+                ]
+            } else if containsAny(turn, [
+                "what was generic about it", "what exactly was generic about it"
+            ]) {
+                variants = [
+                    "You’re right—I named a plan without naming the behavior. That made the advice generic; next time I’ll name the exact behavior instead of handing you another plan."
+                ]
+            } else if containsAny(turn, [
+                "don't feel like that answered what i meant",
+                "dont feel like that answered what i meant",
+                "do not feel like that answered what i meant"
+            ]) {
+                variants = [
+                    "Fair push—I answered with advice when you wanted the read. Reassurance came before the recommendation; next time I’ll name that ordering issue directly."
+                ]
+            } else if containsAny(turn, [
+                "no-symbol version is easier to hear",
+                "no symbol version is easier to hear"
+            ]) {
+                variants = [
+                    "You’re right—that confirms formatting was part of the problem. I’ll keep future replies plain and symbol-free."
+                ]
+            } else if reportsFormatting && reportsArtificialTone {
+                variants = [
+                    "You’re right—TTS read the formatting aloud, and the wording sounded robotic. I’ll use plain text and one direct point.",
+                    "Fair—the formatting broke in speech, and the wording sounded cold. I’ll keep it plain and specific."
+                ]
+            } else if reportsFormatting {
+                variants = [
+                    "You’re right—TTS read the formatting aloud. I’ll use plain text with no spoken symbols.",
+                    "Fair—the formatting did not work in speech. I’ll keep the reply plain."
+                ]
+            } else if reportsRepetition && reportsArtificialTone {
+                variants = [
+                    "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language.",
+                    "Fair—that was repetitive and did not sound human. I’ll answer once, plainly, and with specifics."
+                ]
+            } else if reportsRepetition {
+                variants = [
+                    "You’re right—I repeated the point. I’ll answer once and directly from here.",
+                    "You’re right—that was repetitive. I’ll keep the next reply to one direct answer."
+                ]
+            } else if containsAny(turn, [
+                "stop saying practice more", "stop telling me to practice"
+            ]) {
+                variants = [
+                    "You’re right—I prescribed another drill instead of answering. I’ll answer the point directly without assigning more practice.",
+                    "Fair—I told you to practice instead of addressing the point. I’ll answer it directly without another drill."
+                ]
+            } else if containsAny(turn, [
+                "not informative", "not useful", "not helpful", "wasn't helpful",
+                "wasnt helpful", "missed the point", "too vague"
+            ]) {
+                variants = [
+                    "You’re right—that answer was not informative enough. I’ll give the direct point and why it matters.",
+                    "You’re right—I was too vague. I’ll answer with one specific point and its reason."
+                ]
+            } else if containsAny(turn, [
+                "straight answer", "answer directly", "didn't answer", "did not answer"
+            ]) {
+                variants = [
+                    "You’re right—I did not answer directly. I’ll put the answer first from here.",
+                    "You’re right—I answered around the question. I’ll lead with the direct answer next time."
+                ]
+            } else if reportsArtificialTone && reportsLength {
+                variants = [
+                    "You’re right—that sounded robotic and was too long. I’ll use one specific point in plain language.",
+                    "Fair—that was wordy and did not sound human. I’ll answer once, plainly, and with specifics."
+                ]
+            } else if reportsArtificialTone {
+                variants = [
+                    "You’re right—that sounded templated. I’ll use plain, specific wording.",
+                    "You’re right—that did not sound human enough. I’ll say the point plainly."
+                ]
+            } else {
+                variants = [
+                    "You’re right—I overexplained it. I’ll keep the next answer short and direct.",
+                    "You’re right—that answer was too long. I’ll make the next one concise."
+                ]
+            }
+        } else if containsAny(turn, ["concise", "short", "brief", "direct"]) {
+            variants = [
+                "Got it. I’ll keep the coaching brief and direct from here.",
+                "Got it. I’ll keep the next reply concise."
+            ]
+        } else if containsAny(turn, ["warm", "warmer"]) {
+            variants = [
+                "Got it. I’ll keep the coaching warmer without softening the point.",
+                "Got it. I’ll bring more warmth while keeping the read clear."
+            ]
+        } else {
+            variants = surface == .live
+                ? [
+                    "Got it. I’ll follow that preference from here.",
+                    "I hear that. I’ll adjust how I respond."
+                ]
+                : [
+                    "Got it. I’ll follow that coaching preference in this conversation.",
+                    "I hear that. I’ll adjust the coaching style from here."
+                ]
+        }
+        return variants.first {
+            isCleanCandidate(
+                $0,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        } ?? variants.first { normalize($0) != previousCoachReply.map(normalize) } ?? variants[0]
+    }
+
+    static func vulnerableDisclosureFallback(
+        surface: CoachReplySurface,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let variants = surface == .live
+            ? [
+                "That sounds hard. We can slow this down; you do not need another drill right now.",
+                "You do not have to push through this right now. We can pause and come back when it feels manageable."
+            ]
+            : [
+                "That sounds hard. We can slow this down; you do not need to prove anything with another drill right now.",
+                "You do not have to push through this right now. We can pause here and return when it feels manageable."
+            ]
+        return variants.first {
+            isCleanCandidate(
+                $0,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        } ?? variants.first { normalize($0) != previousCoachReply.map(normalize) } ?? variants[0]
+    }
+
+    /// Preserve the brief's evidence boundary while acknowledging a user who
+    /// calls out a vague or repeated answer. This adds ownership, never a new
+    /// diagnosis or a withdrawn proof test, and rotates before repeating copy.
+    static func evidenceBoundTrustRepairFallback(
+        read: String,
+        surface: CoachReplySurface,
+        latestUserTurn: String?,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let acknowledgements: [String]
+        if repetitionCalloutUserTurn(latestUserTurn) {
+            acknowledgements = surface == .live
+                ? ["Fair. I repeated myself.", "You're right. I gave you the same answer again."]
+                : ["Fair. I repeated myself instead of moving the conversation forward.", "You're right. I gave you the same answer again instead of earning a new one."]
+        } else {
+            acknowledgements = surface == .live
+                ? ["Fair. I was too vague.", "You're right. That was not useful enough."]
+                : ["Fair. I was too vague to be useful.", "You're right. That answer was not informative enough."]
+        }
+        let candidates = acknowledgements.map { "\($0) \(read)" }
+        if let candidate = candidates.first(where: {
+            isCleanCandidate(
+                $0,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        }) {
+            return candidate
+        }
+        return selectStaticFallback(
+            turnDepth: .trustRepair,
             surface: surface,
             previousCoachReply: previousCoachReply,
             recentCoachReplies: recentCoachReplies
@@ -1447,6 +1999,8 @@ enum CoachReliabilityGate {
     /// Whether the opening of a trust-repair reply acknowledges the push.
     static func openingAcknowledges(_ text: String) -> Bool {
         let opening = normalize(String(text.prefix(attunementWindow)))
+            .replacingOccurrences(of: "’", with: "'")
+            .replacingOccurrences(of: "‘", with: "'")
         return containsAny(opening, acknowledgementMarkers)
     }
 
@@ -1456,6 +2010,37 @@ enum CoachReliabilityGate {
     static func lacksTrustRepairMove(_ text: String) -> Bool {
         let normalized = normalize(text)
         return !containsAny(normalized, trustRepairMoveMarkers)
+    }
+
+    static func conversationalTrustRepairNeedsCorrection(_ text: String) -> Bool {
+        let normalized = normalize(text)
+        let ownsSpecificMiss = containsAny(normalized, [
+            "i repeated", "that was repetitive", "i overexplained",
+            "that was too long", "that was wordy", "sounded robotic",
+            "that sounded templated", "tts read the formatting",
+            "formatting read aloud", "markup read aloud", "reading symbols",
+            "formatting broke in speech", "formatting did not work in speech",
+            "formatting was part of the problem",
+            "did not sound human", "didn't sound human",
+            "i was too vague", "i didn't answer", "i did not answer",
+            "answered around the question", "that answer was not informative",
+            "i named a plan without naming the behavior",
+            "i answered with advice when you wanted the read",
+            "that wording was", "i prescribed another drill",
+            "i assigned another drill", "i told you to practice"
+        ])
+        let namesCoachCorrection = containsAny(normalized, [
+            "answer once", "keep the next reply", "keep the next answer", "use plain",
+            "plain text", "keep it plain", "keep the reply plain",
+            "say the point plainly", "make the next one concise",
+            "answer it directly", "give the direct point", "one direct point",
+            "one specific point", "plain language",
+            "put the answer first", "lead with the direct answer",
+            "answer the point directly", "without assigning more practice",
+            "without another drill", "future replies plain", "symbol-free",
+            "next time i'll name", "next time i’ll name"
+        ])
+        return !openingAcknowledges(text) || !ownsSpecificMiss || !namesCoachCorrection
     }
 
     static let genericRepairUserMarkers: [String] = [

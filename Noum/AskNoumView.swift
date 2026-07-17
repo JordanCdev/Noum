@@ -39,6 +39,58 @@ import os
 // Brand alignment: white cards on light background, brand-purple accents
 // for the coach surface, NoumCharacter as the coach's embodiment.
 
+/// Pure presentation contract for a typed transport limitation. Keeping the
+/// retry policy beside the copy prevents a permanent on-device identity from
+/// offering a button that can only return the same result.
+struct AskNoumAvailabilityPresentation: Equatable {
+    let message: String
+    let showsCheckAgain: Bool
+    let connectsLocalGuest: Bool
+
+    static func resolve(
+        _ reason: CoachChatUnavailableReason
+    ) -> AskNoumAvailabilityPresentation {
+        switch reason {
+        case .authenticationPending:
+            return AskNoumAvailabilityPresentation(
+                message: "Noum is temporarily unavailable. Your message is still here.",
+                showsCheckAgain: true,
+                connectsLocalGuest: false
+            )
+        case .localOnlyGuest:
+            return AskNoumAvailabilityPresentation(
+                message: "Connect this guest once to use live coaching. Your practice stays on this device if the connection fails.",
+                showsCheckAgain: false,
+                connectsLocalGuest: true
+            )
+        case .secureSessionMissing:
+            return AskNoumAvailabilityPresentation(
+                message: "Your coaching history is loaded, but Ask Noum needs its secure session reconnected. Your practice is unchanged.",
+                showsCheckAgain: true,
+                connectsLocalGuest: false
+            )
+        case .backendVersionMissing:
+            return AskNoumAvailabilityPresentation(
+                message: "Ask Noum needs its coaching service update before this build can reply.",
+                showsCheckAgain: true,
+                connectsLocalGuest: false
+            )
+        case .debugProviderMissing:
+            return AskNoumAvailabilityPresentation(
+                message: "Live coaching isn’t connected in this build.",
+                showsCheckAgain: true,
+                connectsLocalGuest: false
+            )
+        case .service:
+            return AskNoumAvailabilityPresentation(
+                message: "Noum is temporarily unavailable. Your message is still here.",
+                showsCheckAgain: true,
+                connectsLocalGuest: false
+            )
+        }
+    }
+}
+
 // Reports the thread ScrollView's top offset so the header can collapse
 // as the user scrolls into the conversation. Same shape as
 // `HomeScrollOffsetKey` (ContentView.swift) — a zero-height probe at the
@@ -453,6 +505,7 @@ struct AskNoumView: View {
     private static let speechLog = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumSpeech")
 
     @StateObject private var store = AskNoumStore.shared
+    @StateObject private var authManager = AuthManager.shared
     @ObservedObject var sessionStore: PracticeSessionStore
     @ObservedObject var ratingStore: RatingStore
     @ObservedObject var coachingProfileStore: CoachingProfileStore
@@ -802,7 +855,6 @@ struct AskNoumView: View {
                 inputFocused = false
                 send(
                     trimmed,
-                    preserveAsDraftWhenUnavailable: true,
                     clearDraftWhenSent: true
                 )
             }
@@ -818,7 +870,7 @@ struct AskNoumView: View {
                 pendingReplyCoachID = coachID
                 pendingReplyLease = replyLease
                 replyTask = Task {
-                    await runInjectedReplyAfterPreflight(
+                    await runInjectedReply(
                         coachID: coachID,
                         expected: replyLease
                     )
@@ -827,6 +879,28 @@ struct AskNoumView: View {
         }
         .task {
             await refreshAvailability()
+        }
+        .onChange(
+            of: authManager.localGuestCloudConnectionState
+        ) { _, state in
+            switch state {
+            case .connecting:
+                liveCoachAvailability = .checking
+            case .finalizing, .connected, .failed:
+                Task { @MainActor in
+                    await refreshAvailability()
+                }
+            case .idle:
+                break
+            }
+        }
+        .onChange(
+            of: authManager.initialAccountHydrationState
+        ) { _, state in
+            guard state == .ready else { return }
+            Task { @MainActor in
+                await refreshAvailability()
+            }
         }
         .onDisappear {
             // S5 — barge-in/teardown: never let the coach's voice bleed across
@@ -2653,37 +2727,43 @@ struct AskNoumView: View {
             .padding(.top, Spacing.xs)
             .accessibilityIdentifier("askNoum.availabilityChecking")
         } else if case .unavailable(let reason) = liveCoachAvailability {
+            let presentation = AskNoumAvailabilityPresentation.resolve(reason)
             HStack(alignment: .center, spacing: Spacing.xs) {
                 Image(systemName: "bolt.slash")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
-                Text(unavailableCoachCopy(for: reason))
+                Text(presentation.message)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: Spacing.xs)
-                Button("Check again") {
-                    Task { await refreshAvailability() }
+                if presentation.showsCheckAgain {
+                    Button("Check again") {
+                        Task { await refreshAvailability() }
+                    }
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(minHeight: 44)
+                } else if presentation.connectsLocalGuest {
+                    Button("Connect") {
+                        Task { @MainActor in
+                            liveCoachAvailability = .checking
+                            await authManager.connectLocalGuestToCloud(
+                                force: true
+                            )
+                            await refreshAvailability()
+                        }
+                    }
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Connect live coaching")
                 }
-                .font(Typography.caption.weight(.bold))
-                .foregroundStyle(AppColor.brandBlue)
-                .frame(minHeight: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("askNoum.availability")
-        }
-    }
-
-    private func unavailableCoachCopy(for reason: CoachChatUnavailableReason) -> String {
-        switch reason {
-        case .authenticationPending:
-            return "Noum is temporarily unavailable. Your message is still here."
-        case .debugProviderMissing:
-            return "Live coaching isn’t connected in this build."
-        case .service:
-            return "Noum is temporarily unavailable. Your message is still here."
         }
     }
 
@@ -2695,12 +2775,9 @@ struct AskNoumView: View {
         replyTask = Task { @MainActor in
             defer { isPreparingSend = false }
             liveCoachAvailability = .checking
-            let availability = await AICoachChatService.shared.availability()
             guard !Task.isCancelled,
                   store.sendAdmissionIsCurrent(sendAdmission) else { return }
-            liveCoachAvailability = availability
-            guard availability == .available,
-                  let retry = store.prepareRetry(expected: sendAdmission) else {
+            guard let retry = store.prepareRetry(expected: sendAdmission) else {
                 return
             }
             pendingReplyCoachID = retry.coachID
@@ -3032,7 +3109,6 @@ struct AskNoumView: View {
         inputFocused = false
         send(
             trimmed,
-            preserveAsDraftWhenUnavailable: true,
             clearDraftWhenSent: true
         )
     }
@@ -3056,7 +3132,6 @@ struct AskNoumView: View {
     private func send(
         _ text: String,
         detectIntent: Bool = true,
-        preserveAsDraftWhenUnavailable: Bool = false,
         clearDraftWhenSent: Bool = false
     ) {
         // Day-0 invariant: full replies stay gated on rep 1. The UI never
@@ -3078,14 +3153,8 @@ struct AskNoumView: View {
         replyTask = Task { @MainActor in
             defer { isPreparingSend = false }
             liveCoachAvailability = .checking
-            let availability = await AICoachChatService.shared.availability()
             guard !Task.isCancelled,
                   store.sendAdmissionIsCurrent(sendAdmission) else { return }
-            liveCoachAvailability = availability
-            guard availability == .available else {
-                if preserveAsDraftWhenUnavailable { draft = text }
-                return
-            }
             guard !store.isAwaitingReply else { return }
             speaker.stop()
             if clearDraftWhenSent { draft = "" }
@@ -3124,7 +3193,7 @@ struct AskNoumView: View {
     }
 
     @MainActor
-    private func runInjectedReplyAfterPreflight(
+    private func runInjectedReply(
         coachID: UUID,
         expected replyLease: AskNoumReplyLease
     ) async {
@@ -3133,24 +3202,9 @@ struct AskNoumView: View {
             return
         }
         liveCoachAvailability = .checking
-        let availability = await AICoachChatService.shared.availability()
-        guard store.replyLeaseIsCurrent(replyLease) else {
-            clearPendingReplyTracking(coachID: coachID)
-            return
-        }
-        liveCoachAvailability = availability
         guard !Task.isCancelled else {
             _ = store.cancelPendingCoachTurn(
                 id: coachID,
-                expected: replyLease
-            )
-            clearPendingReplyTracking(coachID: coachID)
-            return
-        }
-        guard availability == .available else {
-            _ = store.completeCoachTurn(
-                id: coachID,
-                outcome: .failure(.network),
                 expected: replyLease
             )
             clearPendingReplyTracking(coachID: coachID)
@@ -3173,6 +3227,24 @@ struct AskNoumView: View {
             expectedReplyLease: replyLease
         )
         guard store.replyLeaseScopeIsCurrent(replyLease) else { return }
+        switch outcome {
+        case .reply:
+            liveCoachAvailability = .available
+        case .failure(.coachUnavailable(let reason)):
+            liveCoachAvailability = .unavailable(reason)
+        case .failure(.backendVersionMissing):
+            liveCoachAvailability = .unavailable(.backendVersionMissing)
+        case .failure(.unauthenticated), .failure(.permissionDenied):
+            liveCoachAvailability = .unavailable(.authenticationPending)
+        case .failure(.noProvider):
+            liveCoachAvailability = .unavailable(.debugProviderMissing)
+        case .failure(.network):
+            liveCoachAvailability = .unavailable(.service)
+        case .failure:
+            // The callable was reachable; content, policy, rate, locale, or
+            // consent failure must not disable the composer as an outage.
+            liveCoachAvailability = .available
+        }
         let route = AskNoumSpokenMode.spokenRoute(
             outcome: outcome,
             spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,

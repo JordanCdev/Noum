@@ -69,13 +69,11 @@ struct CoachReportVoiceRegenerationProofTests {
                 "A 116-word metric-reciting groundedRead reply must trip the app quality gate (length and/or report-voice) so it regenerates.")
     }
 
-    @Test("A real high-scoring reply that cites metrics on a progress turn is NOT flagged")
-    func excellentReplyWithRequestedMetricsIsNotFlagged() {
-        // The live arena's best deep-assessment reply (`am-i-improving`, 90/100).
-        // The user EXPLICITLY asked about progress, so citing the filler trend is
-        // the right coaching move — the report-voice guard must NOT fire here, or
-        // it would force needless regeneration of an excellent reply. This proves
-        // the gate is SELECTIVE (turn-aware), not a blanket number ban.
+    @Test("A polished progress reply with no typed metric source is still rejected")
+    func polishedProgressReplyWithoutMetricEvidenceIsFlagged() {
+        // Arena fluency is not provenance. "Am I improving?" asks for a
+        // calibrated coaching read; it does not authorize an invented trend,
+        // score, chronology, or quote when no typed brief is supplied here.
         let excellent = """
         Real improvement. Fillers dropped from 6.0 to 3.4 per minute over five weeks \
         — that's not noise.
@@ -90,9 +88,12 @@ struct CoachReportVoiceRegenerationProofTests {
         let issue = AICoachChatService.replyQualityIssue(
             in: excellent,
             latestUserTurn: "Am I actually improving or am I just doing reps?",
+            quoteGuard: CoachChatQuoteGuardContext(
+                latestUserTurn: "Am I actually improving or am I just doing reps?"
+            ),
             turnDepth: .deepAssessment
         )
-        #expect(issue == nil,
-                "An excellent progress-turn reply that cites the requested metric trend must not be flagged; the report-voice guard is turn-aware, not a blanket number ban.")
+        #expect(issue == .overclaimsEvidence,
+                "A polished answer must still fail when its progress metrics have no typed source; got \(String(describing: issue)).")
     }
 }

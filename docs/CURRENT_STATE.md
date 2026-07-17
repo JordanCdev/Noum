@@ -1,5 +1,243 @@
 # Noum — Current state
 
+## 2026-07-17 — Ask Noum failed acceptance; local reply contract repaired, source still NO-GO
+
+The latest user acceptance is a product failure, not an external-evidence-only
+gap. Ask Noum usually reported that it was unavailable; when a reply did land,
+the reporter found it repetitive, oddly worded, and unlike a human expert
+communication coach. A read-only production inventory gives a deterministic
+cause for the unavailable state: it exposes only `coachChat`,
+`coachChatAvailability`, `deleteAccount`, and `transcriptionToken`, while the
+current app calls `coachChatV2`. That required callable is not deployed. The
+older `coachChat` route is not a safe silent fallback: Auth/App Check admission
+succeeded before five consecutive production generations failed `data-loss`,
+and it does not carry the v2 evidence and response contract. The last five-case
+Vertex probe is a synthetic model-boundary diagnostic, not current-source live
+generated conversation or quality acceptance.
+
+The dirty working tree targets the identified path through the existing Ask
+Noum transport, context, and reply-pipeline owners. The additive normal app
+route is `coachChatV2`, with one versioned `noum-coach-v2` server policy and
+typed personal-evidence, general-coaching, memory-handoff, and conversational
+response kinds. General and conversational turns do not inherit personal
+assessment/history context; style feedback and vulnerable disclosure receive
+short conversational handling rather than a fabricated diagnosis or drill.
+Personal moves require same-dimension qualified evidence and a latest-rep
+signal. No-move briefs make zero provider calls. A supported general turn whose
+completion fails the quality policy may receive only its bounded intent-specific
+repair; unsupported, empty, and malformed generations remain typed failures
+rather than laundering generic fallback copy as expert judgment.
+
+The repaired client now requires an exact availability capability handshake:
+`coachChatV2`, request schema 2, and policy `noum-coach-v2`. The old
+`{available:true}` response fails closed as a typed backend-version limitation
+with specific user copy instead of masquerading as an internet outage. Ordinary
+text chat waits for one vetted final answer rather than showing a local brief
+and then restating it as a generated answer; only live voice retains the bounded
+low-latency provisional read. Personal provider context is turn-scoped and no
+longer repeats the full plan, case file, assessment, prescription, and brief.
+The server's visible reply limits are 30 words for conversation, 45 for general
+craft, 50 for ordinary personal/memory turns, 45 for trust repair, 90 only for
+an explicit deep assessment, and 35 for live. The server prompt and
+deterministic brief fallback omit a stored move when the current turn does not
+ask for action, and deterministic fallback uses natural evidence-then-move
+sentences rather than a forced `because` formula. The server now rejects
+high-confidence imperative, modal, recommendation, and bounded indirect-action
+shapes when a personal explanation or judgement did not request a move, even
+if its typed brief carries one for continuity. Hidden repair explicitly removes
+the drill, and two rejected drafts fall back to the evidence-only typed read.
+The iOS quality gate applies the same bounded defense before a secure reply
+lands. Explicit action requests, descriptive evidence, general craft, and
+memory handoff remain available. These detectors are conservative lexical
+enforcement, not proof against every semantic paraphrase.
+
+A fresh cross-turn audit found an additional local availability and wording
+deadlock. When the typed brief deliberately retained the active intervention,
+the prior-action gate rejected that required move; changing the move then
+failed typed grounding. The rewrite prompt could not satisfy both rules, and
+deterministic fallback could repeat the same drill and be rejected. Server and
+iOS policy now canonicalize a bounded set of intervention synonyms and still
+reject an exact or paraphrased restatement. They permit only a concise
+continuity reference when the current turn explicitly asks for action, the
+typed move matches recent coach history, and the current decisive evidence is
+visible. After two rejected drafts, the deterministic path names that evidence
+and says to stay with the focus without restating the drill. Repair copy no
+longer forces `because` or `so`, and a clarification about preserving warmth
+answers the concern without reissuing the intervention. This is local
+deterministic policy evidence, not generated human-coach acceptance.
+
+The direct follow-through audit now covers the reporter's conversational
+complaints and the personal coaching questions that previously crossed lanes.
+No-symbol confirmation, “what was generic,” and polite “you did not answer what
+I meant” turns stay conversational: the coach owns the specific miss, changes
+its own behavior, and does not assign another drill. Filler-count follow-up,
+next-run, close-versus-opening, exact-rep, whole-style boundary, diagnosis-
+change, and test-separation questions stay in the personal-evidence lane.
+Deterministic repair copy answers those turns directly with a bounded observable
+anchor, one requested action where applicable, and a natural rationale. A
+memory handoff is graded on explicit coach-side retention rather than being
+forced to prescribe user practice. The server policy and iOS gates share the
+same metric-provenance and no-unsolicited-prescription boundary. This closes
+the known local rubric failures; it does not prove live model wording quality.
+
+Server policy exhaustion now maps to a typed quality
+rejection instead of incomplete data. Trust repair carries the challenged coach
+answer plus the complaint, elliptical follow-ups carry one bounded prior-user
+referent, and cold-start evidence guards also cover general coaching. A send now
+uses one service-owned remote capability preflight; the view does not repeat it
+and the Firebase stream only revalidates local identity, preserving the exact
+backend, identity, or service reason.
+
+`coachChat` remains a distinct schema-v1 source route. Its historical policy,
+request validation, context shape, single-generation behavior, live deltas,
+errors, and exact seven-field completion are frozen in local tests rather than
+silently inheriting v2 thinking, rewrite, or metadata behavior. That is a local
+semantic-contract proof only: it is not proof that the revised v1 source is
+deployed, that installed production clients remain compatible, or that rollback
+works.
+
+On iOS, composer admission and callable creation require the Firebase UID to
+match the durable, fully hydrated Noum account and require the existing
+deletion/provider fence to allow work. Typed transport failures remain typed,
+and rejected non-coaching content cannot reappear as a coach prescription.
+
+The current source also implements the narrow supported-identity repair for a
+`local-guest-*` fallback. On hydration readiness and foreground retry, or from
+the explicit Connect action in Ask Noum and Settings, `AuthManager` may obtain a
+new Firebase anonymous UID and move the local namespace through one copy-first,
+three-phase Keychain journal. `AccountDataRegistry` preflights conflicts, copies
+only exact account-scoped values, rebinds self-owned challenge IDs, discards
+remote/derived bookkeeping, and leaves unattributed device data and recordings
+alone. Before identity commit the local source remains authoritative; after
+commit the target is permanently authoritative and is never deleted or
+overwritten by recovery. Anonymous guests cannot sign out and strand the only
+credential, but can delete the account or link Apple/Google.
+
+Firebase identity creation is separate from coaching-content consent. Profile,
+XP, session/transcript/evidence, and recommendation writes now require the
+current versioned cloud-processing decision. Each outbound content lease is
+also bound to the scheduling account lifecycle, durable provider, hydration
+phase, transition fences, and exact Firebase UID; REST token creation and the
+recommendation callable both recheck that identity rather than borrowing
+ambient auth. Consent is persisted and read back before publication, and a
+failed revoke closes process-local authority instead of allowing an older
+durable allow receipt to authorize work. A target-scoped pending marker
+suppresses remote bootstrap until the consent-gated snapshot is acknowledged;
+snapshot failure retries separately and no longer leaves identity, deletion,
+or provider linking indefinitely blocked. Ask Noum refreshes availability when
+the connection or exact account hydration becomes ready.
+
+Ordinary profile, progression, and session transport now uses one account-
+scoped, metadata-only journal. Existing stores retain payload ownership; each
+mutation synchronously records its document identity, local revision, and
+mutation UUID before transport starts. `BackendSyncManager` drains one account
+serially, resolves the current payload from the exact account namespace, and
+acknowledges only the exact mutation still pending, so an older completion
+cannot clear newer work. Pending work resumes after hydration, foreground
+entry, and consent allow; unreadable journal state fails closed. Account
+deletion closes the lane and waits for an in-flight content write before remote
+destruction can begin.
+
+The promoted-guest whole snapshot enters that same lane and is permitted only
+for the pending newly minted target whose backend was established as empty.
+Existing accounts resume dirty documents instead of receiving a blind bulk
+snapshot. Snapshot tasks carry an exact request ID, so stale completion cannot
+clear a replacement task. Remote bootstrap preserves a dirty local profile,
+merges progression conservatively, and retains dirty local session IDs while
+admitting clean remote rows. Full replacement writes remove stale optional
+fields rather than preserving them through Firestore merge semantics.
+
+This is still a bounded client recovery contract, not distributed convergence
+or general migration. Ordinary documents have no server-enforced revision/CAS
+contract, so mixed or older clients can still overwrite newer state. A process
+crash between local payload persistence and journal enqueue has no startup-
+digest repair. XP remains an aggregate without award-event provenance, session
+deletion has no remote tombstone, and content writes still update mutable root
+provider metadata. Existing-account merge, complete cross-device history
+restoration, the Apple/Google link-success-before-Keychain crash window, and
+recovery of the same anonymous UID after its secure Firebase session is lost
+remain source gaps. Production anonymous-provider configuration and a physical/
+TestFlight kill-and-relaunch promotion have not been proved.
+
+The audit also found that current sessions encode comparison-metric schema 2
+while the checked-in Firestore rule admitted only schema 1, causing current
+session writes to be denied while the transport swallowed the error. Source
+rules now admit known schemas 1 and 2 and reject unknown future schema 3. This
+is source/emulator evidence only until the reviewed rules are deployed and read
+back from production.
+
+Current local Functions verification passes **161/161** tests plus **7/7**
+deploy-lock tests, TypeScript lint/build, and the cloud-operations validator at
+**19/19**. Coach Arena simulator-environment checks pass **9/9**. Those tool
+guards reduce the chance of accidentally replacing a shared simulator app; they
+do not prove that a selected simulator is owned or disposable.
+
+Current-source typed-evidence verification passes **124/124** with zero failures
+or skips in
+`/private/tmp/NoumTypedEvidenceFinal8-20260717.xcresult`. It covers exact
+metric routing, canonical word/WPM provenance, strict comparable-rep selection,
+rounded trend-direction agreement, client/server quality gates, secure JSON
+wire shape, full pipeline-to-wire landing, and mixed-turn precedence so a coach-
+quality complaint or explicit goal change cannot be swallowed by a simultaneous
+metric ask. The current reply-reliability
+selection passes **133/133** in
+`/private/tmp/NoumReliabilityFinal3-20260717.xcresult`. The earlier
+**164/164** provider-chain and **251/251** wider Ask results predate the final
+typed-projection edits and remain broader adjacent historical evidence. All of
+these are unsigned simulator checks; none is a deployed, App Check-valid app
+conversation or human quality acceptance.
+
+The earlier Auth/Firestore/Functions emulator contract passes **30/30** through
+`scripts/test-coach-functions-emulator.sh`, including the exact availability
+capability response and both schema-v1 and v2 callable contracts, but it
+predates the newest server reply-policy edits and remains historical. The
+earlier promotion/privacy/authority **41/41**, journal/
+promotion/registry **22/22**, and deletion-admission **4/4** results remain
+bounded historical evidence for those unchanged assertions, not a current Ask
+Noum regression pass.
+
+The common personal-read routing and typed-evidence gaps are closed locally.
+“How did I do?” and exact latest-stat questions select the grounded personal
+lane; “How am I doing?” and “Am I improving?” select deep assessment. A bounded
+latest-rep projection carries only qualified canonical metrics. A longitudinal
+projection is emitted only with two to five unique, current-schema reps that
+match mode, pressure, rated state, duration band, and exact demand/setup; score
+is omitted unless the complete comparator roster has scores. Exact-stat and
+trend reads return the vetted brief directly without a model call or invented
+drill, keep provenance IDs out of visible/model prose, and bind every metric,
+value, and direction on both iOS and Functions. Filler-rate prose is no longer
+misparsed as a filler count, and direction is classified from the exact rounded
+values sent across the wire. Unsupported claims still fail softly.
+
+This removes a verified local source of generic, redundant, and falsely
+rejected evidence answers. It does **not** remove the Firebase capability
+dependency: a client requiring v2 will still show Ask as unavailable while the
+production roster lacks `coachChatV2` or advertises the wrong capability.
+
+The normally signed Debug build, unsigned Release simulator build, and light
+six-frame sweep recorded in
+`.screenshots/2026-07-17_ask-noum-failed-acceptance-repair/HANDOFF.md` also
+predate the latest Ask edits. A post-edit unsigned Debug simulator build
+succeeds; signed Debug, unsigned Release, and visual evidence have not yet been
+refreshed for the current dirty source. The older sweep used an already
+supported account and did not exercise local-guest Connect, failure, relaunch,
+or post-commit states.
+
+Source now inventories **18** reviewed callable exports plus one reviewed
+scheduled function, **19 Functions exports total**, while the read-only
+production inventory returned only the four active functions named above.
+Backend-first deployment must add `coachChatV2` and update
+`coachChatAvailability` to advertise function `coachChatV2`, request schema 2,
+and policy `noum-coach-v2`; both functions must be read back before a v2 client
+can pass capability admission. That deployment, mixed v1/v2 client smoke,
+adoption measurement, rollback proof, and eventual retirement criteria have not
+been performed. No current-source App Check-valid app conversation has
+traversed the deployed route, no current-source five-case live generated output
+has passed product acceptance, and no independent professional coach has
+reviewed it. The latest authoritative source-bound readiness result remains the
+inherited `ac664112` **NO-GO at 18/100 with 0/5 required external artifacts**;
+it has not been freshly rerun for this dirty source.
+
 ## 2026-07-16 — Account deletion now closes scoped provider admission
 
 The current source developed above `ea667cfd4` closes the verified deletion-
@@ -2928,11 +3166,26 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   persist (mid-reply crash → clean relaunch). User-authored
   messages get a UUID at send for dedupe. Replay-for-model
   excludes system notices + pending rows.
-- `Noum/AICoachChatService.swift` — actor wrapping the same
-  OpenAI / DeepSeek / Gemini providers as `AIInsightsService`.
-  Multi-turn replay capped at 24 messages per request; temp 0.6,
-  max_tokens 380. Failure-soft: nil return on any error → store
-  renders a system notice instead of an empty bubble.
+- `Noum/AICoachChatService.swift` — actor whose normal app route is
+  the App Check- and Firebase Auth-protected `coachChatV2` callable,
+  backed by server-selected Vertex Fast/Ultra models. Direct keyed
+  OpenAI / DeepSeek / Gemini routing is DEBUG-only and explicitly
+  opted in. Multi-turn replay is capped at 24 messages; failures are
+  typed so the store keeps operational notices out of coach speech.
+  The secure request carries bounded context plus validated surface,
+  turn depth, chosen voice, a typed coaching brief, and short verified
+  proof quotes—not a client-authored system prompt or full transcript.
+  Vertex receives the canonical versioned server policy and a
+  model-specific thinking budget so hidden reasoning cannot consume
+  the visible reply allowance. The server buffers the first draft,
+  applies deterministic evidence/repetition checks, and permits one
+  hidden rewrite; a brief that authorizes no next move falls back to
+  its vetted direct verdict instead of inventing an exercise. Completion
+  metadata records the server policy version, while prompt telemetry
+  distinguishes client-built modules from fields actually sent over the
+  secure transport. Composer admission checks the local secure Firebase
+  session and the versioned `coachChatAvailability` capability response; the
+  real `coachChatV2` callable still determines generation health and completion.
 - `Noum/CoachContextBuilder.swift` — pure-function context layer.
   `systemPrompt(for:)` composes a brand-voice frame + per-voice
   personality block (authoritative = "senior advisor giving a

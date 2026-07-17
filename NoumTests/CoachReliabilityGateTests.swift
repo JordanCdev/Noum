@@ -26,8 +26,8 @@ struct CoachReliabilityGateTests {
 
     // MARK: Fixtures
 
-    /// A clean quick-move assessment whose `immediateCoachRead` wraps the proof
-    /// test in a local read — usable as a clean fallback source.
+    /// A legacy-shaped quick-move assessment without typed rubric evidence.
+    /// The evidence-bound fallback must abstain rather than leak its proof test.
     private static func quickMoveAssessment(
         proofTest: String = "Run one 60-second rep with the verdict first, then one reason, then stop.",
         confidence: Double = 0.55,
@@ -378,7 +378,7 @@ struct CoachReliabilityGateTests {
 
     @Test func trustRepairNaturalReportOwnershipNamesTheRepair() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair push. That read too much like a report instead of a human coach. Your recommendation arrived late, so put it in sentence one next time.",
+            replyText: "Fair push. I sounded robotic and overexplained it. I’ll answer with one specific point in plain language.",
             previousCoachReply: "Earlier generic advice.",
             latestUserTurn: "This is robotic and too much writing.",
             turnDepth: .trustRepair,
@@ -393,7 +393,7 @@ struct CoachReliabilityGateTests {
 
     @Test func trustRepairColdReportOwnershipNamesTheRepair() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Good call. That read like a cold report and it was too much to take in at once. Your last rep was clean, but the recommendation arrived late, so start with the recommendation in the first sentence, then stop.",
+            replyText: "Good call. That sounded robotic and was too long. I’ll use one specific point in plain language.",
             previousCoachReply: "Earlier generic report.",
             latestUserTurn: "This is robotic and too much writing.",
             turnDepth: .trustRepair,
@@ -405,9 +405,9 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
-    @Test func politePushbackGenericTipSheetOwnershipNamesTheRepair() {
+    @Test func politePushbackOwnsTheAdviceMissAndChangesCoachBehaviour() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair push. That read like a generic tip sheet instead of looking at your actual practice. In your last rep, reassurance came first and the recommendation arrived late, so state the recommendation in the first sentence next time.",
+            replyText: "Fair push—I answered with advice when you wanted the read. Reassurance came before the recommendation; next time I’ll name that ordering issue directly.",
             previousCoachReply: "Earlier generic advice.",
             latestUserTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
             turnDepth: .trustRepair,
@@ -417,6 +417,7 @@ struct CoachReliabilityGateTests {
 
         #expect(!verdict.issues.contains(.thinTrustRepair))
         #expect(!verdict.blocked)
+        #expect(verdict.fallbackText == nil)
     }
 
     @Test func rejectedPracticeFollowThroughAcknowledgesPushbackAndPasses() throws {
@@ -433,7 +434,10 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: nil
         )
 
-        #expect(reply.hasPrefix("Fair push."))
+        #expect(reply.hasPrefix("You’re right—"))
+        #expect(reply.contains("without assigning more practice"))
+        #expect(!reply.lowercased().contains("send one sentence"))
+        #expect(!reply.lowercased().contains("another rep"))
         #expect(!verdict.issues.contains(.noAttunementOnPushback))
         #expect(!verdict.issues.contains(.thinTrustRepair))
         #expect(!verdict.issues.contains(.genericRepairScaffolded))
@@ -457,7 +461,7 @@ struct CoachReliabilityGateTests {
 
     @Test func typedTrustRepairFallbackOwnsColdGenericMiss() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair push. I sounded cold or generic instead of giving you a specific coaching read. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
+            replyText: "Fair push. That sounded templated and was too long. I’ll use one specific point in plain language.",
             previousCoachReply: "Earlier generic advice.",
             latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
             turnDepth: .trustRepair,
@@ -525,7 +529,7 @@ struct CoachReliabilityGateTests {
 
     @Test func trustRepairGenericWrapperComplaintWithSafeSignalPasses() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
+            replyText: "Fair push. That sounded templated, not like a coach read. I’ll answer with one specific point in plain language.",
             previousCoachReply: "Here are some tips: be confident, speak clearly, and practice.",
             latestUserTurn: "This feels like a generic AI wrapper.",
             turnDepth: .trustRepair,
@@ -642,13 +646,15 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
 
-        #expect(verdict.issues.contains(.notInformativeRepairScaffold))
-        #expect(verdict.blockingIssues.contains(.notInformativeRepairScaffold))
+        #expect(verdict.issues.contains(.thinTrustRepair))
+        #expect(verdict.blockingIssues.contains(.thinTrustRepair))
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("The useful read is that your point arrived in sentence four"))
-        #expect(fallback.contains("say the point first"))
+        #expect(fallback.contains("not informative enough"))
+        #expect(fallback.contains("direct point"))
+        #expect(!lowered.contains("sentence four"))
+        #expect(!lowered.contains("warm-up"))
         #expect(!lowered.contains("real read:"))
         #expect(!lowered.contains("score"))
         #expect(!lowered.contains("cut the"))
@@ -656,7 +662,7 @@ struct CoachReliabilityGateTests {
 
     @Test func cleanNotInformativeRepairDoesNotBlock() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting.",
+            replyText: "You’re right—that answer was not informative enough. I’ll give the direct point and why it matters.",
             previousCoachReply: "Earlier read.",
             latestUserTurn: "That's not informative.",
             turnDepth: .trustRepair,
@@ -679,20 +685,22 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.7
         )
 
-        #expect(verdict.issues.contains(.straightAnswerSplitMissing))
-        #expect(verdict.blockingIssues.contains(.straightAnswerSplitMissing))
+        #expect(verdict.issues.contains(.thinTrustRepair))
+        #expect(verdict.blockingIssues.contains(.thinTrustRepair))
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("Straight answer: yes on fillers; no on pace under pressure"))
-        #expect(fallback.contains("one silent beat"))
+        #expect(fallback.contains("did not answer directly"))
+        #expect(fallback.contains("put the answer first"))
+        #expect(!lowered.contains("yes on fillers"))
+        #expect(!lowered.contains("pace under pressure"))
         #expect(!lowered.contains("hit 3"))
         #expect(!lowered.contains("scored"))
     }
 
     @Test func cleanStraightAnswerSplitDoesNotBlock() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer.",
+            replyText: "You’re right—I did not answer directly. I’ll put the answer first from here.",
             previousCoachReply: "Earlier read.",
             latestUserTurn: "Why can't you just give me a straight answer?",
             turnDepth: .trustRepair,
@@ -726,7 +734,7 @@ struct CoachReliabilityGateTests {
         let lowered = fallback.lowercased()
         #expect(fallback.contains("215 WPM"))
         #expect(fallback.contains("0.09 pause rate"))
-        #expect(fallback.contains("Fix the pause, not the speed"))
+        #expect(fallback.contains("Fix the pause, not your natural pace"))
         #expect(fallback.contains("one silent beat"))
         #expect(!lowered.contains("scored"))
         #expect(!lowered.contains("score 71"))
@@ -1039,7 +1047,7 @@ struct CoachReliabilityGateTests {
         #expect(fallback.contains("race to fill silence"))
         #expect(fallback.contains("170 WPM"))
         #expect(fallback.contains("12-day streak"))
-        #expect(fallback.contains("wait on a next drill"))
+        #expect(fallback.contains("won’t prescribe another drill unless you ask"))
         #expect(!fallback.lowercased().contains("next rep"))
         #expect(!fallback.lowercased().contains("system prompt"))
     }
@@ -1068,22 +1076,23 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.7
         )
 
-        #expect(verdict.issues.contains(.repetitionCourseCorrectionMiss))
-        #expect(verdict.blockingIssues.contains(.repetitionCourseCorrectionMiss))
+        #expect(verdict.issues.contains(.thinTrustRepair))
+        #expect(verdict.blockingIssues.contains(.thinTrustRepair))
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("repeat the same target"))
-        #expect(fallback.contains("You led cleanly"))
-        #expect(fallback.contains("New target: pace"))
-        #expect(fallback.contains("hold one silent beat"))
+        #expect(fallback.contains("repeated the point"))
+        #expect(fallback.contains("answer once and directly"))
+        #expect(!fallback.contains("You led cleanly"))
+        #expect(!fallback.contains("New target: pace"))
+        #expect(!fallback.contains("hold one silent beat"))
         #expect(!lowered.contains("hit 82"))
         #expect(!lowered.contains("lead with the point"))
         #expect(!lowered.contains("point up front"))
     }
 
     @Test func cleanRepetitionCourseCorrectionDoesNotBlock() {
-        let reply = "Fair. I did repeat the same target. You led cleanly and the close held, so there is no reason to run that drill again. New target: pace. Slow the three words that carry the point, then hold one silent beat before the next sentence."
+        let reply = "You’re right—I repeated the point. I’ll answer once and directly from here."
         let verdict = CoachReliabilityGate.evaluate(
             replyText: reply,
             previousCoachReply: "Good. Now record another 60-second answer and put the point up front, then stop clean.",
@@ -1098,8 +1107,8 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
-    @Test func repetitionRepairMayKeepTargetAndChangeEvidenceTest() {
-        let reply = "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence."
+    @Test func repetitionRepairOwnsTheRepeatedMoveWithoutAssigningAnotherTest() {
+        let reply = "Fair push. I repeated the same coaching move. I’ll answer once and directly from here."
         let verdict = CoachReliabilityGate.evaluate(
             replyText: reply,
             previousCoachReply: "Run the close once more.",
@@ -1110,6 +1119,7 @@ struct CoachReliabilityGateTests {
         )
 
         #expect(!verdict.issues.contains(.repetitionCourseCorrectionMiss))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
         #expect(!verdict.blocked)
     }
 
@@ -1120,7 +1130,8 @@ struct CoachReliabilityGateTests {
             latestUserTurn: "It's not easy.",
             turnDepth: .trustRepair,
             assessment: Self.vulnerableTrustRepairAssessment(),
-            evidenceCoverage: 0.65
+            evidenceCoverage: 0.65,
+            responseKind: .conversational
         )
 
         #expect(verdict.issues.contains(.vulnerablePushbackQuestionBurden))
@@ -1453,7 +1464,8 @@ struct CoachReliabilityGateTests {
 
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
-        #expect(fallback.contains("One safe signal is your feedback"))
+        #expect(fallback.contains("sounded robotic"))
+        #expect(fallback.contains("one specific point"))
         #expect(!fallback.contains(assessment.immediateCoachRead))
         let fallbackVerdict = CoachReliabilityGate.evaluate(
             replyText: fallback,
@@ -1490,7 +1502,11 @@ struct CoachReliabilityGateTests {
             latestUserTurn: turn
         )
 
-        #expect(fallback == CoachReliabilityGate.markdownTrustRepairFallback(surface: .text))
+        #expect(fallback == CoachReliabilityGate.preferenceAcknowledgementFallback(
+            surface: .text,
+            latestUserTurn: turn,
+            previousCoachReply: "Here is a long formatted report with several tips."
+        ))
         #expect(!fallback.contains("**"))
         #expect(!fallback.lowercased().contains("markdown"))
         let fallbackVerdict = CoachReliabilityGate.evaluate(
@@ -1594,7 +1610,7 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
-    @Test func repeatedProofTestBlocksWithAssessmentFallback() {
+    @Test func hiddenRepeatedProofHashDoesNotBlockDifferentVisibleAnswer() {
         let assessment = Self.quickMoveAssessment(
             proofTest: "Run a different proof: make the final sentence the ask, then stop."
         )
@@ -1606,11 +1622,29 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5,
             proofTestRecentlyRepeated: true
         )
+        #expect(!verdict.issues.contains(.repeatedProofTest))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func visiblyRepeatedProofTestBlocksWithEvidenceBoundAbstention() {
+        let proof = "Run a different proof: make the final sentence the ask, then stop."
+        let assessment = Self.quickMoveAssessment(proofTest: proof)
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: proof,
+            previousCoachReply: nil,
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5,
+            proofTestRecentlyRepeated: true
+        )
         #expect(verdict.issues.contains(.repeatedProofTest))
         #expect(verdict.blockingIssues.contains(.repeatedProofTest))
         #expect(verdict.blocked)
-        #expect(verdict.fallbackText == assessment.immediateCoachRead)
-        #expect(verdict.fallbackText?.contains("Run a different proof") == true)
+        #expect(verdict.fallbackText ==
+            CoachChatBrief(assessment: assessment).provisionalCoachRead)
+        #expect(verdict.fallbackText ==
+            "I don’t have enough evidence to choose your next move yet.")
+        #expect(verdict.fallbackText?.contains("Run a different proof") == false)
     }
 
     @Test func freshProofTestDoesNotTripRepeatedProofGate() {
@@ -1626,9 +1660,171 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func conversationalStyleRepairSkipsPersonalTrustAndProofRules() {
+        let turn = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        let reply = "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "The prior answer used a long personal coaching read.",
+            recentCoachReplies: [reply],
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: nil,
+            evidenceCoverage: 0.5,
+            proofTestRecentlyRepeated: true,
+            surface: .text,
+            responseKind: .conversational,
+            coachingBrief: nil
+        )
+
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.issues.contains(.repeatedProofTest))
+        #expect(!verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func conversationalStyleRepairStillRequiresSpecificCoachCorrection() {
+        let turn = "This still sounds cold and overexplained, like generic AI tips."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. I heard you, and I will do better next time.",
+            previousCoachReply: "Here are several general communication tips.",
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: nil,
+            evidenceCoverage: nil,
+            responseKind: .conversational
+        )
+
+        #expect(verdict.issues.contains(.thinTrustRepair))
+        #expect(verdict.blocked)
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.contains("sounded robotic"))
+        #expect(fallback.contains("one specific point in plain language"))
+
+        let repaired = CoachReliabilityGate.evaluate(
+            replyText: fallback,
+            previousCoachReply: "Here are several general communication tips.",
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: nil,
+            evidenceCoverage: nil,
+            responseKind: .conversational
+        )
+        #expect(!repaired.blocked)
+    }
+
+    @Test func reporterCompoundStyleFallbackOwnsBothMissesWithoutAssigningARep() {
+        let turn = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        let fallback = CoachReliabilityGate.truthfulFallback(
+            turnDepth: .trustRepair,
+            assessment: nil,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: turn,
+            responseKind: .conversational
+        )
+
+        #expect(fallback.contains("repeated myself"))
+        #expect(fallback.contains("sounded templated"))
+        #expect(fallback.contains("one specific point in plain language"))
+        #expect(!fallback.lowercased().contains("run one"))
+        #expect(!fallback.lowercased().contains("60-second"))
+        #expect(!fallback.lowercased().contains("practice"))
+        #expect(!fallback.lowercased().contains("record"))
+    }
+
+    @Test func duplicateStyleRepairRotatesWithoutAssigningUserWork() {
+        let turn = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
+        let reply = "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: reply,
+            recentCoachReplies: [reply],
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: nil,
+            evidenceCoverage: 0.5,
+            surface: .text,
+            responseKind: .conversational,
+            coachingBrief: nil
+        )
+
+        let fallback = verdict.fallbackText ?? ""
+        #expect(verdict.issues.contains(.duplicateReply))
+        #expect(verdict.blocked)
+        #expect(CoachReliabilityGate.normalize(fallback) !=
+            CoachReliabilityGate.normalize(reply))
+        #expect(fallback.lowercased().contains("60-second") == false)
+        #expect(fallback.lowercased().contains("record") == false)
+        #expect(fallback.lowercased().contains("practice") == false)
+    }
+
     // MARK: - Fallback selection
 
-    @Test func fallbackPrefersCleanImmediateCoachRead() {
+    @Test func laneAwareFallbackKeepsMemoryBriefAndGeneralFailureNonPrescriptive() throws {
+        let memoryAssessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should Noum remember?",
+            directVerdict: "What I’d carry forward for now is that disagreement may be getting softened by setup.",
+            confidence: 0.62,
+            evidenceUsed: [
+                "conversation hypothesis: disagreement may be getting softened by setup"
+            ],
+            rubricScores: [],
+            nextProofDimensionID: nil,
+            missingEvidence: [],
+            nextProofTest: "Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it.",
+            responseMode: .immediateOnly
+        )
+        let brief = try #require(CoachChatBrief.applicable(
+            assessment: memoryAssessment,
+            responseKind: .memoryHandoff
+        ))
+        let memoryVerdict = CoachReliabilityGate.evaluate(
+            replyText: "",
+            previousCoachReply: nil,
+            latestUserTurn: "What should Noum remember?",
+            turnDepth: .groundedRead,
+            assessment: memoryAssessment,
+            evidenceCoverage: 0.5,
+            surface: .text,
+            responseKind: .memoryHandoff,
+            coachingBrief: brief
+        )
+        #expect(memoryVerdict.fallbackText ==
+            brief.provisionalCoachRead(for: .memoryHandoff))
+        #expect(memoryVerdict.fallbackText != CoachChatBrief.insufficientEvidenceVerdict)
+        let briefOnlyFallback = CoachReliabilityGate.truthfulFallback(
+            turnDepth: .groundedRead,
+            assessment: nil,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: "What should Noum remember?",
+            responseKind: .memoryHandoff,
+            coachingBrief: brief
+        )
+        #expect(briefOnlyFallback == brief.provisionalCoachRead(for: .memoryHandoff))
+
+        let generalVerdict = CoachReliabilityGate.evaluate(
+            replyText: "",
+            previousCoachReply: nil,
+            latestUserTurn: "How do I structure a presentation?",
+            turnDepth: .groundedRead,
+            assessment: nil,
+            evidenceCoverage: 0.5,
+            surface: .text,
+            responseKind: .generalCoaching,
+            coachingBrief: nil
+        )
+        let generalFallback = generalVerdict.fallbackText?.lowercased() ?? ""
+        #expect(generalVerdict.blocked)
+        #expect(generalFallback.contains("communication question"))
+        #expect(!generalFallback.contains("rep"))
+        #expect(!generalFallback.contains("verdict first"))
+    }
+
+    @Test func fallbackPrefersCleanEvidenceBoundBrief() {
         let assessment = Self.quickMoveAssessment(
             proofTest: "Run one clean 60-second rep: verdict first, one reason, then stop."
         )
@@ -1640,17 +1836,20 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(verdict.blocked)
-        #expect(!assessment.immediateCoachRead.isEmpty)
+        let briefRead = CoachChatBrief(assessment: assessment).provisionalCoachRead
+        #expect(!briefRead.isEmpty)
         #expect(CoachReliabilityGate.isCleanCandidate(
-            assessment.immediateCoachRead,
+            briefRead,
             previousCoachReply: nil
         ))
-        #expect(verdict.fallbackText == assessment.immediateCoachRead)
+        #expect(verdict.fallbackText == briefRead)
+        #expect(verdict.fallbackText != assessment.immediateCoachRead)
+        #expect(verdict.fallbackText?.contains(assessment.nextProofTest) == false)
     }
 
-    @Test func fallbackUsesHonestStaticLineWhenImmediateReadIsDirty() {
-        // A proof test that itself leaks a placeholder marker → immediateCoachRead
-        // is not a clean candidate → static honest line is used instead.
+    @Test func dirtyUntypedAssessmentCannotLeakProofIntoFallback() {
+        // The legacy immediate read is dirty, but the evidence-bound brief has
+        // already withdrawn that untyped proof and can safely abstain.
         let assessment = Self.quickMoveAssessment(proofTest: "placeholder reply")
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "",
@@ -1660,8 +1859,12 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(verdict.blocked)
+        #expect(verdict.fallbackText ==
+            CoachChatBrief(assessment: assessment).provisionalCoachRead)
+        #expect(verdict.fallbackText ==
+            "I don’t have enough evidence to choose your next move yet.")
         #expect(verdict.fallbackText != assessment.immediateCoachRead)
-        #expect(verdict.fallbackText == CoachReliabilityGate.staticFallback(turnDepth: .quickMove, surface: .text))
+        #expect(verdict.fallbackText?.contains("placeholder") == false)
     }
 
     @Test func coachThisPlaceholderFallbackUsesHonestEvidenceGapNotice() throws {
@@ -1770,13 +1973,15 @@ struct CoachReliabilityGateTests {
         for turn in Self.fallbackAuditTurns {
             let depth = TurnDepthClassifier.classify(userText: turn)
             let assessment = Self.fallbackAuditAssessment(for: depth)
+            let responseKind = CoachChatResponseKind.classify(turn)
             let fallback = CoachReliabilityGate.truthfulFallback(
                 turnDepth: depth,
                 assessment: assessment,
                 surface: .text,
                 previousCoachReply: nil,
                 recentCoachReplies: [],
-                latestUserTurn: turn
+                latestUserTurn: turn,
+                responseKind: responseKind
             )
             #expect(!fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "\(turn): empty fallback")
             #expect(
@@ -1802,13 +2007,15 @@ struct CoachReliabilityGateTests {
         for turn in Self.fallbackAuditTurns where !TurnDepthClassifier.isGreetingOrSmallTalk(turn) {
             let depth = TurnDepthClassifier.classify(userText: turn)
             let assessment = Self.fallbackAuditAssessment(for: depth)
+            let responseKind = CoachChatResponseKind.classify(turn)
             let first = CoachReliabilityGate.truthfulFallback(
                 turnDepth: depth,
                 assessment: assessment,
                 surface: .text,
                 previousCoachReply: nil,
                 recentCoachReplies: [],
-                latestUserTurn: turn
+                latestUserTurn: turn,
+                responseKind: responseKind
             )
             // Same turn again with the first fallback as the previous coach reply —
             // the "it keeps sending the same canned line" loop must not reproduce.
@@ -1818,7 +2025,8 @@ struct CoachReliabilityGateTests {
                 surface: .text,
                 previousCoachReply: first,
                 recentCoachReplies: [first],
-                latestUserTurn: turn
+                latestUserTurn: turn,
+                responseKind: responseKind
             )
             #expect(
                 CoachReliabilityGate.normalize(first) != CoachReliabilityGate.normalize(second),

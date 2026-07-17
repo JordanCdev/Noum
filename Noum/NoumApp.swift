@@ -279,6 +279,9 @@ struct NoumApp: App {
                 if authManager.currentAccountID != nil {
                     FlowEventLog.shared.recordActiveDay()
                 }
+                if !isUITesting {
+                    await authManager.connectLocalGuestToCloud()
+                }
             }
         }
         .onReceive(
@@ -301,6 +304,9 @@ struct NoumApp: App {
             }
             Task { @MainActor in
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+                if !isUITesting {
+                    await authManager.connectLocalGuestToCloud()
+                }
             }
             // Re-arm scheduled notifications with the latest streak +
             // freezes + reps-today snapshot. Notification copy is

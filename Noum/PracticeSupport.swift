@@ -4695,7 +4695,7 @@ final class CoachingProfileStore: ObservableObject {
     @Published private(set) var onboardingDraft: CoachingProfileDraft?
 
     nonisolated static let draftKeyPrefix = "coachingProfileDraft."
-    private static let profileKeyPrefix = "coachingProfile."
+    nonisolated private static let profileKeyPrefix = "coachingProfile."
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
     private let providerRawValueProvider: () -> String?
@@ -4997,7 +4997,17 @@ final class CoachingProfileStore: ObservableObject {
         return draft
     }
 
-    private static func loadProfile(
+    nonisolated static func persistedProfile(
+        for accountID: String,
+        defaults: UserDefaults = .standard
+    ) -> CoachingProfile? {
+        loadProfile(
+            forKey: "\(profileKeyPrefix)\(accountID)",
+            defaults: defaults
+        )
+    }
+
+    nonisolated private static func loadProfile(
         forKey key: String,
         defaults: UserDefaults
     ) -> CoachingProfile? {
@@ -5036,9 +5046,14 @@ final class CoachingProfileStore: ObservableObject {
     private func syncProfileIfPossible(_ profile: CoachingProfile, accountID: String) {
         guard AuthManager.shouldSyncBackend(accountID: accountID),
               let providerRawValue = currentProviderRawValue else { return }
-        Task {
-            await BackendSyncManager.shared.syncProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
-        }
+        let sourceLifecycleGeneration = AuthManager.shared
+            .accountLifecycleGeneration
+        BackendSyncManager.shared.enqueueProfileSync(
+            profile,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
     }
 }
 
@@ -5167,7 +5182,7 @@ final class IMRelationshipStore: ObservableObject {
         )
     }
 
-    private static func storageKey(for accountID: String?) -> String {
+    nonisolated private static func storageKey(for accountID: String?) -> String {
         if let accountID, !accountID.isEmpty {
             return "imRelationshipProfiles.\(accountID)"
         }
@@ -5370,6 +5385,43 @@ final class AISettingsManager: ObservableObject {
         ) == true
     }
 
+    /// Returns the exact durable consent receipt for the requested account.
+    /// Network writers use this instead of the ambient published value so a
+    /// queued account-A payload cannot inherit account B's consent after an
+    /// identity transition. DEBUG availability flags intentionally do not
+    /// synthesize a durable content-upload receipt.
+    func currentCloudProcessingReceipt(
+        for accountID: String
+    ) -> CloudProcessingConsent? {
+        guard currentAccountID == accountID,
+              let data = UserDefaults.standard.data(
+                forKey: consentKey(for: accountID)
+              ),
+              let receipt = try? JSONDecoder().decode(
+                CloudProcessingConsent.self,
+                from: data
+              ),
+              Self.durableConsentReceiptIsUsable(
+                published: cloudProcessingConsent,
+                persisted: receipt
+              ) else {
+            return nil
+        }
+        return receipt
+    }
+
+    nonisolated static func durableConsentReceiptIsUsable(
+        published: CloudProcessingConsent?,
+        persisted: CloudProcessingConsent?
+    ) -> Bool {
+        guard let persisted,
+              persisted == published else { return false }
+        return persisted.isCurrent(
+            disclosureVersion: disclosureVersion,
+            processorManifestVersion: processorManifestVersion
+        )
+    }
+
     var cloudProcessingStatusTitle: String {
         switch cloudProcessingConsent?.decision {
         case .allowed where isCloudProcessingAllowed:
@@ -5393,9 +5445,23 @@ final class AISettingsManager: ObservableObject {
             disclosureVersion: Self.disclosureVersion,
             processorManifestVersion: Self.processorManifestVersion
         )
+        guard let data = try? JSONEncoder().encode(consent) else {
+            cloudProcessingConsent = nil
+            AuthManager.shared.cloudProcessingConsentDidChange()
+            return
+        }
+        let key = consentKey(for: currentAccountID)
+        UserDefaults.standard.set(data, forKey: key)
+        guard UserDefaults.standard.data(forKey: key) == data else {
+            // A decision without a durable versioned receipt must never
+            // authorize content transmission, including failed revocation
+            // while an older allow receipt still exists.
+            cloudProcessingConsent = nil
+            AuthManager.shared.cloudProcessingConsentDidChange()
+            return
+        }
         cloudProcessingConsent = consent
-        guard let data = try? JSONEncoder().encode(consent) else { return }
-        UserDefaults.standard.set(data, forKey: consentKey(for: currentAccountID))
+        AuthManager.shared.cloudProcessingConsentDidChange()
     }
 
     func revokeCloudProcessingConsent() {
@@ -9221,6 +9287,27 @@ final class PracticeSessionStore: ObservableObject {
         UserTrajectoryCache.shared.invalidate()
     }
 
+    /// Remote bootstrap may refresh clean rows, but an exact session whose
+    /// durable mutation is still pending remains locally authoritative until
+    /// transport acknowledgement. This prevents an offline append/annotation
+    /// from disappearing during relaunch hydration.
+    func mergeFromRemote(
+        _ remoteSessions: [PracticeSession],
+        preservingLocalSessionIDs: Set<UUID>
+    ) {
+        var merged = Dictionary(
+            uniqueKeysWithValues: remoteSessions
+                .filter { !$0.isEvaluationFixture }
+                .map { ($0.id, $0) }
+        )
+        for session in sessions where preservingLocalSessionIDs.contains(session.id) {
+            merged[session.id] = session
+        }
+        sessions = merged.values.sorted { $0.date > $1.date }
+        persist()
+        UserTrajectoryCache.shared.invalidate()
+    }
+
     private func persist() {
         if let data = try? JSONEncoder().encode(sessions) {
             UserDefaults.standard.set(data, forKey: Self.storageKey(for: currentAccountID))
@@ -9235,7 +9322,7 @@ final class PracticeSessionStore: ObservableObject {
         KeychainHelper.load(key: providerKey)
     }
 
-    private static func storageKey(for accountID: String?) -> String {
+    nonisolated private static func storageKey(for accountID: String?) -> String {
         if let accountID, !accountID.isEmpty {
             return "practiceSessions.\(accountID)"
         }
@@ -9247,13 +9334,40 @@ final class PracticeSessionStore: ObservableObject {
         guard let accountID = currentAccountID,
               AuthManager.shouldSyncBackend(accountID: accountID),
               let providerRawValue = currentProviderRawValue else { return }
-        Task {
-            await BackendSyncManager.shared.syncSession(session, accountID: accountID, providerRawValue: providerRawValue)
-        }
+        let sourceLifecycleGeneration = AuthManager.shared
+            .accountLifecycleGeneration
+        BackendSyncManager.shared.enqueueSessionSync(
+            session,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            sourceLifecycleGeneration: sourceLifecycleGeneration
+        )
     }
 
-    private static func loadSessions(forKey key: String) -> [PracticeSession] {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    nonisolated static func persistedSessions(
+        for accountID: String,
+        defaults: UserDefaults = .standard
+    ) -> [PracticeSession] {
+        loadSessions(
+            forKey: storageKey(for: accountID),
+            defaults: defaults
+        )
+    }
+
+    nonisolated static func persistedSession(
+        id: UUID,
+        accountID: String,
+        defaults: UserDefaults = .standard
+    ) -> PracticeSession? {
+        persistedSessions(for: accountID, defaults: defaults)
+            .first { $0.id == id }
+    }
+
+    nonisolated private static func loadSessions(
+        forKey key: String,
+        defaults: UserDefaults = .standard
+    ) -> [PracticeSession] {
+        guard let data = defaults.data(forKey: key),
               let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else { return [] }
         return sessions
             .filter { !$0.isEvaluationFixture }
@@ -11024,6 +11138,8 @@ final class RecommendationLearningStore: ObservableObject {
         let outcomes = outcomes
         let revision = stateRevision
         let expectedRemoteRevision = remoteRevision
+        let sourceLifecycleGeneration = AuthManager.shared
+            .accountLifecycleGeneration
         let previousTask = scheduledSyncTask
         let task = Task {
             await previousTask?.value
@@ -11040,7 +11156,8 @@ final class RecommendationLearningStore: ObservableObject {
                 providerRawValue: providerRawValue,
                 revision: revision,
                 expectedRemoteRevision: expectedRemoteRevision,
-                mutationID: mutationID
+                mutationID: mutationID,
+                sourceLifecycleGeneration: sourceLifecycleGeneration
             )
         }
         scheduledSyncTask = task
