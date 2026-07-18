@@ -1,0 +1,53 @@
+# Gitleaks configuration for the full-history secret scan.
+#
+# The scan in scripts/release-secret-scan.sh walks every reachable commit, so
+# historical leaks keep failing CI forever once they are introduced. Rewriting
+# history on a public repository is not an option here, so reviewed findings are
+# recorded below as a baseline instead.
+#
+# RULES FOR EDITING THIS FILE
+#
+#   1. Only ever allowlist a commit whose finding has been INDEPENDENTLY VERIFIED
+#      as inert — the credential is revoked, already invalid, or a false positive.
+#      Record the evidence in docs/SECURITY_deepgram_key_endpoint.md.
+#   2. NEVER allowlist a rule, a path, or a broad regex to make CI green. Those
+#      suppress future live secrets too, which is the whole point of the gate.
+#      Commit SHAs are immutable, so allowlisting one cannot hide a new leak.
+#   3. A NEW commit containing a secret still fails, by design. If this file needs
+#      another entry, treat that as an incident first and a CI fix second.
+
+title = "Noum full-history secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+Reviewed historical findings, all verified inert on 2026-07-18.
+
+  1e67b4dd / c20f5560  docs/DEVELOPMENT_PLAN.md:23  generic-api-key
+      FALSE POSITIVE. The rule matches long alphanumeric tokens in ordinary
+      markdown prose inside a table cell. No credential material is present.
+
+  5ce23e78  Noum/PRIVACY_EXECUTION.md, Noum/PRIVACY_REMEDIATION.md
+      AWS pair AKIAXYKJUU… plus its secret, and two Google API keys.
+      AWS: redacted STS probe returned InvalidClientTokenId — already invalid.
+      Google: GEMINI_API_KEY and GOOGLE_CLOUD_TTS_API_KEY, both deleted from
+      project noum-d0b6f on 2026-07-18 and confirmed absent via
+      `gcloud services api-keys list`.
+
+  15057607  Noum/Transcribe.plist.example:7  aws-access-token
+      AWS pair AKIAWNEH4A… in an example template. Redacted STS probe returned
+      InvalidClientTokenId — already invalid.
+
+  277e2b38  Noum/SpeechRecognizerViewModel.swift:5  generic-api-key
+      Deepgram account:write key 025571b9-6cf4-4118-8c0d-532944ac0cca, revoked
+      by the account owner on 2026-07-18 in project 1dca5364.
+"""
+commits = [
+  "1e67b4dd09e22a87be9ce6d31e19e0aef3733706",
+  "c20f5560d61b8a4fa7706cf57965e2538e46f572",
+  "5ce23e7878a91cdbbe91919c98cec2310d385e4f",
+  "15057607932b9d7d0b9444ecd762e2ef8bde3341",
+  "277e2b388bb17d603011277a819b0bcaae517404",
+]

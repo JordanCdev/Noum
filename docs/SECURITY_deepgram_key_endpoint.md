@@ -1,10 +1,159 @@
 # Security: Deepgram key endpoint leaks an account-level API key
 
 **Severity:** Critical (credential exposure)
-**Status:** OPEN — key rotation + backend fix required
+**Status:** CONTAINED 2026-07-18 — routes deleted, both exposed keys revoked, no evidence of exploitation. Residual: git-history secret baseline.
 **Found:** 2026-06-10, voice-pipeline audit
 **Component:** Transcription backend (AWS API Gateway, `us-east-1`) — source lives **outside this repo**
 **Client touchpoint:** [`DeepgramProvider.swift`](../DeepgramProvider.swift) `fetchBackendScopedKey()`
+
+---
+
+## Containment update — 2026-07-18 — legacy AWS deployment deleted
+
+The legacy API Gateway deployment `091pe6vtbc` (`us-east-1`) was **deleted in
+full** by the account owner. This closes the unauthenticated credential-vending
+routes. Evidence, same day:
+
+**Before deletion** — both credential routes were confirmed still leaking:
+
+| Route | No auth | Forged `X-Noum-Account-ID` | Forged `X-Noum-Auth-Provider` |
+| --- | --- | --- | --- |
+| `GET /v1/transcribe/deepgram-key` | 401 | **200** | 401 |
+| `GET /v1/transcribe/credentials` | 401 | **200** | 401 |
+
+Both 200 responses returned `{ apiKey, expiresAt }` with a 40-character
+Deepgram-shaped credential. The value was never written to this repository.
+`POST /v1/im/context`, `POST /v1/tts/im`, and `POST /v1/im/reply` already
+returned 404 at this point.
+
+**Scope check that justified deleting the whole API** — the client calls exactly
+three paths against `BACKEND_BASE_URL` (`/v1/im/context`, `/v1/transcribe/credentials`,
+`/v1/tts/im`). Two already 404'd, and `Noum/BackendConfig.plist` is in the
+`Noum` target's `membershipExceptions`, so release builds ship no base URL at
+all. Deleting the API therefore had no release-path impact.
+
+**After deletion** — the endpoint no longer exists at the DNS layer:
+
+```
+dig @8.8.8.8 091pe6vtbc.execute-api.us-east-1.amazonaws.com A
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN
+```
+
+`curl` to every documented route returns `Could not resolve host` (exit 6).
+Control check the same minute: `https://aws.amazon.com` → 200, so this is host
+removal, not a local network or resolver failure. NXDOMAIN was confirmed against
+a public resolver rather than the local cache.
+
+### Key revocation and usage audit — 2026-07-18
+
+- Both legacy `account:write` keys in project `1dca5364-3e7c-461a-8b40-bb28bef6e537`
+  were **revoked by the account owner** via the Deepgram dashboard, signed in as
+  the personal account that owns that project: `8fd342e3-7aeb-462a-90f4-b962b7c2f20a`
+  (the vended key) and `025571b9-6cf4-4118-8c0d-532944ac0cca` (the git-history key).
+  **Evidence class:** owner-reported, not independently re-probed — the vending
+  endpoint was deleted first, so no copy of either key value remained available
+  to test against. The dashboard key list is the record.
+- **Usage audit — no evidence of exploitation.** Project `1dca5364` retains
+  **$199.60 of its $200 credit**, i.e. ~$0.40 consumed across the entire exposure
+  window (key created 2025-06-13 → route deleted 2026-07-18, ~13 months). An
+  exploited `account:write` key would have drained that balance quickly. Project
+  `c53045b1` (`Noum Production`, Pay As You Go) shows $199.99 remaining.
+  **Caveat:** credit balance measures usage spend only; it would not surface
+  non-billable account-management calls made with an `account:write` key.
+- Access separation confirmed while auditing: `noumsupport@gmail.com` returns
+  "You don't have permission to access this project" for `1dca5364`. The support
+  account owns only `Noum Production`, so the two projects are properly isolated.
+
+### Google API keys revoked — 2026-07-18
+
+A full-history Gitleaks scan run during closure found **two Google API keys that
+had never been rotated**, in a repository that is **public**
+(`github.com/JordanCdev/Noum`):
+
+| Key | Committed | Redacted from tree | Rotated |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | `5ce23e78` 2026-04-14 | `c6daa3a4` 2026-07-09 | 2026-07-18 |
+| `GOOGLE_CLOUD_TTS_API_KEY` | `5ce23e78` 2026-04-14 | `c6daa3a4` 2026-07-09 | 2026-07-18 |
+
+The 2026-07-09 commit redacted them from the working tree only; both remained
+readable in history for ~3 months. Neither had been reissued — every key in
+project `noum-d0b6f` predated the leak. Both were restricted (TTS → Cloud
+Text-to-Speech only; Gemini → iOS apps + 1 API), which bounded the exposure to
+quota abuse rather than broad project access.
+
+Both are now **deleted** from `noum-d0b6f`, confirmed absent via
+`gcloud services api-keys list`. Replacements must be created by the account
+owner and stored only in `Noum/AIConfig.plist` (gitignored, excluded from the
+release target). The deployed Functions declare only `DEEPGRAM_MANAGEMENT_KEY`,
+so production was unaffected by the deletion.
+
+> **Operational note.** The Cloud Console's batch delete reported
+> "Delete 2 credentials" and then silently dropped one; a second single-key
+> attempt through the UI also failed with no error. Only
+> `gcloud services api-keys delete` actually removed it. **Verify credential
+> deletions out-of-band** — a UI confirmation dialog is not evidence.
+
+### Replacement Google keys issued and hardened — 2026-07-18
+
+Both keys were recreated in `noum-d0b6f` via `gcloud services api-keys create`,
+with the key material piped directly into `Noum/AIConfig.plist` (gitignored,
+untracked, excluded from the `Noum` release target). No key value was rendered
+into a terminal, a log, or an agent transcript at any point.
+
+The replacements are **more restricted than the originals**. The old TTS key had
+an API restriction only, so a leaked copy was directly usable by anyone. Both new
+keys are now additionally bound to the iOS bundle ID, and TTS is called only from
+`Noum/PracticeSupport.swift` — no backend or script caller — so the tightening is
+safe.
+
+| Key | API restriction | App restriction |
+| --- | --- | --- |
+| `TTS` | `texttospeech.googleapis.com` | `com.jordancoaten.noum` |
+| `Gemini Developer API key` | `generativelanguage.googleapis.com` | `com.jordancoaten.noum` |
+
+Verified live, status codes only:
+
+```
+TTS    with X-Ios-Bundle-Identifier → 200      without → 403
+Gemini with X-Ios-Bundle-Identifier → 200      without → 403
+```
+
+The 403s are the meaningful half: the restriction is enforced server-side, so a
+future leak of either key is not directly exploitable off-device.
+
+### Full-history secret gate baselined — 2026-07-18
+
+The gate in [`scripts/release-secret-scan.sh`](../scripts/release-secret-scan.sh)
+now loads [`.gitleaks.toml`](../.gitleaks.toml), which allowlists **five historical
+commits by SHA**. All 11 findings were classified before baselining:
+
+| Commits | Finding | Disposition |
+| --- | --- | --- |
+| `1e67b4dd`, `c20f5560` | `generic-api-key` in `docs/DEVELOPMENT_PLAN.md` | False positive — matches prose in a markdown table |
+| `5ce23e78` | AWS pair `AKIAXYKJUU…` + secret | Invalid — STS returned `InvalidClientTokenId` |
+| `5ce23e78` | 2 × `gcp-api-key` | Revoked 2026-07-18 (above) |
+| `15057607` | AWS pair `AKIAWNEH4A…` | Invalid — STS returned `InvalidClientTokenId` |
+| `277e2b38` | Deepgram `025571b9…` | Revoked 2026-07-18 |
+
+Allowlisting is **by commit SHA only** — no rule, path, or regex is suppressed,
+so a secret in a new commit still fails. Verified both directions:
+
+```
+./scripts/release-secret-scan.sh          → exit 0, "no leaks found"
+planted AWS key in a new file, same config → exit 1, "leaks found: 1"
+```
+
+### Still outstanding after this update
+
+- ~~**Git-history secret baseline.**~~ **RESOLVED 2026-07-18** — see below.
+- **AWS account sweep.** An inventory confirming no other stage, alias, or
+  deployment in that AWS account vends credentials was never performed. The
+  `091pe6vtbc` API is gone, so this can now only be checked against whatever
+  resources remain in the account.
+- **Branch gap (not a security issue, but adjacent).** `transcriptionToken` and
+  the rest of the hardened backend exist only on `ux-overhaul`; `main` is 411
+  commits behind and contains none of it. The deployed function is live and
+  correct, but a deploy from `main` would ship a backend without it.
 
 ---
 
