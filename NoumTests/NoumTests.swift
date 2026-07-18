@@ -4651,6 +4651,7 @@ struct AICallDiagnosticsStoreTests {
         let defaults = UserDefaults(suiteName: "ai-call-diagnostics-export-\(UUID().uuidString)")!
         let storageKey = "aiCallDiagnostics.export.\(UUID().uuidString)"
         let store = AICallDiagnosticsStore(defaults: defaults, storageKey: storageKey, maxRecords: 5)
+        let traceID = UUID(uuidString: "12345678-1234-4234-8234-123456789abc")!
 
         store.record(AICallDiagnosticRecord.make(
             createdAt: Date(timeIntervalSince1970: 10),
@@ -4660,7 +4661,8 @@ struct AICallDiagnosticsStoreTests {
             outcome: .success,
             reason: "Transport succeeded",
             statusCode: 200,
-            latencyMs: 842
+            latencyMs: 842,
+            correlationID: traceID
         ))
 
         let export = store.exportDiagnostics()
@@ -4668,6 +4670,8 @@ struct AICallDiagnosticsStoreTests {
         #expect(export.contains("Gemini"))
         #expect(export.contains("HTTP 200"))
         #expect(export.contains("842ms"))
+        #expect(export.contains(traceID.uuidString))
+        #expect(store.records.first?.correlationID == traceID)
     }
 }
 
@@ -13106,6 +13110,33 @@ struct AskNoumStoreTests {
         #expect(store.lastFailure == .network)
         #expect(store.transientFailureMessage == "Noum is temporarily unavailable. Your message is still here.")
         #expect(!store.isAwaitingReply)
+    }
+
+    @Test func failedCoachTurnRetainsContentFreeTraceReceipt() throws {
+        let store = freshStore()
+        let ids = store.appendUserTurn("SECRET_USER_PROMPT")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .failure(.contentRejected),
+            metadata: CoachTurnMetadata(
+                traceID: UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")!,
+                turnIntent: .coaching,
+                turnDepth: .quickMove,
+                responseKind: .generalCoaching,
+                qualityGateOutcome: .failed("professional:missingPrescribedAction"),
+                qualityGateEvents: ["rejected:professional:missingPrescribedAction"],
+                fullLatencyMs: 1_250
+            )
+        )
+
+        let receipt = try #require(store.lastFailureReceipt)
+        #expect(receipt.traceID == ids.coachID)
+        #expect(receipt.failure == .contentRejected)
+        #expect(receipt.turnIntent == .coaching)
+        #expect(receipt.responseKind == .generalCoaching)
+        #expect(receipt.turnDepth == .quickMove)
+        #expect(receipt.latencyMs == 1_250)
+        #expect(!String(describing: receipt).contains("SECRET_USER_PROMPT"))
     }
 
     @Test func allChatFailuresRemainTransient() {
@@ -50511,6 +50542,9 @@ struct GoalProposalChipCatalogTests {
         #expect(chips[1].label == "Blend Warm and welcoming + Persuasive")
         // The keep chip names the OLD voice so the decline is explicit.
         #expect(chips[2].label == "Keep Warm and welcoming")
+        #expect(chips[0].dispatchText == "Persuasive is now my coaching voice. Give me one way to practise it.")
+        #expect(!chips[0].dispatchText.lowercased().contains("switch"))
+        #expect(chips[1].dispatchText.contains("now blending"))
     }
 
     @Test func changeOmitsBlendWhenTargetEqualsCurrent() {
@@ -50561,6 +50595,14 @@ struct GoalProposalChipCatalogTests {
             #expect(chips.allSatisfy { !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             #expect(Set(chips.map { $0.id }).count == chips.count)
         }
+    }
+
+    @Test func bareClarificationVocabularyIsExactAndBounded() {
+        for turn in ["?", "What?", "why?", "How so?", "What do you mean?"] {
+            #expect(CoachContextBuilder.isBareClarificationTurn(turn), Comment(rawValue: turn))
+        }
+        #expect(!CoachContextBuilder.isBareClarificationTurn("What should I practise next?"))
+        #expect(!CoachContextBuilder.isBareClarificationTurn("Why did that answer land badly?"))
     }
 }
 

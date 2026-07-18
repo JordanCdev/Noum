@@ -457,7 +457,8 @@ enum CoachReliabilityGate {
         proofTestRecentlyRepeated: Bool = false,
         surface: CoachReplySurface = .text,
         responseKind explicitResponseKind: CoachChatResponseKind? = nil,
-        coachingBrief: CoachChatBrief? = nil
+        coachingBrief: CoachChatBrief? = nil,
+        coachVoice: SpeakingStyleGoal? = nil
     ) -> CoachReliabilityVerdict {
         let trimmed = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
         let responseKind: CoachChatResponseKind
@@ -753,7 +754,8 @@ enum CoachReliabilityGate {
             fallback = goalStateDirectiveFallback(
                 surface: surface,
                 latestUserTurn: latestUserTurn,
-                replyText: trimmed
+                replyText: trimmed,
+                coachVoice: coachVoice
             )
         } else if issues.contains(.paceSelfFrustrationReportVoice) {
             fallback = paceSelfFrustrationFallback(
@@ -1227,9 +1229,17 @@ enum CoachReliabilityGate {
     static func goalStateDirectiveFallback(
         surface: CoachReplySurface,
         latestUserTurn: String?,
-        replyText: String = ""
+        replyText: String = "",
+        coachVoice: SpeakingStyleGoal? = nil
     ) -> String {
         let lowered = normalize(latestUserTurn ?? "")
+        if let coachVoice,
+           containsAny(lowered, [coachVoice.rawValue, coachVoice.title.lowercased()]) {
+            if coachVoice == .persuasive {
+                return "Persuasive is set. Practise it by leading with the outcome, giving one listener-specific reason, then making one clear ask."
+            }
+            return "\(coachVoice.title) is set. Test it in one short answer, then listen for whether the delivery matches the room."
+        }
         if containsAny(lowered, ["engaging", "more engaging", "engage"]) {
             let progress = goalStateProgressAnchor(replyText)
             return "\(progress)Engaging maps closest to Storytelling; Warm is the comparison if the gap is connection. What changed?"
@@ -1242,9 +1252,17 @@ enum CoachReliabilityGate {
                 ? "Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Try it on the next 60-second answer."
                 : "Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Treat it as the voice to try next; the practice test is a 60-second answer where sentence one carries the recommendation."
         }
+        if containsAny(lowered, ["witty", "wittier", "wit"]) {
+            return "When you say witty, do you mean more playful and memorable, or quicker and sharper in the moment?"
+        }
+        if containsAny(lowered, ["persuasive", "convincing", "compelling"]) {
+            return surface == .live
+                ? "Persuasive is a sensible direction when you need a listener to act: lead with the outcome, give one listener-specific reason, then make one clear ask."
+                : "Persuasive is a sensible direction when you need a listener to act: lead with the outcome, give one listener-specific reason, then make one clear ask. Use the voice card to confirm the shift."
+        }
         return surface == .live
-            ? "I can recommend the direction without pretending to change it from chat. Start with the voice that matches the room, then test it in one short answer."
-            : "I can recommend the direction without pretending to change it from chat. Start with the voice that matches the room you actually need to handle, then test it in one short answer."
+            ? "Choose the voice that fits the room you need to handle, then test it in one short answer."
+            : "Choose the voice that fits the room you need to handle, then test it in one short answer. Use the voice card to confirm the shift."
     }
 
     static func goalStateProgressAnchor(_ replyText: String) -> String {
@@ -1472,15 +1490,23 @@ enum CoachReliabilityGate {
         surface: CoachReplySurface,
         latestUserTurn: String?,
         previousCoachReply: String?,
-        recentCoachReplies: [String]
+        recentCoachReplies: [String],
+        coachVoice: SpeakingStyleGoal? = nil
     ) -> String? {
         let turn = normalize(latestUserTurn ?? "")
         let variants: [String]
-        if goalOrVoiceChangeUserTurn(latestUserTurn) {
+        if coachVoice == .persuasive,
+           containsAny(turn, ["practice this", "practise this", "best way to practice", "best way to practise"]),
+           containsAny(turn, ["does this app", "does the app", "app have", "noum have", "future development"]) {
+            variants = [
+                "Start with Claim, Evidence, Warrant because it keeps the claim, proof, and ask in one clean sequence. Monroe’s Sequence and Persuade with Structure are also available. Your Persuasive voice goal shapes recommendations, but chat cannot submit a product request for you."
+            ]
+        } else if goalOrVoiceChangeUserTurn(latestUserTurn) {
             variants = [
                 goalStateDirectiveFallback(
                     surface: surface,
-                    latestUserTurn: latestUserTurn
+                    latestUserTurn: latestUserTurn,
+                    coachVoice: coachVoice
                 )
             ]
         } else if containsAny(turn, [

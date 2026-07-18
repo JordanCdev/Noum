@@ -2,12 +2,67 @@
 
 Source: `/Users/jordan/Downloads/deep-research-report (6).md`
 
-Audit date: 2026-07-17
+Audit date: 2026-07-18
 
 Committed implementation inspected through `ea667cfd4`. This audit also covers
 the current dirty account-deletion admission/recovery, Ask Noum failed-
 acceptance repair, and bounded coaching-content journal source developed above
 that baseline. Readiness has not been rerun for the dirty source.
+
+The latest installed-simulator conversation contradicts any claim that Ask
+Noum's coaching loop is complete. After a persisted switch to Persuasive, the
+coach falsely said it could not “pretend” to change the voice, lost the referent
+of a bare `?`, substituted a generic imagery-and-emotion definition for Noum's
+canonical claim/evidence/ask method, and failed the reporter's exact longer
+practice-and-product-capability question. Production evidence separates the
+failures: some attempts ended in server `failed-precondition`; others completed
+generation and were then rejected by iOS as
+`professional:missingPrescribedAction` or
+`professional:missingInsightBridge`.
+
+Current dirty source closes the verified local chain without weakening the
+professional gate. The saved voice state is acknowledged only after verified
+profile persistence. Typed pending goal intent reaches the bounded
+non-personal context; exact bare clarifications retain it and replay only the
+immediate user/coach referent. Anaphoric general turns up to 40 words retrieve
+against the trusted current voice. Persuasive product context is derived from
+the existing drill and Speech Project owners, and an exact safe recovery names
+the available Claim, Evidence, Warrant; Monroe's Sequence; and Persuade with
+Structure paths while stating that chat cannot file a roadmap request. Swift
+and Functions now agree that “best way to practice” requests a move. The
+deterministic “pretending” copy is removed.
+
+Observability now uses the existing coach-row UUID as a content-free trace from
+pending row through callable request, FlowLog, local diagnostics, terminal
+failure receipt, and server logs. Server metadata adds only validated
+intent/response/depth values and allowlisted quality codes. Actual terminal
+failure is no longer logged as a successful commit. Persistent provider-draft
+diagnostics are removed, and local rejection records use stable audit labels
+rather than descriptions that can contain generated fragments.
+
+The bounded iOS regression selection passes **293/293** with zero failures or
+skips in
+`/Users/jordan/src/GitHub/Noum/DerivedData/Noum/Logs/Test/Test-Noum-2026.07.18_01-20-35-+0100.xcresult`.
+Seven pre-existing typed-fallback tests remain explicitly outside that
+selection because their fixtures lack the provenance required by the current
+evidence gate; this slice does not weaken that gate to manufacture a pass.
+Functions unit tests pass **162/162**, and the source-bound release-lock suite
+passes **9/9**. A normally signed Debug build installs on the iPhone 17
+simulator, and a visually inspected light sweep renders Home, Train, Review,
+Profile, and Settings; Profile shows the persisted Persuasive target. An
+earlier code-signing-disabled diagnostic build stalled during account
+preparation with Keychain status `-34018`; reinstalling the normal signed build
+removed that artificial entitlement failure. This is simulator regression
+evidence only. The updated Functions source has not been deployed, the exact
+conversation has not been retried against it, and the five-tab sweep does not
+exercise the Ask Noum conversation surface.
+
+These changes repair the exact deterministic and routing faults; they do not
+establish general human-coach judgement quality. No current-source live retry,
+representative generated conversation sweep, reporter acceptance, blinded
+professional calibration, physical-device TestFlight QA, longitudinal transfer
+result, or operational launch artifact exists. The authoritative readiness
+result remains **NO-GO at 18/100 with 0/5 required external artifacts**.
 
 The newest bounded slice makes deletion a durable input to scoped asynchronous
 coaching work. One Keychain-backed schema-v2 record owns account/provider/
@@ -315,9 +370,10 @@ continue until local teardown, and an in-process plan/thread commit can still
 occur before teardown. Successful teardown later removes account-scoped writes;
 only completions after teardown fail closed. Device-global AI-call diagnostics
 remain outside account reload, export, and deletion. Their reason metadata can
-include interaction/coaching-gate details;
-the optional `NOUM_LIVE_AI_EVAL_INCLUDE_DRAFTS=1` path can also append provider
-draft fragments, although no checked-in build setting enables it. No
+include bounded interaction/coaching-gate labels. The current dirty Ask Noum
+slice removes the optional persistent provider-draft path entirely and replaces
+gate descriptions with stable audit labels; account ownership and deletion of
+this device-global diagnostic archive remain open. No
 Forward-Plan-specific rendered, device, provider, professional, longitudinal,
 operational, or external evidence was collected. Production readiness remains
 **NO-GO at 18/100 with 0/5 required external artifacts**.
@@ -1310,7 +1366,7 @@ Historical results are not treated as proof for later behavior.
 | Roleplay terminal continuation guidance | **Proved locally** | At `5987636f`, feedback and completion share one cached engine transition. A real next turn retains its exact adaptive promise; the fourth attempt becomes future-practice guidance; and a missing transition fails closed without claiming a rung or objection. Four pure tests pass inside a focused 38/38 selection, 3/3 deterministic UI flows pass including Accessibility XXXL terminal feedback/completion, and the complete target passes 4,188 unique tests / 4,205 device executions. The UI fixture bypasses microphone capture and is not physical-device, effectiveness, or launch evidence. |
 | Standalone Pace earned-result integrity | **Proved locally** | At `8e7af9d9`, the provider's terminal receipt owns final speech eligibility, the recorder owns duration, and existing live samples own the Pace result. The shared recording gate plus three-word / three-finite-second floor prevents thin or unusable capture from presenting a score or awarding XP; eligible capture preserves the exact result and awards once. The focused engine/result/integrity selection passes 34/34, and the insufficient and eligible rendered fixtures pass individually, including Accessibility XXXL and accessible retry/exit actions. The complete unit target was not rerun at this commit; the latest complete target remains 4,188 unique tests / 4,205 device executions at `5987636f`. Fixtures bypass microphone/provider timing, and no durable Pace attribution or effectiveness evidence exists. |
 | Standalone Cut the Crutch earned-result integrity | **Proved locally** | At `bb155866`, live engine evidence owns avoided-word violations and the candidate result, while the terminal provider receipt and recorder duration own minimum speech eligibility. The shared completion gate plus three-word / three-finite-second floor prevents thin or unusable capture from presenting a score, awarding XP, or committing Daily Goal/streak progress; eligible capture preserves the exact live candidate and commits once. Focused verification passes 36 parameterized executions across three suites, and both UI branches pass with Reduce Motion enabled, including Accessibility XXXL, accessible retry/exit actions, and exact +150 eligible copy. The complete unit target passes 4,200 unique tests / 4,219 device executions. Fixtures bypass microphone/provider timing; terminal text cannot reconstruct or independently reconcile live avoided-word timing; and no durable Cut the Crutch attribution or effectiveness evidence exists. |
-| Production readiness | **Missing** | The scoped `coachChatV2` capability and availability handshake are deployed and one greeting plus one substantive generation passed production Auth/App Check and account binding. The substantive answer exposed a client-side acceptance mismatch and did not render; current dirty source repairs that mismatch, passes the exact 3/3 and broader 331/331 checks, builds, and is installed on the simulator. It has not completed a post-install live acceptance turn, representative generated-output sweep, mixed-client/adoption/rollback proof, signed full-scheme/UI/VoiceOver/physical-device verification, reporter acceptance, or independent professional review. Wider content-sync convergence, schema-2 production rules, and complete 19-export runtime inventory also remain open. The inherited authoritative readiness result therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**; this local repair earns no readiness points. |
+| Production readiness | **Missing** | The deployed `coachChatV2` route has bounded live transport evidence, but the newest reporter conversation still failed the product-quality boundary: a confirmed Persuasive change received contradictory state copy, clarification and detailed follow-up lost their referent, and server/client action gates disagreed. Current dirty source repairs that exact local chain and adds content-free incident correlation. The bounded iOS selection passes 293/293, Functions pass 162/162 plus 9/9 release-lock checks, and a signed Debug light sweep renders all five tab roots, but seven evidence-provenance fallback fixtures remain explicitly open and the Ask Noum conversation was not visually or live-provider exercised. This source has not completed a current-source deployment/live acceptance retry, representative generated-output sweep, mixed-client/adoption/rollback proof, signed full-scheme/UI/VoiceOver/physical-device verification, reporter acceptance, or independent professional review. Wider content-sync convergence, schema-2 production rules, and complete 19-export runtime inventory also remain open. The inherited authoritative result therefore remains **NO-GO at 18/100 with 0/5 required external artifacts**; this local repair earns no readiness points. |
 
 ## External proof gates
 

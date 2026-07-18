@@ -177,7 +177,9 @@ enum CoachChatTurnIntent: String, Codable, Sendable, Equatable {
         ].contains(where: normalized.contains)
         let directFormattingPreference = [
             "don't use markdown", "do not use markdown", "no markdown",
-            "plain text please", "don't use symbols", "do not use symbols"
+            "plain text please", "don't use symbols", "do not use symbols",
+            "no-symbol version is easier to hear",
+            "no symbol version is easier to hear"
         ].contains(where: normalized.contains)
         return directFormattingPreference ||
             (coachOwnedTarget && (formattingComplaint || styleComplaint))

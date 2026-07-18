@@ -1108,6 +1108,34 @@ struct CoachChatWireContractTests {
         #expect(!general.lowercased().contains("score"))
     }
 
+    @Test func pendingGoalAndPersuasiveCapabilitiesReachNonPersonalContext() {
+        var profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .moreConcise,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .rambling,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .persuasive,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: "",
+            chosenStyleGoal: .persuasive
+        )
+        profile.chosenStyleGoal = .persuasive
+        let context = CoachContextBuilder.nonPersonalContext(
+            profile: profile,
+            responseKind: .generalCoaching,
+            coachingExpertise: [],
+            pendingGoalIntent: .init(requestedVoice: nil, kind: .change)
+        )
+
+        #expect(context.contains("GOAL INTENT (this turn)"))
+        #expect(context.contains("Claim, Evidence, Warrant"))
+        #expect(context.contains("Persuade with Structure"))
+        #expect(context.contains("Chat cannot submit a product or roadmap request"))
+    }
+
     @Test func authorizedMoveVocabularyIsAcceptedAndRepeatableAcrossTheClientGate() {
         let moves = [
             "Advance the read: keep the prior target, but change the proof to the next observable sentence.",
@@ -1720,7 +1748,7 @@ struct CoachChatWireContractTests {
     }
 
     @MainActor
-    @Test func ellipticalGeneralFollowUpKeepsOnePriorUserReferent() async throws {
+    @Test func ellipticalGeneralFollowUpKeepsBoundedUserAndCoachReferent() async throws {
         let transport = CapturingCoachTransport(
             completionText: "Check whether the decision is still in sentence one after the rehearsal."
         )
@@ -1748,7 +1776,77 @@ struct CoachChatWireContractTests {
         let request = try #require(transport.capturedRequest())
         #expect(request.messages == [
             CoachChatWireMessage(role: .user, content: priorUserTurn),
+            CoachChatWireMessage(
+                role: .assistant,
+                content: "Lead with the decision, give one reason, then stop."
+            ),
             CoachChatWireMessage(role: .user, content: followUp)
+        ])
+    }
+
+    @MainActor
+    @Test func detailedPersuasiveFollowUpKeepsReferentAndSharedTrace() async throws {
+        let transport = CapturingCoachTransport(
+            completionText: "Use Claim, Evidence, Warrant because it keeps the proof and ask visible."
+        )
+        let service = AICoachChatService(secureTransport: transport)
+        let traceID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
+        let followUp = "Ok what’s the best way to practice this? And honestly? Does this app have it? If not can we suggest it for future development?"
+
+        _ = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: "I want to practise being more persuasive."),
+                CoachMessage(
+                    role: .coach,
+                    text: "Lead with the claim, support it with evidence, then make one clear ask."
+                ),
+                CoachMessage(role: .user, text: followUp)
+            ],
+            systemPrompt: "Answer the bounded follow-up.",
+            userContext: "GENERAL COACHING ONLY",
+            traceID: traceID,
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.requestID == traceID.uuidString)
+        #expect(request.messages == [
+            CoachChatWireMessage(role: .user, content: "I want to practise being more persuasive."),
+            CoachChatWireMessage(
+                role: .assistant,
+                content: "Lead with the claim, support it with evidence, then make one clear ask."
+            ),
+            CoachChatWireMessage(role: .user, content: followUp)
+        ])
+    }
+
+    @MainActor
+    @Test func bareQuestionMarkKeepsOnlyImmediateConversationReferent() async throws {
+        let transport = CapturingCoachTransport(completionText: "By sharp, I mean quicker in the moment.")
+        let service = AICoachChatService(secureTransport: transport)
+
+        _ = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: "I want to be more witty"),
+                CoachMessage(role: .coach, text: "Do you mean playful and memorable, or quicker and sharper?"),
+                CoachMessage(role: .user, text: "?")
+            ],
+            systemPrompt: "Clarify the preceding question.",
+            userContext: "CONVERSATION ONLY",
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .conversational,
+            preferredTier: .geminiFast
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.messages == [
+            CoachChatWireMessage(role: .user, content: "I want to be more witty"),
+            CoachChatWireMessage(role: .assistant, content: "Do you mean playful and memorable, or quicker and sharper?"),
+            CoachChatWireMessage(role: .user, content: "?")
         ])
     }
 

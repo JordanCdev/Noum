@@ -11,6 +11,7 @@ import {
   type CoachGenerateContentResponse,
   coachCompletionLogMetadata,
   coachFailureLogMetadata,
+  coachFailureQualityMetadata,
   consumeCoachStream,
   generateCoachCompletionWithRepair,
   isAcceptableFinishReason,
@@ -46,6 +47,7 @@ import {
   thinkingBudgetForQualityTier,
 } from "./coachPolicy.js";
 import {FinishReason} from "@google/genai";
+import {HttpsError} from "firebase-functions/v2/https";
 
 const request = {
   schemaVersion: 2,
@@ -615,6 +617,8 @@ test("a stored move appears only when the current turn asks for action", () => {
     "How would I make this clearer?",
     "Do you have any advice?",
     "What would you recommend?",
+    "What's the best way to practice this?",
+    "What is the best way to practise this?",
   ]) {
     const paraphrasedRequest = validateCoachChatRequest({
       ...request,
@@ -631,6 +635,14 @@ test("a stored move appears only when the current turn asks for action", () => {
     }],
   });
   assert.equal(coachTurnRequestsMove(explanationRequest), false);
+  const practiceObservation = validateCoachChatRequest({
+    ...request,
+    messages: [{
+      role: "user",
+      content: "That practice answer felt repetitive.",
+    }],
+  });
+  assert.equal(coachTurnRequestsMove(practiceObservation), false);
   assert.equal(
     coachReplyPolicyIssue(
       explanationRequest,
@@ -3160,8 +3172,8 @@ test(
     assert.equal(serialized.includes(request.accountID), false);
     assert.deepEqual(Object.keys(metadata).sort(), [
       "accountBinding", "finishReason", "inputTokens", "latencyMs", "model",
-      "outputTokens", "policyVersion", "qualityTier", "requestID", "status",
-      "surface",
+      "outputTokens", "policyVersion", "qualityTier", "requestID",
+      "responseKind", "status", "surface", "turnDepth", "turnIntent",
     ]);
 
     const failure = coachFailureLogMetadata(
@@ -3179,8 +3191,57 @@ test(
     assert.equal(serializedFailure.includes(request.accountID), false);
     assert.deepEqual(Object.keys(failure).sort(), [
       "accountBinding", "latencyMs", "model", "policyVersion", "qualityTier",
-      "requestID", "status", "surface",
+      "requestID", "responseKind", "status", "surface", "turnDepth",
+      "turnIntent",
     ]);
+  }
+);
+
+test(
+  "coach failure detail logging accepts only server-owned quality codes",
+  () => {
+    const safe = coachFailureQualityMetadata(new HttpsError(
+      "failed-precondition",
+      "SECRET_USER_CONTENT",
+      {reason: "coach-quality-rejected", policyIssue: "missing-evidence-bridge"}
+    ));
+    assert.deepEqual(safe, {
+      failureReason: "coach-quality-rejected",
+      policyIssue: "missing-evidence-bridge",
+    });
+
+    const unsafe = coachFailureQualityMetadata(new HttpsError(
+      "failed-precondition",
+      "SECRET_USER_CONTENT",
+      {reason: "SECRET_REASON", policyIssue: "SECRET_DRAFT"}
+    ));
+    assert.deepEqual(unsafe, {});
+    assert.equal(JSON.stringify(unsafe).includes("SECRET"), false);
+
+    const protectedLog = coachFailureLogMetadata(
+      validateCoachChatRequest(request),
+      "gemini-2.5-flash",
+      120,
+      "failed-precondition",
+      "verified",
+      {
+        reason: "SECRET_REASON",
+        policyIssue: "SECRET_DRAFT",
+        requestID: "SECRET_OVERRIDE",
+        accountBinding: "SECRET_ACCOUNT",
+      }
+    );
+    const serialized = JSON.stringify(protectedLog);
+    assert.equal(protectedLog.requestID, request.requestID);
+    assert.equal(protectedLog.accountBinding, "verified");
+    assert.equal(serialized.includes("SECRET"), false);
+
+    const unrelated = coachFailureQualityMetadata(new HttpsError(
+      "failed-precondition",
+      "content-free",
+      {reason: "other", policyIssue: "missing-evidence-bridge"}
+    ));
+    assert.deepEqual(unrelated, {});
   }
 );
 

@@ -3081,6 +3081,71 @@ struct CoachTypedFallbackTests {
             turnDepth: .quickMove,
             responseKind: .generalCoaching
         ) == nil)
+
+        var rejectedGate: String?
+        let pipelineFallback = CoachReplyPipeline.safeFailureFallbackText(
+            for: .failure(.contentRejected),
+            assessment: nil,
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: nil,
+            latestUserTurn: userTurn,
+            responseKind: .generalCoaching,
+            coachVoice: .persuasive,
+            onRejectedGate: { rejectedGate = $0 }
+        )
+        #expect(pipelineFallback == fallback)
+        #expect(rejectedGate == nil)
+    }
+
+    @Test func persuasiveCapabilityQuestionHasSpecificSafeRecovery() throws {
+        let userTurn = "Ok what’s the best way to practice this? And honestly? Does this app have it? If not can we suggest it for future development?"
+        let fallback = try #require(
+            CoachReliabilityGate.generalCoachingFailureFallback(
+                turnDepth: .quickMove,
+                surface: .text,
+                latestUserTurn: userTurn,
+                previousCoachReply: "A persuasive voice uses a claim, evidence, and one clear ask.",
+                recentCoachReplies: [],
+                coachVoice: .persuasive
+            )
+        )
+
+        #expect(fallback.contains("Claim, Evidence, Warrant"))
+        #expect(fallback.contains("Persuade with Structure"))
+        #expect(fallback.contains("cannot submit a product request"))
+        #expect(!fallback.lowercased().contains("pretending"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: fallback,
+            latestUserTurn: userTurn,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+    }
+
+    @Test func confirmedPersuasiveGoalFallbackAcknowledgesSavedState() {
+        let fallback = CoachReliabilityGate.goalStateDirectiveFallback(
+            surface: .text,
+            latestUserTurn: "Persuasive is now my coaching voice. Give me one way to practise it.",
+            coachVoice: .persuasive
+        )
+
+        #expect(fallback.hasPrefix("Persuasive is set."))
+        #expect(!fallback.lowercased().contains("confirm"))
+        #expect(!fallback.lowercased().contains("pretending"))
+    }
+
+    @Test func imageryOnlyPersuasiveDefinitionFailsCanonicalExpertiseGate() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "A persuasive voice uses vivid language and imagery to appeal to your audience’s emotions and values.",
+            latestUserTurn: "What does persuasive mean?",
+            systemContext: "Coaching voice: Persuasive",
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        )
+
+        #expect(issue == .ignoredCoachingExpertise)
+        #expect(issue?.auditLabel == "professional:ignoredCoachingExpertise")
     }
 
     @Test func trustRepairRubricUsesDepthAwareBudget() {

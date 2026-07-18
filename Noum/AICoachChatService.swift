@@ -79,6 +79,31 @@ enum ChatFailure: Equatable {
     /// The installed app requires a newer versioned coaching callable than the
     /// currently deployed backend advertises.
     case backendVersionMissing
+
+    var diagnosticCode: String {
+        switch self {
+        case .noProvider: return "noProvider"
+        case .consentRequired: return "consentRequired"
+        case .unauthenticated: return "unauthenticated"
+        case .coachUnavailable(let reason):
+            switch reason {
+            case .authenticationPending: return "coachUnavailable:authenticationPending"
+            case .localOnlyGuest: return "coachUnavailable:localOnlyGuest"
+            case .secureSessionMissing: return "coachUnavailable:secureSessionMissing"
+            case .backendVersionMissing: return "coachUnavailable:backendVersionMissing"
+            case .debugProviderMissing: return "coachUnavailable:debugProviderMissing"
+            case .service: return "coachUnavailable:service"
+            }
+        case .rateLimited: return "rateLimited"
+        case .localeUnsupported: return "localeUnsupported"
+        case .network: return "network"
+        case .empty: return "empty"
+        case .contentRejected: return "contentRejected"
+        case .invalidRequest: return "invalidRequest"
+        case .permissionDenied: return "permissionDenied"
+        case .backendVersionMissing: return "backendVersionMissing"
+        }
+    }
 }
 
 /// Outcome of a chat turn — either a live model reply or a typed failure the
@@ -1282,35 +1307,6 @@ actor AICoachChatService {
     private static let coachReplyMaxOutputTokens = 180
     private static let coachRepairMaxOutputTokens = 128
 
-    private nonisolated static func liveEvalDraftSuffix(_ draft: String) -> String {
-        #if NOUM_LIVE_AI_EVAL_INCLUDE_DRAFTS
-        let includeDraft = true
-        #else
-        let includeDraft = ProcessInfo.processInfo.environment["NOUM_LIVE_AI_EVAL_INCLUDE_DRAFTS"] == "1"
-        #endif
-        guard includeDraft else {
-            return ""
-        }
-        let compact = draft
-            .unicodeScalars
-            .map { scalar -> Character in
-                if CharacterSet.newlines.contains(scalar) || scalar.value < 0x20 {
-                    return " "
-                }
-                if scalar.value == 0x22 {
-                    return "'"
-                }
-                return Character(scalar)
-            }
-            .reduce(into: "") { output, character in
-                output.append(character)
-            }
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !compact.isEmpty else { return "" }
-        return " draft=\"\(String(compact.prefix(700)))\""
-    }
-
     private init() {
         self.keyedProvidersOverride = nil
         self.keyLookupOverride = nil
@@ -1391,6 +1387,7 @@ actor AICoachChatService {
         history: [CoachMessage],
         systemPrompt: String,
         userContext: String,
+        traceID: UUID? = nil,
         accountID: String? = nil,
         grounding: ChatGroundingContext = ChatGroundingContext(),
         turnDepth: CoachTurnDepth = .groundedRead,
@@ -1528,6 +1525,7 @@ actor AICoachChatService {
                 transportOverride: directTransport,
                 history: history,
                 userContext: userContext,
+                traceID: traceID,
                 accountID: accountID,
                 grounding: grounding,
                 turnDepth: turnDepth,
@@ -1558,6 +1556,7 @@ actor AICoachChatService {
             let secureOutcome = await secureReply(
                 history: history,
                 userContext: userContext,
+                traceID: traceID,
                 accountID: accountID,
                 grounding: grounding,
                 turnDepth: turnDepth,
@@ -1818,6 +1817,7 @@ actor AICoachChatService {
         transportOverride: (any CoachChatTransport)? = nil,
         history: [CoachMessage],
         userContext: String,
+        traceID: UUID?,
         accountID: String?,
         grounding: ChatGroundingContext,
         turnDepth: CoachTurnDepth,
@@ -1916,6 +1916,7 @@ actor AICoachChatService {
             }
         }
         let request = CoachChatRequest(
+            requestID: traceID ?? UUID(),
             accountID: requestAccountID,
             surface: surface.rawValue,
             qualityTier: tier.transportQualityTier,
@@ -2001,7 +2002,7 @@ actor AICoachChatService {
                 responseKind: responseKind,
                 coachingBrief: coachingBrief
             ) {
-                await onQualityGateEvent?(.rejected(String(describing: issue)))
+                await onQualityGateEvent?(.rejected(issue.auditLabel))
                 Self.log.notice("Secure coach reply rejected by local gate (\(issue.auditLabel, privacy: .public))")
                 recordChatDiagnostic(
                     .failure,
@@ -2445,10 +2446,10 @@ actor AICoachChatService {
                         responseKind: responseKind,
                         coachingBrief: coachingBrief
                     ) {
-                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(String(describing: issue), privacy: .public)) — repairing")
+                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(issue.auditLabel, privacy: .public)) — repairing")
                         recordChatDiagnostic(
                             .fallback,
-                            "Reply tripped professional-coach gate; attempting repair: \(String(describing: issue))",
+                            "Reply tripped professional-coach gate; attempting repair: \(issue.auditLabel)",
                             provider: provider,
                             startedAt: startedAt
                         )
@@ -2574,7 +2575,7 @@ actor AICoachChatService {
                         // next provider in the chain take the question.
                         recordChatDiagnostic(
                             .fallback,
-                            "Reply failed professional-coach gate: \(String(describing: issue))\(Self.liveEvalDraftSuffix(display))",
+                            "Reply failed professional-coach gate: \(issue.auditLabel)",
                             provider: provider
                         )
                         await onQualityGateEvent?(.rejected(issue.auditLabel))
@@ -2595,7 +2596,7 @@ actor AICoachChatService {
                             Self.log.notice("\(provider.displayName, privacy: .public) reply would trip semantic judgement gate (\(semanticIssue.rawValue, privacy: .public)) — dry-run accepting")
                             recordChatDiagnostic(
                                 .success,
-                                "Semantic judgement gate dry-run: would reject (\(semanticIssue.rawValue))\(Self.liveEvalDraftSuffix(display))",
+                                "Semantic judgement gate dry-run: would reject (\(semanticIssue.rawValue))",
                                 provider: provider,
                                 startedAt: startedAt
                             )
@@ -2678,7 +2679,7 @@ actor AICoachChatService {
                             }
                             recordChatDiagnostic(
                                 .fallback,
-                                "Reply failed semantic judgement gate: \(semanticIssue.rawValue)\(Self.liveEvalDraftSuffix(display))",
+                                "Reply failed semantic judgement gate: \(semanticIssue.rawValue)",
                                 provider: provider
                             )
                             await onQualityGateEvent?(.rejected(issue.auditLabel))
@@ -2697,10 +2698,10 @@ actor AICoachChatService {
                         surface: surface,
                         responseKind: responseKind
                     ) {
-                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped vision gate (\(String(describing: visionIssue), privacy: .public)) — repairing")
+                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped vision gate (\(visionIssue.auditLabel, privacy: .public)) — repairing")
                         recordChatDiagnostic(
                             .fallback,
-                            "Reply tripped vision gate: \(String(describing: visionIssue))",
+                            "Reply tripped vision gate: \(visionIssue.auditLabel)",
                             provider: provider,
                             startedAt: startedAt
                         )
@@ -2773,7 +2774,7 @@ actor AICoachChatService {
                         }
                         recordChatDiagnostic(
                             .fallback,
-                            "Reply failed vision gate: \(String(describing: visionIssue))\(Self.liveEvalDraftSuffix(display))",
+                            "Reply failed vision gate: \(visionIssue.auditLabel)",
                             provider: provider
                         )
                         await onQualityGateEvent?(.rejected(visionIssue.auditLabel))
@@ -3836,6 +3837,24 @@ actor AICoachChatService {
             return CoachChatResponseKind.classify(latestUserTurn)
         }()
         let turnIntent = CoachChatTurnIntent.classify(latestUserTurn)
+        let userLower = latestUserTurn?.lowercased() ?? ""
+        let contextLower = systemContext?.lowercased() ?? ""
+        let userTokens = Set(userLower
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init))
+        let carriesVoiceReferent = !userTokens.isDisjoint(with: [
+            "this", "that", "it", "practice", "practise", "voice"
+        ])
+        let persuasiveReferent = userLower.contains("persuasive") ||
+            (contextLower.contains("coaching voice: persuasive") &&
+             carriesVoiceReferent)
+        if responseKind == .generalCoaching,
+           persuasiveReferent,
+           lower.contains("persuasive"),
+           containsAny(lower, ["imagery", "vivid language", "appeal to", "emotions and values"]),
+           !containsAny(lower, ["claim", "evidence", "proof", "reason", "clear ask", "outcome"]) {
+            return .ignoredCoachingExpertise
+        }
         let groundedMoveContinuation = replyUsesGroundedMoveContinuation(
             lower,
             latestUserTurn: latestUserTurn,
@@ -4325,11 +4344,28 @@ actor AICoachChatService {
         case .generalCoaching:
             if latestUserIndex > messages.startIndex,
                isEllipticalGeneralFollowUp(latestUser.text),
-               let priorUser = messages[..<latestUserIndex]
-                .last(where: { $0.role == .user }) {
+               let priorUserIndex = messages[..<latestUserIndex]
+                .lastIndex(where: { $0.role == .user }) {
+                let priorUser = messages[priorUserIndex]
+                if let priorCoach = messages[priorUserIndex..<latestUserIndex]
+                    .last(where: { $0.role == .coach }) {
+                    return [priorUser, priorCoach, latestUser]
+                }
                 return [priorUser, latestUser]
             }
             return [latestUser]
+        case .conversational where CoachContextBuilder.isBareClarificationTurn(latestUser.text):
+            guard latestUserIndex > messages.startIndex,
+                  let priorUserIndex = messages[..<latestUserIndex]
+                    .lastIndex(where: { $0.role == .user }) else {
+                return [latestUser]
+            }
+            let priorUser = messages[priorUserIndex]
+            if let priorCoach = messages[priorUserIndex..<latestUserIndex]
+                .last(where: { $0.role == .coach }) {
+                return [priorUser, priorCoach, latestUser]
+            }
+            return [priorUser, latestUser]
         case .conversational, .memoryHandoff:
             return [latestUser]
         }
@@ -4339,13 +4375,15 @@ actor AICoachChatService {
         _ userTurn: String
     ) -> Bool {
         let words = userTurn.split { !$0.isLetter && !$0.isNumber }
-        guard words.count <= 12 else { return false }
+        if CoachContextBuilder.isBareClarificationTurn(userTurn) { return true }
+        guard words.count <= 40 else { return false }
         let normalized = " \(userTurn.lowercased()) "
         return [
             "what should i check", "what should i listen for",
             "what do i do after", "what should i do after",
             "how do i make that", "how do i do that",
-            " after?", " that ", " this "
+            " after?", " that ", " this ", " it ",
+            "practice this", "practise this"
         ].contains(where: normalized.contains)
     }
 
@@ -7997,10 +8035,10 @@ actor AICoachChatService {
             responseKind: responseKind,
             coachingBrief: coachingBrief
         ) {
-            Self.log.error("repair pass still tripped the gate (\(String(describing: remainingIssue), privacy: .public))")
+            Self.log.error("repair pass still tripped the gate (\(remainingIssue.auditLabel, privacy: .public))")
             recordChatDiagnostic(
                 .fallback,
-                "Repair reply failed professional-coach gate: \(String(describing: remainingIssue))\(Self.liveEvalDraftSuffix(display))",
+                "Repair reply failed professional-coach gate: \(remainingIssue.auditLabel)",
                 provider: provider
             )
             return nil
@@ -8016,7 +8054,7 @@ actor AICoachChatService {
             Self.log.error("repair pass still tripped semantic gate (\(semanticIssue.rawValue, privacy: .public))")
             recordChatDiagnostic(
                 .fallback,
-                "Repair reply failed semantic judgement gate: \(semanticIssue.rawValue)\(Self.liveEvalDraftSuffix(display))",
+                "Repair reply failed semantic judgement gate: \(semanticIssue.rawValue)",
                 provider: provider
             )
             return nil
@@ -8031,10 +8069,10 @@ actor AICoachChatService {
             surface: surface,
             responseKind: responseKind
         ) {
-            Self.log.error("repair pass still tripped vision gate (\(String(describing: visionIssue), privacy: .public))")
+            Self.log.error("repair pass still tripped vision gate (\(visionIssue.auditLabel, privacy: .public))")
             recordChatDiagnostic(
                 .fallback,
-                "Repair reply failed vision gate: \(String(describing: visionIssue))\(Self.liveEvalDraftSuffix(display))",
+                "Repair reply failed vision gate: \(visionIssue.auditLabel)",
                 provider: provider
             )
             return nil

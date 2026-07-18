@@ -1120,6 +1120,7 @@ export function coachTurnRequestsMove(
     /\b(?:help|coach) me\b/u,
     /\b(?:give|show|teach|suggest|recommend) me\b/u,
     /\b(?:give me )?(?:a )?(?:drill|exercise)\b/u,
+    /\bwhat(?:'s|’s| is) (?:the )?best way to (?:practice|practise)\b/u,
     /\b(?:fix|improve|rewrite|coach) (?:this|that|it|my|the)\b/u,
     new RegExp(
       "\\b(?:what|which) should i " +

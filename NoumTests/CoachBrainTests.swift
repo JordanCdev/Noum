@@ -451,4 +451,42 @@ struct CoachReplyPipelineBrainDiagnosticTests {
             history: history
         ) == current)
     }
+
+    @Test func persuasiveAnaphoricFollowUpResolvesTrustedVoiceForRetrieval() {
+        let current = "Ok what’s the best way to practice this? And honestly? Does this app have it? If not can we suggest it for future development?"
+        let history = [
+            CoachMessage(role: .user, text: "Persuasive is now my coaching voice. Give me one way to practise it."),
+            CoachMessage(role: .coach, text: "Use a claim, one strong reason, and one clear ask."),
+            CoachMessage(role: .user, text: current)
+        ]
+
+        let query = CoachReplyPipeline.knowledgeRetrievalQuery(
+            latestUserTurn: current,
+            history: history,
+            voice: .persuasive
+        )
+        #expect(query.contains("Current speaking goal: Persuasive"))
+        #expect(query.contains("Earlier user context: Persuasive"))
+        let cards = KnowledgeRetriever.retrieve(
+            query: query,
+            voice: .persuasive
+        )
+        #expect(cards.contains { $0.id == "voice-persuasive" })
+    }
+
+    @Test func bareClarificationKeepsGoalReferentInRetrieval() {
+        let history = [
+            CoachMessage(role: .user, text: "I want to be more witty"),
+            CoachMessage(role: .coach, text: "Do you mean playful or sharp in the moment?"),
+            CoachMessage(role: .user, text: "?")
+        ]
+
+        let query = CoachReplyPipeline.knowledgeRetrievalQuery(
+            latestUserTurn: "?",
+            history: history,
+            voice: .persuasive
+        )
+        #expect(query.contains("I want to be more witty"))
+        #expect(query.contains("Current speaking goal: Persuasive"))
+    }
 }

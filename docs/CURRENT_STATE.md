@@ -1,5 +1,75 @@
 # Noum — Current state
 
+## 2026-07-18 — Ask Noum goal continuity and incident tracing repaired locally; coaching acceptance remains open
+
+The reporter's next installed-simulator conversation exposed a product defect,
+not harmless model variance. A confirmed switch to Persuasive was followed by
+Noum saying it could not “pretend” to change the voice; `?` then lost the
+question it referred to; the next answer described Persuasive as imagery and
+emotion rather than Noum's canonical claim/evidence/ask method; and the exact
+longer practice-and-capability question repeatedly ended in the generic
+coaching-failure notice. The persisted profile already held
+`chosenStyleGoal = persuasive`, so the visible state disclaimer was false.
+
+The failure crossed several existing owners. The post-confirmation chip sent a
+new imperative as though the profile had not already changed. The typed pending
+goal intent never reached the non-personal coach context. Bare clarification
+cleared that intent, and secure replay omitted the challenged coach reply.
+Anaphoric knowledge retrieval stopped at 12 words, so the longer follow-up lost
+both the Persuasive goal and its trusted knowledge card. Functions did not
+classify “best way to practice” as an action request while iOS did, allowing a
+server reply that the local professional gate rejected as missing an action or
+reason. Finally, product-capability context did not identify the existing
+Persuasive drills or the absence of an in-chat roadmap-submission channel.
+
+Current dirty source repairs that chain through the existing profile, context,
+transport, reliability, and store owners. A voice card now sends a truthful
+already-saved acknowledgement only after `CoachingProfileStore.save` succeeds;
+a failed write keeps the card visible and shows retry copy. Unresolved “witty”
+requests remain a clarification between playful/memorable and quick/sharp
+rather than being silently mapped to Persuasive. Exact bare clarifications keep
+the pending proposal and replay only the immediately preceding user/coach
+referent. Anaphoric general turns up to 40 words add the trusted current voice
+to retrieval. Persuasive context is derived from the existing drill/project
+catalogue and identifies Claim, Evidence, Warrant; Monroe's Sequence; and
+Persuade with Structure. A bounded Persuasive recovery answer remains
+available if provider repair is exhausted. The former “pretending” copy is
+removed.
+
+The same slice makes failures diagnosable without retaining conversation
+content. One opaque turn UUID now joins the pending chat row, callable request,
+FlowLog, local AI diagnostics, and server log. Terminal failures retain an
+in-memory categorical receipt after the empty coach row is removed. Actual
+failures are no longer recorded as `chat.finalCommitted/success`. Server logs
+include only validated intent/response/depth labels plus an allowlisted policy
+issue. Provider draft fragments were removed from persistent diagnostics, and
+local gates record stable audit labels instead of enum descriptions that could
+carry generated text.
+
+The final local verification selection passes **293/293** with zero failures
+or skips in
+`/Users/jordan/src/GitHub/Noum/DerivedData/Noum/Logs/Test/Test-Noum-2026.07.18_01-20-35-+0100.xcresult`.
+It deliberately excludes seven pre-existing typed-fallback cases whose fixtures
+do not yet carry sufficient evidence provenance; weakening the evidence gate to
+make those fixtures pass would be a trust regression. Functions unit coverage
+passes **162/162**, and the release-lock suite passes **9/9**. A normally signed
+Debug simulator build installs and renders all five tab roots; the light sweep
+is recorded in
+`.screenshots/2026-07-18_ask-noum-goal-continuity/HANDOFF.md`, and Profile visibly
+shows Persuasive as the voice target. A diagnostic install built with code
+signing disabled stalled during account preparation because its Keychain
+entitlement was absent; reinstalling the normally signed Debug app cleared that
+test-install fault. The simulator still emits an early Firebase configuration
+warning before the configured app becomes usable, so initialization ordering
+remains diagnostic noise to audit separately.
+
+This is a targeted repair of the exact incident, not proof that the coach now
+has acceptable EQ/IQ across open-ended conversation. No current-source live
+retry, representative generated transcript sweep, reporter re-acceptance,
+independent professional review, signed device run, or external launch artifact
+exists for this source. Production therefore remains **NO-GO at 18/100 with
+0/5 required external artifacts**.
+
 ## 2026-07-17 — Ask Noum statement turns no longer self-reject locally; live re-acceptance remains open
 
 The reporter's next installed-simulator attempt exposed a different failure

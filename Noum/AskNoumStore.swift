@@ -273,6 +273,10 @@ enum CoachFirstVisibleTokenSource: String, Codable, Equatable {
 /// store can update after the fact when the user's next turn is a trust-repair
 /// prompt.
 struct CoachTurnMetadata: Codable, Equatable {
+    /// One content-free correlation ID shared by the pending row, callable
+    /// request, client diagnostics, and server logs for this turn.
+    var traceID: UUID?
+    var turnIntent: CoachChatTurnIntent?
     var turnDepth: CoachTurnDepth?
     /// The existing pipeline policy lane that actually produced this reply.
     /// Optional for persisted rows written before response-scoped provenance.
@@ -330,6 +334,8 @@ struct CoachTurnMetadata: Codable, Equatable {
     var reliabilityFallbackApplied: Bool?
 
     init(
+        traceID: UUID? = nil,
+        turnIntent: CoachChatTurnIntent? = nil,
         turnDepth: CoachTurnDepth? = nil,
         responseKind: CoachChatResponseKind? = nil,
         providerTier: CoachProviderTier? = nil,
@@ -376,6 +382,8 @@ struct CoachTurnMetadata: Codable, Equatable {
         reliabilityIssues: [CoachReliabilityIssue]? = nil,
         reliabilityFallbackApplied: Bool? = nil
     ) {
+        self.traceID = traceID
+        self.turnIntent = turnIntent
         self.turnDepth = turnDepth
         self.responseKind = responseKind
         self.providerTier = providerTier
@@ -422,6 +430,21 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.reliabilityIssues = reliabilityIssues
         self.reliabilityFallbackApplied = reliabilityFallbackApplied
     }
+}
+
+/// In-memory receipt retained when the pending coach row is removed after a
+/// typed failure. It carries only categorical diagnostics—never prompt, reply,
+/// account, transcript, or assessment content—so a failed turn remains
+/// debuggable without becoming conversation history.
+struct CoachTurnFailureReceipt: Equatable {
+    let traceID: UUID
+    let failure: ChatFailure
+    let turnIntent: CoachChatTurnIntent?
+    let responseKind: CoachChatResponseKind?
+    let turnDepth: CoachTurnDepth?
+    let qualityGateOutcome: CoachTurnQualityGateOutcome?
+    let qualityGateEvents: [String]
+    let latencyMs: Int?
 }
 
 /// One message in the Ask-Noum thread.
@@ -558,6 +581,7 @@ final class AskNoumStore: ObservableObject {
     /// user's turn stays in the thread and can be retried without adding a
     /// duplicate message.
     @Published private(set) var lastFailure: ChatFailure?
+    @Published private(set) var lastFailureReceipt: CoachTurnFailureReceipt?
 
     var transientFailureMessage: String? {
         lastFailure.map { Self.noticeCopy(for: $0) }
@@ -706,6 +730,7 @@ final class AskNoumStore: ObservableObject {
     ) -> (userID: UUID, coachID: UUID, lease: AskNoumReplyLease)? {
         guard sendAdmissionIsCurrent(admission) else { return nil }
         lastFailure = nil
+        lastFailureReceipt = nil
         markImmediatePushbackIfNeeded(for: text)
         let userMsg = CoachMessage(role: .user, text: text)
         let coachMsg = CoachMessage(role: .coach, text: "", isPending: true)
@@ -758,10 +783,15 @@ final class AskNoumStore: ObservableObject {
               let idx = messages.firstIndex(where: { $0.id == id }) else {
             return false
         }
-        let resolvedMetadata = Self.metadataByPreservingMutableFlags(
+        var resolvedMetadata = Self.metadataByPreservingMutableFlags(
             incoming: metadata,
             existing: messages[idx].metadata
         )
+        // The pending coach row owns the end-to-end trace. Never allow caller
+        // metadata to fork local diagnostics from the request/server UUID.
+        if resolvedMetadata != nil {
+            resolvedMetadata?.traceID = id
+        }
         switch outcome {
         case .reply(let text):
             let trimmed = CoachDisplayCopy.normalized(
@@ -772,7 +802,12 @@ final class AskNoumStore: ObservableObject {
                 // it reaches the store, route through the same notice instead
                 // of leaving a blank coach bubble.
                 Self.log.error("coach turn completed with empty normalized text")
-                resolveFailure(at: idx, failure: .empty)
+                resolveFailure(
+                    at: idx,
+                    id: id,
+                    failure: .empty,
+                    metadata: resolvedMetadata
+                )
             } else {
                 if trimmed != text.trimmingCharacters(in: .whitespacesAndNewlines) {
                     Self.log.notice("normalized coach turn before persistence id=\(id.uuidString, privacy: .public)")
@@ -790,7 +825,12 @@ final class AskNoumStore: ObservableObject {
             }
         case .failure(let failure):
             Self.log.notice("coach turn resolved as transient failure cause=\(String(describing: failure), privacy: .public)")
-            resolveFailure(at: idx, failure: failure)
+            resolveFailure(
+                at: idx,
+                id: id,
+                failure: failure,
+                metadata: resolvedMetadata
+            )
         }
         isAwaitingReply = false
         trimAndPersist(accountScope: lease.accountScope)
@@ -888,9 +928,24 @@ final class AskNoumStore: ObservableObject {
         return true
     }
 
-    private func resolveFailure(at idx: Int, failure: ChatFailure) {
+    private func resolveFailure(
+        at idx: Int,
+        id: UUID,
+        failure: ChatFailure,
+        metadata: CoachTurnMetadata?
+    ) {
         messages.remove(at: idx)
         lastFailure = failure
+        lastFailureReceipt = CoachTurnFailureReceipt(
+            traceID: id,
+            failure: failure,
+            turnIntent: metadata?.turnIntent,
+            responseKind: metadata?.responseKind,
+            turnDepth: metadata?.turnDepth,
+            qualityGateOutcome: metadata?.qualityGateOutcome,
+            qualityGateEvents: metadata?.qualityGateEvents ?? [],
+            latencyMs: metadata?.timeToCompleteReplyMs ?? metadata?.fullLatencyMs
+        )
     }
 
     private static func metadataByPreservingMutableFlags(
@@ -1247,6 +1302,7 @@ final class AskNoumStore: ObservableObject {
         let coach = CoachMessage(role: .coach, text: "", isPending: true)
         messages.append(coach)
         lastFailure = nil
+        lastFailureReceipt = nil
         isAwaitingReply = true
         trimAndPersist()
         return (
@@ -1290,6 +1346,7 @@ final class AskNoumStore: ObservableObject {
         invalidateReplyLeases(cancelActiveProviderWork: true)
         messages.removeAll()
         lastFailure = nil
+        lastFailureReceipt = nil
         pendingInjectedCoachID = nil
         // Drop the AI chip cache too — every cached entry is keyed by
         // a coach message ID that no longer exists.
@@ -1334,6 +1391,7 @@ final class AskNoumStore: ObservableObject {
         pendingInjectedCoachID = nil
         isAwaitingReply = false
         lastFailure = nil
+        lastFailureReceipt = nil
         loadedAccountScope = nil
     }
 
@@ -1356,6 +1414,7 @@ final class AskNoumStore: ObservableObject {
         pendingInjectedCoachID = nil
         isAwaitingReply = false
         lastFailure = nil
+        lastFailureReceipt = nil
         persist(accountScope: accountScope)
     }
 

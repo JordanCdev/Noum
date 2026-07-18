@@ -319,7 +319,8 @@ export function isAcceptableFinishReason(value: unknown): boolean {
 export function coachCompletionLogMetadata(
   input: Pick<
     CoachChatInput,
-    "schemaVersion" | "requestID" | "surface" | "qualityTier"
+    "schemaVersion" | "requestID" | "surface" | "qualityTier" |
+    "turnIntent" | "responseKind" | "turnDepth"
   >,
   model: string,
   finishReason: string,
@@ -333,6 +334,9 @@ export function coachCompletionLogMetadata(
     requestID: input.requestID,
     surface: input.surface,
     qualityTier: input.qualityTier,
+    turnIntent: input.turnIntent,
+    responseKind: input.responseKind,
+    turnDepth: input.turnDepth,
     model,
     policyVersion: COACH_POLICY_VERSION,
     accountBinding,
@@ -351,28 +355,86 @@ export function coachCompletionLogMetadata(
  * @param {number} latencyMs End-to-end latency.
  * @param {string} status Stable error code.
  * @param {CoachAccountBinding} accountBinding Admission provenance.
+ * @param {Record<string, string>} failureDetails Allowlisted quality codes.
  * @return {Record<string, unknown>} Safe operational fields.
  */
 export function coachFailureLogMetadata(
   input: Pick<
     CoachChatInput,
-    "schemaVersion" | "requestID" | "surface" | "qualityTier"
+    "schemaVersion" | "requestID" | "surface" | "qualityTier" |
+    "turnIntent" | "responseKind" | "turnDepth"
   >,
   model: string,
   latencyMs: number,
   status: string,
-  accountBinding: CoachAccountBinding = "verified"
+  accountBinding: CoachAccountBinding = "verified",
+  failureDetails: unknown = {}
 ): Record<string, unknown> {
+  const qualityMetadata = allowlistedCoachFailureQualityFields(failureDetails);
   return {
     requestID: input.requestID,
     surface: input.surface,
     qualityTier: input.qualityTier,
+    turnIntent: input.turnIntent,
+    responseKind: input.responseKind,
+    turnDepth: input.turnDepth,
     model,
     policyVersion: COACH_POLICY_VERSION,
     accountBinding,
     latencyMs,
     status,
+    ...qualityMetadata,
   };
+}
+
+const COACH_POLICY_ISSUE_CODES = new Set([
+  "empty", "invented-quote", "internal-language", "invented-setting",
+  "invented-mechanism", "generic-opener", "outcome-promise",
+  "coach-observer-promise", "unverified-personal-read", "invented-action",
+  "unsolicited-action", "deferred-repair", "non-coaching-prescription",
+  "non-coaching-brief-leak", "invented-number", "missing-metric-read",
+  "missing-trend-read", "word-limit", "sentence-limit",
+  "missing-evidence-clarification", "repeated-sentence", "repeated-anchor",
+  "repeated-action", "repeated-prior-action", "missing-evidence-bridge",
+  "missing-move-grounding", "missing-evidence-grounding",
+]);
+
+/**
+ * Extracts only server-owned categorical quality codes from a callable error.
+ * Provider drafts, user content, error messages, and arbitrary detail values
+ * never enter production logs.
+ * @param {unknown} error Candidate callable error.
+ * @return {Record<string, string>} Allowlisted content-free fields.
+ */
+export function coachFailureQualityMetadata(
+  error: unknown
+): Record<string, string> {
+  if (!(error instanceof HttpsError) ||
+      typeof error.details !== "object" || error.details === null) {
+    return {};
+  }
+  return allowlistedCoachFailureQualityFields(error.details);
+}
+
+/**
+ * Reduces any candidate details object to the closed quality-log vocabulary.
+ * The reason must identify the quality path before a policy label is admitted.
+ * @param {unknown} candidate Candidate detail object.
+ * @return {Record<string, string>} Allowlisted content-free fields.
+ */
+function allowlistedCoachFailureQualityFields(
+  candidate: unknown
+): Record<string, string> {
+  if (typeof candidate !== "object" || candidate === null) return {};
+  const details = candidate as Record<string, unknown>;
+  const metadata: Record<string, string> = {};
+  if (details.reason !== "coach-quality-rejected") return metadata;
+  metadata.failureReason = "coach-quality-rejected";
+  if (typeof details.policyIssue === "string" &&
+      COACH_POLICY_ISSUE_CODES.has(details.policyIssue)) {
+    metadata.policyIssue = details.policyIssue;
+  }
+  return metadata;
 }
 
 /** Typed completion returned to the iOS callable client. */
@@ -2336,7 +2398,8 @@ async function executeCoachChatV2(
         modelName,
         Date.now() - startedAt,
         code,
-        accountBinding
+        accountBinding,
+        coachFailureQualityMetadata(error)
       )
     );
     if (error instanceof HttpsError) throw error;

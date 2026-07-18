@@ -554,6 +554,7 @@ struct AskNoumView: View {
     // collapses when this returns to nil. The model NEVER writes to the
     // profile; only a tap on this card's chip commits.
     @State private var pendingGoalIntent: CoachContextBuilder.GoalIntent?
+    @State private var goalSaveError: String?
 
     // Transparent memory / trajectory — sheet presentation for "Your
     // trajectory", opened from the memory-usage pill under the latest coach
@@ -1048,6 +1049,7 @@ struct AskNoumView: View {
                         // Drop any un-acted goal proposal so a wiped thread
                         // doesn't carry a stale intent into the next turn.
                         pendingGoalIntent = nil
+                        goalSaveError = nil
                     } label: {
                         Label("Clear thread", systemImage: "trash")
                     }
@@ -2051,6 +2053,14 @@ struct AskNoumView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let goalSaveError {
+                    Text(goalSaveError)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("askNoum.goalProposal.saveError")
+                }
+
                 FlowLayout(spacing: 8, runSpacing: 6) {
                     ForEach(goalProposalChips) { chip in
                         Button {
@@ -2160,18 +2170,29 @@ struct AskNoumView: View {
     /// durable-write-before-chat ordering. The LLM is never in this path —
     /// `CoachingProfileStore.save` is reached ONLY here, from the user's tap.
     private func handleGoalProposalChip(_ chip: CoachContextBuilder.GoalProposalChip) {
+        let didCommit: Bool
         switch chip.action {
         case .set(let newVoice):
-            recordGoalSet(newVoice)
-            CoachHaptic.drillSuccess()
+            didCommit = recordGoalSet(newVoice)
         case .switchTo(let newVoice):
-            recordGoalChange(to: newVoice, blend: false)
-            CoachHaptic.drillSuccess()
+            didCommit = recordGoalChange(to: newVoice, blend: false)
         case .blend(let newVoice):
-            recordGoalChange(to: newVoice, blend: true)
-            CoachHaptic.drillSuccess()
+            didCommit = recordGoalChange(to: newVoice, blend: true)
         case .decline:
             CoachHaptic.selectionTap()
+            didCommit = true
+        }
+        guard didCommit else {
+            goalSaveError = "That voice change didn’t save. Try it again."
+            CoachHaptic.drillIncomplete()
+            return
+        }
+        goalSaveError = nil
+        switch chip.action {
+        case .decline:
+            break
+        default:
+            CoachHaptic.drillSuccess()
         }
         // Clear the pending intent BEFORE dispatching the continuation so the
         // card collapses and the continuation turn (which would itself match
@@ -2186,13 +2207,12 @@ struct AskNoumView: View {
     /// `save()` persists, syncs, and kicks the AI goal-paraphrase. No
     /// `noteVoiceChange` here — cold start has no prior voice and no memory to
     /// record a course change against; the profile write IS the durable record.
-    private func recordGoalSet(_ newVoice: SpeakingStyleGoal) {
+    private func recordGoalSet(_ newVoice: SpeakingStyleGoal) -> Bool {
         // Guard against a race where a profile materialised between detection
         // and tap (e.g. onboarding finished in another surface). If a profile
         // now exists, treat this as a change instead of clobbering it.
         if coachingProfileStore.profile != nil {
-            recordGoalChange(to: newVoice, blend: false)
-            return
+            return recordGoalChange(to: newVoice, blend: false)
         }
         // Default biggest challenge → its recommended priority; voice → its
         // recommended outcome. Same derivations the onboarding flow uses, so a
@@ -2211,24 +2231,22 @@ struct AskNoumView: View {
             successVision: "",
             chosenStyleGoal: newVoice   // explicit user choice → tailored from here
         )
-        coachingProfileStore.save(profile)
+        return coachingProfileStore.save(profile)
     }
 
-    /// CHANGE commit — the user already has a voice. Record the course change in
-    /// the coach's memory FIRST (the honest "reason for changing course" audit
-    /// trail; appends a bounded `CoachCourseChange`, never wipes baseline /
-    /// trends / session history), THEN save the mutated profile copy. A full
+    /// CHANGE commit — the user already has a voice. Save the profile first,
+    /// then record the course change in coach memory so a failed profile write
+    /// cannot leave a false audit event. A full
     /// switch replaces `speakingStyleGoal` and clears any prior blend secondary;
     /// a blend keeps the current primary and sets the new voice as the
     /// secondary. `paraphrasedGoal` is reset to nil so `save()` re-paraphrases
     /// the goal in the new voice. Bounded scope — only voice fields + the
     /// paraphrase reset are touched, never arbitrary profile data.
-    private func recordGoalChange(to newVoice: SpeakingStyleGoal, blend: Bool) {
+    private func recordGoalChange(to newVoice: SpeakingStyleGoal, blend: Bool) -> Bool {
         guard var profile = coachingProfileStore.profile else {
             // No profile to change — fall back to cold-start construction. (Only
             // reachable if the profile vanished between detection and tap.)
-            recordGoalSet(newVoice)
-            return
+            return recordGoalSet(newVoice)
         }
         guard let fromVoice = profile.chosenStyleGoal else {
             // A compatibility fallback is not a prior user choice. Treat this
@@ -2238,23 +2256,11 @@ struct AskNoumView: View {
             profile.chosenStyleGoal = newVoice
             profile.secondaryStyleGoal = nil
             profile.paraphrasedGoal = nil
-            coachingProfileStore.save(profile)
-            return
+            return coachingProfileStore.save(profile)
         }
         // No-op guard: a full "switch" to the voice the user already has would
         // record a meaningless course change. Bail before any write.
-        if !blend && fromVoice == newVoice { return }
-
-        // Durable course-change record FIRST. `noteVoiceChange` no-ops when
-        // there's no current memory (nothing to record against) — the profile
-        // write below is still the durable record in that case.
-        let kind: CoachCourseChange.VoiceChangeKind = blend ? .blend : .switchVoice
-        coachMemoryStore.noteVoiceChange(
-            from: fromVoice,
-            to: newVoice,
-            reason: CoachCourseChange.voiceChangeReason(from: fromVoice, to: newVoice, kind: kind),
-            evidenceBasis: "User changed their chosen voice goal from the in-chat goal card."
-        )
+        if !blend && fromVoice == newVoice { return true }
 
         if blend {
             // Keep the primary; add the new voice as the secondary. A blend onto
@@ -2272,7 +2278,16 @@ struct AskNoumView: View {
         }
         // Re-paraphrase the goal in the new voice on the next save pass.
         profile.paraphrasedGoal = nil
-        coachingProfileStore.save(profile)
+        guard coachingProfileStore.save(profile) else { return false }
+
+        let kind: CoachCourseChange.VoiceChangeKind = blend ? .blend : .switchVoice
+        coachMemoryStore.noteVoiceChange(
+            from: fromVoice,
+            to: newVoice,
+            reason: CoachCourseChange.voiceChangeReason(from: fromVoice, to: newVoice, kind: kind),
+            evidenceBasis: "User changed their chosen voice goal from the in-chat goal card."
+        )
+        return true
     }
 
     struct CoachOptionLayout: Equatable {
@@ -3169,7 +3184,11 @@ struct AskNoumView: View {
             speaker.stop()
             if clearDraftWhenSent { draft = "" }
             if detectIntent {
-                pendingGoalIntent = CoachContextBuilder.detectGoalIntent(text, currentVoice: voice)
+                let detectedIntent = CoachContextBuilder.detectGoalIntent(text, currentVoice: voice)
+                if detectedIntent != nil || !CoachContextBuilder.isBareClarificationTurn(text) {
+                    pendingGoalIntent = detectedIntent
+                    goalSaveError = nil
+                }
             }
             guard let dispatch = store.appendUserTurn(
                 text,

@@ -1398,6 +1398,9 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
     let reason: String
     let statusCode: Int?
     let latencyMs: Int?
+    /// Content-free turn/request UUID used to join app diagnostics to FlowLog
+    /// and server callable logs. Nil for older and non-turn records.
+    let correlationID: UUID?
     // Prompt-caching / token-cost accounting (additive — nil on every record
     // logged before this field existed, and on any call this session that
     // never carried usage data, e.g. a transport failure).
@@ -1427,6 +1430,7 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
         reason: String,
         statusCode: Int? = nil,
         latencyMs: Int? = nil,
+        correlationID: UUID? = nil,
         cacheCreationInputTokens: Int? = nil,
         cacheReadInputTokens: Int? = nil,
         inputTokens: Int? = nil,
@@ -1443,6 +1447,7 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
             reason: bounded(reason, fallback: outcome.title, maxLength: 256),
             statusCode: statusCode,
             latencyMs: latencyMs,
+            correlationID: correlationID,
             cacheCreationInputTokens: cacheCreationInputTokens,
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,
@@ -1519,6 +1524,7 @@ final class AICallDiagnosticsStore: ObservableObject {
                 record.outcome.rawValue,
                 record.statusCode.map { "HTTP \($0)" } ?? "no HTTP status",
                 record.latencyMs.map { "\($0)ms" } ?? "latency unknown",
+                record.correlationID.map { "trace \($0)" } ?? "trace unknown",
                 record.reason
             ].joined(separator: " | ")
         }.joined(separator: "\n")
@@ -1549,6 +1555,7 @@ enum AICallDiagnostics {
         statusCode: Int? = nil,
         startedAt: Date? = nil,
         now: Date = Date(),
+        correlationID: UUID? = nil,
         cacheCreationInputTokens: Int? = nil,
         cacheReadInputTokens: Int? = nil,
         inputTokens: Int? = nil,
@@ -1565,6 +1572,7 @@ enum AICallDiagnostics {
             reason: reason,
             statusCode: statusCode,
             latencyMs: latencyMs,
+            correlationID: correlationID,
             cacheCreationInputTokens: cacheCreationInputTokens,
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,
@@ -1586,7 +1594,8 @@ enum AICallDiagnostics {
         reason: String,
         statusCode: Int? = nil,
         startedAt: Date? = nil,
-        now: Date = Date()
+        now: Date = Date(),
+        correlationID: UUID? = nil
     ) {
         record(
             surface: surface,
@@ -1596,7 +1605,8 @@ enum AICallDiagnostics {
             reason: reason,
             statusCode: statusCode,
             startedAt: startedAt,
-            now: now
+            now: now,
+            correlationID: correlationID
         )
     }
 
@@ -1609,6 +1619,7 @@ enum AICallDiagnostics {
         statusCode: Int? = nil,
         startedAt: Date? = nil,
         now: Date = Date(),
+        correlationID: UUID? = nil,
         cacheCreationInputTokens: Int? = nil,
         cacheReadInputTokens: Int? = nil,
         inputTokens: Int? = nil,
@@ -1624,6 +1635,7 @@ enum AICallDiagnostics {
             statusCode: statusCode,
             startedAt: startedAt,
             now: now,
+            correlationID: correlationID,
             cacheCreationInputTokens: cacheCreationInputTokens,
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,

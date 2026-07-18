@@ -1698,7 +1698,8 @@ enum CoachContextBuilder {
         profile: CoachingProfile?,
         responseKind: CoachChatResponseKind,
         coachingExpertise: [CoachKnowledgeCard],
-        coachingBrief: CoachChatBrief? = nil
+        coachingBrief: CoachChatBrief? = nil,
+        pendingGoalIntent: GoalIntent? = nil
     ) -> String {
         var lines = [
             "=== NON-PERSONAL COACH CONTEXT ===",
@@ -1723,6 +1724,14 @@ enum CoachContextBuilder {
         }
         lines.append("STYLE PREFERENCE")
         lines.append("- Coaching voice: \(profile?.chosenStyleGoal?.title ?? "Neutral")")
+        if let pendingGoalIntent {
+            lines.append("")
+            lines.append(contentsOf: goalIntentContextLines(
+                intent: pendingGoalIntent,
+                currentVoice: profile?.chosenStyleGoal,
+                adaptationLog: nil
+            ))
+        }
         if responseKind == .generalCoaching {
             let expertiseLines = CoachExpertiseFormatter.contextLines(
                 for: coachingExpertise
@@ -1730,6 +1739,20 @@ enum CoachContextBuilder {
             if !expertiseLines.isEmpty {
                 lines.append("")
                 lines.append(contentsOf: expertiseLines)
+            }
+            if profile?.chosenStyleGoal == .persuasive {
+                let persuasiveDrills = DrillCatalog.allVariations
+                    .filter {
+                        ["structure.claimEvidenceWarrant", "structure.monroeSequence"]
+                            .contains($0.id)
+                    }
+                    .map(\.title)
+                    .joined(separator: ", ")
+                lines.append("")
+                lines.append("PRODUCT CAPABILITY")
+                lines.append("- Persuasive practice available now: \(persuasiveDrills); longer project: \(SpeechProjects.persuadeWithStructure.title).")
+                lines.append("- The saved Persuasive voice shapes recommendations and feedback.")
+                lines.append("- Chat cannot submit a product or roadmap request. Never claim that a request was filed.")
             }
         }
         lines.append("")
@@ -3231,6 +3254,17 @@ enum CoachContextBuilder {
         var kind: Kind
     }
 
+    /// A tiny clarification turn should keep the immediately preceding goal
+    /// proposal alive. These exact forms carry no new intent of their own; they
+    /// ask the coach to explain the proposal the user is looking at.
+    static func isBareClarificationTurn(_ text: String) -> Bool {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return ["?", "what?", "why?", "how so?", "what do you mean?"].contains(normalized)
+    }
+
     /// Lowercased keyword aliases per voice. A user rarely types the exact
     /// `rawValue` or display title — they say "commanding", "boardroom",
     /// "vivid". `SpeakingStyleGoal.resolve` covers rawValue + title; this map
@@ -3633,7 +3667,7 @@ enum CoachContextBuilder {
                         id: "set.\(target.rawValue)",
                         label: "Set \(target.title)",
                         action: .set(target),
-                        dispatchText: "Set my voice to \(target.title)."
+                        dispatchText: "\(target.title) is now my coaching voice. Give me one way to practise it."
                     ),
                     GoalProposalChip(
                         id: "decline",
@@ -3649,7 +3683,7 @@ enum CoachContextBuilder {
                     id: "set.\(voice.rawValue)",
                     label: voice.title,
                     action: .set(voice),
-                    dispatchText: "Set my voice to \(voice.title)."
+                    dispatchText: "\(voice.title) is now my coaching voice. Give me one way to practise it."
                 )
             }
             chips.append(
@@ -3670,7 +3704,7 @@ enum CoachContextBuilder {
                         id: "switch.\(target.rawValue)",
                         label: "Switch to \(target.title)",
                         action: .switchTo(target),
-                        dispatchText: "Switch my voice to \(target.title)."
+                        dispatchText: "\(target.title) is now my coaching voice. Give me one way to practise it."
                     )
                 ]
                 // Blend only makes sense when the target differs from current.
@@ -3680,7 +3714,7 @@ enum CoachContextBuilder {
                             id: "blend.\(target.rawValue)",
                             label: "Blend \(current.title) + \(target.title)",
                             action: .blend(target),
-                            dispatchText: "Blend my \(current.title) voice with \(target.title)."
+                            dispatchText: "I’m now blending \(current.title) with \(target.title). Give me one way to practise that mix."
                         )
                     )
                 }
@@ -3703,7 +3737,7 @@ enum CoachContextBuilder {
                         id: "switch.\(voice.rawValue)",
                         label: voice.title,
                         action: .switchTo(voice),
-                        dispatchText: "Switch my voice to \(voice.title)."
+                        dispatchText: "\(voice.title) is now my coaching voice. Give me one way to practise it."
                     )
                 }
             chips.append(
