@@ -6617,6 +6617,16 @@ struct CoachChatConversationCorpusTests {
         surface: CoachReplySurface
     ) async -> [CoachChatConversationAppPathReportRow] {
         var rows: [CoachChatConversationAppPathReportRow] = []
+        let previousBaseline = BaselineStore.shared.baseline
+        let previousPressureProfile = BaselineStore.shared.pressureProfile
+        let previousRating = RatingStore.shared.rating
+        defer {
+            BaselineStore.shared.replaceForDebug(
+                previousBaseline,
+                pressureProfile: previousPressureProfile
+            )
+            RatingStore.shared.replaceForDebug(previousRating)
+        }
         let sourceGitCommit = Self.sourceGitCommitForAppPathTrace(
             dumpDirectory: Self.evaluationArtifactDumpDirectory()
         )
@@ -6696,6 +6706,13 @@ struct CoachChatConversationCorpusTests {
             // every turn to the thin-evidence 0.20 floor. This mirrors the shipping
             // precondition that Ask Noum chat happens after a baseline exists.
             let sourceSessions = sourceFixture?.sessions ?? []
+            BaselineStore.shared.replaceForDebug(
+                BaselineEngine.computeWithClutchWords(from: sourceSessions),
+                pressureProfile: BaselineEngine.computePressureProfile(from: sourceSessions)
+            )
+            RatingStore.shared.endSession()
+            CoachAssessmentCache.shared.invalidate()
+            UserTrajectoryCache.shared.invalidate()
             var turnRows: [CoachChatConversationAppPathTurnRow] = []
 
             for (index, turn) in conversation.turns.enumerated() {

@@ -2237,6 +2237,20 @@ final class BaselineStore: ObservableObject {
         UserTrajectoryCache.shared.invalidate()
     }
 
+    #if DEBUG
+    /// Process-local injection for deterministic UI/evaluation fixtures. Unlike
+    /// `rebuild`, this does not persist the fixture into the simulator's account
+    /// defaults, so a source-bound evidence run cannot contaminate the next run.
+    func replaceForDebug(
+        _ baseline: CommunicationBaseline,
+        pressureProfile: PressureProfile
+    ) {
+        self.baseline = baseline
+        self.pressureProfile = pressureProfile
+        UserTrajectoryCache.shared.invalidate()
+    }
+    #endif
+
     func endSession() {
         baseline = .empty
         pressureProfile = .empty
