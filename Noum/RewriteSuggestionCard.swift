@@ -121,7 +121,8 @@ struct RewriteSuggestionCard: View {
                 eyebrow: "WHAT I HEARD",
                 text: Text(originalSnippet),
                 detail: "Verified from this rep",
-                tint: .secondary
+                tint: .secondary,
+                identifier: "rewrite.original"
             )
 
             ladderRung(
@@ -131,7 +132,8 @@ struct RewriteSuggestionCard: View {
                     revision: oneStep.text
                 ),
                 detail: "Changed words are highlighted · meaning and voice preserved",
-                tint: AppColor.pro
+                tint: AppColor.pro,
+                identifier: "rewrite.oneStep"
             )
 
             if let aspirationalRewrite {
@@ -142,7 +144,8 @@ struct RewriteSuggestionCard: View {
                         revision: aspirationalRewrite.text
                     ),
                     detail: "A direction to grow toward — not the next rep target",
-                    tint: AppColor.brandBlue
+                    tint: AppColor.brandBlue,
+                    identifier: "rewrite.aspirational"
                 )
             }
 
@@ -197,7 +200,8 @@ struct RewriteSuggestionCard: View {
         eyebrow: String,
         text: Text,
         detail: String,
-        tint: Color
+        tint: Color,
+        identifier: String
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(eyebrow)
@@ -220,6 +224,7 @@ struct RewriteSuggestionCard: View {
                 .stroke(tint.opacity(0.22), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
     }
 
     private var failureState: some View {

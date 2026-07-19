@@ -49,58 +49,42 @@ final class GoalOutcomeLoopUITests: XCTestCase {
     }
 
     @MainActor
-    func testOnDeviceRewriteCanBeSavedAndOpenedFromSummary() throws {
+    func testTranscriptLadderPractisesOneStepRewriteFromSummary() throws {
         let app = XCUIApplication()
         app.launchArguments += [
             "UI_TESTING",
             "UI_TESTING_SEED_FORCE",
             "UI_TESTING_PREMIUM",
+            "UI_TESTING_REWRITE_LADDER",
+            "UI_TESTING_SEED_PROFILE", "plateauedAdvanced",
             "-DeepLink", "noum://summary"
         ]
         app.launch()
 
         dismissProgressionIfNeeded(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["summary.postRepVerdict"].waitForExistence(timeout: 15))
-        openDetails(in: app)
 
         let onDevice = app.descendants(matching: .any)["rewrite.onDevice"]
         scrollUntilHittable(onDevice, in: app, attempts: 20)
         XCTAssertTrue(onDevice.waitForExistence(timeout: 12))
 
-        let save = app.buttons["rewrite.savePhrase"]
-        scrollUntilHittable(save, in: app, attempts: 6)
-        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["rewrite.original"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["rewrite.oneStep"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["rewrite.aspirational"].waitForExistence(timeout: 5))
+
         let rewriteAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        rewriteAttachment.name = "on-device-rewrite-card"
+        rewriteAttachment.name = "transcript-ladder"
         rewriteAttachment.lifetime = .keepAlways
         add(rewriteAttachment)
-        save.tap()
 
-        let phraseBank = app.buttons["rewrite.phraseBank"]
-        scrollUntilHittable(phraseBank, in: app, attempts: 6)
-        XCTAssertTrue(phraseBank.waitForExistence(timeout: 5))
-        phraseBank.tap()
-        XCTAssertTrue(app.staticTexts["Phrase bank"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["No saved phrases"].exists)
-
-        let practicePhrase = app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH %@", "phraseBank.practice.")
-        ).firstMatch
-        XCTAssertTrue(
-            practicePhrase.waitForExistence(timeout: 5),
-            "A saved rewrite should be practiceable through the existing Timed handoff."
-        )
-        XCTAssertGreaterThanOrEqual(practicePhrase.frame.height, 44)
-
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "on-device-rewrite-phrase-bank"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        practicePhrase.tap()
+        let practice = app.buttons["rewrite.practiceOneStep"]
+        scrollUntilHittable(practice, in: app, attempts: 6)
+        XCTAssertTrue(practice.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(practice.frame.height, 44)
+        practice.tap()
         XCTAssertTrue(
             app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
-            "Practising a saved phrase should launch the existing Timed destination."
+            "The one-step ladder rung should launch the existing targeted Timed destination."
         )
     }
 

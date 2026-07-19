@@ -91,7 +91,27 @@ enum DevSeedData {
     /// Inject a seed profile into the live stores. Replaces current data.
     @MainActor
     static func injectProfile(_ profile: SeedProfile) {
-        let sessions = sessions(for: profile)
+        var sessions = sessions(for: profile)
+
+        // The normal improving-intermediate showcase ends with an already
+        // polished answer. The conservative on-device rewrite correctly
+        // withholds a cosmetic edit for that transcript, so the transcript-
+        // ladder UI test opts into one safely editable final rep. This remains
+        // a real PracticeSession in the established store; it does not add a
+        // test-only rewrite service or bypass the production eligibility gate.
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_REWRITE_LADDER"),
+           !sessions.isEmpty {
+            let previous = sessions.removeLast()
+            sessions.append(makeSession(
+                transcript: "Um, so I think the release should start next week because the support team has time to prepare. The customer message needs one clear decision.",
+                fillers: 1,
+                duration: previous.duration,
+                date: previous.date,
+                mode: previous.mode,
+                score: previous.score ?? 7,
+                pressure: previous.pressureLevel
+            ))
+        }
 
         // Write sessions to the store
         let store = PracticeSessionStore.shared

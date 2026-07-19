@@ -296,6 +296,15 @@ struct SummaryView: View {
     /// emphasis, confidence) — those are practice-mode interventions,
     /// not rewrite-the-script ones.
     private var primaryWeakness: AIRewriteService.Weakness? {
+        #if DEBUG
+        // The deterministic transcript-ladder UI fixture needs a rewriteable
+        // dimension even if the surrounding seeded trend would prescribe a
+        // delivery drill. Production continues to take the live drill-engine
+        // result below; eligibility and rewrite guards are never bypassed.
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_REWRITE_LADDER") {
+            return .opening
+        }
+        #endif
         switch drillRecommendationV2.skillArea {
         case .openingStrength:    return .opening
         case .closingStrength:    return .closing

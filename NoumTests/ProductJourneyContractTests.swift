@@ -5,6 +5,30 @@ import Testing
 @Suite("Product journey contracts", .serialized)
 struct ProductJourneyContractTests {
 
+    @Test("Transcript ladder UI fixture has two safe bounded rewrites")
+    func transcriptLadderUITestFixtureIsRewriteable() throws {
+        let transcript = "Um, so I think the release should start next week because the support team has time to prepare. The customer message needs one clear decision."
+        let oneStep = try #require(AIRewriteService.onDeviceRewrite(
+            transcript: transcript,
+            weakness: .opening,
+            voice: .authoritative,
+            intensity: .medium,
+            confidence: nil
+        ))
+        let aspiration = try #require(AIRewriteService.onDeviceRewrite(
+            transcript: transcript,
+            weakness: .opening,
+            voice: .authoritative,
+            intensity: .strong,
+            confidence: nil
+        ))
+
+        #expect(oneStep.source == .onDevice)
+        #expect(aspiration.source == .onDevice)
+        #expect(oneStep.text != transcript)
+        #expect(aspiration.text != oneStep.text)
+    }
+
     @Test("Transcript ladder highlights only the changed lever")
     func transcriptLadderDiffUsesSequenceNotWordSet() {
         let changed = TranscriptChangeHighlighter.changedWordIndexes(
