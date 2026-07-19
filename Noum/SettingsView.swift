@@ -1626,6 +1626,24 @@ struct SettingsView: View {
                     value: kpis.prescriptionAcceptanceRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
                 )
             }
+            HStack {
+                compactStat(
+                    title: "Ladder → retry",
+                    value: kpis.transcriptLadderAcceptanceRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+                Spacer()
+                compactStat(
+                    title: "Retry → compared",
+                    value: kpis.transcriptRetryComparisonCompletionRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+            }
+            HStack {
+                compactStat(
+                    title: "Target improved",
+                    value: kpis.transcriptTargetImprovementRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+                Spacer()
+            }
             Text("Account-local diagnostic signals. No transcript, advertising identifier, or third-party analytics SDK is used.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1690,6 +1708,54 @@ struct SettingsView: View {
                     .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Coach trace \(String(trace.correlationId.uuidString.prefix(8))), \(trace.terminalState?.rawValue ?? "in flight"), \(trace.events.count) stages")
+                }
+            }
+            Divider()
+            Text("Training loop traces")
+                .font(.caption.weight(.semibold))
+            let trainingTraces = flowEvents.recentTranscriptPracticeTraces(limit: 3)
+            if trainingTraces.isEmpty {
+                Text("No transcript-ladder retry traces yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(trainingTraces) { trace in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(String(trace.correlationId.uuidString.prefix(8)))
+                                .font(.caption.monospaced().weight(.semibold))
+                            Spacer()
+                            Text(trace.result?.rawValue ?? "in flight")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(trace.result == .regressed ? AppColor.warning : AppColor.textSecondary)
+                        }
+                        HStack(spacing: Spacing.xs) {
+                            Text("\(trace.events.count) stages")
+                            if let latencyMs = trace.latencyMs {
+                                Text("· \(latencyMs) ms")
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        Text(trace.events.map(\.stage).joined(separator: " → "))
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                        Button {
+                            copyTraceID(trace.correlationId)
+                        } label: {
+                            Label("Copy trace ID", systemImage: "number")
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(AppColor.brandBlue)
+                    }
+                    .padding(Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Training trace \(String(trace.correlationId.uuidString.prefix(8))), \(trace.result?.rawValue ?? "in flight"), \(trace.events.count) stages")
                 }
             }
             Divider()

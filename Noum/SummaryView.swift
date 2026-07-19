@@ -221,6 +221,20 @@ struct SummaryView: View {
         currentStoredSession
     }
 
+    private var currentTranscriptRetryOutcome: RecommendationOutcome? {
+        guard let sessionID = currentStoredSession?.id else { return nil }
+        return recommendationLearningStore.outcomes.first {
+            $0.sessionID == sessionID && $0.transcriptRetryTarget != nil
+        }
+    }
+
+    private var currentTranscriptRetrySource: PracticeSession? {
+        guard let sourceID = currentTranscriptRetryOutcome?.sourceSessionID else {
+            return nil
+        }
+        return sessionStore.sessions.first { $0.id == sourceID }
+    }
+
     private var coachScoreEvidence: Int? {
         lockedScore ?? score ?? currentMetricSession?.score
     }
@@ -330,7 +344,8 @@ struct SummaryView: View {
     /// rewriting a script — so most reps show nothing here at all.
     @ViewBuilder
     private var rewriteSection: some View {
-        if currentRepIsProgressEligible,
+        if currentTranscriptRetryOutcome == nil,
+           currentRepIsProgressEligible,
            let weakness = primaryWeakness,
            AIRewriteService.eligibility(
                transcript: transcriptText,
@@ -341,13 +356,37 @@ struct SummaryView: View {
                 RewriteSuggestionCard(
                     transcript: transcriptText,
                     weakness: weakness,
+                    sourceSessionID: currentStoredSession?.id,
                     targetDimension: goalOutcomeRead?.nextDimension?.label,
+                    targetDimensionID: goalOutcomeRead?.nextDimension?.dimensionID,
+                    goal: goalOutcomeRead?.style,
                     transcriptConfidence: currentStoredSession?.transcriptConfidence,
                     onPracticePhrase: onStartLookingAhead.map { launch in
                         { intent in
                             guard let token = TimedPracticePromptHandoff.shared.offerToken(
                                 intent.suggestedPrompt
                             ) else { return }
+                            launch(.timedPracticePrompt(token: token))
+                        }
+                    },
+                    onPracticeRewrite: onStartLookingAhead.map { launch in
+                        { prescription in
+                            guard let token = TimedPracticePromptHandoff.shared
+                                .offerTranscriptRetryToken(prescription) else { return }
+                            recommendationLearningStore.recordShown(
+                                fingerprint: prescription.fingerprint,
+                                title: prescription.title,
+                                focus: prescription.focus,
+                                target: prescription.target,
+                                mode: .timed,
+                                isAIBacked: true,
+                                goal: prescription.goal,
+                                targetDimensionID: prescription.targetDimensionID,
+                                sourceSessionID: prescription.sourceSessionID,
+                                observabilityID: prescription.correlationID,
+                                transcriptRetryTarget: prescription.retryTarget
+                            )
+                            recommendationLearningStore.markTapped(mode: .timed)
                             launch(.timedPracticePrompt(token: token))
                         }
                     }
@@ -362,6 +401,19 @@ struct SummaryView: View {
                     onUpgrade: { showPaywall = true }
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private var transcriptRetryComparisonSection: some View {
+        if let outcome = currentTranscriptRetryOutcome,
+           let retrySession = currentStoredSession {
+            TranscriptRetryComparisonCard(
+                outcome: outcome,
+                sourceSession: currentTranscriptRetrySource,
+                retrySession: retrySession,
+                intervention: coachMemoryStore.currentMemory?.activeIntervention
+            )
         }
     }
 
@@ -972,9 +1024,10 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
-                            rewriteSection.cardEntrance(2)
+                            transcriptRetryComparisonSection.cardEntrance(2)
+                            rewriteSection.cardEntrance(3)
                             reviewExperimentActionCard
-                            .cardEntrance(3)
+                            .cardEntrance(4)
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
@@ -986,9 +1039,9 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
-                            .cardEntrance(4)
-                            expandableDetailsSection.cardEntrance(5)
-                            SummaryExitPanel(onDone: onHome).cardEntrance(6)
+                            .cardEntrance(5)
+                            expandableDetailsSection.cardEntrance(6)
+                            SummaryExitPanel(onDone: onHome).cardEntrance(7)
                         } else {
                             // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
                             // The post-rep attention budget is small; only the
@@ -1039,9 +1092,10 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
-                            rewriteSection.cardEntrance(2)
+                            transcriptRetryComparisonSection.cardEntrance(2)
+                            rewriteSection.cardEntrance(3)
                             reviewExperimentActionCard
-                            .cardEntrance(3)
+                            .cardEntrance(4)
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
@@ -1053,9 +1107,9 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
-                            .cardEntrance(4)
-                            expandableDetailsSection.cardEntrance(5)
-                            SummaryExitPanel(onDone: onHome).cardEntrance(6)
+                            .cardEntrance(5)
+                            expandableDetailsSection.cardEntrance(6)
+                            SummaryExitPanel(onDone: onHome).cardEntrance(7)
                         }
                     }
                     .padding(.horizontal, 16)

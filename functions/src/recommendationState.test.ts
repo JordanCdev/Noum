@@ -269,3 +269,68 @@ test("legacy mode-only outcomes remain readable but carry no adherence proof", (
     }],
   })));
 });
+
+test("transcript retry evidence is content-free, bounded, and source-bound", () => {
+  const sourceSessionID = "70000000-0000-4000-8000-000000000001";
+  const retrySessionID = "70000000-0000-4000-8000-000000000002";
+  const target = {schemaVersion: 1, lever: "opening"};
+  const comparison = {
+    schemaVersion: 1,
+    lever: "opening",
+    sourceSessionID,
+    retrySessionID,
+    sourceSignal: 58,
+    retrySignal: 100,
+    meaningOverlapPercent: 82,
+    result: "improved",
+  };
+  const outcome = {
+    id: secondMutationID,
+    fingerprint: "transcript-ladder|opening",
+    title: "Opening upgrade",
+    focus: "opening directness",
+    target: "Lead with the point",
+    mode: "timed",
+    sessionID: retrySessionID,
+    sourceSessionID,
+    observabilityID: firstMutationID,
+    followed: true,
+    adherenceSchemaVersion: 1,
+    completedAt: 1_720_000_010,
+    scoreDelta: 0,
+    fillerDelta: 0,
+    durationDelta: 0,
+    goalFollowUpResult: "earlyImprovement",
+    transcriptRetryTarget: target,
+    transcriptRetryComparison: comparison,
+  };
+
+  assert.doesNotThrow(() => validateRecommendationMutation(request({
+    pendingExposure: {
+      fingerprint: "transcript-ladder|opening",
+      title: "Opening upgrade",
+      focus: "opening directness",
+      target: "Lead with the point",
+      mode: "timed",
+      isAIBacked: true,
+      shownAt: 1_720_000_000,
+      sourceSessionID,
+      observabilityID: firstMutationID,
+      adherenceSchemaVersion: 1,
+      transcriptRetryTarget: target,
+    },
+    outcomes: [outcome],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{...outcome, transcriptRetryComparison: {...comparison, lever: "closing"}}],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{...outcome, transcriptRetryComparison: {...comparison, retrySessionID: firstMutationID}}],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{...outcome, transcriptRetryComparison: {...comparison, retrySignal: 101}}],
+  })));
+  assert.throws(() => validateRecommendationMutation(request({
+    outcomes: [{...outcome, transcriptRetryTarget: {...target, transcript: "private words"}}],
+  })));
+});

@@ -9426,6 +9426,9 @@ struct RecommendationExposure: Codable, Equatable, Sendable {
     /// Exact demand shown to the user when the prescription named one. A nil
     /// value on a current schema is an intentionally mode-level prescription.
     var prescribedDemand: PracticeSessionDemand? = nil
+    /// Content-free one-lever retry target for transcript-ladder prescriptions.
+    /// The exact source transcript remains owned by `PracticeSessionStore`.
+    var transcriptRetryTarget: TranscriptRetryTarget? = nil
 }
 
 enum GoalFollowUpResult: String, Codable, Equatable, Sendable {
@@ -9485,6 +9488,11 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
     let targetDimensionID: String?
     let sourceSessionID: UUID?
     let goalFollowUpResult: GoalFollowUpResult?
+    /// Carries the accepted ladder trace through outcome persistence so the
+    /// later memory refresh and Debug viewer can close the same journey.
+    let observabilityID: UUID?
+    let transcriptRetryTarget: TranscriptRetryTarget?
+    let transcriptRetryComparison: TranscriptRetryComparison?
 
     init(
         id: UUID,
@@ -9511,7 +9519,10 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
         goal: SpeakingStyleGoal? = nil,
         targetDimensionID: String? = nil,
         sourceSessionID: UUID? = nil,
-        goalFollowUpResult: GoalFollowUpResult? = nil
+        goalFollowUpResult: GoalFollowUpResult? = nil,
+        observabilityID: UUID? = nil,
+        transcriptRetryTarget: TranscriptRetryTarget? = nil,
+        transcriptRetryComparison: TranscriptRetryComparison? = nil
     ) {
         self.id = id
         self.fingerprint = fingerprint
@@ -9539,11 +9550,15 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable, Sendable {
         self.targetDimensionID = targetDimensionID
         self.sourceSessionID = sourceSessionID
         self.goalFollowUpResult = goalFollowUpResult
+        self.observabilityID = observabilityID
+        self.transcriptRetryTarget = transcriptRetryTarget
+        self.transcriptRetryComparison = transcriptRetryComparison
     }
 
     var hasComparableBaseline: Bool {
-        comparisonSchemaVersion == RecommendationComparisonEngine.schemaVersion
-            && (comparisonSessionCount ?? 0) >= RecommendationComparisonEngine.minimumComparisonSamples
+        transcriptRetryComparison?.isComparable == true
+            || (comparisonSchemaVersion == RecommendationComparisonEngine.schemaVersion
+                && (comparisonSessionCount ?? 0) >= RecommendationComparisonEngine.minimumComparisonSamples)
     }
 
     /// Raw `followed` remains decode-compatible diagnostics. Coaching and KPI
@@ -10414,6 +10429,9 @@ enum RecommendationAdaptationAnalyzer {
 
     private static func hasMovement(_ outcome: RecommendationOutcome) -> Bool {
         guard hasTargetMetric(outcome) else { return false }
+        if let result = outcome.transcriptRetryComparison?.result {
+            return result == .improved || result == .regressed
+        }
         let kind = RecommendationMetricFocus.kind(
             mode: outcome.mode,
             focus: outcome.focus,
@@ -10433,6 +10451,9 @@ enum RecommendationAdaptationAnalyzer {
 
     private static func hasTargetMetric(_ outcome: RecommendationOutcome) -> Bool {
         guard outcome.hasComparableBaseline else { return false }
+        if outcome.transcriptRetryComparison?.isComparable == true {
+            return true
+        }
         switch RecommendationMetricFocus.kind(
             mode: outcome.mode,
             focus: outcome.focus,
@@ -10448,6 +10469,16 @@ enum RecommendationAdaptationAnalyzer {
     }
 
     private static func read(of outcome: RecommendationOutcome) -> Read {
+        // Transcript-ladder prescriptions are judged on the exact lever the
+        // user accepted. A composite score must not override an opening,
+        // closing, structure, or concision retry comparison.
+        if let result = outcome.transcriptRetryComparison?.result {
+            switch result {
+            case .improved: return .favorable
+            case .regressed: return .unfavorable
+            case .held, .needsMoreEvidence: return .neutral
+            }
+        }
         // A pace-focused prescription with recorded pace evidence is judged on
         // pace — the metric it prescribed — never on the composite score.
         let kind = RecommendationMetricFocus.kind(
@@ -10738,6 +10769,9 @@ final class RecommendationLearningStore: ObservableObject {
                 newest.adherenceSchemaVersion = richerAdherence.adherenceSchemaVersion
                 newest.prescribedDemand = richerAdherence.prescribedDemand
             }
+            if newest.transcriptRetryTarget == nil {
+                newest.transcriptRetryTarget = richerAdherence.transcriptRetryTarget
+            }
             let hasMatchingObservabilityID = local.observabilityID.flatMap { localID in
                 remote.observabilityID.map { $0 == localID }
             } ?? false
@@ -10763,7 +10797,10 @@ final class RecommendationLearningStore: ObservableObject {
             outcome.goal.map { _ in 1 },
             outcome.targetDimensionID.map { _ in 1 },
             outcome.sourceSessionID.map { _ in 1 },
-            outcome.goalFollowUpResult.map { _ in 1 }
+            outcome.goalFollowUpResult.map { _ in 1 },
+            outcome.observabilityID.map { _ in 1 },
+            outcome.transcriptRetryTarget.map { _ in 1 },
+            outcome.transcriptRetryComparison.map { _ in 1 }
         ].compactMap { $0 }.count
     }
 
@@ -10912,10 +10949,15 @@ final class RecommendationLearningStore: ObservableObject {
         goal: SpeakingStyleGoal? = nil,
         targetDimensionID: String? = nil,
         sourceSessionID: UUID? = nil,
-        prescribedDemand: PracticeSessionDemand? = nil
+        prescribedDemand: PracticeSessionDemand? = nil,
+        observabilityID: UUID? = nil,
+        transcriptRetryTarget: TranscriptRetryTarget? = nil
     ) {
-        if pendingExposure?.fingerprint == fingerprint { return }
-        let observabilityID = UUID()
+        if pendingExposure?.fingerprint == fingerprint,
+           observabilityID == nil || pendingExposure?.observabilityID == observabilityID {
+            return
+        }
+        let resolvedObservabilityID = observabilityID ?? UUID()
         pendingExposure = RecommendationExposure(
             fingerprint: fingerprint,
             title: title,
@@ -10928,14 +10970,43 @@ final class RecommendationLearningStore: ObservableObject {
             goal: goal,
             targetDimensionID: targetDimensionID,
             sourceSessionID: sourceSessionID,
-            observabilityID: observabilityID,
+            observabilityID: resolvedObservabilityID,
             adherenceSchemaVersion: RecommendationAdherenceContract.schemaVersion,
-            prescribedDemand: prescribedDemand
+            prescribedDemand: prescribedDemand,
+            transcriptRetryTarget: transcriptRetryTarget
         )
         advanceStateRevision(markSyncUnconfirmed: true)
         persistPending()
         syncIfPossible()
-        FlowEventLog.shared.recordPrescriptionShown(correlationId: observabilityID)
+        FlowEventLog.shared.recordPrescriptionShown(correlationId: resolvedObservabilityID)
+    }
+
+    /// Restores the exact accepted transcript prescription when its one-shot
+    /// Timed Practice route is consumed. This is deliberately content-free:
+    /// the suggested words remain in `TimedPracticePromptHandoff`, while this
+    /// owner retains only the coaching target and source provenance needed to
+    /// compare the completed retry.
+    func ensureTranscriptRetryAccepted(_ intent: TranscriptPracticeIntent) {
+        let alreadyAuthoritative = pendingExposure?.fingerprint == intent.fingerprint
+            && pendingExposure?.observabilityID == intent.correlationID
+            && pendingExposure?.transcriptRetryTarget == intent.retryTarget
+
+        if !alreadyAuthoritative {
+            recordShown(
+                fingerprint: intent.fingerprint,
+                title: intent.title,
+                focus: intent.focus,
+                target: intent.target,
+                mode: .timed,
+                isAIBacked: true,
+                goal: intent.goal,
+                targetDimensionID: intent.targetDimensionID,
+                sourceSessionID: intent.sourceSessionID,
+                observabilityID: intent.correlationID,
+                transcriptRetryTarget: intent.retryTarget
+            )
+        }
+        markTapped(mode: .timed)
     }
 
     func markTapped(mode: PracticeMode) {
@@ -10973,6 +11044,12 @@ final class RecommendationLearningStore: ObservableObject {
             for: session,
             previousSessions: history
         )
+        let transcriptRetryComparison = Self.transcriptRetryComparison(
+            for: pendingExposure,
+            completedSession: session,
+            previousSessions: history,
+            followed: followed
+        )
 
         let outcome = RecommendationOutcome(
             id: UUID(),
@@ -11000,6 +11077,8 @@ final class RecommendationLearningStore: ObservableObject {
             sourceSessionID: pendingExposure.sourceSessionID,
             goalFollowUpResult: Self.goalFollowUpResult(
                 followed: followed,
+                transcriptRetryResult: transcriptRetryComparison?.result,
+                hadTranscriptRetryTarget: pendingExposure.transcriptRetryTarget != nil,
                 comparableScoreDelta: comparison.scoreDelta,
                 fillerRateDelta: comparison.fillerRateDelta,
                 comparablePaceDelta: comparison.paceDelta,
@@ -11008,7 +11087,10 @@ final class RecommendationLearningStore: ObservableObject {
                 title: pendingExposure.title,
                 focus: pendingExposure.focus,
                 wordsPerMinute: comparison.wordsPerMinute
-            )
+            ),
+            observabilityID: pendingExposure.observabilityID,
+            transcriptRetryTarget: pendingExposure.transcriptRetryTarget,
+            transcriptRetryComparison: transcriptRetryComparison
         )
 
         outcomes.insert(outcome, at: 0)
@@ -11018,6 +11100,18 @@ final class RecommendationLearningStore: ObservableObject {
         persistOutcomes()
         persistPending()
         syncIfPossible()
+        if followed,
+           pendingExposure.transcriptRetryTarget != nil,
+           let observabilityID = pendingExposure.observabilityID {
+            FlowEventLog.shared.recordTranscriptRetryCompleted(
+                correlationId: observabilityID
+            )
+            FlowEventLog.shared.recordTranscriptTargetCompared(
+                correlationId: observabilityID,
+                result: transcriptRetryComparison?.result ?? .needsMoreEvidence,
+                comparison: transcriptRetryComparison
+            )
+        }
     }
 
     nonisolated static func followedPrescription(
@@ -11036,8 +11130,29 @@ final class RecommendationLearningStore: ObservableObject {
             && prescribedDemand == completedSession.practiceDemand
     }
 
+    nonisolated static func transcriptRetryComparison(
+        for exposure: RecommendationExposure,
+        completedSession: PracticeSession,
+        previousSessions: [PracticeSession],
+        followed: Bool
+    ) -> TranscriptRetryComparison? {
+        guard followed,
+              let target = exposure.transcriptRetryTarget,
+              let sourceSessionID = exposure.sourceSessionID,
+              let source = previousSessions.first(where: { $0.id == sourceSessionID }) else {
+            return nil
+        }
+        return TranscriptRetryComparator.compare(
+            source: source,
+            retry: completedSession,
+            target: target
+        )
+    }
+
     nonisolated static func goalFollowUpResult(
         followed: Bool,
+        transcriptRetryResult: TranscriptRetryResult? = nil,
+        hadTranscriptRetryTarget: Bool = false,
         comparableScoreDelta: Double?,
         fillerRateDelta: Double?,
         comparablePaceDelta: Double?,
@@ -11047,7 +11162,17 @@ final class RecommendationLearningStore: ObservableObject {
         focus: String? = nil,
         wordsPerMinute: Double? = nil
     ) -> GoalFollowUpResult? {
-        guard followed,
+        guard followed else { return nil }
+        if let transcriptRetryResult {
+            switch transcriptRetryResult {
+            case .improved: return .earlyImprovement
+            case .held: return .held
+            case .regressed: return .mixed
+            case .needsMoreEvidence: return .needsMoreEvidence
+            }
+        }
+        if hadTranscriptRetryTarget { return .needsMoreEvidence }
+        guard
               comparisonSessionCount >= RecommendationComparisonEngine.minimumComparisonSamples else { return nil }
         let movements: [Int]
         let metricKind = mode.map {

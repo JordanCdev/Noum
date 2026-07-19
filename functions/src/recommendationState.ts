@@ -35,6 +35,13 @@ const TIMED_DIFFICULTIES = new Set(["free", "easy", "medium", "hard"]);
 const PRESSURE_DIFFICULTIES = new Set(["easy", "medium", "hard"]);
 const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const RECOMMENDATION_ADHERENCE_SCHEMA_VERSION = 1;
+const TRANSCRIPT_RETRY_SCHEMA_VERSION = 1;
+const TRANSCRIPT_RETRY_LEVERS = new Set([
+  "opening", "closing", "structure", "concise",
+]);
+const TRANSCRIPT_RETRY_RESULTS = new Set([
+  "improved", "held", "regressed", "needsMoreEvidence",
+]);
 
 type JsonMap = Record<string, unknown>;
 
@@ -177,12 +184,55 @@ function validateDemand(
   throw new HttpsError("invalid-argument", `${field} is invalid.`);
 }
 
+function validateTranscriptRetryTarget(
+  value: unknown,
+  field: string
+): JsonMap | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || !hasOnlyKeys(value, ["schemaVersion", "lever"]) ||
+      value.schemaVersion !== TRANSCRIPT_RETRY_SCHEMA_VERSION ||
+      !TRANSCRIPT_RETRY_LEVERS.has(requiredString(value.lever, `${field}.lever`, 32))) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  return value;
+}
+
+function validateTranscriptRetryComparison(
+  value: unknown,
+  field: string
+): JsonMap | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "schemaVersion", "lever", "sourceSessionID", "retrySessionID",
+    "sourceSignal", "retrySignal", "meaningOverlapPercent", "result",
+  ]) || value.schemaVersion !== TRANSCRIPT_RETRY_SCHEMA_VERSION ||
+      !TRANSCRIPT_RETRY_LEVERS.has(requiredString(value.lever, `${field}.lever`, 32)) ||
+      !TRANSCRIPT_RETRY_RESULTS.has(requiredString(value.result, `${field}.result`, 32))) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  optionalUUID(value.sourceSessionID, `${field}.sourceSessionID`);
+  optionalUUID(value.retrySessionID, `${field}.retrySessionID`);
+  if (value.sourceSessionID === undefined || value.sourceSessionID === null ||
+      value.retrySessionID === undefined || value.retrySessionID === null ||
+      value.sourceSessionID === value.retrySessionID) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  for (const key of ["sourceSignal", "retrySignal", "meaningOverlapPercent"]) {
+    const signal = boundedNumber(value[key], `${field}.${key}`, 0, 100);
+    if (!Number.isSafeInteger(signal)) {
+      throw new HttpsError("invalid-argument", `${field}.${key} is invalid.`);
+    }
+  }
+  return value;
+}
+
 function validateExposure(value: unknown): JsonMap | null {
   if (value === null) return null;
   if (!isRecord(value) || !hasOnlyKeys(value, [
     "fingerprint", "title", "focus", "target", "mode", "isAIBacked",
     "shownAt", "tappedAt", "goal", "targetDimensionID", "sourceSessionID",
     "observabilityID", "adherenceSchemaVersion", "prescribedDemand",
+    "transcriptRetryTarget",
   ])) {
     throw new HttpsError("invalid-argument", "pendingExposure is invalid.");
   }
@@ -232,6 +282,10 @@ function validateExposure(value: unknown): JsonMap | null {
     "pendingExposure.prescribedDemand",
     mode
   );
+  validateTranscriptRetryTarget(
+    value.transcriptRetryTarget,
+    "pendingExposure.transcriptRetryTarget"
+  );
   if (prescribedDemand !== null &&
       value.adherenceSchemaVersion !== RECOMMENDATION_ADHERENCE_SCHEMA_VERSION) {
     throw new HttpsError(
@@ -251,7 +305,8 @@ function validateOutcome(value: unknown, index: number): JsonMap {
     "fillerRateDelta", "fillerDelta", "durationDelta",
     "comparisonSessionCount", "comparisonSchemaVersion", "wordsPerMinute",
     "paceDelta", "goal", "targetDimensionID", "sourceSessionID",
-    "goalFollowUpResult",
+    "goalFollowUpResult", "observabilityID", "transcriptRetryTarget",
+    "transcriptRetryComparison",
   ])) {
     throw new HttpsError("invalid-argument", `${field} is invalid.`);
   }
@@ -347,6 +402,22 @@ function validateOutcome(value: unknown, index: number): JsonMap {
   }
   optionalString(value.targetDimensionID, `${field}.targetDimensionID`, 120);
   optionalUUID(value.sourceSessionID, `${field}.sourceSessionID`);
+  optionalUUID(value.observabilityID, `${field}.observabilityID`);
+  const transcriptRetryTarget = validateTranscriptRetryTarget(
+    value.transcriptRetryTarget,
+    `${field}.transcriptRetryTarget`
+  );
+  const transcriptRetryComparison = validateTranscriptRetryComparison(
+    value.transcriptRetryComparison,
+    `${field}.transcriptRetryComparison`
+  );
+  if (transcriptRetryComparison !== null &&
+      (transcriptRetryTarget === null ||
+       transcriptRetryTarget.lever !== transcriptRetryComparison.lever ||
+       value.sourceSessionID !== transcriptRetryComparison.sourceSessionID ||
+       value.sessionID !== transcriptRetryComparison.retrySessionID)) {
+    throw new HttpsError("invalid-argument", `${field}.transcriptRetryComparison is invalid.`);
+  }
   if (value.goalFollowUpResult !== undefined &&
       value.goalFollowUpResult !== null &&
       !FOLLOW_UP_RESULTS.has(requiredString(

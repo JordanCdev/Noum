@@ -2599,14 +2599,14 @@ struct CoachChatConversationCorpusTests {
 
         #expect(report.schemaVersion == CoachChatConversationCorpus.reportSchemaVersion)
         #expect(report.conversationCount == CoachChatConversationCorpus.conversations.count)
-        #expect(report.visionProductionReadiness.score == 18)
+        #expect(report.visionProductionReadiness.score == 20)
         #expect(report.visionProductionReadiness.maximumAllowedScore == 20)
         #expect(report.visionProductionReadiness.claim == .localEvaluationSubstrateOnly)
         #expect(!report.visionProductionReadiness.productionReady)
         #expect(report.visionProductionReadiness.blockers.contains(.noProfessionalCoachCalibration))
         #expect(json.contains("\"schemaVersion\":\"coach-chat-conversation-eval-v10\""))
         #expect(json.contains("\"visionProductionReadiness\""))
-        #expect(json.contains("\"score\":18"))
+        #expect(json.contains("\"score\":20"))
         #expect(json.contains("\"maximumAllowedScore\":20"))
         #expect(json.contains("\"claim\":\"localEvaluationSubstrateOnly\""))
         #expect(json.contains("\"noRealUserLongitudinalTransferOutcomes\""))
@@ -2684,7 +2684,7 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.runtimeIssueCounts.isEmpty)
         #expect(report.summary.semanticIssueCounts.isEmpty)
         #expect(report.summary.reliabilityIssueCounts.isEmpty)
-        #expect(report.visionProductionReadiness.score == 18)
+        #expect(report.visionProductionReadiness.score == 20)
         #expect(report.visionProductionReadiness.maximumAllowedScore == 20)
         #expect(report.visionProductionReadiness.claim == .localEvaluationSubstrateOnly)
         #expect(!report.visionProductionReadiness.productionReady)
@@ -2727,7 +2727,7 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.reliabilityIssueCounts["silentPlanSwitch", default: 0] >= 1)
         #expect(report.summary.reliabilityIssueCounts["repairCarryoverBreak", default: 0] >= 1)
         #expect(report.summary.reliabilityIssueCounts["repetitiveDiscourseMove", default: 0] >= 1)
-        #expect(report.visionProductionReadiness.score <= 18)
+        #expect(report.visionProductionReadiness.score <= 20)
         #expect(!report.visionProductionReadiness.productionReady)
         #expect(report.rows.contains { row in
             row.missed.contains(CoachChatConversationCriterion.discourseMoveDiversity.rawValue)
@@ -3014,7 +3014,7 @@ struct CoachChatConversationCorpusTests {
             CoachChatConversationAppPathWarning.weakProofTestVariety.rawValue
         ))
         #expect(appPathTurns.contains { !$0.qualityGateEvents.isEmpty })
-        #expect(report.visionProductionReadiness.score <= 18)
+        #expect(report.visionProductionReadiness.score <= 20)
         #expect(report.visionProductionReadiness.maximumAllowedScore == 20)
         #expect(report.visionProductionReadiness.claim == .localEvaluationSubstrateOnly)
         #expect(!report.visionProductionReadiness.productionReady)
@@ -3191,7 +3191,7 @@ struct CoachChatConversationCorpusTests {
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.weakProofTestVariety.rawValue
         ))
-        #expect(report.visionProductionReadiness.score <= 18)
+        #expect(report.visionProductionReadiness.score <= 20)
         #expect(report.visionProductionReadiness.maximumAllowedScore == 20)
         #expect(report.visionProductionReadiness.claim == .localEvaluationSubstrateOnly)
         #expect(!report.visionProductionReadiness.productionReady)
@@ -3423,7 +3423,7 @@ struct CoachChatConversationCorpusTests {
         let cleanRealUserTransfer = realUserTransferRow?.status == .earned
         let cleanRealDevice = realDeviceRow?.status == .earned
         let cleanOperationalLaunch = operationalRow?.status == .earned
-        let rawExpectedScore = 18 +
+        let rawExpectedScore = 20 +
             (cleanLiveProviderSweep ? 16 : 0) +
             (cleanProfessionalCalibration ? 20 : 0) +
             (cleanRealUserTransfer ? 26 : 0) +
@@ -5158,7 +5158,7 @@ struct CoachChatConversationCorpusTests {
         #expect(rejectedRowsByKey["liveProviderTranscriptSweep"]?.blocker == .noLiveProviderTranscriptSweep)
         #expect(rejectedRowsByKey["liveProviderTranscriptSweep"]?.notes.contains("rejected") == true)
         #expect(rejectedManifest.audit.blockers.contains(.noLiveProviderTranscriptSweep))
-        #expect(rejectedManifest.audit.score == 18)
+        #expect(rejectedManifest.audit.score == 20)
     }
 
     @MainActor
@@ -7022,7 +7022,7 @@ struct CoachVisionProductionReadinessAuditTests {
         #expect(expertPacket.humanGateStatus == .pendingExpertReview)
         #expect(expertPacket.conversationCount == CoachProfessionalCalibrationEvidence.requiredConversationIDs.count)
         #expect(localTargetShapeScore >= 80)
-        #expect(audit.score == 18)
+        #expect(audit.score == 20)
         #expect(audit.maximumAllowedScore == 20)
         #expect(audit.score < localTargetShapeScore / 4)
         #expect(audit.claim == .localEvaluationSubstrateOnly)
@@ -7035,7 +7035,7 @@ struct CoachVisionProductionReadinessAuditTests {
             .operationalLaunchChecklistIncomplete
         ])
         #expect(audit.summary.contains("local target-shape"))
-        #expect(audit.summary.contains("18/100"))
+        #expect(audit.summary.contains("20/100"))
     }
 
     @Test func productionReadyClaimRequiresValidationEvidenceNotJustFixtures() {
@@ -7050,6 +7050,7 @@ struct CoachVisionProductionReadinessAuditTests {
                 localAdversarialRowsRejectedByProductionFloor: 10,
                 appPathImmediateReadVerified: true,
                 appPathProofTestProgressionVerified: true,
+                transcriptPracticeLoopVerified: true,
                 liveProviderRowsPassingFloor: CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount,
                 professionalCoachCalibrationRows: CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount,
                 realUserLongitudinalOutcomeCount: 12,

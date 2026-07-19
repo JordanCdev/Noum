@@ -46,6 +46,10 @@ enum TransformationKPIEventStage {
     static let profileSetupTapped = "activation.profileSetupTapped"
     static let prescriptionShown = "prescription.shown"
     static let prescriptionAccepted = "prescription.accepted"
+    static let transcriptLadderShown = "transcriptLadder.shown"
+    static let transcriptRetryCompleted = "transcriptRetry.completed"
+    static let transcriptTargetCompared = "transcriptRetry.targetCompared"
+    static let transcriptInterventionUpdated = "transcriptRetry.interventionUpdated"
     static let cloudTranscriptionResolvedCloud = "transcription.cloudResolvedCloud"
     static let cloudTranscriptionResolvedLocal = "transcription.cloudResolvedLocal"
     static let localTranscriptionResolvedLocal = "transcription.localResolvedLocal"
@@ -128,6 +132,26 @@ struct CoachDebugTrace: Identifiable, Equatable {
     func elapsedMs(for event: FlowEvent) -> Int? {
         guard let startedAt = events.first?.createdAt else { return nil }
         return max(0, Int(event.createdAt.timeIntervalSince(startedAt) * 1_000))
+    }
+}
+
+struct TranscriptPracticeDebugTrace: Identifiable, Equatable {
+    let correlationId: UUID
+    let events: [FlowEvent]
+
+    var id: UUID { correlationId }
+
+    var result: TranscriptRetryResult? {
+        events.reversed()
+            .first(where: { $0.stage == TransformationKPIEventStage.transcriptTargetCompared })
+            .flatMap { TranscriptRetryResult(rawValue: $0.reason) }
+    }
+
+    var latencyMs: Int? {
+        guard let first = events.first?.createdAt, let last = events.last?.createdAt else {
+            return nil
+        }
+        return max(0, Int(last.timeIntervalSince(first) * 1_000))
     }
 }
 
@@ -407,6 +431,69 @@ final class FlowEventLog: ObservableObject {
         ))
     }
 
+    func recordTranscriptLadderShown(
+        correlationId: UUID,
+        lever: TranscriptPracticeLever,
+        now: Date = Date()
+    ) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .other,
+            stage: TransformationKPIEventStage.transcriptLadderShown,
+            reason: lever.rawValue
+        ))
+    }
+
+    func recordTranscriptRetryCompleted(correlationId: UUID, now: Date = Date()) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .other,
+            stage: TransformationKPIEventStage.transcriptRetryCompleted,
+            reason: "accepted retry persisted"
+        ))
+    }
+
+    func recordTranscriptTargetCompared(
+        correlationId: UUID,
+        result: TranscriptRetryResult,
+        comparison: TranscriptRetryComparison?,
+        now: Date = Date()
+    ) {
+        var numerics: [String: Int] = [:]
+        if let comparison {
+            numerics = [
+                "sourceSignal": comparison.sourceSignal,
+                "retrySignal": comparison.retrySignal,
+                "meaningOverlapPercent": comparison.meaningOverlapPercent,
+            ]
+        }
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .other,
+            stage: TransformationKPIEventStage.transcriptTargetCompared,
+            outcome: result == .regressed ? .failure : .success,
+            reason: result.rawValue,
+            numerics: numerics
+        ))
+    }
+
+    func recordTranscriptInterventionUpdated(
+        correlationId: UUID,
+        result: TranscriptRetryResult,
+        now: Date = Date()
+    ) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .other,
+            stage: TransformationKPIEventStage.transcriptInterventionUpdated,
+            reason: result.rawValue
+        ))
+    }
+
     /// Records the requested route separately from the provider that actually
     /// started. A deliberate local-only session is observable but never enters
     /// the cloud-fallback denominator.
@@ -465,6 +552,22 @@ final class FlowEventLog: ObservableObject {
             .filter { group in group.events.contains { $0.flow == .chatTurn } }
             .prefix(limit)
             .map { CoachDebugTrace(correlationId: $0.correlationId, events: $0.events) }
+    }
+
+    func recentTranscriptPracticeTraces(limit: Int = 10) -> [TranscriptPracticeDebugTrace] {
+        recentFlows(limit: max(limit * 6, limit))
+            .filter { group in
+                group.events.contains {
+                    $0.stage == TransformationKPIEventStage.transcriptLadderShown
+                }
+            }
+            .prefix(limit)
+            .map {
+                TranscriptPracticeDebugTrace(
+                    correlationId: $0.correlationId,
+                    events: $0.events
+                )
+            }
     }
 
     func reset() {
@@ -609,6 +712,9 @@ struct TransformationKPIReport: Equatable {
     /// sessions. Thin, foreign, and repeated legacy events fail closed.
     let reviewOpenRate: Double?
     let prescriptionAcceptanceRate: Double?
+    let transcriptLadderAcceptanceRate: Double?
+    let transcriptRetryComparisonCompletionRate: Double?
+    let transcriptTargetImprovementRate: Double?
     let cloudToLocalFallbackRate: Double?
     let typedToLiveUpgradeRate: Double?
     /// Structured first-value receipts followed by an explicit tap toward
@@ -680,6 +786,30 @@ struct TransformationKPIReport: Equatable {
         let acceptance = shownPrescriptionIDs.isEmpty
             ? nil
             : Double(acceptedPrescriptionIDs.count) / Double(shownPrescriptionIDs.count)
+        let ladderIDs = Set(events.lazy
+            .filter { $0.stage == TransformationKPIEventStage.transcriptLadderShown }
+            .map(\.correlationId))
+        let acceptedLadderIDs = acceptedPrescriptionIDs.intersection(ladderIDs)
+        let comparedLadderIDs = Set(events.lazy
+            .filter { $0.stage == TransformationKPIEventStage.transcriptTargetCompared }
+            .map(\.correlationId))
+            .intersection(acceptedLadderIDs)
+        let improvedLadderIDs = Set(events.lazy
+            .filter {
+                $0.stage == TransformationKPIEventStage.transcriptTargetCompared
+                    && $0.reason == TranscriptRetryResult.improved.rawValue
+            }
+            .map(\.correlationId))
+            .intersection(comparedLadderIDs)
+        let ladderAcceptance = ladderIDs.isEmpty
+            ? nil
+            : Double(acceptedLadderIDs.count) / Double(ladderIDs.count)
+        let retryComparisonCompletion = acceptedLadderIDs.isEmpty
+            ? nil
+            : Double(comparedLadderIDs.count) / Double(acceptedLadderIDs.count)
+        let targetImprovement = comparedLadderIDs.isEmpty
+            ? nil
+            : Double(improvedLadderIDs.count) / Double(comparedLadderIDs.count)
         let cloudRoutes = events.filter {
             $0.stage == TransformationKPIEventStage.cloudTranscriptionResolvedCloud
                 || $0.stage == TransformationKPIEventStage.cloudTranscriptionResolvedLocal
@@ -761,6 +891,9 @@ struct TransformationKPIReport: Equatable {
             sessionsPerActiveWeek: sessionsPerWeek,
             reviewOpenRate: reviewRate,
             prescriptionAcceptanceRate: acceptance,
+            transcriptLadderAcceptanceRate: ladderAcceptance,
+            transcriptRetryComparisonCompletionRate: retryComparisonCompletion,
+            transcriptTargetImprovementRate: targetImprovement,
             cloudToLocalFallbackRate: fallbackRate,
             typedToLiveUpgradeRate: upgradeRate,
             structuredToSpokenUpgradeIntentRate: structuredUpgradeRate,

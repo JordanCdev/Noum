@@ -56,6 +56,8 @@ final class GoalOutcomeLoopUITests: XCTestCase {
             "UI_TESTING_SEED_FORCE",
             "UI_TESTING_PREMIUM",
             "UI_TESTING_REWRITE_LADDER",
+            "UI_TESTING_FIRST_VALUE_LOOP",
+            "UI_TESTING_TRANSCRIPT_RETRY_IMPROVED",
             "UI_TESTING_SEED_PROFILE", "plateauedAdvanced",
             "-DeepLink", "noum://summary"
         ]
@@ -71,6 +73,7 @@ final class GoalOutcomeLoopUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["rewrite.original"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["rewrite.oneStep"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["rewrite.aspirational"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["rewrite.retryTarget"].exists)
 
         let rewriteAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         rewriteAttachment.name = "transcript-ladder"
@@ -86,6 +89,26 @@ final class GoalOutcomeLoopUITests: XCTestCase {
             app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
             "The one-step ladder rung should launch the existing targeted Timed destination."
         )
+        advanceInjectedTimedRepToSummary(in: app)
+        dismissProgressionIfNeeded(in: app)
+        let comparison = app.descendants(matching: .any)["transcriptRetry.comparison"]
+        XCTAssertTrue(
+            comparison.waitForExistence(timeout: 15),
+            "The accepted ladder must return as a source-bound retry comparison."
+        )
+        scrollUntilHittable(comparison, in: app, attempts: 12)
+        XCTAssertTrue(comparison.isHittable)
+        XCTAssertTrue(
+            app.staticTexts["The target moved"].waitForExistence(timeout: 5),
+            "A meaning-preserving retry that improves the prescribed opening should report that bounded target movement."
+        )
+        let summaryScroll = app.scrollViews.firstMatch
+        summaryScroll.swipeUp(velocity: .slow)
+        summaryScroll.swipeUp(velocity: .slow)
+        let comparisonAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        comparisonAttachment.name = "transcript-ladder-retry-comparison"
+        comparisonAttachment.lifetime = .keepAlways
+        add(comparisonAttachment)
     }
 
     /// The non-Pro half of the same surface. The rewrite is the clearest thing

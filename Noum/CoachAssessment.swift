@@ -125,9 +125,9 @@ struct CoachAssessment: Codable, Equatable {
             in: evidence.joined(separator: " ")
         ) else { return nil }
         if let summary = fillerEvidence.summary {
-            return "Your latest qualified rep had \(summary). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
+            return "Latest qualified rep: \(summary). That is one usable signal, not a pressure pattern, so repeat the prompt, hold one silent beat before the final sentence, finish the ask, and compare fillers per minute."
         }
-        return "That latest pressure sample is too small or uncertain for a fair filler-rate read. Run one 60-second pressure rep, use one silent beat before the final sentence, then compare fillers per minute on the next equivalent rep."
+        return "That pressure sample is too uncertain for a fair rate. Run one 60-second rep, hold one silent beat before the final sentence, finish the ask, and compare fillers per minute on the next equivalent rep."
     }
 
     private static func trustRepairRead(

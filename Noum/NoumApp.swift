@@ -84,30 +84,18 @@ struct NoumApp: App {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         AuthManager.shared.useProcessLocalSignedOutStateForUITesting(arguments: args)
-        let hasSeed = args.contains("UI_TESTING_SEED")
         // `UI_TESTING_SEED_FORCE` always reseeds — used by ScreenshotTour
         // so the test starts from a deterministic populated state every
         // run. Plain `UI_TESTING_SEED` only seeds when the store is empty
         // (preserves hand-test data across launches).
         let forceSeed = args.contains("UI_TESTING_SEED_FORCE")
-        if hasSeed || forceSeed {
+        if let seededProfile = DevSeedData.requestedProfileForUITesting(
+            arguments: args
+        ) {
             // Inject the "improving intermediate" dev profile before any view
             // binds to PracticeSessionStore so screenshot-tour UI tests open on
             // a populated state instead of the first-run empty card.
             if forceSeed || PracticeSessionStore.shared.sessions.isEmpty {
-                // Capture tooling can pick which dev persona to seed via
-                // `UI_TESTING_SEED_PROFILE <rawValue>` (the cold/empty
-                // first-run state is driven by simply omitting the seed
-                // args). Defaults to the improving-intermediate demo persona
-                // that ScreenshotTour has always used.
-                let seededProfile: SeedProfile = {
-                    if let i = args.firstIndex(of: "UI_TESTING_SEED_PROFILE"),
-                       i + 1 < args.count,
-                       let picked = SeedProfile(rawValue: args[i + 1]) {
-                        return picked
-                    }
-                    return .improvingIntermediate
-                }()
                 DevSeedData.injectProfile(seededProfile)
                 // Suppress overlay celebrations that fire from the seed's
                 // rating change (tier promotion) or persisted pending state
@@ -246,6 +234,21 @@ struct NoumApp: App {
             await authManager.bootstrapInitialAccountIfNeeded()
             await MainActor.run {
                 #if DEBUG
+                // Account hydration can reload every account-scoped owner
+                // after the App initializer installed a guest fixture. Repair
+                // only a missing requested profile at that boundary; never
+                // replace a successfully hydrated fixture or production data.
+                if authManager.initialAccountHydrationState == .ready,
+                   coachingProfileStore.profile == nil,
+                   let seededProfile = DevSeedData.requestedProfileForUITesting(
+                       arguments: ProcessInfo.processInfo.arguments
+                   ) {
+                    DevSeedData.injectProfile(seededProfile)
+                    LeagueManager.shared.suppressCelebrationsForTesting()
+                    DailyGoalManager.shared.consumeGoalCelebration()
+                    PathProgressManager.shared.consumeCelebration()
+                    LessonStore.shared.consumeCelebration()
+                }
                 // Account-scoped UI fixtures must be installed only after the
                 // account registry has hydrated. Seeding them in `init` would
                 // write to the pre-bootstrap guest key and Home would correctly

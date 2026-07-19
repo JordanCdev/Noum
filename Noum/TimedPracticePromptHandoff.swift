@@ -19,6 +19,7 @@ final class TimedPracticePromptHandoff {
     struct Payload: Equatable {
         let text: String
         let competitiveObservationIntent: CompetitiveObservationIntent?
+        let transcriptPracticeIntent: TranscriptPracticeIntent?
         fileprivate let accountID: String
 
         func isBound(to activeAccountID: String?) -> Bool {
@@ -83,6 +84,47 @@ final class TimedPracticePromptHandoff {
             Payload(
                 text: text,
                 competitiveObservationIntent: nil,
+                transcriptPracticeIntent: nil,
+                accountID: accountID
+            ),
+            accountID: accountID
+        )
+    }
+
+    /// Prepare one transcript-ladder retry. User-authored content stays in the
+    /// same process-local, one-shot owner as ordinary prompts; only content-free
+    /// source/lever/trace provenance travels beside it.
+    func offerTranscriptRetryToken(_ prescription: TranscriptPracticePrescription) -> UUID? {
+        offerTranscriptRetryToken(
+            prescription,
+            accountID: accountIDProvider()
+        )
+    }
+
+    func offerTranscriptRetryToken(
+        _ prescription: TranscriptPracticePrescription,
+        accountID: String?
+    ) -> UUID? {
+        guard let accountID = normalizedAccountID(accountID),
+              let text = normalizedPrompt(prescription.suggestedPrompt),
+              prescription.retryTarget.isSupported else {
+            pending = nil
+            return nil
+        }
+        return store(
+            Payload(
+                text: text,
+                competitiveObservationIntent: nil,
+                transcriptPracticeIntent: TranscriptPracticeIntent(
+                    correlationID: prescription.correlationID,
+                    sourceSessionID: prescription.sourceSessionID,
+                    title: prescription.title,
+                    focus: prescription.focus,
+                    target: prescription.target,
+                    targetDimensionID: prescription.targetDimensionID,
+                    goal: prescription.goal,
+                    retryTarget: prescription.retryTarget
+                ),
                 accountID: accountID
             ),
             accountID: accountID
@@ -127,6 +169,7 @@ final class TimedPracticePromptHandoff {
             Payload(
                 text: exactPrompt,
                 competitiveObservationIntent: intent,
+                transcriptPracticeIntent: nil,
                 accountID: accountID
             ),
             accountID: accountID

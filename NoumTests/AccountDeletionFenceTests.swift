@@ -408,7 +408,7 @@ struct AccountDeletionFenceTests {
             ".advance(fence, to: .localCleanupStarted)",
             "accountDataRegistry.deleteAllData(for: accountID)",
             "accountDataRegistry.endSession()",
-            "signOut()",
+            "performSignOut(allowAnonymousGuest: true)",
             "accountDeletionFenceRepository.clearVerified(fence)",
             "accountDeletionState = .completed",
             "ForwardPlanService.shared.finishProviderWorkDeletion",

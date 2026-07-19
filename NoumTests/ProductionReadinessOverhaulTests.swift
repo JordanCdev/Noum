@@ -364,6 +364,21 @@ struct UIAutomationAccountIsolationTests {
             arguments: ["Noum"]
         ))
     }
+
+    @Test func preRenderAndPostHydrationSeedingResolveTheSamePersona() {
+        #expect(DevSeedData.requestedProfileForUITesting(
+            arguments: ["Noum", "UI_TESTING"]
+        ) == nil)
+        #expect(DevSeedData.requestedProfileForUITesting(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        ) == .improvingIntermediate)
+        #expect(DevSeedData.requestedProfileForUITesting(
+            arguments: [
+                "Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE",
+                "UI_TESTING_SEED_PROFILE", "plateauedAdvanced"
+            ]
+        ) == .plateauedAdvanced)
+    }
 }
 #endif
 

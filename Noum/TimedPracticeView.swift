@@ -797,6 +797,10 @@ struct TimedPracticeView: View {
         ProcessInfo.processInfo.arguments.contains("UI_TESTING_FIRST_VALUE_LOOP")
     }
 
+    private var usesInjectedTranscriptRetryImprovement: Bool {
+        ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPT_RETRY_IMPROVED")
+    }
+
     // TTS — persistent synthesizer + delegate, premium voice for warm, coach-like delivery
     private let ttsEngine = AVSpeechSynthesizer()
     private let ttsDelegate = TTSDelegate()
@@ -1086,6 +1090,13 @@ struct TimedPracticeView: View {
             routeToken: promptHandoffToken
            ) {
             return nil
+        }
+        if let intent = payload.transcriptPracticeIntent {
+            // Summary can render another recommendation while navigation is
+            // transitioning. Reassert the accepted, source-bound ladder at
+            // the practice boundary so the completed rep cannot be joined to
+            // a newer card or silently lose its intervention provenance.
+            RecommendationLearningStore.shared.ensureTranscriptRetryAccepted(intent)
         }
         seededPromptPayload = payload
         return payload.text
@@ -3095,9 +3106,17 @@ struct TimedPracticeView: View {
         elapsedSeconds = 46
         currentTimingState = timingPolicy.state(for: elapsedSeconds)
 
-        let transcript = """
-        I would start by naming the decision clearly. The team needs one owner for the customer handoff, then a weekly check on risk. I would tell the client what changed, what stays on track, and exactly when they will hear from us again.
-        """
+        let transcript: String
+        if usesInjectedTranscriptRetryImprovement,
+           seededPromptPayload?.transcriptPracticeIntent != nil {
+            transcript = """
+            The release should start next week because the support team has time to prepare. The customer message needs one clear decision.
+            """
+        } else {
+            transcript = """
+            I would start by naming the decision clearly. The team needs one owner for the customer handoff, then a weekly check on risk. I would tell the client what changed, what stays on track, and exactly when they will hear from us again.
+            """
+        }
         let duration: TimeInterval = 46
         let fillerCount = FillerWordDetector.count(in: transcript)
         let result = PracticeEvaluator.evaluateTimedPractice(

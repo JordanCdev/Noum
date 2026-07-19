@@ -2863,16 +2863,23 @@ actor AICoachChatService {
                 )
             }
         } else if responseKind == .generalCoaching {
-            guard let fallback = CoachReliabilityGate.generalCoachingFailureFallback(
-                turnDepth: turnDepth,
-                surface: surface,
-                latestUserTurn: latestUserTurn,
-                previousCoachReply: recentCoachReplies.first,
-                recentCoachReplies: recentCoachReplies
-            ) else {
-                return nil
+            if let coldStartShape = coldStartRepairReferenceShape(
+                for: lowerTurn,
+                system: systemContext
+            ) {
+                raw = coldStartShape
+            } else {
+                guard let fallback = CoachReliabilityGate.generalCoachingFailureFallback(
+                    turnDepth: turnDepth,
+                    surface: surface,
+                    latestUserTurn: latestUserTurn,
+                    previousCoachReply: recentCoachReplies.first,
+                    recentCoachReplies: recentCoachReplies
+                ) else {
+                    return nil
+                }
+                raw = fallback
             }
-            raw = fallback
         } else if let assessment {
             if TurnDepthClassifier.isGreetingOrSmallTalk(lowerTurn) {
                 raw = CoachReliabilityGate.greetingFallback(
@@ -2969,7 +2976,13 @@ actor AICoachChatService {
 
         let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
         guard !normalized.isEmpty else { return nil }
-        guard replyQualityIssue(
+        let resolvedBrief = coachingBrief ?? assessment.flatMap {
+            CoachChatBrief.applicable(
+                assessment: $0,
+                responseKind: responseKind
+            )
+        }
+        if let issue = replyQualityIssue(
             in: normalized,
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
@@ -2978,21 +2991,23 @@ actor AICoachChatService {
             turnDepth: turnDepth,
             surface: surface,
             responseKind: responseKind,
-            coachingBrief: coachingBrief
-        ) == nil else {
+            coachingBrief: resolvedBrief
+        ) {
+            Self.log.notice("bounded typed fallback rejected by professional gate: \(issue.auditLabel, privacy: .public)")
             return nil
         }
-        guard semanticQualityIssue(
+        if let issue = semanticQualityIssue(
             in: normalized,
             latestUserTurn: latestUserTurn,
             systemContext: systemContext,
             turnDepth: turnDepth,
             assessment: responseKind == .conversational ? nil : assessment,
             responseKind: responseKind
-        ) == nil else {
+        ) {
+            Self.log.notice("bounded typed fallback rejected by semantic gate: \(issue.rawValue, privacy: .public)")
             return nil
         }
-        guard visionQualityIssue(
+        if let issue = visionQualityIssue(
             in: normalized,
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
@@ -3002,7 +3017,8 @@ actor AICoachChatService {
             assessment: assessment,
             surface: surface,
             responseKind: responseKind
-        ) == nil else {
+        ) {
+            Self.log.notice("bounded typed fallback rejected by vision gate: \(issue.auditLabel, privacy: .public)")
             return nil
         }
         return normalized
@@ -3383,7 +3399,7 @@ actor AICoachChatService {
             return "The close is the move, so make the final sentence the ask, then stop."
         }
         if containsAny(latest, ["can you coach this"]) {
-            return "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
+            return "I cannot coach this honestly until the target answer is here. Record 60 seconds as one rep or share the exact one because I need the actual answer before assessing its opener and close."
         }
 
         return nil
@@ -3439,12 +3455,12 @@ actor AICoachChatService {
             return "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern."
         }
         guard let fillerEvidence = QuantityQualifiedFillerEvidence.parseLatest(in: systemContext) else {
-            return "I do not have a comparable filler sample yet, so run one 60-second pressure rep on the same prompt. Hold one silent beat before the final sentence, finish the ask, then use its fillers-per-minute rate as the baseline."
+            return "I do not have a comparable filler sample yet, so run one 60-second pressure rep. Hold one silent beat before the final sentence, finish the ask, then use its fillers-per-minute rate as the baseline."
         }
         guard let summary = fillerEvidence.summary else {
-            return "That pressure sample is too small or uncertain for a fair filler-rate read, so run one 60-second pressure rep on the same prompt. Hold one silent beat before the final sentence, finish the ask, then use its fillers-per-minute rate as the baseline."
+            return "That pressure sample is too uncertain for a fair rate, so run one 60-second rep. Hold one silent beat before the final sentence, finish the ask, then use its fillers-per-minute rate as the baseline."
         }
-        return "Your latest qualified rep had \(summary). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
+        return "Latest qualified rep: \(summary). That is one usable signal, not a pressure pattern, so repeat the prompt, hold one silent beat before the final sentence, finish the ask, and compare fillers per minute."
     }
 
     private nonisolated static func pressureFillerQuickMoveIntent(
@@ -3502,18 +3518,22 @@ actor AICoachChatService {
     ) -> String {
         var lines: [String] = []
         lines.append(completeSentence(deepAssessmentFallbackVerdict(from: assessment)))
-        lines.append("That matters because one result can show a mechanics gain, while the full goal needs repeated evidence under pressure.")
         let evidence = assessment.evidenceUsed
             .prefix(2)
             .compactMap { deepAssessmentEvidencePhrase(from: $0) }
-        if !evidence.isEmpty {
-            lines.append("The usable evidence is \(evidence.joined(separator: " and ")).")
-        }
+        var evidenceLine = evidence.isEmpty
+            ? ""
+            : "The usable evidence is \(evidence.joined(separator: " and "))"
         if let missing = assessment.missingEvidence.first,
            let clause = deepAssessmentMissingEvidenceClause(from: missing) {
-            lines.append("I still need \(completeSentence(clause))")
+            evidenceLine += evidenceLine.isEmpty
+                ? "I still need \(clause)"
+                : "; I still need \(clause)"
         }
-        lines.append("For the next check, \(connectorClause(assessment.nextProofTest))")
+        if !evidenceLine.isEmpty {
+            lines.append(completeSentence(evidenceLine))
+        }
+        lines.append("Next, \(connectorClause(assessment.nextProofTest))")
         return lines.joined(separator: " ")
     }
 
@@ -3860,6 +3880,26 @@ actor AICoachChatService {
         let persuasiveReferent = userLower.contains("persuasive") ||
             (contextLower.contains("coaching voice: persuasive") &&
              carriesVoiceReferent)
+
+        // A user correction about an ambiguous word is stronger evidence than
+        // any earlier aggregate filler count. Reject provider drafts that erase
+        // that correction so the bounded intent override can preserve semantic
+        // speech instead of coaching the user to remove meaning-bearing words.
+        if containsAny(userLower, [
+            "meant it as a comparison", "meant like as a comparison",
+            "like as a comparison", "semantic comparison", "counted 'like'",
+            "counted like"
+        ]),
+           containsAny(lower, [
+            "all filler", "every like", "cut every like", "remove every like",
+            "stop saying like"
+           ]),
+           !containsAny(lower, [
+            "not filler", "should not count", "shouldn't count",
+            "semantic comparison", "adds meaning", "meaning-bearing"
+           ]) {
+            return .overclaimsEvidence
+        }
         if responseKind == .generalCoaching,
            persuasiveReferent,
            lower.contains("persuasive"),
@@ -3951,8 +3991,10 @@ actor AICoachChatService {
             trimmed,
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
-            coachingBrief: coachingBrief
+            coachingBrief: coachingBrief,
+            systemContext: systemContext
            ) {
+            Self.log.notice("quality rejection: metric provenance")
             return .overclaimsEvidence
         }
 
@@ -3962,6 +4004,7 @@ actor AICoachChatService {
         // robotic phrase such as "recent reps show".
         if responseKind == .generalCoaching,
            replyContainsUnverifiedPersonalRead(lower) {
+            Self.log.notice("quality rejection: personal read in general-coaching lane")
             return .overclaimsEvidence
         }
 
@@ -4019,6 +4062,7 @@ actor AICoachChatService {
             return .roboticPhrase(voiceDirective)
         }
         if replyOverclaimsEvidence(lower) {
+            Self.log.notice("quality rejection: overclaim language")
             return .overclaimsEvidence
         }
         if replyUsesUnrequestedNamedTechnique(
@@ -4150,7 +4194,8 @@ actor AICoachChatService {
         }
         if responseKind == .personalEvidenceRead,
            replyIsEvidenceGapClarification(lower),
-           (coachingBrief == nil ||
+           (coachingBrief?.missingEvidence != nil ||
+            coachingBrief?.decisiveEvidence == nil ||
             (turnRequestsSessionExample(latestUserTurn) &&
              quoteGuard?.hasVerifiedProofQuotes != true)) {
             return nil
@@ -4817,8 +4862,13 @@ actor AICoachChatService {
         let isCritique = isCritiqueTurn(latestLower)
         let hasObservableAnchor = replyHasObservableAnchor(lower)
         let hasSpecificPracticeMove = replyHasSpecificPracticeMove(lower)
-        let honestEvidenceGap = responseKind == .personalEvidenceRead &&
-            replyIsEvidenceGapClarification(lower)
+        // Keep the scorer content-aware. Lane policy still rejects this copy
+        // for general craft before vision runs, while the canonical personal
+        // abstention must not be capped merely because it contains no drill.
+        let honestEvidenceGap = (
+            replyIsEvidenceGapClarification(lower) ||
+            lower.contains("not enough evidence to choose your next move")
+        )
         let directAnswer: Bool
         if responseKind == .conversational {
             directAnswer = conversationalStyleFeedback
@@ -4859,7 +4909,7 @@ actor AICoachChatService {
             weight: 12,
             passes: conversationalStyleFeedback
                 ? hasSpecificCoachCorrection && hasNoUserPrescription
-                : !actionExpected || hasSpecificPracticeMove
+                : honestEvidenceGap || !actionExpected || hasSpecificPracticeMove
         )
 
         let bridgeExpected = anchorExpected && actionExpected
@@ -4869,7 +4919,7 @@ actor AICoachChatService {
             weight: 10,
             passes: conversationalStyleFeedback
                 ? hasSpecificCoachCorrection
-                : !bridgeExpected || hasInsightBridge
+                : honestEvidenceGap || !bridgeExpected || hasInsightBridge
         )
 
         let evidenceHonest = !replyOverclaimsEvidence(lower)
@@ -4982,13 +5032,13 @@ actor AICoachChatService {
         if !seniorRegister {
             cappedScore = min(cappedScore, 44)
         }
-        if actionExpected && !hasSpecificPracticeMove {
+        if actionExpected && !hasSpecificPracticeMove && !honestEvidenceGap {
             cappedScore = min(cappedScore, 48)
         }
         if anchorExpected && !hasObservableAnchor && !honestEvidenceGap {
             cappedScore = min(cappedScore, 48)
         }
-        if bridgeExpected && !hasInsightBridge {
+        if bridgeExpected && !hasInsightBridge && !honestEvidenceGap {
             cappedScore = min(cappedScore, 78)
         }
 
@@ -6322,9 +6372,17 @@ actor AICoachChatService {
             "i can't make a personal read yet", "i cannot make a personal read yet"
         ])
         guard ownsEvidenceGap,
-              lower.filter({ $0 == "?" }).count == 1,
               !replyContainsUnverifiedPersonalRead(lower),
               !replyContainsNonCoachingPrescription(lower) else {
+            return false
+        }
+        if containsAny(lower, [
+            "not enough evidence to choose your next move",
+            "not enough evidence to choose the next move"
+        ]) {
+            return lower.filter({ $0 == "?" }).isEmpty
+        }
+        guard lower.filter({ $0 == "?" }).count == 1 else {
             return false
         }
         return containsAny(lower, [
@@ -7570,7 +7628,8 @@ actor AICoachChatService {
         _ text: String,
         latestUserTurn: String?,
         quoteGuard: CoachChatQuoteGuardContext?,
-        coachingBrief: CoachChatBrief?
+        coachingBrief: CoachChatBrief?,
+        systemContext: String? = nil
     ) -> Bool {
         let unquoted = text.replacingOccurrences(
             of: #"[\"“][^\"”\n]{1,240}[\"”]"#,
@@ -7590,7 +7649,21 @@ actor AICoachChatService {
             coachingBrief?.repairFocus,
             coachingBrief?.projectedMetricEvidenceText
         ].compactMap { $0 }
-        let allowedText = (userTexts + briefTexts).joined(separator: "\n").lowercased()
+        // `systemContext` is assembled locally from persisted user evidence and
+        // typed metrics. It is an authoritative source for gate provenance, not
+        // provider prose, so an exact duration/rate already present there is a
+        // permitted citation even when a compact coaching brief was not built.
+        // A sentence-leading imperative describes a new test, not historical
+        // evidence. Let that sentence authorize its own duration or rep count
+        // while keeping mixed evidence/action sentences strict: "You scored
+        // 10/10, so run one rep" does not begin as a prescription and cannot
+        // smuggle the invented score through this boundary.
+        let prescribedText = prescriptionLeadingSentences(in: unquoted)
+        let allowedText = (
+            userTexts + briefTexts + [systemContext].compactMap { $0 } + prescribedText
+        )
+            .joined(separator: "\n")
+            .lowercased()
 
         let replyNumbers = Set(regexMatches(
             #"\b\d+(?:[.,]\d+)*(?:%|ms|s)?\b"#,
@@ -7601,6 +7674,7 @@ actor AICoachChatService {
             in: allowedText
         ))
         if !replyNumbers.isSubset(of: allowedNumbers) {
+            Self.log.notice("metric provenance rejection: numeric fact")
             return true
         }
 
@@ -7612,6 +7686,7 @@ actor AICoachChatService {
         let replySpokenFacts = Set(regexMatches(spokenFactPattern, in: unquoted))
         let allowedSpokenFacts = Set(regexMatches(spokenFactPattern, in: allowedText))
         if !replySpokenFacts.isSubset(of: allowedSpokenFacts) {
+            Self.log.notice("metric provenance rejection: spoken quantity")
             return true
         }
 
@@ -7623,6 +7698,12 @@ actor AICoachChatService {
         authorizedMetricFacts.formUnion(metricFactTuples(
             in: coachingBrief?.projectedMetricEvidenceText.lowercased() ?? ""
         ))
+        authorizedMetricFacts.formUnion(metricFactTuples(
+            in: systemContext?.lowercased() ?? ""
+        ))
+        authorizedMetricFacts.formUnion(metricFactTuples(
+            in: prescribedText.joined(separator: "\n")
+        ))
         if replyContainsNonCoachingPrescription(unquoted) {
             authorizedMetricFacts.formUnion(metricFactTuples(
                 in: coachingBrief?.nextMove?.lowercased() ?? ""
@@ -7633,7 +7714,27 @@ actor AICoachChatService {
                 in: userTexts.joined(separator: "\n").lowercased()
             ))
         }
-        return !replyMetricFacts.isSubset(of: authorizedMetricFacts)
+        let hasUnauthorizedTypedMetric = !replyMetricFacts.isSubset(
+            of: authorizedMetricFacts
+        )
+        if hasUnauthorizedTypedMetric {
+            Self.log.notice("metric provenance rejection: typed metric kind")
+        }
+        return hasUnauthorizedTypedMetric
+    }
+
+    private nonisolated static func prescriptionLeadingSentences(
+        in lower: String
+    ) -> [String] {
+        lower
+            .split(whereSeparator: { ".!?".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { sentence in
+                sentence.range(
+                    of: #"^(?:(?:next|instead|then|for the next check),?\s+)?(?:answer|record|run|try|practice|say|state|lead|put|give|pause|ask|repeat|start|open|use|hold|make|end|check|listen|review|rewrite|keep|add|place|replay|test|capture|stop)\b"#,
+                    options: .regularExpression
+                ) != nil
+            }
     }
 
     private nonisolated static func replySatisfiesTypedEvidenceRead(
@@ -8577,12 +8678,6 @@ actor AICoachChatService {
         }
 
         if containsAny(latestUserTurn, ["um", "filler", "fillers", "hesitat"]) {
-            if let pressureShape = deterministicPressureFillerQuickMoveReply(
-                latestUserTurn: latestUserTurn,
-                systemContext: system
-            ) {
-                return pressureShape
-            }
             // Technique-seeking turns use the general-coaching lane. Retrieved
             // expertise may shape the answer, but broad context cannot be turned
             // into a personal observation merely because a recent metric exists.
@@ -8611,6 +8706,13 @@ actor AICoachChatService {
         for lowerTurn: String,
         system: String
     ) -> String {
+        if CoachChatTurnIntent.isCoachStyleFeedback(lowerTurn) {
+            return CoachReliabilityGate.preferenceAcknowledgementFallback(
+                surface: .text,
+                latestUserTurn: lowerTurn
+            )
+        }
+
         let friction: String
         if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
             friction = "Fair push. TTS reading symbols breaks trust."

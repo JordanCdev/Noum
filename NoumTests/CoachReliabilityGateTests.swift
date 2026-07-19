@@ -1142,7 +1142,7 @@ struct CoachReliabilityGateTests {
         let fallback = verdict.fallbackText ?? ""
         #expect(fallback.contains("Fair push: no, it is not easy"))
         #expect(fallback.contains("held composure through an interruption"))
-        #expect(fallback.contains("Test a smaller version"))
+        #expect(fallback.contains("test a smaller version"))
         #expect(!fallback.lowercased().contains("what goes first"))
     }
 

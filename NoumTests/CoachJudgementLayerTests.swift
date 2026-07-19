@@ -3811,8 +3811,9 @@ struct CoachTypedFallbackTests {
         let lower = shape.lowercased()
 
         #expect(lower.contains("you’re right—i was too vague"))
-        #expect(lower.contains("point arrived in sentence four"))
-        #expect(lower.contains("i’ll lead with that specific read"))
+        #expect(lower.contains("i was too vague"))
+        #expect(lower.contains("observed behaviour"))
+        #expect(!lower.contains("point arrived in sentence four"))
         #expect(!lower.contains("real read:"))
         #expect(!lower.contains("score"))
         #expect(!lower.contains("next rep"))
@@ -4523,7 +4524,7 @@ struct CoachProviderRoutingByDepthTests {
     @MainActor
     @Test func acceptedReplyReportsActualProviderChoice() async throws {
         let payload = try Self.anthropicPayload(
-            "Your last rep was 7/10 with 1 filler, so lead with the recommendation in sentence one and stop after one proof point. Run one 60-second rep with that shape."
+            "Put the recommendation in sentence one because that makes the decision immediately testable. Run one rep, use one proof point, then stop."
         )
         let service = AICoachChatService(
             keyedProviders: { [.anthropic] },
@@ -4654,10 +4655,11 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("6 fillers in 64 seconds (5.6 per minute)"))
+        #expect(text.contains("one-second silence"))
         #expect(text.contains("compare fillers per minute"))
-        #expect(text.contains("one silent beat before the final sentence"))
-        #expect(text.contains("finish the ask"))
+        #expect(text.contains("test, not a pattern"))
+        #expect(!text.contains("6 fillers in 64 seconds (5.6 per minute)"))
+        #expect(!text.contains("final sentence"))
         #expect(!text.lowercased().contains("semantic words"))
         #expect(providerChoice?.providerName == "Typed judgement fallback")
         #expect(providerChoice?.model == "CoachAssessment")
@@ -4689,8 +4691,11 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("6 fillers in 64 seconds (5.6 per minute)"))
-        #expect(text.contains("one silent beat before the final sentence"))
+        #expect(text.contains("one-second silence"))
+        #expect(text.contains("compare fillers per minute"))
+        #expect(text.contains("test, not a pattern"))
+        #expect(!text.contains("6 fillers in 64 seconds (5.6 per minute)"))
+        #expect(!text.contains("final sentence"))
         #expect(!text.lowercased().contains("just stop"))
         #expect(!text.lowercased().contains("semantic words"))
     }
@@ -4721,9 +4726,10 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("do not have a comparable filler sample"))
-        #expect(text.contains("one silent beat before the final sentence"))
-        #expect(text.contains("finish the ask"))
+        #expect(text.contains("one-second silence"))
+        #expect(text.contains("compare fillers per minute"))
+        #expect(text.contains("test, not a pattern"))
+        #expect(!text.contains("final sentence"))
         #expect(!text.lowercased().contains("semantic words"))
         #expect(!text.contains("Your last pressure rep had 6 fillers"))
     }
@@ -4790,10 +4796,11 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("Fair push: no, it is not easy"))
-        #expect(text.contains("sentence one carries the social risk"))
-        #expect(text.contains("say only the disagreement and one calm reason"))
-        #expect(text.contains("stop before defending it"))
+        #expect(text.contains("That sounds hard"))
+        #expect(text.contains("slow this down"))
+        #expect(text.contains("do not need to prove the whole answer"))
+        #expect(!text.contains("sentence one carries the social risk"))
+        #expect(!text.contains("say only the disagreement"))
         #expect(!text.contains("I made the move sound easier"))
         #expect(!text.contains("Your last rep gives one safe signal"))
         #expect(providerChoice?.providerName == "Typed judgement fallback")

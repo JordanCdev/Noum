@@ -22,9 +22,13 @@ import SwiftUI
 struct RewriteSuggestionCard: View {
     let transcript: String
     let weakness: AIRewriteService.Weakness
+    var sourceSessionID: UUID? = nil
     var targetDimension: String? = nil
+    var targetDimensionID: String? = nil
+    var goal: SpeakingStyleGoal? = nil
     var transcriptConfidence: Double? = nil
     var onPracticePhrase: ((PhrasePracticeIntent) -> Void)? = nil
+    var onPracticeRewrite: ((TranscriptPracticePrescription) -> Void)? = nil
 
     @StateObject private var phraseBank = PhraseBankStore.shared
     @State private var oneStepRewrite: Rewrite?
@@ -33,6 +37,7 @@ struct RewriteSuggestionCard: View {
     @State private var didFail = false
     @State private var didSave = false
     @State private var showPhraseBank = false
+    @State private var ladderCorrelationID = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -136,6 +141,8 @@ struct RewriteSuggestionCard: View {
                 identifier: "rewrite.oneStep"
             )
 
+            targetRung
+
             if let aspirationalRewrite {
                 ladderRung(
                     eyebrow: "ASPIRATIONAL END STATE",
@@ -157,7 +164,7 @@ struct RewriteSuggestionCard: View {
                     .accessibilityLabel("Private on-device edit, built from your own words without an AI provider.")
             }
 
-            if onPracticePhrase != nil {
+            if onPracticeRewrite != nil || onPracticePhrase != nil {
                 Button {
                     practise(oneStep)
                 } label: {
@@ -194,6 +201,27 @@ struct RewriteSuggestionCard: View {
                 Spacer()
             }
         }
+    }
+
+    private var targetRung: some View {
+        let target = TranscriptRetryTarget(
+            lever: TranscriptPracticeLever(weakness: weakness)
+        )
+        return VStack(alignment: .leading, spacing: 5) {
+            Text("TARGET FOR THE RETRY")
+                .font(Typography.micro.weight(.heavy))
+                .tracking(0.5)
+                .foregroundStyle(AppColor.pro)
+            Text(target.lever.successMeasure)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("Noum will compare this lever with the verified source rep; the aspiration is not scored.")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("rewrite.retryTarget")
     }
 
     private func ladderRung(
@@ -321,6 +349,10 @@ struct RewriteSuggestionCard: View {
             if let oneStep {
                 isLoading = false
                 withAnimation(.standardSpring) { oneStepRewrite = oneStep }
+                FlowEventLog.shared.recordTranscriptLadderShown(
+                    correlationId: ladderCorrelationID,
+                    lever: TranscriptPracticeLever(weakness: weakness)
+                )
             } else {
                 isLoading = false
                 didFail = true
@@ -375,7 +407,24 @@ struct RewriteSuggestionCard: View {
         ) else { return }
         guard let intent = PhrasePracticeIntent(entry: entry) else { return }
         didSave = true
-        onPracticePhrase?(intent)
+        if let sourceSessionID, let onPracticeRewrite {
+            let retryTarget = TranscriptRetryTarget(
+                lever: TranscriptPracticeLever(weakness: weakness)
+            )
+            onPracticeRewrite(TranscriptPracticePrescription(
+                correlationID: ladderCorrelationID,
+                sourceSessionID: sourceSessionID,
+                suggestedPrompt: intent.suggestedPrompt,
+                title: "One-step \(retryTarget.lever.focusLabel) upgrade",
+                focus: retryTarget.lever.focusLabel,
+                target: retryTarget.lever.successMeasure,
+                targetDimensionID: targetDimensionID,
+                goal: goal,
+                retryTarget: retryTarget
+            ))
+        } else {
+            onPracticePhrase?(intent)
+        }
     }
 }
 

@@ -30489,8 +30489,8 @@ struct AICoachChatReplyQualityGateTests {
             system: system
         ))
 
-        #expect(shape.contains("not informative enough"))
-        #expect(shape.contains("direct point"))
+        #expect(shape.contains("I was too vague"))
+        #expect(shape.contains("observed behaviour"))
         #expect(!shape.contains("point arrived in sentence four"))
         #expect(!shape.lowercased().contains("next rep"))
         #expect(!shape.lowercased().contains("fluff"))
@@ -30519,8 +30519,8 @@ struct AICoachChatReplyQualityGateTests {
         ))
         let lower = repair.lowercased()
 
-        #expect(repair.contains("not informative enough"))
-        #expect(repair.contains("direct point"))
+        #expect(repair.contains("I was too vague"))
+        #expect(repair.contains("observed behaviour"))
         #expect(!repair.contains("point arrived in sentence four"))
         #expect(!lower.contains("real read:"))
         #expect(!lower.contains("next rep:"))
@@ -31203,43 +31203,43 @@ struct CoachLiveTranscriptRegressionTests {
             id: "fillers-under-pressure",
             userTurn: "How do I stop saying um under pressure?",
             liveReply: "Your last rep had 6 fillers under a timed limit, so the pattern is there when the clock runs.\nTo break this, test the silent pause: the moment you feel an um coming, hold one second of silence instead, then say the next word.\nRun one rep now with that silent beat to see if it stops the filler.",
-            expectedIssue: .roboticPhrase("to break this"),
-            referenceReply: "Your last rep had 6 fillers, so use the silent beat as a test. Hold one second before the next word and see whether the filler count drops on the next rep."
+            expectedIssue: .overclaimsEvidence,
+            referenceReply: "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern."
         ),
         Case(
             id: "filler-count",
             userTurn: "What should I do with that filler count?",
             liveReply: "Your last rep had five fillers, so test a slow open on your next run to give yourself room to find the second sentence. Say your first line slower than feels natural, which can replace the early um with a silent beat.",
             expectedIssue: .roboticPhrase("give yourself room to find"),
-            referenceReply: "Five fillers is enough signal to test the opening, not judge the whole answer. Say the first line slower than feels natural, then hold one beat before sentence two."
+            referenceReply: "Treat that count as one sample, not a verdict, so repeat the same prompt with one silent beat before sentence two and compare fillers per minute."
         ),
         Case(
             id: "robotic-feedback",
             userTurn: "This is robotic and too much writing.",
             liveReply: "You are right to call that out, and I am cutting the robotic report voice. Your last rep had one filler, so record a new rep where you say the main point in your very first sentence and then stop.",
-            expectedIssue: .roboticPhrase("i am cutting the"),
-            referenceReply: "Fair push. That read like a report. Your last rep had one filler, so run one cleaner rep: main point first, then stop."
+            expectedIssue: .nonCoachingPrescription,
+            referenceReply: "You’re right—that sounded robotic and was too long. I’ll use one specific point in plain language."
         ),
         Case(
             id: "markdown-tts",
             userTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach.",
             liveReply: "Fair push. I'll cut the markers and the report voice - your last rep gives me enough to work from, so next time out, lead with your recommendation in the first sentence and stop there.",
-            expectedIssue: .roboticPhrase("i'll cut the markers"),
-            referenceReply: "Fair push: TTS reading symbols breaks trust. Your last rep has enough signal, so lead with the recommendation, give one proof point, then stop."
+            expectedIssue: .nonCoachingPrescription,
+            referenceReply: "You’re right—TTS read the formatting aloud, and the wording sounded robotic. I’ll use plain text and one direct point."
         ),
         Case(
             id: "cold-overexplained",
             userTurn: "This still sounds cold and overexplained, like generic AI tips.",
             liveReply: "You are right to call that out, as that generic tip-giving was cold and did not help. Your last rep had one filler but the main point did not clearly lead, so open your next attempt by saying your core client recommendation in the very first sentence because that tests whether a strong start helps you feel in control.",
-            expectedIssue: .roboticPhrase("generic tip-giving"),
-            referenceReply: "Fair push: that was advice, not coaching. Your last rep had one filler, so say the client recommendation first, then soften it with one reassurance."
+            expectedIssue: .nonCoachingPrescription,
+            referenceReply: "You’re right—that sounded robotic and was too long. I’ll use one specific point in plain language."
         ),
         Case(
             id: "what-next",
             userTurn: "What next?",
             liveReply: "Your last rep had no fillers, so the gap to close is the ending - run the same executive update and finish on one specific decision or next step you want from the room.",
-            expectedIssue: nil,
-            referenceReply: "Your last rep was clean on fillers, so the useful gap is the close. Run the same executive update and end with the one decision or next step you want from the room."
+            expectedIssue: .missingPrescribedAction,
+            referenceReply: "The close is the move, so rewrite the final sentence as the decision, run the update once, then stop."
         ),
         Case(
             id: "why-landed-badly",
@@ -31257,7 +31257,7 @@ struct CoachLiveTranscriptRegressionTests {
             userTurn: "I have a leadership update tomorrow, what should I practice?",
             liveReply: "Your last rep led with the point cleanly, so test the thirty-second update for tomorrow's meeting. State your main headline and what it means in the first sentence, because a senior room wants the implication immediately.",
             expectedIssue: .roboticPhrase("a senior room wants"),
-            referenceReply: "Your last rep led cleanly, so tomorrow's practice should sharpen the ask. Run a 30-second update: headline, implication, one decision you need."
+            referenceReply: "For tomorrow’s update, make the ask the target because that is the decision the room can act on. Run 30 seconds with the headline, implication, and one decision you need."
         )
     ]
 
@@ -31510,9 +31510,6 @@ struct CoachChatEvaluationFixtureTests {
             "definitely means",
             "guaranteed",
             "diagnosis",
-            "i'll keep",
-            "i’ll keep",
-            "i will keep",
             "i'll cut",
             "i’ll cut",
             "i will cut"

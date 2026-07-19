@@ -3322,6 +3322,9 @@ struct CoachVisionProductionReadinessAudit: Codable, Equatable {
         if evidence.appPathProofTestProgressionVerified {
             score += 4
         }
+        if evidence.transcriptPracticeLoopVerified == true {
+            score += 2
+        }
         if evidence.liveProviderRowsPassingFloor >= CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount {
             score += 16
         }
@@ -3401,6 +3404,9 @@ struct CoachVisionProductionReadinessEvidence: Codable, Equatable {
     let localAdversarialRowsRejectedByProductionFloor: Int
     let appPathImmediateReadVerified: Bool
     let appPathProofTestProgressionVerified: Bool
+    /// Local-only, source-bound transcript-ladder corpus. Optional preserves
+    /// decode compatibility with manifests generated before this gate existed.
+    let transcriptPracticeLoopVerified: Bool?
     let liveProviderRowsPassingFloor: Int
     let professionalCoachCalibrationRows: Int
     let realUserLongitudinalOutcomeCount: Int
@@ -3424,6 +3430,8 @@ struct CoachVisionProductionReadinessEvidence: Codable, Equatable {
             localAdversarialRowsRejectedByProductionFloor: adversarialRowsRejectedByProductionFloor,
             appPathImmediateReadVerified: true,
             appPathProofTestProgressionVerified: true,
+            transcriptPracticeLoopVerified: TranscriptPracticeEvaluationCorpus
+                .report().qualifiesForLocalReadiness,
             liveProviderRowsPassingFloor: 0,
             professionalCoachCalibrationRows: 0,
             realUserLongitudinalOutcomeCount: 0,
@@ -3500,6 +3508,8 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
             localAdversarialRowsRejectedByProductionFloor: localAdversarialRowsRejected,
             appPathImmediateReadVerified: appPathImmediateReadVerified,
             appPathProofTestProgressionVerified: appPathProofTestProgressionVerified,
+            transcriptPracticeLoopVerified: TranscriptPracticeEvaluationCorpus
+                .report().qualifiesForLocalReadiness,
             liveProviderRowsPassingFloor: verifiedLiveProviderRowsPassingFloor,
             professionalCoachCalibrationRows: verifiedProfessionalCoachCalibrationRows,
             realUserLongitudinalOutcomeCount: verifiedRealUserTransferOutcomeRows,
@@ -3680,6 +3690,15 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
                 source: liveAppPathReport.schemaVersion,
                 blocker: nil,
                 notes: "surface=\(liveAppPathReport.surface); expected immediate reads=\(liveAppPathReport.summary.immediateCoachReadExpectedCount)."
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "transcriptPracticeLoop",
+                status: evidence.transcriptPracticeLoopVerified == true ? .earned : .missing,
+                observedCount: TranscriptPracticeEvaluationCorpus.report().rowsPassing,
+                requiredCount: 20,
+                source: TranscriptPracticeEvaluationReport.schemaVersion,
+                blocker: nil,
+                notes: "Twenty source-bound simulated retries cover opening, closing, structure, concision, regression, and insufficient-evidence terminals; local substrate only."
             ),
             CoachVisionProductionReadinessEvidenceRow(
                 key: "liveProviderTranscriptSweep",
@@ -3894,7 +3913,7 @@ enum CoachChatEvaluationCorpus {
                 "COACH FORMULATION",
                 "silence as the replacement behavior"
             ],
-            referenceReply: "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand.",
+            referenceReply: "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern.",
             knownBadReply: "Based on your data, the key insight is reducing fillers.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -3954,9 +3973,9 @@ enum CoachChatEvaluationCorpus {
                 "specific friction",
                 "RECENT (most-recent first)"
             ],
-            referenceReply: "Fair push: that read was too generic. The last rep gives enough signal; next rep, use one clean opener and stop after the point lands.",
+            referenceReply: "You’re right—that sounded robotic and was too long. I’ll use one specific point in plain language.",
             knownBadReply: "Next rep, use one clean opener and stop after the point lands.",
-            expectedBadIssue: .missedTrustRepair
+            expectedBadIssue: .nonCoachingPrescription
         ),
         CoachChatEvaluationFixture(
             id: "markdown-tts-trust-repair",
@@ -3984,7 +4003,7 @@ enum CoachChatEvaluationCorpus {
                 "Never output literal Markdown markers",
                 "same text may be spoken aloud"
             ],
-            referenceReply: "Fair push: the stars should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
+            referenceReply: "You’re right—TTS read the formatting aloud, and the wording sounded robotic. I’ll use plain text and one direct point.",
             knownBadReply: "The app is designed to provide AI coaching, and formatting like **Read:** may appear while the system improves.",
             expectedBadIssue: .defensiveProductLanguage
         ),
@@ -4017,9 +4036,9 @@ enum CoachChatEvaluationCorpus {
                 "COACH FORMULATION",
                 "ordering signal"
             ],
-            referenceReply: "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
+            referenceReply: "You’re right—that sounded robotic and was too long. I’ll use one specific point in plain language.",
             knownBadReply: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise, structure your thoughts, and practice confidence.",
-            expectedBadIssue: .roboticPhrase("i understand your frustration")
+            expectedBadIssue: .nonCoachingPrescription
         ),
         CoachChatEvaluationFixture(
             id: "authoritative-distance-deep-assessment",
@@ -4048,7 +4067,7 @@ enum CoachChatEvaluationCorpus {
                 "ARGUMENT LOGIC",
                 "authoritative"
             ],
-            referenceReply: "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
+            referenceReply: "Mechanically, this rep is closer: recommendation first, 7/10, 1 filler. Record 75 seconds with verdict first, one reason, and a clean stop because this rep does not prove authoritative delivery under pressure.",
             knownBadReply: "This proves you are close to sounding authoritative. You scored 7/10, so use fewer fillers next time.",
             expectedBadIssue: .overclaimsEvidence
         ),
@@ -4086,7 +4105,7 @@ enum CoachChatEvaluationCorpus {
                 "No broad menu",
                 "RECENT (most-recent first)"
             ],
-            referenceReply: "The pattern I'd pick is the rushed close. Review the last transcript, rewrite only the final sentence, then run one rep with that close as the target.",
+            referenceReply: "Closing strength declined across four recent reps, so work only on the close. Rewrite the final sentence, then run one equivalent rep and check whether the ask ends cleanly.",
             knownBadReply: "We can work on fillers or structure. What is your priority today?",
             expectedBadIssue: .menuInsteadOfDecision
         ),
@@ -4226,7 +4245,7 @@ enum CoachChatEvaluationCorpus {
                 "Current coaching hypothesis: Pace is the next lever",
                 "recent reps are landing compressed"
             ],
-            referenceReply: "Your last rep is clean but compressed. Next rep, keep the same first sentence, then pause once after the decision so the reason has room to land.",
+            referenceReply: "The current trend is compressed pace, so keep the same first sentence, pause once after the decision, then give the reason without speeding up.",
             knownBadReply: "Based on your data, slow down and sound more confident.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -4306,7 +4325,7 @@ enum CoachChatEvaluationCorpus {
                 "openers are warming up before the point",
                 "COACHING EXPERTISE"
             ],
-            referenceReply: "Your last rep is clean, but the useful gap is the opener: it warms into the point, so the verdict arrives late. Next rep, make sentence one the verdict, then add one reason.",
+            referenceReply: "The current trend is warm-up before the point, so make sentence one the verdict on the next rep, then add one reason.",
             knownBadReply: "Based on your data, make the opening clearer.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -4386,7 +4405,7 @@ enum CoachChatEvaluationCorpus {
                 "recent answers are carrying extra context",
                 "COACHING EXPERTISE"
             ],
-            referenceReply: "Your last rep is already clean; the signal is the extra condition adding drag. Next rep, say the recommendation in one sentence, give one reason, then stop.",
+            referenceReply: "The current trend is extra context adding drag, so say the recommendation in one sentence, give one reason, then stop.",
             knownBadReply: "Based on your data, make it shorter and communicate clearly.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -4426,7 +4445,7 @@ enum CoachChatEvaluationCorpus {
                 "reasons are not consistently tied to the ask",
                 "COACHING EXPERTISE"
             ],
-            referenceReply: "Your last rep has the claim and a reason; the signal is that the reason is not yet tied to the ask. Next rep, use claim, one reason, and one sentence that says what that reason makes possible.",
+            referenceReply: "The current trend is reasons separating from the ask, so use one claim, one reason, and one sentence that names what the reason makes possible.",
             knownBadReply: "Based on your data, structure the middle more clearly.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -4466,7 +4485,7 @@ enum CoachChatEvaluationCorpus {
                 "final lines are ending cautiously",
                 "COACHING EXPERTISE"
             ],
-            referenceReply: "Your last rep is clear; the signal is the close keeps softening. Next rep, say the recommendation once, give one reason, and stop without adding a softener.",
+            referenceReply: "The current trend is a softened close, so say the recommendation once, give one reason, and stop without adding another softener.",
             knownBadReply: "Based on your data, sound more confident and believe in yourself.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -4506,7 +4525,7 @@ enum CoachChatEvaluationCorpus {
                 "answers need one concrete example before they expand",
                 "COACHING EXPERTISE"
             ],
-            referenceReply: "Your last rep has strong reasons; the signal is no concrete example for the listener to picture. Next rep, keep the same claim, add one example, then stop before adding a second thread.",
+            referenceReply: "The current trend is depth without one concrete example, so keep the claim, add one example, then stop before a second thread.",
             knownBadReply: "Based on your data, add more depth but avoid rambling.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -4546,7 +4565,7 @@ enum CoachChatEvaluationCorpus {
                 "final sentences are turning into summaries",
                 "COACHING EXPERTISE"
             ],
-            referenceReply: "Your last rep has the decision; the signal is the ending turns into a summary. Next rep, make the final sentence the decision itself and stop there.",
+            referenceReply: "The current trend is an ending that turns into summary, so make the final sentence the decision itself and stop there.",
             knownBadReply: "Based on your data, make the ending stronger and clearer.",
             expectedBadIssue: .roboticPhrase("based on your data")
         )
@@ -4737,32 +4756,32 @@ struct CoachChatLatestLiveEvalRegressionTests {
                 To break this, test the silent pause: the moment you feel an um coming, hold one second of silence instead, then say the next word.
                 Run one rep now with that silent beat to see if it stops the filler.
                 """,
-                .roboticPhrase("to break this")
+                .overclaimsEvidence
             ),
             (
                 "metric-action-without-read",
                 "Your last rep had five fillers, so test a slow open on your next run to give yourself room to find the second sentence. Say your first line slower than feels natural, which can replace the early um with a silent beat.",
-                .roboticPhrase("give yourself room to find")
+                .overclaimsEvidence
             ),
             (
                 "metric-action-without-read",
                 "Your last rep carried five fillers, which is a solid baseline to test against. Run one rep now where you focus on a slow open: say your first sentence slower than feels natural, then hold a silent beat before sentence two.",
-                .missingInsightBridge
+                .overclaimsEvidence
             ),
             (
                 "critique-trust-repair",
                 "You are right to call that out, and I am cutting the robotic report voice. Your last rep had one filler, so record a new rep where you say the main point in your very first sentence and then stop.",
-                .roboticPhrase("i am cutting the")
+                .nonCoachingPrescription
             ),
             (
                 "markdown-tts-trust-repair",
                 "Fair push. I'll cut the markers and the report voice — your last rep gives me enough to work from, so next time out, lead with your recommendation in the first sentence and stop there.",
-                .roboticPhrase("i'll cut the markers")
+                .nonCoachingPrescription
             ),
             (
                 "assistant-explainer-register",
                 "You are right to call that out, as that generic tip-giving was cold and did not help. Your last rep had one filler but the main point did not clearly lead, so open your next attempt by saying your core client recommendation in the very first sentence because that tests whether a strong start helps you feel in control.",
-                .roboticPhrase("generic tip-giving")
+                .nonCoachingPrescription
             ),
             (
                 "what-next-single-move",
@@ -4804,7 +4823,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             ),
             (
                 "filler-pressure-prescription",
-                "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, then compare fillers per minute under the same demand."
+                "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern."
             ),
             (
                 "metric-action-without-read",
@@ -4812,11 +4831,11 @@ struct CoachChatLatestLiveEvalRegressionTests {
             ),
             (
                 "assistant-explainer-register",
-                "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+                "You’re right—that sounded robotic and was too long. I’ll use one specific point in plain language."
             ),
             (
                 "what-next-single-move",
-                "The pattern I'd pick is the rushed close. Review the last transcript, rewrite only the final sentence, then run one rep with that close as the target."
+                "Closing strength declined across four recent reps, so work only on the close. Rewrite the final sentence, then run one equivalent rep and check whether the ask ends cleanly."
             ),
             (
                 "overclaim-hypothesis-boundary",
@@ -4862,7 +4881,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(!shape.contains("before sentence two"))
     }
 
-    @Test func pressureFillerRepairShapeUsesPressureCloseTarget() throws {
+    @Test func pressureFillerRepairShapeKeepsGeneralTechniqueSeparateFromPersonalMetrics() throws {
         let fixture = try Self.fixture("filler-pressure-prescription")
         let shape = try #require(AICoachChatService.repairReferenceShape(
             issue: .missingInsightBridge,
@@ -4870,13 +4889,10 @@ struct CoachChatLatestLiveEvalRegressionTests {
             system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
         ))
 
-        #expect(shape.contains("6 fillers in 64 seconds (5.6 per minute)"))
-        #expect(shape.contains("before the final sentence"))
-        #expect(shape.contains("finish the ask"))
+        #expect(shape.contains("one-second silence"))
         #expect(shape.contains("compare fillers per minute"))
-        #expect(!shape.contains("before sentence two"))
-        #expect(!shape.contains("pressure leak"))
-        #expect(!shape.contains("mostly before"))
+        #expect(shape.contains("test, not a pattern"))
+        #expect(!shape.contains("6 fillers in 64 seconds"))
         #expect(!shape.lowercased().contains("semantic words"))
     }
 
@@ -4979,9 +4995,9 @@ struct CoachChatLatestLiveEvalRegressionTests {
             turnDepth: .quickMove
         ))
 
-        #expect(repair.contains("6 fillers in 64 seconds (5.6 per minute)"))
-        #expect(repair.contains("one silent beat before the final sentence"))
+        #expect(repair.contains("one-second silence"))
         #expect(repair.contains("compare fillers per minute"))
+        #expect(!repair.contains("6 fillers in 64 seconds"))
         #expect(AICoachChatService.replyQualityIssue(
             in: repair,
             latestUserTurn: fixture.latestUserTurn,
@@ -4999,8 +5015,8 @@ struct CoachChatLatestLiveEvalRegressionTests {
             system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
         ))
 
-        #expect(shape.contains("ordering signal is warmth before the recommendation"))
-        #expect(shape.contains("put the recommendation first"))
+        #expect(shape.contains("sounded robotic"))
+        #expect(shape.contains("one specific point"))
         #expect(!shape.contains("1 filler"))
     }
 
@@ -5338,12 +5354,22 @@ struct CoachChatLatestLiveEvalRegressionTests {
                 systemContext: context
             )
 
-            #expect(vision.score >= 70,
-                    "\(id) reference reply scored too low: \(vision.score), missed \(vision.missed)")
-            #expect(!vision.criticalMisses.contains(.observableAnchor),
-                    "\(id) reference reply lost its grounding anchor")
-            #expect(!vision.criticalMisses.contains(.prescribedAction),
-                    "\(id) reference reply lost its next move")
+            let depth = TurnDepthClassifier.classify(userText: fixture.latestUserTurn)
+            if depth == .trustRepair {
+                #expect(AICoachChatService.replyQualityIssue(
+                    in: fixture.referenceReply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                    systemContext: context
+                ) == nil, "\(id) trust repair should remain concise and non-prescriptive")
+            } else {
+                #expect(vision.score >= 70,
+                        "\(id) reference reply scored too low: \(vision.score), missed \(vision.missed)")
+                #expect(!vision.criticalMisses.contains(.observableAnchor),
+                        "\(id) reference reply lost its grounding anchor")
+                #expect(!vision.criticalMisses.contains(.prescribedAction),
+                        "\(id) reference reply lost its next move")
+            }
         }
     }
 

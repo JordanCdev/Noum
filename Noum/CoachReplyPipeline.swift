@@ -1320,6 +1320,7 @@ enum CoachReplyPipeline {
                 responseKind: responseKind,
                 coachingBrief: resolvedBrief
             ) {
+                Self.log.notice("safe fallback rejected by \(issue.auditLabel, privacy: .public)")
                 onRejectedGate?(issue.auditLabel)
                 return false
             }
@@ -1330,8 +1331,21 @@ enum CoachReplyPipeline {
                 assessment: responseKind == .conversational ? nil : assessment,
                 responseKind: responseKind
             ) {
+                Self.log.notice("safe fallback rejected by semantic:\(issue.rawValue, privacy: .public)")
                 onRejectedGate?("semantic:\(issue.rawValue)")
                 return false
+            }
+            // The canonical missing-evidence brief is already the typed source
+            // of truth for both the pending row and the terminal fallback. Once
+            // reliability, professional quality, and semantic checks pass, do
+            // not ask the generic vision rubric to manufacture an observable
+            // anchor or action that this brief deliberately withdrew.
+            if responseKind == .personalEvidenceRead,
+               resolvedBrief?.evidenceStrength == .missing,
+               fallback == resolvedBrief?.provisionalCoachRead(
+                for: .personalEvidenceRead
+               ) {
+                return true
             }
             if let issue = AICoachChatService.visionQualityIssue(
                 in: fallback,
@@ -1342,6 +1356,7 @@ enum CoachReplyPipeline {
                 surface: surface,
                 responseKind: responseKind
             ) {
+                Self.log.notice("safe fallback rejected by vision:\(issue.auditLabel, privacy: .public)")
                 onRejectedGate?("vision:\(issue.auditLabel)")
                 return false
             }

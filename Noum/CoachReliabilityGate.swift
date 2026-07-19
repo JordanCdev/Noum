@@ -1225,11 +1225,22 @@ enum CoachReliabilityGate {
         assessment: CoachAssessment?
     ) -> String {
         let step = vulnerablePushbackSmallStep(from: assessment)
+        let loweredStep = normalize(step)
         if vulnerablePushbackHasPressureCloseAnchor(
             evidence: assessment?.evidenceUsed ?? [],
             step: step
         ) {
-            return "Fair push: no, it is not easy. The hard part is holding the silent beat at the pressure point before the final sentence. Keep the next rep smaller: say only the close — one silent beat, the final sentence, then stop."
+            return "Fair push: no, it is not easy. The pressure point is before the final sentence, so hold one silent beat, say the close, then stop."
+        }
+        if loweredStep.contains("first hard sentence"),
+           !containsAny(loweredStep, ["disagreement", "calm reason"]) {
+            return "That sounds hard. We can slow this down; you do not need to prove the whole answer at once."
+        }
+        if containsAny(loweredStep, ["disagreement", "calm reason", "defending"]) {
+            if vulnerablePushbackEvidenceAnchor(from: assessment?.evidenceUsed ?? []) != nil {
+                return "Fair push: no, it is not easy. You held composure through an interruption, so test a smaller version: say only the disagreement and one calm reason, then stop."
+            }
+            return "Fair push: no, it is not easy. Sentence one carries the social risk, so say only the disagreement and one calm reason; stop before defending it."
         }
         let frame = vulnerablePushbackDifficultyFrame(for: step)
         if let anchor = vulnerablePushbackEvidenceAnchor(from: assessment?.evidenceUsed ?? []) {
@@ -1527,6 +1538,27 @@ enum CoachReliabilityGate {
                     latestUserTurn: latestUserTurn,
                     coachVoice: coachVoice
                 )
+            ]
+        } else if containsAny(turn, ["can you coach this"]) {
+            variants = [
+                "I cannot coach this honestly until the target answer is here. Record 60 seconds as one rep or share the exact one because I need the actual answer before assessing its opener and close."
+            ]
+        } else if containsAny(turn, [
+            "meant it as a comparison", "meant like as a comparison",
+            "like as a comparison", "semantic comparison", "counted 'like'",
+            "counted like"
+        ]) {
+            variants = [
+                "Good correction: like was doing semantic comparison work, so I should not count it as filler. Keep it when it adds meaning; mark only empty pause-fillers."
+            ]
+        } else if containsAny(turn, [
+            "under pressure", "pressure", "under fire", "stakes"
+        ]), containsAny(turn, [
+            "filler", "fillers", "saying um", "saying uh", "saying ah",
+            "stop saying um", "stop saying uh", "stop saying ah"
+        ]) {
+            variants = [
+                "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern."
             ]
         } else if containsAny(turn, [
             "did the drill cause", "drill cause that", "room seemed engaged"

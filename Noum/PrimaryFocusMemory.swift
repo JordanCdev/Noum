@@ -2484,7 +2484,25 @@ enum CoachMemoryEngine {
         // contradictory reads. See docs/initiatives/01_adaptation_loop_spec.md.
         let status: CoachInterventionReviewStatus
         let reviewBasis: String
-        if let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(
+        if let comparison = latest.transcriptRetryComparison {
+            switch comparison.result {
+            case .improved:
+                status = .continueAndVerify
+                reviewBasis = "The targeted \(comparison.lever.focusLabel) signal improved on this retry; treat one comparison as promising, not conclusive."
+            case .held:
+                status = .formingEvidence
+                reviewBasis = "The targeted \(comparison.lever.focusLabel) signal held on this retry; keep the lever narrow and gather another comparable rep."
+            case .regressed:
+                status = .diagnoseBeforeRepeating
+                reviewBasis = "The targeted \(comparison.lever.focusLabel) signal moved back on this retry; diagnose the attempt before repeating the same wording."
+            case .needsMoreEvidence:
+                status = .formingEvidence
+                reviewBasis = "This retry did not preserve enough comparable evidence to judge the targeted lever."
+            }
+        } else if latest.transcriptRetryTarget != nil {
+            status = .formingEvidence
+            reviewBasis = "The targeted retry completed, but its source comparison was not reliable enough to update the intervention."
+        } else if let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(
             mode: latest.mode, focus: latest.focus, in: outcomes),
            let verdictLine = RecommendationAdaptationAnalyzer.adaptationRationale(
             mode: latest.mode, focus: latest.focus, in: outcomes) {
@@ -2633,6 +2651,17 @@ final class CoachMemoryStore: ObservableObject {
         ) else { return }
         currentMemory = memory
         persist(memory)
+        if let lastSessionID,
+           let outcome = recommendationOutcomes.first(where: {
+               $0.sessionID == lastSessionID
+                   && $0.transcriptRetryTarget != nil
+           }),
+           let observabilityID = outcome.observabilityID {
+            FlowEventLog.shared.recordTranscriptInterventionUpdated(
+                correlationId: observabilityID,
+                result: outcome.transcriptRetryComparison?.result ?? .needsMoreEvidence
+            )
+        }
     }
 
     /// Update only the durable reflection clause on the current memory,

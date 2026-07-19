@@ -191,7 +191,10 @@ struct CoachLiveEvaluationTests {
             Issue.record("Expected the pipeline content-rejected fallback")
             return
         }
-        #expect(reply == CoachReliabilityGate.noSymbolFollowThroughFallback(surface: .text))
+        #expect(reply == CoachReliabilityGate.preferenceAcknowledgementFallback(
+            surface: .text,
+            latestUserTurn: turn
+        ))
         let visible = Self.finalVisibleReply(
             providerReply: reply,
             history: [],
@@ -610,7 +613,6 @@ struct CoachLiveEvaluationTests {
             CoachLiveReadinessWarning.productionFloorFailures.rawValue,
             CoachLiveReadinessWarning.repeatedProofTestHash.rawValue,
             CoachLiveReadinessWarning.flatAssessmentConfidence.rawValue,
-            CoachLiveReadinessWarning.missingImmediateCoachRead.rawValue,
             CoachLiveReadinessWarning.providerRetryPressure.rawValue,
             CoachLiveReadinessWarning.providerRefusalPressure.rawValue
         ])
@@ -626,9 +628,9 @@ struct CoachLiveEvaluationTests {
         #expect(report.summary.totalProviderRefusalCount == 2)
         #expect(report.summary.firstVisibleTokenMinMs == 210)
         #expect(report.summary.firstVisibleTokenMaxMs == 840)
-        #expect(report.summary.immediateCoachReadExpectedCount == 3)
-        #expect(report.summary.immediateCoachReadMissingCount == 1)
-        #expect(report.summary.missingImmediateCoachReadFixtureIDs == ["two"])
+        #expect(report.summary.immediateCoachReadExpectedCount == 0)
+        #expect(report.summary.immediateCoachReadMissingCount == 0)
+        #expect(report.summary.missingImmediateCoachReadFixtureIDs.isEmpty)
         #expect(report.summary.userPushbackWithinTwoTurnsCount == 2)
         #expect(report.summary.coldnessComplaintCount == 1)
         #expect(report.summary.softPushbackCount == 1)
@@ -678,7 +680,7 @@ struct CoachLiveEvaluationTests {
         #expect(report.passesRunReadinessFloor)
         #expect(report.summary.assessmentConfidenceDistinctRoundedCount == 3)
         #expect(report.summary.uniqueProofTestHashCount == 3)
-        #expect(report.summary.immediateCoachReadExpectedCount == 3)
+        #expect(report.summary.immediateCoachReadExpectedCount == 0)
         #expect(neutral.assessmentConfidence == nil)
         #expect(neutral.assessmentProofTestHash == nil)
         #expect(!neutral.immediateCoachReadExpected)

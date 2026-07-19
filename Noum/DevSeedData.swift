@@ -43,6 +43,25 @@ enum DevSeedData {
 
     // MARK: - Public API
 
+    /// Resolves the single deterministic persona requested by launch tooling.
+    /// Keeping argument parsing here lets both pre-render seeding and the
+    /// post-hydration repair use exactly the same profile instead of silently
+    /// falling back to different fixtures.
+    nonisolated static func requestedProfileForUITesting(
+        arguments: [String]
+    ) -> SeedProfile? {
+        guard arguments.contains("UI_TESTING_SEED")
+                || arguments.contains("UI_TESTING_SEED_FORCE") else {
+            return nil
+        }
+        if let index = arguments.firstIndex(of: "UI_TESTING_SEED_PROFILE"),
+           index + 1 < arguments.count,
+           let picked = SeedProfile(rawValue: arguments[index + 1]) {
+            return picked
+        }
+        return .improvingIntermediate
+    }
+
     /// The trend evidence a seeded persona implies. `injectProfile` writes this
     /// into the live trend store, and `coachIntelligenceFixture` feeds the same
     /// roster to `BaselineEngine` so the constructed fixture and the seeded app
