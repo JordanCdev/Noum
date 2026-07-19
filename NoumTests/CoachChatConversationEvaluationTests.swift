@@ -1004,8 +1004,16 @@ enum CoachChatConversationCorpus {
         var earned: [CoachChatConversationCriterion] = []
         var missed: [CoachChatConversationCriterion] = []
         var score = 0
+        var applicableWeight = 0
 
-        func evaluate(_ criterion: CoachChatConversationCriterion, weight: Int, passes: Bool) {
+        func evaluate(
+            _ criterion: CoachChatConversationCriterion,
+            weight: Int,
+            applicable: Bool = true,
+            passes: Bool
+        ) {
+            guard applicable else { return }
+            applicableWeight += weight
             if passes {
                 earned.append(criterion)
                 score += weight
@@ -1029,11 +1037,21 @@ enum CoachChatConversationCorpus {
             "because", "so ", "which", "the signal", "the pattern",
             "the issue", "the target", "the move", "the open question"
         ]))
-        evaluate(.followupContinuity, weight: 8, passes: conversation.turns.count >= 3 && containsAny(lowerCoach, [
+        evaluate(
+            .followupContinuity,
+            weight: 8,
+            applicable: conversation.turns.count >= 3,
+            passes: containsAny(lowerCoach, [
             "sentence one", "final sentence", "same", "that point",
             "the close", "the opener", "recommendation", "proof"
-        ]))
-        evaluate(.stateRetention, weight: 8, passes: preservesTurnState(conversation))
+            ])
+        )
+        evaluate(
+            .stateRetention,
+            weight: 8,
+            applicable: conversation.turns.count >= 2,
+            passes: preservesTurnState(conversation)
+        )
         evaluate(.nonRepetitiveTrajectory, weight: 4, passes: avoidsRepeatedReplyTrajectory(conversation))
         evaluate(.proofTestProgression, weight: 4, passes: proofTestsProgress(conversation))
         evaluate(.discourseMoveDiversity, weight: 0, passes: variesDiscourseMoves(conversation))
@@ -1059,8 +1077,15 @@ enum CoachChatConversationCorpus {
         let averageReplyWords = conversation.turns.isEmpty ? 0 : wordCount(combinedCoach) / conversation.turns.count
         evaluate(.brevity, weight: 2, passes: averageReplyWords <= 70)
 
+        // One-turn adversarial fixtures validate a single response, so they
+        // cannot earn or miss cross-turn continuity/state points. Normalize
+        // against the criteria that can actually be observed; multi-turn
+        // journeys retain the full 100-point contract unchanged.
+        let normalizedScore = applicableWeight > 0
+            ? Int((Double(score) / Double(applicableWeight) * 100).rounded())
+            : 0
         let cappedScore = harshConversationCap(
-            score: score,
+            score: normalizedScore,
             lowerCoach: lowerCoach,
             conversation: conversation
         )
@@ -2101,6 +2126,45 @@ struct CoachChatConversationCorpusTests {
             #expect(score.passesConversationFloor,
                     "\(conversation.id) scored \(score.score), lowest turn \(score.lowestTurnVisionScore), missed \(score.missed)")
         }
+    }
+
+    @Test func singleTurnFixturesDoNotPretendCrossTurnEvidenceExists() {
+        let target = CoachChatConversationCorpus.appPathConversations.first {
+            $0.id == "arena-upcoming-conflict-028-app-path-conversation"
+        }!
+        let targetScore = CoachChatConversationCorpus.evaluate(target)
+        let weak = CoachChatConversationFixture(
+            id: "weak-single-turn",
+            sourceFixtureID: target.sourceFixtureID,
+            turns: [CoachChatConversationTurn(
+                userTurn: target.turns[0].userTurn,
+                coachReply: "Practice more and be confident."
+            )]
+        )
+        let weakScore = CoachChatConversationCorpus.evaluate(weak)
+
+        #expect(!targetScore.earned.contains(.followupContinuity))
+        #expect(!targetScore.missed.contains(.followupContinuity))
+        #expect(!targetScore.earned.contains(.stateRetention))
+        #expect(!targetScore.missed.contains(.stateRetention))
+        #expect(targetScore.passesConversationFloor)
+        #expect(!weakScore.passesConversationFloor)
+        #expect(weakScore.missed.contains(.evidenceCalibration))
+        #expect(weakScore.missed.contains(.observableAnchor))
+    }
+
+    @Test func appPathTargetShapeClearsLocalJourneyFloorWithoutInventingContinuity() {
+        let report = CoachChatConversationEvaluationReport.make(
+            from: CoachChatConversationCorpus.appPathConversations
+        )
+
+        #expect(report.visionProductionReadiness.localTargetShapeScore >= 85)
+        #expect(report.rows.filter { $0.turns.count == 1 }.allSatisfy { row in
+            !row.earned.contains(CoachChatConversationCriterion.followupContinuity.rawValue) &&
+                !row.missed.contains(CoachChatConversationCriterion.followupContinuity.rawValue) &&
+                !row.earned.contains(CoachChatConversationCriterion.stateRetention.rawValue) &&
+                !row.missed.contains(CoachChatConversationCriterion.stateRetention.rawValue)
+        })
     }
 
     @Test func longFormConversationsClearHarshConversationFloor() {
