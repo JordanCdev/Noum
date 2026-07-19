@@ -307,6 +307,55 @@ struct SummaryView: View {
         }
     }
 
+    /// Transcript → a stronger version of the user's own words.
+    ///
+    /// This used to mount inside `expandableDetailsSection`, which defaults
+    /// closed — the same failure the deep-read path already hit (see the
+    /// comment on `deepReadCard`): a Pro feature the pitch advertises but the
+    /// user never reaches. It renders directly beneath the debrief now, so the
+    /// screen reads as one arc: here is the read, here is a stronger version of
+    /// what you actually said, here is the drill.
+    ///
+    /// Self-suppressing. `primaryWeakness` is nil for filler, pace, pauses,
+    /// emphasis and confidence — those are trained by practice modes, not by
+    /// rewriting a script — so most reps show nothing here at all.
+    @ViewBuilder
+    private var rewriteSection: some View {
+        if currentRepIsProgressEligible,
+           let weakness = primaryWeakness,
+           AIRewriteService.eligibility(
+               transcript: transcriptText,
+               confidence: currentStoredSession?.transcriptConfidence,
+               locale: localeSettings.current
+           ) == .eligible {
+            if premium.isPremium {
+                RewriteSuggestionCard(
+                    transcript: transcriptText,
+                    weakness: weakness,
+                    targetDimension: goalOutcomeRead?.nextDimension?.label,
+                    transcriptConfidence: currentStoredSession?.transcriptConfidence,
+                    onPracticePhrase: onStartLookingAhead.map { launch in
+                        { intent in
+                            guard let token = TimedPracticePromptHandoff.shared.offerToken(
+                                intent.suggestedPrompt
+                            ) else { return }
+                            launch(.timedPracticePrompt(token: token))
+                        }
+                    }
+                )
+            } else {
+                // Quotes the user's real sentence and states the rewrite is
+                // Pro. Never calls the service — no provider cost for a user
+                // who cannot read the result.
+                LockedRewritePreviewCard(
+                    transcript: transcriptText,
+                    weakness: weakness,
+                    onUpgrade: { showPaywall = true }
+                )
+            }
+        }
+    }
+
     private var drillRecommendationV2: DrillRecommendationV2 {
         let categoryTuples = feedbackCategories.map { ($0.dimension, $0.rating.rawValue) }
         return DrillEngineV2.recommend(
@@ -674,6 +723,16 @@ struct SummaryView: View {
         }
     }
 
+    /// Closes the gap between "a rep finished" and "the coaching was read".
+    /// Keyed on the stored session's id so it joins `rep.saved`, which uses the
+    /// same id. Only fires for a rep that actually persisted — an interstitial
+    /// or a below-floor rep never renders this summary, so it must not count
+    /// toward the denominator.
+    private func recordSummaryViewedIfNeeded() {
+        guard let sessionID = currentStoredSession?.id else { return }
+        flowEventLog.recordSummaryViewed(correlationId: sessionID)
+    }
+
     private func recordReviewExperimentExposureIfNeeded() {
         guard let assignment = ReviewExperimentContract.persistedAssignment(
             in: flowEventLog.events
@@ -904,8 +963,9 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
+                            rewriteSection.cardEntrance(2)
                             reviewExperimentActionCard
-                            .cardEntrance(2)
+                            .cardEntrance(3)
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
@@ -917,9 +977,9 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
-                            .cardEntrance(3)
-                            expandableDetailsSection.cardEntrance(4)
-                            SummaryExitPanel(onDone: onHome).cardEntrance(5)
+                            .cardEntrance(4)
+                            expandableDetailsSection.cardEntrance(5)
+                            SummaryExitPanel(onDone: onHome).cardEntrance(6)
                         } else {
                             // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
                             // The post-rep attention budget is small; only the
@@ -970,8 +1030,9 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
+                            rewriteSection.cardEntrance(2)
                             reviewExperimentActionCard
-                            .cardEntrance(2)
+                            .cardEntrance(3)
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
@@ -983,9 +1044,9 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
-                            .cardEntrance(3)
-                            expandableDetailsSection.cardEntrance(4)
-                            SummaryExitPanel(onDone: onHome).cardEntrance(5)
+                            .cardEntrance(4)
+                            expandableDetailsSection.cardEntrance(5)
+                            SummaryExitPanel(onDone: onHome).cardEntrance(6)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -1094,6 +1155,7 @@ struct SummaryView: View {
         .navigationBarBackButtonHidden(true)
         .disableSwipeBack()
         .onAppear(perform: setup)
+        .onAppear(perform: recordSummaryViewedIfNeeded)
         .onDisappear {
             if selectedInterstitial != nil {
                 skillProgression.consumeAll()
@@ -1340,33 +1402,10 @@ struct SummaryView: View {
                         // to cluster at transitions" coaching note now lives
                         // in CoachReadCard's voice-shaped read.
 
-                        // Pro-gated rewrite card — preserves the user's
-                        // voice instead of producing AI-default coaching
-                        // text. Only renders when there's a clear
-                        // weakness category to act on AND the user is Pro.
-                        if currentRepIsProgressEligible,
-                           let weakness = primaryWeakness,
-                           premium.isPremium,
-                           AIRewriteService.eligibility(
-                               transcript: transcriptText,
-                               confidence: currentStoredSession?.transcriptConfidence,
-                               locale: localeSettings.current
-                           ) == .eligible {
-                            RewriteSuggestionCard(
-                                transcript: transcriptText,
-                                weakness: weakness,
-                                targetDimension: goalOutcomeRead?.nextDimension?.label,
-                                transcriptConfidence: currentStoredSession?.transcriptConfidence,
-                                onPracticePhrase: onStartLookingAhead.map { launch in
-                                    { intent in
-                                        guard let token = TimedPracticePromptHandoff.shared.offerToken(
-                                            intent.suggestedPrompt
-                                        ) else { return }
-                                        launch(.timedPracticePrompt(token: token))
-                                    }
-                                }
-                            )
-                        }
+                        // The rewrite card used to live here, behind a
+                        // disclosure that defaults closed. It now renders
+                        // above the fold as `rewriteSection` — see its
+                        // definition for why.
 
                         // Premium deep read — the rescued entry point for
                         // `requestDeeperFeedback`. The old standalone
@@ -1485,6 +1524,9 @@ struct SummaryView: View {
             }
             .foregroundStyle(AppColor.brandBlue)
         }
+        // The tap opens a chooser, not a share sheet — and one of the choices
+        // is "request feedback", which the label doesn't hint at.
+        .accessibilityHint("Opens options to share a score card or request feedback.")
         .accessibilityIdentifier("summary.details.share")
     }
 
@@ -1510,6 +1552,10 @@ struct SummaryView: View {
                 .frame(minHeight: 44, alignment: .leading)
             }
             .disabled(isAnalyzingVideo)
+            // "Analyze delivery" doesn't say WHAT gets analysed. The action
+            // reads the video recording (and may ask for cloud-processing
+            // consent first), which a non-visual user cannot infer.
+            .accessibilityHint("Reviews your video recording for posture, eye contact, and gestures.")
             .accessibilityIdentifier("summary.details.analyzeVideo")
 
             if let result = videoAnalysisResult {
@@ -1543,6 +1589,7 @@ struct SummaryView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .tracking(0.6)
+                        .accessibilityAddTraits(.isHeader)
                     HStack(spacing: 16) {
                         if let fd = fillerDelta {
                             comparisonStat(label: "Filler rate", delta: fd, inverted: true, unit: "/min", fractionDigits: 1)
@@ -1591,6 +1638,7 @@ struct SummaryView: View {
 
             Text("Delivery analysis")
                 .font(.subheadline.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
 
             videoAnalysisRow(label: "Posture", rating: result.posture, note: result.postureNote)
             videoAnalysisRow(label: "Eye Contact", rating: result.eyeContact, note: result.eyeContactNote)
@@ -1649,11 +1697,13 @@ struct SummaryView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
+                .accessibilityAddTraits(.isHeader)
 
             if let aiFeedback {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("What you did well")
                         .font(.subheadline.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
                     ForEach(aiFeedback.strengths, id: \.self) { strength in
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "checkmark")
@@ -1670,12 +1720,14 @@ struct SummaryView: View {
 
                     Text("Key improvement")
                         .font(.subheadline.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
                     Text(aiFeedback.keyImprovement)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
                     Text("Suggested drill")
                         .font(.subheadline.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
                     Text(aiFeedback.suggestedDrill)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -1683,6 +1735,7 @@ struct SummaryView: View {
                     if !aiFeedback.revisedOpening.isEmpty {
                         Text("Try this opening")
                             .font(.subheadline.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
                         Text("\"\(aiFeedback.revisedOpening)\"")
                             .font(.subheadline.italic())
                             .foregroundStyle(.secondary)
@@ -1755,6 +1808,10 @@ struct SummaryView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isRequestingAIFeedback)
+                // The monthly analysis budget is only visible on screen once
+                // the user is near the limit. Naming the cost before the tap
+                // is the honest read of what the button spends.
+                .accessibilityHint("Uses one of your monthly coaching analyses.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

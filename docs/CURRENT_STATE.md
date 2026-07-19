@@ -1,5 +1,83 @@
 # Noum — Current state
 
+## 2026-07-19 — Coach-surface accessibility, rewrite reachability, dead-code removal, funnel denominators
+
+An external audit report proposed a twelve-row remediation plan for `ux-overhaul`.
+Six of its nine factual claims were false and were verified as such before any
+code was written. `integration/prod-readiness` is **fully merged** into
+`ux-overhaul` (0 commits ahead, 272 behind, 8 days stale), so the report's entire
+"Highest priority" back-port block was a no-op. The first-rep evidence gate
+already exists with six enforcement points. Retrieval contamination is already
+prevented — the RAG corpus is a static authored card set and the retrieval query
+is filtered to `role == .user`. The hosted privacy URLs return 200, not 404. The
+credential incident closed on 2026-07-18. "FIX FIRST" is not a missing feature;
+it was deliberately folded into `PostRepDebriefCard` by the 2026-07-11 cohesion
+pass, and the report mistook orphaned code for an unimplemented one.
+
+Two claims survived: accessibility coverage and the absence of analytics. Both
+were addressed within M14's ship-gate scope (no new feature surface).
+
+- **VoiceOver on the live call.** New `AccessibilityAnnouncer` — the first
+  announcement helper in the codebase. `LiveCoachCallView` previously posted no
+  announcements at all, so a VoiceOver user got silence when the coach's caption
+  or state line changed: the labels were correct, but focus never moves on its
+  own during a call. `shouldAnnounceCoachCaption` suppresses the announcement
+  when Aloud is on **and** a voice is available, because the reply is already
+  being spoken and a simultaneous announcement is a double-speak bug. User
+  partial transcripts are never announced.
+- **Heading traits and hints.** 13 `.isHeader` traits across `SummaryView`,
+  `AskNoumView`, and `LiveCoachCallView`, so rotor heading navigation works on
+  the post-rep and coach surfaces for the first time, plus 7 `.accessibilityHint`
+  entries limited to genuinely non-obvious actions. `.isSelected` was
+  **deliberately not added**: all four candidate chip rows were checked and none
+  carries selection state, so the trait would have asserted something false.
+- **The rewrite card is reachable.** `AIRewriteService` +
+  `RewriteSuggestionCard` were already built and good — transcript in, a stronger
+  version of the user's own words out, with an explicit "no AI-speak" constraint.
+  They mounted inside `expandableDetailsSection`, which defaults closed: the same
+  failure already documented for the deep-read path. The card now renders beneath
+  the debrief in both Summary branches. Free users get `LockedRewritePreviewCard`,
+  which quotes their real sentence and states the rewrite is Pro. It never calls
+  the service (no provider cost for a user who cannot read the result) and
+  fabricates no teaser text. Pro gating is unchanged.
+- **Bug found and fixed.** `originalSnippet` returned the *entire transcript*
+  labelled as "your opening" whenever the text carried no sentence punctuation —
+  common, since several speech providers return unpunctuated text. Pre-existing,
+  but promoting the card widened its blast radius, so it was fixed here and
+  bounded at 160 characters from the correct end.
+- **360 lines of dead code deleted.** `PostRepFixCard`, `PostRepWinCard`,
+  `PostRepReadCard`, and `ConceptIconChip` were mounted nowhere. The
+  accessibility-ID namespace moved to the live `PostRepDebriefCard` with the
+  identifier value unchanged. This orphaned code is what caused the external
+  audit to hallucinate a missing feature.
+- **Funnel denominators.** `rep.started` and `summary.viewed` added to the
+  existing `FlowObservability`. Deliberately **not** a third-party analytics SDK:
+  that would be net-new feature surface during a ship gate and would add
+  privacy-manifest and App Store disclosure burden. Honest limit — this gives
+  per-user journey reconstruction and local export, not aggregate population
+  analytics. Post-launch population measurement still needs a real analytics path.
+
+**Verification.** Build succeeds. The full unit suite is at exact parity with a
+stashed baseline: **4464 passed / 49 failed on both**, so this work introduces
+zero new failures. 10 new unit tests pass (snippet-never-fabricates asserts every
+returned word traces to the source transcript; funnel `logOnce` semantics; the
+no-transcript-text privacy invariant). The pre-existing Pro rewrite UI test still
+passes even though it calls `openDetails` for a card no longer inside Details, and
+a new `testLockedRewritePreviewRendersForFreeUsersWithoutOpeningDetails` covers
+the free path. Both card states confirmed by screenshot.
+
+**Two pre-existing failures were ruled out by baseline comparison, not assumed:**
+`GoalOutcomeLoopTests/showcaseSeedUsesComparableEvidenceBeforeOfferingAMilestone`
+fails only under parallel execution (passes in isolation — an isolated re-run
+initially made it look like a regression), and
+`GoalOutcomeLoopUITests/testActiveWeekPhraseLaunchesExactPromptFromHome` fails on
+a clean baseline. Neither is caused by this work; both remain open.
+
+**This does not move production readiness.** The gate is 0/5 external artifacts —
+current-source live-provider sweep, blinded professional review, longitudinal
+real-user transfer, physical TestFlight QA, and operational launch sign-off. None
+is reachable from a local session. Production remains **NO-GO**.
+
 ## 2026-07-18 — Ask Noum goal continuity and incident tracing repaired locally; coaching acceptance remains open
 
 The reporter's next installed-simulator conversation exposed a product defect,

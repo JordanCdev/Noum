@@ -960,6 +960,10 @@ struct AskNoumView: View {
                     // Hardcoded 22pt swapped for the shared type scale:
                     // cardTitle (20) at rest, headline (18) when compact.
                     .font(isHeaderCompact ? Typography.headline : Typography.cardTitle)
+                    // The thread's title. A rotor heading here is the only way
+                    // back to the top of a long conversation without swiping
+                    // through every bubble.
+                    .accessibilityAddTraits(.isHeader)
                 if !isHeaderCompact {
                     Text(headerSubtitle)
                         .font(Typography.caption)
@@ -1041,6 +1045,9 @@ struct AskNoumView: View {
                 } label: {
                     Label("Your trajectory", systemImage: "brain")
                 }
+                // "Your trajectory" names the noun, not the action. The hint
+                // says what opens and where the content comes from.
+                .accessibilityHint("Opens what Noum has learned from your practice so far.")
                 .accessibilityIdentifier("askNoum.trajectoryMenuItem")
 
                 if !store.messages.isEmpty {
@@ -1053,6 +1060,10 @@ struct AskNoumView: View {
                     } label: {
                         Label("Clear thread", systemImage: "trash")
                     }
+                    // A destructive action whose scope is genuinely ambiguous:
+                    // the label doesn't say whether practice history goes too.
+                    // It doesn't — say so before the tap.
+                    .accessibilityHint("Removes this conversation. Your practice history stays.")
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -1186,6 +1197,7 @@ struct AskNoumView: View {
                 Text(emptyStateHeadline)
                     .font(Typography.cardTitle)
                     .foregroundStyle(.primary)
+                    .accessibilityAddTraits(.isHeader)
                 Text(emptyStateBody)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
@@ -1235,6 +1247,10 @@ struct AskNoumView: View {
             PrimaryCTA(AskNoumDayZeroGreeting.firstRepCTATitle, icon: "play.fill", tint: AppColor.pro) {
                 beginFirstRep()
             }
+            // "Start first rep" doesn't say the tap leaves the chat for a
+            // practice screen, or that the rep is the coach's recommendation
+            // rather than a picker.
+            .accessibilityHint("Leaves the chat and opens the practice rep your coach recommends.")
             .accessibilityIdentifier("askNoum.dayZeroBegin")
         }
         .padding(.horizontal, Spacing.md)
@@ -1822,6 +1838,9 @@ struct AskNoumView: View {
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Does this coaching read match?")
+                    // Names the chip group below it — a heading so the rotor
+                    // lands on the question before the three verdict chips.
+                    .accessibilityAddTraits(.isHeader)
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
                     ForEach(hypothesisAckChips, id: \.confidence) { chip in
@@ -1957,6 +1976,7 @@ struct AskNoumView: View {
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Does the revised coaching read match?")
+                    .accessibilityAddTraits(.isHeader)
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
                     ForEach(revisedReadFollowUpChips, id: \.confidence) { chip in
@@ -2045,6 +2065,7 @@ struct AskNoumView: View {
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Confirm a change to your speaking voice")
+                    .accessibilityAddTraits(.isHeader)
 
                 if let detail = goalProposalDetail(for: intent) {
                     Text(detail)

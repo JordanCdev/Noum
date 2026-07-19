@@ -262,20 +262,12 @@ struct RewriteSuggestionCard: View {
     /// rewrite is replacing. For opening/closing this is roughly
     /// "first sentence" / "last sentence". Used as the "your version"
     /// view.
+    ///
+    /// Delegates to `AIRewriteService` so the locked (non-Pro) card quotes the
+    /// exact same words back — a free user seeing a different snippet than the
+    /// one Pro would rewrite would make the upgrade pitch dishonest.
     private var originalSnippet: String {
-        let sentences = transcript
-            .split(whereSeparator: { ".!?".contains($0) })
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !sentences.isEmpty else { return transcript.prefix(140).description + (transcript.count > 140 ? "…" : "") }
-        switch weakness {
-        case .opening:
-            return sentences.prefix(2).joined(separator: ". ") + "."
-        case .closing:
-            return sentences.suffix(2).joined(separator: ". ") + "."
-        case .structure, .concise:
-            return transcript.prefix(160).description + (transcript.count > 160 ? "…" : "")
-        }
+        AIRewriteService.originalSnippet(transcript: transcript, weakness: weakness)
     }
 
     private func loadRewrite() async {
@@ -319,6 +311,100 @@ struct RewriteSuggestionCard: View {
             weakness: rewrite.weakness,
             intensity: rewrite.intensity
         ) != nil
+    }
+}
+
+// MARK: - Locked preview (non-Pro)
+//
+// The rewrite is the clearest thing Noum does that a free user cannot see, and
+// it used to be invisible to them entirely — buried behind a collapsed
+// disclosure that also required Pro. A feature nobody can see cannot sell
+// itself.
+//
+// This card shows a free user the real sentence Noum would rework, and states
+// plainly that the reworked version is Pro. What it must never do is fabricate
+// a preview: no blurred fake text, no teaser rewrite, no "AI is thinking"
+// state. The user's own words are real; the absence of the rewrite is honest.
+// It deliberately never touches `AIRewriteService`, so no provider call is
+// made for a user who cannot read the result.
+
+@available(iOS 17.0, *)
+struct LockedRewritePreviewCard: View {
+    let transcript: String
+    let weakness: AIRewriteService.Weakness
+    var onUpgrade: () -> Void
+
+    private var originalSnippet: String {
+        AIRewriteService.originalSnippet(transcript: transcript, weakness: weakness)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(AppColor.pro)
+                Text("Try this \(weakness.humanLabel)")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("PRO")
+                    .font(Typography.micro.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AppColor.pro, in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your version")
+                    .font(Typography.micro.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(originalSnippet)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.md)
+            .background(
+                AppColor.innerSurface,
+                in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+            )
+
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "lock.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
+                Text("Pro rewrites this in your own vocabulary, so it still sounds like you.")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button(action: onUpgrade) {
+                Text("Unlock with Pro")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("summary.rewrite.upgrade")
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("summary.rewrite.locked")
+        .accessibilityLabel("Rewrite suggestion, Pro feature. Your version: \(originalSnippet)")
     }
 }
 

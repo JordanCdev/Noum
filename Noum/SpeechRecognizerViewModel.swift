@@ -584,6 +584,13 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         lastSavedSessionID = nil
         currentRepCorrelationID = UUID()
+        // Opens the funnel for this rep. Logged here — where the correlation
+        // ID is minted and before the audio session can fail — so a rep that
+        // dies during setup still counts as started rather than vanishing.
+        FlowEventLog.shared.recordRepStarted(
+            correlationId: currentRepCorrelationID,
+            mode: currentSessionMode.rawValue
+        )
         sessionUpdateCount = 0
         totalLatencyMs = 0
         confidenceValues = []

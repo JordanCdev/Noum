@@ -104,6 +104,46 @@ final class GoalOutcomeLoopUITests: XCTestCase {
         )
     }
 
+    /// The non-Pro half of the same surface. The rewrite is the clearest thing
+    /// a free user cannot see, so the locked card must actually render — and it
+    /// must render WITHOUT opening Details, which is the whole point of moving
+    /// it above the fold.
+    @MainActor
+    func testLockedRewritePreviewRendersForFreeUsersWithoutOpeningDetails() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "-DeepLink", "noum://summary"
+        ]
+        app.launch()
+
+        dismissProgressionIfNeeded(in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["summary.postRepVerdict"].waitForExistence(timeout: 15))
+
+        let locked = app.descendants(matching: .any)["summary.rewrite.locked"]
+        scrollUntilHittable(locked, in: app, attempts: 20)
+        XCTAssertTrue(
+            locked.waitForExistence(timeout: 12),
+            "A free user must reach the locked rewrite preview without expanding Details."
+        )
+
+        let upgrade = app.buttons["summary.rewrite.upgrade"]
+        scrollUntilHittable(upgrade, in: app, attempts: 6)
+        XCTAssertTrue(upgrade.waitForExistence(timeout: 5))
+
+        // The Pro-only generated rewrite must NOT be present for a free user.
+        XCTAssertFalse(
+            app.descendants(matching: .any)["rewrite.onDevice"].exists,
+            "The locked card must not render a generated rewrite."
+        )
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "locked-rewrite-preview"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor
     func testActiveWeekPhraseLaunchesExactPromptFromHome() throws {
         let app = XCUIApplication()

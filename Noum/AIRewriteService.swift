@@ -56,6 +56,57 @@ actor AIRewriteService {
         profile?.chosenStyleGoal
     }
 
+    /// The slice of the user's own transcript this weakness would rewrite.
+    ///
+    /// Lives on the service rather than inside one card because two surfaces
+    /// quote it: the Pro card's "your version" toggle, and the locked card
+    /// that shows a free user what WOULD be rewritten. Both must quote the
+    /// identical words — a locked pitch that highlights a different sentence
+    /// than the one Pro acts on would be a false advertisement.
+    ///
+    /// Never fabricates: every returned character comes from `transcript`.
+    static func originalSnippet(transcript: String, weakness: Weakness) -> String {
+        let sentences = transcript
+            .split(whereSeparator: { ".!?".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !sentences.isEmpty else { return leading(transcript) }
+
+        // A transcript with no sentence punctuation collapses to ONE
+        // "sentence" — which is common, not exotic: several speech providers
+        // return unpunctuated text, and a rambling rep can genuinely run on.
+        // Joining that single element would hand back the ENTIRE rep labelled
+        // as "your opening", so fall back to a bounded slice from the right
+        // end instead.
+        guard sentences.count > 1 else {
+            return weakness == .closing ? trailing(transcript) : leading(transcript)
+        }
+
+        switch weakness {
+        case .opening:
+            return leading(sentences.prefix(2).joined(separator: ". ") + ".")
+        case .closing:
+            return trailing(sentences.suffix(2).joined(separator: ". ") + ".")
+        case .structure, .concise:
+            return leading(transcript)
+        }
+    }
+
+    /// Longest quoted slice. The snippet sits in a card the user reads at a
+    /// glance; past this it stops being "the sentence to fix" and becomes the
+    /// transcript again.
+    private static let snippetLimit = 160
+
+    private static func leading(_ text: String) -> String {
+        guard text.count > snippetLimit else { return text }
+        return String(text.prefix(snippetLimit)) + "…"
+    }
+
+    private static func trailing(_ text: String) -> String {
+        guard text.count > snippetLimit else { return text }
+        return "…" + String(text.suffix(snippetLimit))
+    }
+
     enum Weakness: String, Sendable, Codable {
         case opening
         case closing

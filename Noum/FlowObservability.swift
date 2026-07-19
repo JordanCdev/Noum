@@ -51,6 +51,21 @@ enum TransformationKPIEventStage {
     static let localTranscriptionResolvedLocal = "transcription.localResolvedLocal"
 }
 
+/// The rep → summary → ask → redo coaching journey.
+///
+/// The terminal halves already existed (`rep.saved`, `rep.aborted`,
+/// `prescription.accepted`), but their denominators did not: there was no
+/// "a rep began" and no "the summary was actually read". Without those two,
+/// a drop-off between finishing a rep and acting on the coaching is
+/// indistinguishable from a rep that was never started.
+///
+/// Same privacy posture as every other stage — reasons and bounded counts,
+/// never prompt text, transcript, or coaching copy.
+enum CoachingFunnelStage {
+    static let repStarted = "rep.started"
+    static let summaryViewed = "summary.viewed"
+}
+
 struct FlowEvent: Codable, Equatable, Identifiable {
     let id: UUID
     let createdAt: Date
@@ -273,6 +288,34 @@ final class FlowEventLog: ObservableObject {
             flow: .other,
             stage: TransformationKPIEventStage.reviewSurfaceOpened,
             reason: "review surface opened"
+        ))
+    }
+
+    /// Opens the funnel for one rep. The caller passes the same correlation ID
+    /// it will later use for `rep.saved` / `rep.aborted`, so a started-but-never
+    /// -finished rep is visible as a gap rather than as silence. Mode is a
+    /// bounded label, never the prompt the user was answering.
+    func recordRepStarted(correlationId: UUID, mode: String, now: Date = Date()) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .practiceRep,
+            stage: CoachingFunnelStage.repStarted,
+            reason: "rep started: \(mode)"
+        ))
+    }
+
+    /// Records that the summary was actually rendered for a finished rep —
+    /// the denominator every post-rep coaching action is measured against.
+    /// Paired to the rep's correlation ID so "finished a rep but never read
+    /// the coaching" is distinguishable from "read it and did nothing".
+    func recordSummaryViewed(correlationId: UUID, now: Date = Date()) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .practiceRep,
+            stage: CoachingFunnelStage.summaryViewed,
+            reason: "summary viewed"
         ))
     }
 

@@ -184,6 +184,17 @@ struct LiveCoachCallView: View {
         voiceInput.state == .recording ? "YOU" : "NOUM"
     }
 
+    /// False when the reply is already going to be spoken aloud — announcing
+    /// it as well would double-speak the same words. Mirrors the condition
+    /// `honestStatusLine` uses: Aloud on AND a usable voice means audio is
+    /// coming, so VoiceOver should stay out of the way. When Aloud is off, or
+    /// no voice could be produced, the announcement is the only way a
+    /// VoiceOver user learns the coach answered.
+    private var shouldAnnounceCoachCaption: Bool {
+        guard voiceSettings.askNoumSpokenRepliesEnabled else { return true }
+        return speaker.voiceUnavailableNotice != nil
+    }
+
     /// The live call is a spoken-caption surface, not the rich text chat.
     /// User partials stay verbatim; coach turns get a final sanitizer pass
     /// immediately before visible rendering so old persisted rows, UI-test
@@ -265,7 +276,28 @@ struct LiveCoachCallView: View {
             voiceInput.onFinalTranscript = { text in handleUtterance(text) }
             seedDebugCaptionIfNeeded()
         }
-        .onDisappear { endLoop() }
+        .onDisappear {
+            endLoop()
+            AccessibilityAnnouncer.reset()
+        }
+        // VoiceOver has no way to learn the call moved on: nothing is tapped
+        // when the coach starts thinking or speaking, so focus never lands on
+        // the changed line. Announce the state transition instead. These are
+        // short ("Listening…", "Thinking…"), so they never talk over the user.
+        .onChange(of: stateLine) { _, line in
+            guard let line, loopActive else { return }
+            AccessibilityAnnouncer.announce(line)
+        }
+        // The coach's reply. Announced ONLY when it isn't already being spoken
+        // aloud — otherwise VoiceOver and the TTS voice say the same words at
+        // once. `visibleCaption` is the sanitized render-time text, and the
+        // recording guard keeps the user's own partial transcript out.
+        .onChange(of: visibleCaption) { _, caption in
+            guard let caption,
+                  voiceInput.state != .recording,
+                  shouldAnnounceCoachCaption else { return }
+            AccessibilityAnnouncer.announce("Noum: \(caption)")
+        }
         // Silence detection — ends the turn after a natural pause.
         .onReceive(tick) { _ in silenceTick() }
         .onChange(of: voiceInput.partialTranscript) { _, _ in lastPartialAt = Date() }
@@ -339,6 +371,10 @@ struct LiveCoachCallView: View {
             Text("Noum")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.white)
+                // The call's only title. Marked as a heading so the VoiceOver
+                // rotor can jump back to the top of the surface instead of
+                // swiping through the orb and the control bar.
+                .accessibilityAddTraits(.isHeader)
             // V4 — idle landing shows no instructional line (stateLine == nil);
             // the orb + controls carry the moment. Only render when there's
             // something honest to say.
@@ -577,7 +613,15 @@ struct LiveCoachCallView: View {
                     : "Unmute coach voice"
             ) { toggleAloud() }
 
-            callButton(glyph: "keyboard", label: "Type", fill: Color.white.opacity(0.12)) {
+            // "Type" alone doesn't say the call ends — a VoiceOver user has no
+            // way to know this control leaves the live surface rather than
+            // opening a keyboard on top of it. The hint names the consequence.
+            callButton(
+                glyph: "keyboard",
+                label: "Type",
+                fill: Color.white.opacity(0.12),
+                accessibilityHint: "Ends the call and opens the typed chat."
+            ) {
                 endLoop(); onSwitchToType()
             }
 
@@ -609,6 +653,11 @@ struct LiveCoachCallView: View {
         glyph: String, label: String, fill: Color,
         tint: Color = .white, ring: Bool = false, disabled: Bool = false,
         accessibilityLabel: String? = nil,
+        // Empty by default: VoiceOver speaks nothing for an empty hint, so the
+        // controls whose label already states the outcome ("Send to coach",
+        // "Mute coach voice", "Leave the call") stay hint-free. Hints are for
+        // the one control whose consequence its label does not carry.
+        accessibilityHint: String = "",
         action: @escaping () -> Void
     ) -> some View {
         VStack(spacing: 6) {
@@ -627,6 +676,7 @@ struct LiveCoachCallView: View {
             .disabled(disabled)
             .opacity(disabled ? 0.4 : 1)
             .accessibilityLabel(accessibilityLabel ?? label)
+            .accessibilityHint(accessibilityHint)
             Text(label)
                 .font(Typography.caption)
                 .foregroundStyle(.white.opacity(0.6))
