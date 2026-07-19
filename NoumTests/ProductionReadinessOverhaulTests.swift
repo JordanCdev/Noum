@@ -932,6 +932,19 @@ struct CoachChatWireContractTests {
         }
     }
 
+    @Test func clientGateAllowsOneBoundedActionWhenAVulnerableTurnExplicitlyAsksForHelp() {
+        let reply = "Hold one silent beat before sentence one, then say only the opener; check whether its first five words stay clean."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "I panic before answering. What do I do?"
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "I'm nervous about this"
+        ) == .nonCoachingPrescription)
+    }
+
     @Test func personalEvidenceReadDoesNotLeakAStoredMoveIntoAnObservationTurn() throws {
         let assessment = CoachAssessment(
             turnDepth: .groundedRead,

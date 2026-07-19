@@ -260,7 +260,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I check after?",
-                    coachReply: "Check the final 10 seconds because that is where the update becomes an ask. Keep it if the last sentence asks for alignment or a decision; rewrite it if it recaps."
+                    coachReply: "Check the close because it shows whether the update becomes a decision: did the final sentence ask for alignment or a choice? Treat your room read as self-report, not proof."
                 )
             ]
         ),
@@ -306,7 +306,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "That's not informative at all.",
-                    coachReply: "You're right—that answer was not informative enough. I'll give the direct point and why it matters."
+                    coachReply: "You're right—that answer was vague. I should have said this plainly: reassurance came before the recommendation, so the listener had to wait for the point."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What was the useful read?",
@@ -324,7 +324,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "It's not easy.",
-                    coachReply: "You're right—this is hard. The social risk sits in the first sentence, so we can pause here and keep the read narrow."
+                    coachReply: "You're right—this isn't easy. The setup before the disagreement may be carrying the social risk; we can slow down and work with that when you're ready."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the disagreement or the setup?",
@@ -342,7 +342,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "You're repeating yourself.",
-                    coachReply: "You're right—I repeated the point. I'll answer once and directly from here."
+                    coachReply: "You're right—I repeated the same instruction. I should have changed the evidence instead of sending you through the same drill again."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So not the same drill again?",
@@ -504,7 +504,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "I panic before answering. What do I do?",
-                    coachReply: "That sounds hard. We can slow this down; you do not need to prove anything with another drill right now."
+                    coachReply: "That panic is the pressure cue. Hold one silent beat before sentence one, then say only the opener; check whether its first five words stay clean."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Won't the pause feel awkward?",
@@ -677,7 +677,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "emotional-disconnection-036",
             userTurn: "It sounds correct but not like me. What do I change?",
-            coachReply: "Keep the structure, but replace one polished phrase with words you would actually say. That tests naturalness without discarding what is already clear."
+            coachReply: "Trust that signal. Keep the structure, replace one polished phrase with words you would actually say, then record once and compare how it feels."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "evasive-polished-037",
@@ -697,7 +697,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "semantic-filler-use-040",
             userTurn: "You counted 'like' but I meant it as a comparison.",
-            coachReply: "Good correction: if like carried a real comparison, it was not filler. Keep the comparison; mark only pause-fillers that add no meaning.",
+            coachReply: "Good correction: if like carried a real comparison, I should not count it as filler. Keep the comparison; mark only pause-fillers that add no meaning.",
             seedCoachReplies: ["You used like as filler several times."]
         ),
         explicitNeutralArenaAppPathScript(
@@ -756,7 +756,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "assistant-wrapper-050",
             userTurn: "This feels like a generic AI wrapper.",
-            coachReply: "You're right—that sounded templated. I'll use plain, specific wording.",
+            coachReply: "You're right—that sounded templated. I should have named the specific read: the recommendation arrived after the setup, which made the advice feel generic.",
             seedCoachReplies: ["Here are some tips: be confident, speak clearly, and practice."]
         )
     ]
@@ -5745,9 +5745,11 @@ struct CoachChatConversationCorpusTests {
                     userText: turn.userTurn,
                     recentTurns: recentTurns
                 )
+                let turnIntent = CoachChatTurnIntent.classify(turn.userTurn)
+                let responseKind = CoachChatResponseKind.classify(turn.userTurn)
                 let semanticGateExpectation =
                     CoachChatConversationAppPathSemanticExpectation
-                        .forResponseKind(CoachChatResponseKind.classify(turn.userTurn))
+                        .forResponseKind(responseKind)
                 let typedAssessmentPresent = semanticGateExpectation ==
                     .passedWithTypedAssessment
                 let assessmentConfidence = typedAssessmentPresent
@@ -5790,6 +5792,8 @@ struct CoachChatConversationCorpusTests {
                     outcomeSucceeded: true,
                     targetReplyMatched: true,
                     metadataPresent: true,
+                    turnIntent: turnIntent.rawValue,
+                    responseKind: responseKind.rawValue,
                     turnDepth: turnDepth.rawValue,
                     providerTierRequested: nil,
                     providerTierChosen: nil,
@@ -6672,12 +6676,13 @@ struct CoachChatConversationCorpusTests {
                     }
                     return false
                 }()
+                let turnIntent = metadata?.turnIntent ??
+                    CoachChatTurnIntent.classify(turn.userTurn)
+                let responseKind = metadata?.responseKind ??
+                    CoachChatResponseKind.classify(turn.userTurn)
                 let semanticGateExpectation =
                     CoachChatConversationAppPathSemanticExpectation
-                        .forResponseKind(
-                            metadata?.responseKind ??
-                                CoachChatResponseKind.classify(turn.userTurn)
-                        )
+                        .forResponseKind(responseKind)
                 let typedAssessmentPresent = metadata?.assessment != nil
                 let assessmentConfidence = metadata?.assessmentConfidence ??
                     metadata?.assessment?.confidence
@@ -6765,6 +6770,8 @@ struct CoachChatConversationCorpusTests {
                     outcomeSucceeded: outcomeSucceeded,
                     targetReplyMatched: targetReplyMatched,
                     metadataPresent: metadata != nil,
+                    turnIntent: turnIntent.rawValue,
+                    responseKind: responseKind.rawValue,
                     turnDepth: metadata?.turnDepth?.rawValue,
                     providerTierRequested: metadata?.providerTier?.rawValue,
                     providerTierChosen: metadata?.providerTierChosen?.rawValue,

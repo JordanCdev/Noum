@@ -815,7 +815,16 @@ def disqualifier_violations(fixture, reply, lower, fabricated_quotes):
 
 
 def quoted_phrases(text):
-    return re.findall(r"['\"]([^'\"]{8,160})['\"]", text or "")
+    # Apostrophes inside contractions and possessives are not quotation marks.
+    # Require quote boundaries outside a word and support straight/curly pairs.
+    source = text or ""
+    phrases = []
+    for pattern in (
+        r'(?<!\w)["“]([^"”\n]{8,160})["”](?!\w)',
+        r"(?<!\w)['‘]([^'’\n]{8,160})['’](?!\w)",
+    ):
+        phrases.extend(re.findall(pattern, source))
+    return phrases
 
 
 def verified_quote_anchors(fixture):
@@ -1439,11 +1448,18 @@ def app_path_trace(row, turn, report, source_path, match_source):
         context.setdefault("userTurn", turn.get("userTurn"))
         context.setdefault("surface", report.get("surface"))
         context.setdefault("matchSource", match_source)
+        provenance_mismatch = False
+        for field in ("turnIntent", "responseKind"):
+            provenance_mismatch = merge_trace_field(
+                context,
+                field,
+                turn.get(field),
+            ) or provenance_mismatch
         provenance_mismatch = merge_trace_field(
             context,
             "semanticGateExpectation",
             turn.get("semanticGateExpectation"),
-        )
+        ) or provenance_mismatch
         memory = dict(trace.get("memory") or {})
         for field in (
             "typedAssessmentPresent",
@@ -1490,6 +1506,8 @@ def app_path_trace(row, turn, report, source_path, match_source):
             "userTurn": turn.get("userTurn"),
             "surface": report.get("surface"),
             "matchSource": match_source,
+            "turnIntent": turn.get("turnIntent"),
+            "responseKind": turn.get("responseKind"),
             "semanticGateExpectation": turn.get("semanticGateExpectation"),
             "semanticGateProvenanceMismatch": False,
         },
@@ -1634,9 +1652,64 @@ def similarity(a, b):
     return len(a_set & b_set) / len(a_set | b_set)
 
 
+def app_path_contract(trace):
+    """Return the shipping app-path intent and declared target, if present."""
+    if trace.get("candidateSource") != "appPathReport":
+        return None, None, ""
+    context = trace.get("context") or {}
+    prompt = trace.get("prompt") or {}
+    return (
+        context.get("turnIntent"),
+        context.get("responseKind"),
+        prompt.get("targetCoachReply") or "",
+    )
+
+
+def preference_repair_acknowledges_friction(lower):
+    return contains_any(lower, [
+        "you're right", "you are right", "fair", "good correction",
+        "i missed", "i was too", "i answered", "i repeated",
+        "i am stopping", "i'm stopping", "that was", "that sounded",
+    ])
+
+
+def preference_repair_changes_coach_behavior(lower):
+    return contains_any(lower, [
+        "the correction is", "the failure was", "the useful read",
+        "the missing specific read", "i'll", "i will", "from here",
+        "i should have",
+        "plain text", "plain language", "answer once", "answer directly",
+        "stopping that thread", "without assigning", "not send you",
+        "not another", "instead of", "next answer", "next time",
+    ])
+
+
+def style_feedback_turn(user_turn):
+    lower = normalize(user_turn)
+    return contains_any(lower, [
+        "robotic", "cold", "generic", "templated", "too much writing",
+        "too long", "get to the point", "not informative", "not helpful",
+        "not useful", "repeating yourself", "repeat yourself",
+        "tts", "format", "ai wrapper", "stop saying practice",
+        "stop telling me to practice",
+    ])
+
+
+def unsolicited_practice_assignment(reply):
+    return regex_any(reply, [
+        r"(?:^|[.!?]\s+)(?:run|record|practise|practice|repeat|try|say|hold)\b",
+        r"\b(?:run|record|practise|practice|repeat)\s+(?:the|this|one|another|a)\s+(?:rep|drill|answer|exercise|prompt)\b",
+    ])
+
+
 def local_judge(fixture, reply, trace):
     lower = normalize(reply)
     is_gold_reference = lower == normalize(fixture["excellentAnswerExample"])
+    turn_intent, response_kind, app_path_target = app_path_contract(trace)
+    is_app_path_target = bool(app_path_target) and lower == normalize(app_path_target)
+    is_preference_repair = (
+        turn_intent == "preference" and response_kind == "conversational"
+    )
     reasons = []
     caps = []
     check_failures = []
@@ -1689,7 +1762,12 @@ def local_judge(fixture, reply, trace):
         add_cap("fabricatesEvidence", 40, "quoted evidence not present in fixture grounding")
         check_failures.append("fabricatedEvidence")
 
-    fixture_disqualifiers = disqualifier_violations(fixture, reply, lower, fabricated_quotes)
+    # Preference turns are corrections to Noum's behaviour, not invitations to
+    # force the older fixture's user drill into the same reply. They use the
+    # explicit repair contract below; safety and quote gates still apply.
+    fixture_disqualifiers = [] if is_preference_repair else disqualifier_violations(
+        fixture, reply, lower, fabricated_quotes
+    )
     if fixture_disqualifiers:
         add_cap(
             "fixtureDisqualifier",
@@ -1702,14 +1780,17 @@ def local_judge(fixture, reply, trace):
 
     semantic_hits = semantic_expected_hits(fixture, lower)
     expected_overlap = overlap_score(reply, fixture["expectedCoachMove"], 8)
-    intent_alignment = max(expected_overlap, semantic_hits)
+    app_path_target_overlap = overlap_score(reply, app_path_target, 8)
+    if is_app_path_target:
+        app_path_target_overlap = 8
+    intent_alignment = max(expected_overlap, semantic_hits, app_path_target_overlap)
     evidence_overlap = overlap_score(reply, " ".join(fixture.get("evidence", [])), 8)
     memory_overlap = overlap_score(reply, fixture.get("memoryState", ""), 8)
     excellent_similarity = similarity(reply, fixture["excellentAnswerExample"])
     bad_similarity = similarity(reply, fixture["badAnswerExample"])
     near_excellent_paraphrase = excellent_similarity >= 0.78 and bad_similarity <= excellent_similarity
 
-    if intent_alignment < 2 and excellent_similarity < 0.18:
+    if intent_alignment < 2 and excellent_similarity < 0.18 and not is_app_path_target:
         add_cap("ignoresIntent", 50, "reply does not match expected coach move")
         check_failures.append("ignoresIntent")
     if bad_similarity > excellent_similarity and bad_similarity > 0.22:
@@ -1722,21 +1803,32 @@ def local_judge(fixture, reply, trace):
 
     trust_repair = fixture.get("turnType") == "trustRepair"
     pushback_signal = normalize(fixture.get("emotionalSignal", ""))
-    if trust_repair and not contains_any(lower, [
-        "fair", "push", "you are right", "that was", "i missed",
-        "good correction", "not easy", "no,"
+    if trust_repair and not preference_repair_acknowledges_friction(lower) and not contains_any(lower, [
+        "push", "not easy", "no,"
     ]):
         reasons.append("trust repair does not acknowledge the user's friction first")
         check_failures.append("poorTrustRepair")
 
     if contains_any(pushback_signal, ["frustration", "annoyance", "discouragement", "irritated", "impatient", "correction"]):
-        if not contains_any(lower, EQ_WORDS):
+        if not contains_any(lower, EQ_WORDS) and not preference_repair_acknowledges_friction(lower):
             reasons.append("low-EQ reply: emotional signal is not acknowledged")
             check_failures.append("lowEQPushback")
 
+    if is_preference_repair:
+        if not preference_repair_acknowledges_friction(lower):
+            reasons.append("preference repair does not own the user's friction")
+            check_failures.append("poorPreferenceRepair")
+        if not preference_repair_changes_coach_behavior(lower):
+            reasons.append("preference repair does not make a specific coach-side correction")
+            check_failures.append("missingCoachCorrection")
+        if style_feedback_turn(fixture.get("userTurn", "")) and unsolicited_practice_assignment(reply):
+            reasons.append("style-feedback repair assigns another user drill instead of correcting Noum")
+            check_failures.append("unsolicitedPracticeAssignment")
+
     brief_live_move = fixture.get("id") == "live-latency-short-044" and len(words(reply)) <= 16
     format_only_move = fixture.get("id") == "grammar-leak-048" and len(words(reply)) <= 18
-    if not brief_live_move and not format_only_move and not contains_any(lower, EVIDENCE_WORDS) and evidence_overlap == 0:
+    if (not is_preference_repair and not brief_live_move and not format_only_move
+            and not contains_any(lower, EVIDENCE_WORDS) and evidence_overlap == 0):
         reasons.append("missing evidence anchor")
         check_failures.append("missingEvidence")
     if verified_quote_required(fixture) and not reply_contains_verified_quote_anchor(fixture, reply):
@@ -1748,7 +1840,7 @@ def local_judge(fixture, reply, trace):
             reasons.append("deep assessment lacks verdict/evidence calibration")
             check_failures.append("missingVerdictEvidence")
 
-    if not contains_any(lower, ACTION_WORDS):
+    if not is_preference_repair and not contains_any(lower, ACTION_WORDS):
         reasons.append("missing practical intervention")
         check_failures.append("missingIntervention")
 
@@ -1783,6 +1875,19 @@ def local_judge(fixture, reply, trace):
         semantic_hits >= 3 and
         not regex_any(reply, GRAMMAR_LEAK_PATTERNS)
     )
+    # A source-bound app-path target is the explicit shipping response
+    # contract, analogous to a gold reference. It earns a floor only after all
+    # independent safety, evidence, repair, and fixture checks are clean.
+    if is_app_path_target and not blocking_cap_applied and not check_failures:
+        target_floors = (18, 18, 12, 12, 13)
+        if is_preference_repair:
+            target_floors = (18, 20, 12, 12, 15)
+        for key, floor in zip(
+            ("diagnosticIQ", "eqAttunement", "personalMemory", "interventionQuality", "dialogueFeel"),
+            target_floors,
+        ):
+            scores[key] = max(scores[key], floor)
+
     if (is_gold_reference or near_excellent_paraphrase or clean_format_move) and not blocking_cap_applied:
         floors = (
             (21, 20, 16, 13, 13) if is_gold_reference
@@ -1858,6 +1963,10 @@ def suggested_fix(fixture, failures):
         return "Use only verified transcript/evidence snippets; retract or avoid quotes without quote-guard proof."
     if "poorTrustRepair" in failures or "lowEQPushback" in failures:
         return "Start by naming the user's friction in human language, then give one changed coaching move."
+    if "poorPreferenceRepair" in failures or "missingCoachCorrection" in failures:
+        return "Own the user's product friction and make one specific change to Noum's answer in the same reply."
+    if "unsolicitedPracticeAssignment" in failures:
+        return "Correct Noum's delivery after style feedback; do not turn the complaint into another user drill."
     if "ignoresIntent" in failures:
         return f"Answer the requested move: {fixture.get('expectedCoachMove', '')}"
     if any(failure.startswith("fixtureDisqualifier:") for failure in failures):

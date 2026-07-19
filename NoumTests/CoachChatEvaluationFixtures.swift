@@ -2433,6 +2433,11 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let outcomeSucceeded: Bool
     let targetReplyMatched: Bool
     let metadataPresent: Bool
+    /// The user-turn contract that determined whether this was coaching,
+    /// vulnerable support, or a correction to Noum's own behaviour.
+    let turnIntent: String?
+    /// The response lane used by the shipping prompt and reliability gates.
+    let responseKind: String?
     let turnDepth: String?
     let providerTierRequested: String?
     let providerTierChosen: String?

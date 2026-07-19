@@ -3864,8 +3864,13 @@ actor AICoachChatService {
             recentCoachReplies: recentCoachReplies,
             coachingBrief: coachingBrief
         )
-        if responseKind == .conversational ||
-            [.greeting, .offTopic, .preference, .vulnerable].contains(turnIntent),
+        let vulnerableTurnForbidsPrescription = turnIntent == .vulnerable &&
+            !turnExpectsPrescribedAction(latestUserTurn)
+        let forbidsUserPrescription = (
+            responseKind == .conversational && turnIntent != .vulnerable
+        ) || [.greeting, .offTopic, .preference].contains(turnIntent) ||
+            vulnerableTurnForbidsPrescription
+        if forbidsUserPrescription,
            replyContainsNonCoachingPrescription(lower) {
             return .nonCoachingPrescription
         }
@@ -4761,9 +4766,13 @@ actor AICoachChatService {
         let responseKind = explicitResponseKind ?? CoachChatResponseKind.classify(
             latestUserTurn
         )
+        let turnIntent = CoachChatTurnIntent.classify(latestUserTurn)
         let conversationalStyleFeedback = responseKind == .conversational &&
             CoachChatTurnIntent.isCoachStyleFeedback(latestUserTurn)
-        let hasNoUserPrescription = !replyContainsNonCoachingPrescription(lower)
+        let requestedVulnerableAction = turnIntent == .vulnerable &&
+            turnExpectsPrescribedAction(latestUserTurn)
+        let hasNoUserPrescription = !replyContainsNonCoachingPrescription(lower) ||
+            requestedVulnerableAction
         let hasSpecificCoachCorrection = conversationalStyleFeedback &&
             !CoachReliabilityGate.conversationalTrustRepairNeedsCorrection(trimmed)
         let effectiveDepth = turnDepth ?? (latestLower.isEmpty
@@ -6167,7 +6176,8 @@ actor AICoachChatService {
             return false
         }
         return containsAny(lower, [
-            "what next", "next move", "what should", "continue", "implement",
+            "what next", "next move", "what should", "what do i do",
+            "continue", "implement",
             "develop", "work on", "focus", "how do i", "help me", "coach me",
             "how can i", "how could i", "how should i", "how would i",
             "practice", "prepare", "fix", "improve", "replace", "go for",

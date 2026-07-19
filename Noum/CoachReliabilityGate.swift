@@ -1719,8 +1719,8 @@ enum CoachReliabilityGate {
                 ]
             } else if reportsRepetition {
                 variants = [
-                    "You’re right—I repeated the point. I’ll answer once and directly from here.",
-                    "You’re right—that was repetitive. I’ll keep the next reply to one direct answer."
+                    "You’re right—I repeated the same instruction. The correction is to change the evidence, not send you through the same drill again.",
+                    "You’re right—that was repetitive. The next answer needs a different read, not the same instruction in new words."
                 ]
             } else if containsAny(turn, [
                 "stop saying practice more", "stop telling me to practice"
@@ -1734,8 +1734,8 @@ enum CoachReliabilityGate {
                 "wasnt helpful", "missed the point", "too vague"
             ]) {
                 variants = [
-                    "You’re right—that answer was not informative enough. I’ll give the direct point and why it matters.",
-                    "You’re right—I was too vague. I’ll answer with one specific point and its reason."
+                    "You’re right—I was too vague. The correction is to name the observed behaviour and why it matters before suggesting a move.",
+                    "You’re right—that was not informative enough. A useful answer must give the specific read and its consequence, not promise to do that later."
                 ]
             } else if containsAny(turn, [
                 "straight answer", "answer directly", "didn't answer", "did not answer"
@@ -1751,8 +1751,8 @@ enum CoachReliabilityGate {
                 ]
             } else if reportsArtificialTone {
                 variants = [
-                    "You’re right—that sounded templated. I’ll use plain, specific wording.",
-                    "You’re right—that did not sound human enough. I’ll say the point plainly."
+                    "You’re right—that sounded templated. The failure was generic advice without a concrete read; I’ll name the behaviour and its consequence.",
+                    "You’re right—that did not sound human enough. The correction is one plain, specific read instead of a coaching template."
                 ]
             } else {
                 variants = [
@@ -2075,10 +2075,13 @@ enum CoachReliabilityGate {
             "formatting broke in speech", "formatting did not work in speech",
             "formatting was part of the problem",
             "did not sound human", "didn't sound human",
-            "i was too vague", "i didn't answer", "i did not answer",
+            "i was too vague", "that answer was vague",
+            "i didn't answer", "i did not answer",
             "answered around the question", "that answer was not informative",
             "i named a plan without naming the behavior",
             "i answered with advice when you wanted the read",
+            "i leaned on generic", "i leaned on a generic",
+            "generic report", "generic advice", "generic drill",
             "that wording was", "i prescribed another drill",
             "i assigned another drill", "i told you to practice"
         ])
@@ -2091,7 +2094,11 @@ enum CoachReliabilityGate {
             "put the answer first", "lead with the direct answer",
             "answer the point directly", "without assigning more practice",
             "without another drill", "future replies plain", "symbol-free",
-            "next time i'll name", "next time i’ll name"
+            "next time i'll name", "next time i’ll name",
+            "next time i'll use", "next time i’ll use",
+            "the correction is", "the next answer needs",
+            "i should have said", "i should have named",
+            "i should have changed"
         ])
         return !openingAcknowledges(text) || !ownsSpecificMiss || !namesCoachCorrection
     }

@@ -227,6 +227,8 @@ class AppPathBoundaryTests(unittest.TestCase):
         turn = {
             "turnIndex": 0,
             "userTurn": "What should I do next?",
+            "turnIntent": "coaching",
+            "responseKind": "generalCoaching",
             "semanticGateExpectation": "notEvaluatedWithoutTypedAssessment",
             "semanticGateOutcome": "notEvaluated",
             "typedAssessmentPresent": False,
@@ -247,9 +249,104 @@ class AppPathBoundaryTests(unittest.TestCase):
             trace["context"]["semanticGateExpectation"],
             "notEvaluatedWithoutTypedAssessment",
         )
+        self.assertEqual(trace["context"]["turnIntent"], "coaching")
+        self.assertEqual(trace["context"]["responseKind"], "generalCoaching")
         self.assertIs(trace["memory"]["typedAssessmentPresent"], False)
         self.assertFalse(trace["context"]["semanticGateProvenanceMismatch"])
         self.assertEqual(arena.trace_semantic_gate_provenance(trace), "neutral")
+
+    def test_quote_parser_does_not_treat_apostrophes_as_user_quotes(self):
+        reply = "You're right—I wasn't specific, and I’ll correct Noum's answer."
+
+        self.assertEqual(arena.quoted_phrases(reply), [])
+        self.assertEqual(
+            arena.quoted_phrases("You said, 'we focused on three priorities.'"),
+            ["we focused on three priorities."],
+        )
+
+    def test_app_path_preference_repair_uses_coach_side_contract(self):
+        fixture = gold_fixture("too-much-writing-017")
+        reply = (
+            "You're right—that was too long. The useful correction is mine: "
+            "one direct point in plain language."
+        )
+        trace = complete_app_path_trace()
+        trace["context"].update({
+            "turnIntent": "preference",
+            "responseKind": "conversational",
+        })
+        trace["prompt"]["targetCoachReply"] = reply
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertGreaterEqual(result["overall"], 70)
+        self.assertNotIn("missingEvidence", result["checkFailures"])
+        self.assertNotIn("missingIntervention", result["checkFailures"])
+        self.assertNotIn("fabricatedEvidence", result["checkFailures"])
+
+    def test_app_path_preference_repair_requires_a_specific_correction(self):
+        fixture = gold_fixture("assistant-wrapper-050")
+        reply = "Fair."
+        trace = complete_app_path_trace()
+        trace["context"].update({
+            "turnIntent": "preference",
+            "responseKind": "conversational",
+        })
+        trace["prompt"]["targetCoachReply"] = reply
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertIn("missingCoachCorrection", result["checkFailures"])
+
+    def test_app_path_preference_repair_accepts_a_delivered_should_have_read(self):
+        fixture = gold_fixture("assistant-wrapper-050")
+        reply = (
+            "You're right—that sounded templated. I should have named the "
+            "specific read: the recommendation arrived after the setup."
+        )
+        trace = complete_app_path_trace()
+        trace["context"].update({
+            "turnIntent": "preference",
+            "responseKind": "conversational",
+        })
+        trace["prompt"]["targetCoachReply"] = reply
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertGreaterEqual(result["overall"], 70)
+        self.assertNotIn("missingCoachCorrection", result["checkFailures"])
+
+    def test_style_feedback_repair_rejects_another_user_drill(self):
+        fixture = gold_fixture("too-much-writing-017")
+        reply = (
+            "You're right—that was too long. I'll be shorter. "
+            "Run another 60-second rep."
+        )
+        trace = complete_app_path_trace()
+        trace["context"].update({
+            "turnIntent": "preference",
+            "responseKind": "conversational",
+        })
+        trace["prompt"]["targetCoachReply"] = reply
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertIn("unsolicitedPracticeAssignment", result["checkFailures"])
+
+    def test_vulnerable_turn_does_not_inherit_preference_exemptions(self):
+        fixture = gold_fixture("pause-before-answer-022")
+        reply = "You're right—that sounds hard."
+        trace = complete_app_path_trace()
+        trace["context"].update({
+            "turnIntent": "vulnerable",
+            "responseKind": "conversational",
+        })
+        trace["prompt"]["targetCoachReply"] = reply
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertIn("missingIntervention", result["checkFailures"])
+        self.assertIn("missingEvidence", result["checkFailures"])
 
     def test_thin_evidence_empty_retrieval_is_intentional(self):
         result = scored_result()

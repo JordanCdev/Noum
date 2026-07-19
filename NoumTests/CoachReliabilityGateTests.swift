@@ -363,7 +363,7 @@ struct CoachReliabilityGateTests {
 
     @Test func trustRepairGoodCallAndGenericReportNamesTheRepair() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Good call. That read exactly like a generic report instead of a human coach. Your recommendation arrived late, so put it in sentence one next time.",
+            replyText: "Good call. That read exactly like a generic report instead of a human coach. I should have named the specific read: your recommendation arrived after the setup.",
             previousCoachReply: "Earlier generic advice.",
             latestUserTurn: "This still feels too generic.",
             turnDepth: .trustRepair,
@@ -556,7 +556,7 @@ struct CoachReliabilityGateTests {
 
     @Test func genericRepairWithOrderingContrastPasses() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Fair push: I leaned on generic advice instead of evidence. The ordering signal is warmth before the recommendation. Test recommendation-first, then check whether warmth comes after the point.",
+            replyText: "Fair push: I leaned on generic advice instead of evidence. The ordering signal was warmth before the recommendation; next time I’ll name that before suggesting a drill.",
             previousCoachReply: "Try another communication drill.",
             latestUserTurn: "This still feels too generic.",
             turnDepth: .trustRepair,
@@ -570,7 +570,7 @@ struct CoachReliabilityGateTests {
     }
 
     @Test func genericDrillRepairWithConcreteRecommendationOrderPasses() {
-        let reply = "Good call. I leaned on a generic drill instead of looking at what happened in your last rep. Because you spent the first part reassuring the client, the recommendation moved all the way to the end. Try the same response again, but say the recommendation in the first sentence, then use the reassurance to back it up."
+        let reply = "Good call. I leaned on a generic drill instead of looking at what happened in your last rep. You reassured the client before giving the recommendation; next time I’ll use that specific ordering read before suggesting any practice."
         let verdict = CoachReliabilityGate.evaluate(
             replyText: reply,
             previousCoachReply: "Run another communication drill.",
@@ -651,8 +651,9 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("not informative enough"))
-        #expect(fallback.contains("direct point"))
+        #expect(lowered.contains("too vague"))
+        #expect(lowered.contains("observed behaviour"))
+        #expect(lowered.contains("why it matters"))
         #expect(!lowered.contains("sentence four"))
         #expect(!lowered.contains("warm-up"))
         #expect(!lowered.contains("real read:"))
@@ -1081,8 +1082,9 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("repeated the point"))
-        #expect(fallback.contains("answer once and directly"))
+        #expect(lowered.contains("repeated the same instruction"))
+        #expect(lowered.contains("change the evidence"))
+        #expect(lowered.contains("same drill again"))
         #expect(!fallback.contains("You led cleanly"))
         #expect(!fallback.contains("New target: pace"))
         #expect(!fallback.contains("hold one silent beat"))
