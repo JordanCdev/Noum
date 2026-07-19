@@ -29,9 +29,9 @@ separate from removable/confirmable coach projections. Existing Home, Train,
 Ask, Summary, Progress, plan, and memory ownership was extended rather than
 duplicated.
 
-Fresh canonical evidence is bound to source commit `6712ee74d` and coach-source
-fingerprint
-`sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`.
+Fresh canonical evidence is bound to implementation commit `fe0498e29` and
+coach-source fingerprint
+`sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`.
 It passes 53 conversations / 109 text turns with zero app-path-floor failures,
 50/50 scored replies at 81.16 average, 50 complete unique terminal traces, no
 placeholder leakage or accepted fallback in the reviewed slice, and the
@@ -39,20 +39,25 @@ placeholder leakage or accepted fallback in the reviewed slice, and the
 contamination bug in the DEBUG evidence harness; fixture baseline/rating state
 is now isolated and restored after each corpus run.
 
-The current Release simulator configuration builds successfully. Ten current
-source contract tests pass, and the selected transcript-ladder, locked-preview,
-and Summary-prescription UI regressions pass 3/3. A fresh serialized broad unit
-run reports **4,502 passed / 33 failed / 0 skipped across 4,535 tests** in
-`/tmp/NoumProductJourneyTestsFinal.xcresult`. This is an improvement over the
-earlier worktree run (4,496 / 38), but it is not presented as exact baseline
-parity because the matching baseline result bundle is unavailable. The
-remaining failures are concentrated in stale typed-fallback/coach-fixture
-expectations that demand unsupported evidence or older wording, plus one brittle
-account-deletion source-text assertion. The stronger evidence gate was not
-weakened to make those fixtures pass. Mission-critical focused suites and the
-final canonical app path are green.
-The light screenshot handoff contains five seeded tab roots plus five honest
-cold-profile recovery captures, all nonblank at 1206×2622.
+The current simulator configuration builds successfully. A fresh serialized
+complete unit-target run reports **4,542/4,542 executions passed, 0 failed, 0
+skipped**: 4,514 Swift tests in 456 suites plus 28 XCTest cases. The result
+bundle is
+`/private/tmp/noum-all-units-post-launch-repair-20260719.xcresult`. Functions
+passes 163/163 tests plus 9/9 release-lock checks; Coach Arena passes 118 tests
+with one intentional skip; and the local readiness selection passes 86/86.
+The source-bound 20-scenario transcript-retry corpus passes 20/20 across
+opening, closing, structure, concise, regression, and meaning-drift outcomes.
+The targeted rendered journey passes 1/1 from Summary through ladder,
+prescribed Timed practice, retry comparison, and intervention adaptation in
+`/private/tmp/noum-transcript-loop-ui-repair2-20260719.xcresult`.
+
+The DEBUG fixture launch contract was also repaired at the account-hydration
+boundary after a real bootstrap stall was reproduced outside XCTest. Its
+pre-render and post-hydration paths now resolve one requested persona, and the
+latter repairs only a missing fixture. The light screenshot handoff contains
+five seeded tab roots plus transcript-ladder and retry-comparison captures, all
+visually inspected and nonblank at 1206×2622.
 
 This does **not** establish production or TestFlight readiness. The source-bound
 readiness evaluator remains **NO-GO at 18/100 (20-point cap)** with all five

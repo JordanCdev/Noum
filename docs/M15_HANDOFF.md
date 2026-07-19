@@ -1,5 +1,52 @@
 # M15 — "A coach who's actually present" — Handoff
 
+## Current product-journey closure continuation — 2026-07-19
+
+This continuation is the current local product-journey record. The implementation
+is isolated on `codex/product-journey-launch` at `fe0498e29`, based on the clean
+`ux-overhaul` baseline `2bcb1ccff769d1eba71da9049e4fa82fbf1d4bb2`. It extends
+the existing profile, evidence, memory, plan, Ask Noum, Summary, Timed Practice,
+recommendation-outcome, and observability owners; it does not introduce a new
+tab, parallel coaching store, or third-party dependency.
+
+Voice goals are training emphasis rather than identity. Goal changes preserve
+user evidence and history, advance provenance, revoke only in-flight or active
+goal-shaped projections, and avoid authenticity-shaming language. Ask Noum has
+bounded accepted/repaired, safe-fallback, retryable-error, cancelled, and
+timed-out terminal states. A content-free trace ID joins classification,
+evidence/memory, prompt, provider attempts, streaming, gates, fallback,
+persistence, and UI commit, with coach-request and training-loop timelines in
+Settings → Debug traces.
+
+Summary now provides a verified-source transcript ladder and routes its
+achievable one-step rewrite into the established Timed Practice handoff. The
+retry is compared only with its exact source session on one delivery lever;
+thin confidence or meaning drift fails closed, and one success is described as
+promising rather than proof. The content-free comparison is attached to the
+existing recommendation outcome and intervention refresh so the next action can
+adapt. A generated 20-scenario corpus covers every lever plus held, regressed,
+and needs-more-evidence terminals and passes 20/20.
+
+The exact implementation source passes 4,542/4,542 unit-target executions (4,514
+Swift tests in 456 suites plus 28 XCTest cases), 163/163 Functions tests, 9/9
+Functions release locks, 118 Coach Arena tests with one intentional skip, and
+86/86 local readiness tests. The end-to-end transcript-ladder UI test passes and
+exports both ladder and retry-comparison screenshots. The light visual sweep at
+`.screenshots/2026-07-19_transcript-practice-loop/HANDOFF.md` verifies all five
+tab roots. Canonical app-path evidence is fresh for `fe0498e29` and
+`sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`:
+53 conversations, 109 text turns, 50/50 scored fixtures, 81.16 average, zero
+floor failures, and 50 complete unique final-reply traces.
+
+Do not describe this as production readiness. The independent readiness gate
+remains **NO-GO at 18/100 with 0/5 required external artifacts**. Live-provider
+transcripts, blinded professional calibration, longitudinal real-user transfer,
+physical same-build TestFlight QA, and operational launch sign-off require
+external authority and evidence. The exact console and physical-device work is
+listed in `docs/MANUAL_LAUNCH_ACTIONS.md`. The clean build also repeats existing
+Swift 6 actor-isolation warnings in `AuthManager`; they are not caused by this
+continuation but remain migration risk.
+
 ## Current production-closure continuation — 2026-07-16 deletion fence
 
 This continuation covers the account-deletion boundary developed on

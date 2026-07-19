@@ -1,8 +1,8 @@
 # Product journey transcript review
 
 Review date: 2026-07-19
-Source commit: `6712ee74d`
-Coach-source fingerprint: `sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`
+Source commit: `fe0498e29`
+Coach-source fingerprint: `sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`
 Canonical artifact: `tools/coach-arena/reports/app-path/latest.json`
 
 ## Evidence boundary
