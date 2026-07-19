@@ -1455,7 +1455,18 @@ enum BaselineEngine {
 
     /// Recomputes the entire baseline from session history.
     /// Called on app launch and after account switch.
-    static func compute(from sessions: [PracticeSession]) -> CommunicationBaseline {
+    ///
+    /// Category ratings (opening / close / structure / depth / clarity) are
+    /// carried by trend snapshots rather than by the sessions themselves. The
+    /// live app reads them from the shared trend store, but that store is a
+    /// process-global whose contents depend on account scope and on whatever
+    /// else has already run. Deterministic fixtures must therefore be able to
+    /// state their own snapshot roster instead of inheriting ambient evidence —
+    /// omitting `categorySnapshots` preserves the shipping behaviour exactly.
+    static func compute(
+        from sessions: [PracticeSession],
+        categorySnapshots: [SkillSnapshot]? = nil
+    ) -> CommunicationBaseline {
         let eligibleSessionCount = PracticeProgressEligibility.eligibleSessions(in: sessions).count
         let qualifying = sessions.filter(acceptsCurrentComparisonMetrics)
         guard !qualifying.isEmpty else { return .empty }
@@ -1522,11 +1533,12 @@ enum BaselineEngine {
 
         // Category ratings (Opening, Closing, Structure, Depth, Clarity)
         // Map "Good" = 3, "OK" = 2, "Could improve" = 1
-        baseline.openingStrength = buildCategoryStat(from: recent, dimension: "Opening", allSamples: qualifying.count)
-        baseline.closingStrength = buildCategoryStat(from: recent, dimension: "Close", allSamples: qualifying.count)
-        baseline.structureQuality = buildCategoryStat(from: recent, dimension: "Structure", allSamples: qualifying.count)
-        baseline.answerDepth = buildCategoryStat(from: recent, dimension: "Depth", allSamples: qualifying.count)
-        baseline.clarity = buildCategoryStat(from: recent, dimension: "Clarity", allSamples: qualifying.count)
+        let ratingSnapshots = categorySnapshots ?? SkillTrendStore.shared.snapshots
+        baseline.openingStrength = buildCategoryStat(from: ratingSnapshots, dimension: "Opening", allSamples: qualifying.count)
+        baseline.closingStrength = buildCategoryStat(from: ratingSnapshots, dimension: "Close", allSamples: qualifying.count)
+        baseline.structureQuality = buildCategoryStat(from: ratingSnapshots, dimension: "Structure", allSamples: qualifying.count)
+        baseline.answerDepth = buildCategoryStat(from: ratingSnapshots, dimension: "Depth", allSamples: qualifying.count)
+        baseline.clarity = buildCategoryStat(from: ratingSnapshots, dimension: "Clarity", allSamples: qualifying.count)
 
         // Vocabulary range (unique word ratio)
         let vocabRatios = recent.compactMap { s -> Double? in
@@ -2035,10 +2047,16 @@ enum BaselineEngine {
         )
     }
 
-    private static func buildCategoryStat(from sessions: [PracticeSession], dimension: String, allSamples: Int) -> BaselineStat {
-        // Pull category ratings from SkillTrendStore snapshots.
+    /// Category ratings live on trend snapshots, not on the sessions themselves,
+    /// so the snapshot roster is passed in rather than read from the shared store
+    /// here. `compute` owns that resolution, which keeps this a pure mapping and
+    /// lets deterministic fixtures state their own evidence.
+    private static func buildCategoryStat(
+        from snapshots: [SkillSnapshot],
+        dimension: String,
+        allSamples: Int
+    ) -> BaselineStat {
         // Map: "Good" = 3, "OK" = 2, "Could improve" = 1
-        let snapshots = SkillTrendStore.shared.snapshots
         let ratingValues: [Double] = snapshots.compactMap { snapshot -> Double? in
             guard let ratingStr = snapshot.categoryRatings[dimension] else { return nil }
             switch ratingStr {

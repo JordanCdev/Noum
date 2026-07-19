@@ -43,6 +43,35 @@ enum DevSeedData {
 
     // MARK: - Public API
 
+    /// The trend evidence a seeded persona implies. `injectProfile` writes this
+    /// into the live trend store, and `coachIntelligenceFixture` feeds the same
+    /// roster to `BaselineEngine` so the constructed fixture and the seeded app
+    /// state describe one coherent user instead of two.
+    static func trendSnapshots(for sessions: [PracticeSession]) -> [SkillSnapshot] {
+        sessions.map { session in
+            let wordCount = session.transcript.split { !$0.isLetter }.count
+            let qualifiedFillerRate = FillerBurden.quantityQualified(session)?.ratePerMinute
+            let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(session)
+            return SkillSnapshot(
+                sessionId: session.id,
+                date: session.date,
+                fillerCount: session.fillerWordCount,
+                duration: session.duration,
+                wordCount: wordCount,
+                wpm: session.duration > 0
+                    ? Double(wordCount) / session.duration * 60.0
+                    : 0,
+                qualifiedFillerRatePerMinute: qualifiedFillerRate,
+                qualifiedPaceWPM: qualifiedPaceWPM,
+                comparisonMetricSchemaVersion: qualifiedFillerRate != nil && qualifiedPaceWPM != nil
+                    ? session.comparisonMetricSchemaVersion
+                    : nil,
+                score: session.score ?? 5,
+                categoryRatings: categoryRatingsForSession(session)
+            )
+        }
+    }
+
     /// Generate a set of practice sessions for a given seed profile.
     static func sessions(for profile: SeedProfile) -> [PracticeSession] {
         switch profile {
@@ -76,29 +105,7 @@ enum DevSeedData {
         // makes a forced persona seed inherit up to 30 snapshots from the prior
         // persona, which can honestly—but incorrectly for the fixture—override
         // the seeded recommendation with a stale coaching focus.
-        let trendSnapshots = sessions.map { session in
-            let wordCount = session.transcript.split { !$0.isLetter }.count
-            let qualifiedFillerRate = FillerBurden.quantityQualified(session)?.ratePerMinute
-            let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(session)
-            return SkillSnapshot(
-                sessionId: session.id,
-                date: session.date,
-                fillerCount: session.fillerWordCount,
-                duration: session.duration,
-                wordCount: wordCount,
-                wpm: session.duration > 0
-                    ? Double(wordCount) / session.duration * 60.0
-                    : 0,
-                qualifiedFillerRatePerMinute: qualifiedFillerRate,
-                qualifiedPaceWPM: qualifiedPaceWPM,
-                comparisonMetricSchemaVersion: qualifiedFillerRate != nil && qualifiedPaceWPM != nil
-                    ? session.comparisonMetricSchemaVersion
-                    : nil,
-                score: session.score ?? 5,
-                categoryRatings: categoryRatingsForSession(session)
-            )
-        }
-        SkillTrendStore.shared.replaceForDebug(trendSnapshots)
+        SkillTrendStore.shared.replaceForDebug(trendSnapshots(for: sessions))
 
         // Seed a plausible SpeakingRating so the premium personal-best hero
         // has something honest to display. The current-week peak is held
@@ -236,12 +243,22 @@ enum DevSeedData {
         }
     }
 
+    /// A constructed fixture, not a reading of live app state. It therefore
+    /// states the persona's own trend evidence rather than inheriting whatever
+    /// `SkillTrendStore.shared` happens to hold: that store is a process-global
+    /// scoped to the signed-in account, so letting it leak in here would make
+    /// every consumer of this fixture depend on what else already ran. Callers
+    /// may still pass an explicit roster to model a different history.
     static func coachIntelligenceFixture(
         for seedProfile: SeedProfile,
-        now: Date = Date()
+        now: Date = Date(),
+        categorySnapshots: [SkillSnapshot]? = nil
     ) -> CoachIntelligenceFixture {
         let sessions = sessions(for: seedProfile)
-        let baseline = BaselineEngine.compute(from: sessions)
+        let baseline = BaselineEngine.compute(
+            from: sessions,
+            categorySnapshots: categorySnapshots ?? trendSnapshots(for: sessions)
+        )
         return coachIntelligenceFixture(
             for: seedProfile,
             sessions: sessions,
@@ -899,6 +916,13 @@ enum DevSeedData {
 
     private static func improvingIntermediateSessions() -> [PracticeSession] {
         // 12 sessions over 14 days. Fillers start at 6, drop to 2. Score 4 → 7.
+        //
+        // Each rep carries its OWN transcript sized to its own duration. Cycling
+        // a small transcript pool across differing durations produced reps of ~30
+        // words over 50 seconds — roughly 32 WPM, which is not speech any person
+        // produces. The coaching read correctly refused to call that evidence
+        // established, so the fixture, not the scorer, was the thing that had to
+        // change. Keep every entry inside the conversational pace band.
         let baseDate = Calendar.current.date(byAdding: .day, value: -14, to: Date())!
         return (0..<12).map { i in
             let dayOffset = i + (i >= 5 ? 1 : 0) + (i >= 9 ? 1 : 0) // skip a couple days
@@ -906,9 +930,8 @@ enum DevSeedData {
             let fillerProgression = [6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 1]
             let scoreProgression = [4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7]
             let durationProgression: [TimeInterval] = [25, 28, 30, 32, 35, 38, 40, 42, 45, 45, 48, 50]
-            let transcript = intermediateTranscripts[i % intermediateTranscripts.count]
             return makeSession(
-                transcript: transcript, fillers: fillerProgression[i],
+                transcript: intermediateTranscripts[i], fillers: fillerProgression[i],
                 duration: durationProgression[i], date: date,
                 mode: .timed, score: scoreProgression[i], pressure: .standard
             )
@@ -1060,12 +1083,40 @@ enum DevSeedData {
         "Well so like I believe that um the future of technology is uh you know going to change everything. Like AI and stuff is um already changing how we like work and communicate."
     ]
 
+    /// One transcript per rep, ordered oldest → newest, each sized to that rep's
+    /// duration at roughly 110–125 words per minute so the seeded pace is one a
+    /// person could actually speak. The arc is the persona's story: the early
+    /// reps bury the point under hedges and fillers, the later reps open with the
+    /// decision and name why it matters. `improvingIntermediateSessions` indexes
+    /// this directly, so the count must stay at 12.
     private static let intermediateTranscripts = [
-        "I believe the most important quality in a leader is empathy. When leaders um understand their team's perspectives, they build trust. The key is showing that you genuinely care about each person's growth.",
-        "Communication starts with listening. In my experience, the best conversations happen when both parties feel heard. I try to like ask clarifying questions before jumping to solutions.",
-        "One challenge I faced was leading a cross-functional project with tight deadlines. I learned that clear expectations and regular check-ins prevented most issues before they escalated.",
-        "Teamwork requires both individual accountability and collective trust. When each person knows their role and trusts their teammates, the whole group performs at a higher level.",
-        "The future of our industry will be shaped by how well we adapt to change. Companies that invest in continuous learning and embrace new tools will have a significant competitive advantage."
+        // 25s — buries the point, heavy hedging, no decision.
+        "So um I guess the thing about our roadmap is that there are a lot of moving pieces and um I think we probably need to figure out what matters most before we commit to anything. It is kind of hard to say right now, honestly, but that is where we are.",
+        // 28s — still hedged, but starts naming a concrete miss.
+        "Um so for the customer escalation I think we sort of handled it okay but there were um a few things that maybe could have gone better. Like the response time was slow and I guess we did not really loop in support early enough. That is probably the main thing I would change.",
+        // 30s — an honest answer appears, though it arrives late.
+        "For the quarterly planning question, I think the honest answer is that we took on too much. We um committed to five initiatives and finished two. What I would do differently is pick three and actually resource them properly. That way the team is not context switching every other day, which is where a lot of the time went.",
+        // 32s — a recommendation lands, with a reason behind it.
+        "On hiring, my view is that we should slow down until the onboarding process is fixed. We brought in four people last quarter and um two of them still do not have a clear owner. Adding more headcount right now just spreads the same problem wider. Fix the ramp first, then hire. That is the sequence I would argue for.",
+        // 35s — separates the call from the execution.
+        "The question about our pricing change is a fair one. I think the increase was the right call but the communication was not. We told customers eleven days before it took effect, which um did not give the smaller accounts time to budget for it. If we do this again I would give a full quarter of notice and lead with what they get, not what changes.",
+        // 38s — opens with the answer and defends the tradeoff.
+        "My answer on the platform migration is that we should do it in stages. Moving everything at once means a hard cutover weekend and no way back if something breaks. If we move the read paths first, we learn where the surprises are while the old system is still there to fall back on. It takes um three weeks longer on paper, but it removes the scenario where we are down on a Monday morning with no rollback.",
+        // 40s — leads with the decision, quantifies the cost.
+        "The decision I would make on the support backlog is to stop taking new feature requests through that queue. Right now one channel carries bug reports, billing questions, and roadmap asks, so everything gets triaged at the same priority and the urgent things sit for days. Splitting it means billing gets answered in hours and the roadmap requests go somewhere they actually get read. It costs us um one afternoon of setup, and it pays for itself in the first week.",
+        // 42s — recommendation first, then the sizing that supports it.
+        "My recommendation on the analytics rebuild is that we do not rebuild it. The dashboard is slow because we are querying raw events every time someone opens it, so the fix is a nightly rollup table, not a new tool. That is about a week of work against three months for a migration, and it solves the actual complaint, which is that the page takes um forty seconds to load. We can revisit the tooling question next year.",
+        // 45s — verdict first, evidence second, clean commitment at the close.
+        "The answer is that we should keep the on call rotation at one week, not two. Two week rotations sound kinder because you go on call half as often, but the people who have done it say the second week is where the mistakes happen, since you are tired and you stop escalating. One week is short enough that you stay sharp the whole way through. If the load is the real problem, the fix is fewer pages, not a longer shift. I would rather cut the alert noise than stretch the rotation.",
+        // 45s — names the point explicitly rather than implying it.
+        "My answer on the design review process is that we should cut it from weekly to twice a month. The weekly cadence means half the sessions have nothing ready, so people stop preparing and start treating it as optional. Twice a month with real work in front of it is a meeting people show up to. The point is not to review less, it is to make each review worth the hour. I would keep the same total time and just concentrate it.",
+        // 48s — recommendation, the risk it avoids, and the fallback.
+        "The recommendation is that we run the pilot with three teams, not the whole org. A full rollout means that if the tool does not fit our workflow we find out with four hundred people already in it, and reversing that costs more trust than the tool is worth. Three teams gives us a real signal in a month because they cover the three main workflows, and if it works the rest of the rollout is a much easier conversation. If it does not, we have spent a month and nobody outside those teams noticed.",
+        // 50s — the showcase rep: decision and reason inside the opening breath,
+        // then the tradeoff, then an explicit ask. This is the rep the goal
+        // outcome read quotes, so the verdict and the "why it matters" must land
+        // early enough to survive the 26-token evidence excerpt.
+        "My recommendation is that we ship the beta in March, because the support team needs a quieter month to absorb the volume. That timing matters more than the feature list. If we launch in February we will be debugging during our busiest support week, and the team will burn out. March gives us two clean weeks to fix whatever the beta surfaces. I would rather ship a smaller release that we can actually support than a bigger one that we cannot. So the ask is simple: approve the March date this week, and I will lock the scope by Friday."
     ]
 
     private static let advancedTranscripts = [
