@@ -72,15 +72,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I get better before my interview?",
-                    coachReply: "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?"
+                    coachReply: "No baseline yet, so start with evidence. Record 60 seconds on 'Why should we hire you?', answer in sentence one, give one proof, then stop and replay only the opener."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I listen for in the replay?",
-                    coachReply: "For your first baseline rep, listen for sentence one only. If it names the answer before the setup, keep it. If it starts with background, rewrite that first sentence and run the rep again."
+                    coachReply: "On your first baseline, listen only to sentence one because it shows whether the answer leads before setup. If background comes first, rewrite that sentence and run the rep again."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So not my whole speaking style yet?",
-                    coachReply: "Right: not your whole speaking style. One interview answer is too thin for that claim, so keep this read narrow: whether sentence one answers before the explanation. Test this across three different interview prompts, including one under pressure, before calling it a broader style pattern."
+                    coachReply: "Right—not your whole speaking style. One interview answer is too thin for that claim, so keep the read to sentence order until different prompts show the same pattern."
                 )
             ]
         ),
@@ -90,7 +90,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I stop saying um under pressure?",
-                    coachReply: "Your latest qualified rep had 6 fillers in 64 seconds (5.6 per minute). That rate is one usable signal, not a pressure pattern, so hold one silent beat before the final sentence on the same prompt, finish the ask, then compare fillers per minute under the same demand."
+                    coachReply: "When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Do I pause before every sentence?",
@@ -108,7 +108,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "What should I do with that filler count?",
-                    coachReply: "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute."
+                    coachReply: "Use the filler count as one baseline, not a pattern. Hold one silent beat after the decision line because that tests the timing move; then compare the rate on an equivalent rep."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Why after the decision line?",
@@ -116,7 +116,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What do I run next?",
-                    coachReply: "Use a 45-second recommendation prompt because it tests the decision line without inviting a full essay. Sentence one is the decision, sentence two is one reason, then stop cleanly."
+                    coachReply: "Run a recommendation answer: decision, one reason, clean stop, because that isolates the proof boundary without inviting a full essay."
                 )
             ]
         ),
@@ -126,15 +126,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "This is robotic and too much writing.",
-                    coachReply: "Fair push: that read was robotic and too much writing. The last rep gives enough signal; next rep, use one clean opener and stop after the point lands."
+                    coachReply: "You're right—that sounded robotic and was too long. I'll use one specific point in plain language: the recommendation came after the setup."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What was generic about it?",
-                    coachReply: "That was generic because it named a plan without naming the behavior. The target is the opener: run a 45-second rep where sentence one lands before the explanation starts."
+                    coachReply: "You're right—I named a plan without naming the behavior. The behavior was a late opener; next time I'll name that before offering a plan."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Give me the short version.",
-                    coachReply: "Short version: the opener is the target because the prior reply buried the behavior. Open with the point, add one reason, then stop. Run that once and check whether sentence one lands before any setup."
+                    coachReply: "The opener is the target because the prior reply buried it. Put the point in sentence one, add one reason, stop, then check whether the setup stayed out."
                 )
             ]
         ),
@@ -144,15 +144,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach.",
-                    coachReply: "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. The safe signal from the last rep is that the recommendation needs to lead, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape."
+                    coachReply: "You're right—TTS read the formatting aloud, and the wording sounded robotic. I'll use plain text and one direct point: the recommendation came after the setup."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "And stop saying practice more.",
-                    coachReply: "Fair push. That was generic. The actual read is that the prior answer prescribed before it earned trust because it named no behavior and no proof. The repair is one signal and one move. Send one sentence with the exact recommendation you plan to use, and I will judge that sentence before prescribing another rep."
+                    coachReply: "You're right—I prescribed another drill instead of answering. I'll answer the point directly without assigning more practice."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I record?",
-                    coachReply: "Record one 45-second answer to a recommendation prompt because it tests whether the first sentence carries the recommendation. If sentence one is not the recommendation, restart."
+                    coachReply: "Record a 30-second recommendation answer because that isolates the opener. Check only whether sentence one states the recommendation; stop once you have that evidence."
                 )
             ]
         ),
@@ -162,7 +162,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "This still sounds cold and overexplained, like generic AI tips.",
-                    coachReply: "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+                    coachReply: "You're right—that sounded robotic and was too long. I'll use one specific point in plain language: reassurance came before the recommendation."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Does that make me sound less warm?",
@@ -180,15 +180,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How far off am I from sounding authoritative?",
-                    coachReply: "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop."
+                    coachReply: "Not proven yet: the transcript shows mechanics—a recommendation and one controlled rep—but not authority under pressure. Missing repeated higher-stakes evidence; repeat the stakeholder answer with verdict first and a clean stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is 7/10 bad?",
-                    coachReply: "No. 7/10 means the mechanics are not the bottleneck yet. The open question is whether the same steadiness survives a more consequential prompt."
+                    coachReply: "No. A rep score is useful evidence, not a verdict on authority; pressure repeatability is still unproven."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What would make you change the diagnosis?",
-                    coachReply: "Your latest rep is not enough to change the diagnosis. Two clean pressure reps would: the verdict stays in sentence one and the close stays settled without extra explanation. Run the next rep under the same conditions, because repeatability separates a mechanics gain from presence under pressure."
+                    coachReply: "The latest timed rep is not enough to change the diagnosis. Two clean pressure reps with the verdict early and the close settled would."
                 )
             ]
         ),
@@ -198,7 +198,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "What next?",
-                    coachReply: "The pattern I'd pick is the rushed close. Review the last transcript, rewrite only the final sentence, then run one rep with that close as the target."
+                    coachReply: "The close is the target because the latest transcript ends in explanation. Rewrite only the final sentence, then retry the same prompt with that ask."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Why the close instead of the opening?",
@@ -206,7 +206,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What is the exact rep?",
-                    coachReply: "60 seconds, same topic, because it isolates the close. Last sentence must be the ask. If it turns into a recap, run it once more."
+                    coachReply: "The recent rep makes the close the target, so use the same topic and change only the ending. Make the final sentence the ask; if it becomes a recap, rewrite that sentence before another run."
                 )
             ]
         ),
@@ -234,7 +234,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Do I sound defensive when I disagree?",
-                    coachReply: "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop."
+                    coachReply: "Treat defensiveness as a hypothesis, not a label: the transcript softened the disagreement before the point. Check whether that fits, then say the disagreement first, give one reason, and stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What if that doesn't fit?",
@@ -242,7 +242,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should Noum remember?",
-                    coachReply: "What I’d carry forward for now is one possible pattern: disagreement may be getting softened by setup. Use two pressure reps to see whether the point still arrives late; drop this read if verdict-first solves it."
+                    coachReply: "I’d remember one tentative pattern: disagreement may be softened by setup, and drop that read if later evidence contradicts it."
                 )
             ]
         ),
@@ -260,7 +260,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I check after?",
-                    coachReply: "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close."
+                    coachReply: "Check the final 10 seconds because that is where the update becomes an ask. Keep it if the last sentence asks for alignment or a decision; rewrite it if it recaps."
                 )
             ]
         ),
@@ -270,11 +270,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I add depth without rambling?",
-                    coachReply: "Your last rep has strong reasons; the signal is no concrete example for the listener to picture. Next rep, keep the same claim, add one example, then stop before adding a second thread."
+                    coachReply: "Add one layer only: state the point, give one concrete example, then stop. That creates depth without opening a second thread."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Can you give me an example of me doing this in sessions?",
-                    coachReply: "In the vendor rep, you said implementation risk was lower and the team already knew the workflow. Those are reasons, not a picture, so add one concrete example after the first reason, then stop."
+                    coachReply: "I don't have a verified quote for that session, and I won't invent one. Choose a rep or transcript and I'll point to the exact moment."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I record?",
@@ -288,15 +288,15 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
-                    coachReply: "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop."
+                    coachReply: "Fair push—I answered with advice when you wanted the read. Reassurance came before the recommendation; next time I'll name that ordering issue directly."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What did you miss?",
-                    coachReply: "I missed the hesitation in your pushback. Your last rep gives the actual read: the comfort came first and the point arrived late. You were asking for that behavior, not a harder drill."
+                    coachReply: "You're right—I answered around the question and missed the hesitation inside the polite pushback. I'll answer the point directly without assigning more practice."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "How do I test that without sounding harsh?",
-                    coachReply: "Run one 45-second client concern answer. Sentence one is the recommendation; sentence two is one reassurance. That tests order without removing warmth, because the tone stays kind while the point arrives first."
+                    coachReply: "Run one client-concern answer: recommendation in sentence one, reassurance in sentence two. That tests order without removing warmth, because the tone stays kind while the point arrives first."
                 )
             ]
         ),
@@ -306,7 +306,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "That's not informative at all.",
-                    coachReply: "Fair push: I missed the actual question and answered around the useful read. The specific read is order: warmth is arriving before the recommendation, so the point lands late. Next rep, put the recommendation first, add one reassurance, then stop."
+                    coachReply: "You're right—that answer was not informative enough. I'll give the direct point and why it matters."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What was the useful read?",
@@ -324,7 +324,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "It's not easy.",
-                    coachReply: "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
+                    coachReply: "You're right—this is hard. The social risk sits in the first sentence, so we can pause here and keep the read narrow."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the disagreement or the setup?",
@@ -342,11 +342,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "You're repeating yourself.",
-                    coachReply: "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: check whether a filler appears after the decision line, then compare fillers per minute on the same prompt."
+                    coachReply: "You're right—I repeated the point. I'll answer once and directly from here."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So not the same drill again?",
-                    coachReply: "Right. Same target, different check, because the last rep gives one qualified rate, not a proven pressure pattern. Hold the close pause, then compare fillers per minute under the same demand."
+                    coachReply: "Right. Keep the close as the target, but change the evidence: compare fillers after the decision line on an equivalent prompt instead of repeating the same drill."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should change next time?",
@@ -360,7 +360,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Okay that's cool, however I still don't feel like that answers what I meant.",
-                    coachReply: "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop."
+                    coachReply: "Fair push—I answered with advice when you wanted the read. Reassurance came before the recommendation; next time I'll name that ordering issue directly."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So what was the question underneath it?",
@@ -368,7 +368,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I try once?",
-                    coachReply: "Try one verdict-first answer because it tests the hypothesis cleanly: sentence one gives the point, sentence two gives one reason, then stop before explaining yourself."
+                    coachReply: "Run one verdict-first answer because it tests the hypothesis cleanly: sentence one gives the point, sentence two gives one reason, then stop before explaining yourself."
                 )
             ]
         ),
@@ -378,7 +378,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Too much writing. Get to the point.",
-                    coachReply: "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop."
+                    coachReply: "You're right—that was too long. I'll give the direct point in plain language: the answer kept explaining after the ask."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "That short?",
@@ -400,7 +400,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So I should stop after the ask?",
-                    coachReply: "Yes. Stop after the ask because the extra sentence is where the confidence drops. Run the same prompt and check only whether the last line asks cleanly."
+                    coachReply: "Yes: stop after the ask because the extra sentence is where confidence drops. Repeat the prompt and check only whether the last line asks cleanly."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I listen for?",
@@ -414,11 +414,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "I got 8/10. Am I ready for the board update?",
-                    coachReply: "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop."
+                    coachReply: "Not proven yet: the timed rep and clear recommendation show useful mechanics, but not board readiness under pressure. Missing: repeated pressure evidence; run a board proof with verdict first, one reason, and a clean stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So the score is not enough?",
-                    coachReply: "Right. The score is useful evidence, not readiness by itself, so treat it as a gate, not a verdict. Run one board-style close before calling it ready."
+                    coachReply: "Right: the score is evidence, not readiness by itself. Run one board-style close under pressure, then judge whether the decision ask stays clean."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What would make you call it ready?",
@@ -432,7 +432,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "I have no sessions yet but need interview help.",
-                    coachReply: "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point."
+                    coachReply: "No baseline yet, so I cannot make a personal read. Record a 60-second interview answer with answer first, one proof, and a clean stop; then replay sentence one."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What question should I use?",
@@ -450,7 +450,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Am I rushing?",
-                    coachReply: "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever."
+                    coachReply: "Yes, locally: 181 WPM plus fillers after sentence one point to rushed transitions. Test one silent beat after the verdict, then check whether the next sentence stays clean."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Why not slow all of it down?",
@@ -504,7 +504,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "I panic before answering. What do I do?",
-                    coachReply: "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener."
+                    coachReply: "That sounds hard. We can slow this down; you do not need to prove anything with another drill right now."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Won't the pause feel awkward?",
@@ -522,11 +522,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I stop rambling?",
-                    coachReply: "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls."
+                    coachReply: "Use a two-sentence ceiling: recommendation, one reason, clean stop. That isolates the ramble point because a second reason opens another thread."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "How do I know I stopped soon enough?",
-                    coachReply: "If the second reason appears, you went too far. The test is recommendation, one reason, clean stop, because it keeps the answer useful without becoming a defense."
+                    coachReply: "Stop when the listener has a decision and one reason because anything after that starts a new thread. To check it, play only the first 20 seconds; if both are clear, cut the rest."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What prompt should I use?",
@@ -540,11 +540,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "My answer has a claim and a reason, but it still feels weak.",
-                    coachReply: "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next."
+                    coachReply: "Your claim and reason are present; the missing link is an implication or ask. Use claim, one reason, implication, ask, then check whether the listener knows what to do."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So I should not add more reasons?",
-                    coachReply: "No. More reasons would hide the gap. The move is one reason, one implication, one ask, because that turns support into direction."
+                    coachReply: "No: more reasons would hide the gap. Use one reason, one implication, and one ask because that turns support into direction."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What is the drill?",
@@ -558,11 +558,11 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I sound more confident at the end?",
-                    coachReply: "The confidence leak is after the ask: maybe or just reopens the decision, so the fix is a clean stop. Make the ask, stop, and listen for whether the final sentence still sounds clean without the qualifier."
+                    coachReply: "The confidence leak comes after the ask, where maybe or just reopens the decision. Make the ask and stop because anything after it weakens the close; then replay the final sentence."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What if I sound too direct?",
-                    coachReply: "Use the close in your next rep: directness is fine if the reason already came before the ask, so keep the reason before it and stop. The risk is apologizing after the ask and weakening the decision."
+                    coachReply: "Direct is fine when the reason comes before the ask; keep that order, then stop. Do not apologise after the ask, because that reopens the decision."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What do I repeat?",
@@ -619,7 +619,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "examples-from-sessions-010",
             userTurn: "Can you give me an example of me doing this in sessions?",
-            coachReply: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
+            coachReply: "In one verified rep, you said, 'we focused on three priorities.' Those are clear reasons but no picture, so add one concrete example after the first reason.",
             seedCoachReplies: ["You tend to give reasons before the picture."],
             // Include the trailing period: the guard extracts the quoted fragment
             // *with* its inner period ('we focused on three priorities.'), and
@@ -631,7 +631,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "outcome-not-causation-027",
             userTurn: "The room seemed engaged. Did the drill cause that?",
-            coachReply: "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
+            coachReply: "I would not call that causation: using the prepared close and your room-read show association, not proof. Keep the close, then capture the exact question people ask afterward.",
             seedCoachReplies: ["Use the final sentence as the ask."]
         ),
         explicitNeutralArenaAppPathScript(
@@ -672,22 +672,22 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "lack-conviction-035",
             userTurn: "Do I lack conviction?",
-            coachReply: "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
+            coachReply: "Not enough evidence to call this lack of conviction: the latest rep and pace support only a mechanics signal—hedging before the recommendation—not a verdict under pressure. Repeat the answer with a direct verb."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "emotional-disconnection-036",
             userTurn: "It sounds correct but not like me. What do I change?",
-            coachReply: "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version."
+            coachReply: "Keep the structure, but replace one polished phrase with words you would actually say. That tests naturalness without discarding what is already clear."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "evasive-polished-037",
             userTurn: "Could this sound polished but evasive?",
-            coachReply: "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
+            coachReply: "Yes, mechanically, but evasiveness under pressure is not proven: the latest rep and pace show only an answer arriving after setup. Missing repeated pressure proof; put the direct answer first, then one reason."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "timidity-038",
             userTurn: "Do I sound timid?",
-            coachReply: "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict."
+            coachReply: "I cannot prove timid from text: the latest rep supports only indirectness before the recommendation, while tone still needs audio. So try one direct recommendation first and compare how it sounds."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "authority-under-pressure-039",
@@ -697,13 +697,13 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "semantic-filler-use-040",
             userTurn: "You counted 'like' but I meant it as a comparison.",
-            coachReply: "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
+            coachReply: "Good correction: if like carried a real comparison, it was not filler. Keep the comparison; mark only pause-fillers that add no meaning.",
             seedCoachReplies: ["You used like as filler several times."]
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "prompt-echo-041",
             userTurn: "The prompt made me repeat the phrase. Is that my filler?",
-            coachReply: "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought."
+            coachReply: "Fair boundary: prompt echo in the latest rep was not filler, so I would not count it. Next time, mark only words added while searching for the next thought."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "no-transcript-fabrication-042",
@@ -714,7 +714,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "quote-guard-043",
             userTurn: "Did I actually say that?",
-            coachReply: "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
+            coachReply: "Correction: I should not quote wording unless it is verified. I retract it; the supported read is only that the recommendation came late.",
             seedCoachReplies: ["You said 'we should pause the launch'."]
         ),
         explicitNeutralArenaAppPathScript(
@@ -729,13 +729,13 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "barge-in-045",
             userTurn: "Stop, that's not what I asked.",
-            coachReply: "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
+            coachReply: "Fair—I am stopping that thread. Your ask is the close, so make the final sentence the ask, not another filler drill.",
             seedCoachReplies: ["Long spoken answer about filler counts."]
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "weekly-checkin-046",
             userTurn: "This week felt harder even though my score improved.",
-            coachReply: "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling."
+            coachReply: "Both can be true: the score reflects mechanics, while your check-in records effort. Run the same prompt with one fewer condition because that tests whether effort drops without losing the gain."
         ),
         explicitNeutralArenaAppPathScript(
             fixtureID: "real-world-outcome-047",
@@ -756,7 +756,7 @@ enum CoachChatConversationCorpus {
         explicitNeutralArenaAppPathScript(
             fixtureID: "assistant-wrapper-050",
             userTurn: "This feels like a generic AI wrapper.",
-            coachReply: "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
+            coachReply: "You're right—that sounded templated. I'll use plain, specific wording.",
             seedCoachReplies: ["Here are some tips: be confident, speak clearly, and practice."]
         )
     ]
@@ -804,7 +804,7 @@ enum CoachChatConversationCorpus {
             extraTurns: [
                 CoachChatConversationTurn(
                     userTurn: "I tried the close pause and fillers dropped, but I sounded stiff.",
-                    coachReply: "That is useful: you reported fewer fillers but a stiffer close, so hold the beat only before the final sentence, add one natural phrase, then repeat the same 60-second prompt and compare fillers per minute."
+                    coachReply: "That is useful: fillers dropped but the close stiffened, so keep the pause point and change the check. Say only the final sentence twice—natural then deliberate—and keep the version that stays clean without sounding managed."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "How do I make that natural tomorrow?",
@@ -843,7 +843,7 @@ enum CoachChatConversationCorpus {
             extraTurns: [
                 CoachChatConversationTurn(
                     userTurn: "The no-symbol version is easier to hear.",
-                    coachReply: "Good, delivery format was part of the trust issue, so keep the no-symbol rule and test only the recommendation line with one proof."
+                    coachReply: "You're right—that confirms formatting was part of the problem. I'll keep future replies plain and symbol-free."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What if the voice still sounds cold?",
@@ -873,7 +873,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I look for before I call it progress?",
-                    coachReply: "The latest rep was cleaner, not settled, so call it progress only after two reps under pressure show the same thing: the verdict stays in sentence one and the close stays steady. In the next rep, keep the verdict first and check whether the final five words stay steady under pressure."
+                    coachReply: "Check whether the verdict stays early and the close stays steady on the next pressure rep, because a mechanics gain becomes progress only when that pattern repeats."
                 )
             ]
         ),
@@ -925,7 +925,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "This still feels too generic, like you're just giving me another drill.",
-                    coachReply: "Fair push: I leaned on generic advice instead of evidence, and I missed the friction again. The actual read is whether recommendation-first can stay warm, because the repair only works if the point lands without losing connection. Record one short client-concern answer and check whether warmth comes after the point."
+                    coachReply: "Fair push—I prescribed another drill instead of using the evidence. I'll answer the point directly: recommendation first can stay warm when reassurance follows."
                 )
             ]
         )
@@ -1043,7 +1043,11 @@ enum CoachChatConversationCorpus {
             "format", "tts", "not informative"
         ])
         evaluate(.adaptiveRepair, weight: 8, passes: isRepair
-            ? containsAny(lowerCoach, ["fair push", "advice, not coaching", "should never", "too generic"])
+            ? containsAny(lowerCoach, [
+                "fair push", "you're right", "you’re right",
+                "i answered", "i missed", "i repeated",
+                "advice, not coaching", "should never", "too generic"
+            ])
             : !containsAny(lowerCoach, ["menu", "choose one"]))
         evaluate(.repairCarryover, weight: 4, passes: !isRepair || repairCarriesAcrossTurns(conversation))
         evaluate(.transferProof, weight: 6, passes: containsAny(lowerCoach, [
@@ -1251,7 +1255,8 @@ enum CoachChatConversationCorpus {
         for conversation: CoachChatConversationFixture
     ) -> CoachChatConversationFixture? {
         guard let repairIndex = conversation.turns.firstIndex(where: { turn in
-            TurnDepthClassifier.classify(userText: turn.userTurn) == .trustRepair
+            TurnDepthClassifier.classify(userText: turn.userTurn) == .trustRepair &&
+                CoachChatTurnIntent.classify(turn.userTurn) != .vulnerable
         }) else {
             return nil
         }
@@ -1273,7 +1278,8 @@ enum CoachChatConversationCorpus {
         for conversation: CoachChatConversationFixture
     ) -> CoachChatConversationFixture? {
         guard let repairIndex = conversation.turns.firstIndex(where: { turn in
-            TurnDepthClassifier.classify(userText: turn.userTurn) == .trustRepair
+            TurnDepthClassifier.classify(userText: turn.userTurn) == .trustRepair &&
+                CoachChatTurnIntent.classify(turn.userTurn) != .vulnerable
         }) else {
             return nil
         }
@@ -1295,7 +1301,8 @@ enum CoachChatConversationCorpus {
         for conversation: CoachChatConversationFixture
     ) -> CoachChatConversationFixture? {
         guard let repairIndex = conversation.turns.firstIndex(where: { turn in
-            TurnDepthClassifier.classify(userText: turn.userTurn) == .trustRepair
+            TurnDepthClassifier.classify(userText: turn.userTurn) == .trustRepair &&
+                CoachChatTurnIntent.classify(turn.userTurn) != .vulnerable
         }),
               conversation.turns.indices.contains(repairIndex + 1) else {
             return nil
@@ -1338,13 +1345,31 @@ enum CoachChatConversationCorpus {
             let proofTestRecentlyRepeated = actionFingerprints.contains {
                 recentActionFingerprints.contains($0)
             }
+            // The shipping repeated-proof gate deliberately requires both the
+            // upstream repeat signal and the typed proof it belongs to. Supply
+            // that contract in the paired negative-control fixtures instead of
+            // testing a nil-assessment path the runtime never uses.
+            let assessment: CoachAssessment? = conversation.id.contains("-repeated-proof")
+                ? CoachAssessment(
+                    turnDepth: turnDepth,
+                    surface: .text,
+                    questionRestatement: turn.userTurn,
+                    directVerdict: "The proof test is repeating.",
+                    confidence: 0.70,
+                    evidenceUsed: [],
+                    rubricScores: [],
+                    missingEvidence: [],
+                    nextProofTest: "Run the same 60-second proof test.",
+                    responseMode: .expandable
+                )
+                : nil
             let verdict = CoachReliabilityGate.evaluate(
                 replyText: turn.coachReply,
                 previousCoachReply: previousCoachReply,
                 recentCoachReplies: recentCoachReplies,
                 latestUserTurn: turn.userTurn,
                 turnDepth: turnDepth,
-                assessment: nil,
+                assessment: assessment,
                 evidenceCoverage: nil,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                 surface: .text
@@ -1620,13 +1645,17 @@ enum CoachChatConversationCorpus {
                 return false
             }
             if user.contains("what was generic") &&
-                !containsAny(reply, ["actual behavior", "opener", "behavior worth training"]) {
+                !containsAny(reply, [
+                    "actual behavior", "opener", "late opener",
+                    "name the behavior", "behavior worth training"
+                ]) {
                 return false
             }
             if user.contains("stop saying practice more") &&
                 !containsAny(reply, [
                     "not more volume", "cleaner first sentence",
-                    "prior answer prescribed", "one signal and one move"
+                    "prior answer prescribed", "prescribed another drill",
+                    "without assigning more practice", "one signal and one move"
                 ]) {
                 return false
             }
@@ -1635,7 +1664,9 @@ enum CoachChatConversationCorpus {
                 return false
             }
             if user.contains("7/10 bad") &&
-                !(reply.contains("no") && containsAny(reply, ["mechanics", "bottleneck"])) {
+                !(reply.contains("no") && containsAny(reply, [
+                    "mechanics", "bottleneck", "rep score", "pressure"
+                ])) {
                 return false
             }
             if user.contains("instead of the opening") && !reply.contains("close") {
@@ -1934,7 +1965,10 @@ enum CoachChatConversationCorpus {
         _ conversation: CoachChatConversationFixture
     ) -> Bool {
         let replies = conversation.turns.map { normalized($0.coachReply) }
-        guard replies.first.map({ containsAny($0, ["fair push", "advice not coaching", "should never"]) }) == true else {
+        guard replies.first.map({ containsAny($0, [
+            "fair push", "you're right", "you’re right", "i missed",
+            "advice not coaching", "should never"
+        ]) }) == true else {
             return false
         }
         guard !replies.dropFirst().contains(where: resetsConversationState) else {
@@ -2043,7 +2077,14 @@ struct CoachChatConversationCorpusTests {
             #expect(conversation.turns.count >= 5, "\(conversation.id) must be a full end-to-end transcript")
             #expect(sourceIDs.contains(conversation.sourceFixtureID))
             let finalReply = conversation.turns.last?.coachReply.lowercased() ?? ""
-            #expect(["check", "after", "compare", "record"].contains { finalReply.contains($0) })
+            let finalUserTurn = conversation.turns.last?.userTurn
+            if CoachChatTurnIntent.isCoachStyleFeedback(finalUserTurn) {
+                #expect(!CoachReliabilityGate.conversationalTrustRepairNeedsCorrection(finalReply))
+            } else {
+                #expect(["check", "after", "compare", "record"].contains {
+                    finalReply.contains($0)
+                })
+            }
         }
 
         #expect(pushbackConversationCount >= 3)
@@ -2086,7 +2127,7 @@ struct CoachChatConversationCorpusTests {
     }
 
     @Test func genericWrapperTrustRepairClearsVisionFloor() {
-        let reply = "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop."
+        let reply = "You're right—that sounded templated. I'll keep the next answer plain and name one specific point."
         let vision = AICoachChatService.coachVisionEvaluation(
             reply: reply,
             latestUserTurn: "This feels like a generic AI wrapper.",
@@ -2194,8 +2235,10 @@ struct CoachChatConversationCorpusTests {
         #expect(noAttunementVariants.count >= 3)
         for conversation in noAttunementVariants {
             let issues = CoachChatConversationCorpus.reliabilityIssues(in: conversation)
-            #expect(issues.contains(.noAttunementOnPushback),
-                    "\(conversation.id) no-attunement variant should trip noAttunementOnPushback, got \(issues)")
+            #expect(
+                issues.contains(.noAttunementOnPushback) || issues.contains(.thinTrustRepair),
+                "\(conversation.id) no-attunement variant should trip the lane-specific repair issue, got \(issues)"
+            )
         }
 
         let thinTrustRepairVariants = CoachChatConversationCorpus.conversations.compactMap {
@@ -2282,7 +2325,7 @@ struct CoachChatConversationCorpusTests {
             sourceFixtureID: "assistant-explainer-register",
             turns: [
                 CoachChatConversationTurn(
-                    userTurn: "This still sounds cold and overexplained, like generic AI tips.",
+                    userTurn: "That is wrong about my last rep; the recommendation was early.",
                     coachReply: "Fair push: that sounded cold, not like a human coach read. Proof test: record one verdict-first rep."
                 )
             ]
@@ -2292,8 +2335,8 @@ struct CoachChatConversationCorpusTests {
 
         #expect(!row.passesSemanticGate)
         #expect(!row.passesProductionFloor)
-        #expect(row.semanticIssues.contains("semantic:missingRepairInsight"))
-        #expect(row.turnSemanticIssues == [["semantic:missingRepairInsight"]])
+        #expect(row.semanticIssues.contains("semantic:missingDirectVerdict"))
+        #expect(row.turnSemanticIssues == [["semantic:missingDirectVerdict"]])
     }
 
     @Test func politePushbackCannotPassSemanticGateBySayingBut() {
@@ -2302,7 +2345,7 @@ struct CoachChatConversationCorpusTests {
             sourceFixtureID: "assistant-explainer-register",
             turns: [
                 CoachChatConversationTurn(
-                    userTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
+                    userTurn: "Okay, but that doesn't answer what happened in my last rep.",
                     coachReply: "Fair push — but the move is a verdict-first rep. The actual read is your recommendation needs to land before the setup. Proof test: record one verdict-first rep."
                 )
             ]
@@ -2379,11 +2422,11 @@ struct CoachChatConversationCorpusTests {
             ),
             (
                 "Give me the short version.",
-                "Short version: the opener is the target because the prior reply buried the behavior. Open with the point, add one reason, then stop. Run that once and check whether sentence one lands before any setup."
+                "The opener is the target because the prior reply buried it. Put the point in sentence one, add one reason, stop, then check whether the setup stayed out."
             ),
             (
                 "And stop saying practice more.",
-                "Agreed: that was too generic. The move is not more volume; the target is a cleaner first sentence because it turns vague advice into a testable line: recommendation, one proof, stop."
+                "You're right—I prescribed another drill instead of answering. I'll answer the point directly without assigning more practice."
             ),
             (
                 "Does that make me sound less warm?",
@@ -2407,7 +2450,7 @@ struct CoachChatConversationCorpusTests {
             ),
             (
                 "What if I sound too direct?",
-                "Use the close in your next rep: directness is fine if the reason already came before the ask, so keep the reason before it and stop. The risk is apologizing after the ask and weakening the decision."
+                "Direct is fine when the reason comes before the ask; keep that order, then stop. Do not apologise after the ask, because that reopens the decision."
             ),
             (
                 "What do I repeat?",
@@ -2613,7 +2656,10 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.semanticIssueCounts["semantic:missingIntentFit", default: 0] >= 5)
         #expect(report.summary.semanticIssueCounts["semantic:unsupportedTransferCausalityClaim", default: 0] >= 1)
         #expect(report.summary.reliabilityIssueCounts["repeatedProofTest", default: 0] >= 2)
-        #expect(report.summary.reliabilityIssueCounts["noAttunementOnPushback", default: 0] >= 2)
+        let missingRepairOwnershipCount =
+            report.summary.reliabilityIssueCounts["noAttunementOnPushback", default: 0] +
+            report.summary.reliabilityIssueCounts["thinTrustRepair", default: 0]
+        #expect(missingRepairOwnershipCount >= 2)
         #expect(report.summary.reliabilityIssueCounts["silentPlanSwitch", default: 0] >= 1)
         #expect(report.summary.reliabilityIssueCounts["repairCarryoverBreak", default: 0] >= 1)
         #expect(report.summary.reliabilityIssueCounts["repetitiveDiscourseMove", default: 0] >= 1)

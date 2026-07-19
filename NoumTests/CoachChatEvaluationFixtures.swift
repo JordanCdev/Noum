@@ -2175,9 +2175,13 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         let floorFailures = rows.filter { !$0.passesAppPathFloor }
         let targetReplyMismatchCount = turns.filter { !$0.targetReplyMatched }.count
         let missingMetadataTurnCount = turns.filter { !$0.metadataPresent }.count
-        let semanticGateFailureTurnCount = turns.filter {
-            !$0.semanticGateExpectationSatisfied
-        }.count
+        let semanticGateFailureTurnCount = rows.reduce(0) { count, row in
+            let sourceIsDeclared = CoachChatConversationCorpus
+                .assessmentProvenance(for: row.sourceFixtureID) != nil
+            return count + row.turns.filter { turn in
+                !sourceIsDeclared || !turn.semanticGateExpectationSatisfied
+            }.count
+        }
         let qualityGateEventCounts = eventCounts(
             turns.flatMap(\.qualityGateEvents)
         )
@@ -2396,9 +2400,15 @@ struct CoachChatConversationAppPathReportRow: Codable, Equatable {
         sourceFixtureID: String,
         turns: [CoachChatConversationAppPathTurnRow]
     ) -> CoachChatConversationAppPathReportRow {
-        let semanticGateContractSatisfied = turns.allSatisfy(
-            \.semanticGateExpectationSatisfied
-        )
+        // Response intent decides whether a turn needs typed judgement, but
+        // the script source still needs explicit provenance. These are
+        // separate contracts: a new/misspelled fixture must never inherit a
+        // passing turn merely because its copied telemetry is internally
+        // consistent.
+        let sourceIsDeclared = CoachChatConversationCorpus
+            .assessmentProvenance(for: sourceFixtureID) != nil
+        let semanticGateContractSatisfied = sourceIsDeclared &&
+            turns.allSatisfy(\.semanticGateExpectationSatisfied)
         return CoachChatConversationAppPathReportRow(
             conversationID: conversationID,
             sourceFixtureID: sourceFixtureID,

@@ -130,6 +130,7 @@ enum CoachChatTurnIntent: String, Codable, Sendable, Equatable {
             "you repeated yourself", "you said the same thing again",
             "this is generic", "that is generic", "that's generic",
             "this feels generic", "that feels generic",
+            "this still feels too generic", "that still feels too generic",
             "that's not informative", "that is not informative",
             "that's not useful", "that is not useful",
             "that's not helpful", "that is not helpful",
@@ -141,9 +142,13 @@ enum CoachChatTurnIntent: String, Codable, Sendable, Equatable {
             "what exactly did you miss", "stop saying practice more",
             "stop telling me to practice", "what was generic about it",
             "what exactly was generic about it",
+            "too much writing", "get to the point",
             "don't feel like that answered what i meant",
             "dont feel like that answered what i meant",
-            "do not feel like that answered what i meant"
+            "do not feel like that answered what i meant",
+            "don't feel like that answers what i meant",
+            "dont feel like that answers what i meant",
+            "do not feel like that answers what i meant"
         ].contains(where: normalized.contains)
         if directCoachComplaint {
             return true
@@ -157,6 +162,7 @@ enum CoachChatTurnIntent: String, Codable, Sendable, Equatable {
             "that feels", "the reply feels", "the answer feels",
             "this is robotic", "that is robotic",
             "this still sounds", "that still sounds",
+            "this still feels", "that still feels",
             "doesn't feel like a human", "does not feel like a human",
             "it just says", "it says", "your formatting",
             "tts", "text to speech", "the voice reads", "voice reads them",

@@ -297,6 +297,15 @@ enum CoachReliabilityGate {
     /// before returning to prescription.
     static let trustRepairMoveMarkers: [String] = [
         "i missed",
+        "i answered with advice",
+        "i answered around the question",
+        "i named a plan without naming the behavior",
+        "i prescribed another drill",
+        "i repeated the point",
+        "sounded robotic",
+        "that answer was not informative",
+        "that was too long",
+        "tts read the formatting aloud",
         "i gave you advice",
         "i gave advice",
         "i used too much",
@@ -3175,7 +3184,8 @@ enum CoachReliabilityGate {
     static func breaksRepairCarryover(reply: String, previousCoachReply: String) -> Bool {
         let reply = normalize(reply)
         let previous = normalize(previousCoachReply)
-        guard containsAny(previous, trustRepairCarryoverSourceMarkers),
+        guard (containsAny(previous, trustRepairCarryoverSourceMarkers) ||
+               openingAcknowledges(previous)),
               containsAny(previous, trustRepairMoveMarkers),
               !containsAny(reply, repairCarryoverSafeNegations) else {
             return false

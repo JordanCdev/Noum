@@ -262,4 +262,12 @@ struct ProductJourneyContractTests {
         #expect(verdict.fallbackText != nil)
         #expect(!(verdict.fallbackText ?? "").lowercased().contains("pretending"))
     }
+
+    @Test("A terse copy complaint repairs Noum instead of assigning user work")
+    func terseCopyComplaintUsesConversationalRepairLane() {
+        let turn = "Too much writing. Get to the point."
+        #expect(CoachChatTurnIntent.classify(turn) == .preference)
+        #expect(CoachChatResponseKind.classify(turn) == .conversational)
+    }
+
 }
