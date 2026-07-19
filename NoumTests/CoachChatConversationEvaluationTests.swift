@@ -324,7 +324,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "It's not easy.",
-                    coachReply: "You're right—this isn't easy. The setup before the disagreement may be carrying the social risk; we can slow down and work with that when you're ready."
+                    coachReply: "You're right—this isn't easy. The setup carries social risk under pressure, so make it smaller: say the disagreement and one calm reason, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the disagreement or the setup?",

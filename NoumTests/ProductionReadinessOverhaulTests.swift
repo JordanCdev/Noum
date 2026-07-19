@@ -940,6 +940,10 @@ struct CoachChatWireContractTests {
             latestUserTurn: "I panic before answering. What do I do?"
         ) == nil)
         #expect(AICoachChatService.replyQualityIssue(
+            in: "You're right—this isn't easy. The setup carries social risk under pressure, so make it smaller: say the disagreement and one calm reason, then stop.",
+            latestUserTurn: "It's not easy."
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "I'm nervous about this"
         ) == .nonCoachingPrescription)

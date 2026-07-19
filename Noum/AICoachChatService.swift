@@ -3865,7 +3865,7 @@ actor AICoachChatService {
             coachingBrief: coachingBrief
         )
         let vulnerableTurnForbidsPrescription = turnIntent == .vulnerable &&
-            !turnExpectsPrescribedAction(latestUserTurn)
+            !vulnerableTurnAllowsBoundedAction(latestUserTurn)
         let forbidsUserPrescription = (
             responseKind == .conversational && turnIntent != .vulnerable
         ) || [.greeting, .offTopic, .preference].contains(turnIntent) ||
@@ -4770,7 +4770,7 @@ actor AICoachChatService {
         let conversationalStyleFeedback = responseKind == .conversational &&
             CoachChatTurnIntent.isCoachStyleFeedback(latestUserTurn)
         let requestedVulnerableAction = turnIntent == .vulnerable &&
-            turnExpectsPrescribedAction(latestUserTurn)
+            vulnerableTurnAllowsBoundedAction(latestUserTurn)
         let hasNoUserPrescription = !replyContainsNonCoachingPrescription(lower) ||
             requestedVulnerableAction
         let hasSpecificCoachCorrection = conversationalStyleFeedback &&
@@ -6184,6 +6184,26 @@ actor AICoachChatService {
             "make a bigger stride", "what do i run", "what is the exact rep",
             "what's the exact rep", "what test", "which test"
         ]) || isCritiqueTurn(lower)
+    }
+
+    /// A vulnerable turn may receive one bounded action when the user asks for
+    /// help or pushes back that the current prescription is harder than Noum
+    /// made it sound. A standalone disclosure such as "I'm nervous" remains a
+    /// presence turn and cannot be converted into unsolicited homework.
+    private nonisolated static func vulnerableTurnAllowsBoundedAction(
+        _ latestUserTurn: String?
+    ) -> Bool {
+        if turnExpectsPrescribedAction(latestUserTurn) {
+            return true
+        }
+        guard let lower = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() else {
+            return false
+        }
+        return containsAny(lower, [
+            "not easy", "not that easy", "easier said", "harder than"
+        ])
     }
 
     private nonisolated static func replyDirectlyAnswersBriefTacticalTurn(
