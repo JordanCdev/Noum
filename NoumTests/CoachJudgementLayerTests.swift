@@ -3130,7 +3130,7 @@ struct CoachTypedFallbackTests {
             coachVoice: .persuasive
         )
 
-        #expect(fallback.hasPrefix("Persuasive is set."))
+        #expect(fallback.hasPrefix("Persuasive is your current training emphasis."))
         #expect(!fallback.lowercased().contains("confirm"))
         #expect(!fallback.lowercased().contains("pretending"))
     }

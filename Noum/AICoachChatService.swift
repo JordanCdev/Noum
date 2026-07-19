@@ -2840,19 +2840,28 @@ actor AICoachChatService {
         let raw: String
         if responseKind == .conversational {
             // This lane owns coach-style feedback, greetings, tiny probes, and
-            // vulnerable disclosures. It must never resurrect a personal
-            // assessment or hand the speaker another drill merely because a
-            // direct/debug caller supplied one.
-            raw = CoachReliabilityGate.truthfulFallback(
-                turnDepth: turnDepth,
-                assessment: nil,
-                surface: surface,
-                previousCoachReply: recentCoachReplies.first,
-                recentCoachReplies: recentCoachReplies,
-                latestUserTurn: latestUserTurn,
-                responseKind: .conversational,
-                coachingBrief: nil
-            )
+            // vulnerable disclosures. Standalone disclosures must never
+            // resurrect a personal assessment or unsolicited homework. An
+            // explicit request for help or pushback on the current prescription
+            // may keep one evidence-bounded smaller step.
+            if vulnerableTurnAllowsBoundedAction(latestUserTurn),
+               CoachReliabilityGate.vulnerablePushbackUserTurn(latestUserTurn) {
+                raw = CoachReliabilityGate.vulnerablePushbackFallback(
+                    surface: surface,
+                    assessment: assessment
+                )
+            } else {
+                raw = CoachReliabilityGate.truthfulFallback(
+                    turnDepth: turnDepth,
+                    assessment: nil,
+                    surface: surface,
+                    previousCoachReply: recentCoachReplies.first,
+                    recentCoachReplies: recentCoachReplies,
+                    latestUserTurn: latestUserTurn,
+                    responseKind: .conversational,
+                    coachingBrief: nil
+                )
+            }
         } else if responseKind == .generalCoaching {
             guard let fallback = CoachReliabilityGate.generalCoachingFailureFallback(
                 turnDepth: turnDepth,

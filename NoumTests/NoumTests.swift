@@ -50148,8 +50148,8 @@ struct GoalIntentContextLinesTests {
             currentVoice: nil,
             adaptationLog: nil
         )
-        #expect(lines.contains { $0.contains("SET their voice to Warm and welcoming") })
-        #expect(lines.contains { $0.contains("do NOT assume it is set") })
+        #expect(lines.contains { $0.contains("set Warm and welcoming as a TRAINING EMPHASIS") })
+        #expect(lines.contains { $0.contains("do not assume it is committed") })
     }
 
     @Test func initialSetWithNoVoiceAsksToGuide() {
@@ -50167,9 +50167,9 @@ struct GoalIntentContextLinesTests {
             currentVoice: .authoritative,
             adaptationLog: nil
         )
-        #expect(lines.contains { $0.contains("CHANGE their voice from Authoritative to Persuasive") })
-        #expect(lines.contains { $0.contains("Name the trade-off") })
-        #expect(lines.contains { $0.contains("their call") })
+        #expect(lines.contains { $0.contains("changing training emphasis from Authoritative to Persuasive") })
+        #expect(lines.contains { $0.contains("Name the practical trade-off") })
+        #expect(lines.contains { $0.contains("Let them choose") })
     }
 
     // S1 — the change branch must carry an explicit clarifying-question
@@ -50181,9 +50181,9 @@ struct GoalIntentContextLinesTests {
             currentVoice: .authoritative,
             adaptationLog: nil
         )
-        #expect(lines.contains { $0.contains("ASK a clarifying question") })
-        #expect(lines.contains { $0.contains("what has shifted") })
-        #expect(lines.contains { $0.contains("do NOT state it is set") })
+        #expect(lines.contains { $0.contains("ask what changed") })
+        #expect(lines.contains { $0.contains("current emphasis not helping") })
+        #expect(lines.contains { $0.contains("Do not assume it is committed") })
     }
 
     @Test func antiThrashNoteFiresAtThreshold() {
@@ -50204,8 +50204,8 @@ struct GoalIntentContextLinesTests {
             adaptationLog: [change, change],
             now: now
         )
-        #expect(lines.contains { $0.contains("changed voice 2 times in the last week") })
-        #expect(lines.contains { $0.contains("Do not punish-shame") })
+        #expect(lines.contains { $0.contains("changed training emphasis 2 times in the last week") })
+        #expect(lines.contains { $0.contains("Never question their authenticity or commitment") })
     }
 
     @Test func antiThrashNoteAbsentBelowThreshold() {
@@ -50542,9 +50542,9 @@ struct GoalProposalChipCatalogTests {
         #expect(chips[1].label == "Blend Warm and welcoming + Persuasive")
         // The keep chip names the OLD voice so the decline is explicit.
         #expect(chips[2].label == "Keep Warm and welcoming")
-        #expect(chips[0].dispatchText == "Persuasive is now my coaching voice. Give me one way to practise it.")
+        #expect(chips[0].dispatchText == "Persuasive is now my training emphasis. Give me one way to practise it.")
         #expect(!chips[0].dispatchText.lowercased().contains("switch"))
-        #expect(chips[1].dispatchText.contains("now blending"))
+        #expect(chips[1].dispatchText.contains("blending Warm and welcoming with Persuasive as my training emphasis"))
     }
 
     @Test func changeOmitsBlendWhenTargetEqualsCurrent() {
