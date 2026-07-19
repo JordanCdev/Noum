@@ -86,7 +86,7 @@ enum CoachPromptBundle {
         case .quickMove:
             return [
                 "- Depth instruction: answer directly. Give one next move only when the user asked for action. No menu.",
-                "- If the turn is off-topic or a test, name it lightly and steer back without pretending it was a real coaching question. Offer a coaching choice; no score, filler, or duration recap on that turn.",
+                "- If the turn is off-topic or a test, name it lightly and steer back without mislabelling it as coaching evidence. Offer a coaching choice; no score, filler, or duration recap on that turn.",
                 "- Length budget: \(live ? "35 spoken words" : "50 words and two sentences")."
             ]
         case .groundedRead:

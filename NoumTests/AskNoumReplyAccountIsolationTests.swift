@@ -441,7 +441,7 @@ struct AskNoumReplyAccountIsolationTests {
         let leaseCapture = try #require(pipeline.range(of: "let replyLease: AskNoumReplyLease"))
         let firstSuspension = try #require(pipeline.range(of: "coachingExpertise = await"))
         #expect(leaseCapture.lowerBound < firstSuspension.lowerBound)
-        let contextEnrichment = try #require(pipeline.range(of: "context +="))
+        let contextSelection = try #require(pipeline.range(of: "let context: String"))
         let contextSnapshot = try #require(pipeline.range(
             of: "let contextSnapshot = context"
         ))
@@ -451,9 +451,10 @@ struct AskNoumReplyAccountIsolationTests {
         let finalVisionContext = try #require(pipeline.range(
             of: "systemContext: contextSnapshot"
         ))
-        #expect(contextEnrichment.lowerBound < contextSnapshot.lowerBound)
+        #expect(contextSelection.lowerBound < contextSnapshot.lowerBound)
         #expect(contextSnapshot.lowerBound < providerContext.lowerBound)
         #expect(providerContext.lowerBound < finalVisionContext.lowerBound)
+        #expect(!pipeline.contains("context +="))
         #expect(!pipeline.contains("userContext: context,"))
         #expect(!pipeline.contains("systemContext: context,"))
         #expect(pipeline.contains("registerProviderWorkCancellation("))

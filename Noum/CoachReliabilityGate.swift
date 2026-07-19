@@ -142,9 +142,12 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     /// confirmation flow owns state mutation.
     case goalStateDirectiveLeak
     /// A voice / goal-change reply recited raw score/filler/duration telemetry
-    /// as proof for a voice decision. Voice selection is identity-adjacent; it
-    /// should use a spoken progress anchor, not a dashboard readout.
+    /// as proof for a voice decision. A voice goal is training emphasis; it
+    /// should use a practical progress anchor, not a dashboard readout.
     case goalStateReportVoiceLeak
+    /// A goal-change answer shames the user by treating a training preference as
+    /// proof that their prior delivery was fake, inauthentic, or an act.
+    case goalAuthenticityShaming
 
     /// Issues that are unambiguous user-facing defects and therefore trigger the
     /// truthful fallback substitution.
@@ -162,7 +165,8 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
                 .repetitiveDiscourseMove, .repeatedProofTest,
                 .greetingWithDrill, .offTopicTestWithDrill, .coldStartJargon,
                 .evidenceOverclaimNoBaseline, .vulnerablePushbackQuestionBurden,
-                .goalStateDirectiveLeak, .goalStateReportVoiceLeak:
+                .goalStateDirectiveLeak, .goalStateReportVoiceLeak,
+                .goalAuthenticityShaming:
             return true
         case .nearDuplicateReply, .floorConfidenceWithEvidence:
             return false
@@ -613,6 +617,11 @@ enum CoachReliabilityGate {
            leaksGoalStateReportVoice(lowered) {
             issues.append(.goalStateReportVoiceLeak)
         }
+        if !trimmed.isEmpty,
+           goalOrVoiceChangeUserTurn(latestUserTurn),
+           leaksGoalAuthenticityShaming(lowered) {
+            issues.append(.goalAuthenticityShaming)
+        }
         // Pace self-frustration needs the coach to separate speed from the
         // sentence-boundary gap. A raw score read or generic "slow down" advice
         // makes the answer feel like a report, not coaching.
@@ -750,7 +759,8 @@ enum CoachReliabilityGate {
         } else if issues.contains(.vulnerablePushbackQuestionBurden) {
             fallback = vulnerablePushbackFallback(surface: surface, assessment: assessment)
         } else if issues.contains(.goalStateDirectiveLeak) ||
-                    issues.contains(.goalStateReportVoiceLeak) {
+                    issues.contains(.goalStateReportVoiceLeak) ||
+                    issues.contains(.goalAuthenticityShaming) {
             fallback = goalStateDirectiveFallback(
                 surface: surface,
                 latestUserTurn: latestUserTurn,
@@ -1236,9 +1246,9 @@ enum CoachReliabilityGate {
         if let coachVoice,
            containsAny(lowered, [coachVoice.rawValue, coachVoice.title.lowercased()]) {
             if coachVoice == .persuasive {
-                return "Persuasive is set. Practise it by leading with the outcome, giving one listener-specific reason, then making one clear ask."
+                return "Persuasive is your current training emphasis. Practise it by leading with the outcome, giving one listener-specific reason, then making one clear ask."
             }
-            return "\(coachVoice.title) is set. Test it in one short answer, then listen for whether the delivery matches the room."
+            return "\(coachVoice.title) is your current training emphasis. Test it in one short answer, then listen for whether the delivery matches the room."
         }
         if containsAny(lowered, ["engaging", "more engaging", "engage"]) {
             let progress = goalStateProgressAnchor(replyText)
@@ -3148,6 +3158,14 @@ enum CoachReliabilityGate {
         return patterns.contains { pattern in
             lowered.range(of: pattern, options: .regularExpression) != nil
         }
+    }
+
+    static func leaksGoalAuthenticityShaming(_ lowered: String) -> Bool {
+        containsAny(lowered, [
+            "you were pretending", "you've been pretending", "you have been pretending",
+            "fake persona", "fake voice", "not your real voice", "wasn't your real voice",
+            "was not your real voice", "inauthentic version of you", "betrayed your voice"
+        ])
     }
 
     /// True when the reply after a real repair returns to generic reset advice

@@ -413,7 +413,7 @@ actor AIRewriteService {
     ) -> String {
         let voiceRegister = voiceRegisterClause(for: voice)
         return """
-        You are a speaking coach who rewrites a small slice of a user's transcript to fix a specific weakness — without making them sound like a different person. The user's existing voice is the asset; you protect it. The user is also training a specific voice goal — you nudge the rewrite toward that goal while keeping their vocabulary intact.
+        You are a speaking coach who rewrites a small slice of a user's transcript to fix a specific weakness while preserving their vocabulary, meaning, and cadence. A speaking-style goal is a training emphasis, not an identity judgment; use it only to choose the communication lever being practised.
 
         \(voiceRegister)
 
@@ -434,7 +434,7 @@ actor AIRewriteService {
     /// authoritative=verdict, warm=mentor, concise=clipped, persuasive=
     /// premise→evidence, executive=chief-of-staff, storytelling=arcs pattern
     /// in `CoachContextBuilder`. The rewrite moves *toward* the user's voice
-    /// goal — never overshoots into a different person.
+    /// goal — never overrides their meaning, vocabulary, or speaking identity.
     static func voiceRegisterClause(for voice: SpeakingStyleGoal?) -> String {
         switch voice {
         case .authoritative:

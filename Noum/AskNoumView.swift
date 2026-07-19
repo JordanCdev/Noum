@@ -2064,7 +2064,7 @@ struct AskNoumView: View {
                 Text(goalProposalEyebrow(for: intent))
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Confirm a change to your speaking voice")
+                    .accessibilityLabel("Confirm a change to your training emphasis")
                     .accessibilityAddTraits(.isHeader)
 
                 if let detail = goalProposalDetail(for: intent) {
@@ -2138,9 +2138,9 @@ struct AskNoumView: View {
     private func goalProposalEyebrow(for intent: CoachContextBuilder.GoalIntent) -> String {
         switch intent.kind {
         case .initialSet:
-            return intent.requestedVoice == nil ? "Pick your voice" : "Set your voice?"
+            return intent.requestedVoice == nil ? "Pick a training emphasis" : "Use this training emphasis?"
         case .change:
-            return "Change your voice?"
+            return "Change training emphasis?"
         }
     }
 
@@ -2153,15 +2153,15 @@ struct AskNoumView: View {
         switch intent.kind {
         case .initialSet:
             if let target = intent.requestedVoice {
-                return "I'll set your voice to \(target.title) — you'll \(target.coachingDescription). Saved to your profile when you tap."
+                return "\(target.title) will shape which skills Noum prioritises next. It changes the training plan, not who you are."
             }
-            return "Pick the voice you want to train toward. I'll save it to your profile and shape every read around it."
+            return "Pick the communication style you want to train toward. Your existing evidence and progress stay intact."
         case .change:
-            let current = voice?.title ?? "your current voice"
+            let current = voice?.title ?? "your current emphasis"
             if let target = intent.requestedVoice {
-                return "You've been building \(current). What's changed — a moment coming up, or \(current) not landing? Switch fully to \(target.title), blend the two, or keep \(current) — your call."
+                return "Shift future practice from \(current) toward \(target.title), blend both, or keep \(current). Your reps, evidence and progress remain."
             }
-            return "You've been building \(current). What's changed — a moment coming up, or \(current) not landing? Pick what to switch to, or keep \(current)."
+            return "Choose which communication style should guide the next plan. Your reps, evidence and progress remain."
         }
     }
 
@@ -2176,9 +2176,9 @@ struct AskNoumView: View {
 
     private func goalChipAccessibilityLabel(for chip: CoachContextBuilder.GoalProposalChip) -> String {
         switch chip.action {
-        case .set(let v): return "Set your voice to \(v.title) and save it"
-        case .switchTo(let v): return "Switch your voice to \(v.title) and save it"
-        case .blend(let v): return "Blend your current voice with \(v.title) and save it"
+        case .set(let v): return "Use \(v.title) as your training emphasis"
+        case .switchTo(let v): return "Shift training emphasis to \(v.title)"
+        case .blend(let v): return "Blend your current training emphasis with \(v.title)"
         case .decline: return chip.label
         }
     }
@@ -2306,7 +2306,9 @@ struct AskNoumView: View {
             from: fromVoice,
             to: newVoice,
             reason: CoachCourseChange.voiceChangeReason(from: fromVoice, to: newVoice, kind: kind),
-            evidenceBasis: "User changed their chosen voice goal from the in-chat goal card."
+            evidenceBasis: "User confirmed a change in training emphasis; prior observed evidence was retained.",
+            statedGoalSummary: coachingProfileStore.profile?.personalGoalReference,
+            effectiveVoice: blend ? fromVoice : newVoice
         )
         return true
     }

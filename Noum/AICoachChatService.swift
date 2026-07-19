@@ -44,7 +44,7 @@ import os
 
 /// Why a chat turn didn't produce a coach reply. Mapped to per-cause
 /// copy by `AskNoumStore`; never shown raw to the user.
-enum ChatFailure: Equatable {
+enum ChatFailure: Equatable, Sendable {
     /// No AI provider has a usable API key configured.
     case noProvider
     /// This account has not granted the current cloud-processing disclosure.
@@ -63,6 +63,10 @@ enum ChatFailure: Equatable {
     case localeUnsupported
     /// Transport / HTTP / JSON-encode failure.
     case network
+    /// The user or app lifecycle deliberately stopped this request.
+    case cancelled
+    /// The client-owned request deadline elapsed. The turn remains retryable.
+    case timedOut
     /// A reply could not be safely committed: the provider returned empty or
     /// length-truncated content. Distinct from `.network` because rephrasing
     /// might help.
@@ -97,6 +101,8 @@ enum ChatFailure: Equatable {
         case .rateLimited: return "rateLimited"
         case .localeUnsupported: return "localeUnsupported"
         case .network: return "network"
+        case .cancelled: return "cancelled"
+        case .timedOut: return "timedOut"
         case .empty: return "empty"
         case .contentRejected: return "contentRejected"
         case .invalidRequest: return "invalidRequest"
@@ -108,7 +114,7 @@ enum ChatFailure: Equatable {
 
 /// Outcome of a chat turn — either a live model reply or a typed failure the
 /// store maps to per-cause copy.
-enum ChatOutcome {
+enum ChatOutcome: Sendable {
     /// A live, model-generated reply.
     case reply(String)
     case failure(ChatFailure)
@@ -1402,9 +1408,8 @@ actor AICoachChatService {
         onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)? = nil,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
-        guard !Task.isCancelled, await providerWorkAllowed() else {
-            return .failure(.unauthenticated)
-        }
+        guard !Task.isCancelled else { return .failure(.cancelled) }
+        guard await providerWorkAllowed() else { return .failure(.unauthenticated) }
         // UI harness only: lets simulator tests verify send -> pipeline ->
         // store -> system-notice rendering without depending on live provider
         // latency or keys. Runtime-gated by `UI_TESTING` rather than
@@ -1464,9 +1469,8 @@ actor AICoachChatService {
             recordChatDiagnostic(.skipped, "Cloud processing not allowed")
             return .failure(.consentRequired)
         }
-        guard !Task.isCancelled, await providerWorkAllowed() else {
-            return .failure(.unauthenticated)
-        }
+        guard !Task.isCancelled else { return .failure(.cancelled) }
+        guard await providerWorkAllowed() else { return .failure(.unauthenticated) }
 
         // M13: AI surfaces are English-only. Non-English chat now resolves as
         // a typed notice rather than an English local coach substitute.
@@ -1480,9 +1484,8 @@ actor AICoachChatService {
             recordChatDiagnostic(.skipped, "Locale not AI-supported")
             return .failure(.localeUnsupported)
         }
-        guard !Task.isCancelled, await providerWorkAllowed() else {
-            return .failure(.unauthenticated)
-        }
+        guard !Task.isCancelled else { return .failure(.cancelled) }
+        guard await providerWorkAllowed() else { return .failure(.unauthenticated) }
 
         #if DEBUG
         if keyedProvidersOverride == nil,
@@ -2028,7 +2031,7 @@ actor AICoachChatService {
             switch error {
             case .unauthenticated: return .failure(.unauthenticated)
             case .rateLimited: return .failure(.rateLimited)
-            case .cancelled: return .failure(.network)
+            case .cancelled: return .failure(.cancelled)
             case .invalidResponse: return .failure(.empty)
             case .qualityRejected: return .failure(.contentRejected)
             case .invalidRequest: return .failure(.invalidRequest)

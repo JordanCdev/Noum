@@ -2302,7 +2302,8 @@ struct ProductionCopyContractTests {
     @Test func infrastructureFailuresNeverSendUsersToSettings() {
         let failures: [ChatFailure] = [
             .noProvider, .unauthenticated, .rateLimited, .network,
-            .empty, .contentRejected, .invalidRequest, .permissionDenied,
+            .cancelled, .timedOut, .empty, .contentRejected,
+            .invalidRequest, .permissionDenied,
             .backendVersionMissing, .coachUnavailable(.backendVersionMissing)
         ]
         let copy = failures.map { AskNoumStore.noticeCopy(for: $0) }

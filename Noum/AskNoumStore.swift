@@ -332,6 +332,10 @@ struct CoachTurnMetadata: Codable, Equatable {
     /// True when a blocking reliability issue caused the truthful fallback to
     /// replace the provider's reply before it reached the UI.
     var reliabilityFallbackApplied: Bool?
+    /// Exhaustive terminal contract for this request. Optional keeps previously
+    /// persisted coach rows backward-compatible.
+    var terminalState: CoachTraceTerminalState?
+    var terminalFailureCode: String?
 
     init(
         traceID: UUID? = nil,
@@ -380,7 +384,9 @@ struct CoachTurnMetadata: Codable, Equatable {
         trajectoryCacheHit: Bool? = nil,
         surface: CoachReplySurface? = nil,
         reliabilityIssues: [CoachReliabilityIssue]? = nil,
-        reliabilityFallbackApplied: Bool? = nil
+        reliabilityFallbackApplied: Bool? = nil,
+        terminalState: CoachTraceTerminalState? = nil,
+        terminalFailureCode: String? = nil
     ) {
         self.traceID = traceID
         self.turnIntent = turnIntent
@@ -429,6 +435,8 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.surface = surface
         self.reliabilityIssues = reliabilityIssues
         self.reliabilityFallbackApplied = reliabilityFallbackApplied
+        self.terminalState = terminalState
+        self.terminalFailureCode = terminalFailureCode
     }
 }
 
@@ -445,6 +453,7 @@ struct CoachTurnFailureReceipt: Equatable {
     let qualityGateOutcome: CoachTurnQualityGateOutcome?
     let qualityGateEvents: [String]
     let latencyMs: Int?
+    let terminalState: CoachTraceTerminalState
 }
 
 /// One message in the Ask-Noum thread.
@@ -738,6 +747,11 @@ final class AskNoumStore: ObservableObject {
         messages.append(coachMsg)
         isAwaitingReply = true
         trimAndPersist()
+        recordCoachTrace(
+            traceID: coachMsg.id,
+            stage: CoachTraceStage.accepted,
+            reason: Self.traceBuildReason(prefix: "user turn accepted; pending coach row persisted")
+        )
         return (
             userMsg.id,
             coachMsg.id,
@@ -834,6 +848,37 @@ final class AskNoumStore: ObservableObject {
         }
         isAwaitingReply = false
         trimAndPersist(accountScope: lease.accountScope)
+        let terminalState = resolvedMetadata?.terminalState ?? Self.terminalState(for: outcome)
+        let flowOutcome: AICallDiagnosticOutcome = {
+            switch terminalState {
+            case .accepted, .repaired: return .success
+            case .safeFallback: return .fallback
+            case .retryableError: return .failure
+            case .cancelled: return .skipped
+            }
+        }()
+        recordCoachTrace(
+            traceID: id,
+            stage: CoachTraceStage.persisted,
+            outcome: flowOutcome,
+            reason: "terminal request state persisted",
+            numerics: ["latencyMs": resolvedMetadata?.timeToCompleteReplyMs ?? -1]
+        )
+        recordCoachTrace(
+            traceID: id,
+            stage: CoachTraceStage.uiCommitted,
+            outcome: flowOutcome,
+            reason: terminalState == .retryableError
+                ? "retryable notice committed"
+                : "vetted reply committed to chat"
+        )
+        recordCoachTrace(
+            traceID: id,
+            stage: CoachTraceStage.terminal,
+            outcome: flowOutcome,
+            reason: terminalState.rawValue,
+            numerics: ["latencyMs": resolvedMetadata?.timeToCompleteReplyMs ?? -1]
+        )
         return true
     }
 
@@ -944,7 +989,8 @@ final class AskNoumStore: ObservableObject {
             turnDepth: metadata?.turnDepth,
             qualityGateOutcome: metadata?.qualityGateOutcome,
             qualityGateEvents: metadata?.qualityGateEvents ?? [],
-            latencyMs: metadata?.timeToCompleteReplyMs ?? metadata?.fullLatencyMs
+            latencyMs: metadata?.timeToCompleteReplyMs ?? metadata?.fullLatencyMs,
+            terminalState: metadata?.terminalState ?? Self.terminalState(for: .failure(failure))
         )
     }
 
@@ -1098,6 +1144,10 @@ final class AskNoumStore: ObservableObject {
             return "Live coaching is currently available in English. Your message is still here."
         case .network:
             return "Noum is temporarily unavailable. Your message is still here."
+        case .cancelled:
+            return "That coaching request was stopped. Your message is still here."
+        case .timedOut:
+            return "Noum took too long to complete that read. Your message is still here. Try again."
         case .empty:
             return "Noum couldn’t complete that coaching read. Your message is still here."
         case .contentRejected:
@@ -1305,6 +1355,11 @@ final class AskNoumStore: ObservableObject {
         lastFailureReceipt = nil
         isAwaitingReply = true
         trimAndPersist()
+        recordCoachTrace(
+            traceID: coach.id,
+            stage: CoachTraceStage.accepted,
+            reason: Self.traceBuildReason(prefix: "retry accepted; pending coach row persisted")
+        )
         return (
             coach.id,
             AskNoumReplyLease(
@@ -1335,8 +1390,74 @@ final class AskNoumStore: ObservableObject {
         activeProviderWorkByCoachID.removeValue(forKey: id)?.cancel()
         messages.removeAll { $0.id == id }
         isAwaitingReply = false
+        lastFailure = nil
+        lastFailureReceipt = CoachTurnFailureReceipt(
+            traceID: id,
+            failure: .cancelled,
+            turnIntent: nil,
+            responseKind: nil,
+            turnDepth: nil,
+            qualityGateOutcome: nil,
+            qualityGateEvents: [],
+            latencyMs: nil,
+            terminalState: .cancelled
+        )
         trimAndPersist(accountScope: lease.accountScope)
+        recordCoachTrace(
+            traceID: id,
+            stage: CoachTraceStage.persisted,
+            outcome: .skipped,
+            reason: "cancellation receipt and pending-row removal persisted"
+        )
+        recordCoachTrace(
+            traceID: id,
+            stage: CoachTraceStage.uiCommitted,
+            outcome: .skipped,
+            reason: "cancelled request removed from the visible thread"
+        )
+        recordCoachTrace(
+            traceID: id,
+            stage: CoachTraceStage.terminal,
+            outcome: .skipped,
+            reason: CoachTraceTerminalState.cancelled.rawValue
+        )
         return true
+    }
+
+    private func recordCoachTrace(
+        traceID: UUID,
+        stage: String,
+        outcome: AICallDiagnosticOutcome = .success,
+        reason: String,
+        numerics: [String: Int] = [:]
+    ) {
+        FlowEventLog.shared.log(FlowEvent.make(
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: stage,
+            outcome: outcome,
+            reason: reason,
+            numerics: numerics
+        ))
+    }
+
+    private static func terminalState(for outcome: ChatOutcome) -> CoachTraceTerminalState {
+        switch outcome {
+        case .reply:
+            return .accepted
+        case .failure(.cancelled):
+            return .cancelled
+        case .failure:
+            return .retryableError
+        }
+    }
+
+    private static func traceBuildReason(prefix: String) -> String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "unversioned"
+        let build = info?["CFBundleVersion"] as? String ?? "unbuilt"
+        let source = info?["NoumSourceGitCommit"] as? String ?? "unbound"
+        return "\(prefix); app=\(version) build=\(build) source=\(source.prefix(12))"
     }
 
     /// Clear the entire thread. Used by Settings → "Reset Ask Noum

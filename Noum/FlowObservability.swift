@@ -66,6 +66,71 @@ enum CoachingFunnelStage {
     static let summaryViewed = "summary.viewed"
 }
 
+/// Stable, content-free stages for one Ask Noum request. Every stage uses the
+/// pending coach row UUID as its correlation ID, including provider/server work
+/// and the final store/UI commit. Keeping the vocabulary here prevents the
+/// Debug trace viewer and tests from depending on ad-hoc strings.
+enum CoachTraceStage {
+    static let accepted = "coach.accepted"
+    static let classified = "coach.classified"
+    static let goalResolved = "coach.goalResolved"
+    static let evidenceLoaded = "coach.evidenceLoaded"
+    static let rubricSelected = "coach.rubricSelected"
+    static let promptAssembled = "coach.promptAssembled"
+    static let providerDeadlineArmed = "coach.providerDeadlineArmed"
+    static let providerStarted = "coach.providerStarted"
+    static let providerRetried = "coach.providerRetried"
+    static let providerRefused = "coach.providerRefused"
+    static let providerFinished = "coach.providerFinished"
+    static let streamFirstVisible = "coach.streamFirstVisible"
+    static let gatePassed = "coach.gatePassed"
+    static let gateRepaired = "coach.gateRepaired"
+    static let gateFallback = "coach.gateFallback"
+    static let gateRejected = "coach.gateRejected"
+    static let finalSanitized = "coach.finalSanitized"
+    static let persisted = "coach.persisted"
+    static let uiCommitted = "coach.uiCommitted"
+    static let terminal = "coach.terminal"
+}
+
+/// The exhaustive user-visible outcome of a dispatched Ask Noum request.
+/// Raw values are persisted in the content-free flow log and shown in Debug.
+enum CoachTraceTerminalState: String, Codable, Equatable, CaseIterable {
+    case accepted
+    case repaired
+    case safeFallback
+    case retryableError
+    case cancelled
+}
+
+struct CoachDebugTrace: Identifiable, Equatable {
+    let correlationId: UUID
+    let events: [FlowEvent]
+
+    var id: UUID { correlationId }
+
+    var terminalState: CoachTraceTerminalState? {
+        events.reversed().first(where: { $0.stage == CoachTraceStage.terminal })
+            .flatMap { CoachTraceTerminalState(rawValue: $0.reason) }
+    }
+
+    var latencyMs: Int? {
+        if let recorded = events.reversed().compactMap({ $0.numerics["latencyMs"] }).first,
+           recorded >= 0 {
+            return recorded
+        }
+        guard let first = events.first?.createdAt, let last = events.last?.createdAt else {
+            return nil
+        }
+        return max(0, Int(last.timeIntervalSince(first) * 1_000))
+    }
+
+    func elapsedMs(for event: FlowEvent) -> Int? {
+        guard let startedAt = events.first?.createdAt else { return nil }
+        return max(0, Int(event.createdAt.timeIntervalSince(startedAt) * 1_000))
+    }
+}
+
 struct FlowEvent: Codable, Equatable, Identifiable {
     let id: UUID
     let createdAt: Date
@@ -390,6 +455,16 @@ final class FlowEventLog: ObservableObject {
             if seen.count >= limit { break }
         }
         return seen.map { (correlationId: $0, events: events(correlationId: $0)) }
+    }
+
+    /// Content-free request traces for the Debug viewer. A trace is returned
+    /// only when at least one Ask Noum stage exists, so unrelated rep funnels do
+    /// not crowd out request inspection.
+    func recentCoachTraces(limit: Int = 10) -> [CoachDebugTrace] {
+        recentFlows(limit: max(limit * 4, limit))
+            .filter { group in group.events.contains { $0.flow == .chatTurn } }
+            .prefix(limit)
+            .map { CoachDebugTrace(correlationId: $0.correlationId, events: $0.events) }
     }
 
     func reset() {

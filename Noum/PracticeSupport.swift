@@ -4876,6 +4876,10 @@ final class CoachingProfileStore: ObservableObject {
         if hadPreviousProfile,
            previousVoice != profile.chosenStyleGoal,
            let newVoice = profile.chosenStyleGoal {
+            // The goal is a training emphasis, not a new identity. Preserve the
+            // prior plan as history, but revoke any in-flight generation shaped
+            // by the previous goal before it can commit.
+            ForwardPlanStore.shared.invalidatePendingGenerationForVoiceGoalChange()
             PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(
                 newVoice: newVoice
             )

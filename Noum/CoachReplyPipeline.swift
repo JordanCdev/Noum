@@ -13,6 +13,26 @@ import os
 // same model call. The caller owns the spoken-reply decision (it differs by
 // surface), so this returns the `ChatOutcome` rather than speaking itself.
 
+private actor CoachOutcomeRace {
+    private var resolved: ChatOutcome?
+    private var waiters: [CheckedContinuation<ChatOutcome, Never>] = []
+
+    func resolve(_ outcome: ChatOutcome) {
+        guard resolved == nil else { return }
+        resolved = outcome
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        pending.forEach { $0.resume(returning: outcome) }
+    }
+
+    func wait() async -> ChatOutcome {
+        if let resolved { return resolved }
+        return await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 enum CoachReplyPipeline {
 
@@ -214,6 +234,9 @@ enum CoachReplyPipeline {
         // (nil closure) from "this fixture has no memory" (closure returning
         // nil), avoiding cross-suite singleton evidence leaking into a turn.
         coachMemoryOverride: (() -> CoachMemory?)? = nil,
+        /// Injectable for deadline regressions. Production stays below the
+        /// server ceiling: 75 seconds for text, 35 seconds for live coaching.
+        providerDeadlineSeconds: Double? = nil,
         onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
@@ -234,6 +257,11 @@ enum CoachReplyPipeline {
         }
         let profileStore = CoachingProfileStore.shared
         let coachVoiceSnapshot = profileStore.profile?.chosenStyleGoal
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.goalResolved,
+            reason: "goal=\(coachVoiceSnapshot?.rawValue ?? "unset") provenance=\(coachVoiceSnapshot == nil ? "none" : "explicit-choice")"
+        )
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
             structuredReplyShapeEnabled: CoachContextBuilder.structuredAskNoumReplyShapeEnabled(),
@@ -268,6 +296,15 @@ enum CoachReplyPipeline {
                 liveMode: surface == .live
             )
             : .groundedRead
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.classified,
+            reason: "intent=\(turnIntent.rawValue) response=\(responseKind.rawValue) depth=\(turnDepth.rawValue)",
+            numerics: [
+                "historyRows": history.count,
+                "userCharacters": latestUserTurn?.count ?? 0,
+            ]
+        )
         let preferredTier = CoachPromptBundle.preferredProviderTier(
             for: turnDepth,
             surface: surface,
@@ -338,7 +375,7 @@ enum CoachReplyPipeline {
                 id: coachID,
                 expected: replyLease
             )
-            return .failure(.network)
+            return .failure(.cancelled)
         }
         guard store.replyLeaseIsCurrent(replyLease) else {
             return .failure(.unauthenticated)
@@ -370,8 +407,27 @@ enum CoachReplyPipeline {
             sessions: sessions,
             coachMemory: coachMemory
         )
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.evidenceLoaded,
+            reason: "memory=\(coachMemory == nil ? "none" : "bounded-case") selectedLever=\(activeLever?.rawValue ?? "none") evidence=session+proof+knowledge",
+            numerics: [
+                "eligibleSessions": sessions.count,
+                "knowledgeCards": coachingExpertise.count,
+                "proofs": recentProofs.count,
+                "hasMemory": coachMemory == nil ? 0 : 1,
+                "memoryEvidence": coachMemory?.evidenceCount ?? 0,
+                "memorySelected": activeLever == nil ? 0 : 1,
+            ]
+        )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
         let coachingRubric = GoalRubricStore.coachingRubric(for: profileStore.profile)
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.rubricSelected,
+            reason: "rubric=\(activeRubric?.rubric.goalID ?? coachingRubric.rubric.goalID) active=\(activeRubric == nil ? 0 : 1)",
+            numerics: ["dimensions": coachingRubric.rubric.dimensions.count]
+        )
         let reasoningStartedAt = Date()
         let assessmentResult: CoachAssessmentCacheResult? = {
             guard Self.shouldBuildAssessment(
@@ -422,6 +478,7 @@ enum CoachReplyPipeline {
         var firstVisibleAt: Date?
         var firstVisibleSource: CoachFirstVisibleTokenSource?
         var immediateCoachReadShown = false
+        var streamObserved = false
         if let assessment {
             AICallDiagnostics.record(
                 surface: "Coach judgement pass",
@@ -535,6 +592,15 @@ enum CoachReplyPipeline {
             systemPrompt: systemPrompt,
             userContext: contextSnapshot
         )
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.promptAssembled,
+            reason: "redacted prompt modules assembled",
+            numerics: [
+                "characters": promptTrace.totalCharacterCount,
+                "modules": promptTrace.moduleCount,
+            ]
+        )
 
         // Quote-grounding context — assembled in the same main-actor prologue
         // so the live model can reference recent rep/proof text without
@@ -564,7 +630,9 @@ enum CoachReplyPipeline {
         let providerTask = Task { @MainActor in
             guard !Task.isCancelled,
                   store.replyLeaseIsCurrent(replyLease) else {
-                return ChatOutcome.failure(.unauthenticated)
+                return Task.isCancelled
+                    ? ChatOutcome.failure(.cancelled)
+                    : ChatOutcome.failure(.unauthenticated)
             }
             return await coachService.reply(
                 history: history,
@@ -585,6 +653,16 @@ enum CoachReplyPipeline {
                     }
                 },
                 onStreamedPartialVisible: { partialText in
+                    if !streamObserved {
+                        streamObserved = true
+                        Self.recordTrace(
+                            coachID,
+                            stage: CoachTraceStage.streamFirstVisible,
+                            reason: CoachBrainFlags.streamRawPartialsToUI
+                                ? "first streamed partial reached UI"
+                                : "first streamed partial buffered until gates"
+                        )
+                    }
                     // Withhold raw un-vetted provider tokens from the visible row
                     // unless explicitly opted in. Default off means the user sees
                     // the local deterministic read while the model verbalises, then
@@ -639,9 +717,23 @@ enum CoachReplyPipeline {
                 },
                 onProviderAttemptEvent: { event in
                     providerAttemptEvents.append(event)
+                    let projection = Self.traceProjection(for: event)
+                    Self.recordTrace(
+                        coachID,
+                        stage: projection.stage,
+                        outcome: projection.outcome,
+                        reason: projection.reason
+                    )
                 },
                 onQualityGateEvent: { event in
                     qualityGateEvents.append(event)
+                    let projection = Self.traceProjection(for: event)
+                    Self.recordTrace(
+                        coachID,
+                        stage: projection.stage,
+                        outcome: projection.outcome,
+                        reason: projection.reason
+                    )
                     onQualityGateEvent?(event)
                 }
             )
@@ -653,8 +745,19 @@ enum CoachReplyPipeline {
             providerTask.cancel()
             return .failure(.unauthenticated)
         }
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.providerDeadlineArmed,
+            reason: "provider deadline armed"
+        )
+        let deadlineSeconds = providerDeadlineSeconds ?? (surface == .live ? 35 : 75)
         let outcome = await withTaskCancellationHandler(
-            operation: { await providerTask.value },
+            operation: {
+                await Self.awaitFirstProviderOutcome(
+                    providerTask,
+                    deadlineSeconds: deadlineSeconds
+                )
+            },
             onCancel: { providerTask.cancel() }
         )
         store.unregisterProviderWorkCancellation(expected: replyLease)
@@ -663,12 +766,27 @@ enum CoachReplyPipeline {
                 id: coachID,
                 expected: replyLease
             )
-            return .failure(.network)
+            return .failure(.cancelled)
         }
         guard store.replyLeaseIsCurrent(replyLease) else {
             return .failure(.unauthenticated)
         }
         let completionAt = Date()
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.providerFinished,
+            outcome: {
+                if case .reply = outcome { return .success }
+                return .failure
+            }(),
+            reason: {
+                if case .failure(let failure) = outcome {
+                    return failure.diagnosticCode
+                }
+                return "provider reply received"
+            }(),
+            numerics: ["latencyMs": Self.latencyMs(from: turnStartedAt, to: completionAt)]
+        )
 
         // Last-mile reliability gate: after the provider chain and its internal
         // repair loops, catch a final reply that is empty, a verbatim repeat of
@@ -912,7 +1030,14 @@ enum CoachReplyPipeline {
             trajectoryCacheHit: trajectoryResult.cacheHit,
             surface: surface,
             reliabilityIssues: reliabilityVerdict.issues.isEmpty ? nil : reliabilityVerdict.issues,
-            reliabilityFallbackApplied: reliabilityVerdict.blocked ? true : nil
+            reliabilityFallbackApplied: reliabilityVerdict.blocked ? true : nil,
+            terminalState: Self.terminalState(
+                providerOutcome: outcome,
+                finalOutcome: finalizedOutcome,
+                finalOutcomeSubstituted: finalOutcomeSubstituted,
+                qualityGateEvents: qualityGateEvents
+            ),
+            terminalFailureCode: finalFailureCode == "none" ? nil : finalFailureCode
         )
         AICallDiagnostics.record(
             surface: "Coach response timing",
@@ -966,6 +1091,16 @@ enum CoachReplyPipeline {
         case .failure(let failure):
             Self.log.notice("coach pipeline produced failure=\(String(describing: failure), privacy: .public)")
         }
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.finalSanitized,
+            outcome: {
+                if case .reply = finalizedOutcome { return .success }
+                return .failure
+            }(),
+            reason: finalOutcomeSubstituted ? "safe substituted output sanitized" : "final output sanitized",
+            numerics: ["replyWords": finalReplyWordCount ?? 0]
+        )
         guard store.completeCoachTurn(
             id: coachID,
             outcome: finalizedOutcome,
@@ -975,6 +1110,113 @@ enum CoachReplyPipeline {
             return .failure(.unauthenticated)
         }
         return finalizedOutcome
+    }
+
+    nonisolated static func terminalState(
+        providerOutcome: ChatOutcome,
+        finalOutcome: ChatOutcome,
+        finalOutcomeSubstituted: Bool,
+        qualityGateEvents: [CoachTurnQualityGateEvent]
+    ) -> CoachTraceTerminalState {
+        if case .failure(.cancelled) = finalOutcome { return .cancelled }
+        if case .failure = finalOutcome { return .retryableError }
+        if finalOutcomeSubstituted { return .safeFallback }
+        if qualityGateEvents.contains(where: {
+            if case .repaired = $0 { return true }
+            return false
+        }) {
+            return .repaired
+        }
+        if case .failure = providerOutcome { return .safeFallback }
+        return .accepted
+    }
+
+    /// Resolve on the first provider/deadline result without making the
+    /// caller wait for a cancellation-insensitive provider task to unwind.
+    /// A structured task group cannot provide that guarantee because leaving
+    /// its scope waits for every child, including a child suspended on an
+    /// uncooperative network operation.
+    nonisolated static func awaitFirstProviderOutcome(
+        _ providerTask: Task<ChatOutcome, Never>,
+        deadlineSeconds: Double
+    ) async -> ChatOutcome {
+        let race = CoachOutcomeRace()
+        let providerWaiter = Task {
+            let outcome = await providerTask.value
+            await race.resolve(outcome)
+        }
+        let deadlineTask = Task {
+            do {
+                let nanos = UInt64(max(0.001, deadlineSeconds) * 1_000_000_000)
+                try await Task.sleep(nanoseconds: nanos)
+                await race.resolve(.failure(.timedOut))
+            } catch {
+                // The winner cancels this sleeper. Cancellation of the parent
+                // is resolved explicitly by the handler below.
+            }
+        }
+
+        let first = await withTaskCancellationHandler(
+            operation: { await race.wait() },
+            onCancel: {
+                providerTask.cancel()
+                providerWaiter.cancel()
+                deadlineTask.cancel()
+                Task { await race.resolve(.failure(.cancelled)) }
+            }
+        )
+        deadlineTask.cancel()
+        providerWaiter.cancel()
+        if case .failure(.timedOut) = first {
+            providerTask.cancel()
+        }
+        return first
+    }
+
+    @MainActor
+    private static func recordTrace(
+        _ traceID: UUID,
+        stage: String,
+        outcome: AICallDiagnosticOutcome = .success,
+        reason: String,
+        numerics: [String: Int] = [:]
+    ) {
+        FlowEventLog.shared.log(FlowEvent.make(
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: stage,
+            outcome: outcome,
+            reason: reason,
+            numerics: numerics
+        ))
+    }
+
+    private static func traceProjection(
+        for event: CoachProviderAttemptEvent
+    ) -> (stage: String, outcome: AICallDiagnosticOutcome, reason: String) {
+        switch event {
+        case .started(let choice):
+            return (CoachTraceStage.providerStarted, .success, "provider=\(choice.providerName) model=\(choice.model)")
+        case .retry(let choice):
+            return (CoachTraceStage.providerRetried, .fallback, "provider=\(choice.providerName) model=\(choice.model)")
+        case .refused(let choice):
+            return (CoachTraceStage.providerRefused, .failure, "provider=\(choice.providerName) model=\(choice.model)")
+        }
+    }
+
+    private static func traceProjection(
+        for event: CoachTurnQualityGateEvent
+    ) -> (stage: String, outcome: AICallDiagnosticOutcome, reason: String) {
+        switch event {
+        case .passed:
+            return (CoachTraceStage.gatePassed, .success, "quality gate passed")
+        case .repaired(let gate):
+            return (CoachTraceStage.gateRepaired, .success, String(gate.prefix(160)))
+        case .fallback(let gate):
+            return (CoachTraceStage.gateFallback, .fallback, String(gate.prefix(160)))
+        case .rejected(let gate), .failed(let gate):
+            return (CoachTraceStage.gateRejected, .failure, String(gate.prefix(160)))
+        }
     }
 
     nonisolated static func finalizedOutcome(

@@ -1013,7 +1013,7 @@ export function coachSystemPolicyForRequest(frame: CoachPolicyFrame): string {
       "decision. If it has no next move, give its direct verdict only; do not",
       "manufacture general advice, an exercise, or a follow-up instruction.",
       "When no brief is present, ask the one question that would change the",
-      "recommendation instead of pretending to have observed the speaker.",
+      "recommendation instead of claiming to have observed the speaker.",
       "Never turn a proposed move into fake evidence.",
     ].join(" ");
     break;

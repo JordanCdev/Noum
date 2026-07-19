@@ -62,9 +62,15 @@ enum CoachContextBuilder {
     ) -> CoachMemory? {
         guard var memory else { return nil }
         guard memory.voice != chosenStyleGoal else { return memory }
-        memory.voice = nil
+        memory.voice = chosenStyleGoal
         memory.statedGoalSummary = nil
-        memory.goalFit = .noVoice
+        if let chosenStyleGoal, let lever = memory.currentLever {
+            memory.goalFit = chosenStyleGoal.aligns(with: lever) ? .aligned : .offGoal
+        } else if memory.currentLever == nil {
+            memory.goalFit = .noLever
+        } else {
+            memory.goalFit = .noVoice
+        }
         return memory
     }
 
@@ -3464,7 +3470,7 @@ enum CoachContextBuilder {
 
         switch intent.kind {
         case .initialSet:
-            lines.append("- GOAL INTENT (this turn): the user is asking to SET their voice to \(targetClause). Help them choose it now — but do NOT assume it is set. They confirm in-app with one tap; the change is not committed until they do.")
+            lines.append("- GOAL INTENT (this turn): the user is asking to set \(targetClause) as a TRAINING EMPHASIS. It changes which communication skills Noum prioritises; it does not redefine who they are. Help them choose it now, but do not assume it is committed until they confirm in-app.")
             if intent.requestedVoice == nil {
                 lines.append("- They have not named a specific voice. Offer a short, plain guide to the options rather than picking for them.")
             }
@@ -3473,10 +3479,10 @@ enum CoachContextBuilder {
             // the current voice is somehow absent (defensive — a .change kind
             // means a voice existed at detection time).
             let fromClause = currentVoice?.title ?? "their current voice"
-            lines.append("- GOAL INTENT (this turn): the user is asking to CHANGE their voice from \(fromClause) to \(targetClause). Do not assume it is committed and do NOT state it is set — they confirm in-app with one tap. Name the trade-off: they have been building \(fromClause) (cite reps / since-date from CONTEXT if present). Then ASK a clarifying question before they decide — why they want to change now and what has shifted (a real moment coming up, the current voice not landing, curiosity). Let them choose; the change is their call, you advise. Weak evidence -> tentative.")
+            lines.append("- GOAL INTENT (this turn): the user is changing training emphasis from \(fromClause) to \(targetClause). This reweights future practice; it does not replace their identity or erase prior evidence. Do not assume it is committed until they confirm in-app. Name the practical trade-off, then ask what changed (a real moment, the current emphasis not helping, or curiosity). Let them choose; weak evidence stays tentative.")
             let switches = recentVoiceChangeCount(adaptationLog: adaptationLog, now: now)
             if switches >= voiceThrashThreshold {
-                lines.append("- The user has changed voice \(switches) times in the last week. Note it plainly — suggest giving the current voice a few more reps before switching again. Do not punish-shame; the choice is theirs.")
+                lines.append("- The user has changed training emphasis \(switches) times in the last week. Mention the limited comparison evidence neutrally and offer a few more reps as an option. Never question their authenticity or commitment; the choice is theirs.")
             }
         }
         return lines
@@ -3667,7 +3673,7 @@ enum CoachContextBuilder {
                         id: "set.\(target.rawValue)",
                         label: "Set \(target.title)",
                         action: .set(target),
-                        dispatchText: "\(target.title) is now my coaching voice. Give me one way to practise it."
+                        dispatchText: "\(target.title) is now my training emphasis. Give me one way to practise it."
                     ),
                     GoalProposalChip(
                         id: "decline",
@@ -3683,7 +3689,7 @@ enum CoachContextBuilder {
                     id: "set.\(voice.rawValue)",
                     label: voice.title,
                     action: .set(voice),
-                    dispatchText: "\(voice.title) is now my coaching voice. Give me one way to practise it."
+                    dispatchText: "\(voice.title) is now my training emphasis. Give me one way to practise it."
                 )
             }
             chips.append(
@@ -3704,7 +3710,7 @@ enum CoachContextBuilder {
                         id: "switch.\(target.rawValue)",
                         label: "Switch to \(target.title)",
                         action: .switchTo(target),
-                        dispatchText: "\(target.title) is now my coaching voice. Give me one way to practise it."
+                        dispatchText: "\(target.title) is now my training emphasis. Give me one way to practise it."
                     )
                 ]
                 // Blend only makes sense when the target differs from current.
@@ -3714,7 +3720,7 @@ enum CoachContextBuilder {
                             id: "blend.\(target.rawValue)",
                             label: "Blend \(current.title) + \(target.title)",
                             action: .blend(target),
-                            dispatchText: "I’m now blending \(current.title) with \(target.title). Give me one way to practise that mix."
+                            dispatchText: "I’m blending \(current.title) with \(target.title) as my training emphasis. Give me one way to practise that mix."
                         )
                     )
                 }
@@ -3737,7 +3743,7 @@ enum CoachContextBuilder {
                         id: "switch.\(voice.rawValue)",
                         label: voice.title,
                         action: .switchTo(voice),
-                        dispatchText: "\(voice.title) is now my coaching voice. Give me one way to practise it."
+                        dispatchText: "\(voice.title) is now my training emphasis. Give me one way to practise it."
                     )
                 }
             chips.append(

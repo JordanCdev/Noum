@@ -367,7 +367,7 @@ struct SettingsView: View {
                     section(label: "Home reveal") { advancedHomeCard }
                     section(label: "Developer tools") { transcriptionProviderCard }
                     section(label: "AI calls") { aiCallDiagnosticsCard }
-                    section(label: "Flow log") { flowEventsCard }
+                    section(label: "Debug traces") { flowEventsCard }
                     section(label: "Diagnostics") { recommendationDiagnosticsCard }
                     section(label: "Seed data") { developerSeedCard }
                 } else if exposesRecommendationFlowLogForUITesting {
@@ -1562,6 +1562,18 @@ struct SettingsView: View {
         }
     }
 
+    private func copyTraceID(_ traceID: UUID) {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = traceID.uuidString
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(traceID.uuidString, forType: .string)
+        #endif
+        withAnimation(reduceMotion ? nil : .standardSpring) {
+            supportToast = "Trace ID copied to clipboard"
+        }
+    }
+
     @ViewBuilder
     private var flowEventsCard: some View {
         let kpis = TransformationKPIReport.derive(
@@ -1617,6 +1629,70 @@ struct SettingsView: View {
             Text("Account-local diagnostic signals. No transcript, advertising identifier, or third-party analytics SDK is used.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            Divider()
+            Text("Coach request traces")
+                .font(.caption.weight(.semibold))
+            let coachTraces = flowEvents.recentCoachTraces(limit: 3)
+            if coachTraces.isEmpty {
+                Text("No Ask Noum request traces yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(coachTraces) { trace in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(String(trace.correlationId.uuidString.prefix(8)))
+                                .font(.caption.monospaced().weight(.semibold))
+                            Spacer()
+                            Text(trace.terminalState?.rawValue ?? "in flight")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(trace.terminalState == .retryableError ? AppColor.warning : AppColor.textSecondary)
+                        }
+                        HStack(spacing: Spacing.xs) {
+                            Text("\(trace.events.count) stages")
+                            if let latencyMs = trace.latencyMs {
+                                Text("· \(latencyMs) ms")
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        ForEach(trace.events) { event in
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack {
+                                    Text(event.stage)
+                                    Spacer()
+                                    if let elapsedMs = trace.elapsedMs(for: event) {
+                                        Text("+\(elapsedMs) ms")
+                                    }
+                                }
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                if !event.reason.isEmpty {
+                                    Text(event.reason)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                        Button {
+                            copyTraceID(trace.correlationId)
+                        } label: {
+                            Label("Copy trace ID", systemImage: "number")
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(AppColor.brandBlue)
+                    }
+                    .padding(Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Coach trace \(String(trace.correlationId.uuidString.prefix(8))), \(trace.terminalState?.rawValue ?? "in flight"), \(trace.events.count) stages")
+                }
+            }
+            Divider()
             if flowEvents.events.isEmpty {
                 Text("No flow events yet.")
                     .font(.caption)
@@ -1648,7 +1724,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .accessibilityIdentifier("settings.flowEvents.card")
+        .accessibilityIdentifier("settings.debugTraces.card")
     }
 
     // MARK: - Microphone Permission
@@ -2726,10 +2802,13 @@ struct YourDataView: View {
     @StateObject private var profileManager = ProfileManager.shared
     @StateObject private var friendsManager = FriendsManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var showExportSheet = false
     @State private var exportURL: URL?
     @State private var exportError: String?
     @State private var isExporting = false
+    @State private var goalMemoryDraft = ""
+    @State private var showDeleteMemoryConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -2743,6 +2822,7 @@ struct YourDataView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 onDeviceSection
+                coachingMemorySection
                 cloudProcessingSection
                 actionsSection
             }
@@ -2760,6 +2840,22 @@ struct YourDataView: View {
             Button("OK", role: .cancel) { exportError = nil }
         } message: {
             Text(exportError ?? "Noum couldn't prepare your export.")
+        }
+        .confirmationDialog(
+            "Delete coaching memory?",
+            isPresented: $showDeleteMemoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete coaching memory", role: .destructive) {
+                coachMemoryStore.clearAll()
+                goalMemoryDraft = ""
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes Noum's bounded cross-session case file. Your practice sessions and measured progress remain.")
+        }
+        .onAppear {
+            goalMemoryDraft = coachMemoryStore.currentMemory?.statedGoalSummary ?? ""
         }
     }
 
@@ -2826,6 +2922,143 @@ struct YourDataView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    private var coachingMemorySection: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Coaching memory")
+                        .font(.headline)
+                    Text("Bounded, inspectable context Noum carries between sessions")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "brain.head.profile")
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityHidden(true)
+            }
+
+            if let memory = coachMemoryStore.currentMemory {
+                Text("Case file updated \(memory.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                dataRow(
+                    label: "Observed evidence",
+                    detail: "\(memory.evidenceCount) eligible reps · \(memory.evidenceConfidence.label) confidence"
+                )
+                dataRow(
+                    label: "Current training lever",
+                    detail: memory.currentLever.map {
+                        "\($0.displayName) · \(memory.currentLeverConfidence?.rawValue ?? "forming") confidence"
+                    } ?? "Waiting for enough evidence"
+                )
+                if let basis = memory.currentLeverBasis,
+                   !basis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    dataRow(label: "Lever provenance", detail: "Observed-session analysis · \(basis)")
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Your stated goal")
+                        .font(.subheadline.weight(.semibold))
+                    Text("User-authored · direct provenance · updated \(memory.updatedAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AppColor.positive)
+                    TextField("What should your communication help you do?", text: $goalMemoryDraft, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...4)
+                        .accessibilityIdentifier("yourData.coachMemory.goal")
+                    Button("Save goal memory") {
+                        coachMemoryStore.updateStatedGoalSummary(goalMemoryDraft)
+                        goalMemoryDraft = coachMemoryStore.currentMemory?.statedGoalSummary ?? ""
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .buttonStyle(.pressable)
+                    .accessibilityHint("Changes only the goal statement carried into coaching, not measured evidence.")
+                }
+
+                if let hypothesis = memory.workingHypothesis,
+                   !hypothesis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let acknowledgement = memory.hypothesisAcknowledgement.flatMap {
+                        $0.appliesTo(currentHypothesis: memory.workingHypothesis) ? $0 : nil
+                    }
+                    let hypothesisDate = acknowledgement?.acknowledgedAt ??
+                        memory.hypothesisWatchStartedAt ?? memory.updatedAt
+                    Divider()
+                    removableMemoryRow(
+                        title: "Coach hypothesis",
+                        provenance: "Coach interpretation · \(acknowledgement?.confidence.rawValue ?? "unconfirmed") · \(hypothesisDate.formatted(date: .abbreviated, time: .omitted)) · confirmable",
+                        value: hypothesis,
+                        removeLabel: "Remove hypothesis"
+                    ) {
+                        coachMemoryStore.removeWorkingHypothesis()
+                    }
+                }
+
+                if let reflection = memory.lastReflectionSummary,
+                   !reflection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Divider()
+                    removableMemoryRow(
+                        title: "Latest reflection carried forward",
+                        provenance: "User report · self-reported confidence · case updated \(memory.updatedAt.formatted(date: .abbreviated, time: .omitted)) · removable",
+                        value: reflection,
+                        removeLabel: "Stop carrying reflection"
+                    ) {
+                        coachMemoryStore.removeCarriedReflection()
+                    }
+                }
+
+                Divider()
+                Button(role: .destructive) {
+                    showDeleteMemoryConfirmation = true
+                } label: {
+                    Label("Delete coaching memory", systemImage: "trash")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.pressable)
+                .accessibilityHint("Deletes cross-session coach context while preserving practice sessions and measured progress.")
+                .accessibilityIdentifier("yourData.coachMemory.delete")
+            } else {
+                Text("No cross-session coaching memory is stored. Noum builds one only from eligible practice evidence and information you choose to share.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .accessibilityIdentifier("yourData.coachMemory")
+    }
+
+    private func removableMemoryRow(
+        title: String,
+        provenance: String,
+        value: String,
+        removeLabel: String,
+        remove: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Text(provenance)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(removeLabel, role: .destructive, action: remove)
+                .font(.caption.weight(.semibold))
+                .frame(minHeight: 44, alignment: .leading)
+                .buttonStyle(.pressable)
+        }
     }
 
     private var actionsSection: some View {

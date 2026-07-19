@@ -2759,6 +2759,8 @@ final class CoachMemoryStore: ObservableObject {
         to: SpeakingStyleGoal,
         reason: String,
         evidenceBasis: String,
+        statedGoalSummary: String? = nil,
+        effectiveVoice: SpeakingStyleGoal? = nil,
         at now: Date = Date(),
         // Outer `nil` (the default) re-reads the LIVE nearest moment from the
         // store on every rebuild, so a caller can never accidentally freeze a
@@ -2779,6 +2781,21 @@ final class CoachMemoryStore: ObservableObject {
             )
         )
         memory.adaptationLog = Array(log.suffix(8))
+        // The observed case survives a goal change. Only goal-derived
+        // projections are invalidated: provenance moves to the confirmed goal,
+        // goal fit is recomputed against the same measured lever, and the plan
+        // projection is cleared until a matching ForwardPlan is generated.
+        let resolvedVoice = effectiveVoice ?? to
+        memory.voice = resolvedVoice
+        memory.statedGoalSummary = statedGoalSummary
+        if let lever = memory.currentLever {
+            memory.goalFit = resolvedVoice.aligns(with: lever) ? .aligned : .offGoal
+        } else {
+            memory.goalFit = .noLever
+        }
+        memory.planWeekIndex = nil
+        memory.planFocus = nil
+        memory.planMode = nil
         memory.updatedAt = now
         memory.caseFile = CoachCaseFile.build(
             from: memory,
@@ -2851,6 +2868,59 @@ final class CoachMemoryStore: ObservableObject {
         } else {
             defaults.removeObject(forKey: storageKey(for: accountID))
         }
+    }
+
+    /// User-owned edit for the goal statement carried into coaching context.
+    /// This never edits measured evidence, the active lever, or intervention
+    /// history. Empty input removes the statement instead of inventing copy.
+    func updateStatedGoalSummary(_ rawValue: String, at now: Date = Date()) {
+        guard var memory = currentMemory else { return }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        memory.statedGoalSummary = trimmed.isEmpty ? nil : String(trimmed.prefix(280))
+        memory.updatedAt = now
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: now,
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: BigMomentStore.shared.activeMoment)
+        )
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Removes coach-authored interpretation while leaving user evidence and
+    /// all observed session evidence intact. A later evidence rebuild may form
+    /// a new, explicitly confirmable hypothesis.
+    func removeWorkingHypothesis(at now: Date = Date()) {
+        guard var memory = currentMemory else { return }
+        memory.workingHypothesis = nil
+        memory.hypothesisAcknowledgement = nil
+        memory.hypothesisWatchStartedAt = nil
+        memory.updatedAt = now
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: now,
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: BigMomentStore.shared.activeMoment)
+        )
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Deletes the bounded self-report projection from coach memory. The
+    /// underlying reflection owner remains the user's session-history store;
+    /// this action controls what the cross-session coach carries forward.
+    func removeCarriedReflection(at now: Date = Date()) {
+        guard var memory = currentMemory else { return }
+        memory.lastReflectionSummary = nil
+        memory.lastReflectionReview = nil
+        memory.reflectionPattern = nil
+        memory.updatedAt = now
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: now,
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: BigMomentStore.shared.activeMoment)
+        )
+        currentMemory = memory
+        persist(memory)
     }
 
     func clearAll() {

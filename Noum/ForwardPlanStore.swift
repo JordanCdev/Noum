@@ -449,6 +449,14 @@ final class ForwardPlanStore: ObservableObject {
         suspendProviderWorkForAccountTransition(accountID: accountID)
     }
 
+    /// A confirmed voice-goal change alters training emphasis. Revoke only
+    /// provider work that was shaped by the prior goal. The last generated plan
+    /// stays on disk as inspectable history, while `currentPlan(...)` already
+    /// excludes it through `voiceAtGeneration` until the user regenerates.
+    func invalidatePendingGenerationForVoiceGoalChange() {
+        invalidateGenerationRequests()
+    }
+
     /// Compare-and-save boundary for async generation. `announce` executes
     /// synchronously on the same MainActor turn after every guard and after the
     /// plan has encoded successfully. If the checked Ask Noum write rejects,
