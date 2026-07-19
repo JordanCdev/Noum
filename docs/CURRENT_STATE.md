@@ -1,5 +1,35 @@
 # Noum — Current state
 
+## 2026-07-19 — Ask Noum continuity policy deployed; live conversation acceptance remains open
+
+The scoped coach-v2 release path deployed the committed Ask Noum continuity,
+Persuasive-quality, and content-free incident-tracing source from
+`08985b39321095edec52c48ca50317763454d736` to `noum-d0b6f`. The authorization
+was bound to tracked Functions digest
+`20949ca38bd48d9cb164d8114e3d69c51fc5860b83b5d29cacb8405f5f542137`
+and selected only `coachChatV2` plus `coachChatAvailability`. Predeploy lint,
+**162/162** Functions tests, **9/9** release-lock tests, and the static
+18-callable/1-schedule cloud-operations contract all passed.
+
+Both Gen 2 functions read back `ACTIVE` on Node 22 in `europe-west2`, with all
+traffic on revisions `coachchatv2-00002-xiq` and
+`coachchatavailability-00004-jek`. Both use the dedicated
+`noum-coach-runtime@noum-d0b6f.iam.gserviceaccount.com` identity. Their Cloud
+Run services expose only the callable transport binding to `allUsers`; direct
+requests without Firebase Auth/App Check reach the handlers and correctly fail
+closed with HTTP 401 `UNAUTHENTICATED`.
+
+A fresh normally signed Debug simulator build succeeds, verifies its signature,
+installs, launches, and completes an HTTPS request with status 200. The prior
+installed bundle was unsigned and failed before process launch; that was a local
+test-install fault, not a Firebase regression. Reinstallation exposed a fresh
+onboarding state, so no authenticated Ask Noum turn or reporter conversation was
+submitted. This deployment proves source delivery, active revisions, runtime
+identity, invoker reachability, and fail-closed unauthenticated admission. It
+does not prove acceptable generated wording, the exact Persuasive follow-up,
+reporter acceptance, or any of the five external readiness artifacts.
+Production remains **NO-GO**.
+
 ## 2026-07-19 — Coach-surface accessibility, rewrite reachability, dead-code removal, funnel denominators
 
 An external audit report proposed a twelve-row remediation plan for `ux-overhaul`.
