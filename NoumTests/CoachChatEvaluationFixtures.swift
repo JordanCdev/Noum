@@ -2026,6 +2026,19 @@ enum CoachChatConversationAppPathSemanticExpectation: String, Codable, Equatable
     /// New or misspelled fixture IDs never inherit the neutral exception.
     case unknownFixtureFailClosed
 
+    /// Semantic judgement follows the response contract, not the user's
+    /// selected training emphasis. A voice goal can shape general coaching or
+    /// a trust-repair answer without authorizing Noum to manufacture a typed
+    /// personal assessment for that turn.
+    static func forResponseKind(_ responseKind: CoachChatResponseKind) -> Self {
+        switch responseKind {
+        case .personalEvidenceRead, .memoryHandoff:
+            return .passedWithTypedAssessment
+        case .generalCoaching, .conversational:
+            return .notEvaluatedWithoutTypedAssessment
+        }
+    }
+
     static func forFixtureID(_ fixtureID: String) -> Self {
         guard let provenance = CoachChatConversationCorpus
             .assessmentProvenance(for: fixtureID) else {
@@ -2162,14 +2175,9 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         let floorFailures = rows.filter { !$0.passesAppPathFloor }
         let targetReplyMismatchCount = turns.filter { !$0.targetReplyMatched }.count
         let missingMetadataTurnCount = turns.filter { !$0.metadataPresent }.count
-        let semanticGateFailureTurnCount = rows.reduce(0) { count, row in
-            let expected = CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID(row.sourceFixtureID)
-            return count + row.turns.filter { turn in
-                turn.semanticGateExpectation != expected ||
-                    !turn.semanticGateExpectationSatisfied
-            }.count
-        }
+        let semanticGateFailureTurnCount = turns.filter {
+            !$0.semanticGateExpectationSatisfied
+        }.count
         let qualityGateEventCounts = eventCounts(
             turns.flatMap(\.qualityGateEvents)
         )
@@ -2388,12 +2396,9 @@ struct CoachChatConversationAppPathReportRow: Codable, Equatable {
         sourceFixtureID: String,
         turns: [CoachChatConversationAppPathTurnRow]
     ) -> CoachChatConversationAppPathReportRow {
-        let expectedSemanticGate = CoachChatConversationAppPathSemanticExpectation
-            .forFixtureID(sourceFixtureID)
-        let semanticGateContractSatisfied = turns.allSatisfy { turn in
-            turn.semanticGateExpectation == expectedSemanticGate &&
-                turn.semanticGateExpectationSatisfied
-        }
+        let semanticGateContractSatisfied = turns.allSatisfy(
+            \.semanticGateExpectationSatisfied
+        )
         return CoachChatConversationAppPathReportRow(
             conversationID: conversationID,
             sourceFixtureID: sourceFixtureID,

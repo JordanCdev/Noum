@@ -2819,27 +2819,20 @@ struct CoachChatConversationCorpusTests {
         }
         #expect(report.summary.qualityGateBlockingFailureTurnCount ==
             appPathTurns.filter(\.qualityGateBlockingFailure).count)
-        let explicitlyStyledRows = report.rows.filter {
-            CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID($0.sourceFixtureID) == .passedWithTypedAssessment
+        let explicitlyStyledTurns = appPathTurns.filter {
+            $0.semanticGateExpectation == .passedWithTypedAssessment
         }
-        let neutralRows = report.rows.filter {
-            CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID($0.sourceFixtureID) == .notEvaluatedWithoutTypedAssessment
+        let neutralTurns = appPathTurns.filter {
+            $0.semanticGateExpectation == .notEvaluatedWithoutTypedAssessment
         }
-        let unknownRows = report.rows.filter {
-            CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID($0.sourceFixtureID) == .unknownFixtureFailClosed
-        }
-        #expect(unknownRows.isEmpty)
-        #expect(explicitlyStyledRows.flatMap(\.turns).allSatisfy {
+        #expect(explicitlyStyledTurns.allSatisfy {
             $0.assessmentConfidence != nil &&
                 $0.semanticGateExpectation == .passedWithTypedAssessment &&
                 $0.semanticGatePassed &&
                 $0.typedAssessmentPresent &&
                 $0.semanticGateExpectationSatisfied
         })
-        #expect(neutralRows.flatMap(\.turns).allSatisfy {
+        #expect(neutralTurns.allSatisfy {
             $0.assessmentConfidence == nil &&
                 $0.semanticGateExpectation == .notEvaluatedWithoutTypedAssessment &&
                 $0.semanticGateOutcome == "notEvaluated" &&
@@ -2979,21 +2972,12 @@ struct CoachChatConversationCorpusTests {
         #expect(report.turnCount == expectedTurnCount)
 
         let turns = report.rows.flatMap(\.turns)
-        let explicitlyStyledRows = report.rows.filter {
-            CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID($0.sourceFixtureID) == .passedWithTypedAssessment
+        let explicitlyStyledTurns = turns.filter {
+            $0.semanticGateExpectation == .passedWithTypedAssessment
         }
-        let neutralRows = report.rows.filter {
-            CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID($0.sourceFixtureID) == .notEvaluatedWithoutTypedAssessment
+        let neutralTurns = turns.filter {
+            $0.semanticGateExpectation == .notEvaluatedWithoutTypedAssessment
         }
-        let unknownRows = report.rows.filter {
-            CoachChatConversationAppPathSemanticExpectation
-                .forFixtureID($0.sourceFixtureID) == .unknownFixtureFailClosed
-        }
-        #expect(unknownRows.isEmpty)
-        let explicitlyStyledTurns = explicitlyStyledRows.flatMap(\.turns)
-        let neutralTurns = neutralRows.flatMap(\.turns)
         let expectedImmediateReadCount = explicitlyStyledTurns.count
         #expect(report.summary.immediateCoachReadExpectedCount == expectedImmediateReadCount)
         #expect(report.summary.immediateCoachReadMissingCount == 0)
@@ -5717,7 +5701,7 @@ struct CoachChatConversationCorpusTests {
                 )
                 let semanticGateExpectation =
                     CoachChatConversationAppPathSemanticExpectation
-                        .forFixtureID(conversation.sourceFixtureID)
+                        .forResponseKind(CoachChatResponseKind.classify(turn.userTurn))
                 let typedAssessmentPresent = semanticGateExpectation ==
                     .passedWithTypedAssessment
                 let assessmentConfidence = typedAssessmentPresent
@@ -6644,7 +6628,10 @@ struct CoachChatConversationCorpusTests {
                 }()
                 let semanticGateExpectation =
                     CoachChatConversationAppPathSemanticExpectation
-                        .forFixtureID(conversation.sourceFixtureID)
+                        .forResponseKind(
+                            metadata?.responseKind ??
+                                CoachChatResponseKind.classify(turn.userTurn)
+                        )
                 let typedAssessmentPresent = metadata?.assessment != nil
                 let assessmentConfidence = metadata?.assessmentConfidence ??
                     metadata?.assessment?.confidence
