@@ -1,9 +1,9 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-14T12:22:36+00:00`
-- Candidate: `/private/tmp/noum-coach-eval-70b0b380-20260714T1330Z-b/coach-chat-conversation-app-path-eval-v1.json`
+- Generated: `2026-07-19T17:14:39+00:00`
+- Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `79.76/100`
+- Average: `81.16/100`
 - Passes score/coverage thresholds: `True`
 - Real-pipeline evidence passes: `True`
 - Evidence claim: `realPipelineEvidence`
@@ -21,10 +21,10 @@
 
 ## Type Averages
 
-- `deepAssessment`: `80.67/100`
-- `groundedRead`: `80.44/100`
-- `quickMove`: `78.76/100`
-- `trustRepair`: `79.67/100`
+- `deepAssessment`: `83.5/100`
+- `groundedRead`: `82.89/100`
+- `quickMove`: `80.47/100`
+- `trustRepair`: `77.44/100`
 
 ## VISION Readiness Boundary
 
@@ -34,7 +34,7 @@
 - Claim: `localEvaluationSubstrateOnly`
 - Blockers: `noLiveProviderTranscriptSweep`, `noProfessionalCoachCalibration`, `noRealUserLongitudinalTransferOutcomes`, `noRealDeviceTestFlightVerification`, `operationalLaunchChecklistIncomplete`
 
-VISION production readiness 18/100; local target-shape 85/100; claim localEvaluationSubstrateOnly; blockers: noLiveProviderTranscriptSweep, noProfessionalCoachCalibration, noRealUserLongitudinalTransferOutcomes, noRealDeviceTestFlightVerification, operationalLaunchChecklistIncomplete.
+VISION production readiness 18/100; local target-shape 90/100; claim localEvaluationSubstrateOnly; blockers: noLiveProviderTranscriptSweep, noProfessionalCoachCalibration, noRealUserLongitudinalTransferOutcomes, noRealDeviceTestFlightVerification, operationalLaunchChecklistIncomplete.
 
 ## Trace Audit
 
@@ -47,16 +47,16 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 
 - Eligible real-pipeline traces: `50`
 - Passes: `True`
-- Styled assessment traces: `23`
-- Declared-neutral assessment traces: `27`
+- Styled assessment traces: `18`
+- Declared-neutral assessment traces: `32`
 - Invalid assessment-provenance traces: `0`
-- Unique proof-test hashes: `17`
-- Max proof-test hash reuse: `3`
-- Max proof-test hash reuse allowed: `5`
+- Unique proof-test hashes: `12`
+- Max proof-test hash reuse: `4`
+- Max proof-test hash reuse allowed: `4`
 - Unique final-reply hashes: `50`
 - Max final-reply hash reuse: `1`
-- Distinct rounded confidence values: `11`
-- Trajectory-cache hits: `30`
+- Distinct rounded confidence values: `4`
+- Trajectory-cache hits: `3`
 - Trajectory-cache hits required: `1`
 - Missing trajectory-cache telemetry: `0`
 - Empty retrieval-card traces: `0`
@@ -66,9 +66,9 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-14T11:49:24+00:00`
-- Previous candidate: `/private/tmp/noum-coach-eval-7ae1fe43-20260714T105310Z/coach-chat-conversation-app-path-eval-v1.json`
-- Candidate changed: `True`
+- Previous generated: `2026-07-19T16:02:07+00:00`
+- Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
+- Candidate changed: `False`
 - Fixture count changed: `False`
 - Average delta: `0.0`
 - Failure count delta: `0`
@@ -88,12 +88,12 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `70b0b380`
+- Source trace git commits: `6712ee74d`
 - Source traces missing git commit: `0`
-- Current git commit: `70b0b380`
-- Source trace coach fingerprints: `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`
+- Current git commit: `6712ee74d`
+- Source trace coach fingerprints: `sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`
+- Current coach source fingerprint: `sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`
 - Source fingerprint matches current: `True`
 - Dirty coach source files: `0`
 - Source freshness passes: `True`
@@ -105,13 +105,13 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 
 ## Worst Fixtures
 
-- `confidence-clean-stop-025` `quickMove`: `70/100` - no local failure reason
-- `not-informative-trust-repair-002` `trustRepair`: `71/100` - no local failure reason
-- `quote-guard-043` `groundedRead`: `71/100` - no local failure reason
-- `confidence-ending-009` `groundedRead`: `72/100` - no local failure reason
-- `leadership-transfer-capture-026` `quickMove`: `72/100` - no local failure reason
-- `semantic-filler-use-040` `groundedRead`: `72/100` - no local failure reason
-- `prompt-echo-041` `groundedRead`: `72/100` - no local failure reason
-- `grammar-leak-048` `quickMove`: `73/100` - no local failure reason
-- `leadership-update-008` `quickMove`: `74/100` - no local failure reason
-- `closing-ask-020` `quickMove`: `74/100` - no local failure reason
+- `not-easy-empathy-004` `trustRepair`: `75/100` - no local failure reason
+- `concise-answer-023` `quickMove`: `75/100` - no local failure reason
+- `barge-in-045` `trustRepair`: `75/100` - no local failure reason
+- `grammar-leak-048` `quickMove`: `75/100` - no local failure reason
+- `not-informative-trust-repair-002` `trustRepair`: `77/100` - no local failure reason
+- `polite-however-pushback-003` `trustRepair`: `77/100` - no local failure reason
+- `markdown-tts-015` `trustRepair`: `77/100` - no local failure reason
+- `too-much-writing-017` `trustRepair`: `77/100` - no local failure reason
+- `authoritative-distance-001` `deepAssessment`: `78/100` - no local failure reason
+- `filler-pressure-007` `quickMove`: `78/100` - no local failure reason

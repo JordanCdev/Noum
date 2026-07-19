@@ -11,18 +11,19 @@ attachment kinds are documented in `docs/PRODUCTION_EVIDENCE_COLLECTION.md`.
 Pre-flight security, deployment, Apple configuration, upload, and triage work
 stays in `coach-operational-launch-checklist-v2.json`.
 
-**Current verdict (2026-07-13): NO-GO for external TestFlight or App Store
+**Current verdict (2026-07-19): NO-GO for external TestFlight or App Store
 release.** Checked infrastructure items below are configuration evidence only;
 they do not override an unchecked release blocker or signed-device test.
 
 ## Pre-flight
 
-- [ ] **Historical Deepgram incident contained** — complete every closure
-      check in `docs/SECURITY_deepgram_key_endpoint.md`. The replacement
-      Firebase path is live, but the exposed legacy credentials and AWS routes
-      remain an open incident. Revoke the credentials, disable or authenticate
-      every legacy transcription/IM/TTS route, and audit provider usage and
-      billing before inviting external users.
+- [x] **Historical Deepgram incident contained** — the 2026-07-18 closure in
+      `docs/SECURITY_deepgram_key_endpoint.md` records deletion of the legacy
+      API, revocation/replacement of the exposed credentials, usage review, and
+      a fail-closed full-history scan. The residual AWS account-wide resource
+      inventory and independently verified operational evidence remain launch
+      actions; they do not reopen the known endpoint incident or satisfy the
+      operational launch artifact by themselves.
 - [ ] **Firebase release sessions re-established safely** — revoke both cached
       Firebase CLI sessions exposed during the 2026-07-13 inspection,
       reauthenticate the required release account, and obtain independent
@@ -213,6 +214,25 @@ they do not silently change or satisfy that independent contract.
       forward to test).
 
 ## Simulator regression gates
+
+- [x] 2026-07-19 — current-source Release simulator build at `6712ee74d`:
+      `BUILD SUCCEEDED` on iPhone 17 with serialized compilation and isolated
+      DerivedData. The three selected journey UI regressions pass: locked free
+      rewrite preview, Summary prescription return, and transcript-ladder
+      one-step practice handoff. Ten product-journey contract tests also pass.
+      This is simulator evidence only and does not satisfy signing/device QA.
+- [ ] 2026-07-19 — fresh serialized broad unit run is not fully green:
+      4,502 passed / 33 failed / 0 skipped across 4,535 tests. Failures cluster
+      in legacy typed-fallback/coach-fixture expectations plus one brittle
+      account-deletion source-order assertion. Do not waive this row from local
+      evidence; keep the focused green results separate from broad parity.
+- [x] 2026-07-19 — light screenshot sweep produced five seeded tab-root and
+      five cold-profile recovery captures, all nonblank at 1206×2622, in
+      `.screenshots/2026-07-19_product-journey/`. The tab roots confirm the
+      dominant next step and current navigation hierarchy; the recovery set
+      confirms an unavailable profile is surfaced as retryable instead of
+      fabricating coaching. Debug-detail, memory editing, transcript-ladder
+      accessibility extremes, and real-speech retry still require focused QA.
 
 - [x] 2026-06-08 — `xcodebuild build -scheme Noum -configuration
       Release -destination 'platform=iOS Simulator,name=iPhone 17'`:

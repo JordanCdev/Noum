@@ -1,5 +1,67 @@
 # Noum — Current state
 
+## 2026-07-19 — Coherent coaching journey and terminal request contract verified locally; production remains NO-GO
+
+The product-journey work was isolated from `ux-overhaul` baseline
+`2bcb1ccff769d1eba71da9049e4fa82fbf1d4bb2` in the clean worktree
+`/Users/jordan/src/GitHub/Noum-product-journey` on
+`codex/product-journey-launch`. It connects the existing coaching owners into
+the intended `UNDERSTAND → DIAGNOSE → SHOW → PRACTISE → COMPARE → ADAPT →
+TRANSFER` loop without adding a tab, parallel store, or third-party dependency.
+
+Voice goals now describe training emphasis rather than identity. Changing one
+preserves sessions, evidence, memory, and history; advances memory/plan
+provenance; and invalidates only the goal-dependent forward projection.
+Authenticity-shaming, fake-persona, and “pretending” language is blocked by
+regression coverage. Ask Noum text and live requests now have deterministic
+client-owned deadlines and an exhaustive accepted/repaired, safe-fallback,
+retryable-error, cancelled, or timed-out terminal contract. One opaque,
+content-free trace ID joins classification, evidence/memory, prompt assembly,
+provider attempts, streaming, gates, fallback, persistence, and UI commit; a
+bounded account-scoped Debug viewer exposes timings, status, and terminal state.
+
+Review now teaches with a transcript ladder: exact verified original, one-step
+meaning/voice-preserving rewrite with changed words emphasized, a clearly
+labelled aspirational end state, and direct targeted practice of the achievable
+rung through the existing Phrase Bank and Timed owners. Bounded memory is
+inspectable, correctable, and deletable while observed evidence remains
+separate from removable/confirmable coach projections. Existing Home, Train,
+Ask, Summary, Progress, plan, and memory ownership was extended rather than
+duplicated.
+
+Fresh canonical evidence is bound to source commit `6712ee74d` and coach-source
+fingerprint
+`sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`.
+It passes 53 conversations / 109 text turns with zero app-path-floor failures,
+50/50 scored replies at 81.16 average, 50 complete unique terminal traces, no
+placeholder leakage or accepted fallback in the reviewed slice, and the
+90-point local target shape. The refresh found and fixed a stale singleton-state
+contamination bug in the DEBUG evidence harness; fixture baseline/rating state
+is now isolated and restored after each corpus run.
+
+The current Release simulator configuration builds successfully. Ten current
+source contract tests pass, and the selected transcript-ladder, locked-preview,
+and Summary-prescription UI regressions pass 3/3. A fresh serialized broad unit
+run reports **4,502 passed / 33 failed / 0 skipped across 4,535 tests** in
+`/tmp/NoumProductJourneyTestsFinal.xcresult`. This is an improvement over the
+earlier worktree run (4,496 / 38), but it is not presented as exact baseline
+parity because the matching baseline result bundle is unavailable. The
+remaining failures are concentrated in stale typed-fallback/coach-fixture
+expectations that demand unsupported evidence or older wording, plus one brittle
+account-deletion source-text assertion. The stronger evidence gate was not
+weakened to make those fixtures pass. Mission-critical focused suites and the
+final canonical app path are green.
+The light screenshot handoff contains five seeded tab roots plus five honest
+cold-profile recovery captures, all nonblank at 1206×2622.
+
+This does **not** establish production or TestFlight readiness. The source-bound
+readiness evaluator remains **NO-GO at 18/100 (20-point cap)** with all five
+external artifacts missing: live-provider transcript sweep, blinded
+professional-coach calibration, longitudinal real-user transfer outcomes,
+physical TestFlight verification, and operational launch sign-off. Signed
+archive/upload, accessibility extremes, real-speech retry, and the exact manual
+actions in `docs/MANUAL_LAUNCH_ACTIONS.md` remain open.
+
 ## 2026-07-19 — Ask Noum continuity policy deployed; live conversation acceptance remains open
 
 The scoped coach-v2 release path deployed the committed Ask Noum continuity,

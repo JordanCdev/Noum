@@ -8,12 +8,12 @@ These are fixture-backed synthetic conversations for done-state review.
 > Real-pipeline evidence passes: `True`.
 > Report-internal source freshness passes: `True`.
 > Sidecar source freshness passes: `True`.
-> Current git commit: `70b0b380`.
-> Report trace git commit(s): `70b0b380`.
-> Current coach source fingerprint: `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
-> Report trace coach source fingerprint(s): `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
-> Sidecar git commit: `70b0b380`.
-> Sidecar coach source fingerprint: `sha256:7f99e3f12183cc9d0973f2645e4ba4271d32c0ff52066be7bc34cc9be689e380`.
+> Current git commit: `6712ee74d`.
+> Report trace git commit(s): `6712ee74d`.
+> Current coach source fingerprint: `sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`.
+> Report trace coach source fingerprint(s): `sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`.
+> Sidecar git commit: `6712ee74d`.
+> Sidecar coach source fingerprint: `sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`.
 
 ## authoritative-distance-001
 
@@ -26,9 +26,9 @@ Prior chat:
 
 User: How far off am I from sounding authoritative?
 
-Noum: You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.
+Noum: Not proven yet: the transcript shows mechanics—a recommendation and one controlled rep—but not authority under pressure. Missing repeated higher-stakes evidence; repeat the stakeholder answer with verdict first and a clean stop.
 
-Arena score: 87/100
+Arena score: 78/100
 
 ## not-informative-trust-repair-002
 
@@ -41,9 +41,9 @@ Prior chat:
 
 User: That's not informative at all.
 
-Noum: Fair push: I missed the actual question and answered around the useful read. The specific read is order: warmth is arriving before the recommendation, so the point lands late. Next rep, put the recommendation first, add one reassurance, then stop.
+Noum: You're right—that answer was vague. I should have said this plainly: reassurance came before the recommendation, so the listener had to wait for the point.
 
-Arena score: 71/100
+Arena score: 77/100
 
 ## polite-however-pushback-003
 
@@ -56,7 +56,7 @@ Prior chat:
 
 User: Okay that's cool, however I still don't feel like that answers what I meant.
 
-Noum: Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop.
+Noum: Fair push—I answered with advice when you wanted the read. Reassurance came before the recommendation; next time I'll name that ordering issue directly.
 
 Arena score: 77/100
 
@@ -71,9 +71,9 @@ Prior chat:
 
 User: It's not easy.
 
-Noum: Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.
+Noum: You're right—this isn't easy. The setup carries social risk under pressure, so make it smaller: say the disagreement and one calm reason, then stop.
 
-Arena score: 85/100
+Arena score: 75/100
 
 ## repeating-yourself-005
 
@@ -87,9 +87,9 @@ Prior chat:
 
 User: You're repeating yourself.
 
-Noum: Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.
+Noum: You're right—I repeated the same instruction. I should have changed the evidence instead of sending you through the same drill again.
 
-Arena score: 80/100
+Arena score: 79/100
 
 ## interview-prep-006
 
@@ -102,9 +102,9 @@ Prior chat:
 
 User: How do I get better before my interview?
 
-Noum: No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?
+Noum: No baseline yet, so start with evidence. Record 60 seconds on 'Why should we hire you?', answer in sentence one, give one proof, then stop and replay only the opener.
 
-Arena score: 87/100
+Arena score: 80/100
 
 ## filler-pressure-007
 
@@ -117,9 +117,9 @@ Prior chat:
 
 User: How do I stop saying um under pressure?
 
-Noum: Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.
+Noum: When um wants to enter under pressure, hold a one-second silence instead because the gap stays quiet. Repeat the prompt and compare fillers per minute; treat one rep as a test, not a pattern.
 
-Arena score: 83/100
+Arena score: 78/100
 
 ## leadership-update-008
 
@@ -134,7 +134,7 @@ User: I have a leadership update tomorrow. What should I practice?
 
 Noum: Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.
 
-Arena score: 74/100
+Arena score: 83/100
 
 ## confidence-ending-009
 
@@ -149,7 +149,7 @@ User: Why does my ending sound less confident?
 
 Noum: The confidence leak is the extra softener after the recommendation. Your closing-strength focus is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.
 
-Arena score: 72/100
+Arena score: 83/100
 
 ## examples-from-sessions-010
 
@@ -162,6 +162,6 @@ Prior chat:
 
 User: Can you give me an example of me doing this in sessions?
 
-Noum: One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.
+Noum: In one verified rep, you said, 'we focused on three priorities.' Those are clear reasons but no picture, so add one concrete example after the first reason.
 
-Arena score: 83/100
+Arena score: 79/100
