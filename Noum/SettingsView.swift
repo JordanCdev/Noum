@@ -142,7 +142,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Practice") {
+                Section {
                     practiceDifficultyRow
                     dailyGoalCard
                     practiceVoiceCuesRow
@@ -150,14 +150,18 @@ struct SettingsView: View {
                     pressureModeRow
                     practiceLanguageRow
                     soundscapeRow
+                } header: {
+                    SettingsSectionLabel(title: "Practice")
                 }
 
-                Section("Coaching") {
+                Section {
                     coachingProfileRow
                     upcomingMomentRow
+                } header: {
+                    SettingsSectionLabel(title: "Coaching")
                 }
 
-                Section("Notifications") {
+                Section {
                     dailyReminderRow
                     if notificationManager.dailyReminderEnabled {
                         dailyReminderTimePicker
@@ -167,16 +171,22 @@ struct SettingsView: View {
                     notificationAccessRow
                     hapticsRow
                     interactionSoundsRow
+                } header: {
+                    SettingsSectionLabel(title: "Notifications")
                 }
 
-                Section("Account") {
+                Section {
                     subscriptionCard
                     privacyCard
                     accountCard
+                } header: {
+                    SettingsSectionLabel(title: "Account")
                 }
 
-                Section("About") {
+                Section {
                     aboutCard
+                } header: {
+                    SettingsSectionLabel(title: "About")
                 }
 
                 Section {
@@ -186,6 +196,7 @@ struct SettingsView: View {
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
             .scrollContentBackground(.hidden)
+            .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         }
         .navigationTitle(isAppTabRoot ? "Settings" : "")
         .navigationBarTitleDisplayMode(.inline)
@@ -371,16 +382,17 @@ struct SettingsView: View {
                     section(label: "Debug traces") { flowEventsCard }
                     section(label: "Diagnostics") { recommendationDiagnosticsCard }
                     section(label: "Seed data") { developerSeedCard }
-                } else if exposesRecommendationFlowLogForUITesting {
+                } else if exposesFlowLogForUITesting {
                     section(label: "Flow log") { flowEventsCard }
                 }
             }
         }
     }
 
-    private var exposesRecommendationFlowLogForUITesting: Bool {
+    private var exposesFlowLogForUITesting: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains("UI_TESTING_RECOMMENDATION_FLOW_LOG")
+            || ProcessInfo.processInfo.arguments.contains("UI_TESTING_COACH_TRACE_SUPPORT")
         #else
         false
         #endif
@@ -620,9 +632,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Practice difficulty")
                 .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
             Text(practiceSettings.timedDifficulty.subtitle)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -643,9 +656,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Daily goal")
                 .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
             Text("Choose a pace that fits your week.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1556,10 +1570,19 @@ struct SettingsView: View {
     }
 
     private var appVersionString: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
-        let build = info?["CFBundleVersion"] as? String ?? "—"
-        return "\(version) (\(build))"
+        "\(appVersion) (\(appBuildNumber))"
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+    }
+
+    private var appBuildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+    }
+
+    private var appSourceGitCommit: String {
+        Bundle.main.infoDictionary?["NoumSourceGitCommit"] as? String ?? "unbound"
     }
 
     private func copyDiagnosticReport() {
@@ -1610,6 +1633,30 @@ struct SettingsView: View {
         #endif
         withAnimation(reduceMotion ? nil : .standardSpring) {
             supportToast = "Trace ID copied to clipboard"
+        }
+    }
+
+    private func copyCoachSupportBundle(_ traceID: UUID) {
+        guard let payload = flowEvents.exportCoachSupportBundle(
+            correlationId: traceID,
+            diagnostics: aiCallDiagnostics.records,
+            appVersion: appVersion,
+            buildNumber: appBuildNumber,
+            sourceGitCommit: appSourceGitCommit
+        ) else {
+            withAnimation(reduceMotion ? nil : .standardSpring) {
+                supportToast = "Trace is no longer available"
+            }
+            return
+        }
+        #if canImport(UIKit)
+        UIPasteboard.general.string = payload
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        #endif
+        withAnimation(reduceMotion ? nil : .standardSpring) {
+            supportToast = "Redacted support bundle copied"
         }
     }
 
@@ -1752,13 +1799,30 @@ struct SettingsView: View {
                                 .frame(minHeight: 44, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                         .foregroundStyle(AppColor.brandBlue)
+                        .accessibilityIdentifier("settings.debugTraces.copyTraceID")
+                        Button {
+                            copyCoachSupportBundle(trace.correlationId)
+                        } label: {
+                            Label("Copy redacted support bundle", systemImage: "doc.badge.gearshape")
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .foregroundStyle(AppColor.brandBlue)
+                        .accessibilityIdentifier("settings.debugTraces.copySupportBundle")
+                        .accessibilityHint("Copies content-free request stages and matching provider diagnostics for local support replay.")
                     }
                     .padding(Spacing.sm)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .contain)
                     .accessibilityLabel("Coach trace \(String(trace.correlationId.uuidString.prefix(8))), \(trace.terminalStatusLabel), \(trace.events.count) stages, \(trace.terminalEventCount) terminal events")
+                    .accessibilityIdentifier("settings.debugTraces.coachTrace")
                 }
             }
             Divider()

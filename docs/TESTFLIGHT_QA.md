@@ -215,17 +215,48 @@ they do not silently change or satisfy that independent contract.
 
 ## Simulator regression gates
 
+- [x] 2026-07-20 — exact-source local candidate `cdce32af9` passes the
+      complete serialized unit target (4,549/4,549) and complete serialized UI
+      target (79/79), with zero failures or skips. Result bundles:
+      `/private/tmp/noum-vision-full-unit-final-pass2.xcresult` and
+      `/private/tmp/noum-vision-full-ui-final-pass2.xcresult`. The UI target
+      includes all long screenshot tours, nine coaching-journey accessibility
+      states, both in-chat goal-confirmation variants, active-week Phrase Bank
+      execution, and the full Ask Noum terminal-state class.
+- [x] 2026-07-20 — the exact-source Release simulator app at `cdce32af9`
+      builds with one Xcode job; the app and embedded extensions pass strict,
+      deep signature verification. The product is 1.1 build 2 with an expected
+      simulator ad-hoc signature. This is not an Apple Distribution archive or
+      TestFlight upload.
 - [x] 2026-07-19 — current-source Release simulator build at `6712ee74d`:
       `BUILD SUCCEEDED` on iPhone 17 with serialized compilation and isolated
       DerivedData. The three selected journey UI regressions pass: locked free
       rewrite preview, Summary prescription return, and transcript-ladder
       one-step practice handoff. Ten product-journey contract tests also pass.
       This is simulator evidence only and does not satisfy signing/device QA.
-- [ ] 2026-07-19 — fresh serialized broad unit run is not fully green:
-      4,502 passed / 33 failed / 0 skipped across 4,535 tests. Failures cluster
-      in legacy typed-fallback/coach-fixture expectations plus one brittle
-      account-deletion source-order assertion. Do not waive this row from local
-      evidence; keep the focused green results separate from broad parity.
+- [x] 2026-07-20 — fresh serialized broad unit run at behavior source
+      `5f25e6a24` is fully green: 4,546 passed / 0 failed / 0 skipped. The run
+      used one iPhone 17 Pro simulator, serialized execution, isolated
+      DerivedData, and the source-bound package cache. Result bundle:
+      `/private/tmp/noum-vision-closure-all-units-final.xcresult`. This supersedes the
+      2026-07-19 4,502/33 failure row; it remains simulator evidence only.
+- [x] 2026-07-20 — the complete Ask Noum rendered reliability class passes
+      10/10 in `/private/tmp/noum-vision-closure-chat-flow-final.xcresult`.
+      The new lifecycle case accepts a delayed turn, backgrounds/foregrounds
+      the app, then proves one stable terminal row, one matching user row, and
+      no lingering thinking state. This does not replace live-provider or
+      physical-device lifecycle QA.
+- [x] 2026-07-20 — the exact-source Release simulator app at `5f25e6a24`
+      builds successfully and the app, Messages extension, and Widget
+      extension all pass strict signature verification. This is not an Apple
+      Distribution archive or TestFlight upload.
+- [x] 2026-07-20 — light screenshot sweep produced five seeded tab-root
+      captures plus an expanded redacted Debug trace/support-export state, all
+      nonblank at 1206×2622, in
+      `.screenshots/2026-07-20_trace-support-bundle/`. All six were visually
+      inspected. The trace UI test independently opened Settings, expanded
+      Developer, exported the bundle, and observed the confirmation toast in
+      `/private/tmp/noum-trace-support-focus.xcresult`.
 - [x] 2026-07-19 — light screenshot sweep produced five seeded tab-root and
       five cold-profile recovery captures, all nonblank at 1206×2622, in
       `.screenshots/2026-07-19_product-journey/`. The tab roots confirm the

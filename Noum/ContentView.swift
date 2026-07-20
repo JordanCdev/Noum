@@ -1059,25 +1059,25 @@ struct ContentView: View {
             HStack(spacing: Spacing.md) {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.coachHeroInk)
                     .frame(width: 32, height: 32)
-                    .background(.white.opacity(0.14), in: Circle())
+                    .background(AppColor.coachHeroInk.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
                         .font(Typography.cardLabel)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppColor.coachHeroInk)
                     Text(body)
                         .font(Typography.caption)
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(AppColor.coachHeroInk)
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, Spacing.md)
@@ -1087,7 +1087,7 @@ struct ContentView: View {
         }
         .buttonStyle(.pressable)
         .overlay(alignment: .top) {
-            Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
+            Rectangle().fill(AppColor.coachHeroInk.opacity(0.18)).frame(height: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(body)")
@@ -1338,11 +1338,11 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(HomeAskNoumShortcut.title)
                         .font(Typography.captionSmall.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(AppColor.coachHeroInk)
 
                     Text(body)
                         .font(Typography.caption)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1350,7 +1350,7 @@ struct ContentView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.78))
+                    .foregroundStyle(AppColor.coachHeroInk)
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1360,7 +1360,7 @@ struct ContentView: View {
         }
         .buttonStyle(.pressable)
         .overlay(alignment: .top) {
-            Rectangle().fill(.white.opacity(0.20)).frame(height: 1)
+            Rectangle().fill(AppColor.coachHeroInk.opacity(0.20)).frame(height: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body)."))

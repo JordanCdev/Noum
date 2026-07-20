@@ -497,7 +497,7 @@ struct SummaryDrillActionCard: View {
             if let evidence, !evidence.isEmpty {
                 Text(evidence)
                     .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary.opacity(0.86))
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -633,7 +633,7 @@ private struct SummaryFullRepActionCard: View {
     let onShown: ((PracticeMode) -> Void)?
     let onStart: ((PracticeModeLaunchProjection) -> Void)?
 
-    private var tint: Color { AppColor.tint(for: mode) }
+    private var tint: Color { AppColor.brandBlue }
     private var ctaLabel: String { "Start \(mode.displayLabel)" }
 
     var body: some View {
@@ -668,7 +668,7 @@ private struct SummaryFullRepActionCard: View {
             if let evidence, !evidence.isEmpty {
                 Text(evidence)
                     .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary.opacity(0.86))
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

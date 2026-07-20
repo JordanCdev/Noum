@@ -259,6 +259,7 @@ struct SessionHistoryView: View {
                     }
                     .padding(.top, 8)
                 }
+                .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
             }
         }
         .navigationTitle("Review")
@@ -425,7 +426,7 @@ struct SessionHistoryView: View {
                         .foregroundStyle(.primary)
                     Text("\(totalSessions) saved rep\(totalSessions == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
 
                 Spacer(minLength: 8)

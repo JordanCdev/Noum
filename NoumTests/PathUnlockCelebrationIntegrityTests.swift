@@ -180,7 +180,6 @@ struct PathUnlockCelebrationIntegrityTests {
     @MainActor
     func reviewOnlyProjectionBoundary() {
         let reviewOnly = session(words: 2, duration: 2)
-        let eligible = session(words: 20, duration: 30)
         let currentReviewOnly = session(words: 2, duration: 2, date: Date())
         let currentEligible = session(words: 20, duration: 30, date: Date())
 

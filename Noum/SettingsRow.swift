@@ -22,7 +22,7 @@ struct SettingsSectionLabel: View {
     var body: some View {
         Text(title)
             .font(Typography.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             .padding(.horizontal, 4)
             .accessibilityAddTraits(.isHeader)
     }
@@ -48,11 +48,11 @@ struct SettingsToggleRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(Typography.subheadline.weight(.semibold))
-                    .foregroundStyle(isDisabled ? Color.secondary : Color.primary)
+                    .foregroundStyle(isDisabled ? AppColor.textSecondary : AppColor.textPrimary)
                 if let subtitle {
                     Text(subtitle)
                         .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if isDisabled, let disabledReason {
@@ -99,7 +99,7 @@ struct SettingsNavRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppColor.textTertiary)
                     .padding(.top, 4)
             }
             .frame(minHeight: 44)
@@ -145,7 +145,7 @@ struct SettingsNavRow: View {
     private func valueText(_ value: String) -> some View {
         Text(value)
             .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
     }
 }
 
@@ -165,7 +165,7 @@ struct SettingsStatusRow: View {
             if let icon {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .frame(width: 22)
                     .padding(.top, 2)
             }

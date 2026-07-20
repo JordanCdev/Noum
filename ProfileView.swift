@@ -1371,6 +1371,7 @@ struct ProfileView: View {
     @State private var profileOutcomeMoment: BigMoment?
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isAppTabRoot) private var isAppTabRoot
 
     private let metricColumns = [
         GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)
@@ -1537,7 +1538,7 @@ struct ProfileView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: Spacing.cardGap) {
+            LazyVStack(spacing: Spacing.cardGap) {
                 let surfacePlan = defaultSurfacePlan
 
                 identityHeader
@@ -1558,6 +1559,7 @@ struct ProfileView: View {
             .padding(.top, Spacing.sm)
             .padding(.bottom, Spacing.lg)
         }
+        .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         .task {
             bigMomentStore.archiveExpiredIfNeeded()
             await challenges.refreshFromBackend()
@@ -1601,9 +1603,10 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text("A quick reality check")
                 .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Text("Did Noum help you move toward the speaker you want to be?")
                 .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Spacing.sm) {
                 transformationResponseButton(title: "Yes", value: "yes")
@@ -1631,9 +1634,14 @@ struct ProfileView: View {
             ))
         } label: {
             Text(title)
+                .foregroundStyle(AppColor.brandBlue)
                 .frame(maxWidth: .infinity, minHeight: 44)
+                .background(AppColor.cardBackground, in: Capsule())
+                .overlay(
+                    Capsule().stroke(AppColor.brandBlue.opacity(0.35), lineWidth: 1)
+                )
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .accessibilityHint("Records an account-local response without transcript text.")
     }
 
@@ -1659,7 +1667,7 @@ struct ProfileView: View {
                     .accessibilityHidden(true)
                 Text("Current coaching focus")
                     .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
 
             Text(presentation.observation)
@@ -1675,14 +1683,14 @@ struct ProfileView: View {
                     .accessibilityHidden(true)
                 Text(presentation.nextMove)
                     .font(Typography.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if let evidenceCaption = presentation.evidenceCaption {
                 Text(evidenceCaption)
                     .font(Typography.captionSmall)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1803,10 +1811,10 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
                         Text("Library")
                             .font(Typography.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(AppColor.textPrimary)
                         Text("Evidence, history, and account tools")
                             .font(Typography.captionSmall)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppColor.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2333,9 +2341,8 @@ struct ProfileView: View {
 
                     Text(identity.subtitle)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .multilineTextAlignment(.leading)
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -2438,16 +2445,16 @@ struct ProfileView: View {
                 Text("Speaking rating")
                     .font(Typography.caption.weight(.semibold))
             }
-            .foregroundStyle(.white.opacity(0.86))
+            .foregroundStyle(AppColor.progressHeroInk)
 
             Text("\(presentation.value)")
                 .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.progressHeroInk)
                 .contentTransition(reduceMotion ? .identity : .numericText())
 
             Text(presentation.directionLine)
                 .font(Typography.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.88))
+                .foregroundStyle(AppColor.progressHeroInk)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Spacing.lg)

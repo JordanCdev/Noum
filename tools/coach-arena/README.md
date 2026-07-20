@@ -84,7 +84,20 @@ ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 ./tools/coach-arena/run.sh readiness --release-evidence-run /secure/noum-release-evidence/rc-<build> --no-fail
 ./tools/coach-arena/run.sh readiness --repo-root /path/to/Noum --no-fail
 ./tools/coach-arena/run.sh readiness --probe-live --no-fail
+
+# Replay the terminal/provider/gate path from Settings → Developer tools.
+# Paste the copied redacted support bundle into a local JSON file first.
+./tools/coach-arena/run.sh trace-replay /secure/local/coach-trace.json
 ```
+
+`trace-replay` validates the bundle's privacy declaration, known stage
+vocabulary, provider/gate path, persistence and UI-commit order, and exactly-one
+terminal-state contract. It fails closed on an unsafe flag, unknown stage,
+duplicate/missing terminal, or malformed trace ID. The bundle intentionally has
+no user turn, transcript, prompt, account identifier, or coach response, so this
+command does not claim semantic reproduction. To reproduce answer quality, make
+a synthetic fixture with the same exported classification/depth and run the
+normal app-path harness; do not paste private communication into a fixture.
 
 `app-path` reads
 `$NOUM_COACH_EVAL_DUMP_DIR/coach-chat-conversation-app-path-eval-v1.json`, defaulting

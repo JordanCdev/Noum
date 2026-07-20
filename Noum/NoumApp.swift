@@ -83,6 +83,9 @@ struct NoumApp: App {
         TypographyDebug.logRegisteredFamiliesOnce()
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
+        AuthManager.shared.useProcessLocalAuthenticatedCoachStateForUITesting(
+            arguments: args
+        )
         AuthManager.shared.useProcessLocalSignedOutStateForUITesting(arguments: args)
         // `UI_TESTING_SEED_FORCE` always reseeds — used by ScreenshotTour
         // so the test starts from a deterministic populated state every
@@ -166,6 +169,11 @@ struct NoumApp: App {
         // clean so tests don't inherit hand-test conversations from the
         // simulator's per-account defaults.
         if args.contains("UI_TESTING_CLEAR_ASK_NOUM") {
+            // The explicit coach-test identity can differ from whichever
+            // account first initialized the registry participant. Scope the
+            // existing owner before clearing so one UI-test process cannot
+            // leak a completed coach row into the next process.
+            AskNoumStore.shared.reloadForCurrentAccount()
             AskNoumStore.shared.clearThread()
         }
         if args.contains("UI_TESTING_CLEAR_FLOW_EVENTS") {
@@ -259,6 +267,9 @@ struct NoumApp: App {
                 }
                 #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
+                #if DEBUG
+                CoachTraceSupportUITestFixture.installIfRequested()
+                #endif
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()
                 FlowEventLog.shared.recordActiveDay()
@@ -277,6 +288,9 @@ struct NoumApp: App {
                 }
                 #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
+                #if DEBUG
+                CoachTraceSupportUITestFixture.installIfRequested()
+                #endif
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()
                 if authManager.currentAccountID != nil {

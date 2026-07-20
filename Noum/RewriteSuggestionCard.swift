@@ -63,8 +63,8 @@ struct RewriteSuggestionCard: View {
         .background(
             LinearGradient(
                 colors: [
-                    AppColor.pro.opacity(0.10),
-                    AppColor.proLight.opacity(0.06)
+                    AppColor.proQuietSurface,
+                    AppColor.cardBackground
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -137,7 +137,7 @@ struct RewriteSuggestionCard: View {
                     revision: oneStep.text
                 ),
                 detail: "Changed words are highlighted · meaning and voice preserved",
-                tint: AppColor.pro,
+                tint: AppColor.proText,
                 identifier: "rewrite.oneStep"
             )
 
@@ -159,7 +159,8 @@ struct RewriteSuggestionCard: View {
             if oneStep.source == .onDevice {
                 Label("Private on-device edit", systemImage: "lock.fill")
                     .font(Typography.micro.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .frame(minHeight: 44, alignment: .leading)
                     .accessibilityIdentifier("rewrite.onDevice")
                     .accessibilityLabel("Private on-device edit, built from your own words without an AI provider.")
             }
@@ -189,12 +190,14 @@ struct RewriteSuggestionCard: View {
                         Text(didSave ? "Saved" : "Save phrase")
                             .font(Typography.caption.weight(.semibold))
                     }
-                    .foregroundStyle(AppColor.pro)
+                    .foregroundStyle(AppColor.proText)
+                    .frame(minHeight: 44)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(AppColor.pro.opacity(0.10), in: Capsule())
+                    .background(AppColor.proQuietSurface, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
                 .accessibilityIdentifier("rewrite.savePhrase")
                 .accessibilityHint("Saves this rewrite to your on-device phrase bank.")
 
@@ -211,13 +214,13 @@ struct RewriteSuggestionCard: View {
             Text("TARGET FOR THE RETRY")
                 .font(Typography.micro.weight(.heavy))
                 .tracking(0.5)
-                .foregroundStyle(AppColor.pro)
+                .foregroundStyle(AppColor.proText)
             Text(target.lever.successMeasure)
                 .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(AppColor.textPrimary)
             Text("Noum will compare this lever with the verified source rep; the aspiration is not scored.")
                 .font(Typography.micro)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
         .padding(.horizontal, Spacing.xs)
         .accessibilityElement(children: .combine)
@@ -238,11 +241,11 @@ struct RewriteSuggestionCard: View {
                 .foregroundStyle(tint)
             text
                 .font(Typography.body.weight(.medium))
-                .foregroundStyle(.primary)
+                .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(detail)
                 .font(Typography.micro)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,10 +291,12 @@ struct RewriteSuggestionCard: View {
                 Text("Phrase bank\(phraseBank.entries.isEmpty ? "" : " (\(phraseBank.entries.count))")")
                     .font(Typography.caption.weight(.semibold))
             }
-            .foregroundStyle(.secondary)
-            .frame(minHeight: 32, alignment: .leading)
+            .foregroundStyle(AppColor.textSecondary)
+            .frame(minHeight: 44, alignment: .leading)
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityIdentifier("rewrite.phraseBank")
         .accessibilityHint("Shows phrases you saved for later practice.")
     }
@@ -511,7 +516,7 @@ enum TranscriptChangeHighlighter {
             }
             let token = Text(nsRevision.substring(with: match.range))
             rendered = rendered + (changed.contains(index)
-                ? token.foregroundColor(AppColor.pro).bold()
+                ? token.foregroundColor(AppColor.proText).bold()
                 : token)
             cursor = match.range.location + match.range.length
         }

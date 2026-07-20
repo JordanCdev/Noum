@@ -1,5 +1,57 @@
 # Noum — Current state
 
+## 2026-07-20 — Vision completion audit, trace support, and journey accessibility; production remains NO-GO
+
+The current behavior source is
+`cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`. The accepted product-journey
+contract is now mapped requirement by requirement in
+`docs/VISION_COMPLETION_AUDIT.md`, separating locally proved implementation,
+partially validated behavior, operator/device dependencies, and post-M14
+strategy. The result is deliberately not a completion claim: the connected
+journey is locally credible, while professional-coach parity and production
+readiness remain unproved.
+
+The last stale code-side observability gap is closed without widening the data
+boundary. Settings can export one versioned, content-free support bundle for a
+coach trace. It joins stage order and timing, provider diagnostics, gates,
+persistence, UI commit, and terminal contract while excluding user text,
+transcript, prompts, responses, account identifiers, and credentials. The
+checked-in Coach Arena replayer validates the terminal path and fails closed on
+unknown stages, duplicate terminals, unsafe privacy declarations, or missing
+semantic-reproduction limitations. Exact answer replay intentionally requires
+a consented synthetic fixture rather than raw user content.
+
+Fresh verification is green. The complete serialized iOS unit target passes
+**4,549/4,549 with 0 failed and 0 skipped** in
+`/private/tmp/noum-vision-full-unit-final-pass2.xcresult`. The complete
+serialized UI target passes **79/79 with 0 failed and 0 skipped** in
+`/private/tmp/noum-vision-full-ui-final-pass2.xcresult`; this supersedes the
+first broad soak's four fixture/audit failures. Product-journey contracts pass
+13/13 within the unit result. The focused serialized rendered bundle passes
+25/25: 15 high-risk journey/failure paths plus all 10 Ask Noum request flows,
+including one accepted request across background/foreground. The expanded
+Accessibility XXXL bundle passes 12/12: eight native rendered state audits, one
+focused Debug trace-action test, and three production color-token/surface tests.
+Coach Arena passes 167/167 Python and 118/118 Node tests with one intentional
+Node skip, and the transcript retry corpus remains 20/20. The current-source
+Release simulator app (1.1 build 2) passes strict signature verification. A
+fresh five-root plus contextual-Ask light sweep and the earlier expanded
+trace/export state were visually inspected; their handoffs are in
+`.screenshots/2026-07-20_accessibility-journey-final/HANDOFF.md` and
+`.screenshots/2026-07-20_trace-support-bundle/HANDOFF.md`.
+
+Canonical app-path evidence is bound to behavior source `cdce32af9` and coach
+fingerprint
+`sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`.
+It passes 53 conversations / 109 turns, 50/50 scored fixtures at 81.16 average,
+50 complete traces, zero app-path failures, and 22/22 static operational checks.
+The independent evaluator correctly remains **NO-GO at 20/100**: there is no
+current-candidate live-provider artifact, blinded professional calibration,
+longitudinal real-user transfer evidence, physical TestFlight QA, or completed
+operational launch sign-off. Same-target real-microphone retry, interactive
+VoiceOver/Reduce Motion, the full physical accessibility matrix, paid-team
+archive/upload, and authorized account operations also remain open.
+
 ## 2026-07-20 — Journey reliability hardening and source-bound launch audit; production remains NO-GO
 
 The accepted product-journey plan was continued from the latest clean journey

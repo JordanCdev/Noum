@@ -2,7 +2,8 @@
 
 Audit date: 2026-07-20
 Baseline branch: `ux-overhaul`
-Baseline commit: `2bcb1ccff769d1eba71da9049e4fa82fbf1d4bb2`
+Baseline commit: `7b8552d79dbea5301e5f804f2bcc84530180a35a`
+Current behavior source: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
 
 ## Product goal
 
@@ -87,7 +88,9 @@ Fix: add inspect/edit/delete controls to Your Data. User-authored goal, observed
 
 - Review/Summary rewrite card: redesigned into the transcript ladder; no new tab or duplicate review screen.
 - Ask Noum: goal-confirmation language reframed as training emphasis; existing contextual entry architecture retained.
-- Settings → Developer: added a recent redacted trace viewer and trace-ID copy action.
+- Settings → Developer: added a recent redacted trace viewer, trace-ID copy
+  action, and content-free support-bundle export that joins trace stages with
+  matching provider diagnostics and a fail-closed terminal-path replay command.
 - Settings → Your Data: added coaching-memory inspection, correction, projection deletion, and full bounded-memory deletion.
 
 No screen or tab was added. No existing state owner was duplicated. Home, Practice, and Progress already contained the intended hierarchy on this baseline, so this phase did not perform cosmetic rewrites solely to satisfy the specification wording.
@@ -95,25 +98,30 @@ No screen or tab was added. No existing state owner was duplicated. Home, Practi
 ## Remaining product gaps
 
 - A retry still flows through the existing phrase-practice and Summary owners; a fresh real-speech run must prove the same target survives that complete route and updates the intervention as intended.
-- Long-request local contracts are now explicit rather than inferred: a 3,000-character user turn survives acceptance and account-scoped reload exactly, and cancellation wins promptly even when the provider ignores cancellation. Current-source live-provider and background/foreground device runs remain required before this becomes production evidence.
+- Long-request local contracts are now explicit rather than inferred: a 3,000-character user turn survives acceptance and account-scoped reload exactly, cancellation wins promptly even when the provider ignores cancellation, and a delayed accepted request reaches one stable terminal UI state across simulator background/foreground. A current-source live-provider lifecycle run on a physical device remains required before this becomes production evidence.
 - Memory exposes the bounded case projection and its overall update date/confidence, not an independently timestamped UI row for every underlying evidence record. The model does not currently persist that granularity, so the UI does not fabricate it.
-- The Debug viewer is deliberately content-free. It now makes duplicate or malformed request terminals visible as `trace error`, but safe local reproduction/export still belongs to Coach Arena and the existing redacted log export; there is no production prompt/reply replay button.
+- The Debug viewer is deliberately content-free. It now makes duplicate or
+  malformed request terminals visible as `trace error` and exports a versioned
+  support bundle that the checked-in Coach Arena replayer validates. This
+  reproduces stage ordering, provider attempts, gates, persistence, UI commit,
+  and terminal status without exporting user content. Exact semantic replay is
+  intentionally unavailable; a consented synthetic fixture is required to
+  reproduce answer quality without weakening the privacy boundary.
 - Largest-Dynamic-Type inspection found and fixed the two compressed Settings picker rows. The complete ladder, retry, memory, weekly check-in, Big Moment, and tab-root accessibility matrix still needs interactive VoiceOver, Reduce Motion, error/offline, and physical-device coverage. The root app currently forces `.preferredColorScheme(.light)`, so dark mode is a deliberate open product/implementation decision rather than a passed appearance check.
 - External live-provider, professional-coach, longitudinal-user, physical-TestFlight, and launch-operations evidence remain missing. Local scores cannot close those gates.
 
 ## Launch verdict
 
-This branch is not proof of production or TestFlight readiness. At source commit
-`6b1dabcfc` and coach-source fingerprint
-`sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`,
+This branch is not proof of production or TestFlight readiness. At behavior
+source `cdce32af9` and coach-source fingerprint
+`sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`,
 the final canonical local refresh passed 53 conversations / 109 app-path turns,
 50/50 scored replies (81.16 average), 50 complete real-pipeline terminal traces,
 source freshness, and 22/22 static operational checks. The Swift readiness
-manifest and independent Python audit agree at 20/100 after the stale scoring
-contract was repaired. The normally signed simulator build succeeds; the light
-sweep produced five nonblank tab roots plus one largest-Dynamic-Type Settings
-capture, all at 1206×2622 and visually inspected. No dependency or Firebase
-Analytics was added.
+manifest and independent Python audit agree at 20/100. The fresh light sweep
+produced five nonblank tab roots plus one expanded Debug trace/export state,
+all at 1206×2622 and visually inspected. No dependency or Firebase Analytics
+was added.
 
 The source-bound launch evaluator remains **NO-GO at 20/100 (20-point cap)**.
 It correctly reports five external blockers: no current-source live-provider
@@ -123,6 +131,9 @@ operational launch checklist. Same-target real-speech retry, interactive
 VoiceOver and Reduce Motion inspection, the remaining accessibility extremes,
 app-wide dark-mode support, signed archive/upload, and those five external
 evidence artifacts remain required. The fresh serialized unit target is fully
-green at **4,545/4,545 passed, 0 failed, 0 skipped**; the transcript retry corpus
-is 20/20. Local scores and simulator screenshots do not close the external
-boundary.
+green at **4,549/4,549 passed, 0 failed, 0 skipped** in
+`/private/tmp/noum-vision-full-unit-final-pass2.xcresult`; the complete
+serialized UI target is green at **79/79 passed, 0 failed, 0 skipped** in
+`/private/tmp/noum-vision-full-ui-final-pass2.xcresult`; and the transcript
+retry corpus is 20/20. Local scores and simulator screenshots do not close the
+external boundary.

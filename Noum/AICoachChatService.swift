@@ -1457,6 +1457,25 @@ actor AICoachChatService {
                 return .reply("Your latest answer shows control, but the evidence is too thin to call the voice consistently authoritative. One rep does not yet show how you hold the answer under pressure or whether you can close cleanly more than once. Record a 75-second answer: give the verdict in sentence one, support it with one reason, then stop cleanly.")
             }
             if Self.uiHarnessFlagPresent(
+                "UI_TESTING_CHAT_FORCE_DELAYED_NOTICE",
+                arguments: launchArguments,
+                environment: launchEnvironment
+            ) {
+                // Keep one request pending long enough for the rendered UI
+                // suite to move the app through background → foreground. The
+                // result is still the existing typed network terminal; this
+                // adds no production-only outcome or alternate state owner.
+                do {
+                    try await Task.sleep(for: .seconds(4))
+                } catch {
+                    return .failure(.cancelled)
+                }
+                guard await providerWorkAllowed() else {
+                    return .failure(.unauthenticated)
+                }
+                return .failure(.network)
+            }
+            if Self.uiHarnessFlagPresent(
                 "UI_TESTING_CHAT_FORCE_NOTICE",
                 arguments: launchArguments,
                 environment: launchEnvironment

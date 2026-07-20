@@ -703,7 +703,13 @@ final class NoumUITests: XCTestCase {
     // a silent write or a refusal.
     @MainActor
     func testAskNoumGoalChangeSurfacesConfirmationCard() throws {
-        let app = launchSeededAt("noum://ask/type", extraArgs: ["UI_TESTING_CHAT_FORCE_GOAL_REPLY"])
+        let app = launchSeededAt(
+            "noum://ask/type",
+            extraArgs: [
+                "UI_TESTING_AUTHENTICATED_COACH",
+                "UI_TESTING_CHAT_FORCE_GOAL_REPLY",
+            ]
+        )
 
         // Land on the chat.
         let input = app.descendants(matching: .any)["askNoum.inputControl"]
@@ -761,7 +767,13 @@ final class NoumUITests: XCTestCase {
     /// authoritative, so a change request yields switch/blend storytelling chips.
     @MainActor
     func testNonCanonicalVoiceDescriptorSurfacesCard() throws {
-        let app = launchSeededAt("noum://ask/type", extraArgs: ["UI_TESTING_CHAT_FORCE_GOAL_REPLY"])
+        let app = launchSeededAt(
+            "noum://ask/type",
+            extraArgs: [
+                "UI_TESTING_AUTHENTICATED_COACH",
+                "UI_TESTING_CHAT_FORCE_GOAL_REPLY",
+            ]
+        )
 
         let input = app.descendants(matching: .any)["askNoum.inputControl"]
         XCTAssertTrue(input.waitForExistence(timeout: 10), "Ask Noum input control should exist")

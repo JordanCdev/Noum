@@ -259,6 +259,129 @@ struct ProductJourneyContractTests {
         #expect(malformedTrace.terminalStatusLabel == "trace error")
     }
 
+    @MainActor
+    @Test("Redacted support bundle joins only one trace and matching provider diagnostics")
+    func supportBundleIsContentFreeAndReplayable() throws {
+        let suiteName = "product-journey-support-bundle-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let log = FlowEventLog(defaults: defaults, storageKey: "events")
+        let traceID = UUID()
+        let otherTraceID = UUID()
+
+        log.log(FlowEvent.make(
+            createdAt: Date(timeIntervalSince1970: 10),
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: CoachTraceStage.accepted,
+            reason: "request accepted; token=must-not-leak"
+        ))
+        log.log(FlowEvent.make(
+            createdAt: Date(timeIntervalSince1970: 11),
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: CoachTraceStage.classified,
+            reason: "intent=coaching response=personal depth=groundedRead",
+            numerics: ["userCharacters": 3_000]
+        ))
+        log.log(FlowEvent.make(
+            createdAt: Date(timeIntervalSince1970: 12),
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: "chat.rawPrompt",
+            reason: "PRIVATE USER TURN MUST NOT EXPORT"
+        ))
+        log.log(FlowEvent.make(
+            createdAt: Date(timeIntervalSince1970: 12.6),
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: CoachTraceStage.persisted,
+            outcome: .failure,
+            reason: "terminal request state persisted"
+        ))
+        log.log(FlowEvent.make(
+            createdAt: Date(timeIntervalSince1970: 12.7),
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: CoachTraceStage.uiCommitted,
+            outcome: .failure,
+            reason: "retryable notice committed"
+        ))
+        log.log(FlowEvent.make(
+            createdAt: Date(timeIntervalSince1970: 13),
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: CoachTraceStage.terminal,
+            reason: CoachTraceTerminalState.retryableError.rawValue,
+            numerics: ["latencyMs": 3_250]
+        ))
+
+        let diagnostics = [
+            AICallDiagnosticRecord.make(
+                createdAt: Date(timeIntervalSince1970: 12.5),
+                surface: "Ask Noum chat",
+                provider: "Secure callable",
+                model: "coach-v1",
+                outcome: .failure,
+                reason: "Authorization: Bearer must-not-leak",
+                statusCode: 503,
+                latencyMs: 3_200,
+                correlationID: traceID,
+                inputTokens: 720,
+                outputTokens: 0
+            ),
+            AICallDiagnosticRecord.make(
+                surface: "Unrelated request",
+                provider: "Other provider",
+                model: nil,
+                outcome: .success,
+                reason: "UNRELATED DIAGNOSTIC MUST NOT EXPORT",
+                correlationID: otherTraceID
+            ),
+        ]
+
+        let output = try #require(log.exportCoachSupportBundle(
+            correlationId: traceID,
+            diagnostics: diagnostics,
+            appVersion: "2.4",
+            buildNumber: "208",
+            sourceGitCommit: "abcdef123456",
+            exportedAt: Date(timeIntervalSince1970: 20)
+        ))
+        let data = try #require(output.data(using: .utf8))
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let privacy = try #require(object["privacy"] as? [String: Any])
+        let trace = try #require(object["trace"] as? [String: Any])
+        let events = try #require(trace["events"] as? [[String: Any]])
+        let providerDiagnostics = try #require(object["providerDiagnostics"] as? [[String: Any]])
+        let reproduction = try #require(object["reproduction"] as? [String: Any])
+
+        #expect(object["schemaVersion"] as? String == CoachTraceSupportBundle.currentSchemaVersion)
+        #expect(privacy["contentFree"] as? Bool == true)
+        #expect(privacy["includesUserText"] as? Bool == false)
+        #expect(privacy["includesTranscript"] as? Bool == false)
+        #expect(privacy["includesPrompt"] as? Bool == false)
+        #expect(privacy["includesResponse"] as? Bool == false)
+        #expect(trace["traceID"] as? String == traceID.uuidString)
+        #expect(trace["terminalState"] as? String == CoachTraceTerminalState.retryableError.rawValue)
+        #expect(trace["terminalEventCount"] as? Int == 1)
+        #expect(events.map { $0["stage"] as? String } == [
+            CoachTraceStage.accepted,
+            CoachTraceStage.classified,
+            CoachTraceStage.persisted,
+            CoachTraceStage.uiCommitted,
+            CoachTraceStage.terminal,
+        ])
+        #expect(providerDiagnostics.count == 1)
+        #expect(providerDiagnostics.first?["statusCode"] as? Int == 503)
+        #expect(reproduction["command"] as? String == "./tools/coach-arena/run.sh trace-replay <bundle.json>")
+        #expect(reproduction["semanticFixtureRequired"] as? Bool == true)
+        #expect(!output.contains("must-not-leak"))
+        #expect(!output.contains("PRIVATE USER TURN"))
+        #expect(!output.contains("UNRELATED DIAGNOSTIC"))
+        #expect(output.contains("[redacted diagnostic reason]"))
+    }
+
     @Test("Every provider outcome maps to an explicit terminal state")
     func terminalStateContractIsExhaustive() {
         #expect(CoachReplyPipeline.terminalState(
