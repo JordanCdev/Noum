@@ -2,7 +2,9 @@
 
 Audit date: 2026-07-20
 
-Behavior source: `5f25e6a244a6531ee1dd994a913f64c4f62c5e2f`
+Behavior source: `a63085fb1eb79817530e375bd99a390b948de732`
+
+Evidence checkout: `a63085fb1eb79817530e375bd99a390b948de732`
 
 Coach-source fingerprint: `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`
 
@@ -124,9 +126,9 @@ performed with real speech on the candidate build and then reviewed by a human.
 
 | Requirement | Status | Evidence | Remaining gap |
 | --- | --- | --- | --- |
-| Clear hierarchy; no wall of cards | `PROVED LOCAL` | Fresh 1206×2622 Home, Train, Review, Profile, Settings, and expanded Debug captures were visually inspected. |
-| Snapshot evidence for key states | `PROVED LOCAL` | `.screenshots/2026-07-20_trace-support-bundle/HANDOFF.md` records the current light sweep; the PNGs remain local evidence by design. |
-| Largest Dynamic Type | `PARTIAL` | A prior current-branch sweep found and fixed collapsed Settings picker rows; focused UI fixtures exercise accessibility-size surfaces. | Complete 14-surface physical matrix is not run on this source. |
+| Clear hierarchy; no wall of cards | `PROVED LOCAL` | Fresh 1206×2622 Home, Train, Review, Profile, Settings, and contextual Ask captures were visually inspected after the contrast and tab-clearance pass; the Debug viewer has its own earlier inspected capture. | Longitudinal comprehension and usefulness remain user/outcome questions. |
+| Snapshot evidence for key states | `PROVED LOCAL` | `.screenshots/2026-07-20_accessibility-journey-final/HANDOFF.md` records the source-bound five-root plus contextual-Ask sweep; `.screenshots/2026-07-20_trace-support-bundle/HANDOFF.md` records the expanded Debug state. The PNGs remain local evidence by design. | Light mode does not emit dedicated PNGs for the scrolled ladder or Debug state on every run; the rendered UI gate owns those states. |
+| Largest Dynamic Type | `PROVED LOCAL` | Fifteen high-risk journey interactions pass at Accessibility XXXL. Eight native rendered audits cover Home, Train, Review, Progress, the scrolled Progress story, Settings, contextual Ask, and the transcript ladder; one focused test verifies Debug trace actions; three companion unit tests resolve the exact production color tokens/surfaces. All 12 checks pass in one result bundle. | The complete 14-surface physical matrix and interactive assistive-technology operation remain external device QA. |
 | VoiceOver | `PARTIAL` | Important actions expose labels/traits/identifiers and rendered accessibility-tree assertions exist. | Interactive focus order, announcements, rotor behavior, and task completion require a device/operator. |
 | Reduce Motion | `PARTIAL` | Core practice/live/social/celebration surfaces read `accessibilityReduceMotion` and disable/reduce repeated animation. | Same-build interactive inspection across the required surface matrix. |
 | Dark appearance | `PARTIAL` | The app root deliberately forces light appearance; a dark-system launch was inspected and remained legible in the supported light presentation. | Decide whether light-only is the shipped product boundary or implement and verify full dark mode after M14. Do not claim dark-mode support today. |
@@ -176,26 +178,31 @@ explicit instruction to stop adding features and start shipping.
 ## Evidence inventory
 
 - Canonical app-path report: `tools/coach-arena/reports/app-path/latest.json`
-  generated 2026-07-20T09:16:58Z; 53 conversations / 109 turns, 50 fixtures,
+  generated 2026-07-20T13:15:18Z; 53 conversations / 109 turns, 50 fixtures,
   81.16 average, zero failures, 50 complete traces, source freshness passed.
 - Canonical dump: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`.
-- Product journey suite: 13/13 in
-  `/private/tmp/noum-vision-closure-trace-derived/Logs/Test/Test-Noum-2026.07.20_09-11-01-+0100.xcresult`.
-- Complete serialized unit target: 4,546/4,546 passed with zero failures or
-  skips in `/private/tmp/noum-vision-closure-all-units-final.xcresult`.
-- Rendered Ask Noum reliability flow: 10/10, including one delayed accepted
-  request across background/foreground, in
-  `/private/tmp/noum-vision-closure-chat-flow-final.xcresult`.
+- Product journey suite: 13/13 within the complete serialized unit result.
+- Complete serialized unit target: 4,549/4,549 passed with zero failures or
+  skips in `/private/tmp/noum-vision-full-unit-final.xcresult`.
+- Accessibility XXXL and request regression matrix: 25/25 passed in
+  `/private/tmp/noum-vision-journey-chat-regression-final.xcresult`; this is 15
+  high-risk journey/failure interactions plus all 10 Ask Noum reliability flows,
+  including one delayed accepted request across background/foreground.
+- Expanded accessibility gate: 12/12 passed in
+  `/private/tmp/noum-vision-core-a11y-final-pass4.xcresult`; this comprises eight
+  native rendered state audits, the focused Debug action state, and three
+  production color-token/surface tests.
 - Rendered trace support flow: 1/1 in
   `/private/tmp/noum-trace-support-focus.xcresult`.
 - Coach Arena: 167/167 Python and 118/118 Node tests passed, with one intentional
   Node skip.
 - Transcript retry corpus: 20/20.
-- Current screenshot handoff:
+- Current screenshot handoffs:
+  `.screenshots/2026-07-20_accessibility-journey-final/HANDOFF.md`,
+  `.screenshots/2026-07-20_accessibility-journey-hardening/HANDOFF.md` and
   `.screenshots/2026-07-20_trace-support-bundle/HANDOFF.md`.
-- Exact-source Release simulator app and its Messages/Widget extensions passed
-  strict signature verification at
-  `/private/tmp/noum-vision-closure-release-derived/Build/Products/Release-iphonesimulator/Noum.app`.
+- Current-source Release simulator app passed strict signature verification at
+  `/private/tmp/noum-vision-home-a11y-fix-derived/Build/Products/Release-iphonesimulator/Noum.app`.
 
 These artifacts prove the stated local contracts only. They do not replace any
 of the five independent production artifacts.
