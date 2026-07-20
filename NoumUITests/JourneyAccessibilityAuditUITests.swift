@@ -236,13 +236,24 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
                 || (ignoresBottomBoundaryContrast
                     && self.handlesPartiallyEnteringBottomCard(issue, in: app))
         }
-        do {
-            try app.performAccessibilityAudit(for: auditTypes, issueHandler)
-        } catch let error as NSError
-            where error.domain == "com.apple.xcode.xctest.accessibilityAudit"
-                && error.code == -56 {
-            XCTContext.runActivity(named: "Retrying one native audit timeout") { _ in }
-            try app.performAccessibilityAudit(for: auditTypes, issueHandler)
+        // Xcode's simulator audit service can time out after a long serialized
+        // UI soak even when the same rendered state passes in isolation. Retry
+        // only that infrastructure error, with a hard bound. Real audit issues
+        // and every other error still fail immediately.
+        var remainingTimeoutRetries = 2
+        while true {
+            do {
+                try app.performAccessibilityAudit(for: auditTypes, issueHandler)
+                return
+            } catch let error as NSError
+                where error.domain == "com.apple.xcode.xctest.accessibilityAudit"
+                    && error.code == -56
+                    && remainingTimeoutRetries > 0 {
+                remainingTimeoutRetries -= 1
+                XCTContext.runActivity(
+                    named: "Retrying native audit timeout (\(remainingTimeoutRetries) retries remain)"
+                ) { _ in }
+            }
         }
     }
 

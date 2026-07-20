@@ -195,6 +195,17 @@ enum DevSeedData {
     static func injectForwardPlanPhraseForUITesting() {
         let planStore = ForwardPlanStore.shared
         let phraseBank = PhraseBankStore.shared
+
+        // Ordinary UI-test launches deliberately skip credential restoration
+        // so they cannot disturb the user's real session. That also means the
+        // account registry has no hydration transition on which to reload a
+        // lazily-created fixture owner. Scope both existing owners explicitly
+        // before installing the joined plan/phrase fixture; otherwise
+        // `replaceForDebug` correctly rejects the write because the plan store
+        // still has `loadedAccountScope == nil`.
+        planStore.reloadForCurrentAccount()
+        phraseBank.reloadForCurrentAccount()
+
         let plan = ForwardPlanService.deterministicPlan(
             input: ForwardPlanCoordinator.buildInput()
         )
