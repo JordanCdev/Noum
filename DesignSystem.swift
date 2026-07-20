@@ -479,14 +479,16 @@ struct ReadingScreenScaffold<Content: View>: View {
                 .frame(maxWidth: 680, alignment: .leading)
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.sm)
-                .padding(.bottom, bottomClearance)
+                // Keep clearance inside the scroll content. Padding the
+                // ScrollView itself shrinks its viewport and leaves a dead
+                // strip above the floating tab bar, which can visibly clip a
+                // card halfway through the screen.
+                .padding(
+                    .bottom,
+                    bottomClearance + (isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
+                )
                 .frame(maxWidth: .infinity)
             }
-            // iOS's floating tab bar intentionally lets scroll content travel
-            // beneath its glass. Reduce the physical scroll viewport at tab
-            // roots so partially visible coaching copy is never rendered
-            // through navigation controls.
-            .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         }
     }
 }

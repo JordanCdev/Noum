@@ -93,9 +93,11 @@ struct BigMomentIntakeView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Skip for now") {
+                    Button("Not now") {
                         onSkip?()
                         dismiss()
                     }
@@ -208,7 +210,13 @@ struct BigMomentIntakeView: View {
 
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            sectionLabel("Name it")
+            HStack(alignment: .firstTextBaseline) {
+                sectionLabel("Name it")
+                Spacer(minLength: Spacing.sm)
+                Text("Required")
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+            }
             TextField("What's coming up?", text: $title, axis: .vertical)
                 .font(Typography.subheadline)
                 .focused($titleFieldFocused)
@@ -226,6 +234,13 @@ struct BigMomentIntakeView: View {
                 )
                 .lineLimit(2...4)
                 .accessibilityIdentifier("bigMoment.intake.title")
+
+            if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Give this moment a short name to save it.")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityIdentifier("bigMoment.intake.titleGuidance")
+            }
         }
     }
 
@@ -233,7 +248,15 @@ struct BigMomentIntakeView: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             sectionLabel("When is it?")
 
-            Toggle(isOn: includeDateBinding) {
+            Button {
+                if reduceMotion {
+                    includeDate.toggle()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        includeDate.toggle()
+                    }
+                }
+            } label: {
                 HStack(spacing: Spacing.sm) {
                     // Quiet slate chip — the date is supporting detail, not
                     // a concept of its own (grey-chip register from the
@@ -248,12 +271,26 @@ struct BigMomentIntakeView: View {
                         )
                         .accessibilityHidden(true)
 
-                    Text("Add a date")
-                        .font(Typography.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.textPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(includeDate ? "Date added" : "Add a date")
+                            .font(Typography.subheadline.weight(.semibold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        if includeDate {
+                            Text(selectedDate.formatted(date: .abbreviated, time: .omitted))
+                                .font(Typography.caption)
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
+                    }
+
+                    Spacer(minLength: Spacing.xs)
+
+                    Image(systemName: includeDate ? "minus.circle" : "plus.circle")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .accessibilityHidden(true)
                 }
             }
-            .tint(AppColor.brandBlue)
+            .buttonStyle(.plain)
             .padding(.horizontal, Spacing.sm)
             .padding(.vertical, Spacing.xs + 2)
             .background(
@@ -286,12 +323,6 @@ struct BigMomentIntakeView: View {
                 .accessibilityIdentifier("bigMoment.intake.date")
             }
         }
-    }
-
-    /// Date-toggle binding — animated reveal of the calendar only when the
-    /// user hasn't asked for reduced motion.
-    private var includeDateBinding: Binding<Bool> {
-        reduceMotion ? $includeDate : $includeDate.animation(.easeInOut(duration: 0.2))
     }
 
     private func sectionLabel(_ text: String) -> some View {

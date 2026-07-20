@@ -192,11 +192,20 @@ struct SettingsView: View {
                 Section {
                     advancedDisclosure
                 }
+
+                if isAppTabRoot {
+                    Section {
+                        Color.clear
+                            .frame(height: Spacing.tabRootNavigationClearance)
+                            .accessibilityHidden(true)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
             }
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
             .scrollContentBackground(.hidden)
-            .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         }
         .navigationTitle(isAppTabRoot ? "Settings" : "")
         .navigationBarTitleDisplayMode(.inline)

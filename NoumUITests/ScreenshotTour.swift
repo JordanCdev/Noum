@@ -339,6 +339,18 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
+    func testCaptureBigMomentIntakeOnly() throws {
+        let app = launchSeededAt("noum://bigmoment")
+        XCTAssertTrue(app.descendants(matching: .any)["bigMoment.intake.title"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1.0)
+        attach(app, name: "big-moment-intake-top")
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.6)
+        attach(app, name: "big-moment-intake-bottom")
+        app.terminate()
+    }
+
+    @MainActor
     func testCaptureSuddenDeathResults() throws {
         captureSuddenDeathResult(
             launchArgument: "UI_TESTING_SUDDEN_DEATH_RESULT_FILLER",

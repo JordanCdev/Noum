@@ -999,6 +999,24 @@ struct ProfileCoachBriefPresentation: Equatable {
         proof: ProofMomentRecord? = nil,
         now: Date = Date()
     ) -> ProfileCoachBriefPresentation {
+        // The durable intervention is the coach's active promise to the user.
+        // Keep Profile aligned with Home/Train by letting it outrank a generic
+        // trend focus; otherwise the card can name fillers while prescribing a
+        // structure drill in the very next line.
+        if let intervention = memory?.activeIntervention {
+            let focus = bounded(intervention.focus)
+                ?? bounded(intervention.target)
+                ?? intervention.title
+            let target = bounded(intervention.target)
+                ?? bounded(intervention.focus)
+                ?? intervention.title
+            return ProfileCoachBriefPresentation(
+                observation: "Your current plan is working on \(sentenceFragment(focus)).",
+                nextMove: "\(intervention.mode.displayLabel): \(sentenceFragment(target)).",
+                evidenceCaption: evidenceCaption(for: max(0, memory?.evidenceCount ?? sessionCount))
+            )
+        }
+
         if let currentFocus = CurrentCoachingFocusPresentation.make(
             trends: trends,
             sessionCount: sessionCount
@@ -1064,6 +1082,17 @@ struct ProfileCoachBriefPresentation: Equatable {
             .replacingOccurrences(of: "proof point", with: "concrete example", options: .caseInsensitive)
     }
 
+    private static func sentenceFragment(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+    }
+
+    private static func bounded(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private static func startingPointObservation(for evidenceCount: Int) -> String {
         evidenceCount == 1
             ? "Your first rep gives Noum a starting point."
@@ -1078,7 +1107,8 @@ struct ProfileRatingHeroPresentation: Equatable {
     static func make(rating: SpeakingRating) -> ProfileRatingHeroPresentation {
         let directionLine: String
         if rating.ratingHistory.count < 3 {
-            directionLine = "Your rated baseline is forming."
+            let remaining = max(1, 3 - rating.ratingHistory.count)
+            directionLine = "Baseline forming — \(remaining) more rated rep\(remaining == 1 ? "" : "s") will show a direction."
         } else {
             switch rating.currentTrend {
             case .improving:
@@ -1115,19 +1145,18 @@ struct ProfileCoachLoopReadinessContent: Equatable {
 
         let title: String
         if earned.isEmpty {
-            title = "The coaching loop is forming"
+            title = "Noum is still learning what helps you"
         } else {
-            let noun = earned.count == 1 ? "stage has" : "stages have"
-            title = "\(earned.count) coaching \(noun) solid evidence"
+            title = "Your plan is grounded in \(earned.count) kind\(earned.count == 1 ? "" : "s") of evidence"
         }
 
-        let detail = stageLine(prefix: "Solid", stages: earned)
-            ?? stageLine(prefix: "Forming", stages: forming)
+        let detail = stageLine(prefix: "Strong so far", stages: earned)
+            ?? stageLine(prefix: "Still learning", stages: forming)
             ?? "Noum is still gathering evidence from your reps and check-ins."
 
         let next = coachingStages.first { $0.status == .thin }
             ?? coachingStages.first { $0.status == .forming }
-        let nextTitle = next.map { "Next evidence: \($0.stage.title)" }
+        let nextTitle = next.map { "Next to strengthen: \(userFacingName(for: $0.stage))" }
         let nextDetail = next?.basis
 
         return ProfileCoachLoopReadinessContent(
@@ -1135,15 +1164,36 @@ struct ProfileCoachLoopReadinessContent: Equatable {
             detail: detail,
             nextTitle: nextTitle,
             nextDetail: nextDetail,
-            validationLine: "Validation stays open outside the app; real-world outcomes over time decide whether the coaching is working."
+            validationLine: "Real-world check-ins will show whether this coaching is helping outside the app."
         )
     }
 
     private static func stageLine(prefix: String, stages: [CoachParityReadiness.StageRead]) -> String? {
         guard !stages.isEmpty else { return nil }
-        let names = stages.map(\.stage.title).prefix(3).joined(separator: ", ")
-        let suffix = stages.count > 3 ? " +\(stages.count - 3) more" : ""
-        return "\(prefix): \(names)\(suffix)."
+        let names = stages.map { userFacingName(for: $0.stage) }
+        return "\(prefix): \(naturalList(names))."
+    }
+
+    private static func userFacingName(for stage: CoachParityReadiness.Stage) -> String {
+        switch stage {
+        case .diagnosis: return "your baseline"
+        case .formulation: return "the pattern behind your reps"
+        case .prescription: return "the exercise choice"
+        case .observation: return "how you responded"
+        case .adaptation: return "what to adjust next"
+        case .transfer: return "what carries into real conversations"
+        case .validation: return "real-world results"
+        }
+    }
+
+    private static func naturalList(_ values: [String]) -> String {
+        switch values.count {
+        case 0: return ""
+        case 1: return values[0]
+        case 2: return values.joined(separator: " and ")
+        default:
+            return values.dropLast().joined(separator: ", ") + ", and " + values.last!
+        }
     }
 }
 
@@ -1531,7 +1581,8 @@ struct ProfileView: View {
 
     private var profileLibraryPresentation: ProfileLibraryPresentation {
         ProfileLibraryPresentation.make(
-            showsPeerComparison: peerComparisonVisibility.showsProfileEntry,
+            showsPeerComparison: SocialReleaseCapabilities.peerProgress.isAvailable
+                && peerComparisonVisibility.showsProfileEntry,
             isPremium: premium.isPremium
         )
     }
@@ -1557,9 +1608,11 @@ struct ProfileView: View {
             }
             .padding(.horizontal, Spacing.screenH)
             .padding(.top, Spacing.sm)
-            .padding(.bottom, Spacing.lg)
+            .padding(
+                .bottom,
+                Spacing.lg + (isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
+            )
         }
-        .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         .task {
             bigMomentStore.archiveExpiredIfNeeded()
             await challenges.refreshFromBackend()
@@ -1869,6 +1922,9 @@ struct ProfileView: View {
                 .background(AppColor.screenBackground.ignoresSafeArea())
                 .navigationTitle("Coaching evidence")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .tabBar)
+                .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
             } label: {
                 profileLibraryRowLabel(
                     title: "Coaching evidence",
@@ -3157,7 +3213,8 @@ struct ProfileView: View {
             // and summary bridge; the link is restrained on purpose
             // (no card, no glyph) so it reads as a quiet handoff, not
             // a second hero competing with the goal ring above.
-            if coachingProfileStore.profile != nil {
+            if coachingProfileStore.profile != nil,
+               case .hidden = coachingPlanState {
                 askNoumProfileLink
             }
         }
@@ -3175,7 +3232,7 @@ struct ProfileView: View {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
                         .font(Typography.caption.weight(.bold))
                         .foregroundStyle(AppColor.pro)
-                    Text("Coach loop")
+                    Text("How your plan is learning")
                         .font(Typography.micro.weight(.bold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -3279,12 +3336,7 @@ struct ProfileView: View {
     ///   • `.live` → just open Ask Noum (the program is already in the
     ///     thread; the user is navigating back to it).
     private var coachingPlanCard: some View {
-        let state = CoachingPlanCardVisibility.resolve(
-            plan: forwardPlanStore.activePlan,
-            profile: coachingProfileStore.profile,
-            sessions: progressEligibleSessions,
-            activeBigMomentID: bigMomentStore.activeMoment?.id
-        )
+        let state = coachingPlanState
         return CoachingPlanCard(
             state: state,
             voice: coachingProfileStore.profile?.chosenStyleGoal,
@@ -3308,6 +3360,15 @@ struct ProfileView: View {
                     openURL(url)
                 }
             }
+        )
+    }
+
+    private var coachingPlanState: CoachingPlanCardState {
+        CoachingPlanCardVisibility.resolve(
+            plan: forwardPlanStore.activePlan,
+            profile: coachingProfileStore.profile,
+            sessions: progressEligibleSessions,
+            activeBigMomentID: bigMomentStore.activeMoment?.id
         )
     }
 

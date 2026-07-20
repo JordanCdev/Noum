@@ -10,6 +10,16 @@ enum PathLandscapeSizing {
         1.0 + max(0, min(1, depthInField)) * 0.58
     }
 }
+
+/// Keeps the visible habit summary internally coherent when persisted streak
+/// state is temporarily ahead of the eligible-session ledger (for example
+/// after a fixture restore or an account transition). A rhythm cannot be
+/// presented without at least one visible practice day.
+enum PathConsistencyPresentation {
+    static func displayedStreak(practicedDays: Int, rawStreak: Int) -> Int {
+        practicedDays > 0 ? max(0, rawStreak) : 0
+    }
+}
 #endif
 
 #if canImport(SwiftUI)
@@ -92,6 +102,13 @@ struct PathJourneyView: View {
     private var practicedToday: Bool {
         let calendar = Calendar.current
         return sessionStore.progressEligibleSessions.contains { calendar.isDateInToday($0.date) }
+    }
+
+    private var displayedStreak: Int {
+        PathConsistencyPresentation.displayedStreak(
+            practicedDays: snapshot.practicedDays,
+            rawStreak: snapshot.streak
+        )
     }
 
     /// Whole days since the most recent rep; nil when the user has never
@@ -201,6 +218,8 @@ struct PathJourneyView: View {
             DeferredProfileCaptureSheet(prompt: .whyNow)
         }
         .accessibilityIdentifier("journey.screen")
+        .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task {
             daylightModel.activate()
         }
@@ -365,8 +384,8 @@ struct PathJourneyView: View {
 
     private var consistencyAccessibilityLabel: String {
         let practiced = "\(snapshot.practicedDays) of the last 21 days practiced."
-        guard snapshot.streak > 0 else { return practiced }
-        return "\(practiced) Current rhythm: \(snapshot.streak) days."
+        guard displayedStreak > 0 else { return practiced }
+        return "\(practiced) Current rhythm: \(displayedStreak) days."
     }
 
     private var practiceDayCount: some View {
@@ -374,7 +393,7 @@ struct PathJourneyView: View {
             Text("\(snapshot.practicedDays)")
                 .font(Typography.figtreeNumeric(size: 32, relativeTo: .title2))
                 .foregroundStyle(.primary)
-            Text("of 21 recent days")
+            Text("of the last 21 days")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -383,11 +402,11 @@ struct PathJourneyView: View {
 
     @ViewBuilder
     private var pathStreakChip: some View {
-        if snapshot.streak > 0 {
+        if displayedStreak > 0 {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
                     .font(.system(size: 13, weight: .semibold))
-                Text("\(snapshot.streak)-day rhythm")
+                Text("\(displayedStreak)-day rhythm")
                     .font(Typography.caption.weight(.semibold))
             }
             .foregroundStyle(.secondary)
@@ -414,16 +433,21 @@ struct PathJourneyView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("journey.today")
         } else {
-            NavigationLink(value: AppDestination.practiceSelection) {
+            let current = pathProgress.statuses.first(where: { !$0.isComplete })
+            let destination = current?.node.actionDestination ?? AppDestination.practiceSelection
+            let title = current?.node.actionLabel ?? "Start today's rep"
+            let subtitle = current.map { "Build toward \($0.node.title)." } ?? "About two minutes."
+
+            NavigationLink(value: destination) {
                 HStack(spacing: 10) {
                     Image(systemName: "figure.walk")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Start today's rep")
+                        Text(title)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
-                        Text("About two minutes.")
+                        Text(subtitle)
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.78))
                     }
@@ -550,7 +574,7 @@ struct PathJourneyView: View {
                             .font(Typography.headline)
                             .foregroundStyle(AppColor.brandBlue.opacity(0.85))
                         Spacer()
-                        Text("\(completedCount) of \(statuses.count) reached")
+                        Text("\(completedCount) / \(statuses.count) landmarks")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }

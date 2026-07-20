@@ -9118,9 +9118,9 @@ struct ProfileCollapseContractTests {
             return
         }
 
-        #expect(content.title.contains("coaching"))
-        #expect(content.detail.contains("Solid: Diagnosis"))
-        #expect(content.nextTitle?.contains("Next evidence") == true)
+        #expect(content.title.contains("evidence"))
+        #expect(content.detail.contains("Strong so far: your baseline"))
+        #expect(content.nextTitle?.contains("Next to strengthen") == true)
         #expect(content.validationLine.localizedCaseInsensitiveContains("outside the app"))
         let joined = [
             content.title,
@@ -9149,7 +9149,7 @@ struct ProfileCollapseContractTests {
         }
 
         #expect(!content.detail.contains("Validation"))
-        #expect(content.validationLine.localizedCaseInsensitiveContains("stays open"))
+        #expect(content.validationLine.localizedCaseInsensitiveContains("real-world check-ins"))
     }
 
     @Test func transferStatusPendingOutcomeBeatsActivePrep() {

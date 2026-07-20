@@ -14,6 +14,9 @@ import SwiftUI
 enum SummaryInterstitial: Hashable, CaseIterable {
     case personalBest
     case skillProgress
+    // Retained as decoded/test fixture identities, but no longer selected for
+    // production presentation. Practice volume and achievement progress now
+    // render as one compact receipt inside Results.
     case achievementProgress
     case practiceVolume
 }
@@ -24,8 +27,6 @@ struct SummaryInterstitialPolicy {
     static let priority: [SummaryInterstitial] = [
         .personalBest,
         .skillProgress,
-        .achievementProgress,
-        .practiceVolume,
     ]
 
     static func select(
@@ -36,11 +37,13 @@ struct SummaryInterstitialPolicy {
         hasPracticeVolumeLevel: Bool
     ) -> SummaryInterstitial? {
         guard completedRepCount > 1 else { return nil }
+        // These events are still persisted and presented, but inline on the
+        // summary so they never add a second mandatory screen before coaching.
+        _ = hasAchievementProgress
+        _ = hasPracticeVolumeLevel
         var available: Set<SummaryInterstitial> = []
         if hasPersonalBest { available.insert(.personalBest) }
         if hasSkillProgress { available.insert(.skillProgress) }
-        if hasAchievementProgress { available.insert(.achievementProgress) }
-        if hasPracticeVolumeLevel { available.insert(.practiceVolume) }
         return priority.first(where: available.contains)
     }
 }
@@ -952,13 +955,16 @@ struct SummaryView: View {
                 case .personalBest:
                     if let milestone = personalBestMilestone {
                         personalBestCelebration(milestone: milestone)
-                            .transition(reduceMotion ? .identity : .opacity)
+                            // Full-screen backgrounds must be opaque from frame
+                            // one. Fading the entire view over the light summary
+                            // creates a washed-out, disabled-looking frame.
+                            .transition(.identity)
                     }
                 case .skillProgress:
                     PreSummaryCelebration(events: preSummaryEvents) {
                         finishInterstitial()
                     }
-                    .transition(reduceMotion ? .identity : .opacity)
+                    .transition(.identity)
                 case .achievementProgress:
                     PostSessionProgressionView(
                         xpEarned: earnedXPForPresentation,
@@ -970,7 +976,7 @@ struct SummaryView: View {
                         newUnlocks: progressionNewUnlocks,
                         onContinue: finishInterstitial
                     )
-                    .transition(reduceMotion ? .identity : .opacity)
+                    .transition(.identity)
                 case .practiceVolume:
                     LevelUpCelebrationScreen(
                         newLevel: PracticeVolumeNarration.title(forXP: profile.xp),
@@ -979,7 +985,7 @@ struct SummaryView: View {
                         xpProgress: progress,
                         onContinue: finishInterstitial
                     )
-                    .transition(reduceMotion ? .identity : .opacity)
+                    .transition(.identity)
                 }
             } else {
                 // Normal summary content — redesigned hierarchy
@@ -1024,6 +1030,7 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
+                            postRepProgressReceipt.cardEntrance(2)
                             transcriptRetryComparisonSection.cardEntrance(2)
                             rewriteSection.cardEntrance(3)
                             reviewExperimentActionCard
@@ -1092,6 +1099,7 @@ struct SummaryView: View {
                                 }
                             )
                             .cardEntrance(1)
+                            postRepProgressReceipt.cardEntrance(2)
                             transcriptRetryComparisonSection.cardEntrance(2)
                             rewriteSection.cardEntrance(3)
                             reviewExperimentActionCard
@@ -1306,6 +1314,65 @@ struct SummaryView: View {
     }
 
     // MARK: - Expandable Details Section
+
+    /// One non-blocking receipt for volume and unlocks. Speaking evidence and
+    /// the coach's next move remain above it; progression never owns another
+    /// full-screen tap before the user can read their result.
+    @ViewBuilder
+    private var postRepProgressReceipt: some View {
+        if progressionReachedNewPracticeLevel || !progressionNewUnlocks.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Progress from this rep")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .textCase(.uppercase)
+                    .tracking(0.7)
+
+                if progressionReachedNewPracticeLevel {
+                    Label(
+                        "Reached \(PracticeVolumeNarration.title(forXP: profile.xp))",
+                        systemImage: "waveform.path"
+                    )
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                }
+
+                ForEach(Array(progressionNewUnlocks.prefix(2)), id: \.id) { tier in
+                    Label("\(tier.title) unlocked", systemImage: "checkmark.seal.fill")
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                }
+
+                if let credit = PracticeVolumeNarration.verdictCreditLine(
+                    xpEarned: earnedXPForPresentation,
+                    eloquenceBonus: currentRepIsProgressEligible
+                        ? EloquenceXP.totalXP(for: eloquenceFindings)
+                        : 0
+                ) {
+                    Text(credit)
+                        .font(Typography.caption.monospacedDigit())
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AppColor.brandBlue.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("summary.progressReceipt")
+        }
+    }
+
+    private var progressionReachedNewPracticeLevel: Bool {
+        PracticeVolumeNarration.level(forXP: profile.xp)
+            > PracticeVolumeNarration.level(forXP: progressionPreviousXP)
+    }
 
     private var expandableDetailsSection: some View {
         VStack(spacing: 12) {

@@ -26,12 +26,17 @@ struct PersonalBestCelebrationScreen: View {
 
     var body: some View {
         ZStack {
-            // Background gradient
+            // Keep the base fully opaque. A partially transparent color used
+            // directly inside a gradient composites against the hosting
+            // screen's light background and washes the whole celebration out.
+            Color.black
+                .ignoresSafeArea()
+
             LinearGradient(
                 colors: [
-                    Color.black,
+                    Color.clear,
                     scoreAccent.opacity(0.15),
-                    Color.black
+                    Color.clear
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -100,14 +105,14 @@ struct PersonalBestCelebrationScreen: View {
 
                     Text(modeName)
                         .font(Typography.cardTitle)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.88))
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 || reduceMotion ? 0 : 10)
 
                     if let previousBest {
                         Text(previousBest)
                             .font(Typography.subheadline)
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(.white.opacity(0.72))
                             .opacity(phase2 ? 1 : 0)
                             .padding(.top, 4)
                     }
@@ -124,7 +129,7 @@ struct PersonalBestCelebrationScreen: View {
                                 .padding(.horizontal, 24)
                             Text(proof.technique.uppercased())
                                 .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
-                                .foregroundStyle(.white.opacity(0.55))
+                                .foregroundStyle(.white.opacity(0.72))
                         }
                         .opacity(phase2 ? 1 : 0)
                         .padding(.top, 20)
@@ -137,9 +142,9 @@ struct PersonalBestCelebrationScreen: View {
                 Button {
                     onContinue()
                 } label: {
-                    Text("View Results")
+                    Text("See coaching read")
                         .font(Typography.headline)
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(scoreAccent, in: Capsule())
@@ -152,6 +157,7 @@ struct PersonalBestCelebrationScreen: View {
             }
         }
         .onAppear { runAnimation() }
+        .preferredColorScheme(.dark)
     }
 
     private func runAnimation() {
@@ -267,12 +273,16 @@ struct LevelUpCelebrationScreen: View {
 
     var body: some View {
         ZStack {
-            // Background
+            // The tint is an overlay on an opaque dark base; keeping an alpha
+            // color as a gradient stop alone reveals the light host beneath.
+            Color.black
+                .ignoresSafeArea()
+
             LinearGradient(
                 colors: [
-                    Color.black,
+                    Color.clear,
                     levelTint.opacity(0.12),
-                    Color.black
+                    Color.clear
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -340,13 +350,13 @@ struct LevelUpCelebrationScreen: View {
 
                     Text("Previously: \(previousLevel)")
                         .font(Typography.subheadline)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.white.opacity(0.72))
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 || reduceMotion ? 0 : 10)
 
                     Text(PracticeVolumeNarration.levelUpDetail(forXP: xp))
                         .font(Typography.captionSmall)
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(.white.opacity(0.68))
                         .multilineTextAlignment(.center)
                         .opacity(phase2 ? 1 : 0)
                         .padding(.top, 4)
@@ -359,9 +369,9 @@ struct LevelUpCelebrationScreen: View {
                 Button {
                     onContinue()
                 } label: {
-                    Text("View Results")
+                    Text("See coaching read")
                         .font(Typography.headline)
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(levelTint, in: Capsule())
@@ -374,6 +384,7 @@ struct LevelUpCelebrationScreen: View {
             }
         }
         .onAppear { runLevelUpAnimation() }
+        .preferredColorScheme(.dark)
     }
 
     private func runLevelUpAnimation() {

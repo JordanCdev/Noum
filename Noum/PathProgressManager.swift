@@ -326,11 +326,13 @@ enum GatingPhrase {
         switch criterion {
         case .sessionCountAtLeast(let n):
             let remaining = max(0, n - input.sessionCount)
-            return remaining == 0 ? readyLine : "\(repsRemaining(remaining)) from unlocked."
+            return remaining == 0 ? readyLine : "Complete \(moreReps(remaining)) to unlock."
         case .modeSessionAtLeast(let mode, let n):
             let count = input.progressEligibleSessions.filter { $0.mode == mode }.count
             let remaining = max(0, n - count)
-            return remaining == 0 ? readyLine : "\(repsRemaining(remaining)) in \(modeName(mode)) from unlocked."
+            return remaining == 0
+                ? readyLine
+                : "Complete \(counted(remaining, singular: "rep", plural: "reps")) in \(modeName(mode)) to unlock."
         case .scoreAtLeast(let target):
             let scored = input.progressEligibleSessions.compactMap(\.score)
             let best = scored.max() ?? 0
@@ -340,14 +342,16 @@ enum GatingPhrase {
             }
             return "Best so far is \(best)/10. \(target)/10 unlocks it."
         case .zeroFillerSession:
-            return "One zero-filler rep (\(quantityFloorLabel)) from unlocked."
+            return "Complete 1 zero-filler rep (\(quantityFloorLabel)) to unlock."
         case .streakAtLeast(let n):
             let remaining = max(0, n - input.currentStreak)
-            return remaining == 0 ? readyLine : "\(daysRemaining(remaining)) of streak from unlocked."
+            return remaining == 0
+                ? readyLine
+                : "Practice on \(counted(remaining, singular: "more day", plural: "more days")) to unlock."
         case .ratingAtLeast(let target):
             let peak = input.rating.peakRating
             if peak >= target { return readyLine }
-            return "+\(target - peak) rating from unlocked."
+            return "Reach a \(target) rating to unlock. Your best is \(peak)."
         case .pressureSurvived(let rounds):
             return "Survive into round \(rounds) of a Pressure Drill rep to unlock."
         case .modeMasteryLevel(let mode, let level):
@@ -360,7 +364,9 @@ enum GatingPhrase {
             return "Reach mastery \(level) in any mode. Your best is \(best)."
         case .distinctPracticeDays(let n):
             let remaining = max(0, n - input.distinctPracticeDayCount)
-            return remaining == 0 ? readyLine : "\(daysRemaining(remaining)) of practice from unlocked."
+            return remaining == 0
+                ? readyLine
+                : "Practice on \(counted(remaining, singular: "more day", plural: "more days")) to unlock."
         case .cleanRunsInWindow(let count, let minScore):
             let qualifying = input.quantityQualifiedZeroFillerCountLast7Days(
                 minimumScore: minScore
@@ -368,12 +374,12 @@ enum GatingPhrase {
             let remaining = max(0, count - qualifying)
             if remaining == 0 { return readyLine }
             let unit = remaining == 1 ? "clean rep" : "clean reps"
-            return "\(remaining) more full \(unit) (\(quantityFloorLabel), \(minScore)/10+) in seven days from unlocked."
+            return "Complete \(remaining) more full \(unit) (\(quantityFloorLabel), \(minScore)/10+) within 7 days to unlock."
         case .totalLessonPasses(let target):
             let remaining = max(0, target - input.totalLessonPasses)
             if remaining == 0 { return readyLine }
             let unit = remaining == 1 ? "practice pass" : "practice passes"
-            return "\(remaining) more lesson \(unit) from unlocked."
+            return "Complete \(remaining) more lesson \(unit) to unlock."
         case .anyLessonMastered:
             let passCount = input.maxLessonPassCount
             if passCount >= LessonProgressPresentation.masteryPassCap { return readyLine }
@@ -400,6 +406,14 @@ enum GatingPhrase {
             let pct = Int(maxRatio * 100)
             return "Land a rep with \(minPauses)+ pauses, fewer than \(pct)% filled, to unlock."
         }
+    }
+
+    private static func moreReps(_ count: Int) -> String {
+        counted(count, singular: "more rep", plural: "more reps")
+    }
+
+    private static func counted(_ count: Int, singular: String, plural: String) -> String {
+        "\(count) \(count == 1 ? singular : plural)"
     }
 
     // MARK: - Helpers

@@ -19,11 +19,11 @@ struct WeeklyCheckInPrompt: Equatable, Identifiable {
 
 enum WeeklyCheckInCopy {
     static let cardTitle = "Your weekly read"
-    static let cardBody = "One minute for the part metrics cannot hear."
-    static let sheetTitle = "What should Noum know?"
-    static let sheetBody = "Answer any one. Your words help Noum prepare the next question."
+    static let cardBody = "A quick check-in for what metrics miss."
+    static let sheetTitle = "A quick weekly check-in"
+    static let sheetBody = "Choose one answer. Add detail only if it helps."
     static let noteTitle = "Your words, not a score"
-    static let noteBody = "Share what felt hard, where it showed up, or whether the current exercise still fits."
+    static let noteBody = "One honest answer is enough to help Noum shape the next question."
 
     static let hardest = WeeklyCheckInPrompt(
         id: "hardest",
@@ -119,6 +119,8 @@ struct WeeklyCheckInSheet: View {
     @State private var drillVerdict: CoachDrillVerdict? = nil
     @State private var confidenceShift: CoachConfidenceShift? = nil
     @State private var avoidedSaying: String = ""
+    @State private var showsMoreContext = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
@@ -129,20 +131,35 @@ struct WeeklyCheckInSheet: View {
                     VStack(alignment: .leading, spacing: Spacing.lg) {
                         header
                         coachNote
+                        confidenceSection
                         question(
                             WeeklyCheckInCopy.hardest,
                             text: $hardest,
                         )
-                        question(
-                            WeeklyCheckInCopy.outsideApp,
-                            text: $outsideApp,
-                        )
-                        confidenceSection
-                        question(
-                            WeeklyCheckInCopy.avoidedSaying,
-                            text: $avoidedSaying,
-                        )
-                        drillVerdictSection
+
+                        moreContextButton
+
+                        if showsMoreContext {
+                            VStack(alignment: .leading, spacing: Spacing.lg) {
+                                question(
+                                    WeeklyCheckInCopy.outsideApp,
+                                    text: $outsideApp,
+                                )
+                                question(
+                                    WeeklyCheckInCopy.avoidedSaying,
+                                    text: $avoidedSaying,
+                                )
+                                drillVerdictSection
+                            }
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                        }
+
+                        if !canSave {
+                            Label("Choose one option or write one line to save.", systemImage: "info.circle")
+                                .font(Typography.caption)
+                                .foregroundStyle(AppColor.textSecondary)
+                                .accessibilityIdentifier("weeklyCheckIn.saveGuidance")
+                        }
                         Spacer(minLength: Spacing.lg)
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -151,6 +168,8 @@ struct WeeklyCheckInSheet: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Not now") { dismiss() }
@@ -249,6 +268,34 @@ struct WeeklyCheckInSheet: View {
         }
     }
 
+    private var moreContextButton: some View {
+        Button {
+            if reduceMotion {
+                showsMoreContext.toggle()
+            } else {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    showsMoreContext.toggle()
+                }
+            }
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "text.badge.plus")
+                    .foregroundStyle(AppColor.brandBlue)
+                Text(showsMoreContext ? "Show fewer questions" : "Add more context")
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Spacer(minLength: 0)
+                Image(systemName: showsMoreContext ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("weeklyCheckIn.moreContext")
+    }
+
     private func confidenceChip(_ shift: CoachConfidenceShift) -> some View {
         let isSelected = confidenceShift == shift
         return Button {
@@ -257,7 +304,7 @@ struct WeeklyCheckInSheet: View {
         } label: {
             Text(shift.chipLabel)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(isSelected ? AppColor.pro : .secondary)
+                .foregroundStyle(isSelected ? AppColor.pro : AppColor.textPrimary)
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.sm)
                 .fixedSize(horizontal: true, vertical: false)
@@ -267,7 +314,7 @@ struct WeeklyCheckInSheet: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                        .strokeBorder(isSelected ? AppColor.pro.opacity(0.3) : Color.clear, lineWidth: 1)
+                        .strokeBorder(isSelected ? AppColor.pro.opacity(0.3) : AppColor.subtleBorder, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -294,7 +341,7 @@ struct WeeklyCheckInSheet: View {
         } label: {
             Text(verdict.chipLabel)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(isSelected ? AppColor.brandBlue : .secondary)
+                .foregroundStyle(isSelected ? AppColor.brandBlue : AppColor.textPrimary)
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.sm)
                 .fixedSize(horizontal: true, vertical: false)
@@ -304,7 +351,7 @@ struct WeeklyCheckInSheet: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                        .strokeBorder(isSelected ? AppColor.brandBlue.opacity(0.3) : Color.clear, lineWidth: 1)
+                        .strokeBorder(isSelected ? AppColor.brandBlue.opacity(0.3) : AppColor.subtleBorder, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)

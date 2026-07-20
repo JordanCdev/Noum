@@ -108,7 +108,7 @@ struct PathFillerMilestoneTests {
         #expect(criterion.progress(for: input(qualified + [thin])) == 0.8)
         #expect(
             GatingPhrase.copy(for: criterion, input: input(qualified + [thin]))
-                == "1 more full clean rep (20+ words, 15s+, 5/10+) in seven days from unlocked."
+                == "Complete 1 more full clean rep (20+ words, 15s+, 5/10+) within 7 days to unlock."
         )
     }
 
@@ -141,7 +141,7 @@ struct PathFillerMilestoneTests {
             input: input([])
         )
 
-        #expect(copy == "One zero-filler rep (20+ words, 15s+) from unlocked.")
+        #expect(copy == "Complete 1 zero-filler rep (20+ words, 15s+) to unlock.")
         #expect(copy?.contains("14+") == false)
     }
 

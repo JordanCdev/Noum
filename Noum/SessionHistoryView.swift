@@ -259,7 +259,13 @@ struct SessionHistoryView: View {
                     }
                     .padding(.top, 8)
                 }
-                .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if isAppTabRoot {
+                        Color.clear
+                            .frame(height: Spacing.tabRootNavigationClearance)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
         }
         .navigationTitle("Review")

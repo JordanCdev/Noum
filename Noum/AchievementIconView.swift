@@ -349,15 +349,21 @@ struct AchievementUnlockCelebration: View {
     @State private var phase1 = false
     @State private var phase2 = false
     @State private var phase3 = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            // Dark background tinted by track
+            // Composite the track tint over a fully opaque dark base. Using
+            // an alpha color as the gradient itself exposed the light host at
+            // the midpoint and made the entire reward look disabled.
+            Color.black
+                .ignoresSafeArea()
+
             LinearGradient(
                 colors: [
-                    Color.black,
+                    Color.clear,
                     tier.track.gradient[0].opacity(0.12),
-                    Color.black
+                    Color.clear
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -365,7 +371,7 @@ struct AchievementUnlockCelebration: View {
             .ignoresSafeArea()
 
             // Particles
-            if phase3 {
+            if phase3, !reduceMotion {
                 achievementParticles
                     .transition(.opacity)
             }
@@ -382,7 +388,7 @@ struct AchievementUnlockCelebration: View {
                                 lineWidth: 1.5
                             )
                             .frame(width: CGFloat(180 + i * 40), height: CGFloat(180 + i * 40))
-                            .scaleEffect(phase1 ? 1.0 : 0.3)
+                            .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.3)
                     }
 
                     AchievementIconView(
@@ -391,7 +397,7 @@ struct AchievementUnlockCelebration: View {
                         progress: 1.0,
                         size: .celebrate
                     )
-                    .scaleEffect(phase1 ? 1.0 : 0.1)
+                    .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.1)
                 }
 
                 Spacer().frame(height: 40)
@@ -402,22 +408,22 @@ struct AchievementUnlockCelebration: View {
                         .font(Typography.figtree(size: 12, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(tier.track.accentGradient[0])
                         .opacity(phase2 ? 1 : 0)
-                        .offset(y: phase2 ? 0 : 20)
+                        .offset(y: phase2 || reduceMotion ? 0 : 20)
 
                     Text(tier.title)
                         .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .opacity(phase2 ? 1 : 0)
-                        .scaleEffect(phase2 ? 1.0 : 0.85)
+                        .scaleEffect(phase2 || reduceMotion ? 1.0 : 0.85)
 
                     Text(tier.description)
                         .font(Typography.subheadline)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.white.opacity(0.80))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                         .opacity(phase2 ? 1 : 0)
-                        .offset(y: phase2 ? 0 : 10)
+                        .offset(y: phase2 || reduceMotion ? 0 : 10)
 
                     // Track badge
                     HStack(spacing: 5) {
@@ -439,21 +445,22 @@ struct AchievementUnlockCelebration: View {
                 Button {
                     onContinue()
                 } label: {
-                    Text("Continue")
+                    Text("See coaching read")
                         .font(.headline.weight(.bold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(tier.track.accentGradient[0], in: Capsule())
                 }
                 .buttonStyle(.pressable)
                 .opacity(phase2 ? 1 : 0)
-                .offset(y: phase2 ? 0 : 30)
+                .offset(y: phase2 || reduceMotion ? 0 : 30)
                 .padding(.horizontal, 32)
                 .padding(.bottom, 50)
             }
         }
         .onAppear { runAnimation() }
+        .preferredColorScheme(.dark)
     }
 
     private func runAnimation() {
@@ -462,6 +469,13 @@ struct AchievementUnlockCelebration: View {
         heavy.prepare()
         heavy.impactOccurred()
 #endif
+        if reduceMotion {
+            withAnimation(.easeOut(duration: 0.25)) {
+                phase1 = true
+                phase2 = true
+            }
+            return
+        }
         withAnimation(.spring(response: 0.6, dampingFraction: 0.65)) {
             phase1 = true
         }
@@ -522,7 +536,7 @@ struct PostSessionProgressionView: View {
     @State private var xpBarProgress: Double = 0
     @State private var showAchievements = false
     @State private var showButton = false
-    @State private var currentUnlockIndex: Int = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var didLevelUp: Bool { previousLevel != newLevel }
 
@@ -550,25 +564,9 @@ struct PostSessionProgressionView: View {
             )
             .ignoresSafeArea()
 
-            // Unlock celebrations shown one at a time
-            if currentUnlockIndex >= 0 && currentUnlockIndex < newUnlocks.count {
-                AchievementUnlockCelebration(
-                    tier: newUnlocks[currentUnlockIndex],
-                    onContinue: {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            if currentUnlockIndex + 1 < newUnlocks.count {
-                                currentUnlockIndex += 1
-                            } else {
-                                currentUnlockIndex = -1
-                            }
-                        }
-                    }
-                )
-                .transition(.opacity)
-                .zIndex(10)
-            } else {
-                // Reward screen — concise, no scrolling if possible
-                VStack(spacing: 0) {
+            // One receipt only. Unlocks are listed below; this view never
+            // launches another full-screen celebration before Results.
+            VStack(spacing: 0) {
                     Spacer()
 
                     // Progression spine (S2): this panel only mounts when an
@@ -578,7 +576,11 @@ struct PostSessionProgressionView: View {
                     VStack(spacing: 6) {
                         Text("SESSION COMPLETE")
                             .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(.white.opacity(0.72))
+
+                        Text("Your coaching read is ready")
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.white)
 
                         if let credit = PracticeVolumeNarration.verdictCreditLine(
                             xpEarned: max(0, newXP - previousXP),
@@ -586,7 +588,7 @@ struct PostSessionProgressionView: View {
                         ) {
                             Text(credit)
                                 .font(Typography.caption.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.55))
+                                .foregroundStyle(.white.opacity(0.80))
                                 .accessibilityLabel("Practice credit: \(credit)")
                         }
 
@@ -623,11 +625,11 @@ struct PostSessionProgressionView: View {
                         HStack {
                             Text(PracticeVolumeNarration.title(forXP: newXP))
                                 .font(Typography.captionSmall.weight(.bold))
-                                .foregroundStyle(.white.opacity(0.6))
+                                .foregroundStyle(.white.opacity(0.76))
                             Spacer()
                             Text("\(ProfileManager.xpNeededToNextLevel(forXP: newXP)) to practice level \(PracticeVolumeNarration.level(forXP: newXP) + 1)")
                                 .font(Typography.captionSmall.weight(.medium))
-                                .foregroundStyle(.white.opacity(0.30))
+                                .foregroundStyle(.white.opacity(0.66))
                         }
                     }
                     .padding(.horizontal, 32)
@@ -653,7 +655,7 @@ struct PostSessionProgressionView: View {
                     Button {
                         onContinue()
                     } label: {
-                        Text("View Summary")
+                        Text("See coaching read")
                             .font(Typography.headline)
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -673,10 +675,10 @@ struct PostSessionProgressionView: View {
                     .offset(y: showButton ? 0 : 30)
                     .padding(.horizontal, 32)
                     .padding(.bottom, 50)
-                }
             }
         }
         .onAppear { runProgressionAnimation() }
+        .preferredColorScheme(.dark)
     }
 
     /// Compact achievement row — icon + title + inline progress bar, single line feel.
@@ -727,12 +729,12 @@ struct PostSessionProgressionView: View {
     }
 
     private func runProgressionAnimation() {
-        if !newUnlocks.isEmpty {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    currentUnlockIndex = 0
-                }
-            }
+        if reduceMotion {
+            showXP = true
+            xpBarProgress = ProfileManager.progressTowardsNextLevel(forXP: newXP)
+            showAchievements = true
+            showButton = true
+            return
         }
 
         let xpDelay: Double = 0.2

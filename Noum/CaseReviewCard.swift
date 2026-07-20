@@ -289,9 +289,15 @@ struct CaseReviewCard: View {
         }
         var line = parts.joined(separator: " ")
         if let target = intervention.target, !target.isEmpty {
-            line += ". Goal: \(target)"
+            line += ". Goal: \(withoutTrailingPunctuation(target))"
         }
         return line + "."
+    }
+
+    private func withoutTrailingPunctuation(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
     }
 
     private func reviewStatusColor(_ status: CoachInterventionReviewStatus) -> Color {

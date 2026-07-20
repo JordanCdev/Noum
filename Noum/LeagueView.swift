@@ -17,16 +17,20 @@ struct LeagueView: View {
 
             ScrollView(showsIndicators: false) {
                 Group {
-                    switch peerVisibility {
-                    case .forming:
-                        formingState
-                    case .available:
-                        VStack(alignment: .leading, spacing: Spacing.lg) {
-                            headerCopy
-                            authorityNotice
-                            tierCard
-                            membersCard
-                            Spacer(minLength: Spacing.lg)
+                    if !SocialReleaseCapabilities.peerProgress.isAvailable {
+                        unavailableState
+                    } else {
+                        switch peerVisibility {
+                        case .forming:
+                            formingState
+                        case .available:
+                            VStack(alignment: .leading, spacing: Spacing.lg) {
+                                headerCopy
+                                authorityNotice
+                                tierCard
+                                membersCard
+                                Spacer(minLength: Spacing.lg)
+                            }
                         }
                     }
                 }
@@ -40,6 +44,8 @@ struct LeagueView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .accessibilityIdentifier("league.screen")
         .task {
             await pushSelfAndRefresh(force: false)
@@ -47,6 +53,40 @@ struct LeagueView: View {
     }
 
     // MARK: - Header
+
+    private var unavailableState: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            Text("Peer comparison")
+                .font(Typography.bigStat)
+                .foregroundStyle(.primary)
+
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Image(systemName: "lock.shield")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 48, height: 48)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                Text("Not available yet")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(.primary)
+
+                Text("Noum is keeping peer progress private until secure verification is ready. Your coaching and private progress continue as normal.")
+                    .font(Typography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+            )
+        }
+        .accessibilityIdentifier("peerComparison.unavailable")
+    }
 
     private var peerVisibility: PeerComparisonVisibility {
         PeerComparisonVisibility.make(

@@ -508,6 +508,8 @@ struct PracticeModeSelectionView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .accessibilityIdentifier("practiceModes.screen")
         .safeAreaInset(edge: .bottom) {
             if showsFloatingStartCTA {
@@ -1206,6 +1208,7 @@ struct PracticeModeSelectionView: View {
     private func modeExpandedSection(_ option: ModeOption) -> some View {
         let copy = PracticeModeExpansionCopy.copy(for: option.mode)
         let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
+        let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
         return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top, spacing: Spacing.md) {
                 NoumCharacter.Inline(
@@ -1239,8 +1242,14 @@ struct PracticeModeSelectionView: View {
 
             if isLocked {
                 lockedQuickStartHint(tint: option.tint)
-            } else {
+            } else if isSelected {
                 quickStartButton(for: option)
+            } else {
+                Text("Select this exercise to make it your next rep.")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(option.tint)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("practiceMode.\(option.mode.rawValue).previewHint")
             }
         }
         .padding(.top, Spacing.md)

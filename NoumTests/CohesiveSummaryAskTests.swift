@@ -28,8 +28,6 @@ struct CohesiveSummaryInterstitialPolicyTests {
         #expect(SummaryInterstitialPolicy.priority == [
             .personalBest,
             .skillProgress,
-            .achievementProgress,
-            .practiceVolume,
         ])
 
         #expect(SummaryInterstitialPolicy.select(
@@ -54,7 +52,7 @@ struct CohesiveSummaryInterstitialPolicyTests {
             hasSkillProgress: false,
             hasAchievementProgress: true,
             hasPracticeVolumeLevel: true
-        ) == .achievementProgress)
+        ) == nil)
     }
 
     @Test func noEarnedCandidateGoesStraightToSummary() {

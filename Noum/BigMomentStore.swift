@@ -17,7 +17,7 @@ enum BigMomentCategory: String, Codable, CaseIterable {
         switch self {
         case .presentation:  return "Presentation"
         case .interview:     return "Interview"
-        case .review:        return "Review"
+        case .review:        return "Performance review"
         case .conversation:  return "Conversation"
         case .publicSpeaking: return "Public speaking"
         case .other:         return "Other"

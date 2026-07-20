@@ -543,12 +543,16 @@ struct AppDestinationView: View {
             }
         case .friendLeaderboard:
             FriendLeaderboardView()
+                .toolbar(.hidden, for: .tabBar)
         case .league:
             LeagueView()
+                .toolbar(.hidden, for: .tabBar)
         case .speechProjects:
             SpeechProjectsView(navigationPath: $navigationPath)
+                .toolbar(.hidden, for: .tabBar)
         case .lessons:
             LessonsHomeView(navigationPath: $navigationPath)
+                .toolbar(.hidden, for: .tabBar)
         case .lesson(let id):
             if let lesson = LessonsCatalog.lesson(id: id) {
                 LessonView(lesson: lesson, navigationPath: $navigationPath)
@@ -563,10 +567,12 @@ struct AppDestinationView: View {
             SessionHistoryView(navigationPath: $navigationPath)
         case .socialProfile, .speakingRank:
             ProfileView()
+                .toolbar(.hidden, for: .tabBar)
         case .settings:
             SettingsView()
         case .pathJourney:
             PathJourneyView()
+                .toolbar(.hidden, for: .tabBar)
         case .askNoum:
             CoachSessionView(
                 sessionStore: sessionStore,
@@ -587,6 +593,7 @@ struct AppDestinationView: View {
             .toolbar(.hidden, for: .tabBar)
         case .growthLibrary:
             GrowthLibraryView()
+                .toolbar(.hidden, for: .tabBar)
         case .sessionDetail(let sessionID):
             if let session = sessionStore.sessions.first(where: { $0.id == sessionID }) {
                 SessionHistoryDetailView(
@@ -598,17 +605,22 @@ struct AppDestinationView: View {
                     ),
                     navigationPath: $navigationPath
                 )
+                .toolbar(.hidden, for: .tabBar)
             } else {
                 SessionHistoryView(navigationPath: $navigationPath)
             }
         case .bigMomentIntake:
             BigMomentIntakeView()
+                .toolbar(.hidden, for: .tabBar)
         case .prepSession:
             PrepSessionView(navigationPath: $navigationPath)
+                .toolbar(.hidden, for: .tabBar)
         case .suddenDeathDifficultyDetail(let difficulty):
             SuddenDeathDifficultyRunsView(difficulty: difficulty)
+                .toolbar(.hidden, for: .tabBar)
         case .imScenarioDetail(let scenario):
             IMScenarioDetailView(scenario: scenario, navigationPath: $navigationPath)
+                .toolbar(.hidden, for: .tabBar)
         case .roleplaySetup:
             RoleplaySetupView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)

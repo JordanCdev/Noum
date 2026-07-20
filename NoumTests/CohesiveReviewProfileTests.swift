@@ -289,6 +289,55 @@ struct CohesiveProfileCompositionTests {
         #expect(!visibleCopy.contains("established read"))
         #expect(!visibleCopy.contains("evidence behind this read"))
     }
+
+    @Test func activeInterventionOwnsTheCompactProfileStory() {
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 12,
+            evidenceConfidence: .established,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Filler words remain the main focus.",
+            activeIntervention: CoachIntervention(
+                title: "Concise stakeholder answers",
+                focus: "concise stakeholder answers",
+                target: "Open with the answer, then add one concrete example.",
+                mode: .timed,
+                prescribedAt: Date(),
+                lastObservedAt: nil,
+                followedRepCount: 1,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .formingEvidence,
+                reviewBasis: "One followed rep"
+            )
+        )
+
+        let brief = ProfileCoachBriefPresentation.make(
+            sessionCount: 12,
+            plan: plan(),
+            memory: memory,
+            trends: [SkillTrend(
+                skillArea: .fillerReduction,
+                direction: .declining,
+                confidence: .high,
+                windowSize: 12,
+                currentLevel: .developing
+            )]
+        )
+
+        #expect(brief.observation == "Your current plan is working on concise stakeholder answers.")
+        #expect(brief.nextMove == "Timed Practice: Open with the answer, then add one concrete example.")
+        #expect(!brief.observation.localizedCaseInsensitiveContains("filler"))
+        #expect(!brief.nextMove.hasSuffix(".."))
+    }
+
+    @Test func pathConsistencyNeverShowsARhythmWithoutAVisiblePracticeDay() {
+        #expect(PathConsistencyPresentation.displayedStreak(practicedDays: 0, rawStreak: 1) == 0)
+        #expect(PathConsistencyPresentation.displayedStreak(practicedDays: 4, rawStreak: 3) == 3)
+        #expect(PathConsistencyPresentation.displayedStreak(practicedDays: 2, rawStreak: -1) == 0)
+    }
 }
 
 @Suite("Peer comparison visibility")
