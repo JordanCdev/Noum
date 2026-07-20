@@ -215,6 +215,19 @@ they do not silently change or satisfy that independent contract.
 
 ## Simulator regression gates
 
+- [x] 2026-07-20 — exact-source local candidate `cdce32af9` passes the
+      complete serialized unit target (4,549/4,549) and complete serialized UI
+      target (79/79), with zero failures or skips. Result bundles:
+      `/private/tmp/noum-vision-full-unit-final-pass2.xcresult` and
+      `/private/tmp/noum-vision-full-ui-final-pass2.xcresult`. The UI target
+      includes all long screenshot tours, nine coaching-journey accessibility
+      states, both in-chat goal-confirmation variants, active-week Phrase Bank
+      execution, and the full Ask Noum terminal-state class.
+- [x] 2026-07-20 — the exact-source Release simulator app at `cdce32af9`
+      builds with one Xcode job; the app and embedded extensions pass strict,
+      deep signature verification. The product is 1.1 build 2 with an expected
+      simulator ad-hoc signature. This is not an Apple Distribution archive or
+      TestFlight upload.
 - [x] 2026-07-19 — current-source Release simulator build at `6712ee74d`:
       `BUILD SUCCEEDED` on iPhone 17 with serialized compilation and isolated
       DerivedData. The three selected journey UI regressions pass: locked free

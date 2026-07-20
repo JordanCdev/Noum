@@ -3,7 +3,7 @@
 ## 2026-07-20 — Vision completion audit, trace support, and journey accessibility; production remains NO-GO
 
 The current behavior source is
-`a63085fb1eb79817530e375bd99a390b948de732`. The accepted product-journey
+`cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`. The accepted product-journey
 contract is now mapped requirement by requirement in
 `docs/VISION_COMPLETION_AUDIT.md`, separating locally proved implementation,
 partially validated behavior, operator/device dependencies, and post-M14
@@ -23,8 +23,11 @@ a consented synthetic fixture rather than raw user content.
 
 Fresh verification is green. The complete serialized iOS unit target passes
 **4,549/4,549 with 0 failed and 0 skipped** in
-`/private/tmp/noum-vision-full-unit-final.xcresult`. Product-journey contracts
-pass 13/13 within that result. The serialized rendered regression bundle passes
+`/private/tmp/noum-vision-full-unit-final-pass2.xcresult`. The complete
+serialized UI target passes **79/79 with 0 failed and 0 skipped** in
+`/private/tmp/noum-vision-full-ui-final-pass2.xcresult`; this supersedes the
+first broad soak's four fixture/audit failures. Product-journey contracts pass
+13/13 within the unit result. The focused serialized rendered bundle passes
 25/25: 15 high-risk journey/failure paths plus all 10 Ask Noum request flows,
 including one accepted request across background/foreground. The expanded
 Accessibility XXXL bundle passes 12/12: eight native rendered state audits, one
@@ -37,7 +40,7 @@ trace/export state were visually inspected; their handoffs are in
 `.screenshots/2026-07-20_accessibility-journey-final/HANDOFF.md` and
 `.screenshots/2026-07-20_trace-support-bundle/HANDOFF.md`.
 
-Canonical app-path evidence is bound to behavior source `a63085fb1` and coach
+Canonical app-path evidence is bound to behavior source `cdce32af9` and coach
 fingerprint
 `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`.
 It passes 53 conversations / 109 turns, 50/50 scored fixtures at 81.16 average,

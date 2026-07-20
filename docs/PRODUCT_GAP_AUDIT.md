@@ -2,8 +2,8 @@
 
 Audit date: 2026-07-20
 Baseline branch: `ux-overhaul`
-Baseline commit: `2bcb1ccff769d1eba71da9049e4fa82fbf1d4bb2`
-Current behavior source: `5f25e6a244a6531ee1dd994a913f64c4f62c5e2f`
+Baseline commit: `7b8552d79dbea5301e5f804f2bcc84530180a35a`
+Current behavior source: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
 
 ## Product goal
 
@@ -113,7 +113,7 @@ No screen or tab was added. No existing state owner was duplicated. Home, Practi
 ## Launch verdict
 
 This branch is not proof of production or TestFlight readiness. At behavior
-source `5f25e6a24` and coach-source fingerprint
+source `cdce32af9` and coach-source fingerprint
 `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`,
 the final canonical local refresh passed 53 conversations / 109 app-path turns,
 50/50 scored replies (81.16 average), 50 complete real-pipeline terminal traces,
@@ -131,7 +131,9 @@ operational launch checklist. Same-target real-speech retry, interactive
 VoiceOver and Reduce Motion inspection, the remaining accessibility extremes,
 app-wide dark-mode support, signed archive/upload, and those five external
 evidence artifacts remain required. The fresh serialized unit target is fully
-green at **4,546/4,546 passed, 0 failed, 0 skipped** in
-`/private/tmp/noum-vision-closure-all-units-final.xcresult`; the transcript retry corpus
-is 20/20. Local scores and simulator screenshots do not close the external
-boundary.
+green at **4,549/4,549 passed, 0 failed, 0 skipped** in
+`/private/tmp/noum-vision-full-unit-final-pass2.xcresult`; the complete
+serialized UI target is green at **79/79 passed, 0 failed, 0 skipped** in
+`/private/tmp/noum-vision-full-ui-final-pass2.xcresult`; and the transcript
+retry corpus is 20/20. Local scores and simulator screenshots do not close the
+external boundary.

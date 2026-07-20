@@ -2,9 +2,9 @@
 
 Audit date: 2026-07-20
 
-Behavior source: `a63085fb1eb79817530e375bd99a390b948de732`
+Behavior source: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
 
-Evidence checkout: `a63085fb1eb79817530e375bd99a390b948de732`
+Evidence checkout: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
 
 Coach-source fingerprint: `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`
 
@@ -178,12 +178,17 @@ explicit instruction to stop adding features and start shipping.
 ## Evidence inventory
 
 - Canonical app-path report: `tools/coach-arena/reports/app-path/latest.json`
-  generated 2026-07-20T13:15:18Z; 53 conversations / 109 turns, 50 fixtures,
+  generated 2026-07-20T15:15:04Z; 53 conversations / 109 turns, 50 fixtures,
   81.16 average, zero failures, 50 complete traces, source freshness passed.
 - Canonical dump: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`.
 - Product journey suite: 13/13 within the complete serialized unit result.
 - Complete serialized unit target: 4,549/4,549 passed with zero failures or
-  skips in `/private/tmp/noum-vision-full-unit-final.xcresult`.
+  skips in `/private/tmp/noum-vision-full-unit-final-pass2.xcresult`.
+- Complete serialized UI target: 79/79 passed with zero failures or skips in
+  `/private/tmp/noum-vision-full-ui-final-pass2.xcresult`. This includes the
+  full screenshot tours and the four paths that failed the first broad soak:
+  active-week phrase execution, both in-chat goal-confirmation variants, and
+  the transcript-ladder native accessibility audit under sustained load.
 - Accessibility XXXL and request regression matrix: 25/25 passed in
   `/private/tmp/noum-vision-journey-chat-regression-final.xcresult`; this is 15
   high-risk journey/failure interactions plus all 10 Ask Noum reliability flows,
