@@ -118,6 +118,22 @@ struct CoachDebugTrace: Identifiable, Equatable {
             .flatMap { CoachTraceTerminalState(rawValue: $0.reason) }
     }
 
+    var terminalEventCount: Int {
+        events.lazy.filter { $0.stage == CoachTraceStage.terminal }.count
+    }
+
+    /// A dispatched request may be in flight with no terminal event, but once
+    /// terminal it must have exactly one known state. Surface violations in
+    /// Debug instead of letting a duplicate or malformed terminal look healthy.
+    var hasTerminalContractViolation: Bool {
+        terminalEventCount > 1 || (terminalEventCount == 1 && terminalState == nil)
+    }
+
+    var terminalStatusLabel: String {
+        if hasTerminalContractViolation { return "trace error" }
+        return terminalState?.rawValue ?? "in flight"
+    }
+
     var latencyMs: Int? {
         if let recorded = events.reversed().compactMap({ $0.numerics["latencyMs"] }).first,
            recorded >= 0 {

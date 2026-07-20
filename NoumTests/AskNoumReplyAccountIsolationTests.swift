@@ -69,6 +69,25 @@ struct AskNoumReplyAccountIsolationTests {
         ))
     }
 
+    @Test("A detailed three-thousand-character turn survives acceptance and reload")
+    func detailedTurnPersistsWithoutSilentLoss() throws {
+        let defaults = isolatedDefaults()
+        let state = AccountState()
+        let store = state.makeStore(defaults: defaults)
+        let detailedTurn = String(repeating: "Detailed context with a decision, constraint, and intended meaning. ", count: 48)
+            .prefix(3_000)
+        let exactTurn = String(detailedTurn)
+        #expect(exactTurn.count == 3_000)
+
+        let admission = try #require(store.sendAdmission())
+        _ = try #require(store.appendUserTurn(exactTurn, expected: admission))
+
+        let reloadedStore = state.makeStore(defaults: defaults)
+        let persistedUserTurn = reloadedStore.messages.last(where: { $0.role == .user })
+        #expect(persistedUserTurn?.text == exactTurn)
+        #expect(reloadedStore.messages.allSatisfy { !$0.isPending })
+    }
+
     @Test("Identity change before registry reload rejects every old-row mutation")
     func accountSwitchBeforeReloadRejectsOldLease() throws {
         let defaults = isolatedDefaults()

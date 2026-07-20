@@ -75,29 +75,32 @@ Where the product is now **underweight** for coach parity:
   next coach move. That is the right architecture, but it still needs richer
   user confirmation, more repeated evidence, and real-world validation before
   Noum can claim professional-coach parity.
-- **Delivery sensing is not deep enough.** Fillers, pace, pauses, word choice,
-  rhetorical devices, and scenario state are useful signals, but professional
-  coaching also needs reliable prosody/intonation, pitch range, emphasis,
-  breathing, vocal energy, authority, tension, composure, structure, and
-  eventually opt-in presence signals.
-- **The user's inner experience is not yet deeply captured.** A human coach
-  asks what felt difficult, where confidence changed, what the user avoided,
-  what nerves did to their delivery, and whether a technically polished answer
-  actually felt like them. Noum now carries bounded repeated self-report
-  patterns from recent post-rep reflections into the coach case as hypotheses,
-  but it still needs richer confidence, avoidance, difficulty, and outside-app
-  outcome check-ins that become durable context only with the user's
-  participation.
+- **Delivery sensing exists, but is not yet validated deeply enough.** Fillers,
+  pace, pause quality, word choice, rhetorical devices, scenario state, pitch
+  range, vocal energy, composure, and structure now feed a conservative fused
+  delivery read. The remaining gap is reliability across real devices, voices,
+  rooms, and microphones, plus breathing, emphasis, tension, and eventually
+  opt-in presence signals. A derived delivery read must never be presented as a
+  direct read of motive or personality.
+- **The user's inner experience is now captured at bounded checkpoints, but the
+  evidence is still early.** Post-rep reflection and the weekly check-in ask
+  what felt hardest, what changed outside the app, confidence, avoidance, and
+  drill fit. Confirmable patterns can enter the coaching case as hypotheses;
+  observed speech evidence remains separate and higher priority. The remaining
+  need is longitudinal participation, user correction, and evidence that these
+  check-ins improve the intervention rather than merely collect more data.
 - **Deeper patterns remain hypotheses, not a coaching record.** The product
   must be able to explore overexplaining, fear of disagreement, lack of
   conviction, defensiveness, weak executive presence, timidity, evasion, or
   emotional disconnection, while never labelling the user from telemetry or
   a single AI reading.
-- **Transfer outside practice is barely measured.** A coach is valuable
-  because the interview, board update, pitch, difficult conversation,
-  networking meeting, date, leadership conversation, or speech goes better.
-  Noum needs outcome check-ins tied to real moments, including the user's read
-  of audience reaction, not only better in-app repetitions.
+- **The transfer loop exists, but real-world evidence is sparse.** Big Moment
+  supports an upcoming case, a rehearsal plan, relevant scenario practice, a
+  post-event outcome/reflection, the user's read of audience or counterpart
+  reaction, and an updated transfer trend. That is the correct product loop;
+  it is not proof that interviews, board updates, pitches, difficult
+  conversations, networking, leadership moments, or speeches improve. Only a
+  longitudinal real-user programme can establish that.
 - **Goal capture used to be a write-once event** — now an explicitly chosen
   style shapes the M14 coaching loop, including drill *selection*
   (a small `+10` priority bonus on goal-aligned trends inside
@@ -128,7 +131,7 @@ Where the product is now **underweight** for coach parity:
 
 ## Current phase
 
-**Build phase: deepening the speech metrics + coach memory.** Core
+**Release phase: M14 — open the loop and earn TestFlight evidence.** Core
 session loop, multi-mode practice, scoring, rating, achievements,
 premium gating, settings, and account lifecycle all ship. M1 (daily-
 rhythm), M2 (peer pull), and M3 (path-journey gameplay v1) are landed
@@ -281,30 +284,35 @@ M14 is the active operational milestone. After a stable TestFlight build,
 coach-parity work takes priority over optional retention and expansion
 features.
 
-1. **Coaching case file + intervention cycle.** Turn existing profile,
-   memory, forward-plan, proof-moment, and recommendation-response data into
-   one durable coaching record: active hypothesis, chosen intervention,
-   observable target, success measure, evidence depth, review date, response,
-   reflection check-ins (difficulty, nerves, confidence, avoidance, and
-   off-app change), and next adjustment. Surface it coherently in Ask Noum,
-   post-rep feedback, and the next-practice recommendation.
-2. **Delivery intelligence.** Make pause quality, prosody/intonation,
-   pitch range, breathing, emphasis, vocal energy, authority/tension,
-   structure, confidence markers, and word-choice precision reliable session
-   evidence. Coach for the difference between clarity and over-polish,
-   avoidance, timidity, or emotional distance, with conservative thresholds
-   and user-visible explanations of what can and cannot be inferred.
-3. **Real-moment preparation and transfer.** Expand Big Moment into an
-   outcome loop: pre-event rehearsal plan, relevant scenario simulation,
-   post-event reflection/outcome capture, and a coach update based on what
-   happened outside the app, including the user's account of audience or
-   counterpart reaction across presentations, interviews, leadership,
-   pitches, conflict, networking, and personal conversations.
-4. **Presence coaching with consent.** Add opt-in visual and nonverbal reads
+1. **Validate and deepen the coaching case.** The existing case spine already
+   joins profile, bounded memory, forward plan, proof moments,
+   recommendation-response evidence, weekly check-ins, and transfer outcomes.
+   Use stable TestFlight history to test whether its active hypothesis,
+   intervention, target, success measure, review date, response, and next move
+   remain coherent over weeks. Improve confirmation and correction before
+   expanding what is inferred.
+2. **Validate and deepen delivery intelligence.** Pause quality, pitch range,
+   vocal energy, composure, structure, confidence markers, and word-choice
+   precision already contribute to delivery reads. Calibrate them on real
+   audio before adding breathing, emphasis, authority/tension, or other
+   channels. Coach for the difference between clarity and over-polish only
+   with conservative thresholds and user-visible inference limits.
+3. **Validate and deepen real-moment transfer.** Big Moment already links an
+   upcoming event, rehearsal plan, scenario practice, post-event reflection,
+   perceived audience/counterpart reaction, and a coach update. Use a
+   longitudinal pilot to learn whether that loop changes outcomes across
+   presentations, interviews, leadership, pitches, conflict, networking, and
+   personal conversations before adding more transfer surfaces.
+4. **Consolidate the progress story.** After a stable TestFlight build, make
+   Progress, Path, and streak continuity read as one coaching narrative:
+   current lever, evidence-backed change, next milestone, and the reason for
+   the next practice. Reuse the existing session, path, memory, plan, and
+   streak owners; do not add another progress store or another dashboard.
+5. **Presence coaching with consent.** Add opt-in visual and nonverbal reads
    only once audio/text coaching is trustworthy: eye contact, posture,
    gesture, facial energy, and camera rehearsal, with clear privacy controls,
    no hidden analysis, and no claim that visual cues reveal inner motives.
-5. **Human-coach calibration.** Build a blinded evaluation set and
+6. **Human-coach calibration.** Build a blinded evaluation set and
    longitudinal pilot in which professional coaches rate diagnosis,
    usefulness, fairness, drill choice, and adaptation. Do not market
    replacement/parity until Noum can meet an explicit benchmark.

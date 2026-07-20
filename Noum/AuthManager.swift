@@ -300,7 +300,7 @@ class AuthManager: ObservableObject {
     private nonisolated static let promotedGuestBackendSeedKeyPrefix =
         "noum.localGuestBackendSeedPending."
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
-    private static let automaticGuestPromotionRetryInterval: TimeInterval = 30
+    private nonisolated static let automaticGuestPromotionRetryInterval: TimeInterval = 30
     private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }

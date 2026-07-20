@@ -1662,9 +1662,13 @@ struct SettingsView: View {
                             Text(String(trace.correlationId.uuidString.prefix(8)))
                                 .font(.caption.monospaced().weight(.semibold))
                             Spacer()
-                            Text(trace.terminalState?.rawValue ?? "in flight")
+                            Text(trace.terminalStatusLabel)
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(trace.terminalState == .retryableError ? AppColor.warning : AppColor.textSecondary)
+                                .foregroundStyle(
+                                    trace.hasTerminalContractViolation || trace.terminalState == .retryableError
+                                        ? AppColor.warning
+                                        : AppColor.textSecondary
+                                )
                         }
                         HStack(spacing: Spacing.xs) {
                             Text("\(trace.events.count) stages")
@@ -1674,6 +1678,14 @@ struct SettingsView: View {
                         }
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        if trace.hasTerminalContractViolation {
+                            Label(
+                                "Terminal contract violation: \(trace.terminalEventCount) terminal events",
+                                systemImage: "exclamationmark.triangle.fill"
+                            )
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(AppColor.warning)
+                        }
                         ForEach(trace.events) { event in
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack {
@@ -1707,7 +1719,7 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Coach trace \(String(trace.correlationId.uuidString.prefix(8))), \(trace.terminalState?.rawValue ?? "in flight"), \(trace.events.count) stages")
+                    .accessibilityLabel("Coach trace \(String(trace.correlationId.uuidString.prefix(8))), \(trace.terminalStatusLabel), \(trace.events.count) stages, \(trace.terminalEventCount) terminal events")
                 }
             }
             Divider()

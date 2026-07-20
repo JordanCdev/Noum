@@ -209,8 +209,54 @@ struct ProductJourneyContractTests {
         let trace = log.recentCoachTraces(limit: 1).first
         #expect(trace?.correlationId == traceID)
         #expect(trace?.terminalState == .safeFallback)
+        #expect(trace?.terminalEventCount == 1)
+        #expect(trace?.hasTerminalContractViolation == false)
+        #expect(trace?.terminalStatusLabel == CoachTraceTerminalState.safeFallback.rawValue)
         #expect(trace?.latencyMs == 1_250)
         #expect(trace?.events.count == 3)
+    }
+
+    @MainActor
+    @Test("Debug traces expose duplicate or malformed terminal events")
+    func debugTraceExposesTerminalContractViolation() {
+        let suiteName = "product-journey-duplicate-terminal-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let log = FlowEventLog(defaults: defaults, storageKey: "events")
+        let traceID = UUID()
+        log.log(FlowEvent.make(
+            correlationId: traceID,
+            flow: .chatTurn,
+            stage: CoachTraceStage.accepted,
+            reason: "request accepted"
+        ))
+        for terminal in [CoachTraceTerminalState.retryableError, .cancelled] {
+            log.log(FlowEvent.make(
+                correlationId: traceID,
+                flow: .chatTurn,
+                stage: CoachTraceStage.terminal,
+                reason: terminal.rawValue
+            ))
+        }
+
+        let trace = log.recentCoachTraces(limit: 1).first
+        #expect(trace?.terminalEventCount == 2)
+        #expect(trace?.hasTerminalContractViolation == true)
+        #expect(trace?.terminalStatusLabel == "trace error")
+
+        let malformedID = UUID()
+        let malformedTrace = CoachDebugTrace(
+            correlationId: malformedID,
+            events: [FlowEvent.make(
+                correlationId: malformedID,
+                flow: .chatTurn,
+                stage: CoachTraceStage.terminal,
+                reason: "unknown-terminal-state"
+            )]
+        )
+        #expect(malformedTrace.terminalEventCount == 1)
+        #expect(malformedTrace.hasTerminalContractViolation)
+        #expect(malformedTrace.terminalStatusLabel == "trace error")
     }
 
     @Test("Every provider outcome maps to an explicit terminal state")
@@ -267,6 +313,36 @@ struct ProductJourneyContractTests {
 
         guard case .failure(.timedOut) = outcome else {
             Issue.record("Expected a typed timeout, got \(String(describing: outcome))")
+            return
+        }
+        #expect(elapsed < 0.25)
+    }
+
+    @Test("Parent cancellation wins even when provider cancellation is ignored")
+    func parentCancellationCannotWaitForLateProvider() async {
+        let provider = Task<ChatOutcome, Never> {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                    continuation.resume(returning: .reply("Late reply"))
+                }
+            }
+        }
+        defer { provider.cancel() }
+
+        let waiter = Task {
+            await CoachReplyPipeline.awaitFirstProviderOutcome(
+                provider,
+                deadlineSeconds: 10
+            )
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        let startedAt = Date()
+        waiter.cancel()
+        let outcome = await waiter.value
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        guard case .failure(.cancelled) = outcome else {
+            Issue.record("Expected typed cancellation, got \(String(describing: outcome))")
             return
         }
         #expect(elapsed < 0.25)
