@@ -1606,6 +1606,7 @@ struct ProfileView: View {
                 .foregroundStyle(AppColor.textSecondary)
             Text("Did Noum help you move toward the speaker you want to be?")
                 .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Spacing.sm) {
                 transformationResponseButton(title: "Yes", value: "yes")
@@ -1633,9 +1634,14 @@ struct ProfileView: View {
             ))
         } label: {
             Text(title)
+                .foregroundStyle(AppColor.brandBlue)
                 .frame(maxWidth: .infinity, minHeight: 44)
+                .background(AppColor.cardBackground, in: Capsule())
+                .overlay(
+                    Capsule().stroke(AppColor.brandBlue.opacity(0.35), lineWidth: 1)
+                )
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .accessibilityHint("Records an account-local response without transcript text.")
     }
 

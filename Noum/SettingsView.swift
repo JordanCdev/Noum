@@ -1799,6 +1799,8 @@ struct SettingsView: View {
                                 .frame(minHeight: 44, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                         .foregroundStyle(AppColor.brandBlue)
                         .accessibilityIdentifier("settings.debugTraces.copyTraceID")
                         Button {
@@ -1809,6 +1811,8 @@ struct SettingsView: View {
                                 .frame(minHeight: 44, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                         .foregroundStyle(AppColor.brandBlue)
                         .accessibilityIdentifier("settings.debugTraces.copySupportBundle")
                         .accessibilityHint("Copies content-free request stages and matching provider diagnostics for local support replay.")

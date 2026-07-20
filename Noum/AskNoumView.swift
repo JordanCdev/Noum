@@ -967,10 +967,12 @@ struct AskNoumView: View {
                 if !isHeaderCompact {
                     Text(headerSubtitle)
                         .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
             }
+            .layoutPriority(1)
             Spacer(minLength: Spacing.sm)
             threadOptionsMenu
         }
@@ -1200,7 +1202,7 @@ struct AskNoumView: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(emptyStateBody)
                     .font(Typography.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1311,7 +1313,7 @@ struct AskNoumView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(AskNoumVisibleCopy.currentFocus)
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.pro)
+                        .foregroundStyle(AppColor.textPrimary)
                     Text(line)
                         .font(Typography.caption)
                         .foregroundStyle(.primary)
@@ -2889,7 +2891,7 @@ struct AskNoumView: View {
                 if draft.isEmpty {
                     Text(textFieldPlaceholder)
                         .font(Typography.body)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AppColor.textPrimary)
                         .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, Spacing.xs)
                         .allowsHitTesting(false)

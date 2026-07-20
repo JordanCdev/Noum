@@ -91,6 +91,11 @@ enum AppColor {
     static let coachHeroQuietSurface = Color(red: 0.78, green: 0.92, blue: 0.98)
     /// High-contrast foreground for the blue-to-green progress hero.
     static let progressHeroInk = Color.black
+    /// Semantic purple for copy and icons on light coaching surfaces. Keep the
+    /// brighter `pro` token for filled accents and decorative identity.
+    static let proText = Color(red: 0.34, green: 0.12, blue: 0.64)
+    /// Opaque pale-purple surface for readable secondary Pro actions/cards.
+    static let proQuietSurface = Color(red: 0.95, green: 0.93, blue: 0.99)
 
     // MARK: Mode Tints
 

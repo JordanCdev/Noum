@@ -1,4 +1,5 @@
 import Testing
+import SwiftUI
 import UIKit
 @testable import Noum
 
@@ -6,11 +7,45 @@ import UIKit
 struct AccessibilityContrastTests {
     @Test @MainActor
     func adjustTextTokenClearsAAAgainstWhite() {
-        let foreground = UIColor(AppColor.brandBlue)
-            .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        let foreground = resolved(AppColor.brandBlue)
         let ratio = contrastRatio(foreground: foreground, background: .white)
 
         #expect(ratio >= 4.5)
+    }
+
+    @Test @MainActor
+    func semanticLightSurfaceTokensClearAA() {
+        let cases: [(String, UIColor, UIColor)] = [
+            ("primary", resolved(AppColor.textPrimary), .white),
+            ("primary on pro surface", resolved(AppColor.textPrimary), resolved(AppColor.proQuietSurface)),
+            ("secondary", resolved(AppColor.textSecondary), .white),
+            ("tertiary", resolved(AppColor.textTertiary), .white),
+            ("pro text", resolved(AppColor.proText), resolved(AppColor.proQuietSurface)),
+        ]
+
+        for (name, foreground, background) in cases {
+            #expect(
+                contrastRatio(foreground: foreground, background: background) >= 4.5,
+                "\(name) must clear AA on its production surface"
+            )
+        }
+    }
+
+    @Test @MainActor
+    func progressHeroInkClearsAAAtEveryGradientStop() {
+        let foreground = resolved(AppColor.progressHeroInk)
+        for stop in [
+            AppColor.progressHeroStart,
+            AppColor.progressHeroMid,
+            AppColor.progressHeroEnd,
+        ] {
+            #expect(contrastRatio(foreground: foreground, background: resolved(stop)) >= 4.5)
+        }
+    }
+
+    @MainActor
+    private func resolved(_ color: Color) -> UIColor {
+        UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
     }
 
     private func contrastRatio(foreground: UIColor, background: UIColor) -> Double {
