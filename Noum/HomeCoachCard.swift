@@ -230,7 +230,7 @@ struct HomeCoachCard: View {
                     weight: .bold,
                     relativeTo: presentation == .immersive ? .largeTitle : .title2
                 ))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.coachHeroInk)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Spacing.xs)
@@ -243,7 +243,7 @@ struct HomeCoachCard: View {
                     .font(presentation == .immersive
                         ? Typography.manrope(size: 19, weight: .medium, relativeTo: .title3)
                         : Typography.body)
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(AppColor.coachHeroInk)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Spacing.sm)
@@ -253,7 +253,7 @@ struct HomeCoachCard: View {
             VoiceAlignmentChip(
                 styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
                 mode: renderedExposure.mode,
-                tint: .white
+                tint: AppColor.coachHeroInk
             )
             .padding(.top, Spacing.xs)
 
@@ -267,16 +267,20 @@ struct HomeCoachCard: View {
                let days = bigMomentStore.daysUntil(moment),
                days >= 0 && days <= 14 {
                 prepSessionCTA(moment: moment, days: days)
-                Button("Start \(renderedExposure.mode.displayLabel) instead") {
+                Button {
                     beginRecommendedRep(renderedExposure: renderedExposure)
+                } label: {
+                    Text("Start \(renderedExposure.mode.displayLabel) instead")
+                        .font(Typography.captionSmall.weight(.semibold))
+                        .foregroundStyle(AppColor.coachHeroInk)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(AppColor.coachHeroQuietSurface, in: Capsule())
+                        .contentShape(Rectangle())
                 }
-                .font(Typography.captionSmall.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.86))
-                .frame(minHeight: 44)
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("home.coachCard.begin")
             } else {
-                PrimaryCTA(beginCTAText(for: renderedExposure.mode), tint: .white, labelTint: AppColor.coachHeroStart) {
+                PrimaryCTA(beginCTAText(for: renderedExposure.mode), tint: .white, labelTint: AppColor.coachHeroInk) {
                     beginRecommendedRep(renderedExposure: renderedExposure)
                 }
                 .accessibilityIdentifier("home.coachCard.begin")
@@ -585,19 +589,19 @@ struct HomeCoachCard: View {
             HStack(spacing: 8) {
                 Image(systemName: moment.category.sfSymbol)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.coachHeroInk)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Continue prep")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppColor.coachHeroInk)
                     Text("Three focused reps")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.78))
+                        .foregroundStyle(AppColor.coachHeroInk)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(AppColor.coachHeroInk)
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
@@ -632,15 +636,15 @@ struct HomeCoachCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bookmark.fill")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .accessibilityHidden(true)
                     Text("Week \(plannedPhrase.target.weekIndex) phrase \u{2014} practice your saved line")
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, Spacing.sm)
@@ -668,15 +672,15 @@ struct HomeCoachCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .accessibilityHidden(true)
                     Text(line)
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppColor.coachHeroInk)
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, Spacing.sm)

@@ -570,7 +570,7 @@ struct PracticeModeSelectionView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(PracticeModePrescriptionCopy.displayHeroEyebrow)
                         .font(Typography.caption)
-                        .foregroundStyle(option.tint)
+                        .foregroundStyle(AppColor.brandBlue)
 
                     Text(recommendation.title)
                         .font(Typography.cardTitle)
@@ -599,7 +599,7 @@ struct PracticeModeSelectionView: View {
             }
 
             if !showsFloatingStartCTA {
-                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: option.tint) {
+                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: AppColor.brandBlue) {
                     selectedMode = recommendation.mode
                     crutchSelected = false
                     paceSelected = false
@@ -630,12 +630,13 @@ struct PracticeModeSelectionView: View {
                     recordsRecommendationAcceptance: false
                 )
             } label: {
-                Label(PracticeModePrescriptionCopy.adjustLabel, systemImage: "slider.horizontal.3")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                Text(PracticeModePrescriptionCopy.adjustLabel)
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .center)
             .accessibilityIdentifier("practiceModes.recommendedHero.adjust")
         }
         .padding(Spacing.md)
@@ -708,7 +709,7 @@ struct PracticeModeSelectionView: View {
     // MARK: - Practice library
 
     private var practiceLibrary: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        LazyVStack(alignment: .leading, spacing: Spacing.lg) {
             Text(PracticeModePrescriptionCopy.practiceLibraryTitle)
                 .font(Typography.sectionHero)
                 .foregroundStyle(.primary)
@@ -763,7 +764,7 @@ struct PracticeModeSelectionView: View {
                         .foregroundStyle(.primary)
                     Text(item.subtitle)
                         .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

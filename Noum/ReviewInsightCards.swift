@@ -301,7 +301,7 @@ struct ReviewStoryCard: View {
                     .accessibilityHidden(true)
                 Text("Your recent movement")
                     .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
 
             Text(presentation.movement)
@@ -311,7 +311,7 @@ struct ReviewStoryCard: View {
 
             Text(presentation.meaning)
                 .font(Typography.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .top, spacing: Spacing.xs) {
@@ -328,7 +328,7 @@ struct ReviewStoryCard: View {
 
             Text(presentation.evidenceCaption)
                 .font(Typography.captionSmall)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(AppColor.textTertiary)
 
             Button(action: onReviewLatest) {
                 Label("Review latest rep", systemImage: "arrow.right")

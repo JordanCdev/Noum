@@ -142,7 +142,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Practice") {
+                Section {
                     practiceDifficultyRow
                     dailyGoalCard
                     practiceVoiceCuesRow
@@ -150,14 +150,18 @@ struct SettingsView: View {
                     pressureModeRow
                     practiceLanguageRow
                     soundscapeRow
+                } header: {
+                    SettingsSectionLabel(title: "Practice")
                 }
 
-                Section("Coaching") {
+                Section {
                     coachingProfileRow
                     upcomingMomentRow
+                } header: {
+                    SettingsSectionLabel(title: "Coaching")
                 }
 
-                Section("Notifications") {
+                Section {
                     dailyReminderRow
                     if notificationManager.dailyReminderEnabled {
                         dailyReminderTimePicker
@@ -167,16 +171,22 @@ struct SettingsView: View {
                     notificationAccessRow
                     hapticsRow
                     interactionSoundsRow
+                } header: {
+                    SettingsSectionLabel(title: "Notifications")
                 }
 
-                Section("Account") {
+                Section {
                     subscriptionCard
                     privacyCard
                     accountCard
+                } header: {
+                    SettingsSectionLabel(title: "Account")
                 }
 
-                Section("About") {
+                Section {
                     aboutCard
+                } header: {
+                    SettingsSectionLabel(title: "About")
                 }
 
                 Section {
@@ -186,6 +196,7 @@ struct SettingsView: View {
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
             .scrollContentBackground(.hidden)
+            .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         }
         .navigationTitle(isAppTabRoot ? "Settings" : "")
         .navigationBarTitleDisplayMode(.inline)
@@ -621,9 +632,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Practice difficulty")
                 .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
             Text(practiceSettings.timedDifficulty.subtitle)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -644,9 +656,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Daily goal")
                 .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
             Text("Choose a pace that fits your week.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

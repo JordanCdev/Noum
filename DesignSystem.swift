@@ -43,6 +43,10 @@ enum Spacing {
 
     /// Reserved scroll clearance for an immersive screen's safe-area action.
     static let focusedActionClearance: CGFloat = 112
+    /// Physical viewport clearance for iOS's floating tab glass. Root scroll
+    /// views use this as outer padding so copy is clipped above navigation,
+    /// rather than merely remaining scrollable underneath it.
+    static let tabRootNavigationClearance: CGFloat = 92
 }
 
 // MARK: - App Colors
@@ -70,10 +74,23 @@ enum AppColor {
     static let pro = Color(red: 0.56, green: 0.28, blue: 0.92)
     /// Lighter pro purple for gradients
     static let proLight = Color(red: 0.82, green: 0.52, blue: 1.0)
-    /// Primary brand blue
-    static let brandBlue = Color(red: 0.20, green: 0.47, blue: 0.96)
+    /// Primary brand blue. This darker action register keeps white labels
+    /// above AA contrast on buttons; brighter blues remain available for
+    /// decorative gradients and mode identity.
+    static let brandBlue = Color(red: 0.10, green: 0.32, blue: 0.70)
     /// Lighter brand blue for gradients
     static let brandBlueLight = Color(red: 0.26, green: 0.63, blue: 1.00)
+
+    /// High-contrast foreground for the light blue-to-cyan coaching hero.
+    /// The darkest raw hero stop still clears WCAG AA for body copy, while
+    /// the navy register keeps the screen calm and visibly coach-led.
+    static let coachHeroInk = Color(red: 0.02, green: 0.08, blue: 0.18)
+    /// Opaque secondary-action surface for the continuously varying coach
+    /// gradient. Its quiet cyan register preserves hierarchy while making
+    /// both rendered contrast and the tappable boundary unambiguous.
+    static let coachHeroQuietSurface = Color(red: 0.78, green: 0.92, blue: 0.98)
+    /// High-contrast foreground for the blue-to-green progress hero.
+    static let progressHeroInk = Color.black
 
     // MARK: Mode Tints
 
@@ -139,8 +156,11 @@ enum AppColor {
 
     /// Primary text (use .primary for most cases)
     static let textPrimary = Color(red: 0.13, green: 0.15, blue: 0.20)
-    /// Secondary / muted text
-    static let textSecondary = Color(red: 0.41, green: 0.45, blue: 0.52)
+    /// Secondary / muted text. Deliberately stronger than the system
+    /// secondary label so coaching evidence remains readable at small roles.
+    static let textSecondary = Color(red: 0.29, green: 0.33, blue: 0.40)
+    /// Quiet metadata that still clears AA on Noum's light surfaces.
+    static let textTertiary = Color(red: 0.36, green: 0.40, blue: 0.47)
 
     // MARK: Surfaces & Borders
 
@@ -413,6 +433,7 @@ struct ReadingScreenScaffold<Content: View>: View {
     let subtitle: String?
     let bottomClearance: CGFloat
     @ViewBuilder let content: () -> Content
+    @Environment(\.isAppTabRoot) private var isAppTabRoot
 
     init(
         title: String,
@@ -432,7 +453,7 @@ struct ReadingScreenScaffold<Content: View>: View {
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
+                LazyVStack(alignment: .leading, spacing: Spacing.lg) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text(title)
                             .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
@@ -442,7 +463,7 @@ struct ReadingScreenScaffold<Content: View>: View {
                         if let subtitle {
                             Text(subtitle)
                                 .font(Typography.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -456,6 +477,11 @@ struct ReadingScreenScaffold<Content: View>: View {
                 .padding(.bottom, bottomClearance)
                 .frame(maxWidth: .infinity)
             }
+            // iOS's floating tab bar intentionally lets scroll content travel
+            // beneath its glass. Reduce the physical scroll viewport at tab
+            // roots so partially visible coaching copy is never rendered
+            // through navigation controls.
+            .padding(.bottom, isAppTabRoot ? Spacing.tabRootNavigationClearance : 0)
         }
     }
 }
@@ -491,11 +517,11 @@ struct GroupedDestinationList<Content: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(Typography.headline)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.textPrimary)
                     if let subtitle {
                         Text(subtitle)
                             .font(Typography.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
