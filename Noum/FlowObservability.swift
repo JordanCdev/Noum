@@ -95,6 +95,29 @@ enum CoachTraceStage {
     static let persisted = "coach.persisted"
     static let uiCommitted = "coach.uiCommitted"
     static let terminal = "coach.terminal"
+
+    static let all: Set<String> = [
+        accepted,
+        classified,
+        goalResolved,
+        evidenceLoaded,
+        rubricSelected,
+        promptAssembled,
+        providerDeadlineArmed,
+        providerStarted,
+        providerRetried,
+        providerRefused,
+        providerFinished,
+        streamFirstVisible,
+        gatePassed,
+        gateRepaired,
+        gateFallback,
+        gateRejected,
+        finalSanitized,
+        persisted,
+        uiCommitted,
+        terminal,
+    ]
 }
 
 /// The exhaustive user-visible outcome of a dispatched Ask Noum request.
@@ -148,6 +171,197 @@ struct CoachDebugTrace: Identifiable, Equatable {
     func elapsedMs(for event: FlowEvent) -> Int? {
         guard let startedAt = events.first?.createdAt else { return nil }
         return max(0, Int(event.createdAt.timeIntervalSince(startedAt) * 1_000))
+    }
+}
+
+/// A content-free, machine-readable packet for one Ask Noum request.
+///
+/// The packet deliberately contains only the bounded trace ledger and matching
+/// AI transport diagnostics. It never includes the user turn, transcript,
+/// assembled prompt, provider response, account identifier, or credentials.
+/// Support can inspect or replay the terminal path locally without expanding
+/// production retention of communication content.
+struct CoachTraceSupportBundle: Codable, Equatable {
+    static let currentSchemaVersion = "noum-coach-trace-support-v1"
+
+    struct Build: Codable, Equatable {
+        let appVersion: String
+        let buildNumber: String
+        let sourceGitCommit: String
+    }
+
+    struct Privacy: Codable, Equatable {
+        let contentFree: Bool
+        let includesUserText: Bool
+        let includesTranscript: Bool
+        let includesPrompt: Bool
+        let includesResponse: Bool
+        let includesAccountIdentifier: Bool
+        let includesCredentials: Bool
+    }
+
+    struct Trace: Codable, Equatable {
+        let traceID: UUID
+        let terminalState: String?
+        let terminalStatus: String
+        let terminalEventCount: Int
+        let terminalContractViolation: Bool
+        let latencyMs: Int?
+        let events: [Event]
+    }
+
+    struct Event: Codable, Equatable {
+        let createdAt: Date
+        let elapsedMs: Int?
+        let stage: String
+        let outcome: String
+        let reason: String
+        let numerics: [String: Int]
+    }
+
+    struct ProviderDiagnostic: Codable, Equatable {
+        let createdAt: Date
+        let surface: String
+        let provider: String
+        let model: String?
+        let outcome: String
+        let statusCode: Int?
+        let latencyMs: Int?
+        let cacheHit: Bool
+        let inputTokens: Int?
+        let outputTokens: Int?
+        let reason: String
+    }
+
+    struct Reproduction: Codable, Equatable {
+        let mode: String
+        let command: String
+        let scope: String
+        let semanticFixtureRequired: Bool
+    }
+
+    let schemaVersion: String
+    let exportedAt: Date
+    let build: Build
+    let privacy: Privacy
+    let trace: Trace
+    let providerDiagnostics: [ProviderDiagnostic]
+    let reproduction: Reproduction
+
+    static func make(
+        trace: CoachDebugTrace,
+        diagnostics: [AICallDiagnosticRecord],
+        appVersion: String,
+        buildNumber: String,
+        sourceGitCommit: String,
+        exportedAt: Date = Date()
+    ) -> CoachTraceSupportBundle {
+        let safeEvents = trace.events
+            .filter { $0.flow == .chatTurn && CoachTraceStage.all.contains($0.stage) }
+            .map { event in
+                Event(
+                    createdAt: event.createdAt,
+                    elapsedMs: trace.elapsedMs(for: event),
+                    stage: event.stage,
+                    outcome: event.outcome.rawValue,
+                    reason: redactedReason(event.reason),
+                    numerics: event.numerics
+                )
+            }
+        let matchingDiagnostics = diagnostics
+            .filter { $0.correlationID == trace.correlationId }
+            .sorted { $0.createdAt < $1.createdAt }
+            .map { record in
+                ProviderDiagnostic(
+                    createdAt: record.createdAt,
+                    surface: record.surface,
+                    provider: record.provider,
+                    model: record.model,
+                    outcome: record.outcome.rawValue,
+                    statusCode: record.statusCode,
+                    latencyMs: record.latencyMs,
+                    cacheHit: record.cacheHit,
+                    inputTokens: record.inputTokens,
+                    outputTokens: record.outputTokens,
+                    reason: redactedReason(record.reason)
+                )
+            }
+
+        return CoachTraceSupportBundle(
+            schemaVersion: currentSchemaVersion,
+            exportedAt: exportedAt,
+            build: Build(
+                appVersion: boundedMetadata(appVersion, fallback: "unknown"),
+                buildNumber: boundedMetadata(buildNumber, fallback: "unknown"),
+                sourceGitCommit: boundedMetadata(sourceGitCommit, fallback: "unbound")
+            ),
+            privacy: Privacy(
+                contentFree: true,
+                includesUserText: false,
+                includesTranscript: false,
+                includesPrompt: false,
+                includesResponse: false,
+                includesAccountIdentifier: false,
+                includesCredentials: false
+            ),
+            trace: Trace(
+                traceID: trace.correlationId,
+                terminalState: trace.terminalState?.rawValue,
+                terminalStatus: trace.terminalStatusLabel,
+                terminalEventCount: trace.terminalEventCount,
+                terminalContractViolation: trace.hasTerminalContractViolation,
+                latencyMs: trace.latencyMs,
+                events: safeEvents
+            ),
+            providerDiagnostics: matchingDiagnostics,
+            reproduction: Reproduction(
+                mode: "content-free-terminal-path-replay",
+                command: "./tools/coach-arena/run.sh trace-replay <bundle.json>",
+                scope: "Validates the recorded stage order, provider attempts, gate decisions, and terminal UI contract. Raw communication content is intentionally unavailable.",
+                semanticFixtureRequired: true
+            )
+        )
+    }
+
+    func encodedJSON() -> String {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(self),
+              let output = String(data: data, encoding: .utf8) else {
+            return "{\"schemaVersion\":\"noum-coach-trace-support-error\"}"
+        }
+        return output
+    }
+
+    private static func boundedMetadata(
+        _ value: String,
+        fallback: String,
+        maxLength: Int = 80
+    ) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return fallback }
+        return String(trimmed.prefix(maxLength))
+    }
+
+    private static func redactedReason(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+        let secretMarkers = [
+            "authorization:",
+            "bearer ",
+            "api_key",
+            "apikey",
+            "access_token",
+            "refresh_token",
+            "client_secret",
+            "secret=",
+            "token=",
+        ]
+        guard !secretMarkers.contains(where: lowered.contains) else {
+            return "[redacted diagnostic reason]"
+        }
+        return String(trimmed.replacingOccurrences(of: "\n", with: " ").prefix(256))
     }
 }
 
@@ -607,6 +821,32 @@ final class FlowEventLog: ObservableObject {
         return flows.map { exportGroup($0.events) }.joined(separator: "\n\n")
     }
 
+    /// Structured support export for one Ask Noum trace. Matching transport
+    /// records are joined by the same root trace ID; unrelated diagnostics are
+    /// excluded. The resulting JSON is suitable for the local `trace-replay`
+    /// command and intentionally carries no communication content.
+    func exportCoachSupportBundle(
+        correlationId: UUID,
+        diagnostics: [AICallDiagnosticRecord],
+        appVersion: String,
+        buildNumber: String,
+        sourceGitCommit: String,
+        exportedAt: Date = Date()
+    ) -> String? {
+        guard let trace = recentCoachTraces(limit: max(events.count, 1))
+            .first(where: { $0.correlationId == correlationId }) else {
+            return nil
+        }
+        return CoachTraceSupportBundle.make(
+            trace: trace,
+            diagnostics: diagnostics,
+            appVersion: appVersion,
+            buildNumber: buildNumber,
+            sourceGitCommit: sourceGitCommit,
+            exportedAt: exportedAt
+        ).encodedJSON()
+    }
+
     private func exportGroup(_ group: [FlowEvent]) -> String {
         guard let first = group.first else { return "" }
         let formatter = ISO8601DateFormatter()
@@ -704,6 +944,72 @@ final class FlowEventLog: ObservableObject {
         return (Array(recent) + pinned).sorted { $0.createdAt > $1.createdAt }
     }
 }
+
+#if DEBUG
+/// Deterministic, content-free trace used only by the rendered Developer Tools
+/// regression. It exercises the same account-local stores as production after
+/// account hydration, so the test cannot pass against a disconnected mock UI.
+enum CoachTraceSupportUITestFixture {
+    static let traceID = UUID(uuidString: "a11ce000-1234-4234-8234-123456789abc")!
+
+    static func requested(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Bool {
+        arguments.contains("UI_TESTING_COACH_TRACE_SUPPORT")
+    }
+
+    @MainActor
+    static func installIfRequested(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) {
+        guard requested(arguments: arguments) else { return }
+        let start = Date(timeIntervalSince1970: 1_782_000_000)
+        let stages: [(String, AICallDiagnosticOutcome, String, [String: Int])] = [
+            (CoachTraceStage.accepted, .success, "request accepted; app=2.4 build=208 source=ui-test", [:]),
+            (CoachTraceStage.goalResolved, .success, "goal=authoritative provenance=explicit-choice", [:]),
+            (CoachTraceStage.classified, .success, "intent=coaching response=personal depth=deepAssessment", ["historyRows": 9, "userCharacters": 3_000]),
+            (CoachTraceStage.evidenceLoaded, .success, "memory=bounded-case selectedLever=structure evidence=session+proof+knowledge", ["eligibleSessions": 4, "hasMemory": 1, "knowledgeCards": 3]),
+            (CoachTraceStage.rubricSelected, .success, "rubric=authoritative active=1", ["dimensions": 3]),
+            (CoachTraceStage.promptAssembled, .success, "redacted prompt modules assembled", ["characters": 8_240, "modules": 7]),
+            (CoachTraceStage.providerDeadlineArmed, .success, "provider deadline armed", ["deadlineMs": 75_000]),
+            (CoachTraceStage.providerStarted, .success, "provider=Secure callable model=coach-v1", [:]),
+            (CoachTraceStage.providerRefused, .failure, "provider=Secure callable model=coach-v1", [:]),
+            (CoachTraceStage.gateFallback, .fallback, "provider unavailable; selected safe bounded fallback", [:]),
+            (CoachTraceStage.finalSanitized, .success, "safe substituted output sanitized", ["replyWords": 42]),
+            (CoachTraceStage.persisted, .fallback, "terminal request state persisted", ["latencyMs": 1_420]),
+            (CoachTraceStage.uiCommitted, .fallback, "vetted reply committed to chat", [:]),
+            (CoachTraceStage.terminal, .fallback, CoachTraceTerminalState.safeFallback.rawValue, ["latencyMs": 1_420]),
+        ]
+        let events = stages.enumerated().map { index, stage in
+            FlowEvent.make(
+                createdAt: start.addingTimeInterval(Double(index) / 10),
+                correlationId: traceID,
+                flow: .chatTurn,
+                stage: stage.0,
+                outcome: stage.1,
+                reason: stage.2,
+                numerics: stage.3
+            )
+        }
+        FlowEventLog.shared.replaceForDebug(events)
+        AICallDiagnosticsStore.shared.replaceForDebug([
+            AICallDiagnosticRecord.make(
+                createdAt: start.addingTimeInterval(0.75),
+                surface: "Ask Noum chat",
+                provider: "Secure callable",
+                model: "coach-v1",
+                outcome: .failure,
+                reason: "Provider returned a retryable service response",
+                statusCode: 503,
+                latencyMs: 820,
+                correlationID: traceID,
+                inputTokens: 1_240,
+                outputTokens: 0
+            ),
+        ])
+    }
+}
+#endif
 
 struct TransformationKPIReport: Equatable {
     /// Account-local assignment/exposure attribution. Outcomes remain separate

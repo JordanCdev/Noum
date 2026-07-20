@@ -259,6 +259,9 @@ struct NoumApp: App {
                 }
                 #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
+                #if DEBUG
+                CoachTraceSupportUITestFixture.installIfRequested()
+                #endif
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()
                 FlowEventLog.shared.recordActiveDay()
@@ -277,6 +280,9 @@ struct NoumApp: App {
                 }
                 #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
+                #if DEBUG
+                CoachTraceSupportUITestFixture.installIfRequested()
+                #endif
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()
                 if authManager.currentAccountID != nil {
