@@ -28,14 +28,15 @@ final class NoumChatFlowUITests: XCTestCase {
         app.launchArguments += [
             "UI_TESTING",
             "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_AUTHENTICATED_COACH",
             "UI_TESTING_CLEAR_ASK_NOUM",
             "-DeepLink",
             "noum://ask/type"
         ]
         app.launchArguments += forceArguments
         app.launch()
-        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
-        Thread.sleep(forTimeInterval: 1.0)
+        _ = app.descendants(matching: .any)["askNoum.messageField"]
+            .waitForExistence(timeout: 10)
         return app
     }
 
@@ -194,6 +195,70 @@ final class NoumChatFlowUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "typed-turn-resolved"; shot.lifetime = .keepAlways; add(shot)
+        app.terminate()
+    }
+
+    /// A scene transition must not strand or duplicate an accepted request.
+    /// The delayed harness outcome enters the ordinary network-terminal
+    /// mapping (safe fallback or retryable error); only its timing is controlled
+    /// so the app can be backgrounded while the pending row is visible.
+    @MainActor
+    func testPendingTurnResolvesOnceAfterBackgroundAndForeground() throws {
+        let app = launchTypedChat(
+            forceArguments: ["UI_TESTING_CHAT_FORCE_DELAYED_NOTICE"]
+        )
+        let field = messageField(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        let uniqueText = "Keep this request through the scene transition"
+        let before = resolvedTurnCount(in: app)
+
+        field.tap()
+        field.typeText(uniqueText)
+        let send = waitForEnabledSendControl(in: app, timeout: 15)
+        XCTAssertEqual(
+            send.label,
+            "Send message",
+            "The seeded account must finish availability before the transition scenario begins"
+        )
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+
+        let thinking = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Noum is thinking"))
+            .firstMatch
+        XCTAssertTrue(
+            thinking.waitForExistence(timeout: 5),
+            "The controlled request should be pending before the scene transition"
+        )
+
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 1)
+        app.activate()
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+
+        _ = waitForResolution(in: app, above: before, timeout: 15)
+        // Let the foreground navigation tree settle before counting rows. An
+        // XCUI snapshot taken during scene reattachment can briefly contain
+        // both the outgoing and incoming accessibility representations even
+        // though the store owns one message row.
+        Thread.sleep(forTimeInterval: 1)
+        let after = resolvedTurnCount(in: app)
+        let terminalDetails = "coach=\(coachBubbleLabels(in: app)); transient=\(transientFailureCount(in: app))"
+        XCTAssertEqual(
+            after,
+            before + 1,
+            "Foregrounding must produce exactly one stable terminal UI row; \(terminalDetails)"
+        )
+        XCTAssertEqual(userBubbleCount(in: app, containing: uniqueText), 1)
+        XCTAssertFalse(
+            thinking.exists,
+            "The pending indicator must clear after the retryable terminal lands"
+        )
+
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "typed-turn-resolved-after-foreground"
+        shot.lifetime = .keepAlways
+        add(shot)
         app.terminate()
     }
 

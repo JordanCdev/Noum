@@ -291,6 +291,11 @@ class AuthManager: ObservableObject {
         CoachingContentSnapshotSyncHandle?
     private var localGuestPromotionIsConnecting = false
     private var lastLocalGuestPromotionAttemptAt: Date?
+    #if DEBUG
+    /// Explicit DEBUG UI-test identity. It exists only for this process and
+    /// never mutates or shadows the user's Keychain in a later normal launch.
+    private var processLocalUITestAccountID: String?
+    #endif
     /// Monotonic process-local identity epoch. Async consumers that handle
     /// sensitive transient data capture this value and reject completions
     /// after teardown or hydration, including a rapid sign-out/sign-in to the
@@ -302,7 +307,14 @@ class AuthManager: ObservableObject {
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
     private nonisolated static let automaticGuestPromotionRetryInterval: TimeInterval = 30
     private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
-    var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
+    var currentAccountID: String? {
+        #if DEBUG
+        if let processLocalUITestAccountID {
+            return processLocalUITestAccountID
+        }
+        #endif
+        return KeychainHelper.load(key: accountKey)
+    }
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
     var currentAuthProviderTitle: String? { authProvider?.title }
     var currentAuthProviderRawValue: String? { KeychainHelper.load(key: accountProviderKey) }
@@ -1170,6 +1182,25 @@ class AuthManager: ObservableObject {
     }
 
 #if DEBUG
+    /// Gives rendered coach-flow tests an authenticated, account-scoped owner
+    /// without reading/writing Firebase auth or replacing the real Keychain
+    /// session. The explicit launch flag prevents ordinary UI suites from
+    /// acquiring provider-work authority accidentally.
+    func useProcessLocalAuthenticatedCoachStateForUITesting(
+        arguments: [String]
+    ) {
+        guard arguments.contains("UI_TESTING"),
+              arguments.contains("UI_TESTING_AUTHENTICATED_COACH") else {
+            return
+        }
+
+        processLocalUITestAccountID = "ui-test-coach-account"
+        signInError = nil
+        isSignedIn = true
+        authProvider = .guest
+        initialAccountHydrationState = .ready
+    }
+
     /// Presents a deterministic signed-out UI state without changing the
     /// Keychain, Firebase session, or any account-scoped stores. The next
     /// normal launch restores the real session unchanged.
@@ -1177,6 +1208,7 @@ class AuthManager: ObservableObject {
         guard arguments.contains("UI_TESTING"),
               arguments.contains("UI_TESTING_SIGNED_OUT") else { return }
 
+        processLocalUITestAccountID = nil
         signInError = nil
         isSignedIn = false
         authProvider = nil
