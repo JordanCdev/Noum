@@ -4,7 +4,7 @@ Audit date: 2026-07-20
 
 Behavior source: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
 
-Evidence checkout: `bde1db5a458aec56f4e93b82ee2b6e63fb1ebf4a`
+Evidence checkout: `56cfc2f0d161ff4413d7e178eecf288cf89647fa`
 
 Coach-source fingerprint: `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`
 
@@ -178,12 +178,13 @@ explicit instruction to stop adding features and start shipping.
 ## Evidence inventory
 
 - Canonical app-path report: `tools/coach-arena/reports/app-path/latest.json`
-  generated 2026-07-20T17:08:39Z; 53 conversations / 109 turns, 50 fixtures,
+  generated 2026-07-20T18:42:37Z; 53 conversations / 109 turns, 50 fixtures,
   81.16 average, zero failures, 50 complete traces, source freshness passed.
 - Canonical dump: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`.
 - Product journey suite: 13/13 within the complete serialized unit result.
 - Complete serialized unit target: 4,549/4,549 passed with zero failures or
-  skips in `/private/tmp/noum-vision-full-unit-final-pass2.xcresult`.
+  skips in
+  `/private/tmp/noum-merged-full-unit/Logs/Test/Test-Noum-2026.07.20_19-43-35-+0100.xcresult`.
 - Complete serialized UI target: 79/79 passed with zero failures or skips in
   `/private/tmp/noum-vision-full-ui-final-pass2.xcresult`. This includes the
   full screenshot tours and the four paths that failed the first broad soak:
@@ -199,15 +200,14 @@ explicit instruction to stop adding features and start shipping.
   production color-token/surface tests.
 - Rendered trace support flow: 1/1 in
   `/private/tmp/noum-trace-support-focus.xcresult`.
-- Coach Arena: 167/167 Python and 118/118 Node tests passed, with one intentional
-  Node skip.
+- Coach Arena: 167/167 Python and 119/119 Node tests passed with zero failures.
 - Transcript retry corpus: 20/20.
 - Current screenshot handoffs:
   `.screenshots/2026-07-20_accessibility-journey-final/HANDOFF.md`,
   `.screenshots/2026-07-20_accessibility-journey-hardening/HANDOFF.md` and
   `.screenshots/2026-07-20_trace-support-bundle/HANDOFF.md`.
 - Current-source Release simulator app passed strict signature verification at
-  `/private/tmp/noum-vision-home-a11y-fix-derived/Build/Products/Release-iphonesimulator/Noum.app`.
+  `/private/tmp/noum-merged-release-final/Build/Products/Release-iphonesimulator/Noum.app`.
 
 These artifacts prove the stated local contracts only. They do not replace any
 of the five independent production artifacts.

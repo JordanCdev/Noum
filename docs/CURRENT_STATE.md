@@ -1,5 +1,40 @@
 # Noum — Current state
 
+## 2026-07-20 — Vision-gap closure integrated on `ux-overhaul`; production remains NO-GO
+
+`codex/vision-gap-closure`, including the full `codex/product-journey-launch`
+lineage, is integrated into `ux-overhaul` at merge commit
+`56cfc2f0d161ff4413d7e178eecf288cf89647fa`. The original feature worktree and
+its screenshot handoffs remain intact. The merge retained the existing
+coaching, memory, plan, recommendation, transfer, lifecycle, and observability
+owners; no parallel store, route, analytics SDK, or production deployment was
+added.
+
+Canonical app-path evidence was regenerated from the merged checkout and is
+bound to `56cfc2f0d` plus coach-source fingerprint
+`sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`.
+It passes 53 conversations / 109 turns, 50/50 scored fixtures at 81.16 average,
+50 complete traces, zero failures, zero placeholder leaks, and source
+freshness. The complete serialized iOS unit target passes **4,549/4,549** with
+zero failed or skipped tests in
+`/private/tmp/noum-merged-full-unit/Logs/Test/Test-Noum-2026.07.20_19-43-35-+0100.xcresult`.
+Functions passes **163/163** tests plus **9/9** release locks. Coach Arena passes
+**119/119 Node** and **167/167 Python** tests. A clean optimized Release
+simulator build succeeds and passes strict signature verification at
+`/private/tmp/noum-merged-release-final/Build/Products/Release-iphonesimulator/Noum.app`.
+
+The first Release attempt exhausted the data volume and caused a Swift frontend
+crash rather than a source diagnostic. Removing only task-created temporary
+build caches and rerunning from fresh DerivedData with one compiler job passed;
+the successful unit result and final Release build were retained.
+
+The independent readiness evaluator remains correctly **NO-GO at 20/100**.
+Current-candidate live-provider evidence, blinded professional-coach
+calibration, longitudinal real-user transfer outcomes, physical TestFlight QA,
+and operational launch sign-off are still absent. Post-TestFlight Progress/Path
+consolidation, broader localisation, and unvalidated breathing/emphasis labels
+remain sequenced behind those gates rather than being added during M14.
+
 ## 2026-07-20 — Vision completion audit, trace support, and journey accessibility; production remains NO-GO
 
 The current behavior source is
