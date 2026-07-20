@@ -1,5 +1,62 @@
 # Noum — Current state
 
+## 2026-07-20 — Journey reliability hardening and source-bound launch audit; production remains NO-GO
+
+The accepted product-journey plan was continued from the latest clean journey
+branch rather than reimplemented on stale `ux-overhaul` state. The protected
+baseline remains `ux-overhaul` at
+`2bcb1ccff769d1eba71da9049e4fa82fbf1d4bb2`; implementation lives in the clean
+worktree `/Users/jordan/src/GitHub/Noum-vision-gap-closure` on
+`codex/vision-gap-closure`. That branch is a direct descendant of the baseline
+and includes the coherent journey from `codex/product-journey-launch`.
+
+The remaining code-side M14 reliability gaps are closed. `AuthManager` no
+longer emits the Swift 6 actor-isolation warning for its retry interval. The
+redacted Debug trace now detects duplicate or malformed terminal events and
+labels them `trace error` instead of presenting an apparently valid terminal
+state. Regression coverage proves that a 3,000-character Ask Noum turn survives
+acceptance and account-scoped reload without truncation or silent loss, and
+that parent cancellation returns a typed cancellation promptly even when a
+provider ignores cancellation. The independent Python readiness audit was also
+realigned with the Swift manifest's two source-bound transcript-practice
+points, removing the stale `auditMismatch:score` failure without weakening the
+20-point external-evidence cap.
+
+Visual inspection found a real accessibility defect in the Settings root: at
+the largest Dynamic Type category, the practice and daily-goal picker rows
+collapsed into character-width columns. They now switch to a stacked layout at
+accessibility sizes while retaining the established compact layout at standard
+sizes. A fresh normally signed simulator build produced five nonblank 1206×2622
+tab-root captures plus the largest-Dynamic-Type stress capture; all six were
+visually inspected. The app intentionally forces the light color scheme at its
+root, so the requested dark-appearance check proves a remaining light-only
+product boundary, not dark-mode compatibility.
+
+Post-fix verification is green: the serialized iOS unit target passes
+**4,545/4,545 tests with 0 failed and 0 skipped** in
+`/private/tmp/noum-vision-gap-all-units-accessibility.xcresult`; the focused
+journey and account-isolation suites pass 26/26; Functions passes 163/163 plus
+9/9 release-lock checks; and Coach Arena passes 118 Node tests with one
+intentional skip plus 162/162 Python tests. The freshly regenerated transcript
+practice corpus passes 20/20. No Firebase Analytics or new dependency was
+added.
+
+Canonical app-path evidence is bound to source commit `6b1dabcfc` and coach
+fingerprint
+`sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`.
+It contains 53 conversations / 109 turns, 50/50 scored replies at 81.16
+average, 50 complete real-pipeline traces, zero app-path failures, current
+source sidecars, and 22/22 static operational checks. The Swift readiness
+manifest and independent audit now agree.
+
+Production remains correctly **NO-GO at 20/100 with 0/5 required external
+artifacts**. A live-provider sweep, blinded professional-coach calibration,
+longitudinal real-user transfer outcomes, physical TestFlight verification,
+and operational launch sign-off cannot be manufactured locally. Same-target
+real-microphone retry, interactive VoiceOver and Reduce Motion inspection,
+full-surface accessibility extremes, signed archive/upload, and a product
+decision or implementation for app-wide dark mode remain open.
+
 ## 2026-07-19 — Coherent coaching journey and terminal request contract verified locally; production remains NO-GO
 
 The product-journey work was isolated from `ux-overhaul` baseline

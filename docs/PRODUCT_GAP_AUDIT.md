@@ -1,6 +1,6 @@
 # Product journey gap audit
 
-Audit date: 2026-07-19
+Audit date: 2026-07-20
 Baseline branch: `ux-overhaul`
 Baseline commit: `2bcb1ccff769d1eba71da9049e4fa82fbf1d4bb2`
 
@@ -95,29 +95,34 @@ No screen or tab was added. No existing state owner was duplicated. Home, Practi
 ## Remaining product gaps
 
 - A retry still flows through the existing phrase-practice and Summary owners; a fresh real-speech run must prove the same target survives that complete route and updates the intervention as intended.
+- Long-request local contracts are now explicit rather than inferred: a 3,000-character user turn survives acceptance and account-scoped reload exactly, and cancellation wins promptly even when the provider ignores cancellation. Current-source live-provider and background/foreground device runs remain required before this becomes production evidence.
 - Memory exposes the bounded case projection and its overall update date/confidence, not an independently timestamped UI row for every underlying evidence record. The model does not currently persist that granularity, so the UI does not fabricate it.
-- The Debug viewer is deliberately content-free. Safe local reproduction/export of a failed request remains with Coach Arena and existing redacted log export; there is no production prompt/reply replay button.
+- The Debug viewer is deliberately content-free. It now makes duplicate or malformed request terminals visible as `trace error`, but safe local reproduction/export still belongs to Coach Arena and the existing redacted log export; there is no production prompt/reply replay button.
+- Largest-Dynamic-Type inspection found and fixed the two compressed Settings picker rows. The complete ladder, retry, memory, weekly check-in, Big Moment, and tab-root accessibility matrix still needs interactive VoiceOver, Reduce Motion, error/offline, and physical-device coverage. The root app currently forces `.preferredColorScheme(.light)`, so dark mode is a deliberate open product/implementation decision rather than a passed appearance check.
 - External live-provider, professional-coach, longitudinal-user, physical-TestFlight, and launch-operations evidence remain missing. Local scores cannot close those gates.
 
 ## Launch verdict
 
 This branch is not proof of production or TestFlight readiness. At source commit
-`6712ee74d` and coach-source fingerprint
-`sha256:d5efd3bebbb7e5aefb20db1ea67a7986191dad6cb9b3d8ded0ffb5424468c2c6`,
-the final canonical local refresh passed 109/109 app-path turns, 50/50 scored
-replies (81.16 average), all terminal-trace checks, and the 90-point local target
-shape. The current Release simulator build succeeds; the three selected journey
-UI regressions pass; and the five-tab seeded plus cold-profile recovery light
-sweeps produced ten nonblank 1206×2622 captures. No dependency was added.
+`6b1dabcfc` and coach-source fingerprint
+`sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`,
+the final canonical local refresh passed 53 conversations / 109 app-path turns,
+50/50 scored replies (81.16 average), 50 complete real-pipeline terminal traces,
+source freshness, and 22/22 static operational checks. The Swift readiness
+manifest and independent Python audit agree at 20/100 after the stale scoring
+contract was repaired. The normally signed simulator build succeeds; the light
+sweep produced five nonblank tab roots plus one largest-Dynamic-Type Settings
+capture, all at 1206×2622 and visually inspected. No dependency or Firebase
+Analytics was added.
 
-The source-bound launch evaluator remains **NO-GO at 18/100 (20-point cap)**.
+The source-bound launch evaluator remains **NO-GO at 20/100 (20-point cap)**.
 It correctly reports five external blockers: no current-source live-provider
 transcript sweep, no professional-coach calibration, no real-user longitudinal
 transfer outcomes, no physical TestFlight verification, and an incomplete
-operational launch checklist. Accessibility extremes, same-target real-speech
-retry, signed archive/upload, and those five external evidence artifacts remain
-required. The fresh broad unit run is also not fully green: 4,502 passed and 33
-failed across 4,535 tests. Those failures cluster in legacy coach-fixture/
-typed-fallback expectations and one source-text ordering assertion; focused
-journey/reliability tests and the canonical app path pass. Local scores and
-simulator screenshots do not close either boundary.
+operational launch checklist. Same-target real-speech retry, interactive
+VoiceOver and Reduce Motion inspection, the remaining accessibility extremes,
+app-wide dark-mode support, signed archive/upload, and those five external
+evidence artifacts remain required. The fresh serialized unit target is fully
+green at **4,545/4,545 passed, 0 failed, 0 skipped**; the transcript retry corpus
+is 20/20. Local scores and simulator screenshots do not close the external
+boundary.

@@ -1,6 +1,6 @@
 # Manual launch actions
 
-Updated: 2026-07-19
+Updated: 2026-07-20
 
 This document lists actions that require account ownership, independent verification, a paid Apple team, real users, professional reviewers, or physical devices. It is not evidence that any action is complete.
 
@@ -8,6 +8,7 @@ This document lists actions that require account ownership, independent verifica
 
 - The legacy Deepgram/AWS credential-vending incident is recorded as contained on 2026-07-18 in `docs/SECURITY_deepgram_key_endpoint.md`: the API was deleted, exposed Deepgram and Google keys were revoked/replaced, usage was reviewed, and the history scan was baselined. Do not revert to the stale 2026-07-13 wording.
 - `coachChatV2` and `coachChatAvailability` from source commit `08985b39321095edec52c48ca50317763454d736` were deployed and read back active on 2026-07-19. Do not redeploy them merely to collect newer-looking output.
+- The latest locally verified behavior/evidence source is `6b1dabcfc` with coach fingerprint `sha256:0dd341ca95e6c86a06fac375080dbbf90db7af372194231b08f64eccd452e089`. It is not a signed archive or processed TestFlight build; any later behavior change must receive a new source-bound refresh.
 - Production remains NO-GO. The operational checklist, social cutover, Apple authority, current-candidate external evidence, and physical TestFlight sweep are not complete.
 
 ## 1. Close untrusted Firebase CLI sessions
