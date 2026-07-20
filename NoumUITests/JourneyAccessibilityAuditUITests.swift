@@ -150,6 +150,7 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
                 "Changed words are highlighted · meaning and voice preserved",
                 "Lead with the point and remove one tentative opening marker.",
             ],
+            ignoresTopBoundaryContrast: true,
             ignoresBottomBoundaryContrast: true
         )
     }
@@ -204,6 +205,7 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
         includesHitRegions: Bool = true,
         includesElementDetection: Bool = true,
         verifiedContrastLabels: Set<String> = [],
+        ignoresTopBoundaryContrast: Bool = false,
         ignoresBottomBoundaryContrast: Bool = false
     ) throws {
         var auditTypes: XCUIAccessibilityAuditType = [
@@ -233,6 +235,8 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
                     issue,
                     labels: verifiedContrastLabels
                 )
+                || (ignoresTopBoundaryContrast
+                    && self.handlesPartiallyLeavingTopContent(issue, in: app))
                 || (ignoresBottomBoundaryContrast
                     && self.handlesPartiallyEnteringBottomCard(issue, in: app))
         }
@@ -311,6 +315,31 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
         guard window.exists else { return false }
         return !window.frame.intersects(element.frame)
             || element.frame.minY < window.frame.minY
+    }
+
+    /// The Summary ScrollView can stop with the previous ladder heading partly
+    /// beneath the system status area. Xcode still marks that retained node as
+    /// hittable, then samples covered pixels. Restrict this exception to the
+    /// transcript-ladder state and to elements intersecting the top system
+    /// boundary (plus a small antialiasing margin); fully visible content is
+    /// still audited normally.
+    @MainActor
+    private func handlesPartiallyLeavingTopContent(
+        _ issue: XCUIAccessibilityAuditIssue,
+        in app: XCUIApplication
+    ) -> Bool {
+        guard issue.auditType == .contrast,
+              let element = issue.element else {
+            return false
+        }
+        let window = app.windows.firstMatch
+        guard window.exists else { return false }
+
+        let statusBar = app.statusBars.firstMatch
+        let systemTop = statusBar.exists ? statusBar.frame.maxY : window.frame.minY
+        let samplingBoundary = systemTop + 8
+        return element.frame.maxY > window.frame.minY
+            && element.frame.minY <= samplingBoundary
     }
 
     /// The Summary ScrollView publishes the next lazy card while only its top
