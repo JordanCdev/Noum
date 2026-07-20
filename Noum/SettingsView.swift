@@ -69,6 +69,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isAppTabRoot) private var isAppTabRoot
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var authManager = AuthManager.shared
@@ -596,28 +597,89 @@ struct SettingsView: View {
     // MARK: - Practice Card
 
     private var practiceDifficultyRow: some View {
-        HStack(alignment: .center, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Practice difficulty")
-                    .font(.subheadline.weight(.semibold))
-                Text(practiceSettings.timedDifficulty.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: Spacing.sm)
-            Picker("Practice difficulty", selection: $practiceSettings.timedDifficulty) {
-                ForEach(TimedPracticeDifficulty.allCases) { difficulty in
-                    Text(difficulty.title).tag(difficulty)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    practiceDifficultyLabel
+                    practiceDifficultyPicker
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    practiceDifficultyLabel
+                    Spacer(minLength: Spacing.sm)
+                    practiceDifficultyPicker
                 }
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .accessibilityLabel("Practice difficulty")
-            .tint(AppColor.brandBlue)
         }
         .frame(minHeight: 44)
         .accessibilityIdentifier("settings.practiceDifficulty")
+    }
+
+    private var practiceDifficultyLabel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Practice difficulty")
+                .font(.subheadline.weight(.semibold))
+            Text(practiceSettings.timedDifficulty.subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var practiceDifficultyPicker: some View {
+        Picker("Practice difficulty", selection: $practiceSettings.timedDifficulty) {
+            ForEach(TimedPracticeDifficulty.allCases) { difficulty in
+                Text(difficulty.title).tag(difficulty)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .accessibilityLabel("Practice difficulty")
+        .tint(AppColor.brandBlue)
+    }
+
+    private var dailyGoalLabel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Daily goal")
+                .font(.subheadline.weight(.semibold))
+            Text("Choose a pace that fits your week.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var dailyGoalPicker: some View {
+        Picker("Daily goal", selection: $dailyGoal.goalReps) {
+            ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
+                Text("\(value) rep\(value == 1 ? "" : "s")").tag(value)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .accessibilityLabel("Daily goal")
+        .tint(AppColor.brandBlue)
+    }
+
+    private var dailyGoalCard: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    dailyGoalLabel
+                    dailyGoalPicker
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    dailyGoalLabel
+                    Spacer(minLength: Spacing.sm)
+                    dailyGoalPicker
+                }
+            }
+        }
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("settings.dailyGoal")
     }
 
     private var practiceVoiceCuesRow: some View {
@@ -752,29 +814,6 @@ struct SettingsView: View {
                 accessibilityHint: "Adds time pressure and rating to every drill."
             )
         }
-    }
-
-    private var dailyGoalCard: some View {
-        HStack(alignment: .center, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Daily goal")
-                    .font(.subheadline.weight(.semibold))
-                Text("Choose a pace that fits your week.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: Spacing.sm)
-            Picker("Daily goal", selection: $dailyGoal.goalReps) {
-                ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
-                    Text("\(value) rep\(value == 1 ? "" : "s")").tag(value)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .tint(AppColor.brandBlue)
-        }
-        .frame(minHeight: 44)
-        .accessibilityIdentifier("settings.dailyGoal")
     }
 
     private var micDisabledForFillerHighlight: Bool {
