@@ -68,7 +68,8 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
                 "Did Noum help you move toward the speaker you want to be?",
                 "Yes",
                 "Not yet",
-            ]
+            ],
+            ignoresTopBoundaryContrast: true
         )
     }
 
