@@ -813,6 +813,24 @@ class ReadinessGateTests(unittest.TestCase):
             "coach-operational-launch-checklist-v2.json",
         )
 
+    def test_verified_artifact_audit_preserves_transcript_practice_local_points(self):
+        readiness = {
+            "score": 20,
+            "maximumAllowedScore": 20,
+            "localTargetShapeScore": 90,
+            "claim": "localEvaluationSubstrateOnly",
+            "blockers": list(gate.EVIDENCE_REQUIREMENTS),
+        }
+
+        audited = gate.readiness_with_verified_artifacts(
+            readiness,
+            {"requiredArtifacts": []},
+        )
+
+        self.assertEqual(audited["score"], 20)
+        self.assertEqual(audited["maximumAllowedScore"], 20)
+        self.assertEqual(audited["blockers"], list(gate.EVIDENCE_REQUIREMENTS))
+
     def test_production_ready_requires_score_claim_and_no_blockers(self):
         not_ready = {
             "score": 100,

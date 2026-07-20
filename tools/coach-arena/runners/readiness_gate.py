@@ -655,7 +655,12 @@ def readiness_with_verified_artifacts(local_readiness, artifact_audit):
         if blocker not in valid_blockers
     ]
     local_score = strict_int(local_readiness.get("score")) or 0
-    raw_score = min(18, local_score)
+    # The local Swift audit now awards two bounded points for the source-bound
+    # transcript-practice loop in addition to the original 18-point corpus and
+    # app-path substrate. Keep the independent audit aligned with that explicit
+    # 20-point local ceiling; external artifacts are still the only path above
+    # it and the blocker caps below remain authoritative.
+    raw_score = min(20, local_score)
     weights = {
         "noLiveProviderTranscriptSweep": 16,
         "noProfessionalCoachCalibration": 20,
