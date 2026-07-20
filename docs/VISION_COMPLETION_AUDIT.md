@@ -4,7 +4,7 @@ Audit date: 2026-07-20
 
 Behavior source: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
 
-Evidence checkout: `cdce32af90f64295fb2ce4bfd5ef905d4194f4c7`
+Evidence checkout: `bde1db5a458aec56f4e93b82ee2b6e63fb1ebf4a`
 
 Coach-source fingerprint: `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`
 
@@ -178,7 +178,7 @@ explicit instruction to stop adding features and start shipping.
 ## Evidence inventory
 
 - Canonical app-path report: `tools/coach-arena/reports/app-path/latest.json`
-  generated 2026-07-20T15:15:04Z; 53 conversations / 109 turns, 50 fixtures,
+  generated 2026-07-20T17:08:39Z; 53 conversations / 109 turns, 50 fixtures,
   81.16 average, zero failures, 50 complete traces, source freshness passed.
 - Canonical dump: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`.
 - Product journey suite: 13/13 within the complete serialized unit result.
