@@ -178,6 +178,51 @@ struct ProductJourneyContractTests {
         #expect(updated?.blockers == memory.blockers)
     }
 
+    @Test("Goal-change context retains bounded evidence without leaking the case file")
+    func goalChangeContextRetainsOnlyEvidenceSafeMemory() throws {
+        let intent = try #require(CoachContextBuilder.detectGoalIntent(
+            "Change my voice goal from warm to persuasive.",
+            currentVoice: .warm
+        ))
+        let now = Date()
+        let watchingSince = now.addingTimeInterval(-(16 * 86_400))
+        let memory = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            voice: .warm,
+            currentLever: .paceControl,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "PRIVATE BASIS MUST NOT CROSS",
+            goalFit: .aligned,
+            strengths: ["PRIVATE STRENGTH MUST NOT CROSS"],
+            blockers: ["PRIVATE BLOCKER MUST NOT CROSS"],
+            workingHypothesis: "PRIVATE HYPOTHESIS MUST NOT CROSS",
+            hypothesisWatchStartedAt: watchingSince
+        )
+
+        let context = CoachContextBuilder.nonPersonalContext(
+            profile: nil,
+            responseKind: .conversational,
+            coachingExpertise: [],
+            pendingGoalIntent: intent,
+            goalChangeMemory: memory
+        )
+        let line = try #require(CoachContextBuilder.retainedGoalChangeEvidenceLine(
+            memory: memory,
+            now: now
+        ))
+
+        #expect(line.contains("Pace"))
+        #expect(line.contains("8 reps over 2 weeks"))
+        #expect(context.contains("RETAINED TRAINING CONTEXT"))
+        #expect(context.contains("prior work on Pace remains observed"))
+        #expect(!context.contains("PRIVATE BASIS"))
+        #expect(!context.contains("PRIVATE STRENGTH"))
+        #expect(!context.contains("PRIVATE BLOCKER"))
+        #expect(!context.contains("PRIVATE HYPOTHESIS"))
+    }
+
     @MainActor
     @Test("Debug traces group one content-free terminal journey")
     func debugTraceGroupsTerminalStateAndLatency() {
@@ -274,7 +319,7 @@ struct ProductJourneyContractTests {
             correlationId: traceID,
             flow: .chatTurn,
             stage: CoachTraceStage.accepted,
-            reason: "request accepted; token=must-not-leak"
+            reason: "request accepted for jordan@example.com; token=must-not-leak"
         ))
         log.log(FlowEvent.make(
             createdAt: Date(timeIntervalSince1970: 11),
@@ -323,7 +368,7 @@ struct ProductJourneyContractTests {
                 provider: "Secure callable",
                 model: "coach-v1",
                 outcome: .failure,
-                reason: "Authorization: Bearer must-not-leak",
+                reason: "Authorization: Bearer must-not-leak for jordan@example.com",
                 statusCode: 503,
                 latencyMs: 3_200,
                 correlationID: traceID,
@@ -377,9 +422,11 @@ struct ProductJourneyContractTests {
         #expect(reproduction["command"] as? String == "./tools/coach-arena/run.sh trace-replay <bundle.json>")
         #expect(reproduction["semanticFixtureRequired"] as? Bool == true)
         #expect(!output.contains("must-not-leak"))
+        #expect(!output.contains("jordan@example.com"))
         #expect(!output.contains("PRIVATE USER TURN"))
         #expect(!output.contains("UNRELATED DIAGNOSTIC"))
-        #expect(output.contains("[redacted diagnostic reason]"))
+        #expect(output.contains("provider-outcome:failure"))
+        #expect(output.contains("stage:coach.accepted|outcome:success"))
     }
 
     @Test("Every provider outcome maps to an explicit terminal state")
@@ -473,17 +520,40 @@ struct ProductJourneyContractTests {
 
     @Test("Authenticity shaming is blocked on voice-goal turns")
     func authenticityShamingCannotReachTheUser() {
+        let unsafeReplies = [
+            "Your old delivery was a fake persona.",
+            "That wasn't really you.",
+            "You were performing a persona.",
+            "Return to your authentic self.",
+            "The old you was fake.",
+            "Just be yourself.",
+            "You don't believe what you're saying."
+        ]
+        for reply in unsafeReplies {
+            let verdict = CoachReliabilityGate.evaluate(
+                replyText: reply,
+                previousCoachReply: nil,
+                latestUserTurn: "Can I change my voice goal from warm to persuasive?",
+                turnDepth: .quickMove,
+                assessment: nil,
+                evidenceCoverage: nil
+            )
+            #expect(verdict.blockingIssues.contains(.goalAuthenticityShaming), "Expected block for: \(reply)")
+            #expect(verdict.fallbackText != nil)
+        }
+    }
+
+    @Test("A user's own authenticity concern can be reflected without diagnosis")
+    func userOwnedAuthenticityLanguageRemainsAvailable() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "Your old delivery was a fake persona. You were pretending to be warm.",
+            replyText: "You said the new emphasis feels unlike you. Treat that as useful friction, not proof that either voice is fake.",
             previousCoachReply: nil,
-            latestUserTurn: "Can I change my voice goal from warm to persuasive?",
+            latestUserTurn: "This feels unlike me, almost fraudulent. Can I change the goal?",
             turnDepth: .quickMove,
             assessment: nil,
             evidenceCoverage: nil
         )
-        #expect(verdict.blockingIssues.contains(.goalAuthenticityShaming))
-        #expect(verdict.fallbackText != nil)
-        #expect(!(verdict.fallbackText ?? "").lowercased().contains("pretending"))
+        #expect(!verdict.blockingIssues.contains(.goalAuthenticityShaming))
     }
 
     @Test("A terse copy complaint repairs Noum instead of assigning user work")

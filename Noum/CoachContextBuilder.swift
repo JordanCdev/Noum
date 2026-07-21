@@ -487,8 +487,9 @@ enum CoachContextBuilder {
            to X from now on". Instead: name the closest of the six real voices \
            (Authoritative, Warm and welcoming, Concise and sharp, Persuasive, \
            Executive presence, Storytelling) — and if what they said maps to \
-           none, ask them to pick from those six rather than inventing a voice \
-           that is not one of them. If they already have a voice, name what \
+           none, map it to the closest one or two named voices and ask which \
+           practical pull fits rather than inventing a voice that is not one \
+           of them. If they already have a voice, name what \
            they have been building on it (cite reps / since-date from CONTEXT \
            if present) AND ask a clarifying question — why they want to change \
            and what has shifted — before they decide. Propose the choice in \
@@ -1705,7 +1706,8 @@ enum CoachContextBuilder {
         responseKind: CoachChatResponseKind,
         coachingExpertise: [CoachKnowledgeCard],
         coachingBrief: CoachChatBrief? = nil,
-        pendingGoalIntent: GoalIntent? = nil
+        pendingGoalIntent: GoalIntent? = nil,
+        goalChangeMemory: CoachMemory? = nil
     ) -> String {
         var lines = [
             "=== NON-PERSONAL COACH CONTEXT ===",
@@ -1735,8 +1737,12 @@ enum CoachContextBuilder {
             lines.append(contentsOf: goalIntentContextLines(
                 intent: pendingGoalIntent,
                 currentVoice: profile?.chosenStyleGoal,
-                adaptationLog: nil
+                adaptationLog: goalChangeMemory?.adaptationLog
             ))
+            if pendingGoalIntent.kind == .change,
+               let retainedLine = retainedGoalChangeEvidenceLine(memory: goalChangeMemory) {
+                lines.append(retainedLine)
+            }
         }
         if responseKind == .generalCoaching {
             let expertiseLines = CoachExpertiseFormatter.contextLines(
@@ -1764,6 +1770,24 @@ enum CoachContextBuilder {
         lines.append("")
         lines.append("=== END CONTEXT ===")
         return lines.joined(separator: "\n")
+    }
+
+    /// Goal-change turns normally use the non-personal lane, but the coach must
+    /// still explain that prior observed work survives the change. This helper
+    /// exposes only one bounded, evidence-safe line: no transcript, metric,
+    /// score, case scaffold, or raw memory prose crosses the boundary.
+    static func retainedGoalChangeEvidenceLine(
+        memory: CoachMemory?,
+        now: Date = Date()
+    ) -> String? {
+        guard let memory,
+              let lever = memory.currentLever,
+              let depth = CoachCaseFile.evidenceDepthClause(
+                evidenceCount: memory.evidenceCount,
+                watchingSince: memory.hypothesisWatchStartedAt,
+                now: now
+              ) else { return nil }
+        return "- RETAINED TRAINING CONTEXT: prior work on \(lever.displayName) remains observed across \(depth). A new emphasis does not erase it or prove the new emphasis yet."
     }
 
     /// Turn-scoped provider context for a personal evidence read. The typed

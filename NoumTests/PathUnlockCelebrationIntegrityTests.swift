@@ -405,23 +405,20 @@ struct PathUnlockCelebrationIntegrityTests {
         #expect(summary.contains("sessionStore.progressEligibleSessionCount"))
     }
 
-    @Test("Celebration copy and proof resolve the triggering session, never array position")
+    @Test("Home resolves the pending path node into the unified progress receipt")
     func renderedProvenanceSourceContract() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let celebration = try String(
-            contentsOf: repositoryRoot.appendingPathComponent("Noum/PathNodeCelebration.swift"),
-            encoding: .utf8
-        )
         let content = try String(
             contentsOf: repositoryRoot.appendingPathComponent("Noum/ContentView.swift"),
             encoding: .utf8
         )
 
-        #expect(celebration.contains("first(where: { $0.id == triggeringSessionID })"))
-        #expect(!celebration.contains("sessionStore.sessions.last"))
-        #expect(content.contains("first(where: { $0.id == sessionID })"))
-        #expect(content.contains("pendingCelebrationSessionID == sessionID"))
+        #expect(content.contains("home.progressReceipt"))
+        #expect(content.contains("guard let nodeID = pathProgress.pendingCelebrationNodeID"))
+        #expect(content.contains("PathNodeRegistry.all.first(where: { $0.0.id == nodeID })?.0"))
+        #expect(content.contains("onDismiss: pathProgress.consumeCelebration"))
+        #expect(!content.contains("PathNodeCelebration("))
     }
 }

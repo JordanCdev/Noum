@@ -7,7 +7,7 @@ import SwiftUI
 // Tap-the-screen behaviour and dismissal are the caller's concern — this
 // layer just emits N particles, animates them, then disappears.
 //
-// Used by `FirstRepCelebration` and `PathNodeCelebration`. Tuned so a
+// Used by the restrained first-rep moment. Tuned so a
 // single celebration feels like a moment, not a screensaver: 28 pieces,
 // 1.6s window, slight x-jitter + gravity-style fall.
 

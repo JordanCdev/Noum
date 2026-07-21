@@ -264,7 +264,7 @@ struct CoachTraceSupportBundle: Codable, Equatable {
                     elapsedMs: trace.elapsedMs(for: event),
                     stage: event.stage,
                     outcome: event.outcome.rawValue,
-                    reason: redactedReason(event.reason),
+                    reason: canonicalEventReason(event),
                     numerics: event.numerics
                 )
             }
@@ -283,7 +283,7 @@ struct CoachTraceSupportBundle: Codable, Equatable {
                     cacheHit: record.cacheHit,
                     inputTokens: record.inputTokens,
                     outputTokens: record.outputTokens,
-                    reason: redactedReason(record.reason)
+                    reason: canonicalProviderReason(record)
                 )
             }
 
@@ -344,24 +344,12 @@ struct CoachTraceSupportBundle: Codable, Equatable {
         return String(trimmed.prefix(maxLength))
     }
 
-    private static func redactedReason(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lowered = trimmed.lowercased()
-        let secretMarkers = [
-            "authorization:",
-            "bearer ",
-            "api_key",
-            "apikey",
-            "access_token",
-            "refresh_token",
-            "client_secret",
-            "secret=",
-            "token=",
-        ]
-        guard !secretMarkers.contains(where: lowered.contains) else {
-            return "[redacted diagnostic reason]"
-        }
-        return String(trimmed.replacingOccurrences(of: "\n", with: " ").prefix(256))
+    private static func canonicalEventReason(_ event: FlowEvent) -> String {
+        "stage:\(event.stage)|outcome:\(event.outcome.rawValue)"
+    }
+
+    private static func canonicalProviderReason(_ record: AICallDiagnosticRecord) -> String {
+        "provider-outcome:\(record.outcome.rawValue)"
     }
 }
 

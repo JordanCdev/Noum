@@ -31,9 +31,9 @@
       "text": "yeah maybe I should just switch to something warmer altogether",
       "turnDepth": "groundedRead",
       "emotionalSignal": "reflective, testing an idea out loud — not committed, reacting to one piece of feedback",
-      "expectedCoachMove": "Propose, do not set. Map \"warmer\" to the closest real voice (Warm) and ask him to confirm, referencing the specific feedback (clear but cold) and the 3 weeks already banked on authoritative. Ask one clarifying question before treating this as decided. Defer the actual change to the in-app confirmation card. Must not say the voice has been changed/set/saved.",
+      "expectedCoachMove": "Propose, do not set. Treat Warm as a training emphasis, not an identity. Map \"warmer\" to Warm, reference the specific feedback (clear but cold) and the retained Authoritative work, then ask one clarifying question before treating this as decided. Use no tap/confirm/button copy and never imply the prior delivery was fake.",
       "badAnswerExample": "Got it, I've switched you over to Warm. Your new warm style will focus on connection and empathy. Let's see how it feels this week!",
-      "excellentAnswerExample": "Closest match to warmer is Warm — built around connecting person-to-person rather than landing a verdict. Worth asking first: was it cold in the whole update, or just the one moment someone called out? Three weeks of authoritative got you \"clear\" — that's not nothing. If you want to try Warm, tap to confirm and I'll set it up.",
+      "excellentAnswerExample": "Closest match to warmer is Warm — training connection without erasing the clarity your Authoritative work built. Was the whole update cold, or one moment that needed a warmer edge?",
       "disqualifiers": [
         {
           "pattern": "i('| ha)ve (updated|set|changed|saved|locked)",
@@ -46,6 +46,16 @@
           "cap": "placeholderOrBroken"
         },
         "from now on",
+        {
+          "pattern": "tap|confirm|set it up|lock it in",
+          "regex": true,
+          "cap": "placeholderOrBroken"
+        },
+        {
+          "pattern": "fake|inauthentic|pretending|authentic self",
+          "regex": true,
+          "cap": "ignoresIntent"
+        },
         {
           "pattern": "let's see how it feels",
           "penalty": 6

@@ -62,7 +62,7 @@ ANTHROPIC_API_KEY=sk-ant-... ./tools/coach-arena/run.sh run
 # Offline replay over captured replies/verdicts (no key, reproducible)
 ARENA_PROVIDER=replay ./tools/coach-arena/run.sh run
 
-# Include the 10 synthetic multi-turn conversations
+# Include the 11 synthetic multi-turn conversations
 ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 
 # Real Swift app-path evidence from the XCTest artifact dump
@@ -295,7 +295,7 @@ so a report ties to an exact state of the coach.
 
 ## Fixtures
 
-50 gold fixtures in [`fixtures/gold/`](fixtures/gold) + 10 multi-turn
+52 gold fixtures in [`fixtures/gold/`](fixtures/gold) + 11 multi-turn
 conversations expanded from [`synthetic/conversations.data.mjs`](synthetic/conversations.data.mjs).
 Each carries `userTurn`, `priorChatTurns`, `goal`, `evidence`, `memoryState`,
 `emotionalSignal`, `expectedCoachMove`, `badAnswerExample`,

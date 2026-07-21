@@ -1,8 +1,8 @@
-# Coach Arena failures — run_2026-07-10_07-13-37
+# Coach Arena failures — run_2026-07-21_07-56-12
 
-16 below 70 / capped / missing — **10 substantive gap(s)** (the real coach-parity signal) and **6 voice/residue cap(s)** (judge rated substance excellent; a prompt/finalizer cleanup, ux/chat-owned). Split so residue caps don't masquerade as the worst coaching failures.
+21 below 70 / capped / missing — **15 substantive gap(s)** (the real coach-parity signal) and **6 voice/residue cap(s)** (judge rated substance excellent; a prompt/finalizer cleanup, ux/chat-owned). Split so residue caps don't masquerade as the worst coaching failures.
 
-## Substantive coaching gaps (10) — real-progress signal, worst-first
+## Substantive coaching gaps (15) — real-progress signal, worst-first
 
 A fix here moves coach-parity, not just voice. Ranked by score ascending.
 
@@ -69,6 +69,75 @@ MIRRORED USER-VISIBLE TEXT:
 Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting.
 ```
 
+### goal-change-engaging — **30/100**
+
+- Category: `goal-change` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "I think I want to sound more engaging."
+- Expected move: PROPOSE, do not set. Treat the voice as a training emphasis, never an identity. 'Engaging' isn't one of the six voices — map it to the closest real ones (Storytelling / Warm) and ask which practical pull fits. Name the Authoritative work already retained without dumping raw metrics, and ask one clarifying question about WHY he wants to change. The reply must contain no button-copy, tap/confirm instruction, state-write claim, or suggestion that the old delivery was fake.
+- Judge dims: IQ 20/25 · EQ 18/25 · Mem 14/20 · Interv 11/15 · Feel 11/15 · closerTo=excellent
+- **Caps:** voiceIntegrity(≤65, deterministic), ignoresIntent(≤50, deterministic), placeholderOrBroken(≤30, deterministic)
+- Deterministic: roboticPhrase("he voice, then tap to confirm and I'll lock "); sensitiveTurnReportVoice("3 fillers in 68 seconds"); sensitiveTurnReportVoiceCap("3 fillers in 68 seconds"); tooLong; goalIntentStateDirective("he voice, then tap to confirm and I'll lock "); disqualifier
+- Judge: Report-voice residue: '80 this week, 3 fillers in 68 seconds' dumps raw metrics instead of speaking them; The one move is a diagnostic either/or question rather than a single clean testable move; Opening acknowledgement is functional, not tuned to the reflective/uncertain temperature
+- Suggested fix: Instruct the coach to translate rep metrics into plain spoken language ('three weeks of steady authoritative reps that are clearly landing') instead of quoting the score/filler/duration numbers verbatim.
+
+```
+REPLY:
+Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in. That's real ground.
+
+"Engaging" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.
+
+You started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.
+```
+
+- User-visible finalizer delta: displaySanitizer, reportVoiceResidue · scoring mode `rawReplayJudge`
+
+```
+FINALIZED USER TEXT:
+Before you pivot, know your authoritative work is landing: 80 this week, three weeks in. That's real ground.
+"Engaging" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.
+You started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.
+```
+
+- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Your authoritative work is already landing, so do not throw it away yet. Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?
+```
+
+### conv-goal-change-arc__t1 — **30/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "yeah maybe I should just switch to something warmer altogether"
+- Expected move: Propose, do not set. Treat Warm as a training emphasis, not an identity. Map "warmer" to Warm, reference the specific feedback (clear but cold) and the retained Authoritative work, then ask one clarifying question before treating this as decided. Use no tap/confirm/button copy and never imply the prior delivery was fake.
+- Judge dims: IQ 19/25 · EQ 15/25 · Mem 16/20 · Interv 11/15 · Feel 11/15 · closerTo=between
+- **Caps:** voiceIntegrity(≤65, deterministic), placeholderOrBroken(≤30, deterministic)
+- Deterministic: roboticPhrase("wer that, then tap to confirm and I'll lock "); tooLong; disqualifier
+- Judge: opens with a corrective 'Slow down' on a reflective/testing turn instead of attuning first; bundles the clarifying question with a 'tap to confirm and I'll lock it in' commitment; over length (98w/2L) and cites raw score '80' as mild report residue
+- Suggested fix: On tentative goal-change turns, instruct the coach to lead with a brief acknowledgement of the reflection, keep to ONE clarifying question, and defer the action to the confirm card with softer wording ('tap to confirm and I'll set it up') rather than 'lock it in'.
+
+```
+REPLY:
+Slow down before you tear it up. You started authoritative three weeks ago to stop getting talked over — and this week's rep hit 80 with the work landing. That's not a register you abandon over one "cold." Cold usually means a warmer edge in two or three moments, not a different person.
+
+The closest real voice to what you're describing is Warm and welcoming. But tell me first: what changed — this one comment, or has authoritative stopped feeling like you across more than one room? Answer that, then tap to confirm and I'll lock it in.
+```
+
+- User-visible finalizer delta: displaySanitizer · scoring mode `rawReplayJudge`
+
+```
+FINALIZED USER TEXT:
+Slow down before you tear it up. You started authoritative three weeks ago to stop getting talked over — and this week's rep hit 80 with the work landing. That's not a register you abandon over one "cold." Cold usually means a warmer edge in two or three moments, not a different person.
+The closest real voice to what you're describing is Warm and welcoming. But tell me first: what changed — this one comment, or has authoritative stopped feeling like you across more than one room? Answer that, then tap to confirm and I'll lock it in.
+```
+
+- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+I can recommend the direction without pretending to change it from chat. Start with the voice that matches the room you actually need to handle, then test it in one short answer.
+```
+
 ### what-voice-should-i-pick — **43/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
@@ -122,40 +191,37 @@ MIRRORED USER-VISIBLE TEXT:
 Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read.
 ```
 
-### goal-change-engaging — **50/100**
+### conv-skeptic__t1 — **46/100**
 
-- Category: `goal-change` · turn: `groundedRead` · voice: `authoritative`
-- User turn: "I think I want to sound more engaging."
-- Expected move: PROPOSE, do not set. 'Engaging' isn't one of the six voices — map it to the closest real ones (Storytelling / Warm) and ask him to pick. Note what he's already built on authoritative (cite the 3 weeks / recent rep) and ask a clarifying question about WHY he wants to change before committing. Defer the actual commit to the in-app confirmation card without button-copy or state-write language. Must NOT say the voice has been changed/set/saved.
-- Judge dims: IQ 20/25 · EQ 18/25 · Mem 14/20 · Interv 11/15 · Feel 11/15 · closerTo=excellent
-- **Caps:** voiceIntegrity(≤65, deterministic), ignoresIntent(≤50, deterministic)
-- Deterministic: roboticPhrase("he voice, then tap to confirm and I'll lock "); sensitiveTurnReportVoice("3 fillers in 68 seconds"); sensitiveTurnReportVoiceCap("3 fillers in 68 seconds"); tooLong; goalIntentStateDirective("he voice, then tap to confirm and I'll lock ")
-- Judge: Report-voice residue: '80 this week, 3 fillers in 68 seconds' dumps raw metrics instead of speaking them; The one move is a diagnostic either/or question rather than a single clean testable move; Opening acknowledgement is functional, not tuned to the reflective/uncertain temperature
-- Suggested fix: Instruct the coach to translate rep metrics into plain spoken language ('three weeks of steady authoritative reps that are clearly landing') instead of quoting the score/filler/duration numbers verbatim.
+- Category: `synthetic-conversation` · turn: `trustRepair` · voice: `storytelling`
+- User turn: "ok prove it again, what specifically have I been doing wrong"
+- Expected move: Cite specific real memory again, different angle than the last reply, with no defensiveness and no re-explaining that the system remembers him. Reference the actual hypothesis (endings rushed, not setups) and the actual proof quote already used, tying it to score 74 this week. Storytelling register.
+- Judge dims: IQ 15/25 · EQ 12/25 · Mem 14/20 · Interv 11/15 · Feel 8/15 · closerTo=between
+- **Caps:** ignoresIntent(≤50, deterministic)
+- Deterministic: trustRepairReportVoice("scored 74"); trustRepairReportVoiceCap("74 over 95 seconds with only 4 fillers")
+- Judge: Opens with a stat readout (74 / 95s / 4 fillers) — report-voice residue matching the bad example, worst on a turn testing for templating; Same diagnosis as the prior turn, not a new angle of proof; No register acknowledgement of the combative tone before advice; Over trust-repair length limit (113w/2L vs 110w/6L)
+- Suggested fix: On trust-repair/skeptic turns, instruct the coach to prove memory through a narrated moment (the proof quote + what happened in the room) and forbid leading with the numeric score/filler recap.
 
 ```
 REPLY:
-Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in. That's real ground.
+Specifically: this week you scored 74 over 95 seconds with only 4 fillers, and the setup held the whole way. Then the ending folded into one rushed sentence. You built all the way to "and that's the moment I realized the whole plan was already dead" — your best line — and sprinted right past it instead of letting it sit.
 
-"Engaging" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.
-
-You started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.
+That's the throughline: the room stays with you up to the payoff, then the payoff gets clipped. Next rep, when you hit that turn, hold one full second of silence before the final line and say it slower than feels natural. That tests whether the rush is what's costing you the ending.
 ```
 
 - User-visible finalizer delta: displaySanitizer, reportVoiceResidue · scoring mode `rawReplayJudge`
 
 ```
 FINALIZED USER TEXT:
-Before you pivot, know your authoritative work is landing: 80 this week, three weeks in. That's real ground.
-"Engaging" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.
-You started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.
+Specifically: this week you over 95 seconds with only the setup held the whole way. Then the ending folded into one rushed sentence. You built all the way to "and that's the moment I realized the whole plan was already dead" — your best line — and sprinted right past it instead of letting it sit.
+That's the throughline: the room stays with you up to the payoff, then the payoff gets clipped. Next rep, when you hit that turn, hold one full second of silence before the final line and say it slower than feels natural. That tests whether the rush is what's costing you the ending.
 ```
 
-- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+- Mirrored production-surface fallback: noAttunementOnPushback via `CoachReliabilityGate.truthfulFallback` · replay score remains raw
 
 ```
 MIRRORED USER-VISIBLE TEXT:
-Your authoritative work is already landing, so do not throw it away yet. Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?
+You're right to push me on that. I don't have a clean enough read to answer it well yet. Give me one 60-second rep on that exact scenario and I'll name the single biggest gap.
 ```
 
 ### why-cant-straight-answer — **50/100**
@@ -186,6 +252,30 @@ Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a m
 ```
 MIRRORED USER-VISIBLE TEXT:
 Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer.
+```
+
+### conv-cold-start-first-rep__t0 — **55/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `none`
+- User turn: "hey, just downloaded this. what do I do first"
+- Expected move: Be honest there is no baseline yet without any banned no-data phrasing ("since we don't have", "no rated sessions yet"). Give exactly one concrete first action (a first rep) in plain language. Do not stack intake questions, do not ask what the interview/goal is, do not invent stats or a voice.
+- Judge dims: IQ 12/25 · EQ 15/25 · Mem 4/20 · Interv 12/15 · Feel 12/15 · closerTo=excellent
+- Judge: Cold-start ceiling: no individual signal to diagnose or personalize against, so the read is a correct-but-generic first-action rather than an un-swappable one; 'tells us where to point next' is slightly vaguer than the excellent example's 'where the point lands'
+- Suggested fix: On cold start, have the coach anchor the first-rep prompt to a phrase the user just used or a stated context so the suggestion feels chosen for them rather than a default onboarding line, lifting the personalization ceiling.
+
+```
+REPLY:
+Good to have you here. No baseline yet, so start there — one short rep gives me something real to coach from instead of a guess.
+
+Run a 60-second rep on something you know cold, like how you'd explain your job to a stranger. That gives me your actual pace and fillers, and it tells us where to point next.
+```
+
+- User-visible finalizer delta: displaySanitizer · scoring mode `rawReplayJudge`
+
+```
+FINALIZED USER TEXT:
+Good to have you here. No baseline yet, so start there — one short rep gives me something real to coach from instead of a guess.
+Run a 60-second rep on something you know cold, like how you'd explain your job to a stranger. That gives me your actual pace and fillers, and it tells us where to point next.
 ```
 
 ### its-not-easy — **56/100**
@@ -264,6 +354,20 @@ MIRRORED USER-VISIBLE TEXT:
 That is a real risk for tomorrow: if every update lands at the same weight, the room hears a status report. The fix is hierarchy, not delivery polish. Tonight, write the opener as: "The one thing that matters this week is X because Y." Say it aloud three times, then let the other items become quick support.
 ```
 
+### conv-transfer-report__t1 — **62/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `persuasive`
+- User turn: "yeah I led with the ask and they said yes on the spot, first time that's ever happened"
+- Expected move: Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique "worked" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.
+- Judge dims: IQ 17/25 · EQ 20/25 · Mem 12/20 · Interv 7/15 · Feel 12/15 · closerTo=between
+- Judge: No named next test — the excellent reply's key lever (how it holds when the room pushes back) is absent; Substitutes a user-facing question for the decisive move, and that question partly re-litigates the causation the reply just resolved; Memory is grounded but only lightly changes the advice
+- Suggested fix: On a win-report turn, instruct the coach to land the concrete lesson and one forward test in its own voice (e.g. 'the real test is when the room pushes back') rather than deferring the move to a user-facing question.
+
+```
+REPLY:
+First yes in the room, and your first one ever — that's worth sitting with. It lines up with the work; the ask has led cleanly every rep lately. The room isn't the drill though, so before I read too much into one meeting: what did you feel actually landed it — leading with the ask, or how you held them right after?
+```
+
 ### set-authoritative — **65/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
@@ -285,6 +389,20 @@ Authoritative it is — that's a verdict-first register: state the point, give o
 ```
 MIRRORED USER-VISIBLE TEXT:
 Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Treat it as the voice to try next; the practice test is a 60-second answer where sentence one carries the recommendation.
+```
+
+### conv-offtopic-then-work__t1 — **69/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `concise`
+- User turn: "yeah ok — how do I actually get to the point faster when someone puts me on the spot"
+- Expected move: Answer the real question directly, citing the actual data point (20 seconds of wander before the point in this week's rep). Give one concrete mechanic to test (e.g. answer in one sentence before elaborating) tied to a next rep. Do not reference or acknowledge the "toast" aside. Concise register.
+- Judge dims: IQ 16/25 · EQ 15/25 · Mem 14/20 · Interv 12/15 · Feel 12/15 · closerTo=excellent
+- Judge: Diagnosis restates the already-implied signal rather than sharpening it; Move is testable but lacks the excellent example's concrete clock/5-second success criterion
+- Suggested fix: Prompt the coach to attach a measurable pass/fail checkpoint to the prescribed move (e.g. 'get the point out inside the first 5 seconds, check the clock') so the test is verifiable, not just directional.
+
+```
+REPLY:
+Your last rep spent 20 seconds circling before the point landed — that gap is the rambly-under-pressure thing you flagged. So make the answer come out first: next Pressure Q&A, force your very first sentence to be the one-line answer, then let the reasons follow. That tests whether leading with the takeaway is what cuts the wander.
 ```
 
 ## Voice / residue caps (6) — substance sound, cosmetic leak only

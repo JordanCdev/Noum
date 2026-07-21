@@ -3212,7 +3212,10 @@ enum CoachReliabilityGate {
         containsAny(lowered, [
             "you were pretending", "you've been pretending", "you have been pretending",
             "fake persona", "fake voice", "not your real voice", "wasn't your real voice",
-            "was not your real voice", "inauthentic version of you", "betrayed your voice"
+            "was not your real voice", "inauthentic version of you", "betrayed your voice",
+            "that wasn't really you", "that was not really you", "performing a persona",
+            "your authentic self", "old you was fake", "just be yourself",
+            "you don't believe what you're saying", "you do not believe what you're saying"
         ])
     }
 

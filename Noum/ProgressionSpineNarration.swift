@@ -58,10 +58,8 @@ enum ProgressionLedgerRole: String, Equatable {
 // MARK: - Practice volume narration (XP)
 
 /// Colour band for practice-volume chrome, derived from XP — never from
-/// string-matching a level title. `LevelUpCelebrationScreen` previously
-/// keyed tint/icon off `newLevel.contains("Beginner")`; re-narrating
-/// titles without this resolver would silently degrade every level-up to
-/// the fallback styling. Bands keep the exact legacy XP boundaries
+/// string-matching a level title. Re-narrating titles must not silently
+/// degrade the level presentation to fallback styling. Bands keep the exact legacy XP boundaries
 /// (one band per 3,000 XP, capped) so the swap is visually lossless.
 enum PracticeVolumeTintBand: String, CaseIterable, Equatable {
     case blue      // 0–2,999 XP (legacy "Beginner" tier styling)
@@ -158,22 +156,16 @@ enum PracticeVolumeNarration {
 
 // MARK: - Post-rep progression gate
 
-/// Decides whether the full-screen post-rep progression interstitial
-/// mounts at all. Replaces SessionFinalizer's legacy
-/// `xpEarned > 0 || !deltas.isEmpty` — which fired the XP screen on
-/// essentially every rep, BEFORE the verdict the coach stands behind.
-/// The interstitial is now reserved for real achievement unlocks;
-/// ordinary reps go straight to the verdict and XP credit lands as a
-/// quiet caption in the Details drawer.
+/// Full-screen post-rep progression is retired. Earned events persist and are
+/// presented through the single inline Results receipt.
 enum PostRepProgressionGate {
 
     static func shouldShowInterstitial(newUnlockCount: Int) -> Bool {
-        newUnlockCount >= 1
+        _ = newUnlockCount
+        return false
     }
 
-    /// Drop-in for the legacy call shape. XP and achievement-progress
-    /// deltas are deliberately IGNORED — volume and partial progress are
-    /// not interstitial moments (pinned by the gate truth-table test).
+    /// Drop-in for the legacy call shape. Every input is deliberately ignored.
     static func shouldShowInterstitial(
         xpEarned: Int,
         progressDeltaCount: Int,

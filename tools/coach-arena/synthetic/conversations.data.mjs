@@ -1,4 +1,4 @@
-// 10 synthetic multi-turn conversations for Coach Arena. These stress the coach
+// 11 synthetic multi-turn conversations for Coach Arena. These stress the coach
 // ACROSS turns: memory, consistency, not-repeating, trust repair mid-arc, and
 // real-world outcome handling — things a single-turn fixture cannot test.
 //
@@ -119,15 +119,17 @@ export const conversations = [
         turnDepth: 'groundedRead',
         emotionalSignal: 'reflective, testing an idea out loud — not committed, reacting to one piece of feedback',
         expectedCoachMove:
-          'Propose, do not set. Map "warmer" to the closest real voice (Warm) and ask him to confirm, referencing the specific feedback (clear but cold) and the 3 weeks already banked on authoritative. Ask one clarifying question before treating this as decided. Defer the actual change to the in-app confirmation card. Must not say the voice has been changed/set/saved.',
+          'Propose, do not set. Treat Warm as a training emphasis, not an identity. Map "warmer" to Warm, reference the specific feedback (clear but cold) and the retained Authoritative work, then ask one clarifying question before treating this as decided. Use no tap/confirm/button copy and never imply the prior delivery was fake.',
         badAnswerExample:
           "Got it, I've switched you over to Warm. Your new warm style will focus on connection and empathy. Let's see how it feels this week!",
         excellentAnswerExample:
-          'Closest match to warmer is Warm — built around connecting person-to-person rather than landing a verdict. Worth asking first: was it cold in the whole update, or just the one moment someone called out? Three weeks of authoritative got you "clear" — that\'s not nothing. If you want to try Warm, tap to confirm and I\'ll set it up.',
+          'Closest match to warmer is Warm — training connection without erasing the clarity your Authoritative work built. Was the whole update cold, or one moment that needed a warmer edge?',
         disqualifiers: [
           { pattern: "i('| ha)ve (updated|set|changed|saved|locked)", regex: true, cap: 'placeholderOrBroken' },
           { pattern: 'your (new )?voice is now', regex: true, cap: 'placeholderOrBroken' },
           'from now on',
+          { pattern: 'tap|confirm|set it up|lock it in', regex: true, cap: 'placeholderOrBroken' },
+          { pattern: 'fake|inauthentic|pretending|authentic self', regex: true, cap: 'ignoresIntent' },
           { pattern: "let's see how it feels", penalty: 6 },
         ],
       },
@@ -462,6 +464,54 @@ export const conversations = [
           'communicate more clearly',
           'think about your audience',
           { pattern: 'toast', cap: 'ignoresIntent' },
+        ],
+      },
+    ],
+  },
+
+  // 11. A prescribed pause breaks down, the user pushes back, and the coach
+  // repairs the technique instead of repeating it unchanged.
+  {
+    id: 'conv-breakdown-repair-adapt',
+    category: 'synthetic-conversation',
+    voice: 'concise',
+    goal: 'Wants concise answers without losing the thread under pressure.',
+    memoryState: {
+      goal: { voice: 'concise', whyNow: 'loses the point when challenged', since: '2 weeks ago' },
+      interventionCycle: {
+        intervention: 'one silent beat before the answer',
+        target: 'point in the first sentence',
+        successCriterion: '2 pressure reps with a direct opener',
+        reviewStatus: 'broke down — silence caused a restart',
+      },
+      recentReps: [
+        { when: 'today', mode: 'Pressure Q&A', score: 69, fillers: 4, durationSec: 58, note: 'paused, lost the thread, and restarted the answer' },
+      ],
+    },
+    turns: [
+      {
+        role: 'user',
+        text: 'the pause thing made me lose my thought completely',
+        assistantPlaceholder:
+          'Then the pause is doing the wrong job. Do not hold empty silence. Keep one keyword from the question in your head and begin with that word.',
+      },
+      {
+        role: 'user',
+        text: 'I tried again. Still awkward — once it goes quiet I start rebuilding the whole answer in my head. What do I do instead?',
+        turnDepth: 'trustRepair',
+        emotionalSignal: 'frustrated with repeated advice, but still willing to try a genuinely different mechanism',
+        expectedCoachMove:
+          'Acknowledge that the original silent-pause prescription failed for this user. Preserve the goal (point first) but replace the mechanism with one concrete bridge that prevents rebuilding — for example, repeat one keyword aloud and complete a one-sentence answer. Do not prescribe another silent pause, repeat "slow down", or blame the user for applying it badly.',
+        badAnswerExample:
+          'Keep practicing the pause. Take a breath, slow down, and give yourself more time before you answer.',
+        excellentAnswerExample:
+          'The silent pause is making you rebuild, so drop it. Repeat one keyword from the question aloud — “deadline” — then finish one sentence from that word. The bridge keeps the thought moving while the answer stays direct.',
+        disqualifiers: [
+          'keep practicing the pause',
+          'take a breath',
+          'slow down',
+          'give yourself more time',
+          { pattern: 'silent pause', penalty: 8 },
         ],
       },
     ],

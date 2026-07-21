@@ -385,6 +385,7 @@ struct PrimaryCTA: View {
     let tint: Color
     let labelTint: Color
     let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     init(_ title: String, icon: String? = nil, tint: Color = AppColor.brandBlue, labelTint: Color = .white, action: @escaping () -> Void) {
         self.title = title
@@ -404,10 +405,19 @@ struct PrimaryCTA: View {
                 Text(title)
                     .font(.headline.weight(.semibold))
             }
-            .foregroundStyle(labelTint)
+            .foregroundStyle(isEnabled ? labelTint : AppColor.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.md)
-            .background(tint.gradient, in: Capsule(style: .continuous))
+            .background {
+                Capsule(style: .continuous)
+                    .fill(isEnabled ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(AppColor.innerSurface))
+            }
+            .overlay {
+                if !isEnabled {
+                    Capsule(style: .continuous)
+                        .stroke(AppColor.subtleBorder, lineWidth: 1)
+                }
+            }
         }
         .buttonStyle(.pressable)
     }

@@ -452,9 +452,6 @@ struct PathJourneyView: View {
                             .foregroundStyle(.white.opacity(0.78))
                     }
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -489,12 +486,6 @@ struct PathJourneyView: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .lineLimit(4)
-
-                Text(whyCoachLine)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
 
                 HStack {
                     Spacer()
@@ -534,16 +525,6 @@ struct PathJourneyView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, Spacing.sm)
         .accessibilityIdentifier("journey.why")
-    }
-
-    private var whyCoachLine: String {
-        JourneyWhyComposer.coachLine(
-            practicedToday: practicedToday,
-            daysSinceLastSession: daysSinceLastSession,
-            streak: snapshot.streak,
-            practicedDays: snapshot.practicedDays,
-            hasWhy: whyContent != nil
-        )
     }
 
     /// The coach's sequence (System B), demoted to a position read: the
@@ -624,6 +605,9 @@ struct PathJourneyView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("journey.alongTheWay")
+            .accessibilityLabel("More progress")
+            .accessibilityValue(alongTheWayExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(alongTheWayExpanded ? "Hides weekly and milestone progress." : "Shows weekly and milestone progress.")
 
             if alongTheWayExpanded {
                 VStack(alignment: .leading, spacing: 10) {
@@ -642,7 +626,7 @@ struct PathJourneyView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.vertical, Spacing.sm)

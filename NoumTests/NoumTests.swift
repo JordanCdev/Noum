@@ -9450,27 +9450,24 @@ struct ProgressionSpineNarrationTests {
         #expect(spineLedgers == [.speakingRating])
     }
 
-    // MARK: Interstitial gate truth table
+    // MARK: Retired interstitial gate
 
-    @Test func interstitialMountsOnlyOnAchievementUnlocks() {
-        // Legacy trigger inputs (XP earned, achievement-progress deltas)
-        // are deliberately ignored: an ordinary rep with XP and partial
-        // progress goes straight to the verdict.
+    @Test func interstitialNeverMountsBecauseResultsOwnTheReceipt() {
         #expect(!PostRepProgressionGate.shouldShowInterstitial(
             xpEarned: 120, progressDeltaCount: 4, newUnlockCount: 0
         ))
         #expect(!PostRepProgressionGate.shouldShowInterstitial(
             xpEarned: 0, progressDeltaCount: 0, newUnlockCount: 0
         ))
-        #expect(PostRepProgressionGate.shouldShowInterstitial(
+        #expect(!PostRepProgressionGate.shouldShowInterstitial(
             xpEarned: 0, progressDeltaCount: 0, newUnlockCount: 1
         ))
-        #expect(PostRepProgressionGate.shouldShowInterstitial(
+        #expect(!PostRepProgressionGate.shouldShowInterstitial(
             xpEarned: 80, progressDeltaCount: 2, newUnlockCount: 3
         ))
 
         #expect(!PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: 0))
-        #expect(PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: 1))
+        #expect(!PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: 1))
     }
 
     // MARK: Volume vocabulary bans
@@ -9568,10 +9565,8 @@ struct ProgressionSpineNarrationTests {
     }
 
     @Test func tintBandMatchesLegacyTitleMatchingBoundaries() {
-        // LevelUpCelebrationScreen previously keyed tint/icon off
-        // `newLevel.contains("Beginner")` etc. These are the exact XP
-        // boundaries that string matching produced — the resolver swap
-        // must be visually lossless.
+        // These are the XP boundaries that must remain visually stable even
+        // when practice-level titles change.
         #expect(PracticeVolumeNarration.tintBand(forXP: 0) == .blue)
         #expect(PracticeVolumeNarration.tintBand(forXP: 2_999) == .blue)
         #expect(PracticeVolumeNarration.tintBand(forXP: 3_000) == .teal)
@@ -15902,23 +15897,15 @@ struct HomeAccessibilityModalGateTests {
         #expect(ContentView.navigationStackAccessibilityIdentifier(pathIsEmpty: false) == "app.navigationStack")
     }
 
-    @Test func pathCelebrationProofAnimationRespectsReduceMotion() {
-        #expect(ContentView.shouldAnimatePathCelebrationProof(reduceMotion: false))
-        #expect(!ContentView.shouldAnimatePathCelebrationProof(reduceMotion: true))
-    }
-
     @Test func quietHomeDoesNotSuppressItself() {
         let gate = HomeAccessibilityModalGate()
 
         #expect(!gate.suppressesUnderlyingHome)
     }
 
-    @Test func anyPresentedSurfaceSuppressesUnderlyingHome() {
+    @Test func anyPresentedModalSuppressesUnderlyingHome() {
         let cases: [HomeAccessibilityModalGate] = [
             HomeAccessibilityModalGate(onboardingPresented: true),
-            HomeAccessibilityModalGate(leaguePromotionPresented: true),
-            HomeAccessibilityModalGate(dailyGoalCelebrationPresented: true),
-            HomeAccessibilityModalGate(pathCelebrationPresented: true),
             HomeAccessibilityModalGate(notificationPromptPresented: true),
             HomeAccessibilityModalGate(bigMomentIntakePresented: true)
         ]
@@ -40032,8 +40019,7 @@ struct HeroScoreCardToneDrillRibbonContractTests {
             fillerTint: .green,
             fillerDelta: nil,
             effectiveDuration: 30,
-            durationAssessment: .onTarget,
-            celebrationVisible: false
+            durationAssessment: .onTarget
         )
         #expect(!card.shouldShowToneDrillResolvedRibbon, "Default card must not render the SOLVED ribbon.")
         #expect(card.toneDrillResolvedRibbonLabel == nil, "Default label must be nil.")
@@ -40056,7 +40042,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
             fillerDelta: nil,
             effectiveDuration: 60,
             durationAssessment: .onTarget,
-            celebrationVisible: false,
             toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
                 scenarioTitle: "Difficult Conversation",
                 toneTitle: "Calm"
@@ -40089,7 +40074,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
                     fillerDelta: nil,
                     effectiveDuration: 45,
                     durationAssessment: .onTarget,
-                    celebrationVisible: false,
                     toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
                         scenarioTitle: scenario,
                         toneTitle: tone
@@ -40133,7 +40117,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
                 fillerDelta: nil,
                 effectiveDuration: 45,
                 durationAssessment: .onTarget,
-                celebrationVisible: false,
                 toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
                     scenarioTitle: scenario,
                     toneTitle: tone
@@ -40168,7 +40151,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
             fillerDelta: nil,
             effectiveDuration: 30,
             durationAssessment: .onTarget,
-            celebrationVisible: false,
             toneDrillResolvedRibbon: nil
         )
         #expect(!card.shouldShowToneDrillResolvedRibbon)

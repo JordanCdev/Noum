@@ -207,6 +207,13 @@ all of the following for an individual user:
   strengthening them.
 - Weak evidence must produce tentative language; repeated evidence can
   strengthen intervention; association must never be described as causation.
+- A chosen voice is a training emphasis, not an identity or personality label.
+  Changing emphasis must preserve prior evidence and never describe earlier
+  delivery as fake, inauthentic, or wasted.
+- Practice should be plan-first: present the coach-built next rep as the clear
+  default and keep free selection available as a secondary, reversible choice.
+- Progress belongs inside the coaching loop. Prefer one calm, evidence-linked
+  receipt over chained full-screen score, level, and achievement celebrations.
 - Engagement, vocabulary, social, or cosmetic features must not displace
   work that closes a coach-parity gap unless they are needed to ship or retain
   enough usage to measure real improvement.

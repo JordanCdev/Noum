@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import Noum
 
-@Suite("Cohesive summary interstitial policy")
-struct CohesiveSummaryInterstitialPolicyTests {
+@Suite("Cohesive summary layout")
+struct CohesiveSummaryLayoutTests {
     @Test func statusAreaCoverUsesTheMeasuredTopInset() {
         #expect(SummaryTopSafeAreaCoverLayout.height(for: 59) == 59)
         #expect(SummaryTopSafeAreaCoverLayout.height(for: 24) == 24)
@@ -11,56 +11,6 @@ struct CohesiveSummaryInterstitialPolicyTests {
         #expect(SummaryTopSafeAreaCoverLayout.height(for: -1) == 0)
     }
 
-    @Test func firstRepSuppressesEveryInterstitialCandidate() {
-        for count in [0, 1] {
-            let selected = SummaryInterstitialPolicy.select(
-                completedRepCount: count,
-                hasPersonalBest: true,
-                hasSkillProgress: true,
-                hasAchievementProgress: true,
-                hasPracticeVolumeLevel: true
-            )
-            #expect(selected == nil)
-        }
-    }
-
-    @Test func everyEarnedEventStaysInsideTheResultsReceipt() {
-        #expect(SummaryInterstitialPolicy.priority.isEmpty)
-
-        #expect(SummaryInterstitialPolicy.select(
-            completedRepCount: 8,
-            hasPersonalBest: true,
-            hasSkillProgress: true,
-            hasAchievementProgress: true,
-            hasPracticeVolumeLevel: true
-        ) == nil)
-
-        #expect(SummaryInterstitialPolicy.select(
-            completedRepCount: 8,
-            hasPersonalBest: false,
-            hasSkillProgress: true,
-            hasAchievementProgress: true,
-            hasPracticeVolumeLevel: true
-        ) == nil)
-
-        #expect(SummaryInterstitialPolicy.select(
-            completedRepCount: 8,
-            hasPersonalBest: false,
-            hasSkillProgress: false,
-            hasAchievementProgress: true,
-            hasPracticeVolumeLevel: true
-        ) == nil)
-    }
-
-    @Test func noEarnedCandidateGoesStraightToSummary() {
-        #expect(SummaryInterstitialPolicy.select(
-            completedRepCount: 12,
-            hasPersonalBest: false,
-            hasSkillProgress: false,
-            hasAchievementProgress: false,
-            hasPracticeVolumeLevel: false
-        ) == nil)
-    }
 }
 
 @Suite("Cohesive post-rep debrief")

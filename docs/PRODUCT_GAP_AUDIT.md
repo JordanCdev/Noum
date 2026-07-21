@@ -88,12 +88,25 @@ Fix: add inspect/edit/delete controls to Your Data. User-authored goal, observed
 
 - Review/Summary rewrite card: redesigned into the transcript ladder; no new tab or duplicate review screen.
 - Ask Noum: goal-confirmation language reframed as training emphasis; existing contextual entry architecture retained.
+- Path: simplified to one legible corridor and waypoint with shorter section
+  copy; prior progress ownership remains unchanged.
+- Train: the existing recommendation is now the primary plan, while the full
+  exercise library remains available behind an explicit free-select disclosure.
+- Coaching evidence: current focus/next move lead; supporting rationale and
+  records use progressive disclosure.
+- Weekly check-in: replaced popup-style top controls with the existing pushed
+  navigation pattern and one coaching-memory save action.
+- Progress: Summary, Home, and Lessons use one inline receipt language; obsolete
+  personal-best, level-up, achievement, path, and progression overlays were
+  removed rather than retained as dormant alternate flows.
 - Settings → Developer: added a recent redacted trace viewer, trace-ID copy
   action, and content-free support-bundle export that joins trace stages with
   matching provider diagnostics and a fail-closed terminal-path replay command.
 - Settings → Your Data: added coaching-memory inspection, correction, projection deletion, and full bounded-memory deletion.
 
-No screen or tab was added. No existing state owner was duplicated. Home, Practice, and Progress already contained the intended hierarchy on this baseline, so this phase did not perform cosmetic rewrites solely to satisfy the specification wording.
+No screen or tab was added. No existing state owner was duplicated. The visual
+changes reinforce the same coaching case, recommendation, path, reflection, and
+progress owners rather than introducing parallel state or navigation.
 
 ## Remaining product gaps
 

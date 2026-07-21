@@ -334,17 +334,11 @@ enum HomeShortcutDockLayout {
 
 struct HomeAccessibilityModalGate: Equatable {
     var onboardingPresented = false
-    var leaguePromotionPresented = false
-    var dailyGoalCelebrationPresented = false
-    var pathCelebrationPresented = false
     var notificationPromptPresented = false
     var bigMomentIntakePresented = false
 
     var suppressesUnderlyingHome: Bool {
         onboardingPresented
-        || leaguePromotionPresented
-        || dailyGoalCelebrationPresented
-        || pathCelebrationPresented
         || notificationPromptPresented
         || bigMomentIntakePresented
     }
@@ -372,17 +366,11 @@ struct ContentView: View {
     @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
-    @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
     @Binding private var navigationPath: NavigationPath
     @State private var hourBucket: HourBucket = HourBucket.current()
-    /// Proof moment loaded for the active path celebration. Stays nil
-    /// until the async extraction resolves, at which point the
-    /// celebration's `proofLine` row fades in. Cleared when the
-    /// celebration is dismissed.
-    @State private var pathCelebrationProof: ProofMoment? = nil
     @State private var showBigMomentIntake: Bool = false
     @State private var showGoalReview: Bool = false
     @State private var showDeferredCoachingSetup = false
@@ -408,15 +396,9 @@ struct ContentView: View {
         pathIsEmpty ? "home.screen" : "app.navigationStack"
     }
 
-    static func shouldAnimatePathCelebrationProof(reduceMotion: Bool) -> Bool {
-        !reduceMotion
-    }
     private var homeAccessibilityIsSuppressed: Bool {
         HomeAccessibilityModalGate(
             onboardingPresented: isOnboardingUITesting,
-            leaguePromotionPresented: league.pendingPromotion != nil,
-            dailyGoalCelebrationPresented: showDailyGoalCelebration,
-            pathCelebrationPresented: pendingPathCelebration != nil,
             notificationPromptPresented: notificationPrePrompt.pendingPrompt,
             bigMomentIntakePresented: showBigMomentIntake
         ).suppressesUnderlyingHome
@@ -446,16 +428,6 @@ struct ContentView: View {
             guard let url else { return }
             consumeDeepLink(url)
             externalRoute = nil
-        }
-        .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
-            if isPending && navigationPath.isEmpty {
-                showDailyGoalCelebration = true
-            }
-        }
-        .onChange(of: navigationPath) { _, newPath in
-            if newPath.isEmpty && dailyGoal.pendingGoalCelebration && !showDailyGoalCelebration {
-                showDailyGoalCelebration = true
-            }
         }
         .onAppear {
             bigMomentStore.archiveExpiredIfNeeded()
@@ -490,28 +462,6 @@ struct ContentView: View {
                 onComplete: { showDeferredCoachingSetup = false },
                 onDefer: { showDeferredCoachingSetup = false }
             )
-        }
-        // Tier promotion celebration. Surfaces over the home with a
-        // tinted radial gradient + sparkle ribbon. Cleared when the
-        // user taps Continue or the backdrop.
-        .fullScreenCover(item: $league.pendingPromotion) { promotion in
-            TierPromotionOverlay(promotion: promotion) {
-                league.consumePendingPromotion()
-            }
-            .presentationBackground(.clear)
-        }
-        .overlay {
-            if showDailyGoalCelebration {
-                DailyGoalCelebration {
-                    showDailyGoalCelebration = false
-                    dailyGoal.consumeGoalCelebration()
-                }
-                .transition(.opacity)
-                .zIndex(100)
-            }
-        }
-        .overlay {
-            pathCelebrationOverlay
         }
         .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
             NotificationPrePromptSheet()
@@ -559,25 +509,6 @@ struct ContentView: View {
             .navigationDestination(for: AppDestination.self) { destination in
                 AppDestinationView(destination: destination, navigationPath: $navigationPath)
             }
-        }
-    }
-
-    @ViewBuilder
-    private var pathCelebrationOverlay: some View {
-        if navigationPath.isEmpty, let celebration = pendingPathCelebration {
-            PathNodeCelebration(
-                node: celebration.node,
-                triggeringSessionID: celebration.triggeringSessionID,
-                onDismiss: { pathProgress.consumeCelebration() },
-                onOpenPath: {
-                    pathProgress.consumeCelebration()
-                    navigationPath.append(AppDestination.pathJourney)
-                },
-                proof: pathCelebrationProof
-            )
-            .transition(.opacity)
-            .zIndex(99)
-            .onAppear { Task { await loadPathCelebrationProof() } }
         }
     }
 
@@ -965,6 +896,9 @@ struct ContentView: View {
             .cardEntrance(0)
         }
 
+        homeProgressReceipt
+            .padding(.horizontal, Spacing.screenH)
+
         if coachingProfileStore.profile == nil,
            coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true {
             deferredCoachingSetupCard
@@ -1005,6 +939,74 @@ struct ContentView: View {
         case nil:
             EmptyView()
         }
+    }
+
+    /// One calm receipt replaces the former tier, daily-goal and path
+    /// celebration overlays. Persistence remains owned by the existing
+    /// managers; Home only acknowledges one pending event at a time.
+    @ViewBuilder
+    private var homeProgressReceipt: some View {
+        if let promotion = league.pendingPromotion {
+            progressReceipt(
+                title: "Peer group reached",
+                body: "You're now in the \(promotion.newTier.title) peer group.",
+                tint: promotion.newTier.tint,
+                onDismiss: league.consumePendingPromotion
+            )
+        } else if let node = pendingPathNode {
+            progressReceipt(
+                title: "Landmark reached",
+                body: node.title,
+                tint: node.tier.tint,
+                onDismiss: pathProgress.consumeCelebration
+            )
+        } else if dailyGoal.pendingGoalCelebration {
+            progressReceipt(
+                title: "Today's practice complete",
+                body: "You completed your \(dailyGoal.goalReps)-rep target.",
+                tint: AppColor.positive,
+                onDismiss: dailyGoal.consumeGoalCelebration
+            )
+        }
+    }
+
+    private func progressReceipt(
+        title: String,
+        body: String,
+        tint: Color,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(AppColor.textPrimary)
+                Text(body)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Spacing.xs)
+
+            Button("Done", action: onDismiss)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .padding(Spacing.md)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(tint.opacity(0.18), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.progressReceipt")
     }
 
     private var homeGoalReviewRow: some View {
@@ -1624,60 +1626,11 @@ struct ContentView: View {
         navigationPath = path
     }
 
-    /// The node that was just newly-unlocked, if any. Drives the path
-    /// celebration overlay. Cleared by `pathProgress.consumeCelebration()`.
-    private var pendingPathCelebration: (node: PathNode, triggeringSessionID: UUID)? {
-        guard let celebration = pathProgress.pendingCelebration,
-              let node = PathNodeRegistry.all.first(where: { $0.0.id == celebration.nodeID })?.0 else {
-            return nil
-        }
-        return (node, celebration.triggeringSessionID)
-    }
-
-    /// Load the proof moment for the active path celebration. Resolves
-    /// the exact session that triggered the unlock
-    /// and asks `ProofMomentService` for a transcript-anchored quote
-    /// + technique label tied to the user's voice. Hydrates
-    /// `pathCelebrationProof` on success; leaves it nil on miss so
-    /// the celebration renders without a proof line.
-    private func loadPathCelebrationProof() async {
-        pathCelebrationProof = nil
-        guard let sessionID = pathProgress.pendingCelebrationSessionID,
-              let session = sessionStore.sessions.first(where: { $0.id == sessionID }),
-              PracticeProgressEligibility.qualifies(session),
-              !session.transcript.isEmpty,
-              session.duration > 8 else {
-            return
-        }
-        let baseline = BaselineStore.shared.baseline
-        let input = ProofMomentInput(
-            session: session,
-            voice: coachingProfileStore.profile?.chosenStyleGoal,
-            goalParaphrase: coachingProfileStore.profile?.displayableGoal,
-            baselineFillerRate: baseline.fillerRate.confidence != .insufficient
-                ? baseline.fillerRate.value : nil,
-            baselinePace: baseline.pace.confidence != .insufficient
-                ? baseline.pace.value : nil
-        )
-        guard let request = ProofMomentStore.shared.generationRequest(for: input) else {
-            return
-        }
-        let result = await ProofMomentService.shared.proof(for: request)
-        await MainActor.run {
-            guard !Task.isCancelled,
-                  pathProgress.pendingCelebrationSessionID == sessionID,
-                  let result,
-                  ProofMomentStore.shared.tokenIsCurrent(result.saveToken) else {
-                return
-            }
-            if Self.shouldAnimatePathCelebrationProof(reduceMotion: reduceMotion) {
-                withAnimation(.standardSpring) {
-                    pathCelebrationProof = result.proof
-                }
-            } else {
-                pathCelebrationProof = result.proof
-            }
-        }
+    /// The persisted path manager remains the event owner; Home only resolves
+    /// its compact display title.
+    private var pendingPathNode: PathNode? {
+        guard let nodeID = pathProgress.pendingCelebrationNodeID else { return nil }
+        return PathNodeRegistry.all.first(where: { $0.0.id == nodeID })?.0
     }
 
     /// Single source of truth for the user-visible streak count: the

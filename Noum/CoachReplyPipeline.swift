@@ -574,7 +574,8 @@ enum CoachReplyPipeline {
                 responseKind: responseKind,
                 coachingExpertise: responseKind == .generalCoaching ? coachingExpertise : [],
                 coachingBrief: coachingBrief,
-                pendingGoalIntent: pendingGoalIntent
+                pendingGoalIntent: pendingGoalIntent,
+                goalChangeMemory: pendingGoalIntent?.kind == .change ? coachMemory : nil
             )
         } else {
             context = CoachContextBuilder.personalTurnContext(

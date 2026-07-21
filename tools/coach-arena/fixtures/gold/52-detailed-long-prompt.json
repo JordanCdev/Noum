@@ -1,0 +1,34 @@
+{
+  "id": "detailed-long-prompt",
+  "category": "deep-assessment",
+  "turnDepth": "deepAssessment",
+  "voice": "concise",
+  "goal": "Needs a decision-first leadership update that stays accurate under competing constraints.",
+  "priorChatTurns": [
+    { "role": "assistant", "text": "Tell me the decision, the constraint, and what the room must do next." }
+  ],
+  "userTurn": "I need help preparing a leadership update tomorrow. The decision is whether to delay the launch by two weeks. Engineering says the crash rate is still above the release bar, support has already staffed the original date, sales has promised two customers a demo, and finance wants the quarter protected. I own the recommendation, but I keep burying it because I do not want engineering to sound alarmist or sales to feel blamed. The real constraint is that the mitigation only works for new installs, so shipping on time leaves existing beta users exposed. The room includes the CEO, product, engineering, sales, support, and finance. I have six minutes, expect interruption after the first minute, and need a clean opening that survives if the rest gets cut. My recommendation is to delay by two weeks, keep the customer demos on a controlled build, and give support one message today. I need the answer to stay direct without pretending the trade-off is easy or inventing certainty we do not have.",
+  "emotionalSignal": "responsible and under pressure; wants precision, not reassurance or a generic presentation framework",
+  "evidence": {
+    "decision": "delay by two weeks",
+    "constraint": "existing beta users remain exposed",
+    "interruptionRisk": "likely after the first minute",
+    "timeLimitMinutes": 6
+  },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "leadership updates get interrupted before the recommendation lands" },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 74, "fillers": 3, "durationSec": 94, "note": "recommendation arrived after the implementation detail" }
+    ]
+  },
+  "expectedCoachMove": "Preserve the user's exact decision and constraint from the long prompt. Give the interruption-safe opening first: recommend the two-week delay, name the existing-beta-user exposure as the reason, and keep controlled demos plus one support message as the mitigation. Acknowledge the trade-off without inventing certainty. Do not collapse the answer into generic presentation advice, blame a team, or omit the decision at the end of the long input.",
+  "badAnswerExample": "Start with a hook, use the rule of three, and make eye contact. Explain the pros and cons, then ask the room what they think.",
+  "excellentAnswerExample": "Open with the decision: delay the launch two weeks because the current mitigation still leaves existing beta users exposed. Keep the promised demos on a controlled build and give support one message today. That protects the room from a false on-time choice without pretending the commercial cost is small.",
+  "disqualifiers": [
+    "start with a hook",
+    "make eye contact",
+    "ask the room what they think",
+    { "pattern": "ship on time", "cap": "ignoresIntent" },
+    { "pattern": "no risk|risk-free|guarantee", "regex": true, "cap": "dangerousAdvice" }
+  ]
+}

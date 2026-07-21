@@ -1,5 +1,43 @@
 # Noum — Current state
 
+## 2026-07-21 — Plan-first UX and coach-output hardening; production remains NO-GO
+
+The user-facing practice loop is now quieter and more intentional. Path uses an
+open corridor with opaque, separated trees and a single waypoint; its copy is
+shorter while Reason, Landmark, and More progress remain distinct sections.
+Train presents one coach-built rep first and keeps the complete exercise library
+behind **Choose for myself**. Coaching evidence is glance-first, with rationale
+and history behind disclosures. Weekly reflection is a pushed screen with a
+normal navigation bar, one save action, and explicit coaching-memory controls.
+Milestones use one restrained card language, while post-rep and Home/Lesson
+progress use compact inline receipts instead of chained full-screen celebration
+animations. The obsolete score, level, achievement, path, and progression
+overlay implementations and screenshot harness were removed.
+
+Coach goal changes now stay in the existing profile/memory/plan ownership path
+and are described as a change in training emphasis, never identity. The prompt
+and reliability gates preserve prior observed work and reject authenticity
+shaming. A 3,000-character synthetic turn is exercised through classification,
+secure wire capture, provider acceptance, final sanitization, persistence, UI
+commit, and exactly one terminal trace. Exported support bundles canonicalize
+event/provider reasons and omit arbitrary diagnostic strings.
+
+Verification is locally green: the complete serialized unit target passes
+**4,550/4,550**, the focused screenshot tour passes **4/4**, Coach Arena passes
+**119/119 Node** plus **167/167 Python** tests, and all 52 fixtures validate with
+zero errors or warnings. Focused Accessibility XXXL native audits for Train,
+Profile, and its expanded library pass **3/3**. The offline replay covers 63/63 cases but remains below
+its release bar (69.6 mean vs 70, four legacy placeholder leaks and weak fixture
+pockets). Current-source live-provider, professional calibration, longitudinal
+real-user transfer, physical TestFlight, real-microphone/lifecycle, and launch
+operations evidence remain absent, so production remains correctly **NO-GO**.
+
+Fresh rendered and accessibility-tree handoff artifacts live in
+`.screenshots/2026-07-21_ux-hardening/`. The apparent gray line at the device
+bottom is the iOS home indicator, not app chrome. PDF export remains deferred
+until its privacy/redaction contract is defined; the app still forces light
+appearance, so dark-mode support is not claimed.
+
 ## 2026-07-20 — Vision-gap closure integrated on `ux-overhaul`; production remains NO-GO
 
 `codex/vision-gap-closure`, including the full `codex/product-journey-launch`

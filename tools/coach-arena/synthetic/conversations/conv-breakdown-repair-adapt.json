@@ -1,0 +1,55 @@
+{
+  "id": "conv-breakdown-repair-adapt",
+  "category": "synthetic-conversation",
+  "voice": "concise",
+  "goal": "Wants concise answers without losing the thread under pressure.",
+  "memoryState": {
+    "goal": {
+      "voice": "concise",
+      "whyNow": "loses the point when challenged",
+      "since": "2 weeks ago"
+    },
+    "interventionCycle": {
+      "intervention": "one silent beat before the answer",
+      "target": "point in the first sentence",
+      "successCriterion": "2 pressure reps with a direct opener",
+      "reviewStatus": "broke down — silence caused a restart"
+    },
+    "recentReps": [
+      {
+        "when": "today",
+        "mode": "Pressure Q&A",
+        "score": 69,
+        "fillers": 4,
+        "durationSec": 58,
+        "note": "paused, lost the thread, and restarted the answer"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "the pause thing made me lose my thought completely",
+      "assistantPlaceholder": "Then the pause is doing the wrong job. Do not hold empty silence. Keep one keyword from the question in your head and begin with that word."
+    },
+    {
+      "role": "user",
+      "text": "I tried again. Still awkward — once it goes quiet I start rebuilding the whole answer in my head. What do I do instead?",
+      "turnDepth": "trustRepair",
+      "emotionalSignal": "frustrated with repeated advice, but still willing to try a genuinely different mechanism",
+      "expectedCoachMove": "Acknowledge that the original silent-pause prescription failed for this user. Preserve the goal (point first) but replace the mechanism with one concrete bridge that prevents rebuilding — for example, repeat one keyword aloud and complete a one-sentence answer. Do not prescribe another silent pause, repeat \"slow down\", or blame the user for applying it badly.",
+      "badAnswerExample": "Keep practicing the pause. Take a breath, slow down, and give yourself more time before you answer.",
+      "excellentAnswerExample": "The silent pause is making you rebuild, so drop it. Repeat one keyword from the question aloud — “deadline” — then finish one sentence from that word. The bridge keeps the thought moving while the answer stays direct.",
+      "disqualifiers": [
+        "keep practicing the pause",
+        "take a breath",
+        "slow down",
+        "give yourself more time",
+        {
+          "pattern": "silent pause",
+          "penalty": 8
+        }
+      ]
+    }
+  ]
+}

@@ -155,6 +155,15 @@ struct WeeklyCheckInSheet: View {
                             .foregroundStyle(AppColor.textSecondary)
                             .accessibilityIdentifier("weeklyCheckIn.saveGuidance")
                     }
+
+                    Label(
+                        "Saves to coaching memory. Review, edit, or delete it in Settings → Your data.",
+                        systemImage: "lock.shield"
+                    )
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("weeklyCheckIn.memoryNotice")
                     Spacer(minLength: Spacing.lg)
                 }
                 .padding(.horizontal, Spacing.screenH)
@@ -163,18 +172,28 @@ struct WeeklyCheckInSheet: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 0) {
-                Divider()
-                PrimaryCTA("Save reflection", tint: AppColor.brandBlue) {
+            VStack(spacing: Spacing.xs) {
+                PrimaryCTA("Save to coaching memory", tint: AppColor.brandBlue) {
                     save()
                 }
                 .disabled(!canSave)
-                .opacity(canSave ? 1 : 0.45)
                 .accessibilityIdentifier("weeklyCheckIn.save")
                 .padding(.horizontal, Spacing.screenH)
-                .padding(.vertical, Spacing.sm)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.sm)
             }
-            .background(.regularMaterial)
+            .background {
+                LinearGradient(
+                    colors: [
+                        AppColor.screenBackground.opacity(0),
+                        AppColor.screenBackground,
+                        AppColor.screenBackground
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea(edges: .bottom)
+            }
         }
         .navigationTitle("Weekly check-in")
         .navigationBarTitleDisplayMode(.inline)

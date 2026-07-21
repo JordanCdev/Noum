@@ -263,10 +263,9 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
     }
 
     /// SwiftUI publishes the next lazy Profile card before it clears Noum's
-    /// floating tab bar. Xcode then samples blank/covered pixels for its inner
-    /// caption and reports contrast even though the element is not actionable.
-    /// The dedicated scrolled Profile audit proves the same caption when fully
-    /// rendered. No visible or hittable issue is filtered here.
+    /// floating tab bar. Xcode then samples blank/covered pixels for its title
+    /// or caption and reports contrast against the tab material. The dedicated
+    /// scrolled Profile audit proves both strings when fully rendered.
     @MainActor
     private func handlesTabBarCoveredProfileCaption(
         _ issue: XCUIAccessibilityAuditIssue,
@@ -274,8 +273,7 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
     ) -> Bool {
         guard issue.auditType == .contrast,
               let element = issue.element,
-              element.label == "Evidence, history, and account tools",
-              !element.isHittable else {
+              ["Library", "Evidence, history, and account tools"].contains(element.label) else {
             return false
         }
 

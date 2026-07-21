@@ -1,0 +1,104 @@
+Attributes: Application, 0x11667e800, pid: 87163, label: 'Noum'
+Element subtree:
+ →Application, 0x11667e800, pid: 87163, label: 'Noum'
+    Window (Main), 0x11667ea80, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x11667e940, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x11667e580, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x11667e6c0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x11667e440, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x11667e1c0, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x11667e300, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x11667dcc0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11667e080, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x11667df40, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x11667de00, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x11667d540, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x11667db80, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'app.navigationStack'
+                            Other, 0x11667da40, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x11667d900, {{0.0, 0.0}, {402.0, 874.0}}
+                                Other, 0x11667d7c0, {{0.0, 0.0}, {402.0, 874.0}}
+                                  Other, 0x11667d680, {{0.0, 0.0}, {402.0, 874.0}}
+                                    Other, 0x11667c8c0, {{0.0, 62.0}, {402.0, 778.0}}
+                                    ScrollView, 0x11667d180, {{0.0, 0.0}, {402.0, 874.0}}
+                                      Other, 0x11667d400, {{0.0, -465.7}, {402.0, 1745.0}}
+                                        StaticText, 0x11667d2c0, {{156.7, -429.7}, {88.7, 14.3}}, label: 'Timed Practice'
+                                        Other, 0x11667d040, {{137.0, -403.3}, {128.0, 128.0}}, label: 'Score 7 out of 10'
+                                          StaticText, 0x11667cf00, {{187.0, -374.0}, {28.0, 53.0}}, label: '7'
+                                          StaticText, 0x11667cdc0, {{192.0, -319.0}, {18.0, 14.3}}, label: '/10'
+                                        Image, 0x11667cc80, {{129.0, -258.7}, {14.7, 15.0}}, identifier: 'hand.thumbsup.fill', label: 'Like'
+                                        StaticText, 0x11667cb40, {{153.2, -263.3}, {121.7, 24.0}}, label: 'Good control'
+                                        Other, 0x11667ca00, {{98.3, -215.3}, {51.7, 55.0}}, label: '1 filler across 50 seconds. Filler rate 1.2 per minute. 5.2 per minute lower than the recent qualified average.'
+                                          StaticText, 0x11667c780, {{119.3, -215.3}, {8.3, 20.3}}, label: '1'
+                                          StaticText, 0x11667c640, {{107.3, -191.0}, {32.3, 13.3}}, label: 'Fillers'
+                                          Image, 0x11667c500, {{98.3, -171.0}, {6.3, 7.7}}, identifier: 'arrow.down', label: 'Down'
+                                          StaticText, 0x11667c3c0, {{107.7, -173.7}, {42.3, 13.3}}, label: '5.2/min'
+                                        StaticText, 0x11667c280, {{262.8, -214.2}, {31.3, 20.3}}, label: '50s'
+                                        StaticText, 0x11667c140, {{255.3, -189.8}, {46.3, 13.3}}, label: 'Duration'
+                                        Image, 0x11667c000, {{252.3, -171.7}, {9.3, 9.3}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                                        StaticText, 0x11667ed00, {{265.2, -172.5}, {40.3, 11.0}}, label: 'On target'
+                                        Other, 0x11667ee40, {{15.5, -112.8}, {371.0, 377.3}}, identifier: 'summary.postRepVerdict', label: 'Coaching debrief for this rep'
+                                          StaticText, 0x11667ef80, {{37.0, -92.3}, {83.7, 18.0}}, identifier: 'summary.win.card', label: 'What held'
+                                            Image, 0x11667f0c0, {{37.0, -89.3}, {12.3, 12.3}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                                            StaticText, 0x11667f200, {{56.3, -92.3}, {64.3, 18.0}}, label: 'What held'
+                                          StaticText, 0x11667f340, {{36.0, -62.3}, {213.0, 41.0}}, identifier: 'summary.win.card', label: 'This line held together as one complete thought.'
+                                          StaticText, 0x11667f480, {{48.0, -9.3}, {265.7, 41.0}}, identifier: 'summary.win.card', label: '"March gives us two clean weeks to fix whatever the beta surfaces"'
+                                          StaticText, 0x11667f5c0, {{48.0, 36.7}, {126.3, 15.3}}, identifier: 'summary.win.card', label: 'Your words from this rep'
+                                          StaticText, 0x11667f700, {{37.3, 84.3}, {83.3, 18.0}}, identifier: 'summary.fix.card', label: 'Next move'
+                                            Image, 0x11667f840, {{37.3, 88.7}, {9.3, 9.3}}, identifier: 'arrow.up.right', label: 'arrow.up.right'
+                                            StaticText, 0x11667f980, {{54.0, 84.3}, {66.7, 18.0}}, label: 'Next move'
+                                          StaticText, 0x11667fac0, {{36.0, 114.3}, {324.0, 82.0}}, identifier: 'summary.fix.card', label: 'Your answer stayed surface-level. One well-developed idea with a specific example beats three shallow points. These are the moves that build your warm voice.'
+                                          StaticText, 0x11667fc00, {{36.0, 208.3}, {317.0, 35.7}}, identifier: 'summary.fix.card', label: 'Practice developing one idea fully before moving to the next. This is direct work on your warm voice.'
+                                        StaticText, 0x11667fd40, {{15.5, 279.5}, {371.0, 177.7}}, identifier: 'summary.progressReceipt', label: 'Progress noted, Recorded with this coaching read., Pace leveled up, Developing → Strong, Conciseness leveled up, Developing → Strong', Selected
+                                          Image, 0x11667fe80, {{33.3, 306.7}, {15.3, 15.3}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                                          StaticText, 0x108663ac0, {{62.0, 296.0}, {111.3, 19.3}}, label: 'Progress noted'
+                                          StaticText, 0x108663840, {{62.0, 317.3}, {178.0, 15.3}}, label: 'Recorded with this coaching read.'
+                                          Image, 0x108663980, {{32.0, 344.7}, {28.0, 28.0}}, identifier: 'metronome.fill', label: 'metronome.fill'
+                                          StaticText, 0x108663700, {{72.0, 344.7}, {118.3, 22.0}}, label: 'Pace leveled up'
+                                          StaticText, 0x1086608c0, {{72.0, 368.7}, {130.7, 18.0}}, label: 'Developing → Strong'
+                                          Image, 0x108662300, {{32.0, 398.7}, {28.0, 28.0}}, identifier: 'scissors', label: 'Cut'
+                                          StaticText, 0x108663c00, {{72.0, 398.7}, {179.7, 22.0}}, label: 'Conciseness leveled up'
+                                          StaticText, 0x108663340, {{72.0, 422.7}, {130.7, 18.0}}, label: 'Developing → Strong'
+                                        Other, 0x108663200, {{15.5, 472.2}, {371.0, 307.3}}, identifier: 'summary.rewrite.locked', label: 'Rewrite suggestion, Pro feature. Your version: My recommendation is that we ship the beta in March, because the support team needs a quieter month to absorb the volume. That timing matters more than the feat…'
+                                          Image, 0x108660640, {{37.0, 498.0}, {13.3, 13.7}}, identifier: 'wand.and.stars', label: 'wand.and.stars'
+                                          StaticText, 0x1086635c0, {{60.0, 492.7}, {159.0, 24.0}}, label: 'Try this structure'
+                                          StaticText, 0x108660500, {{337.3, 498.7}, {20.7, 12.0}}, label: 'PRO'
+                                          StaticText, 0x1086603c0, {{52.0, 544.7}, {56.3, 12.0}}, label: 'Your version'
+                                          StaticText, 0x108660280, {{52.0, 562.7}, {295.7, 102.7}}, label: 'My recommendation is that we ship the beta in March, because the support team needs a quieter month to absorb the volume. That timing matters more than the feat…'
+                                          Image, 0x108660140, {{37.7, 696.3}, {8.0, 11.0}}, identifier: 'lock.fill', label: 'Lock'
+                                          StaticText, 0x108660000, {{53.3, 693.3}, {304.7, 35.7}}, label: 'Pro rewrites this in your own vocabulary, so it still sounds like you.'
+                                          Button, 0x108662800, {{36.0, 741.0}, {96.3, 18.0}}, identifier: 'summary.rewrite.upgrade', label: 'Unlock with Pro'
+                                        Other, 0x1086630c0, {{16.0, 795.0}, {370.0, 280.3}}, identifier: 'summary.exitPanel.drill'
+                                          StaticText, 0x108663e80, {{34.0, 817.0}, {53.7, 12.0}}, label: 'NEXT REP'
+                                          StaticText, 0x108663d40, {{103.7, 817.0}, {52.3, 12.0}}, label: 'Established'
+                                          StaticText, 0x108662f80, {{34.0, 843.0}, {123.3, 20.7}}, label: 'The Breath Reset'
+                                          StaticText, 0x108662e40, {{34.0, 873.7}, {328.3, 35.7}}, label: 'You had 1 filler words — they appeared between ideas and made transitions less clean.'
+                                          StaticText, 0x108662d00, {{34.0, 919.3}, {308.3, 35.7}}, label: 'Target: Take one deliberate breath between every sentence. No exceptions.'
+                                          StaticText, 0x108662bc0, {{34.0, 965.0}, {326.7, 35.7}}, label: 'This is a persistent pattern across many sessions, so focused work here is the clearest next step.'
+                                          Button, 0x108662a80, {{34.0, 1010.7}, {334.0, 46.7}}, identifier: 'summary.postRepVerdict.startMiniDrill', label: 'Start The Breath Reset'
+                                            Image, 0x108662940, {{110.0, 1025.3}, {11.0, 17.7}}, identifier: 'bolt.fill', label: 'Flash'
+                                            StaticText, 0x108661a40, {{131.0, 1023.7}, {163.0, 20.7}}, label: 'Start The Breath Reset'
+                                        Button, 0x1086626c0, {{16.0, 1091.3}, {370.0, 44.0}}, identifier: 'summary.talkToNoum.gated', label: 'Ask Noum. Want a coach's read on this rep?. Locked — Pro members unlock the coach thread for every rep.'
+                                          Image, 0x108662440, {{18.0, 1104.3}, {23.0, 18.3}}, identifier: 'bubble.left.and.bubble.right.fill', label: 'Conversation'
+                                          StaticText, 0x1086621c0, {{53.7, 1103.0}, {71.0, 20.7}}, label: 'Ask Noum'
+                                          Image, 0x108662080, {{143.7, 1109.3}, {6.0, 8.0}}, identifier: 'lock.fill', label: 'Lock'
+                                          StaticText, 0x108661f40, {{153.7, 1107.3}, {23.0, 12.0}}, label: 'PRO'
+                                          Image, 0x108661e00, {{375.7, 1107.3}, {8.7, 12.0}}, identifier: 'lock.fill', label: 'Lock'
+                                        Button, 0x108661cc0, {{24.0, 1151.3}, {354.0, 44.0}}, identifier: 'summary.details.toggle', label: 'See details'
+                                          Image, 0x108661b80, {{25.3, 1166.0}, {12.3, 15.0}}, identifier: 'doc.text.magnifyingglass', label: 'Search Document'
+                                          StaticText, 0x108660dc0, {{45.3, 1164.3}, {69.0, 18.0}}, label: 'See details'
+                                          Image, 0x108661900, {{365.7, 1170.0}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                                        Other, 0x1086617c0, {{16.0, 1211.3}, {370.0, 44.0}}, identifier: 'summary.exitPanel'
+                                          Button, 0x108661680, {{16.0, 1211.3}, {370.0, 44.0}}, identifier: 'summary.exitPanel.done', label: 'Done'
+                                    Other, 0x108661540, {{0.0, 0.0}, {402.0, 62.0}}
+                            Other, 0x108661400, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x1086612c0, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x108661180, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x108661040, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x108660f00, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x11667e800, pid: 87163, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x108660c80, pid: 87163, label: 'Noum'
+  }

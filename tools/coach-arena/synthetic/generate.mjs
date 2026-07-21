@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Emits the 10 synthetic multi-turn conversations from synthetic/conversations.data.mjs
+// Emits the 11 synthetic multi-turn conversations from synthetic/conversations.data.mjs
 // into synthetic/conversations/*.json, and sanity-checks that each expands into
 // at least one gradeable turn with the required fields. These conversations
 // stress the coach across turns: memory, consistency, not-repeating, trust

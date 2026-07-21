@@ -6,43 +6,6 @@ import UIKit
 #if canImport(SwiftUI)
 import SwiftUI
 
-// MARK: - Summary interstitial policy
-
-/// Legacy identities retained for fixture compatibility. Production no longer
-/// places a full-screen beat between a completed rep and its coaching read;
-/// every earned event is presented through one inline progress receipt.
-enum SummaryInterstitial: Hashable, CaseIterable {
-    case personalBest
-    case skillProgress
-    // Retained as decoded/test fixture identities, but no longer selected for
-    // production presentation. Practice volume and achievement progress now
-    // render as one compact receipt inside Results.
-    case achievementProgress
-    case practiceVolume
-}
-
-struct SummaryInterstitialPolicy {
-    /// Highest-value first. Kept public to the module so tests can pin future
-    /// additions to an intentional place in the attention budget.
-    static let priority: [SummaryInterstitial] = []
-
-    static func select(
-        completedRepCount: Int,
-        hasPersonalBest: Bool,
-        hasSkillProgress: Bool,
-        hasAchievementProgress: Bool,
-        hasPracticeVolumeLevel: Bool
-    ) -> SummaryInterstitial? {
-        // All events are still persisted and presented, but inline on Results.
-        _ = completedRepCount
-        _ = hasPersonalBest
-        _ = hasSkillProgress
-        _ = hasAchievementProgress
-        _ = hasPracticeVolumeLevel
-        return nil
-    }
-}
-
 /// Keeps the status-area cover tied to the container's measured safe area.
 /// The clamp is defensive for previews or transient layout passes that can
 /// briefly report a negative inset while a navigation transition settles.
@@ -136,7 +99,6 @@ struct SummaryView: View {
     @State private var isRequestingAIFeedback = false
     @State private var aiError: String?
     @State private var showVideoPlayback = false
-    @State private var celebrationVisible = false
     @State private var lockedTranscriptText: String?
     @State private var lockedFillerCount: Int?
     @State private var lockedDuration: TimeInterval?
@@ -151,17 +113,10 @@ struct SummaryView: View {
     @State private var feedbackRequestURL: URL?
     @State private var videoAnalysisResult: VideoAnalysisResult?
     @State private var isAnalyzingVideo = false
-    @State private var personalBestMilestone: MilestoneEvent?
     @State private var sessionMilestone: MilestoneEvent?
-    /// Skill level-up sequence played between PersonalBest (or
-    /// LevelUp / Progression) and the standard summary content. The
-    /// snapshot is locked at setup so the pre-summary celebration
-    /// plays the exact set of events that was pending at finalize
-    /// time, not whatever's pending the moment the user scrolls back.
-    /// Empty array = no celebration; the parent skips straight to
-    /// summary content without rendering the overlay.
+    /// Snapshot the pending skill events at setup so the inline Results receipt
+    /// describes exactly what the completed rep earned.
     @State private var preSummaryEvents: [SkillLevelUpEvent] = []
-    @State private var selectedInterstitial: SummaryInterstitial?
     @State private var activeMiniDrill: DrillRecommendationV2?
     @State private var miniDrillOutcome: MiniDrillOutcome?
     @State private var miniDrillAwardedXP: Int = 0
@@ -636,10 +591,9 @@ struct SummaryView: View {
         // If a Path landmark just unlocked on this rep, the headline
         // reads "Landmark reached." to anchor the story/progression
         // register the rest of the app uses. PathProgressManager queues
-        // an unlocked node celebration via `pendingCelebrationNodeID`
-        // when a session causes a node to satisfy its criteria. We read
-        // it here without consuming — the PathNodeCelebration overlay
-        // still consumes on its own fullScreenCover dismissal.
+        // an unlocked node via `pendingCelebrationNodeID` when a session
+        // causes a node to satisfy its criteria. We read it here without
+        // consuming; Home's unified progress receipt owns acknowledgement.
         if PathProgressManager.shared.pendingCelebrationNodeID != nil {
             return "Landmark reached"
         }
@@ -946,46 +900,7 @@ struct SummaryView: View {
             AppColor.screenBackground
                 .ignoresSafeArea()
 
-            if let selectedInterstitial {
-                switch selectedInterstitial {
-                case .personalBest:
-                    if let milestone = personalBestMilestone {
-                        personalBestCelebration(milestone: milestone)
-                            // Full-screen backgrounds must be opaque from frame
-                            // one. Fading the entire view over the light summary
-                            // creates a washed-out, disabled-looking frame.
-                            .transition(.identity)
-                    }
-                case .skillProgress:
-                    PreSummaryCelebration(events: preSummaryEvents) {
-                        finishInterstitial()
-                    }
-                    .transition(.identity)
-                case .achievementProgress:
-                    PostSessionProgressionView(
-                        xpEarned: earnedXPForPresentation,
-                        previousXP: progressionPreviousXP,
-                        newXP: profile.xp,
-                        previousLevel: currentLevel,
-                        newLevel: ProfileManager.levelTitle(forXP: profile.xp),
-                        achievementProgress: progressionDeltas,
-                        newUnlocks: progressionNewUnlocks,
-                        onContinue: finishInterstitial
-                    )
-                    .transition(.identity)
-                case .practiceVolume:
-                    LevelUpCelebrationScreen(
-                        newLevel: PracticeVolumeNarration.title(forXP: profile.xp),
-                        previousLevel: PracticeVolumeNarration.title(forXP: progressionPreviousXP),
-                        xp: profile.xp,
-                        xpProgress: progress,
-                        onContinue: finishInterstitial
-                    )
-                    .transition(.identity)
-                }
-            } else {
-                // Normal summary content — redesigned hierarchy
-                ScrollView(showsIndicators: false) {
+            ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         // MODE CONSISTENCY NOTE (M20):
                         // IM, Sudden Death and Timed/other share TalkToNoumCTACard
@@ -1076,7 +991,6 @@ struct SummaryView: View {
                                     fillerAccessibilityLabel: summaryFillerPresentation.accessibilityLabel,
                                     effectiveDuration: effectiveDuration,
                                     durationAssessment: durationAssessment,
-                                    celebrationVisible: celebrationVisible,
                                     belowEvidenceFloor: isMinimalEffort,
                                     toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
                                 )
@@ -1187,35 +1101,26 @@ struct SummaryView: View {
                 }
                 .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
 
-                if celebrationVisible && !reduceMotion {
-                    celebrationOverlay
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
-
-            }
         }
         .overlay {
-            if selectedInterstitial == nil {
-                // Summary intentionally hides navigation chrome. Keep a
-                // quiet, persistent safe-area scrim so scrolled coaching
-                // never competes with the status-bar clock and indicators.
-                GeometryReader { geometry in
-                    VStack(spacing: 0) {
-                        AppColor.screenBackground
-                            .frame(maxWidth: .infinity)
-                            .frame(
-                                height: SummaryTopSafeAreaCoverLayout.height(
-                                    for: geometry.safeAreaInsets.top
-                                )
+            // Summary intentionally hides navigation chrome. Keep a quiet,
+            // persistent safe-area scrim so coaching never competes with the
+            // status-bar clock and indicators.
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    AppColor.screenBackground
+                        .frame(maxWidth: .infinity)
+                        .frame(
+                            height: SummaryTopSafeAreaCoverLayout.height(
+                                for: geometry.safeAreaInsets.top
                             )
-                        Spacer(minLength: 0)
-                    }
-                    .ignoresSafeArea(edges: .top)
+                        )
+                    Spacer(minLength: 0)
                 }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                .ignoresSafeArea(edges: .top)
             }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -1223,11 +1128,6 @@ struct SummaryView: View {
         .disableSwipeBack()
         .onAppear(perform: setup)
         .onAppear(perform: recordSummaryViewedIfNeeded)
-        .onDisappear {
-            if selectedInterstitial != nil {
-                skillProgression.consumeAll()
-            }
-        }
         // Iteration 1: load the transcript-verified proof moment on every
         // summary (not just the personal-best celebration) so the WIN card
         // can lead with the user's own strongest line. Nil on a miss.
@@ -1275,13 +1175,6 @@ struct SummaryView: View {
                 }
             )
         }
-#if canImport(UIKit)
-        .onChange(of: celebrationVisible) { _, visible in
-            if visible {
-                CoachHaptic.personalBest()
-            }
-        }
-#endif
     }
     /// Filler tint comes from the same quantity-qualified rate projection as
     /// the hero badge, fallback insight, and details comparison.
@@ -2297,30 +2190,6 @@ struct SummaryView: View {
         return false
     }
 
-    private func personalBestCelebration(milestone: MilestoneEvent) -> some View {
-        PersonalBestCelebrationScreen(
-            scoreValue: scoreValue,
-            scoreAccent: scoreAccent,
-            modeName: currentMode.displayLabel,
-            previousBest: milestone.detail,
-            onContinue: finishInterstitial,
-            proof: resolvedProof
-        )
-        .onAppear {
-            Task { await loadPersonalBestProof() }
-        }
-    }
-
-    /// Clears the complete post-rep interstitial budget in one transition.
-    /// Pending skill events are consumed whether or not they won priority so
-    /// an unshown event can never leak into the next rep.
-    private func finishInterstitial() {
-        skillProgression.consumeAll()
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-            selectedInterstitial = nil
-        }
-    }
-
     /// The proof-extraction input for the just-finished session, or nil
     /// when no qualifying session exists (empty transcript or a ≤8s misfire
     /// rep). Resolve through the same exact finalized row every other Summary
@@ -2387,31 +2256,6 @@ struct SummaryView: View {
             }
             withAnimation(reduceMotion ? nil : .standardSpring) {
                 personalBestProof = result.proof
-            }
-        }
-    }
-
-    // MARK: - Celebration Overlay
-
-    private var celebrationOverlay: some View {
-        GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1 / 22.0)) { timeline in
-                let phase = timeline.date.timeIntervalSinceReferenceDate
-
-                ZStack {
-                    ForEach(0..<14, id: \.self) { index in
-                        let x = geometry.size.width * (0.10 + (Double(index % 7) * 0.13))
-                        let travel = (phase.truncatingRemainder(dividingBy: 1.6)) / 1.6
-                        let y = geometry.size.height * (0.22 + Double(index / 7) * 0.08) - travel * 120
-
-                        Image(systemName: index.isMultiple(of: 2) ? "sparkle" : "star.fill")
-                            .font(.system(size: index.isMultiple(of: 2) ? 10 : 8, weight: .bold))
-                            .foregroundStyle(scoreAccent.opacity(0.28))
-                            .position(x: x, y: y)
-                            .opacity(1 - travel)
-                            .scaleEffect(0.7 + travel * 0.4)
-                    }
-                }
             }
         }
     }
@@ -2658,26 +2502,12 @@ struct SummaryView: View {
             InteractionSoundEngine.cue(.verdictReveal)
         }
 
-        // Capture milestone payloads first, then let one pure policy decide
-        // which (if any) earns the full-screen attention budget.
+        // Capture every earned event for the single inline Results receipt.
         sessionMilestone = result.milestone
-        if let milestone = result.milestone {
-            if milestone.title == "New personal best." {
-                personalBestMilestone = milestone
-            }
-        }
-
         preSummaryEvents = currentRepIsProgressEligible
             ? skillProgression.pendingLevelUps
             : []
         let completedRepCount = sessionStore.progressEligibleSessionCount
-        selectedInterstitial = SummaryInterstitialPolicy.select(
-            completedRepCount: completedRepCount,
-            hasPersonalBest: personalBestMilestone != nil,
-            hasSkillProgress: !preSummaryEvents.isEmpty,
-            hasAchievementProgress: result.showProgressionScreen && !isSuddenDeathSummary,
-            hasPracticeVolumeLevel: result.isLevelUp
-        )
 
         // First-rep celebration used to stack on top of the summary. The
         // cohesive pass deliberately starts with the useful coaching read;
@@ -2687,44 +2517,17 @@ struct SummaryView: View {
             FirstRepCelebrationManager.shared.dismiss()
         }
 
-        // Only the skill-progress interstitial consumes events as it renders.
-        // Every other choice (including no choice) records progression
-        // silently and drains pending presentation state immediately.
-        if selectedInterstitial != .skillProgress {
-            skillProgression.consumeAll()
-        }
+        // The receipt owns presentation. Drain the pending overlay queue now so
+        // no old full-screen event can leak into the next rep.
+        skillProgression.consumeAll()
 
-        // The hero's restrained score beat waits until the single earned
-        // interstitial has cleared. It never adds a second celebration on top
-        // of the selected full-screen beat.
-        let celebrationDelay = motionDelay(selectedInterstitial == nil ? 0 : 0.5)
         let revealDelay = motionDelay(0.8)
         Task {
-            if celebrationDelay > 0 {
-                try? await Task.sleep(for: .seconds(celebrationDelay))
-            }
-            await MainActor.run {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.35)) {
-                    // Reward ownership (Iteration 1): the full celebration fires
-                    // ONLY on a real crossing detected by SessionFinalizer (personal
-                    // best / level-up / streak / count milestone) — never on a score
-                    // or XP threshold, and never on the first rep (count milestones
-                    // start at 10, streak at 3, no PB on rep 1). The score-ring
-                    // count-up + haptic stays the honest per-rep beat.
-                    celebrationVisible = false
-                }
-            }
             if revealDelay > 0 {
                 try? await Task.sleep(for: .seconds(revealDelay))
             }
             await MainActor.run {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.4)) { coachNoteRevealed = true }
-            }
-            if revealDelay > 0 {
-                try? await Task.sleep(for: .seconds(revealDelay))
-            }
-            await MainActor.run {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.35)) { celebrationVisible = false }
             }
         }
 

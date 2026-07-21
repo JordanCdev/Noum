@@ -731,7 +731,7 @@ struct PracticeModeSelectionView: View {
                             .foregroundStyle(.primary)
                         Text("Browse every exercise and learning path.")
                             .font(Typography.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 

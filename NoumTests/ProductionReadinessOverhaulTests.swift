@@ -2326,6 +2326,86 @@ struct TypedCoachEvidencePipelineWireTests {
             #expect(!landed.lowercased().contains("qualified"))
         }
     }
+
+    @Test func detailedThreeThousandCharacterTurnReachesProviderAndCommitsOneTerminalReply() async throws {
+        let suiteName = "CoachLongPromptPipelineTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        FlowEventLog.shared.reset()
+        defer { FlowEventLog.shared.reset() }
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+
+        let opening = "I need help preparing a leadership update. Recommend whether we delay by two weeks. "
+        let ending = " Existing beta users remain exposed; keep customer demos on a controlled build and give support one message today."
+        let paddingCount = 3_000 - opening.count - ending.count
+        let middle = String(String(repeating: "Operational context remains relevant. ", count: 120).prefix(paddingCount))
+        let turn = opening + middle + ending
+        #expect(turn.count == 3_000)
+        #expect(CoachChatTurnIntent.classify(turn) == .coaching)
+        #expect(CoachChatResponseKind.classify(turn) == .generalCoaching)
+        #expect(TurnDepthClassifier.classify(userText: turn) == .quickMove)
+
+        let landedReply = "Recommend the two-week delay first because existing beta users remain exposed. Keep the demos on a controlled build and give support one message today."
+        let store = AskNoumStore(
+            defaults: defaults,
+            accountIDProvider: { "pipeline-long-prompt" }
+        )
+        let ids = store.appendUserTurn(turn)
+        let transport = CapturingCoachTransport(completionText: landedReply)
+        let service = AICoachChatService(secureTransport: transport)
+
+        let outcome = await CoachReplyPipeline.generate(
+            coachID: ids.coachID,
+            store: store,
+            coachService: service,
+            judgementPassEnabled: true,
+            realtimeCoachModeEnabled: true,
+            sessionsOverride: [],
+            coachMemoryOverride: { nil }
+        )
+
+        let request = try #require(transport.capturedRequest())
+        #expect(request.messages.last == CoachChatWireMessage(role: .user, content: turn))
+        #expect(request.responseKind == CoachChatResponseKind.generalCoaching.rawValue)
+        #expect(request.turnDepth == CoachTurnDepth.quickMove.rawValue)
+        guard case .reply(let reply) = outcome else {
+            Issue.record("Long prompt did not finish with a live reply")
+            return
+        }
+        #expect(reply == landedReply)
+
+        let committed = try #require(store.messages.first(where: { $0.id == ids.coachID }))
+        #expect(!committed.isPending)
+        #expect(committed.role == .coach)
+        #expect(committed.text == landedReply)
+        #expect(committed.metadata?.traceID == ids.coachID)
+        #expect((committed.metadata?.providerAttemptCount ?? 0) >= 1)
+        #expect(committed.metadata?.qualityGateOutcome != nil)
+        #expect((committed.metadata?.timeToCompleteReplyMs ?? -1) >= 0)
+        #expect(committed.metadata?.terminalState == .accepted)
+
+        let trace = try #require(FlowEventLog.shared.recentCoachTraces(limit: 20)
+            .first(where: { $0.correlationId == ids.coachID }))
+        let stages = Set(trace.events.map(\.stage))
+        for expectedStage in [
+            CoachTraceStage.accepted,
+            CoachTraceStage.classified,
+            CoachTraceStage.providerStarted,
+            CoachTraceStage.finalSanitized,
+            CoachTraceStage.persisted,
+            CoachTraceStage.uiCommitted,
+            CoachTraceStage.terminal,
+        ] {
+            #expect(stages.contains(expectedStage), "Missing trace stage \(expectedStage)")
+        }
+        let classified = try #require(trace.events.first(where: { $0.stage == CoachTraceStage.classified }))
+        #expect(classified.numerics["userCharacters"] == 3_000)
+        #expect(trace.terminalState == .accepted)
+        #expect(trace.terminalEventCount == 1)
+        #expect((trace.latencyMs ?? -1) >= 0)
+    }
 }
 
 @Suite("Production copy contracts")

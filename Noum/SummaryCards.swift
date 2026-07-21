@@ -20,7 +20,6 @@ struct HeroScoreCard: View {
     var fillerAccessibilityLabel: String? = nil
     let effectiveDuration: TimeInterval
     let durationAssessment: DurationAssessment
-    let celebrationVisible: Bool
     /// When true the rep was below the evidence floor (accidental instant-stop,
     /// too short to read). The ring shows no number and stays empty — a "1/10"
     /// on a rep the user never really gave is a lie. Opt-in, default false so
@@ -125,8 +124,6 @@ struct HeroScoreCard: View {
                     }
                 }
             }
-            .scaleEffect(!reduceMotion && celebrationVisible ? 1.06 : 1.0)
-            .animation(reduceMotion ? nil : .bouncySpring, value: celebrationVisible)
             // VoiceOver always reads the final score — never an animated
             // intermediate frame.
             .accessibilityElement(children: .ignore)

@@ -28,6 +28,7 @@ struct LessonsHomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
+                    lessonProgressReceipt
                     if let recommendedLesson {
                         recommendedLessonSection(recommendedLesson)
                     } else {
@@ -47,17 +48,47 @@ struct LessonsHomeView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("lessons.screen")
-        .overlay {
-            if let celebration = lessonStore.pendingCelebration,
-               let lesson = LessonsCatalog.lesson(id: celebration.lessonID) {
-                LessonCelebrationOverlay(
-                    celebration: celebration,
-                    lesson: lesson,
-                    onDismiss: { lessonStore.consumeCelebration() }
-                )
-                .transition(.opacity)
-                .zIndex(99)
+    }
+
+    /// Lesson events use the same calm inline receipt as every other progress
+    /// surface. The existing store remains the durable event owner.
+    @ViewBuilder
+    private var lessonProgressReceipt: some View {
+        if let celebration = lessonStore.pendingCelebration,
+           let lesson = LessonsCatalog.lesson(id: celebration.lessonID) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(celebration.kind.headline)
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text("\(lesson.title) · \(LessonProgressPresentation(completedPasses: celebration.practicePassCount).celebrationLine(for: celebration.kind))")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Spacing.xs)
+
+                Button("Done") {
+                    lessonStore.consumeCelebration()
+                }
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(minWidth: 44, minHeight: 44)
             }
+            .padding(Spacing.md)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("lesson.progressReceipt")
         }
     }
 
@@ -248,102 +279,6 @@ struct LessonsHomeView: View {
     }
 }
 
-// MARK: - Celebration overlay
-
-@available(iOS 17.0, macOS 12.0, *)
-struct LessonCelebrationOverlay: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    let celebration: LessonCelebration
-    let lesson: Lesson
-    let onDismiss: () -> Void
-
-    @State private var hasAppeared = false
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.32)
-                .ignoresSafeArea()
-                .onTapGesture(perform: onDismiss)
-
-            VStack(spacing: 22) {
-                ZStack {
-                    Circle()
-                        .fill(AppColor.brandBlue.opacity(0.16))
-                        .frame(width: 96, height: 96)
-                    Image(systemName: lesson.symbolName)
-                        .font(.system(size: 38, weight: .bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .scaleEffect(hasAppeared ? 1 : 0.7)
-                }
-
-                SparkleRibbon(tint: AppColor.brandBlue)
-                    .opacity(hasAppeared ? 1 : 0)
-
-                VStack(spacing: 10) {
-                    Text(celebration.kind.headline)
-                        .font(Typography.micro)
-                        .foregroundStyle(AppColor.brandBlue)
-                        .textCase(.uppercase)
-                        .tracking(0.8)
-                    Text(lesson.title)
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.center)
-                    Text(progressLine)
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack(spacing: 6) {
-                    ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
-                        Image(systemName: i < celebration.practicePassCount ? "checkmark.seal.fill" : "circle")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(i < celebration.practicePassCount ? AppColor.brandBlue : Color.secondary.opacity(0.3))
-                    }
-                }
-                .accessibilityLabel(LessonProgressPresentation(completedPasses: celebration.practicePassCount).accessibilityLabel)
-
-                Button(action: onDismiss) {
-                    Text("Continue")
-                        .font(Typography.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(AppColor.brandBlue, in: Capsule())
-                }
-                .accessibilityIdentifier("lesson.celebration.continue")
-            }
-            .padding(28)
-            .frame(maxWidth: 320)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.2), radius: 24, y: 8)
-            .padding(.horizontal, 32)
-            .scaleEffect(hasAppeared ? 1 : 0.92)
-            .opacity(hasAppeared ? 1 : 0)
-        }
-        .onAppear {
-            CoachHaptic.trendBreakthrough()
-            guard !reduceMotion else {
-                hasAppeared = true
-                return
-            }
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                hasAppeared = true
-            }
-        }
-    }
-
-    private var progressLine: String {
-        LessonProgressPresentation(completedPasses: celebration.practicePassCount)
-            .celebrationLine(for: celebration.kind)
-    }
-}
-
 #if DEBUG
 @available(iOS 17.0, *)
 #Preview("Lessons — catalog") {
@@ -352,18 +287,6 @@ struct LessonCelebrationOverlay: View {
     }
 }
 
-@available(iOS 17.0, *)
-#Preview("Lesson celebration — unlocked") {
-    LessonCelebrationOverlay(
-        celebration: LessonCelebration(
-            lessonID: LessonsCatalog.ruleOfThree.id,
-            kind: .unlocked,
-            practicePassCount: 1
-        ),
-        lesson: LessonsCatalog.ruleOfThree,
-        onDismiss: {}
-    )
-}
 #endif
 
 #endif

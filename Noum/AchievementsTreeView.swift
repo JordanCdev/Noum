@@ -26,6 +26,7 @@ struct AchievementsTreeView: View {
     /// next milestone per track so the page reads as a plan, not an inventory.
     @State private var expandedTrackIDs: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // MARK: - Derived state
 
@@ -106,7 +107,7 @@ struct AchievementsTreeView: View {
             in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(unlockedCount) of \(totalCount) achievements unlocked")
+        .accessibilityLabel("\(unlockedCount) of \(totalCount) practice milestones reached")
     }
 
     // MARK: - Track Section
@@ -171,35 +172,51 @@ struct AchievementsTreeView: View {
         )
     }
 
+    @ViewBuilder
     private func trackHeader(
         track: AchievementTrack,
         unlocked: Int,
         total: Int,
         isExpanded: Bool
     ) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                trackTitle(track)
+                HStack {
+                    Text("\(unlocked) of \(total) reached")
+                        .font(Typography.caption.monospacedDigit())
+                        .foregroundStyle(AppColor.textSecondary)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } else {
+            HStack(spacing: Spacing.xs) {
+                trackTitle(track)
+                Spacer()
+                Text("\(unlocked)/\(total)")
+                    .font(Typography.caption.monospacedDigit())
+                    .foregroundStyle(AppColor.textSecondary)
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func trackTitle(_ track: AchievementTrack) -> some View {
         HStack(spacing: Spacing.xs) {
             Image(systemName: track.symbol)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(AppColor.brandBlue)
                 .frame(width: 28, height: 28)
-                .background(
-                    AppColor.brandBlue.opacity(0.09),
-                    in: Circle()
-                )
-
+                .background(AppColor.brandBlue.opacity(0.09), in: Circle())
             Text(track.label)
                 .font(Typography.headline)
                 .foregroundStyle(AppColor.textPrimary)
-
-            Spacer()
-
-            Text("\(unlocked)/\(total)")
-                .font(Typography.caption.monospacedDigit())
-                .foregroundStyle(AppColor.textSecondary)
-
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -218,20 +235,17 @@ struct AchievementsTreeView: View {
                     .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                        Text(tier.title)
-                            .font(Typography.subheadline.weight(.semibold))
-                            .foregroundStyle(status.isUnlocked
-                                ? AppColor.textPrimary
-                                : AppColor.textSecondary)
-
-                        Spacer(minLength: 0)
-
-                        Text(status.progressLabel)
-                            .font(Typography.caption.monospacedDigit())
-                            .foregroundStyle(status.isUnlocked
-                                ? AppColor.positive
-                                : AppColor.textSecondary)
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            milestoneTitle(tier, status: status)
+                            milestoneProgress(status)
+                        }
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                            milestoneTitle(tier, status: status)
+                            Spacer(minLength: 0)
+                            milestoneProgress(status)
+                        }
                     }
 
                     Text(tier.description)
@@ -247,7 +261,7 @@ struct AchievementsTreeView: View {
                     if status.isUnlocked, let unlockDate {
                         if showingDate {
                             unlockDateLabel(date: unlockDate)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                         } else {
                             unlockDateLabel(date: unlockDate)
                                 .opacity(0.6)
@@ -257,7 +271,7 @@ struct AchievementsTreeView: View {
                     // Locked: tap reveals what unlocks it (using tier.description as the criteria).
                     if !status.isUnlocked, showingHint {
                         unlockHintLabel(description: tier.description)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
                 }
             }
@@ -266,6 +280,19 @@ struct AchievementsTreeView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(accessibilityLabel(for: tier, status: status, unlockDate: unlockDate))
+    }
+
+    private func milestoneTitle(_ tier: AchievementTier, status: PracticeAchievementStatus) -> some View {
+        Text(tier.title)
+            .font(Typography.subheadline.weight(.semibold))
+            .foregroundStyle(status.isUnlocked ? AppColor.textPrimary : AppColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func milestoneProgress(_ status: PracticeAchievementStatus) -> some View {
+        Text(status.progressLabel)
+            .font(Typography.caption.monospacedDigit())
+            .foregroundStyle(status.isUnlocked ? AppColor.positive : AppColor.textSecondary)
     }
 
     // MARK: - Row Pieces
@@ -312,7 +339,7 @@ struct AchievementsTreeView: View {
                     .frame(
                         width: max(progress > 0 ? 6 : 0, geo.size.width * min(1.0, progress))
                     )
-                    .animation(.progressFill, value: progress)
+                    .animation(reduceMotion ? nil : .progressFill, value: progress)
             }
         }
         .frame(height: 6)
@@ -323,7 +350,7 @@ struct AchievementsTreeView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppColor.positive)
-            Text("Unlocked \(date.formatted(.dateTime.month(.abbreviated).day().year()))")
+            Text("Reached \(date.formatted(.dateTime.month(.abbreviated).day().year()))")
                 .font(Typography.micro)
                 .foregroundStyle(AppColor.textSecondary)
                 .textCase(.none)
@@ -400,12 +427,12 @@ struct AchievementsTreeView: View {
         if status.isUnlocked {
             if let unlockDate {
                 let formatted = unlockDate.formatted(.dateTime.month(.abbreviated).day().year())
-                parts.append("Unlocked \(formatted)")
+                parts.append("Reached \(formatted)")
             } else {
-                parts.append("Unlocked")
+                parts.append("Reached")
             }
         } else {
-            parts.append("Locked. Progress \(status.progressLabel)")
+            parts.append("Not reached. Progress \(status.progressLabel)")
         }
         return parts.joined(separator: ". ")
     }

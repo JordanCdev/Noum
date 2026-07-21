@@ -427,14 +427,6 @@ final class ScreenshotTour: XCTestCase {
         )
     }
 
-    @MainActor
-    func testCaptureCelebrationOverlays() throws {
-        captureOverlayHarness(kind: "progression", name: "33-post-session-progression")
-        captureOverlayHarness(kind: "personalBest", name: "34-personal-best-celebration")
-        captureOverlayHarness(kind: "levelUp", name: "35-level-up-celebration")
-        captureOverlayHarness(kind: "achievementUnlock", name: "36-achievement-unlock-celebration")
-    }
-
     /// Focused capture for the Impromptu setup surface. The full tour can fail
     /// on unrelated screens, so this keeps the primary pressure-drill entry
     /// independently verifiable.
@@ -791,22 +783,6 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
-    private func captureOverlayHarness(kind: String, name: String) {
-        let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_OVERLAY", kind]
-        app.launch()
-        let harness = app.descendants(matching: .any)["overlayHarness.\(kind)"]
-        XCTAssertTrue(harness.waitForExistence(timeout: 5))
-        guard harness.exists else {
-            app.terminate()
-            return
-        }
-        Thread.sleep(forTimeInterval: 1.4)
-        attach(app, name: name)
-        app.terminate()
-    }
-
-    @MainActor
     private func attach(_ app: XCUIApplication, name: String) {
         let shot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)
@@ -852,29 +828,14 @@ final class ScreenshotTour: XCTestCase {
         app.launch()
         _ = app.wait(for: .runningForeground, timeout: 10)
         Thread.sleep(forTimeInterval: 2.5) // deep-link routes Home -> Summary
-        // The force-hook re-finalizes the seeded session, which can fire a
-        // celebration/achievement overlay over the summary body. Dismiss the
-        // chain (Continue) so we capture the actual verdict, not the overlay.
-        // The force-hook re-finalizes the seeded session, which MAY fire the
-        // progression/celebration chain over the verdict (only on a real
-        // unlock since the PostRepProgressionGate change — silent reps now
-        // route straight to the verdict). Tap through overlay labels only.
-        // NEVER tap "Done": the redesigned verdict's bottom exit panel has
-        // its own Done (summary.exitPanel.done) and blind-tapping it exits
-        // the very screen this tour captures. Stop as soon as the verdict
-        // read card (summary.postRepVerdict) is on screen.
-        let dismissLabels = ["View Summary", "Continue", "Got it"]
-        for _ in 0..<5 {
-            if app.otherElements["summary.postRepVerdict"].exists { break }
-            var tapped = false
-            for label in dismissLabels {
-                let b = app.buttons[label]
-                if b.waitForExistence(timeout: 2) {
-                    b.tap(); Thread.sleep(forTimeInterval: 1.2); tapped = true; break
-                }
-            }
-            if !tapped { break }
-        }
+        XCTAssertTrue(
+            app.otherElements["summary.postRepVerdict"].waitForExistence(timeout: 8),
+            "The result should open directly on the unified summary."
+        )
+        XCTAssertFalse(app.otherElements["preSummary.celebration"].exists)
+        XCTAssertFalse(app.otherElements["path.celebration"].exists)
+        XCTAssertFalse(app.otherElements["tier.promotion.overlay"].exists)
+        XCTAssertFalse(app.buttons["postSessionProgression.viewSummary"].exists)
         deepAttach(app, name: "S-summary-1top")
         app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
         deepAttach(app, name: "S-summary-2mid")
