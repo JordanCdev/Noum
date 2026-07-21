@@ -1,9 +1,6 @@
 import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
 // MARK: - Achievements Tree View
 //
@@ -25,6 +22,10 @@ struct AchievementsTreeView: View {
     @State private var revealedUnlockedIDs: Set<String> = []
     /// IDs of locked rows currently showing their unlock-criteria tooltip.
     @State private var revealedLockedIDs: Set<String> = []
+    /// Track detail stays collapsed until requested. The overview names one
+    /// next milestone per track so the page reads as a plan, not an inventory.
+    @State private var expandedTrackIDs: Set<String> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Derived state
 
@@ -72,50 +73,32 @@ struct AchievementsTreeView: View {
             .padding(.horizontal, Spacing.screenH)
             .padding(.bottom, 40)
         }
-        .background(LightGradientBackground())
-        .navigationTitle("Achievements")
+        .background(AppColor.screenBackground.ignoresSafeArea())
+        .navigationTitle("Milestones")
         .navigationBarTitleDisplayMode(.large)
+        .accessibilityIdentifier("milestones.screen")
     }
 
     // MARK: - Hero Strip
 
     private var heroStrip: some View {
-        HStack(spacing: Spacing.md) {
-            heroProgressRing
-                .frame(width: 76, height: 76)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Markers of consistent work—not another speaking score.")
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
 
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text("\(unlockedCount) of \(totalCount)")
-                    .font(Typography.bigStat.monospacedDigit())
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(unlockedCount) reached")
+                    .font(Typography.subheadline.weight(.semibold))
                     .foregroundStyle(AppColor.textPrimary)
-                    .contentTransition(.numericText())
-                    .animation(.standardSpring, value: unlockedCount)
-
-                Text("achievements unlocked")
-                    .font(Typography.caption)
+                Spacer()
+                Text("\(totalCount) total")
+                    .font(Typography.caption.monospacedDigit())
                     .foregroundStyle(AppColor.textSecondary)
-
-                if totalCount > 0 {
-                    Text(percentLabel)
-                        .font(Typography.micro)
-                        .foregroundStyle(AppColor.textSecondary.opacity(0.8))
-                        .textCase(.uppercase)
-                        .tracking(0.8)
-                        .padding(.top, 2)
-                }
             }
 
-            Spacer(minLength: 0)
-
-            // Coach character anchors the right side. Mood scales with
-            // progress: excited once half the achievements are unlocked,
-            // coaching otherwise (reads as "still teaching you").
-            NoumCharacter(
-                mood: overallFraction >= 0.5 ? .excited : .coaching,
-                tint: AppColor.brandBlue,
-                size: 56
-            )
-            .accessibilityHidden(true)
+            ProgressView(value: overallFraction)
+                .tint(AppColor.brandBlue)
         }
         .padding(Spacing.lg)
         .background(
@@ -126,61 +109,59 @@ struct AchievementsTreeView: View {
         .accessibilityLabel("\(unlockedCount) of \(totalCount) achievements unlocked")
     }
 
-    private var percentLabel: String {
-        let pct = Int((overallFraction * 100).rounded())
-        return "\(pct)% complete"
-    }
-
-    private var heroProgressRing: some View {
-        ZStack {
-            Circle()
-                .stroke(AppColor.subtleBorder, lineWidth: 8)
-
-            Circle()
-                .trim(from: 0, to: max(0.0001, overallFraction))
-                .stroke(
-                    LinearGradient(
-                        colors: [AppColor.brandBlue, AppColor.pro],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(.progressFill, value: overallFraction)
-
-            VStack(spacing: 0) {
-                Text("\(unlockedCount)")
-                    .font(Typography.cardTitle.monospacedDigit())
-                    .foregroundStyle(AppColor.textPrimary)
-                Text("of \(totalCount)")
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-        }
-    }
-
     // MARK: - Track Section
 
     private func trackSection(track: AchievementTrack, tiers: [AchievementTier]) -> some View {
         let trackStatuses = tiers.compactMap { statusByID[$0.id] }
         let unlockedInTrack = trackStatuses.filter(\.isUnlocked).count
+        let isExpanded = expandedTrackIDs.contains(track.rawValue)
+        let nextPair = zip(tiers, trackStatuses).first { !$0.1.isUnlocked }
 
         return VStack(alignment: .leading, spacing: Spacing.sm) {
-            trackHeader(track: track, unlocked: unlockedInTrack, total: tiers.count)
+            Button {
+                toggleTrack(track)
+            } label: {
+                trackHeader(
+                    track: track,
+                    unlocked: unlockedInTrack,
+                    total: tiers.count,
+                    isExpanded: isExpanded
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("\(track.label), \(unlockedInTrack) of \(tiers.count) reached")
+            .accessibilityHint(isExpanded ? "Hides every milestone in this area." : "Shows every milestone in this area.")
 
-            VStack(spacing: 0) {
-                ForEach(Array(tiers.enumerated()), id: \.element.id) { index, tier in
-                    if let status = statusByID[tier.id] {
-                        achievementRow(tier: tier, status: status)
+            if isExpanded {
+                VStack(spacing: 0) {
+                    ForEach(Array(tiers.enumerated()), id: \.element.id) { index, tier in
+                        if let status = statusByID[tier.id] {
+                            achievementRow(tier: tier, status: status)
 
-                        if index < tiers.count - 1 {
-                            Divider()
-                                .background(AppColor.subtleBorder)
-                                .padding(.leading, 56)
+                            if index < tiers.count - 1 {
+                                Divider()
+                                    .background(AppColor.subtleBorder)
+                                    .padding(.leading, 56)
+                            }
                         }
                     }
                 }
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            } else if let nextPair {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "arrow.forward.circle")
+                        .foregroundStyle(AppColor.brandBlue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Next: \(nextPair.0.title)")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text(nextPair.1.progressLabel)
+                            .font(Typography.captionSmall.monospacedDigit())
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                }
+                .padding(.top, Spacing.xxs)
             }
         }
         .padding(Spacing.lg)
@@ -190,15 +171,20 @@ struct AchievementsTreeView: View {
         )
     }
 
-    private func trackHeader(track: AchievementTrack, unlocked: Int, total: Int) -> some View {
+    private func trackHeader(
+        track: AchievementTrack,
+        unlocked: Int,
+        total: Int,
+        isExpanded: Bool
+    ) -> some View {
         HStack(spacing: Spacing.xs) {
             Image(systemName: track.symbol)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(track.tint)
+                .foregroundStyle(AppColor.brandBlue)
                 .frame(width: 28, height: 28)
                 .background(
-                    track.tint.opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    AppColor.brandBlue.opacity(0.09),
+                    in: Circle()
                 )
 
             Text(track.label)
@@ -210,6 +196,10 @@ struct AchievementsTreeView: View {
             Text("\(unlocked)/\(total)")
                 .font(Typography.caption.monospacedDigit())
                 .foregroundStyle(AppColor.textSecondary)
+
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -283,31 +273,25 @@ struct AchievementsTreeView: View {
     private func rowIcon(tier: AchievementTier, isUnlocked: Bool) -> some View {
         ZStack {
             if isUnlocked {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: tier.track.gradient,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                Circle()
+                    .fill(AppColor.brandBlue)
                     .frame(width: 40, height: 40)
 
                 Image(systemName: tier.symbolName)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white)
             } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                Circle()
                     .fill(AppColor.innerSurface)
                     .frame(width: 40, height: 40)
 
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                Circle()
                     .stroke(AppColor.subtleBorder, lineWidth: 1)
                     .frame(width: 40, height: 40)
 
                 Image(systemName: tier.symbolName)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(AppColor.textSecondary.opacity(0.55))
+                    .foregroundStyle(AppColor.brandBlue.opacity(0.55))
             }
         }
         .frame(width: 40, height: 40)
@@ -323,11 +307,7 @@ struct AchievementsTreeView: View {
                     .fill(
                         isUnlocked
                             ? AnyShapeStyle(AppColor.positive)
-                            : AnyShapeStyle(LinearGradient(
-                                colors: [tint.opacity(0.85), tint],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ))
+                            : AnyShapeStyle(AppColor.brandBlue)
                     )
                     .frame(
                         width: max(progress > 0 ? 6 : 0, geo.size.width * min(1.0, progress))
@@ -375,10 +355,10 @@ struct AchievementsTreeView: View {
     // MARK: - Tap Handling
 
     private func handleRowTap(tier: AchievementTier, status: PracticeAchievementStatus) {
-        triggerHaptic()
+        CoachHaptic.selectionTap()
 
         if status.isUnlocked {
-            withAnimation(.snappySpring) {
+            withAnimation(reduceMotion ? nil : .snappySpring) {
                 if revealedUnlockedIDs.contains(tier.id) {
                     revealedUnlockedIDs.remove(tier.id)
                 } else {
@@ -386,7 +366,7 @@ struct AchievementsTreeView: View {
                 }
             }
         } else {
-            withAnimation(.snappySpring) {
+            withAnimation(reduceMotion ? nil : .snappySpring) {
                 if revealedLockedIDs.contains(tier.id) {
                     revealedLockedIDs.remove(tier.id)
                 } else {
@@ -396,11 +376,15 @@ struct AchievementsTreeView: View {
         }
     }
 
-    private func triggerHaptic() {
-#if canImport(UIKit)
-        let generator = UIImpactFeedbackGenerator(style: .soft)
-        generator.impactOccurred()
-#endif
+    private func toggleTrack(_ track: AchievementTrack) {
+        CoachHaptic.selectionTap()
+        withAnimation(reduceMotion ? nil : .standardSpring) {
+            if expandedTrackIDs.contains(track.rawValue) {
+                expandedTrackIDs.remove(track.rawValue)
+            } else {
+                expandedTrackIDs.insert(track.rawValue)
+            }
+        }
     }
 
     // MARK: - Accessibility

@@ -20,7 +20,7 @@ struct WeeklyCheckInPrompt: Equatable, Identifiable {
 enum WeeklyCheckInCopy {
     static let cardTitle = "Your weekly read"
     static let cardBody = "A quick check-in for what metrics miss."
-    static let sheetTitle = "A quick weekly check-in"
+    static let sheetTitle = "What should Noum know?"
     static let sheetBody = "Choose one answer. Add detail only if it helps."
     static let noteTitle = "Your words, not a score"
     static let noteBody = "One honest answer is enough to help Noum shape the next question."
@@ -54,24 +54,20 @@ enum WeeklyCheckInCopy {
 
 struct WeeklyCheckInCard: View {
     @ObservedObject var store: CoachCheckInStore
-    @State private var showingSheet = false
 
     var body: some View {
         // Self-guard on cadence so the card is inert when not due, even if a
         // caller forgets to gate. ProfileView also gates, so this is belt-and-
         // braces, not the only check.
         if store.isCheckInDue() {
-            Button {
-                showingSheet = true
+            NavigationLink {
+                WeeklyCheckInSheet(store: store)
             } label: {
                 cardBody
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityIdentifier("profile.weeklyCheckIn.start")
             .accessibilityLabel("Start your weekly coach check-in")
-            .sheet(isPresented: $showingSheet) {
-                WeeklyCheckInSheet(store: store)
-            }
         }
     }
 
@@ -123,79 +119,80 @@ struct WeeklyCheckInSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AppColor.screenBackground.ignoresSafeArea()
+        ZStack {
+            AppColor.screenBackground.ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: Spacing.lg) {
-                        header
-                        coachNote
-                        confidenceSection
-                        question(
-                            WeeklyCheckInCopy.hardest,
-                            text: $hardest,
-                        )
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    header
+                    coachNote
+                    confidenceSection
+                    question(
+                        WeeklyCheckInCopy.hardest,
+                        text: $hardest,
+                    )
 
-                        moreContextButton
+                    moreContextButton
 
-                        if showsMoreContext {
-                            VStack(alignment: .leading, spacing: Spacing.lg) {
-                                question(
-                                    WeeklyCheckInCopy.outsideApp,
-                                    text: $outsideApp,
-                                )
-                                question(
-                                    WeeklyCheckInCopy.avoidedSaying,
-                                    text: $avoidedSaying,
-                                )
-                                drillVerdictSection
-                            }
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                    if showsMoreContext {
+                        VStack(alignment: .leading, spacing: Spacing.lg) {
+                            question(
+                                WeeklyCheckInCopy.outsideApp,
+                                text: $outsideApp,
+                            )
+                            question(
+                                WeeklyCheckInCopy.avoidedSaying,
+                                text: $avoidedSaying,
+                            )
+                            drillVerdictSection
                         }
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                    }
 
-                        if !canSave {
-                            Label("Choose one option or write one line to save.", systemImage: "info.circle")
-                                .font(Typography.caption)
-                                .foregroundStyle(AppColor.textSecondary)
-                                .accessibilityIdentifier("weeklyCheckIn.saveGuidance")
-                        }
-                        Spacer(minLength: Spacing.lg)
+                    if !canSave {
+                        Label("Choose one option or write one line to save.", systemImage: "info.circle")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .accessibilityIdentifier("weeklyCheckIn.saveGuidance")
                     }
-                    .padding(.horizontal, Spacing.screenH)
-                    .padding(.top, Spacing.md)
-                    .padding(.bottom, Spacing.lg)
+                    Spacer(minLength: Spacing.lg)
                 }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Not now") { dismiss() }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("weeklyCheckIn.skip")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        store.record(
-                            hardest: hardest.nilIfBlank,
-                            outsideApp: outsideApp.nilIfBlank,
-                            drillVerdict: drillVerdict,
-                            confidenceShift: confidenceShift,
-                            avoidedSaying: avoidedSaying.nilIfBlank
-                        )
-                        dismiss()
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(canSave ? AppColor.brandBlue : Color.secondary)
-                    .disabled(!canSave)
-                    .accessibilityIdentifier("weeklyCheckIn.save")
-                }
-            }
-            .accessibilityIdentifier("weeklyCheckIn.sheet")
         }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                Divider()
+                PrimaryCTA("Save reflection", tint: AppColor.brandBlue) {
+                    save()
+                }
+                .disabled(!canSave)
+                .opacity(canSave ? 1 : 0.45)
+                .accessibilityIdentifier("weeklyCheckIn.save")
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.sm)
+            }
+            .background(.regularMaterial)
+        }
+        .navigationTitle("Weekly check-in")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .accessibilityIdentifier("weeklyCheckIn.sheet")
+    }
+
+    private func save() {
+        guard canSave else { return }
+        store.record(
+            hardest: hardest.nilIfBlank,
+            outsideApp: outsideApp.nilIfBlank,
+            drillVerdict: drillVerdict,
+            confidenceShift: confidenceShift,
+            avoidedSaying: avoidedSaying.nilIfBlank
+        )
+        dismiss()
     }
 
     // MARK: Sections

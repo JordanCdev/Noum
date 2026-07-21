@@ -179,8 +179,8 @@ struct PathJourneyView: View {
                                 }
                                 .frame(
                                     height: dynamicTypeSize.isAccessibilitySize
-                                        ? min(220, geometry.size.height * 0.30)
-                                        : min(300, geometry.size.height * 0.40)
+                                        ? min(200, geometry.size.height * 0.27)
+                                        : min(248, geometry.size.height * 0.33)
                                 )
                                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                                 .overlay(
@@ -440,7 +440,7 @@ struct PathJourneyView: View {
 
             NavigationLink(value: destination) {
                 HStack(spacing: 10) {
-                    Image(systemName: "figure.walk")
+                    Image(systemName: "arrow.forward.circle.fill")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
                     VStack(alignment: .leading, spacing: 1) {
@@ -510,13 +510,9 @@ struct PathJourneyView: View {
                     .accessibilityIdentifier("journey.why.refresh")
                 }
             } else {
-                Text("What do you want to communicate more clearly?")
+                Text("What matters outside the app?")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
-                Text(whyCoachLine)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 Button {
                     showWhyCapture = true
@@ -557,13 +553,6 @@ struct PathJourneyView: View {
         let statuses = pathProgress.statuses
         let completedCount = statuses.filter(\.isComplete).count
         let current = statuses.first(where: { !$0.isComplete })
-        let upcoming = current.map { cur in
-            statuses
-                .filter { !$0.isComplete && $0.node.order > cur.node.order }
-                .sorted { $0.node.order < $1.node.order }
-                .prefix(2)
-        } ?? []
-
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 NoumPathCharacter()
@@ -593,20 +582,6 @@ struct PathJourneyView: View {
                                 .padding(.top, 2)
                         }
 
-                        if !upcoming.isEmpty {
-                            VStack(alignment: .leading, spacing: 3) {
-                                ForEach(Array(upcoming), id: \.node.id) { status in
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "circle.dashed")
-                                            .font(.system(size: 9, weight: .semibold))
-                                        Text(status.node.title)
-                                            .font(.caption)
-                                    }
-                                    .foregroundStyle(.secondary.opacity(0.7))
-                                }
-                            }
-                            .padding(.top, 4)
-                        }
                     } else {
                         Text("Current path complete.")
                             .font(.subheadline.weight(.semibold))
@@ -616,11 +591,6 @@ struct PathJourneyView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Text(LedgerRoleLines.landmarkRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1835,9 +1805,9 @@ struct PathJourneyArtwork: View {
     }
 
     /// Where the current-position marker sits: the frontier of the revealed
-    /// trail, following the path's perspective. The visual marker is a pair of
-    /// footprints rather than a decorative cairn, so it reads immediately as
-    /// "you have walked this far."
+    /// trail, following the path's perspective. A quiet waypoint dot avoids
+    /// turning the landscape into literal clip-art while still reading as
+    /// "you are here."
     private func currentPositionMetrics(for size: CGSize) -> (x: CGFloat, y: CGFloat, size: CGFloat) {
         let field = fieldMetrics(for: size)
         let frontierY = field.top + hiddenDepth(for: size)
@@ -1860,18 +1830,14 @@ struct PathJourneyArtwork: View {
         let metrics = currentPositionMetrics(for: size)
 
         ZStack {
-            Ellipse()
-                .fill(Color.black.opacity(0.16))
-                .frame(width: metrics.size * 1.10, height: metrics.size * 0.30)
-                .blur(radius: 2)
-                .offset(y: metrics.size * 0.30)
+            Circle()
+                .fill(Color.white.opacity(0.92))
+                .frame(width: metrics.size * 0.62, height: metrics.size * 0.62)
+                .shadow(color: .black.opacity(0.16), radius: 3, y: 2)
 
-            Image(systemName: "shoeprints.fill")
-                .font(.system(size: metrics.size * 0.44, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.16).opacity(0.58))
-                .rotationEffect(.degrees(-4))
-                .blendMode(.multiply)
+            Circle()
+                .fill(AppColor.brandBlue)
+                .frame(width: metrics.size * 0.26, height: metrics.size * 0.26)
         }
         .position(x: metrics.x, y: metrics.y)
         .accessibilityHidden(true)
@@ -2213,7 +2179,7 @@ struct PathJourneyArtwork: View {
 
     private func canopyGradient(for tree: FieldTreeNode) -> LinearGradient {
         LinearGradient(
-            colors: [tree.highlight, tree.color, tree.color.opacity(0.90)],
+            colors: [tree.highlight, tree.color, tree.color],
             startPoint: .top,
             endPoint: .bottom
         )
@@ -2257,28 +2223,16 @@ struct PathJourneyArtwork: View {
     private func treeSilhouettes(for size: CGSize) -> [FieldTreeNode] {
         let field = fieldMetrics(for: size)
 
-        // (x, scale, depthInField, variety) — depthInField 0 = horizon, >0 = further into field.
-        // The horizon stays dense while trees lower in the field become larger,
-        // creating actual foreground depth instead of a row of tiny icons.
+        // A restrained tree line keeps the landscape open. Trees deliberately
+        // share nearly the same scale and sit away from the path corridor so
+        // the scene reads as depth, not two overlapping green walls.
         let values: [(Double, Double, Double, TreeVariety)] = [
-            // Horizon row — the main tree-line
-            (0.04,  1.00, 0, .pointed),
-            (0.10,  1.10, 0, .round),
-            (0.17,  0.95, 0, .layered),
-            (0.23,  1.05, 0, .round),
-            (0.77,  1.00, 0, .layered),
-            (0.82,  1.08, 0, .pointed),
-            (0.89,  1.10, 0, .round),
-            (0.95,  1.02, 0, .layered),
-            (0.985, 0.92, 0, .pointed),
-            // Mid-field trees — closer to the path for depth
-            (0.28, 0.95, 0.18, .layered),
-            (0.72, 0.98, 0.18, .round),
-            (0.15, 0.92, 0.28, .pointed),
-            (0.85, 0.95, 0.28, .layered),
-            // Deep field trees — even closer to path
-            (0.34, 0.90, 0.42, .round),
-            (0.66, 0.92, 0.42, .layered),
+            (0.03, 1.00, 0.00, .pointed),
+            (0.17, 1.02, 0.00, .round),
+            (0.31, 1.00, 0.08, .round),
+            (0.69, 1.00, 0.08, .layered),
+            (0.83, 1.02, 0.00, .pointed),
+            (0.97, 1.00, 0.00, .layered),
         ]
 
         return values.map { x, scale, depthInField, variety in
@@ -2295,7 +2249,7 @@ struct PathJourneyArtwork: View {
             let canopyHalfWidth = crownW * 0.55
             // Deeper trees have a narrower exclusion zone so they sit closer
             // to the path, giving a natural corridor perspective.
-            let exclusionHalf = 0.13 - (depthInField * 0.07)
+            let exclusionHalf = 0.17 - (depthInField * 0.03)
             let exclusionLeft = size.width * (0.5 - exclusionHalf)
             let exclusionRight = size.width * (0.5 + exclusionHalf)
             var positionX = size.width * x
@@ -2329,7 +2283,7 @@ struct PathJourneyArtwork: View {
                 color: treeColor,
                 highlight: treeHighlight,
                 trunkColor: Color(red: 0.40, green: 0.28, blue: 0.16),
-                opacity: 1.0 - depthInField * 0.08,
+                opacity: 1.0,
                 variety: variety
             )
         }

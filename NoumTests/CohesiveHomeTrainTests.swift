@@ -120,7 +120,7 @@ struct CohesiveTrainLibraryTests {
 
     @Test func libraryTitlesUseOneStableNamePerFeature() {
         #expect(TrainLibraryItem.items.map(\.title) == [
-            "Choose another exercise",
+            "Choose for myself",
             "Roleplay",
             "Lessons",
             "Speech Projects",

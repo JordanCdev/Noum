@@ -14637,8 +14637,8 @@ struct PracticeModePrescriptionCopyTests {
 
     @Test func sectionTitlesDemoteTheCatalog() {
         #expect(PracticeModePrescriptionCopy.heroEyebrow == "Recommended rep")
-        #expect(PracticeModePrescriptionCopy.practiceLibraryTitle == "Practice library")
-        #expect(PracticeModePrescriptionCopy.alternateSectionTitle == "Choose another exercise")
+        #expect(PracticeModePrescriptionCopy.practiceLibraryTitle == "Free selection")
+        #expect(PracticeModePrescriptionCopy.alternateSectionTitle == "Choose for myself")
         #expect(PracticeModePrescriptionCopy.adjustLabel == "Adjust")
     }
 
@@ -50711,11 +50711,9 @@ struct ReviewSurfaceCopyTests {
 
 // MARK: - Reward ownership (Iteration 1)
 //
-// The post-rep full celebration must fire ONLY on a real crossing detected by
-// SessionFinalizer — never on a score or XP threshold (the prior
-// `score>=7 || xp>=100` bug), and never on the first rep (milestone detection
-// starts at count 10 / streak 3 and emits no PB on rep 1, so rep 1 yields
-// milestone == nil -> hasMilestoneCrossing == false).
+// Post-rep progress is recorded in the Results receipt. No score, XP threshold,
+// or milestone crossing inserts a separate full-screen celebration before the
+// user can read their coaching feedback.
 struct RewardOwnershipTests {
     @Test func celebrationNeverFiresFromScoreOrXPAlone() {
         guard #available(iOS 17.0, *) else { return }
@@ -50724,10 +50722,10 @@ struct RewardOwnershipTests {
         #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: false, score: 0, xpEarned: 0) == false)
     }
 
-    @Test func celebrationFiresOnlyOnRealCrossing() {
+    @Test func milestoneCrossingAlsoStaysInsideResults() {
         guard #available(iOS 17.0, *) else { return }
-        #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: true, score: 0, xpEarned: 0) == true)
-        #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: true, score: 3, xpEarned: 5) == true)
+        #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: true, score: 0, xpEarned: 0) == false)
+        #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: true, score: 3, xpEarned: 5) == false)
     }
 
     @Test @MainActor func firstRepIsNotTreatedAsAMilestoneCrossing() {

@@ -24,11 +24,8 @@ struct CohesiveSummaryInterstitialPolicyTests {
         }
     }
 
-    @Test func priorityFavorsSpeakingEvidenceOverProgressFurniture() {
-        #expect(SummaryInterstitialPolicy.priority == [
-            .personalBest,
-            .skillProgress,
-        ])
+    @Test func everyEarnedEventStaysInsideTheResultsReceipt() {
+        #expect(SummaryInterstitialPolicy.priority.isEmpty)
 
         #expect(SummaryInterstitialPolicy.select(
             completedRepCount: 8,
@@ -36,7 +33,7 @@ struct CohesiveSummaryInterstitialPolicyTests {
             hasSkillProgress: true,
             hasAchievementProgress: true,
             hasPracticeVolumeLevel: true
-        ) == .personalBest)
+        ) == nil)
 
         #expect(SummaryInterstitialPolicy.select(
             completedRepCount: 8,
@@ -44,7 +41,7 @@ struct CohesiveSummaryInterstitialPolicyTests {
             hasSkillProgress: true,
             hasAchievementProgress: true,
             hasPracticeVolumeLevel: true
-        ) == .skillProgress)
+        ) == nil)
 
         #expect(SummaryInterstitialPolicy.select(
             completedRepCount: 8,

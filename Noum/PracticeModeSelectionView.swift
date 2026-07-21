@@ -53,10 +53,10 @@ struct PracticeModeExpansionCopy {
 
 struct PracticeModePrescriptionCopy {
     static let heroEyebrow = "Recommended rep"
-    static let alternateSectionTitle = "Choose another exercise"
+    static let alternateSectionTitle = "Choose for myself"
     static let displayHeroEyebrow = heroEyebrow
-    static let practiceLibraryTitle = "Practice library"
-    static let chooseExerciseTitle = "Choose another exercise"
+    static let practiceLibraryTitle = "Free selection"
+    static let chooseExerciseTitle = "Choose for myself"
     static let adjustLabel = "Adjust"
     static let pressureLockedHint = "Complete one rated rep before Pressure Drill."
     static let pressureLockedDisplayHint = pressureLockedHint
@@ -496,7 +496,7 @@ struct PracticeModeSelectionView: View {
             || selectedMode != recommendation.mode
         return ReadingScreenScaffold(
             title: "Train",
-            subtitle: "Choose one focused rep, or continue your curriculum.",
+            subtitle: "Your coach has built today’s rep. The full library is there when you want it.",
             bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
         ) {
             recommendedRepHero(
@@ -504,7 +504,7 @@ struct PracticeModeSelectionView: View {
                 option: recommendationOption,
                 showsFloatingStartCTA: showsFloatingStartCTA
             )
-            practiceLibrary
+            freeSelectSection
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -710,13 +710,72 @@ struct PracticeModeSelectionView: View {
 
     // MARK: - Practice library
 
+    private var freeSelectSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Button {
+                animateMode { showOtherWays.toggle() }
+            } label: {
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            AppColor.brandBlue.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                        )
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(PracticeModePrescriptionCopy.alternateSectionTitle)
+                            .font(Typography.cardLabel)
+                            .foregroundStyle(.primary)
+                        Text("Browse every exercise and learning path.")
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: showOtherWays ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(Spacing.md)
+                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        .stroke(AppColor.subtleBorder, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("practiceModes.otherWays")
+            .accessibilityLabel(PracticeModePrescriptionCopy.alternateSectionTitle)
+            .accessibilityHint(showOtherWays ? "Hides free selection." : "Shows every exercise and learning path.")
+
+            if showOtherWays {
+                practiceLibrary
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
     private var practiceLibrary: some View {
         LazyVStack(alignment: .leading, spacing: Spacing.lg) {
-            Text(PracticeModePrescriptionCopy.practiceLibraryTitle)
-                .font(Typography.sectionHero)
-                .foregroundStyle(.primary)
+            GroupedDestinationList(
+                title: "Exercises",
+                subtitle: "Choose a specific kind of rep.",
+                tint: AppColor.brandBlue
+            ) {
+                exerciseLibraryRows
+            }
 
-            ForEach(TrainLibraryGroup.allCases) { group in
+            ForEach(TrainLibraryGroup.allCases.filter { $0 != .speakingDrills }) { group in
                 let items = TrainLibraryItem.items.filter { $0.group == group }
                 GroupedDestinationList(
                     title: group.title,
@@ -729,14 +788,6 @@ struct PracticeModeSelectionView: View {
                         }
 
                         trainLibraryRow(item)
-
-                        if item.action == .expandExercises, showOtherWays {
-                            Divider().padding(.leading, 60)
-                            exerciseLibraryRows
-                                .transition(reduceMotion
-                                    ? .opacity
-                                    : .opacity.combined(with: .move(edge: .top)))
-                        }
                     }
                 }
             }

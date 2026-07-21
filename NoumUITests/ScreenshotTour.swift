@@ -319,6 +319,12 @@ final class ScreenshotTour: XCTestCase {
         }
 
         baselineRow.tap()
+        let whyPlanToggle = profileApp.descendants(matching: .any)["profile.evidence.whyPlan.toggle"].firstMatch
+        XCTAssertTrue(whyPlanToggle.waitForExistence(timeout: 5))
+        if whyPlanToggle.exists {
+            whyPlanToggle.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
         let baselineMap = profileApp.descendants(matching: .any)["profile.evidence.baselineMap"].firstMatch
         // The expanded readout renders below the compact evidence hub rows.
         // Move past the hub first so the attachment proves the card body, not
@@ -336,6 +342,62 @@ final class ScreenshotTour: XCTestCase {
     @MainActor
     func testCaptureWeeklyCheckInSheetOnly() throws {
         captureWeeklyCheckInSheet(name: "profile-weekly-check-in-sheet")
+    }
+
+    @MainActor
+    func testCapturePlanFirstUXOnly() throws {
+        let trainApp = launchSeededAt(
+            "noum://train",
+            extraEnvironment: ["BACKEND_BASE_URL": "https://noum-ui-test.invalid"]
+        )
+        XCTAssertTrue(trainApp.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1.0)
+        attach(trainApp, name: "ux-train-coach-plan")
+        let freeSelect = trainApp.descendants(matching: .any)["practiceModes.otherWays"].firstMatch
+        scrollUntilVisible(freeSelect, in: trainApp, maxSwipes: 3)
+        if freeSelect.waitForExistence(timeout: 3) {
+            freeSelect.tap()
+            Thread.sleep(forTimeInterval: 0.8)
+            attach(trainApp, name: "ux-train-free-selection")
+        }
+        trainApp.terminate()
+
+        let evidenceApp = launchSeededAt("noum://profile", extraArgs: ["FORCE_WEEKLY_CHECKIN"])
+        XCTAssertTrue(evidenceApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+        expandProfileLibrary(in: evidenceApp)
+        let evidenceRow = evidenceApp.descendants(matching: .any)["profile.evidence.baselineMap.row"].firstMatch
+        scrollUntilVisible(evidenceRow, in: evidenceApp, maxSwipes: 5)
+        XCTAssertTrue(evidenceRow.waitForExistence(timeout: 5))
+        if evidenceRow.exists {
+            evidenceRow.tap()
+            let details = evidenceApp.descendants(matching: .any)["profile.evidenceDetails"].firstMatch
+            XCTAssertTrue(details.waitForExistence(timeout: 5))
+            Thread.sleep(forTimeInterval: 0.8)
+            attach(evidenceApp, name: "ux-coaching-evidence-overview")
+
+            let whyPlan = evidenceApp.descendants(matching: .any)["profile.evidence.whyPlan.toggle"].firstMatch
+            scrollUntilVisible(whyPlan, in: evidenceApp, maxSwipes: 4)
+            if whyPlan.waitForExistence(timeout: 3) {
+                whyPlan.tap()
+                Thread.sleep(forTimeInterval: 0.8)
+                attach(evidenceApp, name: "ux-coaching-evidence-expanded")
+            }
+        }
+        evidenceApp.terminate()
+
+        let milestonesApp = launchSeededAt("noum://profile")
+        XCTAssertTrue(milestonesApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+        expandProfileLibrary(in: milestonesApp)
+        let milestonesRow = milestonesApp.descendants(matching: .any)["profile.library.achievements"].firstMatch
+        scrollUntilVisible(milestonesRow, in: milestonesApp, maxSwipes: 6)
+        XCTAssertTrue(milestonesRow.waitForExistence(timeout: 5))
+        if milestonesRow.exists {
+            milestonesRow.tap()
+            XCTAssertTrue(milestonesApp.descendants(matching: .any)["milestones.screen"].waitForExistence(timeout: 5))
+            Thread.sleep(forTimeInterval: 0.8)
+            attach(milestonesApp, name: "ux-practice-milestones")
+        }
+        milestonesApp.terminate()
     }
 
     @MainActor

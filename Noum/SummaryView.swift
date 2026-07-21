@@ -8,9 +8,9 @@ import SwiftUI
 
 // MARK: - Summary interstitial policy
 
-/// The only full-screen beat allowed between a completed rep and its summary.
-/// Priority favors evidence of speaking improvement over volume/progression
-/// furniture. The first rep always lands directly on its coaching read.
+/// Legacy identities retained for fixture compatibility. Production no longer
+/// places a full-screen beat between a completed rep and its coaching read;
+/// every earned event is presented through one inline progress receipt.
 enum SummaryInterstitial: Hashable, CaseIterable {
     case personalBest
     case skillProgress
@@ -24,10 +24,7 @@ enum SummaryInterstitial: Hashable, CaseIterable {
 struct SummaryInterstitialPolicy {
     /// Highest-value first. Kept public to the module so tests can pin future
     /// additions to an intentional place in the attention budget.
-    static let priority: [SummaryInterstitial] = [
-        .personalBest,
-        .skillProgress,
-    ]
+    static let priority: [SummaryInterstitial] = []
 
     static func select(
         completedRepCount: Int,
@@ -36,15 +33,13 @@ struct SummaryInterstitialPolicy {
         hasAchievementProgress: Bool,
         hasPracticeVolumeLevel: Bool
     ) -> SummaryInterstitial? {
-        guard completedRepCount > 1 else { return nil }
-        // These events are still persisted and presented, but inline on the
-        // summary so they never add a second mandatory screen before coaching.
+        // All events are still persisted and presented, but inline on Results.
+        _ = completedRepCount
+        _ = hasPersonalBest
+        _ = hasSkillProgress
         _ = hasAchievementProgress
         _ = hasPracticeVolumeLevel
-        var available: Set<SummaryInterstitial> = []
-        if hasPersonalBest { available.insert(.personalBest) }
-        if hasSkillProgress { available.insert(.skillProgress) }
-        return priority.first(where: available.contains)
+        return nil
     }
 }
 
@@ -157,6 +152,7 @@ struct SummaryView: View {
     @State private var videoAnalysisResult: VideoAnalysisResult?
     @State private var isAnalyzingVideo = false
     @State private var personalBestMilestone: MilestoneEvent?
+    @State private var sessionMilestone: MilestoneEvent?
     /// Skill level-up sequence played between PersonalBest (or
     /// LevelUp / Progression) and the standard summary content. The
     /// snapshot is locked at setup so the pre-summary celebration
@@ -1315,32 +1311,61 @@ struct SummaryView: View {
 
     // MARK: - Expandable Details Section
 
-    /// One non-blocking receipt for volume and unlocks. Speaking evidence and
-    /// the coach's next move remain above it; progression never owns another
-    /// full-screen tap before the user can read their result.
+    /// The single presentation language for every post-rep progression event.
+    /// It sits inside Results after the coaching read; no achievement, level,
+    /// skill crossing, or personal best earns a separate mandatory screen.
     @ViewBuilder
     private var postRepProgressReceipt: some View {
-        if progressionReachedNewPracticeLevel || !progressionNewUnlocks.isEmpty {
+        if sessionMilestone != nil
+            || !preSummaryEvents.isEmpty
+            || progressionReachedNewPracticeLevel
+            || !progressionNewUnlocks.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Progress from this rep")
-                    .font(Typography.micro.weight(.bold))
-                    .foregroundStyle(AppColor.textSecondary)
-                    .textCase(.uppercase)
-                    .tracking(0.7)
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Progress noted")
+                            .font(Typography.cardLabel)
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text("Recorded with this coaching read.")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                }
 
-                if progressionReachedNewPracticeLevel {
-                    Label(
-                        "Reached \(PracticeVolumeNarration.title(forXP: profile.xp))",
+                if let milestone = sessionMilestone {
+                    progressReceiptRow(
+                        title: milestone.title.trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+                        detail: milestone.subtitle,
+                        systemImage: milestone.icon
+                    )
+                }
+
+                if progressionReachedNewPracticeLevel,
+                   sessionMilestone?.title != "Level up." {
+                    progressReceiptRow(
+                        title: "Practice milestone",
+                        detail: "Reached \(PracticeVolumeNarration.title(forXP: profile.xp))",
                         systemImage: "waveform.path"
                     )
-                    .font(Typography.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
+                }
+
+                ForEach(Array(preSummaryEvents.prefix(2))) { event in
+                    progressReceiptRow(
+                        title: event.headline,
+                        detail: event.subline,
+                        systemImage: event.skillArea.icon
+                    )
                 }
 
                 ForEach(Array(progressionNewUnlocks.prefix(2)), id: \.id) { tier in
-                    Label("\(tier.title) unlocked", systemImage: "checkmark.seal.fill")
-                        .font(Typography.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.textPrimary)
+                    progressReceiptRow(
+                        title: tier.title,
+                        detail: "Practice milestone reached",
+                        systemImage: "checkmark.seal"
+                    )
                 }
 
                 if let credit = PracticeVolumeNarration.verdictCreditLine(
@@ -1366,6 +1391,31 @@ struct SummaryView: View {
             )
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("summary.progressReceipt")
+        }
+    }
+
+    private func progressReceiptRow(
+        title: String,
+        detail: String,
+        systemImage: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(width: 28, height: 28)
+                .background(AppColor.brandBlue.opacity(0.09), in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                Text(detail)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -2237,13 +2287,14 @@ struct SummaryView: View {
 
     // MARK: - Personal Best Celebration (Full-Screen Intermediary)
 
-    /// Honesty gate for the full post-rep celebration (Iteration 1 / reward
-    /// ownership). Returns true ONLY when SessionFinalizer detected a real
-    /// crossing. `score` and `xpEarned` are accepted but intentionally ignored
-    /// so a test can pin that neither a high score nor an XP threshold triggers
-    /// a celebration on its own (the prior `score>=7 || xp>=100` bug).
+    /// Production milestones now use the unified inline receipt. This legacy
+    /// hook remains for source compatibility and deliberately never mounts the
+    /// old particle overlay.
     static func shouldShowCelebration(hasMilestoneCrossing: Bool, score: Int, xpEarned: Int) -> Bool {
-        hasMilestoneCrossing
+        _ = hasMilestoneCrossing
+        _ = score
+        _ = xpEarned
+        return false
     }
 
     private func personalBestCelebration(milestone: MilestoneEvent) -> some View {
@@ -2609,6 +2660,7 @@ struct SummaryView: View {
 
         // Capture milestone payloads first, then let one pure policy decide
         // which (if any) earns the full-screen attention budget.
+        sessionMilestone = result.milestone
         if let milestone = result.milestone {
             if milestone.title == "New personal best." {
                 personalBestMilestone = milestone
@@ -2659,11 +2711,7 @@ struct SummaryView: View {
                     // or XP threshold, and never on the first rep (count milestones
                     // start at 10, streak at 3, no PB on rep 1). The score-ring
                     // count-up + haptic stays the honest per-rep beat.
-                    celebrationVisible = selectedInterstitial == nil && completedRepCount > 1 && Self.shouldShowCelebration(
-                        hasMilestoneCrossing: result.milestone != nil,
-                        score: scoreValue,
-                        xpEarned: earnedXPForPresentation
-                    )
+                    celebrationVisible = false
                 }
             }
             if revealDelay > 0 {

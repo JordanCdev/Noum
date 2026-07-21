@@ -1402,6 +1402,7 @@ struct ProfileView: View {
     @State private var showProfileEvidence = false
     @State private var showCoachReadEvidence = false
     @State private var showRatingEvidence = false
+    @State private var showProgressionEvidence = false
     /// Last rating value this view has rendered — feeds the earned-motion
     /// policy so the numeric roll fires only on an upward tick to a new
     /// weekly best (drops and first paint update silently).
@@ -1991,13 +1992,13 @@ struct ProfileView: View {
                 showAchievementsTree = true
             } label: {
                 profileLibraryRowLabel(
-                    title: "Achievements",
+                    title: "Practice milestones",
                     subtitle: achievementsSummarySubtitle(
                         unlocked: unlockedAchievements.count,
                         total: retentionSnapshot.achievements.count
                     ),
-                    icon: "seal.fill",
-                    tint: AppColor.pro
+                    icon: "checkmark.circle",
+                    tint: AppColor.brandBlue
                 )
             }
             .buttonStyle(.pressable)
@@ -2117,6 +2118,16 @@ struct ProfileView: View {
         } else {
             withAnimation(.standardSpring) {
                 showRatingEvidence.toggle()
+            }
+        }
+    }
+
+    private func toggleProgressionEvidence() {
+        if reduceMotion {
+            showProgressionEvidence.toggle()
+        } else {
+            withAnimation(.standardSpring) {
+                showProgressionEvidence.toggle()
             }
         }
     }
@@ -2277,71 +2288,136 @@ struct ProfileView: View {
     private var profileEvidenceDetails: some View {
         let plan = evidenceDetailPlan
         return VStack(spacing: Spacing.cardGap) {
-            clusterHeader("Progression details")
-            if plan.surfaces.contains(.ratingTrajectory) {
-                ProgressionChartsCard(sessionStore: sessionStore)
-                    .accessibilityIdentifier("profile.evidence.ratingTrajectory")
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("At a glance")
+                    .font(Typography.sectionHero)
+                    .foregroundStyle(.primary)
+                Text("Your current focus and next move come first. Open the supporting evidence only when you need it.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            // Practice volume renders BELOW the rating trajectory — the
-            // spine (rating) always leads the progression story.
-            if plan.surfaces.contains(.rankProgress) {
-                rankPanel
-            }
-            if plan.surfaces.contains(.insightsBanked) {
-                insightsBankedChip
-            }
-            if plan.surfaces.contains(.pressureHistoryShare) {
-                suddenDeathHistoryShareRow
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            clusterHeader("Coaching evidence")
-            if plan.surfaces.contains(.baselineMap) {
-                baselineMapCard
-            }
-            if plan.surfaces.contains(.coachingDirection) {
-                coachingDirectionCard
-            }
-            if plan.surfaces.contains(.coachLoopReadiness) {
-                coachLoopReadinessCard
-            }
+            profileCoachReadCard
+
             if plan.surfaces.contains(.weeklyCheckIn) {
                 weeklyCheckInCard
             }
-            if plan.surfaces.contains(.caseReview) {
-                caseReviewCard
-            }
-            if plan.surfaces.contains(.deliveryProfile) {
-                deliveryProfileCard
-            }
-            if plan.surfaces.contains(.speechPatterns) {
-                speechPatternsCard
-            }
-            if plan.surfaces.contains(.skillProgress) {
-                skillProgressPanel
-            }
-            if plan.surfaces.contains(.activeChallenge) {
-                activeChallengePanel
-            }
-            if plan.surfaces.contains(.feedbackInbox) {
-                feedbackInboxCard
+
+            evidenceDisclosure(
+                title: "Why this plan",
+                subtitle: "Baseline, repeated patterns, and how Noum decides what to try next.",
+                systemImage: "doc.text.magnifyingglass",
+                identifier: "profile.evidence.whyPlan.toggle",
+                isExpanded: showCoachReadEvidence,
+                action: toggleCoachReadEvidence
+            ) {
+                VStack(spacing: Spacing.cardGap) {
+                    if plan.surfaces.contains(.baselineMap) {
+                        baselineMapCard
+                    }
+                    if plan.surfaces.contains(.coachingDirection) {
+                        coachingDirectionCard
+                    }
+                    if plan.surfaces.contains(.coachLoopReadiness) {
+                        coachLoopReadinessCard
+                    }
+                    if plan.surfaces.contains(.caseReview) {
+                        caseReviewCard
+                    }
+                    if plan.surfaces.contains(.deliveryProfile) {
+                        deliveryProfileCard
+                    }
+                    if plan.surfaces.contains(.speechPatterns) {
+                        speechPatternsCard
+                    }
+                }
             }
 
-            let optionalSurfaces: [ProfileEvidenceDetailSurface] = [.league, .communityPractice, .achievements]
-            if plan.surfaces.contains(where: { optionalSurfaces.contains($0) }) {
-                clusterHeader("Optional systems")
-                if plan.surfaces.contains(.league) {
-                    leaguePanel
-                }
-                if plan.surfaces.contains(.communityPractice) {
-                    communityPracticeRow
-                }
-                if plan.surfaces.contains(.achievements) {
-                    achievementsSummaryRow
+            evidenceDisclosure(
+                title: "Progress evidence",
+                subtitle: "Rating history, practice volume, and pressure-rep records.",
+                systemImage: "chart.xyaxis.line",
+                identifier: "profile.evidence.progress.toggle",
+                isExpanded: showProgressionEvidence,
+                action: toggleProgressionEvidence
+            ) {
+                VStack(spacing: Spacing.cardGap) {
+                    if plan.surfaces.contains(.ratingTrajectory) {
+                        ProgressionChartsCard(sessionStore: sessionStore)
+                            .accessibilityIdentifier("profile.evidence.ratingTrajectory")
+                    }
+                    if plan.surfaces.contains(.rankProgress) {
+                        rankPanel
+                    }
+                    if plan.surfaces.contains(.insightsBanked) {
+                        insightsBankedChip
+                    }
+                    if plan.surfaces.contains(.pressureHistoryShare) {
+                        suddenDeathHistoryShareRow
+                    }
                 }
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.evidenceDetails")
+    }
+
+    private func evidenceDisclosure<Content: View>(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        identifier: String,
+        isExpanded: Bool,
+        action: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Button(action: action) {
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: systemImage)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 38, height: 38)
+                        .background(AppColor.brandBlue.opacity(0.09), in: Circle())
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(title)
+                            .font(Typography.cardLabel)
+                            .foregroundStyle(.primary)
+                        Text(subtitle)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        .stroke(AppColor.subtleBorder, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(isExpanded ? "Hide \(title)" : "Show \(title)")
+            .accessibilityIdentifier(identifier)
+
+            if isExpanded {
+                content()
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 
     private var baselineMapCard: some View {
@@ -3469,7 +3545,7 @@ struct ProfileView: View {
                     .background(AppColor.pro.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Achievements")
+                    Text("Practice milestones")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     Text(achievementsSummarySubtitle(unlocked: unlockedCount, total: totalCount))
@@ -3501,12 +3577,12 @@ struct ProfileView: View {
 
     private func achievementsSummarySubtitle(unlocked: Int, total: Int) -> String {
         if total == 0 {
-            return "Complete a rep before badges enter the profile."
+            return "Complete a rep to begin your milestone record."
         }
         if unlocked == 0 {
-            return "Badges stay secondary to real speaking progress."
+            return "Small markers of consistent practice."
         }
-        return "Optional badge archive. Your coaching read stays first."
+        return "\(unlocked) of \(total) reached through real practice."
     }
 
     private var achievementsPanel: some View {
