@@ -2025,6 +2025,47 @@ actor AICoachChatService {
                 coachingBrief: coachingBrief
             ) {
                 await onQualityGateEvent?(.rejected(issue.auditLabel))
+                // The secure callable already performs its own provider repair,
+                // but the client can still reject a final draft against newer
+                // local product/quality gates. Keep that path aligned with the
+                // direct-provider chain: narrow, source-backed deterministic
+                // repairs may recover the turn without another network call.
+                // `safeReferenceRepairReply` re-runs professional, semantic,
+                // and vision gates before returning, so unsupported failures
+                // still remain an explicit `.contentRejected` outcome.
+                if let safeRepair = Self.safeReferenceRepairReply(
+                    issue: issue,
+                    latestUserTurn: latestUserTurn,
+                    system: userContext,
+                    quoteGuard: quoteGuard,
+                    recentCoachReplies: recentCoachReplies,
+                    turnDepth: turnDepth,
+                    assessment: laneAssessment,
+                    surface: surface,
+                    responseKind: responseKind,
+                    coachingBrief: coachingBrief
+                ) {
+                    let repaired = Self.finalizedCoachReply(
+                        from: safeRepair,
+                        latestUserTurn: latestUserTurn,
+                        turnDepth: turnDepth
+                    )
+                    let fallbackChoice = CoachTurnProviderChoice(
+                        providerName: "Deterministic quality fallback",
+                        model: "SafeReferenceCoachGuard",
+                        resolvedTier: resolvedTier,
+                        policyVersion: completion.policyVersion,
+                        generationMode: .deterministicBrief
+                    )
+                    await onProviderChosen?(fallbackChoice)
+                    await onQualityGateEvent?(.fallback(issue.auditLabel))
+                    Self.log.notice("Secure coach reply recovered by safe reference fallback (\(issue.auditLabel, privacy: .public))")
+                    recordChatDiagnostic(
+                        .success,
+                        "Secure coach reply used safe reference fallback: \(issue.auditLabel)"
+                    )
+                    return .reply(repaired)
+                }
                 Self.log.notice("Secure coach reply rejected by local gate (\(issue.auditLabel, privacy: .public))")
                 recordChatDiagnostic(
                     .failure,
@@ -8451,6 +8492,16 @@ actor AICoachChatService {
         ) {
             return true
         }
+        // A user asking how to apply the prior coaching inside Noum needs a
+        // product-aware answer, not another provider pass that can repeat the
+        // same generic technique miss. The retrieved application line is
+        // already bounded craft guidance, so this narrow turn can be repaired
+        // deterministically and still clear every downstream quality gate.
+        if issue == .ignoredCoachingExpertise,
+           turnRequestsInAppPractice(lowerTurn),
+           retrievedCoachingExpertiseApplicationLine(from: system ?? "") != nil {
+            return true
+        }
         if directFollowThroughRepairReferenceShape(
             for: lowerTurn,
             system: system ?? ""
@@ -8588,6 +8639,10 @@ actor AICoachChatService {
         ) != nil {
             return true
         }
+        if turnRequestsInAppPractice(lowerTurn),
+           retrievedCoachingExpertiseApplicationLine(from: system) != nil {
+            return true
+        }
         if turnAsksWhyAnswerLandedBadly(latestUserTurn),
            sourceMentionsLateRecommendation(system) {
             return true
@@ -8696,6 +8751,25 @@ actor AICoachChatService {
             return nil
         }
 
+        if turnRequestsInAppPractice(latestUserTurn) {
+            let combined = "\(latestUserTurn) \(application)".lowercased()
+            if containsAny(combined, [
+                "conversation", "curiosity", "follow-up", "follow up",
+                "rapport", "social", "networking", "story", "other person"
+            ]) {
+                return "Use Conversation Practice for one role-play. The target is a response that opens the conversation, so \(application)."
+            }
+            if containsAny(combined, ["um", "filler", "hesitat"]) {
+                return "Use Filler Control for one rep: \(application)."
+            }
+            if containsAny(combined, [
+                "pressure", "think on your feet", "quick response", "curveball"
+            ]) {
+                return "Use Pressure Drill for one rep: \(application)."
+            }
+            return "Use Timed Practice for one rep: \(application)."
+        }
+
         if containsAny(latestUserTurn, ["um", "filler", "fillers", "hesitat"]) {
             // Technique-seeking turns use the general-coaching lane. Retrieved
             // expertise may shape the answer, but broad context cannot be turned
@@ -8719,6 +8793,23 @@ actor AICoachChatService {
         }
 
         return "Test the next rep so the move is observable: \(application)."
+    }
+
+    private nonisolated static func turnRequestsInAppPractice(_ turn: String?) -> Bool {
+        guard let lower = turn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !lower.isEmpty else {
+            return false
+        }
+        return containsAny(lower, [
+            "in this app", "in the app", "inside the app", "on this app",
+            "with this app", "practice that here", "practise that here",
+            "practice this here", "practise this here", "where can i practice",
+            "where can i practise", "which practice mode", "what practice mode",
+            "which exercise in noum", "how do i do that in noum",
+            "how can i do that in noum"
+        ])
     }
 
     private nonisolated static func trustRepairReferenceShape(

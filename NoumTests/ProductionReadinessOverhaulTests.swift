@@ -1607,6 +1607,130 @@ struct CoachChatWireContractTests {
     }
 
     @MainActor
+    @Test func secureInAppTechniqueFollowUpUsesSourceBackedLocalRepair() async throws {
+        let userTurn = "So how can I do that in this app???"
+        let previousReply = "It sounds like you want to make a stronger impression and connect more deeply with your colleagues. To do that, practice active listening by focusing on what others say and asking clarifying questions."
+        let rejectedReply = "Use active listening in a practice session and review the result."
+        let context = """
+        === NON-PERSONAL COACH CONTEXT ===
+        TURN CONTRACT
+        - Answer the communication craft question directly.
+
+        COACHING EXPERTISE
+        - Warmth plus a real question [practitioner guidance]. Why: connection comes more from genuine interest. Apply it: instead of topping their story, ask the one thing you actually want to know about it. Working when: the other person opens up because you got curious about them.
+
+        === END CONTEXT ===
+        """
+        #expect(AICoachChatService.replyQualityIssue(
+            in: rejectedReply,
+            latestUserTurn: userTurn,
+            systemContext: context,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == .ignoredCoachingExpertise)
+
+        let quoteGuard = CoachChatQuoteGuardContext(
+            transcripts: [nil],
+            verifiedProofQuotes: [],
+            latestUserTurn: userTurn,
+            recentUserTurns: [
+                "I feel ignored in team meetings and usually only have surface-level conversations.",
+                userTurn,
+            ]
+        )
+        let referenceShape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .ignoredCoachingExpertise,
+            latestUserTurn: userTurn,
+            system: context
+        ))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: referenceShape,
+            latestUserTurn: userTurn,
+            quoteGuard: quoteGuard,
+            systemContext: context,
+            recentCoachReplies: [previousReply],
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(AICoachChatService.semanticQualityIssue(
+            in: referenceShape,
+            latestUserTurn: userTurn,
+            systemContext: context,
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(AICoachChatService.visionQualityIssue(
+            in: referenceShape,
+            latestUserTurn: userTurn,
+            quoteGuard: quoteGuard,
+            systemContext: context,
+            recentCoachReplies: [previousReply],
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching
+        ) == nil)
+        let expectedRepair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .ignoredCoachingExpertise,
+            latestUserTurn: userTurn,
+            system: context,
+            quoteGuard: quoteGuard,
+            recentCoachReplies: [previousReply],
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ))
+        #expect(expectedRepair.contains("Use Conversation Practice"))
+
+        let transport = CapturingCoachTransport(completionText: rejectedReply)
+        let service = AICoachChatService(secureTransport: transport)
+        var providerChoice: CoachTurnProviderChoice?
+        var gateEvents: [CoachTurnQualityGateEvent] = []
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(
+                    role: .user,
+                    text: "I feel ignored in team meetings and usually only have surface-level conversations."
+                ),
+                CoachMessage(role: .coach, text: previousReply),
+                CoachMessage(role: .user, text: userTurn),
+            ],
+            systemPrompt: "Answer the communication question directly.",
+            userContext: context,
+            turnDepth: .quickMove,
+            assessment: nil,
+            responseKind: .generalCoaching,
+            preferredTier: .geminiFast,
+            onProviderChosen: { providerChoice = $0 },
+            onQualityGateEvent: { gateEvents.append($0) }
+        )
+
+        guard case .reply(let landed) = outcome else {
+            Issue.record("The secure path did not recover the in-app follow-up")
+            return
+        }
+        #expect(landed.contains("Use Conversation Practice"))
+        #expect(landed.contains("ask the one thing you actually want to know"))
+        #expect(AskNoumModeSuggestion.detect(in: landed) == .imPractice(
+            scenario: nil,
+            tone: nil
+        ))
+        #expect(providerChoice?.providerName == "Deterministic quality fallback")
+        #expect(providerChoice?.model == "SafeReferenceCoachGuard")
+        #expect(gateEvents == [
+            .rejected("professional:ignoredCoachingExpertise"),
+            .fallback("professional:ignoredCoachingExpertise"),
+        ])
+        #expect(AICoachChatService.replyQualityIssue(
+            in: landed,
+            latestUserTurn: userTurn,
+            systemContext: context,
+            recentCoachReplies: [previousReply],
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+    }
+
+    @MainActor
     @Test func reporterStyleFeedbackGetsCoachOwnedRepairWithoutADrill() async throws {
         let userTurn = "it just says weird wording and too much redundant wording, doesn’t feel like a human expert communications coach at all"
         let reply = "You’re right—I repeated myself and sounded templated. I’ll answer with one specific point in plain language."

@@ -54,7 +54,8 @@ enum AskNoumModeSuggestion {
         if t.contains("sudden death") || t.contains("pressure drill") {
             return .suddenDeathPractice
         }
-        if t.contains("difficult conversation") || t.contains("im mode")
+        if t.contains("conversation practice") || t.contains("difficult conversation")
+            || t.contains("im mode")
             || t.contains("conversation mode") || t.contains("audience simulation")
             || t.contains("role-play") || t.contains("roleplay") {
             return .imPractice(scenario: nil, tone: nil)

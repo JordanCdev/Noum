@@ -5007,6 +5007,43 @@ struct CoachChatLatestLiveEvalRegressionTests {
         ) == nil)
     }
 
+    @Test func inAppTechniqueFollowUpRepairsToLaunchableConversationPractice() throws {
+        let userTurn = "So how can I do that in this app???"
+        let context = """
+        === NON-PERSONAL COACH CONTEXT ===
+        TURN CONTRACT
+        - Answer the communication craft question directly.
+
+        COACHING EXPERTISE
+        - Warmth plus a real question [practitioner guidance]. Why: connection comes more from genuine interest. Apply it: instead of topping their story, ask the one thing you actually want to know about it. Working when: the other person opens up because you got curious about them.
+
+        === END CONTEXT ===
+        """
+
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .ignoredCoachingExpertise,
+            latestUserTurn: userTurn,
+            system: context,
+            quoteGuard: nil,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ))
+
+        #expect(repair.contains("Use Conversation Practice"))
+        #expect(repair.contains("ask the one thing you actually want to know"))
+        #expect(AskNoumModeSuggestion.detect(in: repair) == .imPractice(
+            scenario: nil,
+            tone: nil
+        ))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: userTurn,
+            systemContext: context,
+            turnDepth: .quickMove,
+            responseKind: .generalCoaching
+        ) == nil)
+    }
+
     @Test func trustRepairShapePrefersWarmthSignalOverFillerCount() throws {
         let fixture = try Self.fixture("assistant-explainer-register")
         let shape = try #require(AICoachChatService.repairReferenceShape(
