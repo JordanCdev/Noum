@@ -18,7 +18,10 @@ import {
   type CallableResponse,
   HttpsError,
   onCall,
+  onRequest,
+  type Request,
 } from "firebase-functions/v2/https";
+import type {Response} from "express";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import {
@@ -131,6 +134,21 @@ import {
   validateRecommendationMutation,
 } from "./recommendationState.js";
 import {
+  growthAggregatePeriodKey,
+  validateGrowthAggregate,
+} from "./growthAggregate.js";
+import {
+  APP_STORE_NOTIFICATION_MARKER_RETENTION_MILLISECONDS,
+  AppStoreNotificationProcessingError,
+  appStoreNotificationHTTPStatus,
+  appStoreSignedPayload,
+  createAppStoreNotificationVerifier,
+  parseAppStoreNotificationConfiguration,
+  verifyAndProjectAppStoreNotification,
+  type AppStoreLifecycleProjection,
+} from "./appStoreServerNotifications.js";
+import {Environment} from "@apple/app-store-server-library";
+import {
   COMPETITIVE_OBSERVATION_HOUR_LIMIT,
   COMPETITIVE_OBSERVATION_INTENT_LIFETIME_MS,
   COMPETITIVE_OBSERVATION_MINUTE_LIMIT,
@@ -192,6 +210,10 @@ const ACCOUNT_RUNTIME_SERVICE_ACCOUNT =
   "noum-account-runtime@noum-d0b6f.iam.gserviceaccount.com";
 const RECOMMENDATION_RUNTIME_SERVICE_ACCOUNT =
   "noum-recommendation-runtime@noum-d0b6f.iam.gserviceaccount.com";
+const GROWTH_RUNTIME_SERVICE_ACCOUNT =
+  "noum-growth-runtime@noum-d0b6f.iam.gserviceaccount.com";
+const APP_STORE_NOTIFICATIONS_RUNTIME_SERVICE_ACCOUNT =
+  "noum-appstore-notifications-runtime@noum-d0b6f.iam.gserviceaccount.com";
 const SOCIAL_RUNTIME_SERVICE_ACCOUNT =
   "noum-social-runtime@noum-d0b6f.iam.gserviceaccount.com";
 
@@ -208,6 +230,27 @@ const vertexLocation = defineString("VERTEX_LOCATION", {
   description: "Vertex region that serves the configured coach model.",
 });
 const deepgramManagementKey = defineSecret("DEEPGRAM_MANAGEMENT_KEY");
+const appStoreRootCertificates = defineSecret(
+  "APP_STORE_ROOT_CERTIFICATES_BASE64"
+);
+const appStoreAppAppleID = defineString("APP_STORE_APP_APPLE_ID", {
+  default: "",
+  description: "Numeric App Store app ID bound into Apple's JWS verifier.",
+});
+const appStoreProductionNotificationsEnabled = defineString(
+  "APP_STORE_PRODUCTION_NOTIFICATIONS_ENABLED",
+  {
+    default: "false",
+    description: "Exact true switch for verified production notifications.",
+  }
+);
+const appStoreSandboxNotificationsEnabled = defineString(
+  "APP_STORE_SANDBOX_NOTIFICATIONS_ENABLED",
+  {
+    default: "false",
+    description: "Exact true switch for verified sandbox notifications.",
+  }
+);
 
 const MAX_MESSAGES = 12;
 const MAX_MESSAGE_CHARS = 4_000;
@@ -4438,6 +4481,353 @@ export const syncRecommendationState = onCall(
       return decision;
     });
   }
+);
+
+interface GrowthAggregateRateState {
+  dayStartMilliseconds: number;
+  count: number;
+}
+
+/**
+ * Advances the server-only daily aggregate admission counter.
+ * @param {unknown} current Existing counter state.
+ * @param {number} nowMilliseconds Trusted server wall clock.
+ * @return {GrowthAggregateRateState} Next bounded counter state.
+ */
+function nextGrowthAggregateRateState(
+  current: unknown,
+  nowMilliseconds: number
+): GrowthAggregateRateState {
+  const dayStartMilliseconds = nowMilliseconds -
+    (nowMilliseconds % 86_400_000);
+  if (!isRecord(current) ||
+      current.dayStartMilliseconds !== dayStartMilliseconds ||
+      typeof current.count !== "number" ||
+      !Number.isSafeInteger(current.count)) {
+    return {dayStartMilliseconds, count: 1};
+  }
+  if (current.count >= 8) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "Aggregate reporting is taking a short pause."
+    );
+  }
+  return {dayStartMilliseconds, count: current.count + 1};
+}
+
+/**
+ * Converts validated counters to atomic Firestore increments.
+ * @param {Record<string, number>} values Validated counter map.
+ * @return {Record<string, FieldValue>} Atomic increments.
+ */
+function growthCountIncrements(
+  values: Record<string, number>
+): Record<string, FieldValue> {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [
+    key,
+    FieldValue.increment(value),
+  ]));
+}
+
+/**
+ * Produces a bounded Firestore document component from a version string.
+ * @param {string} value Validated version string.
+ * @return {string} Safe document component.
+ */
+function growthVersionToken(value: string): string {
+  return value.replace(/[^0-9a-z-]/giu, "_");
+}
+
+/**
+ * Accepts one explicit-consent, content-free daily aggregate. Auth and App
+ * Check protect admission, but neither UID nor any event-level identifier is
+ * written to the aggregate or idempotency documents.
+ */
+export const recordGrowthAggregate = onCall(
+  {
+    enforceAppCheck: true,
+    serviceAccount: GROWTH_RUNTIME_SERVICE_ACCOUNT,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateGrowthAggregate(request.data);
+    const periodKey = growthAggregatePeriodKey(input);
+    const periodDocumentID = [
+      periodKey,
+      growthVersionToken(input.appVersion),
+      growthVersionToken(input.buildNumber),
+    ].join("_");
+    const cohortDocumentID = [
+      input.activationCohortDay,
+      growthVersionToken(input.appVersion),
+      growthVersionToken(input.buildNumber),
+    ].join("_");
+    const firestore = getFirestore();
+    const deletionRef = firestore.collection("_accountDeletionState").doc(uid);
+    const markerRef = firestore.collection("_growthAggregateBatches")
+      .doc(input.batchID);
+    const periodRef = firestore.collection("_growthAggregatePeriods")
+      .doc(periodDocumentID);
+    const cohortRef = firestore.collection("_growthActivationCohorts")
+      .doc(cohortDocumentID);
+    const rateRef = firestore.collection("_serverRateLimits").doc(uid);
+
+    return firestore.runTransaction(async (transaction) => {
+      const deletionSnapshot = await transaction.get(deletionRef);
+      const markerSnapshot = await transaction.get(markerRef);
+      assertAccountDeletionNotPending(deletionSnapshot.exists);
+      if (markerSnapshot.exists) {
+        return {accepted: true, duplicate: true, batchID: input.batchID};
+      }
+      const rateSnapshot = await transaction.get(rateRef);
+      const rateData = rateSnapshot.exists ? rateSnapshot.data() : undefined;
+      const nextRate = nextGrowthAggregateRateState(
+        isRecord(rateData?.growthAggregate) ?
+          rateData.growthAggregate : undefined,
+        Date.now()
+      );
+
+      transaction.set(rateRef, {growthAggregate: nextRate}, {merge: true});
+      transaction.create(markerRef, {
+        schemaVersion: 2,
+        periodKey,
+        activationCohortDay: input.activationCohortDay,
+        createdAt: Timestamp.now(),
+        expiresAt: Timestamp.fromMillis(
+          input.periodEndMilliseconds + 35 * 86_400_000
+        ),
+      });
+      transaction.set(periodRef, {
+        schemaVersion: 2,
+        appVersion: input.appVersion,
+        buildNumber: input.buildNumber,
+        periodStart: Timestamp.fromMillis(input.periodStartMilliseconds),
+        periodEnd: Timestamp.fromMillis(input.periodEndMilliseconds),
+        batchCount: FieldValue.increment(1),
+        eventCounts: growthCountIncrements(input.eventCounts),
+        paywallSourceCounts: growthCountIncrements(
+          input.paywallSourceCounts
+        ),
+        planSelectionCounts: growthCountIncrements(
+          input.planSelectionCounts
+        ),
+        trialEligibilityCounts: growthCountIncrements(
+          input.trialEligibilityCounts
+        ),
+        inactiveReasonCounts: growthCountIncrements(
+          input.inactiveReasonCounts
+        ),
+        notificationOpenCounts: growthCountIncrements(
+          input.notificationOpenCounts
+        ),
+        activeDayIndexCounts: growthCountIncrements(
+          input.activeDayIndexCounts
+        ),
+        firstWrittenValueDurationBucketCounts: growthCountIncrements(
+          input.firstWrittenValueDurationBucketCounts
+        ),
+        secondPracticeWithin48HoursCount: FieldValue.increment(
+          input.secondPracticeWithin48HoursCount
+        ),
+        weeklyReadAmongDay1ReturnersCount: FieldValue.increment(
+          input.weeklyReadAmongDay1ReturnersCount
+        ),
+        estimatedAICostMicros: FieldValue.increment(
+          input.estimatedAICostMicros
+        ),
+        estimatedAICostCurrency: input.estimatedAICostCurrency,
+        unpricedAIUsageCount: FieldValue.increment(
+          input.unpricedAIUsageCount
+        ),
+        aiBudgetReservationCount: FieldValue.increment(
+          input.aiBudgetReservationCount
+        ),
+        updatedAt: Timestamp.now(),
+      }, {merge: true});
+      transaction.set(cohortRef, {
+        schemaVersion: 2,
+        activationCohortDay: input.activationCohortDay,
+        appVersion: input.appVersion,
+        buildNumber: input.buildNumber,
+        batchCount: FieldValue.increment(1),
+        accountActivatedCount: FieldValue.increment(
+          input.eventCounts["growth.lifecycle.accountActivated"] ?? 0
+        ),
+        activeDayIndexCounts: growthCountIncrements(
+          input.activeDayIndexCounts
+        ),
+        secondPracticeWithin48HoursCount: FieldValue.increment(
+          input.secondPracticeWithin48HoursCount
+        ),
+        weeklyReadAmongDay1ReturnersCount: FieldValue.increment(
+          input.weeklyReadAmongDay1ReturnersCount
+        ),
+        updatedAt: Timestamp.now(),
+      }, {merge: true});
+      return {accepted: true, duplicate: false, batchID: input.batchID};
+    });
+  }
+);
+
+/**
+ * Writes one verified, anonymous App Store lifecycle projection exactly once.
+ * The digest is a one-way replay marker; no Apple JWS, receipt, transaction,
+ * product, account, or device identifier is retained.
+ * @param {AppStoreLifecycleProjection} projection Verified bounded counters.
+ * @return {Promise<boolean>} True when Apple retried an existing notification.
+ */
+async function recordAppStoreLifecycleProjection(
+  projection: AppStoreLifecycleProjection
+): Promise<boolean> {
+  const firestore = getFirestore();
+  const markerRef = firestore.collection("_appStoreNotificationMarkers")
+    .doc(projection.notificationDigest);
+  const periodRef = firestore.collection("_growthAggregatePeriods").doc([
+    projection.periodKey,
+    "appstore-notifications-v2",
+    projection.environment,
+  ].join("_"));
+  return firestore.runTransaction(async (transaction) => {
+    const markerSnapshot = await transaction.get(markerRef);
+    if (markerSnapshot.exists) return true;
+
+    const eventNames = Object.keys(projection.eventCounts);
+    transaction.create(markerRef, {
+      schemaVersion: 1,
+      source: projection.source,
+      environment: projection.environment,
+      periodKey: projection.periodKey,
+      lifecycleEventCount: eventNames.length,
+      createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(
+        Date.now() + APP_STORE_NOTIFICATION_MARKER_RETENTION_MILLISECONDS
+      ),
+    });
+    transaction.set(periodRef, {
+      schemaVersion: 1,
+      source: projection.source,
+      environment: projection.environment,
+      periodStart: Timestamp.fromMillis(projection.periodStartMilliseconds),
+      periodEnd: Timestamp.fromMillis(projection.periodEndMilliseconds),
+      verifiedNotificationCount: FieldValue.increment(1),
+      ignoredNotificationCount: FieldValue.increment(
+        eventNames.length === 0 ? 1 : 0
+      ),
+      ...(eventNames.length > 0 ? {
+        eventCounts: growthCountIncrements(
+          projection.eventCounts as Record<string, number>
+        ),
+      } : {}),
+      updatedAt: Timestamp.now(),
+    }, {merge: true});
+    return false;
+  });
+}
+
+/**
+ * Handles one environment-specific Apple Notifications V2 endpoint.
+ * @param {Request} request Public HTTPS request from Apple.
+ * @param {Response} response Empty response recognized by Apple.
+ * @param {Environment.PRODUCTION|Environment.SANDBOX} environment Target.
+ * @param {string} enabled Exact operator-controlled feature switch.
+ * @return {Promise<void>} Resolves after response completion.
+ */
+async function handleAppStoreServerNotification(
+  request: Request,
+  response: Response,
+  environment: Environment.PRODUCTION | Environment.SANDBOX,
+  enabled: string
+): Promise<void> {
+  const environmentLabel = environment === Environment.PRODUCTION ?
+    "production" : "sandbox";
+  try {
+    if (request.method !== "POST" || !request.is("application/json")) {
+      throw new AppStoreNotificationProcessingError(
+        "request-malformed",
+        false
+      );
+    }
+    const configuration = parseAppStoreNotificationConfiguration({
+      enabled,
+      appAppleID: appStoreAppAppleID.value(),
+      rootCertificatesBase64: appStoreRootCertificates.value(),
+      environment,
+    });
+    const signedPayload = appStoreSignedPayload(request.body);
+    const verifier = createAppStoreNotificationVerifier(configuration);
+    const projection = await verifyAndProjectAppStoreNotification(
+      signedPayload,
+      verifier,
+      configuration
+    );
+    const duplicate = await recordAppStoreLifecycleProjection(projection);
+    logger.info("Verified App Store lifecycle aggregate processed.", {
+      source: projection.source,
+      environment: projection.environment,
+      duplicate,
+      lifecycleEventCount: Object.keys(projection.eventCounts).length,
+    });
+    response.status(200).end();
+  } catch (error) {
+    if (error instanceof AppStoreNotificationProcessingError) {
+      logger.warn("App Store lifecycle notification rejected.", {
+        source: "appStoreServerNotificationsV2",
+        environment: environmentLabel,
+        reason: error.code,
+        retryable: error.retryable,
+      });
+      response.status(appStoreNotificationHTTPStatus(error)).end();
+      return;
+    }
+    logger.error("App Store lifecycle aggregate write unavailable.", {
+      source: "appStoreServerNotificationsV2",
+      environment: environmentLabel,
+      reason: "storage-unavailable",
+    });
+    response.status(503).end();
+  }
+}
+
+/** Production App Store Server Notifications V2 receiver. */
+export const appStoreServerNotificationsV2 = onRequest(
+  {
+    invoker: "public",
+    cors: false,
+    serviceAccount: APP_STORE_NOTIFICATIONS_RUNTIME_SERVICE_ACCOUNT,
+    secrets: [appStoreRootCertificates],
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  async (request, response) => handleAppStoreServerNotification(
+    request,
+    response,
+    Environment.PRODUCTION,
+    appStoreProductionNotificationsEnabled.value()
+  )
+);
+
+/** Sandbox App Store Server Notifications V2 receiver. */
+export const appStoreServerNotificationsV2Sandbox = onRequest(
+  {
+    invoker: "public",
+    cors: false,
+    serviceAccount: APP_STORE_NOTIFICATIONS_RUNTIME_SERVICE_ACCOUNT,
+    secrets: [appStoreRootCertificates],
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  async (request, response) => handleAppStoreServerNotification(
+    request,
+    response,
+    Environment.SANDBOX,
+    appStoreSandboxNotificationsEnabled.value()
+  )
 );
 
 /**

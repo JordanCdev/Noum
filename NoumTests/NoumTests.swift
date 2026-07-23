@@ -223,7 +223,9 @@ struct FirebaseBootstrapTests {
         )
         #expect(!bootstrapSource.contains("import FirebaseAuth"))
         #expect(bootstrapSource.contains("private static let runtimeServicesReady"))
+        #expect(bootstrapSource.contains("private static let unitTestCoreReady"))
         #expect(bootstrapSource.contains("FirebaseApp.configure()"))
+        #expect(!bootstrapSource.contains("FirebaseApp.app()"))
         #expect(bootstrapSource.contains("AppCheck.setAppCheckProviderFactory"))
         #expect(bootstrapSource.contains("RemoteConfig.remoteConfig()"))
     }
@@ -13771,8 +13773,8 @@ struct AskNoumStoreTests {
 //      while rejecting quotes that don't actually appear.
 //   2. `deterministicProof` returns voice-specific (technique, claim)
 //      shapes — never the same string regardless of voice.
-//   3. The fallback never invents a quote; if the transcript is too
-//      short to yield a clause, it returns nil.
+//   3. The fallback never invents a quote. It can bound long/unpunctuated
+//      source text, while still abstaining on thin or ineligible captures.
 
 struct ProofMomentServiceTests {
 
@@ -13830,6 +13832,36 @@ struct ProofMomentServiceTests {
         #expect(ProofMomentService.deterministicProof(for: input) == nil)
     }
 
+    @Test func deterministicProofAbstainsForThreeWordProgressEligibleCapture() {
+        let session = sampleSession(transcript: "State the decision", score: 5, duration: 30)
+        let input = ProofMomentInput(
+            session: session,
+            voice: .authoritative,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        #expect(PracticeProgressEligibility.qualifies(session),
+                "Three spoken words can count for progress while remaining too thin to quote as proof")
+        #expect(ProofMomentService.deterministicProof(for: input) == nil)
+    }
+
+    @Test func deterministicProofDoesNotStitchFragmentedNoiseIntoAQuote() {
+        let session = sampleSession(transcript: "Yes. Fine. Okay. Sure.", score: 5, duration: 30)
+        let input = ProofMomentInput(
+            session: session,
+            voice: .authoritative,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        #expect(PracticeProgressEligibility.qualifies(session))
+        #expect(ProofMomentService.deterministicProof(for: input) == nil,
+                "Disconnected one-word fragments remain too thin to present as one verified thought")
+    }
+
     @Test func deterministicProofProducesValidQuote() {
         // Given a realistic transcript, the deterministic path should
         // pick a clause from it and stamp it with a voice-specific
@@ -13852,6 +13884,44 @@ struct ProofMomentServiceTests {
             #expect(ProofMomentService.transcriptContains(proof.quote, in: transcript),
                     "Deterministic quote must come from the transcript verbatim")
         }
+    }
+
+    @Test func deterministicProofPreservesUnpunctuatedSourceCharacters() {
+        let transcript = "I would name the decision   and assign one owner today"
+        let session = sampleSession(transcript: transcript, score: 7, duration: 30)
+        let input = ProofMomentInput(
+            session: session,
+            voice: .concise,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        let proof = ProofMomentService.deterministicProof(for: input)
+
+        #expect(proof?.quote == transcript,
+                "Verified proof must preserve the transcript's exact whitespace and wording")
+        #expect(proof.map { transcript.contains($0.quote) } == true)
+    }
+
+    @Test func deterministicProofBoundsSingleLongThoughtToFourteenSourceWords() {
+        let transcript = "The customer handoff needs one clear owner before Friday because support must prepare the account history and risk summary."
+        let expected = "The customer handoff needs one clear owner before Friday because support must prepare the"
+        let session = sampleSession(transcript: transcript, score: 7, duration: 30)
+        let input = ProofMomentInput(
+            session: session,
+            voice: .executive,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        let proof = ProofMomentService.deterministicProof(for: input)
+
+        #expect(proof?.quote == expected)
+        #expect(proof?.quote.split(whereSeparator: { $0.isWhitespace }).count == 14)
+        #expect(proof.map { transcript.contains($0.quote) } == true,
+                "A bounded fallback must remain an exact source substring")
     }
 
     @Test func deterministicProofRejectsProgressIneligibleFixture() throws {
@@ -13880,7 +13950,7 @@ struct ProofMomentServiceTests {
             encoding: .utf8
         )
         let gate = try #require(source.range(
-            of: "guard PracticeProgressEligibility.qualifies(input.session)"
+            of: "guard Self.canProduceRestrainedProof(from: input.session)"
         ))
         let cache = try #require(source.range(
             of: "let cacheKey = saveToken.cacheIdentity"
@@ -16269,6 +16339,27 @@ struct AIWeeklyInsightPresentationTests {
     @Test func cardDoesNotRenderBeforeServiceResultExists() {
         #expect(!AIWeeklyInsightPresentation.shouldRenderCard(weeklyReps: 3, totalSessions: 3, hasInsight: false))
         #expect(AIWeeklyInsightPresentation.shouldRenderCard(weeklyReps: 3, totalSessions: 3, hasInsight: true))
+    }
+
+    @Test func firstWeekReadNeverRequestsUnusedAINarrative() {
+        #expect(!AIWeeklyInsightPresentation.shouldRequestInsight(
+            weeklyReps: 8,
+            totalSessions: 12,
+            contentMode: .firstWeekOnly,
+            hasFirstWeekRead: true
+        ))
+        #expect(!AIWeeklyInsightPresentation.shouldRequestInsight(
+            weeklyReps: 8,
+            totalSessions: 12,
+            contentMode: .automatic,
+            hasFirstWeekRead: true
+        ))
+        #expect(AIWeeklyInsightPresentation.shouldRequestInsight(
+            weeklyReps: 8,
+            totalSessions: 12,
+            contentMode: .rollingWeeklyOnly,
+            hasFirstWeekRead: false
+        ))
     }
 }
 
@@ -42072,6 +42163,7 @@ struct AskNoumModeSuggestionTests {
         #expect(AskNoumModeSuggestion.detect(in: "Try a Sudden Death round to test composure.") == .suddenDeathPractice)
         #expect(AskNoumModeSuggestion.detect(in: "Try a Pressure Drill round to test composure.") == .suddenDeathPractice)
         #expect(AskNoumModeSuggestion.detect(in: "Run a difficult conversation rep next.") == .imPractice(scenario: nil, tone: nil))
+        #expect(AskNoumModeSuggestion.detect(in: "Use Conversation Practice for one role-play.") == .imPractice(scenario: nil, tone: nil))
         #expect(AskNoumModeSuggestion.detect(in: "Warm up with a Timed rep first.") == .timedPractice(difficulty: nil))
     }
 

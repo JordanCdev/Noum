@@ -95,11 +95,17 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "Spoken Summary evidence cards must stay absent from the structure-only result."
         )
 
-        let liveUpgrade = app.buttons["fastLane.completeSetup"]
-        XCTAssertTrue(liveUpgrade.waitForExistence(timeout: 5))
-        scrollUntilHittable(liveUpgrade, in: app)
-        assertMinimumTapTarget(liveUpgrade)
-        XCTAssertEqual(liveUpgrade.label, "Continue to spoken coaching")
+        let spokenProof = app.buttons["fastLane.spokenProof"]
+        XCTAssertTrue(spokenProof.waitForExistence(timeout: 5))
+        scrollUntilHittable(spokenProof, in: app)
+        assertMinimumTapTarget(spokenProof)
+        XCTAssertEqual(spokenProof.label, "Try a 30-second spoken proof")
+
+        let completeProfile = app.buttons["fastLane.completeSetup"]
+        XCTAssertTrue(completeProfile.waitForExistence(timeout: 5))
+        scrollUntilHittable(completeProfile, in: app)
+        assertMinimumTapTarget(completeProfile)
+        XCTAssertEqual(completeProfile.label, "Complete my coaching profile")
 
         let explore = app.buttons["fastLane.enterApp"]
         XCTAssertTrue(explore.waitForExistence(timeout: 5))
@@ -150,6 +156,167 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "The durable local guest must have a visible account-deletion entry point."
         )
         XCTAssertTrue(deleteAccount.isHittable)
+    }
+
+    @MainActor
+    func testSpokenProofRequiresTapAndLandsOnPreparedTimedScreen() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_FAST_LANE",
+            "UI_TESTING_CLEAR_FLOW_EVENTS"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["fastLane.screen"].waitForExistence(timeout: 15))
+        let work = app.buttons["fastLane.context.work"]
+        let rambling = app.buttons["fastLane.challenge.rambling"]
+        XCTAssertTrue(work.waitForExistence(timeout: 5))
+        work.tap()
+        scrollUntilHittable(rambling, in: app)
+        XCTAssertTrue(rambling.isHittable)
+        rambling.tap()
+
+        let begin = app.buttons["fastLane.begin"]
+        scrollUntilHittable(begin, in: app)
+        XCTAssertTrue(begin.waitForExistence(timeout: 5))
+        begin.tap()
+
+        let response = app.descendants(matching: .any)["fastLane.response"]
+        XCTAssertTrue(response.waitForExistence(timeout: 5))
+        response.tap()
+        response.typeText("I would state the decision, give one reason, and name the owner before I close.")
+
+        let submit = app.buttons["fastLane.submit"]
+        scrollUntilHittable(submit, in: app)
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        submit.tap()
+
+        let spokenProof = app.buttons["fastLane.spokenProof"]
+        scrollUntilHittable(spokenProof, in: app)
+        XCTAssertTrue(spokenProof.waitForExistence(timeout: 8))
+        XCTAssertTrue(spokenProof.isHittable)
+
+        // Reaching the result never opens the microphone or Timed route by
+        // itself. The explicit CTA is the only production handoff.
+        XCTAssertFalse(app.descendants(matching: .any)["timedPractice.screen"].exists)
+        spokenProof.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
+            "The explicit spoken-proof CTA should reuse the Timed practice engine."
+        )
+        XCTAssertTrue(
+            app.buttons["timedPractice.begin"].waitForExistence(timeout: 5),
+            "The production spoken proof must wait on the prepared screen for another user tap."
+        )
+        XCTAssertFalse(
+            app.buttons["timedPractice.end"].exists,
+            "The microphone/capture phase must not auto-start when the handoff opens."
+        )
+    }
+
+    /// One deterministic production-route contract for the complete Day-0
+    /// funnel. XCUITest cannot inject real microphone audio, so the checked-in
+    /// fixture substitutes only the terminal captured rep after the user taps
+    /// Start; onboarding, navigation, persistence, Summary, and paywall routing
+    /// remain the shipping implementations.
+    @MainActor
+    func testFreshInstallReachesSpokenSummaryBeforeContextualPaywall() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_FAST_LANE",
+            "UI_TESTING_CLEAR_FLOW_EVENTS",
+            "UI_TESTING_FIRST_VALUE_LOOP"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["fastLane.screen"].waitForExistence(timeout: 15))
+        let work = app.buttons["fastLane.context.work"]
+        let rambling = app.buttons["fastLane.challenge.rambling"]
+        XCTAssertTrue(work.waitForExistence(timeout: 5))
+        work.tap()
+        scrollUntilHittable(rambling, in: app)
+        XCTAssertTrue(rambling.isHittable)
+        rambling.tap()
+
+        let beginWritten = app.buttons["fastLane.begin"]
+        scrollUntilHittable(beginWritten, in: app)
+        XCTAssertTrue(beginWritten.waitForExistence(timeout: 5))
+        beginWritten.tap()
+
+        let response = app.descendants(matching: .any)["fastLane.response"]
+        XCTAssertTrue(response.waitForExistence(timeout: 5))
+        response.tap()
+        response.typeText("I would name the decision, the owner, and the customer impact before I close.")
+
+        let submit = app.buttons["fastLane.submit"]
+        scrollUntilHittable(submit, in: app)
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        submit.tap()
+
+        let spokenProof = app.buttons["fastLane.spokenProof"]
+        scrollUntilHittable(spokenProof, in: app)
+        XCTAssertTrue(spokenProof.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.descendants(matching: .any)["timedPractice.screen"].exists)
+        spokenProof.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
+        let beginSpoken = app.buttons["timedPractice.begin"]
+        XCTAssertTrue(beginSpoken.waitForExistence(timeout: 5))
+        beginSpoken.tap()
+
+        let spokenSummary = app.descendants(matching: .any)["summary.postRepVerdict"]
+        XCTAssertTrue(
+            spokenSummary.waitForExistence(timeout: 15),
+            "The user-started spoken proof did not persist and reach its evidence summary."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["paywall.root"].exists,
+            "The Day-0 paywall must stay absent until after spoken proof is visible."
+        )
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["summary.win.card"].waitForExistence(timeout: 5),
+            "Day 0 must show one restrained observation backed by the spoken rep."
+        )
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "I would start by naming the decision clearly")
+            ).firstMatch.waitForExistence(timeout: 5),
+            "Day 0 must quote the user's own verified words."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Your words from this rep"].waitForExistence(timeout: 5),
+            "The quote must carry explicit source provenance."
+        )
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "solid baseline move")
+            ).firstMatch.waitForExistence(timeout: 5),
+            "The observation should stay bounded to what this one rep proves."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["summary.fix.card"].waitForExistence(timeout: 5),
+            "Day 0 must prescribe one concrete next action."
+        )
+
+        let proAction = app.buttons["summary.talkToNoum.gated"]
+        scrollUntilHittable(proAction, in: app, attempts: 12)
+        XCTAssertTrue(
+            proAction.waitForExistence(timeout: 8),
+            "Summary did not expose the contextual Pro coaching action."
+        )
+        XCTAssertTrue(proAction.isHittable)
+        proAction.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["paywall.root"].waitForExistence(timeout: 8),
+            "The contextual post-proof Pro action did not present the StoreKit-backed paywall."
+        )
     }
 
     @MainActor

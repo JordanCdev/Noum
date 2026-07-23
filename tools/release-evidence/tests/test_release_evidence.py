@@ -38,8 +38,11 @@ def fixture_packet():
         "rubricVersion": release.GATE.PROFESSIONAL_CALIBRATION_RUBRIC,
         "sourceCorpusFingerprint": "fnv1a64:TEST-ONLY-calibration-packet",
         "conversationCount": len(conversation_ids),
-        "requiredIndependentReviewsPerConversation": 2,
-        "requiredReviewCount": len(conversation_ids) * 2,
+        "requiredIndependentReviewsPerConversation": (
+            release.GATE.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION
+        ),
+        "requiredReviewCount": len(conversation_ids)
+        * release.GATE.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION,
         "rows": [
             {
                 "conversationID": conversation_id,
@@ -163,7 +166,11 @@ def fill_complete_fixture(run_dir):
         "attestsNoReviewerWasOnTheNoumProductTeam": True,
     }
     calibration["reviewerAttestations"] = []
-    reviewer_ids = ["TEST-ONLY-reviewer-a", "TEST-ONLY-reviewer-b"]
+    reviewer_ids = [
+        "TEST-ONLY-reviewer-a",
+        "TEST-ONLY-reviewer-b",
+        "TEST-ONLY-reviewer-c",
+    ]
     for reviewer_id in reviewer_ids:
         slug = reviewer_id.lower()
         calibration["reviewerAttestations"].append({
@@ -220,7 +227,12 @@ def fill_complete_fixture(run_dir):
         "participantConsentLogReference": ("transfer-consent-log", "participantConsentLog"),
         "withdrawalLogReference": ("transfer-withdrawal-log", "withdrawalLog"),
         "exclusionLogReference": ("transfer-exclusion-log", "exclusionLog"),
+        "negativeOutcomeLogReference": ("transfer-negative-log", "negativeOutcomeLog"),
         "adverseOutcomeLogReference": ("transfer-adverse-log", "adverseOutcomeLog"),
+        "populationProvenanceReference": (
+            "transfer-population-provenance",
+            "realPopulationProvenance",
+        ),
     }
     transfer["studyAttestation"] = {
         "principalInvestigatorID": "TEST-ONLY-principal-investigator",
@@ -229,26 +241,63 @@ def fill_complete_fixture(run_dir):
         "attestsCompleteEnrollmentAccounting": True,
         "attestsWithdrawalsAndExclusionsWereRetained": True,
         "attestsNegativeAndAdverseOutcomesWereRetained": True,
+        "attestsNoSyntheticParticipantsOrInstallsWereCounted": True,
     }
     for field, (evidence_id, kind) in study_refs.items():
         transfer["studyAttestation"][field] = add_attachment(
             run_dir, manifest, evidence_id, kind
         )
+    transfer["studyWindow"] = {
+        "startedAtISO8601": "2026-06-01T12:00:00Z",
+        "completedAtISO8601": "2026-06-29T12:00:00Z",
+    }
     transfer["enrollment"] = {
-        "enrolledUserCount": 12,
-        "completedUserCount": 10,
-        "withdrawnUserCount": 1,
-        "excludedUserCount": 1,
+        "enrolledUserCount": 34,
+        "qualifiedQualitativeParticipantCount": 30,
+        "completedUserCount": 30,
+        "withdrawnUserCount": 2,
+        "excludedUserCount": 2,
+        "participantQualificationCriteriaReference": add_attachment(
+            run_dir,
+            manifest,
+            "transfer-participant-qualification",
+            "participantQualificationCriteria",
+        ),
         "exclusionLogReference": transfer["studyAttestation"]["exclusionLogReference"],
+    }
+    transfer["installCohort"] = {
+        "source": release.GATE.REAL_USER_TRANSFER_INSTALL_SOURCE,
+        "cohortStartedAtISO8601": "2026-06-01T12:00:00Z",
+        "cohortCompletedAtISO8601": "2026-06-29T12:00:00Z",
+        "appVersion": "TEST-ONLY-1.0",
+        "storefronts": ["GB", "US"],
+        "qualifiedInstallCount": 200,
+        "day1EligibleInstallCount": 200,
+        "day1RetainedInstallCount": 60,
+        "day7EligibleInstallCount": 200,
+        "day7RetainedInstallCount": 35,
+        "qualificationCriteriaReference": add_attachment(
+            run_dir,
+            manifest,
+            "transfer-install-qualification",
+            "installQualificationCriteria",
+        ),
+        "retentionEvidenceReference": add_attachment(
+            run_dir,
+            manifest,
+            "transfer-retention-evidence",
+            "appStoreRetentionEvidence",
+        ),
     }
     categories = ["presentation", "interview", "leadership", "conflict", "networking"]
     transfer["rows"] = []
-    for index in range(12):
+    for index in range(30):
         outcome_id = f"TEST-ONLY-outcome-{index}"
+        positive = index < 24
         row = {
             "outcomeID": outcome_id,
             "userIDHash": "sha256:" + hashlib.sha256(
-                f"TEST-ONLY-user-{index % 10}".encode("utf-8")
+                f"TEST-ONLY-user-{index}".encode("utf-8")
             ).hexdigest(),
             "momentCategory": categories[index % len(categories)],
             "interventionID": f"TEST-ONLY-intervention-{index}",
@@ -258,8 +307,9 @@ def fill_complete_fixture(run_dir):
             "daysSinceFirstNoumSession": 14 + index,
             "followUpDelayHours": 36 + index,
             "preMomentConfidence": 2,
-            "postMomentConfidence": 3,
-            "positiveTransferReported": index < 9,
+            "postMomentConfidence": 3 if positive else 1,
+            "positiveTransferReported": positive,
+            "negativeOutcomeReported": not positive,
             "audienceResponseEvidenceCollected": True,
             "adverseOutcomeReported": False,
             "adverseOutcomeResolved": False,
@@ -278,7 +328,6 @@ def fill_complete_fixture(run_dir):
                 run_dir, manifest, f"transfer-row-{index}-{field.lower()}", kind
             )
         transfer["rows"].append(row)
-    transfer["summary"]["studyDurationDays"] = 42
     transfer["summary"]["readinessWarnings"] = []
     release.summarize_transfer(transfer)
     write_json(transfer_path, transfer)
@@ -653,6 +702,104 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
         self.assertIn("transferEnrollmentAccountingMismatch", failures)
         self.assertIn("transferInvestigatorAndAnalystMustDiffer", failures)
 
+    def test_transfer_v4_requires_real_population_and_indexed_cohort_evidence(self):
+        fill_complete_fixture(self.run_dir)
+        path = self.run_dir / release.MANAGED_ARTIFACTS["realUserTransfer"][0]
+        payload = release.read_json(path)
+        payload["studyAttestation"][
+            "attestsNoSyntheticParticipantsOrInstallsWereCounted"
+        ] = False
+        payload["studyAttestation"]["populationProvenanceReference"] = ""
+        write_json(path, payload)
+
+        failures = release.validate_run(self.run_dir, REPO_ROOT)["failures"]
+        self.assertIn(
+            "transferStudyAttestationMissing:attestsNoSyntheticParticipantsOrInstallsWereCounted",
+            failures,
+        )
+        self.assertTrue(any(
+            failure.startswith(
+                "unindexedEvidenceReference:transfer.studyAttestation.populationProvenanceReference"
+            )
+            for failure in failures
+        ))
+        self.assertIn(
+            "existingReadinessValidator.realUserTransfer:incompleteStudyAttestation",
+            failures,
+        )
+
+    def test_transfer_v4_requires_actual_four_week_window_and_release_cohort(self):
+        fill_complete_fixture(self.run_dir)
+        path = self.run_dir / release.MANAGED_ARTIFACTS["realUserTransfer"][0]
+        payload = release.read_json(path)
+        payload["studyWindow"]["completedAtISO8601"] = "2026-06-29T11:59:59Z"
+        payload["installCohort"]["cohortCompletedAtISO8601"] = (
+            "2026-06-29T11:59:59Z"
+        )
+        payload["installCohort"]["day7EligibleInstallCount"] = 199
+        write_json(path, payload)
+
+        failures = release.validate_run(self.run_dir, REPO_ROOT)["failures"]
+        self.assertIn(
+            "existingReadinessValidator.realUserTransfer:insufficientLongitudinalWindow",
+            failures,
+        )
+        self.assertIn(
+            "existingReadinessValidator.realUserTransfer:studyDurationMismatch",
+            failures,
+        )
+        self.assertIn(
+            "existingReadinessValidator.realUserTransfer:insufficientDay7EligibleInstalls",
+            failures,
+        )
+
+    def test_transfer_v4_tracks_qualification_attrition_and_negative_outcomes(self):
+        fill_complete_fixture(self.run_dir)
+        path = self.run_dir / release.MANAGED_ARTIFACTS["realUserTransfer"][0]
+        payload = release.read_json(path)
+        self.assertEqual(payload["enrollment"]["qualifiedQualitativeParticipantCount"], 30)
+        self.assertEqual(payload["summary"]["negativeOutcomeCount"], 6)
+
+        payload["enrollment"]["qualifiedQualitativeParticipantCount"] = 29
+        payload["summary"]["negativeOutcomeCount"] = 5
+        write_json(path, payload)
+
+        failures = release.validate_run(self.run_dir, REPO_ROOT)["failures"]
+        self.assertIn(
+            "existingReadinessValidator.realUserTransfer:invalidOrInsufficientCohortCompletion",
+            failures,
+        )
+        self.assertIn(
+            "existingReadinessValidator.realUserTransfer:negativeOutcomeCountMismatch",
+            failures,
+        )
+
+    def test_five_hundred_install_signal_is_distinct_and_nonblocking(self):
+        fill_complete_fixture(self.run_dir)
+        path = self.run_dir / release.MANAGED_ARTIFACTS["realUserTransfer"][0]
+
+        release_result = release.validate_run(self.run_dir, REPO_ROOT)
+        self.assertTrue(release_result["passes"], release_result["failures"])
+        release_signal = next(
+            signal for signal in release_result["nonBlockingSignals"]
+            if signal["key"] == "scaleConversionCohortReadiness"
+        )
+        self.assertEqual(release_signal["observedCount"], 200)
+        self.assertFalse(release_signal["ready"])
+        self.assertFalse(release_signal["blocking"])
+
+        payload = release.read_json(path)
+        payload["installCohort"]["qualifiedInstallCount"] = 500
+        write_json(path, payload)
+        scale_result = release.validate_run(self.run_dir, REPO_ROOT)
+        self.assertTrue(scale_result["passes"], scale_result["failures"])
+        scale_signal = next(
+            signal for signal in scale_result["nonBlockingSignals"]
+            if signal["key"] == "scaleConversionCohortReadiness"
+        )
+        self.assertEqual(scale_signal["observedCount"], 500)
+        self.assertTrue(scale_signal["ready"])
+
     def test_missing_physical_attachment_is_rejected_even_when_json_says_passed(self):
         fill_complete_fixture(self.run_dir)
         path = self.run_dir / release.MANAGED_ARTIFACTS["realDeviceTestFlight"][0]
@@ -668,16 +815,16 @@ class ReleaseEvidenceWorkflowTests(unittest.TestCase):
             for failure in failures
         ))
 
-    def test_testflight_v3_template_pins_fourteen_surfaces_and_seventy_seven_checks(self):
+    def test_testflight_v3_template_pins_fourteen_surfaces_and_eighty_four_checks(self):
         path = self.run_dir / release.MANAGED_ARTIFACTS["realDeviceTestFlight"][0]
         payload = release.read_json(path)
 
         self.assertEqual(payload["schemaVersion"], "coach-real-device-testflight-qa-v3")
         self.assertEqual(len(payload["rows"]), 14)
-        self.assertEqual(payload["summary"]["requiredCheckCount"], 77)
+        self.assertEqual(payload["summary"]["requiredCheckCount"], 84)
         self.assertEqual(
             sum(len(row["checks"]) for row in payload["rows"]),
-            77,
+            84,
         )
         rows = {row["surfaceKey"]: row for row in payload["rows"]}
         self.assertEqual(set(rows), set(release.GATE.REAL_DEVICE_REQUIRED_SURFACES))

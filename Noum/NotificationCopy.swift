@@ -20,7 +20,192 @@ struct NotificationLine {
     let body: String
 }
 
+/// Content-free attribution for Noum notifications outside the bounded
+/// first-week contract. Only an enum and an app-owned route are persisted in
+/// the notification request; display copy, account data, session identifiers,
+/// goals, and coach content are deliberately not representable.
+struct GrowthNotificationAttribution: Equatable {
+    static let contractKey = "noum.notification.contract"
+    static let growthKindKey = "noum.notification.growthKind"
+    static let routeKey = "noum.notification.route"
+    static let contractVersion = "growth.v1"
+
+    let kind: GrowthNotificationKind
+    let route: URL
+
+    init?(kind: GrowthNotificationKind, route: URL) {
+        guard kind != .unknown, route.scheme == "noum" else { return nil }
+        self.kind = kind
+        self.route = route
+    }
+
+    var userInfo: [AnyHashable: Any] {
+        [
+            Self.contractKey: Self.contractVersion,
+            Self.growthKindKey: kind.rawValue,
+            Self.routeKey: route.absoluteString,
+        ]
+    }
+
+    static func decode(
+        _ userInfo: [AnyHashable: Any]
+    ) -> GrowthNotificationAttribution? {
+        guard userInfo[contractKey] as? String == contractVersion,
+              let rawKind = userInfo[growthKindKey] as? Int,
+              let kind = GrowthNotificationKind(rawValue: rawKind),
+              let rawRoute = userInfo[routeKey] as? String,
+              let route = URL(string: rawRoute) else {
+            return nil
+        }
+        return GrowthNotificationAttribution(kind: kind, route: route)
+    }
+}
+
+/// Bounded attribution payload for first-week notifications. Values are only
+/// enums, a version marker, and an app-owned route: no account ID, authored
+/// text, transcript, coach prose, or session identifier leaves the app in the
+/// notification request. `NoumAppDelegate` can decode this same contract to
+/// route the tap and record `GrowthNotificationKind` without guessing from
+/// display copy.
+struct FirstWeekNotificationAttribution {
+    static let contractKey = "noum.notification.contract"
+    static let intentKey = "noum.notification.intent"
+    static let routeKey = "noum.notification.route"
+    static let growthKindKey = "noum.notification.growthKind"
+    static let contractVersion = "firstWeek.v1"
+    /// Content-free rendezvous route for Day 1–4. The app resolves the current
+    /// contract and recommendation exposure when this route is opened; no
+    /// coaching target or exercise setup is serialized into the notification.
+    static let recommendationActionRoute = URL(
+        string: "noum://home/first-week-action"
+    )!
+    /// Neutral Home rendezvous for Day 0. Only an explicit Home or
+    /// notification tap prepares the process-local prompt handoff; the
+    /// notification never carries a prompt token or opens a microphone route.
+    static let spokenBaselineActionRoute = URL(
+        string: "noum://home/first-week-spoken-proof"
+    )!
+
+    let intent: FirstWeekCoachingContract.NotificationIntent
+    let route: URL
+    let growthKind: GrowthNotificationKind
+
+    init(snapshot: FirstWeekCoachingContract.Snapshot) {
+        intent = snapshot.notificationIntent
+        route = Self.route(for: intent)
+        growthKind = Self.growthKind(for: intent)
+    }
+
+    var userInfo: [AnyHashable: Any] {
+        [
+            Self.contractKey: Self.contractVersion,
+            Self.intentKey: intent.rawValue,
+            Self.routeKey: route.absoluteString,
+            Self.growthKindKey: growthKind.rawValue,
+        ]
+    }
+
+    static func decode(
+        _ userInfo: [AnyHashable: Any]
+    ) -> FirstWeekNotificationAttribution? {
+        guard userInfo[contractKey] as? String == contractVersion,
+              let rawIntent = userInfo[intentKey] as? String,
+              let intent = FirstWeekCoachingContract.NotificationIntent(rawValue: rawIntent),
+              let rawRoute = userInfo[routeKey] as? String,
+              let route = URL(string: rawRoute),
+              let rawGrowthKind = userInfo[growthKindKey] as? Int,
+              let growthKind = GrowthNotificationKind(rawValue: rawGrowthKind),
+              route == Self.route(for: intent),
+              growthKind == Self.growthKind(for: intent) else {
+            return nil
+        }
+        return FirstWeekNotificationAttribution(
+            intent: intent,
+            route: route,
+            growthKind: growthKind
+        )
+    }
+
+    private init(
+        intent: FirstWeekCoachingContract.NotificationIntent,
+        route: URL,
+        growthKind: GrowthNotificationKind
+    ) {
+        self.intent = intent
+        self.route = route
+        self.growthKind = growthKind
+    }
+
+    private static func route(
+        for intent: FirstWeekCoachingContract.NotificationIntent
+    ) -> URL {
+        let value: String
+        switch intent {
+        case .recordSpokenBaseline:
+            return spokenBaselineActionRoute
+        case .repeatRep, .compareAndAdapt:
+            return recommendationActionRoute
+        case .realWorldCheckIn:
+            value = "noum://profile/check-in"
+        case .firstWeekRead:
+            value = "noum://home/first-week-read"
+        }
+        // Every branch is an app-owned literal. Keeping the fallback makes the
+        // initializer total if URL parsing behavior ever changes.
+        return URL(string: value) ?? URL(string: "noum://home")!
+    }
+
+    private static func growthKind(
+        for intent: FirstWeekCoachingContract.NotificationIntent
+    ) -> GrowthNotificationKind {
+        switch intent {
+        case .recordSpokenBaseline, .repeatRep, .compareAndAdapt:
+            return .practiceReminder
+        case .realWorldCheckIn, .firstWeekRead:
+            return .weeklyRead
+        }
+    }
+}
+
 enum NotificationCopy {
+
+    // MARK: - First-week coaching contract
+
+    /// Lock-screen-safe copy for the one unfinished step projected by
+    /// `FirstWeekCoachingContract`. The intent is content-free by design, so
+    /// authored goals, transcripts, check-in text, and generated prescription
+    /// prose can never leak into a notification.
+    static func firstWeek(
+        intent: FirstWeekCoachingContract.NotificationIntent
+    ) -> NotificationLine {
+        switch intent {
+        case .recordSpokenBaseline:
+            return NotificationLine(
+                title: "Your spoken baseline is ready",
+                body: "Try the 30-second proof you chose. Noum will only report what the recording can support."
+            )
+        case .repeatRep:
+            return NotificationLine(
+                title: "Give your coach a second look",
+                body: "Repeat one short rep so Noum can check whether the first pattern holds."
+            )
+        case .compareAndAdapt:
+            return NotificationLine(
+                title: "Your comparison rep is next",
+                body: "Run the current prescription once more. Noum will compare the evidence before changing course."
+            )
+        case .realWorldCheckIn:
+            return NotificationLine(
+                title: "How did this show up outside Noum?",
+                body: "A short check-in tells your coach what carried into a real conversation."
+            )
+        case .firstWeekRead:
+            return NotificationLine(
+                title: "Your first-week read is ready",
+                body: "Review what repeated, what changed, and the one next step your evidence supports."
+            )
+        }
+    }
 
     // MARK: - Daily reminder
 

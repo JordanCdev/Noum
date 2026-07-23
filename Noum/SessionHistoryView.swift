@@ -576,6 +576,9 @@ struct SessionHistoryDetailView: View {
 
                     promptCard
                     if isProgressEligible {
+                        if let snapshot = durableRewriteSnapshot {
+                            transcriptUpgradeCard(snapshot)
+                        }
                         if let goalOutcomeRead {
                             // Historical goal movement is a read, not a fresh
                             // adaptive prescription. The replay action below owns
@@ -768,6 +771,134 @@ struct SessionHistoryDetailView: View {
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    private var durableRewriteSnapshot: TranscriptRewriteSnapshot? {
+        guard let snapshot = session.transcriptRewriteSnapshot,
+              snapshot.matches(sourceTranscript: session.transcript) else {
+            return nil
+        }
+        return snapshot
+    }
+
+    private func transcriptUpgradeCard(
+        _ snapshot: TranscriptRewriteSnapshot
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("A stronger version of your words")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                Text("Saved with this rep, so the coaching does not change when you reopen it.")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ReviewTranscriptStep(
+                eyebrow: "ORIGINAL TRANSCRIPT",
+                text: Text(snapshot.originalSnippet),
+                detail: "Verified excerpt from this rep",
+                tint: AppColor.textSecondary,
+                identifier: "history.detail.rewrite.original"
+            )
+
+            ReviewTranscriptStep(
+                eyebrow: "ONE-STEP UPGRADE",
+                text: TranscriptChangeHighlighter.highlightedText(
+                    original: snapshot.originalSnippet,
+                    revision: snapshot.oneStepText
+                ),
+                detail: "Noum's minimal edit · changed words are highlighted",
+                tint: AppColor.proText,
+                identifier: "history.detail.rewrite.oneStep"
+            )
+
+            if let aspiration = snapshot.aspirationalRewrite {
+                ReviewTranscriptStep(
+                    eyebrow: "ASPIRATIONAL END STATE",
+                    text: TranscriptChangeHighlighter.highlightedText(
+                        original: snapshot.originalSnippet,
+                        revision: aspiration.text
+                    ),
+                    detail: "A direction to grow toward — not the next rep target",
+                    tint: AppColor.brandBlue,
+                    identifier: "history.detail.rewrite.aspiration"
+                )
+            }
+
+            Button {
+                startTargetedRetry(snapshot)
+            } label: {
+                Label("Practise the one-step upgrade", systemImage: "arrow.counterclockwise")
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(AppColor.pro, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("history.detail.rewrite.retry")
+            .accessibilityHint("Starts Timed Practice with the saved edit and the same improvement target.")
+
+            if snapshot.origin == .onDevice {
+                Label("Private on-device edit", systemImage: "lock.fill")
+                    .font(Typography.micro.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityLabel("Private on-device edit, built without an AI provider.")
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppColor.proQuietSurface, AppColor.cardBackground],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityIdentifier("history.detail.rewriteLadder")
+    }
+
+    private func startTargetedRetry(_ snapshot: TranscriptRewriteSnapshot) {
+        let correlationID = UUID()
+        let lever = TranscriptPracticeLever(weakness: snapshot.weakness)
+        let retryTarget = TranscriptRetryTarget(lever: lever)
+        let prescription = TranscriptPracticePrescription(
+            correlationID: correlationID,
+            sourceSessionID: session.id,
+            suggestedPrompt: snapshot.oneStepText,
+            title: "One-step \(lever.focusLabel) upgrade",
+            focus: lever.focusLabel,
+            target: lever.successMeasure,
+            targetDimensionID: nil,
+            goal: coachingProfileStore.profile?.chosenStyleGoal,
+            retryTarget: retryTarget
+        )
+        guard let token = TimedPracticePromptHandoff.shared
+            .offerTranscriptRetryToken(prescription) else { return }
+
+        recommendationLearningStore.recordShown(
+            fingerprint: prescription.fingerprint,
+            title: prescription.title,
+            focus: prescription.focus,
+            target: prescription.target,
+            mode: .timed,
+            isAIBacked: snapshot.origin == .provider,
+            goal: prescription.goal,
+            targetDimensionID: nil,
+            sourceSessionID: session.id,
+            observabilityID: correlationID,
+            transcriptRetryTarget: retryTarget
+        )
+        recommendationLearningStore.markTapped(mode: .timed)
+        navigationPath.append(
+            AppDestination.timedPracticePrompt(token: token)
+        )
     }
 
     private var insufficientEvidenceCard: some View {

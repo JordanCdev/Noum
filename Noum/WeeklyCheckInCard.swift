@@ -18,18 +18,18 @@ struct WeeklyCheckInPrompt: Equatable, Identifiable {
 }
 
 enum WeeklyCheckInCopy {
-    static let cardTitle = "Your weekly read"
-    static let cardBody = "A quick check-in for what metrics miss."
-    static let sheetTitle = "What should Noum know?"
-    static let sheetBody = "Choose one answer. Add detail only if it helps."
+    static let cardTitle = "Weekly check-in"
+    static let cardBody = "Tell your coach what metrics missed."
+    static let sheetTitle = "What changed outside the app?"
+    static let sheetBody = "Choose one answer. Add a note if it helps."
     static let noteTitle = "Your words, not a score"
     static let noteBody = "One honest answer is enough to help Noum shape the next question."
 
     static let hardest = WeeklyCheckInPrompt(
         id: "hardest",
-        title: "What felt hard?",
-        helper: "A moment or feeling you kept noticing.",
-        placeholder: "I tightened up when..."
+        title: "What should your coach know?",
+        helper: "Optional — share a moment that felt hard, went well, or stayed unsaid.",
+        placeholder: "One thing I noticed..."
     )
 
     static let outsideApp = WeeklyCheckInPrompt(
@@ -125,7 +125,6 @@ struct WeeklyCheckInSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     header
-                    coachNote
                     confidenceSection
                     question(
                         WeeklyCheckInCopy.hardest,
@@ -150,14 +149,14 @@ struct WeeklyCheckInSheet: View {
                     }
 
                     if !canSave {
-                        Label("Choose one option or write one line to save.", systemImage: "info.circle")
+                        Label("Choose one answer or add a note.", systemImage: "info.circle")
                             .font(Typography.caption)
                             .foregroundStyle(AppColor.textSecondary)
                             .accessibilityIdentifier("weeklyCheckIn.saveGuidance")
                     }
 
                     Label(
-                        "Saves to coaching memory. Review, edit, or delete it in Settings → Your data.",
+                        "Used only to shape your coaching plan. Manage it in Your Data.",
                         systemImage: "lock.shield"
                     )
                     .font(Typography.captionSmall)
@@ -173,7 +172,7 @@ struct WeeklyCheckInSheet: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: Spacing.xs) {
-                PrimaryCTA("Save to coaching memory", tint: AppColor.brandBlue) {
+                PrimaryCTA("Save check-in", tint: AppColor.brandBlue) {
                     save()
                 }
                 .disabled(!canSave)
@@ -204,13 +203,17 @@ struct WeeklyCheckInSheet: View {
 
     private func save() {
         guard canSave else { return }
-        store.record(
+        guard store.record(
             hardest: hardest.nilIfBlank,
             outsideApp: outsideApp.nilIfBlank,
             drillVerdict: drillVerdict,
             confidenceShift: confidenceShift,
             avoidedSaying: avoidedSaying.nilIfBlank
-        )
+        ) != nil else { return }
+        // This store is the single completion owner for the real-world step.
+        // Rebuild future one-shot reminders immediately so a saved check-in
+        // cannot leave an already-completed prompt pending on the lock screen.
+        NotificationManager.shared.refreshScheduledNotifications()
         dismiss()
     }
 
@@ -227,30 +230,6 @@ struct WeeklyCheckInSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, Spacing.sm)
-    }
-
-    private var coachNote: some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            Image(systemName: "quote.bubble.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppColor.pro)
-                .frame(width: 24, height: 24)
-                .background(AppColor.pro.opacity(0.10), in: Circle())
-
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(WeeklyCheckInCopy.noteTitle)
-                    .font(Typography.caption)
-                    .foregroundStyle(.primary)
-                Text(WeeklyCheckInCopy.noteBody)
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.pro.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 
     private func question(_ prompt: WeeklyCheckInPrompt, text: Binding<String>) -> some View {
@@ -310,6 +289,7 @@ struct WeeklyCheckInSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("weeklyCheckIn.moreContext")
+        .accessibilityValue(showsMoreContext ? "Expanded" : "Collapsed")
     }
 
     private func confidenceChip(_ shift: CoachConfidenceShift) -> some View {
@@ -335,6 +315,7 @@ struct WeeklyCheckInSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("weeklyCheckIn.confidence.\(shift.rawValue)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var drillVerdictSection: some View {
@@ -372,6 +353,7 @@ struct WeeklyCheckInSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("weeklyCheckIn.verdict.\(verdict.rawValue)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func sectionLabel(_ text: String, helper: String) -> some View {

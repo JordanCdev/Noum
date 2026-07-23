@@ -6,7 +6,7 @@ specific set of things that **only work right on hardware** or that have
 never been touched on a real device this milestone series.
 
 Runtime sign-off is recorded in `coach-real-device-testflight-qa-v3.json` as
-an exact 14-surface, 77-check contract. The check-key mapping and required
+an exact 14-surface, 84-check contract. The check-key mapping and required
 attachment kinds are documented in `docs/PRODUCTION_EVIDENCE_COLLECTION.md`.
 Pre-flight security, deployment, Apple configuration, upload, and triage work
 stays in `coach-operational-launch-checklist-v2.json`.
@@ -106,7 +106,18 @@ they do not override an unchecked release blocker or signed-device test.
 ### Paywall + StoreKit 2
 - [ ] Settings → Subscription → opens the paywall card.
 - [ ] Tap Monthly — sandbox purchase flow shows native iOS sheet.
-- [ ] Tap Annual — same.
+- [ ] With an eligible sandbox account, Annual shows the seven-day trial,
+      exact trial end date, renewal price/period, cancellation route, and
+      StoreKit-confirmed eligibility. Starting it produces an active trial.
+- [ ] With an ineligible sandbox account, Annual never promises a trial.
+- [ ] Advance StoreKit time through renewal — entitlement and the lifecycle
+      snapshot remain active without a duplicate purchase.
+- [ ] Cancel while active — access remains until the verified expiry date,
+      then closes at expiry.
+- [ ] Exercise billing retry and any configured grace period. Noum follows the
+      verified StoreKit state and never grants access from stale local state.
+- [ ] Refund/revoke the transaction — Pro access closes and the lifecycle read
+      records revocation/refund without retaining receipt or account content.
 - [ ] **Restore Purchase** while signed into a previous-test sandbox
       account — entitlements re-apply.
 - [ ] Subscription status reflected in: Coach Mode unlocked, Live
@@ -154,7 +165,7 @@ they do not override an unchecked release blocker or signed-device test.
 
 ## Supplemental research-loop regression
 
-These checks supplement the fixed 14-surface/77-check release-evidence schema;
+These checks supplement the fixed 14-surface/84-check release-evidence schema;
 they do not silently change or satisfy that independent contract.
 
 - [ ] On Train with no rated evidence, a Pressure recommendation resolves as

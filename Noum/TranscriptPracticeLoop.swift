@@ -50,6 +50,104 @@ enum TranscriptPracticeLever: String, Codable, CaseIterable, Hashable, Sendable 
     }
 }
 
+/// Durable, source-bound presentation of the transcript upgrade that was
+/// actually shown for one saved rep. The session remains the sole owner of the
+/// source transcript; this snapshot only prevents Review from making another
+/// provider request (and potentially showing different coaching) when the user
+/// reopens the same evidence later.
+struct TranscriptRewriteSnapshot: Codable, Equatable, Sendable {
+    static let schemaVersion = 1
+    static let maximumRewriteCharacters = 1_200
+
+    enum Origin: String, Codable, Equatable, Sendable {
+        case provider
+        case onDevice
+
+        init(_ source: Rewrite.Source) {
+            switch source {
+            case .provider: self = .provider
+            case .onDevice: self = .onDevice
+            }
+        }
+
+        var rewriteSource: Rewrite.Source {
+            switch self {
+            case .provider: return .provider
+            case .onDevice: return .onDevice
+            }
+        }
+    }
+
+    let schemaVersion: Int
+    let weakness: AIRewriteService.Weakness
+    let originalSnippet: String
+    let oneStepText: String
+    let aspirationalText: String?
+    let origin: Origin
+    let createdAt: Date
+
+    init(
+        weakness: AIRewriteService.Weakness,
+        originalSnippet: String,
+        oneStepText: String,
+        aspirationalText: String?,
+        origin: Origin,
+        createdAt: Date = Date(),
+        schemaVersion: Int = Self.schemaVersion
+    ) {
+        self.schemaVersion = schemaVersion
+        self.weakness = weakness
+        self.originalSnippet = originalSnippet
+        self.oneStepText = oneStepText
+        self.aspirationalText = aspirationalText
+        self.origin = origin
+        self.createdAt = createdAt
+    }
+
+    var isSupported: Bool {
+        schemaVersion == Self.schemaVersion
+            && !originalSnippet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !oneStepText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && originalSnippet.count <= Self.maximumRewriteCharacters
+            && oneStepText.count <= Self.maximumRewriteCharacters
+            && (aspirationalText?.count ?? 0) <= Self.maximumRewriteCharacters
+    }
+
+    /// The source excerpt is derived by the same bounded helper used by the
+    /// rewrite request. Exact equality is stronger than substring matching
+    /// because long opening/closing excerpts intentionally include an ellipsis.
+    func matches(sourceTranscript: String) -> Bool {
+        guard isSupported else { return false }
+        return originalSnippet == AIRewriteService.originalSnippet(
+            transcript: sourceTranscript,
+            weakness: weakness
+        )
+    }
+
+    var oneStepRewrite: Rewrite {
+        Rewrite(
+            text: oneStepText,
+            weakness: weakness,
+            intensity: .medium,
+            source: origin.rewriteSource
+        )
+    }
+
+    var aspirationalRewrite: Rewrite? {
+        guard let aspirationalText,
+              !aspirationalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              aspirationalText.caseInsensitiveCompare(oneStepText) != .orderedSame else {
+            return nil
+        }
+        return Rewrite(
+            text: aspirationalText,
+            weakness: weakness,
+            intensity: .strong,
+            source: origin.rewriteSource
+        )
+    }
+}
+
 /// Persisted prescription provenance for one accepted transcript-ladder retry.
 /// It intentionally contains no transcript, rewrite, prompt, or content hash.
 struct TranscriptRetryTarget: Codable, Equatable, Sendable {
@@ -117,6 +215,19 @@ struct TranscriptPracticePrescription: Equatable {
             retryTarget: retryTarget,
             targetDimensionID: targetDimensionID
         )
+    }
+}
+
+/// Keeps a transcript-ladder retry on the same communication problem. The
+/// rewrite is a reference rung, not a script to recite; when the source rep
+/// has a prompt, Timed Practice must present that exact prompt again.
+enum TranscriptRetryPrompt {
+    static func resolve(sourcePrompt: String?, fallbackRewritePrompt: String) -> String {
+        if let sourcePrompt {
+            let trimmed = sourcePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return fallbackRewritePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

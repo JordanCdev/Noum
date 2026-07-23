@@ -137,9 +137,7 @@ actor ProofMomentService {
             )
         }
 
-        guard PracticeProgressEligibility.qualifies(input.session),
-              !input.session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              input.session.duration > 8 else {
+        guard Self.canProduceRestrainedProof(from: input.session) else {
             record(.skipped, "Session below proof signal floor")
             return nil
         }
@@ -482,6 +480,7 @@ actor ProofMomentService {
         let technique = (payload["technique"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let claim = (payload["claim"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !quote.isEmpty, !technique.isEmpty, !claim.isEmpty,
+              (4...14).contains(wordRanges(in: quote[...]).count),
               claimStaysObservable(claim) else { return nil }
         // Guard against fabrication — the quote MUST appear in the
         // session's transcript (case-insensitive, whitespace-flexible).
@@ -581,17 +580,24 @@ actor ProofMomentService {
 
     // MARK: - Deterministic fallback
 
-    /// Template proof for the offline / no-provider path. Picks a quote
-    /// from the transcript by heuristic: the longest "thought" (sentence
-    /// or comma-separated clause) under 14 words. Pairs it with a
-    /// voice-specific technique label + claim. Always renders something
-    /// useful — the AI version is just sharper.
+    /// Shared evidence floor for every surface that promises a verified
+    /// example. A progress-bearing capture alone is not enough: Noum must also
+    /// have more than eight seconds and one coherent, verbatim 4...14-word
+    /// thought it can safely show. Keeping this check beside the extractor
+    /// prevents first-week reads from linking to a session the proof service
+    /// would later have to reject.
+    static func canProduceRestrainedProof(from session: PracticeSession) -> Bool {
+        restrainedProofQuote(from: session) != nil
+    }
+
+    /// Template proof for the offline / no-provider path. Picks a bounded,
+    /// verbatim quote from the transcript: first the longest complete sentence,
+    /// then a comma-clause, then a raw 14-word source range when ASR supplied no
+    /// usable punctuation. Pairs it with a voice-specific technique + claim.
+    /// Empty, very short, and progress-ineligible captures still abstain.
     static func deterministicProof(for input: ProofMomentInput) -> ProofMoment? {
         let s = input.session
-        guard PracticeProgressEligibility.qualifies(s),
-              s.duration > 8 else { return nil }
-        let candidate = longestThought(in: s.transcript, maxWords: 14)
-        guard let quote = candidate, !quote.isEmpty else { return nil }
+        guard let quote = restrainedProofQuote(from: s) else { return nil }
 
         let mapping = templateMapping(for: input.voice, session: s)
         guard let mapping = mapping else { return nil }
@@ -606,32 +612,106 @@ actor ProofMomentService {
         )
     }
 
-    /// Pick the longest clause in the transcript that fits in maxWords.
-    /// We prefer sentences over comma-clauses, and skip the very first
-    /// word if it's a filler ("um," / "uh,"). Returns nil if no clause
-    /// qualifies (transcript is short or noise-only).
+    private static func restrainedProofQuote(
+        from session: PracticeSession
+    ) -> String? {
+        guard PracticeProgressEligibility.qualifies(session),
+              session.duration > 8,
+              let quote = longestThought(in: session.transcript, maxWords: 14),
+              !quote.isEmpty,
+              session.transcript.contains(quote) else {
+            return nil
+        }
+        return quote
+    }
+
+    /// Pick a 4...`maxWords` verbatim source range. Complete sentences win over
+    /// comma-clauses; if transcription has no useful boundary (or every thought
+    /// is longer than the cap), use the first bounded word window. The raw-window
+    /// path is what keeps a valid first spoken rep from losing its proof merely
+    /// because the speech recognizer omitted punctuation.
     private static func longestThought(in transcript: String, maxWords: Int) -> String? {
-        let cleaned = transcript
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\u{2019}", with: "'")
-        // Split on terminal punctuation first; fall back to commas if
-        // the rep has no sentence boundaries.
-        var pieces = cleaned
-            .components(separatedBy: CharacterSet(charactersIn: ".!?"))
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        if pieces.isEmpty {
-            pieces = cleaned
-                .components(separatedBy: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
+        guard maxWords >= 4 else { return nil }
+
+        let sentences = transcript.split(omittingEmptySubsequences: true) { character in
+            character == "." || character == "!" || character == "?"
+                || character == "\n" || character == "\r"
         }
-        let qualified = pieces.compactMap { piece -> String? in
-            let words = piece.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            guard words.count >= 4, words.count <= maxWords else { return nil }
-            return words.joined(separator: " ")
+        if let sentence = longestQualifiedVerbatimSlice(in: sentences, maxWords: maxWords) {
+            return sentence
         }
-        return qualified.max(by: { $0.count < $1.count })
+
+        let clauses = transcript.split(omittingEmptySubsequences: true) { character in
+            character == "." || character == "!" || character == "?" || character == ","
+                || character == "\n" || character == "\r"
+        }
+        if let clause = longestQualifiedVerbatimSlice(in: clauses, maxWords: maxWords) {
+            return clause
+        }
+
+        // Only cap a source piece that already carries a full thought. Four
+        // disconnected one-word sentences are still thin evidence and must not
+        // be stitched into a quote just because their aggregate count is four.
+        let oversizedClause = clauses
+            .filter { wordRanges(in: $0).count > maxWords }
+            .max(by: { $0.count < $1.count })
+        if let oversizedClause {
+            return boundedVerbatimPrefix(in: oversizedClause, maxWords: maxWords)
+        }
+
+        let oversizedSentence = sentences
+            .filter { wordRanges(in: $0).count > maxWords }
+            .max(by: { $0.count < $1.count })
+        guard let oversizedSentence else { return nil }
+        return boundedVerbatimPrefix(in: oversizedSentence, maxWords: maxWords)
+    }
+
+    /// Preserve the exact source characters between the first and last word.
+    /// This deliberately does not normalize apostrophes or collapse whitespace:
+    /// a displayed verified quote must be an actual substring of the transcript,
+    /// not a cosmetically rewritten approximation of what the user said.
+    private static func longestQualifiedVerbatimSlice(
+        in pieces: [Substring],
+        maxWords: Int
+    ) -> String? {
+        pieces.compactMap { piece -> String? in
+            let words = wordRanges(in: piece)
+            guard (4...maxWords).contains(words.count),
+                  let first = words.first,
+                  let last = words.last else { return nil }
+            return String(piece[first.lowerBound..<last.upperBound])
+        }
+        .max(by: { $0.count < $1.count })
+    }
+
+    private static func boundedVerbatimPrefix(in source: Substring, maxWords: Int) -> String? {
+        let words = wordRanges(in: source)
+        guard words.count >= 4 else { return nil }
+        let lastWord = words[min(maxWords, words.count) - 1]
+        return String(source[words[0].lowerBound..<lastWord.upperBound])
+    }
+
+    private static func wordRanges(in source: Substring) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var wordStart: String.Index?
+        var index = source.startIndex
+
+        while index < source.endIndex {
+            if source[index].isWhitespace {
+                if let start = wordStart {
+                    ranges.append(start..<index)
+                    wordStart = nil
+                }
+            } else if wordStart == nil {
+                wordStart = index
+            }
+            index = source.index(after: index)
+        }
+
+        if let wordStart {
+            ranges.append(wordStart..<source.endIndex)
+        }
+        return ranges
     }
 
     /// Voice-specific (technique, claim) for the deterministic path.

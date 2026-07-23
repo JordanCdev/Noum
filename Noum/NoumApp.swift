@@ -22,6 +22,9 @@ import GoogleSignIn
 #if canImport(Speech)
 import Speech
 #endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 #if canImport(UIKit)
 /// Minimal UIKit app delegate whose only job is to configure Firebase inside
@@ -31,21 +34,50 @@ import Speech
 /// `FirebaseBootstrap.configure()`, which no-ops once Firebase is set up, so
 /// the belt-and-suspenders call below stays safe.
 ///
-/// NOTE: FirebaseCore's I-COR000003 "not yet configured" and the GoogleUtilities
-/// I-SWZ001014 "does not conform to UIApplicationDelegate" lines are emitted by
-/// Firebase's Objective-C load-time swizzler, which runs before ANY Swift (this
-/// delegate included), so an explicit delegate alone cannot suppress them. They
-/// are silenced by `FirebaseAppDelegateProxyEnabled = NO` in Info.plist — safe
-/// here because the app uses no Firebase Messaging / Dynamic Links (the only
-/// products that need the swizzled AppDelegate callbacks).
-final class NoumAppDelegate: NSObject, UIApplicationDelegate {
+/// App-delegate proxying is disabled by
+/// `FirebaseAppDelegateProxyEnabled = NO` in Info.plist. That is safe here
+/// because Noum does not use Firebase Messaging or Dynamic Links, the products
+/// that would need swizzled AppDelegate callbacks.
+final class NoumAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         FirebaseBootstrap.configure()
+        #if canImport(UserNotifications)
+        UNUserNotificationCenter.current().delegate = self
+        #endif
         return true
     }
+
+    #if canImport(UserNotifications)
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        let firstWeekAttribution = FirstWeekNotificationAttribution.decode(userInfo)
+        let growthAttribution = GrowthNotificationAttribution.decode(userInfo)
+        guard let kind = firstWeekAttribution?.growthKind ?? growthAttribution?.kind,
+              let route = firstWeekAttribution?.route ?? growthAttribution?.route else {
+            completionHandler()
+            return
+        }
+
+        Task { @MainActor in
+            FlowEventGrowthEventSink.shared.record(
+                GrowthEvent(
+                    name: .notificationOpened,
+                    notificationKind: kind,
+                    entryPoint: .notification
+                )
+            )
+            DeepLinkRouter.shared.pending = route
+            completionHandler()
+        }
+    }
+    #endif
 }
 #endif
 
@@ -267,13 +299,19 @@ struct NoumApp: App {
                 }
                 #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
+                reconcileFirstRepCompletionForHydratedAccount()
                 #if DEBUG
                 CoachTraceSupportUITestFixture.installIfRequested()
                 #endif
                 resolveActivationExperimentForHydratedAccountIfNeeded()
                 resolveReviewExperimentForHydratedAccountIfNeeded()
                 FlowEventLog.shared.recordActiveDay()
+                recordGrowthActivationDayIfNeeded()
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+            }
+            if !isUITesting {
+                await authManager.connectLocalGuestToCloud()
+                await uploadGrowthAggregatesIfConsented()
             }
         }
         .onChange(of: authManager.initialAccountHydrationState) { _, newState in
@@ -288,6 +326,7 @@ struct NoumApp: App {
                 }
                 #endif
                 FlowEventLog.shared.reloadForCurrentAccount()
+                reconcileFirstRepCompletionForHydratedAccount()
                 #if DEBUG
                 CoachTraceSupportUITestFixture.installIfRequested()
                 #endif
@@ -295,9 +334,11 @@ struct NoumApp: App {
                 resolveReviewExperimentForHydratedAccountIfNeeded()
                 if authManager.currentAccountID != nil {
                     FlowEventLog.shared.recordActiveDay()
+                    recordGrowthActivationDayIfNeeded()
                 }
                 if !isUITesting {
                     await authManager.connectLocalGuestToCloud()
+                    await uploadGrowthAggregatesIfConsented()
                 }
             }
         }
@@ -318,11 +359,14 @@ struct NoumApp: App {
             guard newPhase == .active else { return }
             if authManager.currentAccountID != nil {
                 FlowEventLog.shared.recordActiveDay()
+                recordGrowthActivationDayIfNeeded()
             }
             Task { @MainActor in
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+                await PremiumManager.shared.refreshStoreKitState()
                 if !isUITesting {
                     await authManager.connectLocalGuestToCloud()
+                    await uploadGrowthAggregatesIfConsented()
                 }
             }
             // Re-arm scheduled notifications with the latest streak +
@@ -388,6 +432,7 @@ struct NoumApp: App {
                     .interactiveDismissDisabled(true)
                     .onAppear {
                         recordActivationExperimentExposure(route: .fastLane)
+                        recordGrowthOnboardingStartedIfNeeded()
                     }
                 case .fullOnboarding:
                     // Full setup remains the only route that publishes a complete
@@ -403,6 +448,7 @@ struct NoumApp: App {
                     .interactiveDismissDisabled(true)
                     .onAppear {
                         recordActivationExperimentExposure(route: .fullOnboarding)
+                        recordGrowthOnboardingStartedIfNeeded()
                     }
                 case .appShell:
                     AppShellView()
@@ -569,6 +615,7 @@ struct NoumApp: App {
 
     private func completeFirstRunOnboarding() {
         guard coachingProfileStore.profile != nil else { return }
+        recordGrowthOnboardingCompletedIfNeeded()
         guard aiSettings.isCloudProcessingAllowed else {
             showFirstRepCloudProcessingConsent = true
             return
@@ -577,19 +624,48 @@ struct NoumApp: App {
     }
 
     private func prepareFirstRepLaunch() {
-        let preparation = AutoGuidedFirstRep.prepareLaunch(
+        guard let preparation = AutoGuidedFirstRep.prepareLaunch(
             hasCompletedOnboarding: true
-        )
-        var components = URLComponents(string: "noum://practice/timed")
-        if let token = preparation?.promptToken {
-            components?.queryItems = [
-                URLQueryItem(
-                    name: AppTab.timedPromptTokenQueryName,
-                    value: token.uuidString
-                )
-            ]
+        ),
+        let route = AutoGuidedFirstRep.routeURL(for: preparation) else {
+            // Production's automatic lane is disabled. Completing setup enters
+            // the app without silently opening a recorder; the spoken proof is
+            // offered by an explicit onboarding or Home CTA instead.
+            return
         }
-        DeepLinkRouter.shared.pending = components?.url
+        DeepLinkRouter.shared.pending = route
+    }
+
+    /// Repairs the narrow crash window where a qualifying rep reached the
+    /// account-scoped session store but the Timed screen did not get to commit
+    /// the separate Day-0 handoff marker. Account hydration must finish first,
+    /// otherwise a guest store could complete the wrong account's handoff.
+    @MainActor
+    private func reconcileFirstRepCompletionForHydratedAccount() {
+        guard authManager.initialAccountHydrationState == .ready,
+              let accountID = authManager.currentAccountID else { return }
+        _ = AutoGuidedFirstRep.reconcileQualifiedCompletion(
+            in: PracticeSessionStore.shared.sessions,
+            accountID: accountID
+        )
+        let growthEvents = FlowEventLog.shared.growthEvents()
+        guard DeepLinkRouter.shared.pending == nil,
+              let session = AutoGuidedFirstRep.pendingSummarySession(
+                  in: PracticeSessionStore.shared.sessions,
+                  accountID: accountID
+              ) else { return }
+        if growthEvents.contains(where: {
+            $0.name == .summaryViewed && $0.correlationID == session.id
+        }) {
+            AutoGuidedFirstRep.markSummaryPresented(
+                sessionID: session.id,
+                accountID: accountID
+            )
+            return
+        }
+        DeepLinkRouter.shared.pending = AutoGuidedFirstRep.pendingSummaryRoute(
+            sessionID: session.id
+        )
     }
 
     private func persistStructuredFirstValue(_ result: StructuredFirstValueResult) -> Bool {
@@ -616,6 +692,18 @@ struct NoumApp: App {
                 "wordCount": min(600, max(0, result.wordCount)),
             ]
         ))
+        recordGrowthOnce(
+            name: .firstValueDelivered,
+            correlationID: draft.correlationID,
+            entryPoint: .onboarding,
+            metrics: [.durationMs: min(86_400_000, max(0, elapsedMilliseconds))]
+        )
+        recordGrowthOnce(
+            name: .firstWrittenValueDelivered,
+            correlationID: draft.correlationID,
+            entryPoint: .onboarding,
+            metrics: [.durationMs: min(86_400_000, max(0, elapsedMilliseconds))]
+        )
         return true
     }
 
@@ -627,6 +715,107 @@ struct NoumApp: App {
     private func enterAppAfterStructuredValue() {
         holdsFastLaneResult = false
         firstRunPostValueChoice = .enterApp
+        recordGrowthOnboardingCompletedIfNeeded()
+    }
+
+    /// Bridges the existing account-local retention ledger into the stable
+    /// growth vocabulary without adding an identifier or a second analytics
+    /// store. Account activation is once per account; app activation is once
+    /// per local calendar day and carries only the bounded day index.
+    private func recordGrowthActivationDayIfNeeded(
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        guard authManager.currentAccountID != nil else { return }
+        let existing = FlowEventLog.shared.growthEvents()
+        let existingActivation = existing
+            .filter { $0.name == .accountActivated }
+            .map(\.createdAt)
+            .min()
+        if existingActivation == nil {
+            FlowEventGrowthEventSink.shared.record(
+                GrowthEvent(
+                    createdAt: now,
+                    name: .accountActivated,
+                    entryPoint: .onboarding,
+                    metrics: [.activeDayIndex: 0]
+                )
+            )
+        }
+        guard !existing.contains(where: {
+            $0.name == .appActivated && calendar.isDate($0.createdAt, inSameDayAs: now)
+        }) else { return }
+        let activeDayIndex = GrowthActivationDayIndex.elapsed(
+            from: existingActivation ?? now,
+            to: now,
+            calendar: calendar
+        )
+        FlowEventGrowthEventSink.shared.record(
+            GrowthEvent(
+                createdAt: now,
+                name: .appActivated,
+                entryPoint: .home,
+                metrics: [.activeDayIndex: activeDayIndex]
+            )
+        )
+    }
+
+    @MainActor
+    private func uploadGrowthAggregatesIfConsented() async {
+        guard authManager.initialAccountHydrationState == .ready,
+              authManager.currentAccountID != nil,
+              FlowEventLog.shared.aggregateConsent == .granted else { return }
+        do {
+            try await FlowEventLog.shared.uploadClosedGrowthAggregatePeriods(
+                transport: BackendGrowthAggregateTransport()
+            )
+        } catch {
+            // The flow ledger retains the anonymous checkpoint and exposes a
+            // waiting-to-retry state in Settings. Foreground activation is the
+            // bounded retry trigger; this path must never block app launch.
+        }
+    }
+
+    private func recordGrowthOnboardingStartedIfNeeded() {
+        recordGrowthOnce(
+            name: .onboardingStarted,
+            correlationID: growthOnboardingJourneyCorrelationID(),
+            entryPoint: .onboarding
+        )
+    }
+
+    private func recordGrowthOnboardingCompletedIfNeeded() {
+        recordGrowthOnce(
+            name: .onboardingCompleted,
+            correlationID: growthOnboardingJourneyCorrelationID(),
+            entryPoint: .onboarding
+        )
+    }
+
+    private func growthOnboardingJourneyCorrelationID() -> UUID {
+        GrowthJourneyCorrelation.onboarding(
+            existingEvents: FlowEventLog.shared.growthEvents(),
+            draftCorrelationID: coachingProfileStore.onboardingDraft?.correlationID
+        )
+    }
+
+    private func recordGrowthOnce(
+        name: GrowthEventName,
+        correlationID: UUID,
+        entryPoint: GrowthEntryPoint,
+        metrics: [GrowthMetric: Int] = [:]
+    ) {
+        guard !FlowEventLog.shared.growthEvents().contains(where: { $0.name == name }) else {
+            return
+        }
+        FlowEventGrowthEventSink.shared.record(
+            GrowthEvent(
+                correlationID: correlationID,
+                name: name,
+                entryPoint: entryPoint,
+                metrics: metrics
+            )
+        )
     }
 
     /// Routes an incoming `noum://` URL to the right surface.

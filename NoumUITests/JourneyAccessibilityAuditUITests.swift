@@ -65,7 +65,7 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
             verifiedContrastLabels: [
                 "Your rated baseline is forming.",
                 "Seen across 8 recent reps.",
-                "Did Noum help you move toward the speaker you want to be?",
+                "Did this help outside the app?",
                 "Yes",
                 "Not yet",
             ],
@@ -273,7 +273,7 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
     ) -> Bool {
         guard issue.auditType == .contrast,
               let element = issue.element,
-              ["Library", "Evidence, history, and account tools"].contains(element.label) else {
+              ["Library", "Evidence and history"].contains(element.label) else {
             return false
         }
 

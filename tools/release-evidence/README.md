@@ -8,7 +8,7 @@ that cannot be earned by simulator tests:
 - physical-device TestFlight QA;
 - operational launch completion.
 
-The TestFlight v3 artifact is an exact 14-surface, 77-check runtime contract;
+The TestFlight v3 artifact is an exact 14-surface, 84-check runtime contract;
 operational security, deployment, Apple configuration, upload, and triage proof
 remain in the separate launch artifact.
 

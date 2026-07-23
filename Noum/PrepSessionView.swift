@@ -234,15 +234,13 @@ struct PrepSessionView: View {
 
     // MARK: - Launchers
 
-    /// Resolve the rendered action again at tap time, then push the shared
-    /// practice destination. When a planned pressure/audience shape must fall
-    /// back to Timed, carry one category-bounded prompt so the destination
-    /// fulfills the card's rehearsal promise. We don't observe
-    /// completion in the MVP — the user navigates back to this view
-    /// after each rep finishes (SummaryView's Home button pops to
-    /// root; user re-enters prep via the home CTA if they want to
-    /// continue the sequence). A future pass can chain via sheet
-    /// presentation + completion handlers.
+    /// Resolve the rendered action again at tap time, then push the existing
+    /// practice surface through an explicit preparation route. When a planned
+    /// pressure/audience shape must fall back to Timed, carry one
+    /// category-bounded prompt so the destination fulfills the card's
+    /// rehearsal promise. The route stamps only presentation provenance onto
+    /// the resulting Summary; BigMomentStore remains the state owner, and Done
+    /// returns to this plan only while the same moment is still active.
     private func launch(step: PrepRepStep) {
         let imAvailable = IMModeAvailability.isAvailable
         let tapAvailability = NextActionModeAvailability(
@@ -253,19 +251,29 @@ struct PrepSessionView: View {
             modeAvailability: tapAvailability,
             imAvailable: imAvailable
         )
+        guard let moment = bigMomentStore.activeMoment else { return }
+
+        let destination: AppDestination
         if case .timedPractice = launch.destination,
-           let moment = bigMomentStore.activeMoment,
            let prompt = PrepSessionPlanner.timedFallbackPrompt(
                for: step.mode,
                category: moment.category
            ),
            let token = TimedPracticePromptHandoff.shared.offerToken(prompt) {
-            navigationPath.append(
-                AppDestination.timedPracticePrompt(token: token)
-            )
+            destination = .timedPracticePrompt(token: token)
         } else {
-            navigationPath.append(launch.destination)
+            destination = launch.destination
         }
+
+        guard let route = PreparationPracticeRoute(
+            momentID: moment.id,
+            destination: destination
+        ) else {
+            assertionFailure("Preparation planner produced an unsupported destination")
+            navigationPath.append(destination)
+            return
+        }
+        navigationPath.append(AppDestination.preparationPractice(route))
     }
 
     /// The stores remain the state owners. Reading the published consent here

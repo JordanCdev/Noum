@@ -947,7 +947,8 @@ struct AhCounterView: View {
                 xpEarned: result.xpEarned,
                 headline: result.headline,
                 insights: result.insights,
-                coachSummary: result.feedback
+                coachSummary: result.feedback,
+                categoryRatings: result.categories.persistedCategoryRatings
             )
             pushSummary(finalizedSessionID: finalizedSessionID)
         }

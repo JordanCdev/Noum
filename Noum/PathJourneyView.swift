@@ -2,6 +2,127 @@ import Foundation
 #if canImport(CoreLocation)
 import CoreLocation
 #endif
+
+/// Visual state for the Path screen's compact landmark component. This is a
+/// projection of `PathNodeStatus`, not a second progress owner.
+enum ProgressLandmarkState: String, Equatable {
+    case complete
+    case current
+    case upcoming
+
+    var label: String {
+        switch self {
+        case .complete: return "Complete"
+        case .current: return "Current"
+        case .upcoming: return "Upcoming"
+        }
+    }
+}
+
+/// View-only handoff model for Figma's `Progress/Landmark` component.
+/// Identity and copy remain sourced from the existing Path node registry.
+struct ProgressLandmarkPresentation: Identifiable, Equatable {
+    let id: String
+    let state: ProgressLandmarkState
+    let title: String
+    let detail: String
+
+    var accessibilityLabel: String {
+        "\(state.label) landmark, \(title). \(detail)"
+    }
+}
+
+/// One calm slice of the full path: the last proof, the active prescription,
+/// and the next landmark. The resolver intentionally owns no persistence and
+/// cannot unlock or relock anything.
+struct PathJourneyProgressProjection: Equatable {
+    let statusLine: String
+    let completed: ProgressLandmarkPresentation?
+    let current: ProgressLandmarkPresentation
+    let upcoming: ProgressLandmarkPresentation?
+
+    static func make(
+        statuses: [PathNodeStatus],
+        evidenceDays: Int,
+        currentGatingPhrase: String?
+    ) -> PathJourneyProgressProjection {
+        let evidenceDayCount = max(0, evidenceDays)
+        let evidenceLabel = evidenceDayCount == 1 ? "evidence day" : "evidence days"
+
+        guard !statuses.isEmpty else {
+            return PathJourneyProgressProjection(
+                statusLine: "Path ready · \(evidenceDayCount) \(evidenceLabel)",
+                completed: nil,
+                current: ProgressLandmarkPresentation(
+                    id: "path.first-step",
+                    state: .current,
+                    title: "Start your path",
+                    detail: "Complete one focused rep."
+                ),
+                upcoming: nil
+            )
+        }
+
+        let currentIndex = statuses.firstIndex(where: \PathNodeStatus.isCurrent)
+            ?? statuses.firstIndex(where: { !$0.isComplete })
+        let stageOrdinal = currentIndex.map { $0 + 1 } ?? statuses.count
+        let statusLine = "Stage \(stageOrdinal) of \(statuses.count) · \(evidenceDayCount) \(evidenceLabel)"
+
+        guard let currentIndex else {
+            return PathJourneyProgressProjection(
+                statusLine: statusLine,
+                completed: nil,
+                current: ProgressLandmarkPresentation(
+                    id: "path.complete",
+                    state: .complete,
+                    title: "Path complete",
+                    detail: "Keep applying the skill in real conversations."
+                ),
+                upcoming: nil
+            )
+        }
+
+        let currentStatus = statuses[currentIndex]
+        let completedStatus = statuses[..<currentIndex].last(where: \PathNodeStatus.isComplete)
+        let upcomingStatus = statuses.dropFirst(currentIndex + 1).first(where: { !$0.isComplete })
+
+        return PathJourneyProgressProjection(
+            statusLine: statusLine,
+            completed: completedStatus.map {
+                ProgressLandmarkPresentation(
+                    id: $0.id,
+                    state: .complete,
+                    title: $0.node.title,
+                    detail: $0.node.detail
+                )
+            },
+            current: ProgressLandmarkPresentation(
+                id: currentStatus.id,
+                state: .current,
+                title: currentStatus.node.title,
+                detail: evidenceSafeDetail(currentGatingPhrase ?? currentStatus.node.detail)
+            ),
+            upcoming: upcomingStatus.map {
+                ProgressLandmarkPresentation(
+                    id: $0.id,
+                    state: .upcoming,
+                    title: $0.node.title,
+                    detail: evidenceSafeDetail($0.node.detail)
+                )
+            }
+        )
+    }
+
+    /// Legacy node copy used game-like "unlock" language. Path presents an
+    /// evidence sequence, so the view projection removes only that suffix
+    /// without mutating the authoritative node registry or gating rules.
+    private static func evidenceSafeDetail(_ detail: String) -> String {
+        detail
+            .replacingOccurrences(of: " to unlock.", with: ".", options: .caseInsensitive)
+            .replacingOccurrences(of: " to unlock", with: "", options: .caseInsensitive)
+    }
+}
+
 #if canImport(SwiftUI)
 import SwiftUI
 
@@ -49,11 +170,10 @@ struct PathJourneyView: View {
     private var isDebugActive: Bool { debugDayOverride >= 0 }
 #endif
 
-    /// Days-driven landscape truth (System A). The artwork, header, and
-    /// consistency strip read THIS: the path is worn in by practiced days
-    /// — the habit — never by landmark counts. The coach's landmark
-    /// sequence renders separately in `landmarksCard` so the two
-    /// progressions never masquerade as one number.
+    /// Days-driven landscape truth (System A). The artwork and compact
+    /// evidence-day status read THIS: the path is worn in by practiced days
+    /// — the habit — never by landmark counts. The coach's node sequence is
+    /// projected separately so the two progressions never masquerade as one.
     private var snapshot: PracticeJourneySnapshot {
         let base = PracticeJourneySnapshot.make(from: sessionStore.progressEligibleSessions)
             .withDisplayedStreak(streakManager.currentStreak)
@@ -63,17 +183,6 @@ struct PathJourneyView: View {
         }
 #endif
         return base
-    }
-
-    /// The coach's landmark sequence (System B) — feeds the
-    /// "Trail landmarks" card only.
-    private var landmarkPresentation: PathJourneyPresentation {
-        PathJourneyPresentation.make(
-            statuses: pathProgress.statuses,
-            currentStreak: streakManager.currentStreak,
-            sessionCount: sessionStore.progressEligibleSessionCount,
-            currentGatingPhrase: pathProgress.currentNodeGatingPhrase
-        )
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
@@ -86,8 +195,8 @@ struct PathJourneyView: View {
 
     /// What the hero artwork renders. Identical to `snapshot` except for
     /// the one beat where the day-bloom holds the reveal at the last-seen
-    /// count; the header and consistency strip always read the live
-    /// snapshot so copy never lags the truth. The DEBUG slider wins —
+    /// count; the status line always reads the live snapshot so copy never
+    /// lags the truth. The DEBUG slider wins —
     /// it already owns `snapshot` wholesale.
     private var artworkSnapshot: PracticeJourneySnapshot {
 #if DEBUG
@@ -104,23 +213,12 @@ struct PathJourneyView: View {
         return sessionStore.progressEligibleSessions.contains { calendar.isDateInToday($0.date) }
     }
 
-    private var displayedStreak: Int {
-        PathConsistencyPresentation.displayedStreak(
-            practicedDays: snapshot.practicedDays,
-            rawStreak: snapshot.streak
+    private var progressProjection: PathJourneyProgressProjection {
+        PathJourneyProgressProjection.make(
+            statuses: pathProgress.statuses,
+            evidenceDays: snapshot.practicedDays,
+            currentGatingPhrase: pathProgress.currentNodeGatingPhrase
         )
-    }
-
-    /// Whole days since the most recent rep; nil when the user has never
-    /// practiced. Drives the why card's coach line — forward-framing only.
-    private var daysSinceLastSession: Int? {
-        guard let last = sessionStore.progressEligibleSessions.map(\.date).max() else { return nil }
-        let calendar = Calendar.current
-        return calendar.dateComponents(
-            [.day],
-            from: calendar.startOfDay(for: last),
-            to: calendar.startOfDay(for: Date())
-        ).day
     }
 
     private var whyContent: JourneyWhyContent? {
@@ -141,7 +239,7 @@ struct PathJourneyView: View {
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: Spacing.lg) {
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
                                 Text("Path")
                                     .font(Typography.screenTitle)
                                 Text(headerStateLine)
@@ -150,7 +248,7 @@ struct PathJourneyView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
 
-                            VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: Spacing.sm) {
                                 ZStack {
                                     PathJourneyArtwork(
                                         snapshot: artworkSnapshot,
@@ -179,24 +277,24 @@ struct PathJourneyView: View {
                                 }
                                 .frame(
                                     height: dynamicTypeSize.isAccessibilitySize
-                                        ? min(200, geometry.size.height * 0.27)
-                                        : min(248, geometry.size.height * 0.33)
+                                        ? min(176, geometry.size.height * 0.23)
+                                        : min(216, geometry.size.height * 0.28)
                                 )
                                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                                        .stroke(Color.white.opacity(0.55), lineWidth: 1)
+                                        .stroke(Color.white.opacity(0.38), lineWidth: 1)
                                 )
-                                .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 14, y: 8)
+                                .shadow(color: AppColor.brandBlue.opacity(0.06), radius: 8, y: 4)
 
-                                consistencyStrip
+                                journeyStatusLine
+                                ProgressLandmark(presentation: progressProjection.current)
                                 todayRow
+                                landmarkContextRows
                             }
 
                             whyCard
                                 .id("journey.why")
-
-                            landmarksCard
 
                             alongTheWayCard
 
@@ -207,9 +305,9 @@ struct PathJourneyView: View {
                             }
 #endif
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.top, 8)
-                        .padding(.bottom, 16)
+                        .padding(.horizontal, Spacing.screenH)
+                        .padding(.top, Spacing.xs)
+                        .padding(.bottom, Spacing.md)
                     }
                 }
             }
@@ -346,70 +444,34 @@ struct PathJourneyView: View {
     }
 #endif
 
-    /// Header subtitle — states the habit metaphor once, plainly. The
-    /// numbers live in the consistency strip; this line carries the idea.
+    /// Figma's target framing: Path is a proof-to-transfer sequence, not a
+    /// second score or a streak dashboard.
     private var headerStateLine: String {
-        if snapshot.practicedDays == 0 {
-            return "Build a steadier speaking habit, one rep at a time."
-        }
-        return "Your practice, next landmark, and reason for showing up."
+        "One journey from proof to real-world transfer."
     }
 
-    /// Replaces the old Path-% / Streak pills. The landscape is days, so
-    /// the number under it is days — "12 of the last 21" is the honest
-    /// phrasing for a rolling window (the count can drift down as old
-    /// days age out; a "Day 12" label that goes backwards would read as
-    /// punishment).
-    private var consistencyStrip: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    practiceDayCount
-                    pathStreakChip
-                }
-            } else {
-                HStack(spacing: 10) {
-                    practiceDayCount
-                    Spacer(minLength: Spacing.xs)
-                    pathStreakChip
-                }
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, Spacing.xs)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(consistencyAccessibilityLabel)
+    private var journeyStatusLine: some View {
+        Text(progressProjection.statusLine)
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Spacing.xxs)
+            .accessibilityLabel(progressProjection.statusLine.replacingOccurrences(of: "·", with: ","))
         .accessibilityIdentifier("journey.consistency")
     }
 
-    private var consistencyAccessibilityLabel: String {
-        let practiced = "\(snapshot.practicedDays) of the last 21 days practiced."
-        guard displayedStreak > 0 else { return practiced }
-        return "\(practiced) Current rhythm: \(displayedStreak) days."
-    }
-
-    private var practiceDayCount: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Text("\(snapshot.practicedDays)")
-                .font(Typography.figtreeNumeric(size: 32, relativeTo: .title2))
-                .foregroundStyle(.primary)
-            Text("of the last 21 days")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     @ViewBuilder
-    private var pathStreakChip: some View {
-        if displayedStreak > 0 {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("\(displayedStreak)-day rhythm")
-                    .font(Typography.caption.weight(.semibold))
+    private var landmarkContextRows: some View {
+        if progressProjection.completed != nil || progressProjection.upcoming != nil {
+            VStack(spacing: Spacing.xs) {
+                if let completed = progressProjection.completed {
+                    ProgressLandmark(presentation: completed)
+                }
+                if let upcoming = progressProjection.upcoming {
+                    ProgressLandmark(presentation: upcoming)
+                }
             }
-            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("journey.landmark.context")
         }
     }
 
@@ -418,47 +480,40 @@ struct PathJourneyView: View {
     @ViewBuilder
     private var todayRow: some View {
         if practicedToday {
-            HStack(spacing: 10) {
+            HStack(spacing: Spacing.xs) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.green.opacity(0.85))
+                    .foregroundStyle(AppColor.brandBlue)
                 Text("Today's rep is done.")
-                    .font(.subheadline.weight(.medium))
+                    .font(Typography.cardLabel)
                     .foregroundStyle(.primary)
                 Spacer()
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .frame(minHeight: 52)
+            .padding(.horizontal, Spacing.md)
+            .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("journey.today")
         } else {
-            let current = pathProgress.statuses.first(where: { !$0.isComplete })
+            let current = pathProgress.statuses.first(where: { $0.isCurrent })
+                ?? pathProgress.statuses.first(where: { !$0.isComplete })
             let destination = current?.node.actionDestination ?? AppDestination.practiceSelection
-            let title = current?.node.actionLabel ?? "Start today's rep"
-            let subtitle = current.map { "Build toward \($0.node.title)." } ?? "About two minutes."
+            let title = current == nil ? "Choose a practice" : "Start prescribed rep"
 
             NavigationLink(value: destination) {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.forward.circle.fill")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.78))
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                Text(title)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .padding(.horizontal, Spacing.md)
                 .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .background(AppColor.brandBlue, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .accessibilityLabel(title)
+            .accessibilityHint(current.map { "Opens the practice for \($0.node.title)." } ?? "Opens the practice library.")
             .accessibilityIdentifier("journey.today")
         }
     }
@@ -485,14 +540,14 @@ struct PathJourneyView: View {
                 }
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
-                .lineLimit(4)
+                .lineLimit(2)
 
                 HStack {
                     Spacer()
                     Button {
                         goalRefresh.requestReview()
                     } label: {
-                        Label("Review goal", systemImage: "scope")
+                        Label("Edit", systemImage: "pencil")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppColor.brandBlue.opacity(0.9))
                             .frame(minHeight: 44)
@@ -525,59 +580,6 @@ struct PathJourneyView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, Spacing.sm)
         .accessibilityIdentifier("journey.why")
-    }
-
-    /// The coach's sequence (System B), demoted to a position read: the
-    /// landmark you're walking toward, what opens it, and the two after
-    /// it. Never a percentage, never the landscape's truth.
-    private var landmarksCard: some View {
-        let statuses = pathProgress.statuses
-        let completedCount = statuses.filter(\.isComplete).count
-        let current = statuses.first(where: { !$0.isComplete })
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                NoumPathCharacter()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Next landmark")
-                            .font(Typography.headline)
-                            .foregroundStyle(AppColor.brandBlue.opacity(0.85))
-                        Spacer()
-                        Text("\(completedCount) / \(statuses.count) landmarks")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let current {
-                        Text(current.node.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text(pathProgress.currentNodeGatingPhrase ?? landmarkPresentation.nextMilestoneLabel)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        if current.progress > 0 {
-                            ShimmerProgressBar(progress: current.progress, tint: AppColor.brandBlue, animated: false)
-                                .padding(.top, 2)
-                        }
-
-                    } else {
-                        Text("Current path complete.")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text(landmarkPresentation.summaryLine)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.vertical, Spacing.sm)
-        .accessibilityIdentifier("journey.landmarks")
     }
 
     /// The weekly challenge and skill milestones, demoted into one quiet
@@ -760,36 +762,133 @@ struct PathJourneyView: View {
     }
 }
 
-/// Inline Noum-character glyph used as the narrator anchor on the path screen.
-/// Composed from `waveform`-family SF Symbols at scale + opacity — no illustration,
-/// per the brand rule. Brand-blue tint signals the "you progressing" register.
+/// SwiftUI counterpart of Figma `Progress/Landmark` (`31:189`). The component
+/// communicates state with icon, label, surface, and border so colour is never
+/// the only cue. It is deliberately view-only; `PathProgressManager` remains
+/// the sole owner of unlock truth.
 @available(iOS 17.0, macOS 12.0, *)
-private struct NoumPathCharacter: View {
+struct ProgressLandmark: View {
+    let presentation: ProgressLandmarkPresentation
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibilityLayout
+            } else {
+                standardLayout
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(presentation.state == .current ? Spacing.md : Spacing.sm)
+        .background(
+            landmarkSurface,
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .strokeBorder(
+                    landmarkBorder,
+                    lineWidth: presentation.state == .current ? 2 : 1
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityIdentifier("journey.landmark.\(presentation.state.rawValue)")
+    }
+
+    private var standardLayout: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            stateIcon
+            landmarkCopy
+        }
+    }
+
+    private var accessibilityLayout: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                stateIcon
+                Text(presentation.state.label)
+                    .font(Typography.caption)
+                    .foregroundStyle(landmarkAccent)
+            }
+            Text(presentation.title)
+                .font(Typography.cardLabel)
+                .foregroundStyle(.primary)
+            Text(presentation.detail)
+                .font(Typography.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var landmarkCopy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(presentation.state.label)
+                .font(Typography.captionSmall)
+                .foregroundStyle(landmarkAccent)
+            Text(presentation.title)
+                .font(Typography.cardLabel)
+                .foregroundStyle(.primary)
+            Text(presentation.detail)
+                .font(Typography.body)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var stateIcon: some View {
         ZStack {
             Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            AppColor.brandBlue.opacity(0.18),
-                            AppColor.brandBlueLight.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(iconSurface)
                 .frame(width: 40, height: 40)
-
-            Image(systemName: "waveform")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(AppColor.brandBlue.opacity(0.92))
-                .symbolRenderingMode(.hierarchical)
+            Image(systemName: iconName)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(iconForeground)
         }
-        .overlay(
-            Circle()
-                .strokeBorder(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
-        )
+        .frame(width: 44, height: 44)
         .accessibilityHidden(true)
+    }
+
+    private var iconName: String {
+        switch presentation.state {
+        case .complete: return "checkmark"
+        case .current: return "arrow.right"
+        case .upcoming: return "circle.dashed"
+        }
+    }
+
+    private var landmarkAccent: Color {
+        presentation.state == .upcoming ? Color.secondary : AppColor.brandBlue
+    }
+
+    private var iconSurface: Color {
+        switch presentation.state {
+        case .current: return AppColor.brandBlue
+        case .complete: return AppColor.brandBlue.opacity(0.12)
+        case .upcoming: return AppColor.innerSurface
+        }
+    }
+
+    private var iconForeground: Color {
+        presentation.state == .current ? .white : landmarkAccent
+    }
+
+    private var landmarkSurface: Color {
+        switch presentation.state {
+        case .current: return AppColor.lightGradientStart
+        case .complete, .upcoming: return AppColor.cardBackground
+        }
+    }
+
+    private var landmarkBorder: Color {
+        switch presentation.state {
+        case .current: return AppColor.brandBlue
+        case .complete: return AppColor.brandBlue.opacity(0.14)
+        case .upcoming: return AppColor.subtleBorder
+        }
     }
 }
 

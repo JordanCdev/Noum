@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "templateStatus": "TEMPLATE_NOT_EXPERIMENT_EVIDENCE",
+  "experiment": {
+    "experimentID": "",
+    "appStoreConnectExperimentDeepLink": "",
+    "hypothesis": "Changing only the first screenshot message will improve first-time download conversion without changing the product promise.",
+    "platform": "iOS",
+    "appVersion": "",
+    "sourceGitCommit": "",
+    "storefronts": [
+      "GB",
+      "US"
+    ],
+    "controlArmID": "default",
+    "treatmentArmIDs": [
+      "evidence",
+      "pressure",
+      "plan"
+    ],
+    "primaryMetric": {
+      "denominator": "uniqueImpressions",
+      "numerator": "firstTimeDownloads"
+    },
+    "decisionRequirements": {
+      "minimumObservationWindowDays": 7,
+      "maximumObservationWindowDays": 90,
+      "minimumUniqueImpressionsPerArmPerStorefront": null,
+      "minimumAppleConfidenceBasisPointsForWinner": 9000,
+      "requireSingleAppVersion": true,
+      "requireStorefrontBreakdown": true,
+      "requireAppStoreConnectResultExport": true,
+      "requireIndependentVerification": true
+    },
+    "startedAtISO8601": "",
+    "endedAtISO8601": ""
+  },
+  "results": {
+    "rows": [],
+    "armSummaries": [],
+    "appStoreConnectResultExportPath": "",
+    "appStoreConnectResultExportSha256": "",
+    "decision": "pending",
+    "selectedArmID": "",
+    "decisionRationale": "",
+    "decidedAtISO8601": "",
+    "decidedByID": "",
+    "verifiedAtISO8601": "",
+    "verifiedByID": "",
+    "decisionRecordPath": "",
+    "decisionRecordSha256": ""
+  }
+}

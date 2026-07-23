@@ -29,6 +29,7 @@ KNOWN_STAGES = {
     "coach.accepted",
     "coach.classified",
     "coach.goalResolved",
+    "coach.memoryLoaded",
     "coach.evidenceLoaded",
     "coach.rubricSelected",
     "coach.promptAssembled",
@@ -37,6 +38,7 @@ KNOWN_STAGES = {
     "coach.providerRetried",
     "coach.providerRefused",
     "coach.providerFinished",
+    "coach.streamFirstBuffered",
     "coach.streamFirstVisible",
     "coach.gatePassed",
     "coach.gateRepaired",
@@ -47,6 +49,15 @@ KNOWN_STAGES = {
     "coach.uiCommitted",
     "coach.terminal",
 }
+
+SEMANTIC_STAGE_PATH = (
+    "coach.classified",
+    "coach.goalResolved",
+    "coach.memoryLoaded",
+    "coach.evidenceLoaded",
+    "coach.rubricSelected",
+    "coach.promptAssembled",
+)
 
 
 class TraceReplayError(ValueError):
@@ -115,6 +126,39 @@ def validate_and_replay(bundle: dict[str, Any]) -> dict[str, Any]:
         raise TraceReplayError("coach.terminal must be the final recorded stage")
     if stages[0] != "coach.accepted":
         raise TraceReplayError("coach.accepted must open the replayable path")
+
+    # v1 support bundles created before memory had its own trace stage remain
+    # replayable. Once a producer emits the additive memory stage, however, it
+    # is declaring the ordered semantic contract. Early terminal paths may
+    # contain only a prefix, so validate the stages present rather than
+    # requiring work that truthfully never ran.
+    if "coach.memoryLoaded" in stages:
+        required_prefix = (
+            "coach.classified",
+            "coach.goalResolved",
+            "coach.memoryLoaded",
+        )
+        missing_prefix = [stage for stage in required_prefix if stage not in stages]
+        if missing_prefix:
+            raise TraceReplayError(
+                "memory stage requires classified and goalResolved first: "
+                + ", ".join(missing_prefix)
+            )
+        present_semantic = [
+            stage for stage in SEMANTIC_STAGE_PATH if stage in stages
+        ]
+        duplicates = [stage for stage in present_semantic if stages.count(stage) != 1]
+        if duplicates:
+            raise TraceReplayError(
+                "semantic path must contain each recorded stage once: "
+                + ", ".join(duplicates)
+            )
+        semantic_indexes = [stages.index(stage) for stage in present_semantic]
+        if semantic_indexes != sorted(semantic_indexes):
+            raise TraceReplayError(
+                "semantic stages must follow classified, goal, memory, evidence, rubric, prompt order"
+            )
+
     for required in ("coach.persisted", "coach.uiCommitted"):
         if required not in stages:
             raise TraceReplayError(f"terminal path is missing {required}")

@@ -257,11 +257,6 @@ enum CoachReplyPipeline {
         }
         let profileStore = CoachingProfileStore.shared
         let coachVoiceSnapshot = profileStore.profile?.chosenStyleGoal
-        Self.recordTrace(
-            coachID,
-            stage: CoachTraceStage.goalResolved,
-            reason: "goal=\(coachVoiceSnapshot?.rawValue ?? "unset") provenance=\(coachVoiceSnapshot == nil ? "none" : "explicit-choice")"
-        )
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
             structuredReplyShapeEnabled: CoachContextBuilder.structuredAskNoumReplyShapeEnabled(),
@@ -271,12 +266,6 @@ enum CoachReplyPipeline {
         let sessions = PracticeProgressEligibility.eligibleSessions(
             in: sessionsOverride ?? PracticeSessionStore.shared.sessions
         )
-        let coachMemory: CoachMemory?
-        if let coachMemoryOverride {
-            coachMemory = coachMemoryOverride()
-        } else {
-            coachMemory = CoachMemoryStore.shared.currentMemory
-        }
         let recentProofs = ProofMomentStore.shared.recent(
             limit: 3,
             compatibleWith: profileStore.profile?.chosenStyleGoal
@@ -303,6 +292,26 @@ enum CoachReplyPipeline {
             numerics: [
                 "historyRows": history.count,
                 "userCharacters": latestUserTurn?.count ?? 0,
+            ]
+        )
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.goalResolved,
+            reason: "goal=\(coachVoiceSnapshot?.rawValue ?? "unset") provenance=\(coachVoiceSnapshot == nil ? "none" : "explicit-choice")"
+        )
+        let coachMemory: CoachMemory?
+        if let coachMemoryOverride {
+            coachMemory = coachMemoryOverride()
+        } else {
+            coachMemory = CoachMemoryStore.shared.currentMemory
+        }
+        Self.recordTrace(
+            coachID,
+            stage: CoachTraceStage.memoryLoaded,
+            reason: "memory=\(coachMemory == nil ? "none" : "bounded-case")",
+            numerics: [
+                "hasMemory": coachMemory == nil ? 0 : 1,
+                "memoryEvidence": coachMemory?.evidenceCount ?? 0,
             ]
         )
         let preferredTier = CoachPromptBundle.preferredProviderTier(
@@ -478,7 +487,8 @@ enum CoachReplyPipeline {
         var firstVisibleAt: Date?
         var firstVisibleSource: CoachFirstVisibleTokenSource?
         var immediateCoachReadShown = false
-        var streamObserved = false
+        var streamFirstBufferedRecorded = false
+        var streamFirstVisibleRecorded = false
         if let assessment {
             AICallDiagnostics.record(
                 surface: "Coach judgement pass",
@@ -654,22 +664,22 @@ enum CoachReplyPipeline {
                     }
                 },
                 onStreamedPartialVisible: { partialText in
-                    if !streamObserved {
-                        streamObserved = true
-                        Self.recordTrace(
-                            coachID,
-                            stage: CoachTraceStage.streamFirstVisible,
-                            reason: CoachBrainFlags.streamRawPartialsToUI
-                                ? "first streamed partial reached UI"
-                                : "first streamed partial buffered until gates"
-                        )
-                    }
                     // Withhold raw un-vetted provider tokens from the visible row
                     // unless explicitly opted in. Default off means the user sees
                     // the local deterministic read while the model verbalises, then
                     // the committed (gate-approved) final — never a rich draft that
                     // is silently downgraded to a shorter substituted final.
-                    guard CoachBrainFlags.streamRawPartialsToUI else { return }
+                    guard CoachBrainFlags.streamRawPartialsToUI else {
+                        if !streamFirstBufferedRecorded {
+                            streamFirstBufferedRecorded = true
+                            Self.recordTrace(
+                                coachID,
+                                stage: CoachTraceStage.streamFirstBuffered,
+                                reason: "first streamed partial buffered until gates"
+                            )
+                        }
+                        return
+                    }
                     let streamedVisibleAt = Date()
                     let streamedTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt)
                     let streamedFirstVisibleSource = firstVisibleSource ?? CoachFirstVisibleTokenSource.streamedProviderPartial
@@ -700,6 +710,14 @@ enum CoachReplyPipeline {
                         metadata: streamedMetadata,
                         expected: replyLease
                     ) {
+                        if !streamFirstVisibleRecorded {
+                            streamFirstVisibleRecorded = true
+                            Self.recordTrace(
+                                coachID,
+                                stage: CoachTraceStage.streamFirstVisible,
+                                reason: "first streamed partial reached UI"
+                            )
+                        }
                         if firstVisibleAt == nil {
                             firstVisibleAt = streamedVisibleAt
                             firstVisibleSource = .streamedProviderPartial

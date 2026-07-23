@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 
@@ -59,15 +60,35 @@ struct PostRepVerdictContent: Equatable {
         fixBullets: [WhatToImproveCard.Bullet],
         proof: ProofMoment?,
         isMinimalEffort: Bool,
-        deliveryReadLine: String? = nil
+        deliveryReadLine: String? = nil,
+        sourceDuration: TimeInterval? = nil
     ) -> PostRepVerdictContent {
         PostRepVerdictContent(
             readText: readText(note: note, coachNote: coachNote, isMinimalEffort: isMinimalEffort),
-            provenanceLabel: nil,
+            provenanceLabel: verifiedSourceLabel(
+                proof: proof,
+                sourceDuration: sourceDuration
+            ),
             thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will make the next read clearer." : nil,
             deliveryReadLine: isMinimalEffort ? nil : deliveryReadLine,
             win: isMinimalEffort ? nil : win(proof: proof, bullets: winBullets),
             fix: isMinimalEffort ? nil : fix(coachNote: coachNote, bullets: fixBullets)
+        )
+    }
+
+    private static func verifiedSourceLabel(
+        proof: ProofMoment?,
+        sourceDuration: TimeInterval?
+    ) -> String? {
+        guard proof != nil else { return nil }
+        guard let sourceDuration, sourceDuration.isFinite, sourceDuration > 0 else {
+            return "Source: original transcript"
+        }
+        let totalSeconds = Int(sourceDuration.rounded())
+        return String(
+            format: "Source: original transcript · %d:%02d",
+            totalSeconds / 60,
+            totalSeconds % 60
         )
     }
 
@@ -161,12 +182,60 @@ struct PostRepDebriefVisibility: Equatable {
 
     static func resolve(
         content: PostRepVerdictContent,
-        hasReviewIntervention: Bool = false
+        hasReviewIntervention: Bool = false,
+        suppressesNextMove: Bool = false
     ) -> PostRepDebriefVisibility {
         PostRepDebriefVisibility(
             showsWhatHeld: content.win != nil,
-            showsNextMove: content.fix != nil || hasReviewIntervention
+            showsNextMove: !suppressesNextMove
+                && (content.fix != nil || hasReviewIntervention)
         )
+    }
+}
+
+/// Keeps the first-pass receipt readable without throwing away the fuller
+/// coaching record. Summary's Details disclosure retains the unabridged read;
+/// this projection only chooses the one observation and one action shown
+/// before the user asks for depth.
+@available(iOS 17.0, *)
+enum PostRepDebriefCopy {
+    static func conciseObservation(from text: String) -> String {
+        firstBoundedSentence(in: text)
+    }
+
+    static func prescribedAction(from fix: PostRepVerdictContent.Fix?) -> String? {
+        guard let fix else { return nil }
+        let preferred = fix.nextMove?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source: String
+        if let preferred, !preferred.isEmpty {
+            source = preferred
+        } else {
+            source = fix.headline
+        }
+        let result = firstBoundedSentence(in: source)
+        return result.isEmpty ? nil : result
+    }
+
+    private static func firstBoundedSentence(in text: String, limit: Int = 160) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        var firstSentence: String?
+        trimmed.enumerateSubstrings(
+            in: trimmed.startIndex..<trimmed.endIndex,
+            options: [.bySentences, .substringNotRequired]
+        ) { _, range, _, stop in
+            firstSentence = String(trimmed[range])
+            stop = true
+        }
+
+        let sentence = (firstSentence ?? trimmed)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard sentence.count > limit else { return sentence }
+
+        let prefix = String(sentence.prefix(limit))
+        let boundary = prefix.lastIndex(where: { $0.isWhitespace }) ?? prefix.endIndex
+        return String(prefix[..<boundary]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }
 
@@ -187,26 +256,31 @@ struct PostRepDebriefCard: View {
     var revisedChange: CoachCourseChange? = nil
     var reviewIntervention: CoachIntervention? = nil
     var onReview: (() -> Void)? = nil
+    var suppressesNextMove = false
+    var observationOverride: String? = nil
 
     private var visibility: PostRepDebriefVisibility {
-        .resolve(content: content, hasReviewIntervention: reviewIntervention != nil)
+        .resolve(
+            content: content,
+            hasReviewIntervention: reviewIntervention != nil,
+            suppressesNextMove: suppressesNextMove
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            if !visibility.showsWhatHeld && !visibility.showsNextMove {
-                coachRead
-            }
-
             if visibility.showsWhatHeld, let win = content.win {
                 whatHeld(win)
                     .accessibilityIdentifier("summary.win.card")
+
+                Divider()
             }
 
+            coachRead
+                .accessibilityIdentifier("summary.coachRead")
+
             if visibility.showsNextMove {
-                if visibility.showsWhatHeld {
-                    Divider()
-                }
+                Divider()
                 nextMove
                     .accessibilityIdentifier("summary.fix.card")
             }
@@ -228,6 +302,8 @@ struct PostRepDebriefCard: View {
 
     private var coachRead: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
+            debriefHeading("One observation", symbol: "text.magnifyingglass", tint: AppColor.brandBlue)
+
             if let change = revisedChange {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "arrow.triangle.2.circlepath")
@@ -244,18 +320,10 @@ struct PostRepDebriefCard: View {
                 .accessibilityIdentifier("summary.revisedRead.card")
             }
 
-            Text(content.readText)
+            Text(observationCopy)
                 .font(Typography.body)
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            if let deliveryLine = content.deliveryReadLine {
-                Text(deliveryLine)
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Delivery read: \(deliveryLine)")
-            }
 
             if let copy = content.thinEvidenceCopy {
                 Text(copy)
@@ -266,14 +334,26 @@ struct PostRepDebriefCard: View {
         }
     }
 
+    private var observationCopy: String {
+        if let observationOverride = observationOverride?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !observationOverride.isEmpty {
+            return observationOverride
+        }
+        if let win = content.win, win.quoteIsVerified {
+            let boundedClaim = PostRepDebriefCopy.conciseObservation(from: win.headline)
+            if !boundedClaim.isEmpty { return boundedClaim }
+        }
+        return PostRepDebriefCopy.conciseObservation(from: content.readText)
+    }
+
     private func whatHeld(_ win: PostRepVerdictContent.Win) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            debriefHeading("What held", symbol: "checkmark.circle.fill", tint: AppColor.positive)
-
-            Text(win.headline)
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+            debriefHeading(
+                win.quoteIsVerified ? "Verified from this rep" : "What held",
+                symbol: "quote.bubble.fill",
+                tint: AppColor.positive
+            )
 
             if let quote = win.quote, !quote.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
@@ -282,7 +362,7 @@ struct PostRepDebriefCard: View {
                         .foregroundStyle(AppColor.textPrimary.opacity(0.86))
                         .fixedSize(horizontal: false, vertical: true)
                     if win.quoteIsVerified {
-                        Text("Your words from this rep")
+                        Text(content.provenanceLabel ?? "Source: original transcript")
                             .font(Typography.captionSmall)
                             .foregroundStyle(AppColor.textSecondary)
                     }
@@ -293,6 +373,13 @@ struct PostRepDebriefCard: View {
                         .fill(AppColor.positive.opacity(0.55))
                         .frame(width: 3)
                 }
+            }
+
+            if win.quote?.isEmpty != false {
+                Text(win.headline)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let support = win.support, !support.isEmpty {
@@ -309,15 +396,11 @@ struct PostRepDebriefCard: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             debriefHeading("Next move", symbol: "arrow.up.right", tint: AppColor.caution)
 
-            if let fix = content.fix {
-                Text(fix.headline)
+            if let action = PostRepDebriefCopy.prescribedAction(from: content.fix) {
+                Text(action)
                     .font(Typography.body.weight(.semibold))
                     .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let evidence = fix.evidence {
-                    fixEvidence(evidence)
-                }
             }
 
             if let reviewIntervention, let onReview {
@@ -332,11 +415,6 @@ struct PostRepDebriefCard: View {
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("summary.interventionReview.cta")
                     .accessibilityHint("Opens Ask Noum to review whether the active focus is working.")
-            } else if let next = content.fix?.nextMove, !next.isEmpty {
-                Text(next)
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -358,32 +436,6 @@ struct PostRepDebriefCard: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    @ViewBuilder
-    private func fixEvidence(_ evidence: PostRepVerdictContent.Fix.Evidence) -> some View {
-        switch evidence {
-        case .text(let text):
-            Text(text)
-                .font(Typography.caption)
-                .foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        case .fillerChips(let chips):
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Spacing.xs) {
-                    ForEach(chips, id: \.word) { chip in
-                        Text("\"\(chip.word)\" · \(chip.count)")
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.textSecondary)
-                            .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, 6)
-                            .background(AppColor.tagBackground, in: Capsule())
-                    }
-                }
-            }
-            .accessibilityLabel(
-                chips.map { "\($0.word), \($0.count)" }.joined(separator: "; ")
-            )
-        }
-    }
 }
 
 // MARK: - Bottom exit panel

@@ -108,7 +108,6 @@ struct SettingsView: View {
     @State private var isBackendConfigured = false
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @State private var showCoachingProfile = false
-    @State private var showBigMomentIntake = false
     @State private var showPaywall = false
     @State private var showLocalePicker = false
     @State private var showYourData = false
@@ -145,13 +144,23 @@ struct SettingsView: View {
                 Section {
                     practiceDifficultyRow
                     dailyGoalCard
+                } header: {
+                    SettingsSectionLabel(title: "Practice")
+                }
+
+                Section {
                     practiceVoiceCuesRow
                     fillerHighlightRow
                     pressureModeRow
+                } header: {
+                    SettingsSectionLabel(title: "During reps")
+                }
+
+                Section {
                     practiceLanguageRow
                     soundscapeRow
                 } header: {
-                    SettingsSectionLabel(title: "Practice")
+                    SettingsSectionLabel(title: "Language & sound")
                 }
 
                 Section {
@@ -239,11 +248,8 @@ struct SettingsView: View {
         .sheet(isPresented: $showCoachingProfile) {
             CoachingOnboardingView()
         }
-        .sheet(isPresented: $showBigMomentIntake) {
-            BigMomentIntakeView()
-        }
         .sheet(isPresented: $showPaywall) {
-            PaywallView()
+            PaywallView(entryPoint: .settings)
         }
         .sheet(isPresented: $showYourData) {
             NavigationStack {
@@ -708,7 +714,7 @@ struct SettingsView: View {
     private var practiceVoiceCuesRow: some View {
         SettingsToggleRow(
             title: "Voice cues",
-            subtitle: "Read replies aloud during Conversation Practice.",
+            subtitle: "Read Conversation replies aloud.",
             isOn: $imVoicePlaybackSettings.isEnabled,
             accessibilityHint: "Enables spoken responses during Conversation Practice."
         )
@@ -716,10 +722,10 @@ struct SettingsView: View {
 
     private var fillerHighlightRow: some View {
         SettingsToggleRow(
-            title: "Real-time filler highlight",
+            title: "Filler cue",
             subtitle: micDisabledForFillerHighlight
                 ? "Microphone access is required for live filler detection."
-                : "Plays a soft cue and pulse when a filler word is detected.",
+                : "Pulse when a filler is detected.",
             isOn: $practiceSettings.fillerAlertSoundEnabled,
             isDisabled: micDisabledForFillerHighlight,
             disabledReason: micDisabledForFillerHighlight ? "Mic access blocked" : nil,
@@ -730,7 +736,7 @@ struct SettingsView: View {
     private var pressureModeRow: some View {
         SettingsToggleRow(
             title: "Pressure mode",
-            subtitle: "One-take reps, shorter prep, and a rated finish across exercises.",
+            subtitle: "One take with shorter prep.",
             isOn: $practiceSettings.pressureModeEnabled,
             accessibilityHint: "Adds time pressure and rating to every exercise."
         )
@@ -771,14 +777,31 @@ struct SettingsView: View {
     }
 
     private var upcomingMomentRow: some View {
-        SettingsNavRow(
-            title: "Upcoming moment",
-            value: bigMomentStore.activeMoment?.title,
-            icon: "calendar.badge.clock",
-            accessibilityHint: "Set or update the important moment you are preparing for."
-        ) {
-            showBigMomentIntake = true
+        NavigationLink(value: AppDestination.bigMomentIntake) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 22)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Prepare for a real moment")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                    if let title = bigMomentStore.activeMoment?.title, !title.isEmpty {
+                        Text(title)
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 44)
         }
+        .accessibilityLabel("Prepare for a real moment")
+        .accessibilityValue(bigMomentStore.activeMoment?.title ?? "No moment saved")
+        .accessibilityHint("Set or update the important moment you are preparing for.")
     }
 
     private var practiceCard: some View {
@@ -889,14 +912,7 @@ struct SettingsView: View {
                 showCoachingProfile = true
             }
 
-            SettingsNavRow(
-                title: "Upcoming moment",
-                value: bigMomentStore.activeMoment?.title,
-                icon: "calendar.badge.clock",
-                accessibilityHint: "Set or update the high-stakes moment you are preparing for."
-            ) {
-                showBigMomentIntake = true
-            }
+            upcomingMomentRow
         }
     }
 
@@ -1407,6 +1423,44 @@ struct SettingsView: View {
 
             Divider()
 
+            Toggle(isOn: Binding(
+                get: { flowEvents.aggregateConsent == .granted },
+                set: { enabled in
+                    flowEvents.setAggregateConsent(enabled ? .granted : .denied)
+                    guard enabled else { return }
+                    Task { @MainActor in
+                        try? await flowEvents.uploadClosedGrowthAggregatePeriods(
+                            transport: BackendGrowthAggregateTransport()
+                        )
+                    }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Share product analytics")
+                        .font(.body.weight(.medium))
+                    Text("Sends daily totals for feature use, purchases, and estimated AI cost. Never speech, transcripts, prompts, or account identifiers.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(AppColor.brandBlue)
+            .accessibilityHint("Controls consent for content-free first-party aggregate analytics.")
+
+            if flowEvents.aggregateConsent == .granted {
+                Text(aggregateUploadStatusText)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(
+                        flowEvents.aggregateUploadStatus == .waitingToRetry
+                            ? AppColor.warning
+                            : .secondary
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("settings.productAnalytics.status")
+            }
+
+            Divider()
+
             SettingsNavRow(
                 title: "Your data",
                 icon: "tray.full.fill",
@@ -1432,6 +1486,15 @@ struct SettingsView: View {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
         #endif
+    }
+
+    private var aggregateUploadStatusText: String {
+        switch flowEvents.aggregateUploadStatus {
+        case .idle: return "Daily totals will upload after each closed day."
+        case .uploading: return "Uploading a bounded daily total…"
+        case .uploaded: return "Daily product totals are up to date."
+        case .waitingToRetry: return "Could not connect. Noum will retry when the app next becomes active."
+        }
     }
 
     // MARK: - Account Card
@@ -1560,6 +1623,34 @@ struct SettingsView: View {
 
     private var aboutCard: some View {
         cardContainer(spacing: Spacing.sm) {
+            NavigationLink {
+                HowNoumCoachesView()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "checkmark.seal")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("How Noum coaches")
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text("Evidence, uncertainty, and your controls")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings.howNoumCoaches")
+            .accessibilityHint("Explains how Noum uses evidence and what it cannot infer.")
+
+            Divider()
+
             SettingsStatusRow(
                 title: "Version",
                 value: appVersionString,
@@ -2521,7 +2612,8 @@ struct SettingsView: View {
                 xpEarned: evaluation.xpEarned,
                 headline: evaluation.headline,
                 insights: evaluation.insights,
-                coachSummary: evaluation.feedback
+                coachSummary: evaluation.feedback,
+                categoryRatings: evaluation.categories.persistedCategoryRatings
             )
         )
 

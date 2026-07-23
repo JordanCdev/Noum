@@ -25,17 +25,7 @@ struct HeroScoreCard: View {
     /// on a rep the user never really gave is a lie. Opt-in, default false so
     /// every existing call site renders the normal score ring unchanged.
     var belowEvidenceFloor: Bool = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    // Verdict reveal — the ring draws 0 → score/10 and the number rolls up
-    // alongside it. The score was computed from the rep that ended seconds
-    // ago, so drawing it in IS the reveal of a real result, not decoration.
-    // One-shot per card lifetime (`hasRevealed`) so a push/pop or tab
-    // round-trip never replays the reveal. Reduce Motion: static fill +
-    // immediate number; the haptic is the only beat.
-    @State private var revealedScore: Int = 0
-    @State private var ringFill: Double = 0
-    @State private var hasRevealed = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Optional IM tone-drill SOLVED ribbon. When non-nil, the card
     /// renders a quiet mode-tinted capsule between the score ring and the
@@ -84,176 +74,173 @@ struct HeroScoreCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Mode label
-            Text(practiceTitle)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.8))
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Results")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .accessibilityAddTraits(.isHeader)
 
-            // Score ring — white-on-gradient (verdict hero register).
-            // Draws in from zero on appear (see `revealScore`).
-            ZStack {
-                Circle()
-                    .stroke(.white.opacity(0.25), lineWidth: 8)
-                    .frame(width: 120, height: 120)
-
-                Circle()
-                    .trim(from: 0, to: belowEvidenceFloor ? 0 : ringFill)
-                    .stroke(.white, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 120, height: 120)
-                    .rotationEffect(.degrees(-90))
-
-                if belowEvidenceFloor {
-                    VStack(spacing: 2) {
-                        Text("—")
-                            .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
-                            .foregroundStyle(.white)
-                        Text("too short")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                } else {
-                    VStack(spacing: 2) {
-                        Text("\(revealedScore)")
-                            .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
-                            .foregroundStyle(.white)
-                            .contentTransition(.numericText(value: Double(revealedScore)))
-                        Text("/10")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
+                    Text(practiceTitle)
+                        .font(Typography.headline)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            // VoiceOver always reads the final score — never an animated
-            // intermediate frame.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(belowEvidenceFloor ? "Too short to score" : "Score \(scoreValue) out of 10")
-            .onAppear(perform: revealScore)
-            // Settle-beat hygiene: if the user leaves before the ring
-            // settles, the pending haptic+thump must not fire over the
-            // next screen.
-            .onDisappear { settleWork?.cancel(); settleWork = nil }
-            // Defensive: the score is static in every current flow (the
-            // summary payload is pushed only after analysis resolves), but
-            // if it ever changes post-reveal, snap silently — a stale
-            // number is a lie, and a second reveal would be ceremony the
-            // moment didn't earn.
-            .onChange(of: scoreValue) { _, newValue in
-                guard hasRevealed else { return }
-                revealedScore = newValue
-                ringFill = Double(newValue) / 10.0
+
+                Spacer(minLength: Spacing.xs)
+
+                scoreSummary
             }
 
-            // SOLVED ribbon (renders only when wired). Visual register
-            // stays deliberately restrained — quiet mode-tinted capsule
-            // in line with the existing "Toward your <voice>" chip on
-            // the `LookingAheadCard` and the "Best this week" chip on
-            // the per-mode breakdown cards. The score ring and headline
-            // are the loud signals; this is the "and you also just
-            // closed something the coach has been working on with you"
-            // tag that makes the moment unmissable without competing.
             if let label = toneDrillResolvedRibbonLabel {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.caption.weight(.semibold))
-                    Text(label)
-                        .font(.caption.weight(.semibold))
-                        .multilineTextAlignment(.center)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.white.opacity(0.16), in: Capsule())
-                .accessibilityIdentifier("summary.hero.toneDrillSolvedRibbon")
-                .accessibilityLabel(label)
+                Label(label, systemImage: "checkmark.circle.fill")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 6)
+                    .background(AppColor.brandBlue.opacity(0.08), in: Capsule())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("summary.hero.toneDrillSolvedRibbon")
+                    .accessibilityLabel(label)
             }
 
-            // Headline
-            HStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                 Image(systemName: scoreEmoji)
-                    .foregroundStyle(.white)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(scoreAccent)
+                    .accessibilityHidden(true)
                 Text(headline)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Prompt (if available)
-            if let sessionPrompt {
-                Text("\"\(sessionPrompt)\"")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
+            if let sessionPrompt, !sessionPrompt.isEmpty {
+                Text(sessionPrompt)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
                     .lineLimit(2)
-                    .padding(.horizontal, 12)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Prompt: \(sessionPrompt)")
             }
 
-            // Quick stats — existing delta pills ride a frosted tray so
-            // their tinted semantics stay legible on the gradient. The
-            // filler-rate delta (a genuine comparison against repeated,
-            // quantity-qualified history)
-            // gets its own beat ~0.3s after the ring settles.
-            HStack(spacing: 20) {
-                StatPill(
-                    label: "Fillers",
-                    value: "\(effectiveFillerCount)",
-                    delta: fillerDelta,
-                    tint: fillerTint,
-                    invertDelta: true,
-                    deltaPrecision: 1,
-                    deltaSuffix: "/min",
-                    accessibilityLabel: fillerAccessibilityLabel,
-                    deltaRevealDelay: Animation.scoreRevealDuration
-                )
-                DurationAssessmentPill(effectiveDuration: effectiveDuration, durationAssessment: durationAssessment)
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.xs)
-            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            Divider()
+
+            quickStats
         }
-        .frame(maxWidth: .infinity)
-        .padding(24)
-        .background(HeroGradient.verdict.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .shadow(color: HeroGradient.verdict.shadowTint.opacity(0.30), radius: 18, y: 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("summary.results.card")
     }
 
-    /// One-shot verdict reveal: ring + number animate together on the
-    /// `scoreReveal` token, and the `scoreReveal` haptic + verdict thump
-    /// land on the settle frame — one moment, three channels (the haptic
-    /// previously fired from `SummaryView.setup()` with nothing visual
-    /// landing alongside it). Under Reduce Motion the number and fill
-    /// render immediately — the reveal never gates comprehension; the
-    /// haptic + thump still mark the moment (sound is not motion).
-    private func revealScore() {
-        guard !hasRevealed else { return }
-        hasRevealed = true
-        let target = Double(scoreValue) / 10.0
+    private var scoreSummary: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            if belowEvidenceFloor {
+                Text("—")
+                    .font(Typography.figtreeNumeric(size: 36, weight: .bold, relativeTo: .title))
+                    .foregroundStyle(AppColor.textPrimary)
+                Text("Too short to score")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text("\(scoreValue)")
+                        .font(Typography.figtreeNumeric(size: 40, weight: .bold, relativeTo: .largeTitle))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .monospacedDigit()
+                    Text("/10")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(belowEvidenceFloor ? "Too short to score" : "Score \(scoreValue) out of 10")
+    }
 
-        if reduceMotion {
-            revealedScore = scoreValue
-            ringFill = target
-            CoachHaptic.scoreReveal()
-            InteractionSoundEngine.cue(.verdictReveal)
-            return
+    @ViewBuilder
+    private var quickStats: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: Spacing.sm) {
+                fillerMetric
+                Divider()
+                durationMetric
+            }
+        } else {
+            HStack(spacing: Spacing.md) {
+                fillerMetric
+                Divider().frame(height: 36)
+                durationMetric
+            }
         }
+    }
 
-        withAnimation(.scoreReveal) {
-            revealedScore = scoreValue
-            ringFill = target
-        }
-        let work = DispatchWorkItem {
-            CoachHaptic.scoreReveal()
-            InteractionSoundEngine.cue(.verdictReveal)
-        }
-        settleWork = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Animation.scoreRevealDuration,
-            execute: work
+    private var fillerMetric: some View {
+        compactMetric(
+            label: "Fillers",
+            value: "\(effectiveFillerCount)",
+            detail: fillerDeltaLabel,
+            tint: fillerTint,
+            accessibilityLabel: fillerAccessibilityLabel ?? "\(effectiveFillerCount) fillers"
         )
     }
 
-    /// Pending settle-frame beat — cancelled in `onDisappear` so the
-    /// haptic/sound can never fire after the card is gone.
-    @State private var settleWork: DispatchWorkItem?
+    private var durationMetric: some View {
+        compactMetric(
+            label: "Duration",
+            value: "\(Int(effectiveDuration))s",
+            detail: durationAssessment.rawValue,
+            tint: durationAssessment.tint,
+            accessibilityLabel: "Duration \(Int(effectiveDuration)) seconds, \(durationAssessment.rawValue)"
+        )
+    }
+
+    private var fillerDeltaLabel: String? {
+        guard let fillerDelta, fillerDelta != 0 else { return nil }
+        let direction = fillerDelta < 0 ? "Down" : "Up"
+        return "\(direction) \(String(format: "%.1f", abs(fillerDelta)))/min"
+    }
+
+    private func compactMetric(
+        label: String,
+        value: String,
+        detail: String?,
+        tint: Color,
+        accessibilityLabel: String
+    ) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Text(value)
+                .font(Typography.figtreeNumeric(size: 22, weight: .bold, relativeTo: .title3))
+                .foregroundStyle(tint)
+                .monospacedDigit()
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                if let detail {
+                    Text(detail)
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
 }
 
 // MARK: - Sudden Death Review Card

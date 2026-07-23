@@ -727,6 +727,16 @@ struct CoachHypothesisAcknowledgement: Codable, Equatable {
     }
 }
 
+/// The bounded source of an intervention that did not originate in the
+/// recommendation exposure ledger. Optional on `CoachIntervention` so every
+/// pre-launch memory decodes unchanged.
+enum CoachInterventionOrigin: String, Codable, Equatable {
+    /// A content-free target projected from the evaluator's bounded category
+    /// ratings for the first qualified spoken rep. This is a starting lever,
+    /// never a longitudinal claim.
+    case boundedFirstRep
+}
+
 /// The bounded intervention cycle carried in durable coach memory.
 /// RecommendationLearningStore remains the raw evidence owner; this record
 /// holds the coach's current prescription and review state for continuity.
@@ -747,6 +757,12 @@ struct CoachIntervention: Codable, Equatable {
     var successCriterion: CoachSuccessCriterion? = nil
     var criterionStatus: CoachCriterionStatus? = nil
     var reviewDueAt: Date? = nil
+    /// Present only when the intervention is tied to one exact durable source
+    /// row rather than a rendered recommendation exposure.
+    var sourceSessionID: UUID? = nil
+    /// Content-free canonical lever for source-bound first-week continuity.
+    var skillArea: SkillArea? = nil
+    var origin: CoachInterventionOrigin? = nil
 
     /// Has the user accumulated enough followed reps AND has the
     /// review-due date passed? Both conditions must hold so the
@@ -763,6 +779,195 @@ struct CoachIntervention: Codable, Equatable {
         guard followedRepCount >= minimumFollowedRepsForReview else { return false }
         guard let due = reviewDueAt else { return false }
         return now >= due
+    }
+}
+
+/// The one-session bridge between a qualified spoken baseline and the durable
+/// first-week contract. It consumes only evaluator-owned category enums and
+/// session identity; transcript, prompt, and user-authored profile fields are
+/// deliberately not inputs.
+enum BoundedFirstRepCoachingSeed {
+    struct Projection: Equatable {
+        let sourceSessionID: UUID
+        let observedAt: Date
+        let area: SkillArea
+        let basis: String
+        let title: String
+        let focus: String
+        let target: String
+        let mode: PracticeMode
+
+        var intervention: CoachIntervention {
+            CoachIntervention(
+                title: title,
+                focus: focus,
+                target: target,
+                mode: mode,
+                prescribedAt: observedAt,
+                lastObservedAt: observedAt,
+                followedRepCount: 0,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .awaitingAttempt,
+                reviewBasis: "One bounded first-rep read set this starting target; another exact rep must verify it.",
+                sourceSessionID: sourceSessionID,
+                skillArea: area,
+                origin: .boundedFirstRep
+            )
+        }
+    }
+
+    private struct DimensionCandidate {
+        let dimension: String
+        let area: SkillArea
+        let rating: FeedbackRating
+        let priority: Int
+
+        var ratingRank: Int {
+            switch rating {
+            case .couldImprove: return 0
+            case .ok: return 1
+            case .good: return 2
+            }
+        }
+    }
+
+    /// Stable order breaks equal evaluator ratings without consulting text.
+    /// Structure is deliberately first because it can be tested in the same
+    /// neutral Timed setup without inferring delivery traits from one sample.
+    private static let dimensions: [(String, SkillArea)] = [
+        ("Structure", .structure),
+        ("Opening", .openingStrength),
+        ("Close", .closingStrength),
+        ("Depth", .answerDevelopment),
+        // `PracticeEvaluator.buildFeedbackCategories` owns this first-rep
+        // value and derives Clarity from `FillerBurden`; keep that evaluator
+        // provenance rather than borrowing TrendAnalyzer's older category map.
+        ("Clarity", .fillerReduction),
+        ("Pace", .paceControl),
+        ("Relevance", .structure),
+    ]
+
+    static func resolve(sessions: [PracticeSession]) -> Projection? {
+        let eligible = PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { $0.score != nil }
+        guard eligible.count == 1, let session = eligible.first else { return nil }
+        return resolve(session: session)
+    }
+
+    static func resolve(session: PracticeSession) -> Projection? {
+        guard PracticeProgressEligibility.qualifies(session),
+              session.mode == .timed,
+              session.score != nil else { return nil }
+
+        let candidates = dimensions.enumerated().compactMap { index, entry -> DimensionCandidate? in
+            guard let raw = session.categoryRatings[entry.0],
+                  let rating = FeedbackRating(rawValue: raw) else { return nil }
+            return DimensionCandidate(
+                dimension: entry.0,
+                area: entry.1,
+                rating: rating,
+                priority: index
+            )
+        }
+        guard let selected = candidates.min(by: { lhs, rhs in
+            lhs.ratingRank == rhs.ratingRank
+                ? lhs.priority < rhs.priority
+                : lhs.ratingRank < rhs.ratingRank
+        }) else {
+            // Old rows without durable evaluator categories remain honest: they
+            // can contribute to baseline history but cannot manufacture a seed.
+            return nil
+        }
+
+        return Projection(
+            sourceSessionID: session.id,
+            observedAt: session.date,
+            area: selected.area,
+            basis: basis(dimension: selected.dimension, rating: selected.rating),
+            title: "Repeat the first-rep lever",
+            focus: selected.area.displayName,
+            target: target(for: selected.area),
+            mode: session.mode
+        )
+    }
+
+    static func validates(
+        intervention: CoachIntervention,
+        activationAt: Date,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> Bool {
+        guard intervention.origin == .boundedFirstRep,
+              let sourceSessionID = intervention.sourceSessionID,
+              let area = intervention.skillArea,
+              intervention.prescribedAt != nil,
+              !intervention.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !(intervention.focus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !(intervention.target ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let source = sessions.first(where: { $0.id == sourceSessionID }),
+              activationAt <= source.date,
+              source.date <= now,
+              intervention.prescribedAt == source.date,
+              PracticeProgressEligibility.qualifies(source),
+              source.score != nil,
+              let projection = resolve(session: source),
+              projection.area == area,
+              projection.title == intervention.title,
+              projection.focus == intervention.focus,
+              projection.mode == intervention.mode,
+              projection.target == intervention.target else {
+            return false
+        }
+        return true
+    }
+
+    /// Restores the immutable catalog projection behind a previously persisted
+    /// seed. This lets the low-confidence starting lever survive the second rep
+    /// without reinterpreting that later rep or storing any speech content.
+    static func restore(
+        intervention: CoachIntervention?,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> Projection? {
+        guard let intervention,
+              let sourceSessionID = intervention.sourceSessionID,
+              let prescribedAt = intervention.prescribedAt,
+              validates(
+                intervention: intervention,
+                activationAt: prescribedAt,
+                sessions: sessions,
+                now: now
+              ),
+              let source = sessions.first(where: { $0.id == sourceSessionID }) else {
+            return nil
+        }
+        return resolve(session: source)
+    }
+
+    private static func basis(dimension: String, rating: FeedbackRating) -> String {
+        switch rating {
+        case .couldImprove:
+            return "the bounded first-rep \(dimension.lowercased()) read marked one improvement cue"
+        case .ok:
+            return "the bounded first-rep \(dimension.lowercased()) read left one area to verify"
+        case .good:
+            return "the first rep cleared its bounded reads, so \(dimension.lowercased()) is a neutral lever to verify"
+        }
+    }
+
+    private static func target(for area: SkillArea) -> String {
+        switch area {
+        case .fillerReduction: return "Pause instead of filling the gap."
+        case .openingStrength: return "Open with the answer in one sentence."
+        case .closingStrength: return "End with one clear decision or takeaway."
+        case .paceControl: return "Hold a conversational pace and finish each sentence."
+        case .structure: return "Open with the answer, then add one concrete example."
+        case .answerDevelopment: return "Add one concrete proof point before closing."
+        case .conciseSpeaking: return "Land one point, one proof, then stop."
+        case .pauseUsage: return "Use one deliberate pause between points."
+        case .vocalEmphasis: return "Stress the decision and the key proof point."
+        case .confidence: return "Commit to the opening without a soft lead-in."
+        }
     }
 }
 
@@ -989,6 +1194,13 @@ struct CoachMemory: Codable, Equatable {
     // context as one user-initiated recording rather than a durable trait.
     var visualDeliveryRead: VisualDeliveryRead?
 
+    // The first qualified Day-7 coaching read, captured exactly once by the
+    // existing account-scoped CoachMemoryStore. Later memory/trajectory
+    // rebuilds carry this value forward rather than recomputing the user's
+    // first-week receipt from Day-8+ evidence. Optional for memories persisted
+    // before the first-week launch contract shipped.
+    var firstWeekReadSnapshot: FirstWeekCoachingContract.FirstWeekReadSnapshot?
+
     // Explicit memberwise init — required because the custom
     // `init(from:)` below suppresses the synthesized one.
     init(
@@ -1028,7 +1240,8 @@ struct CoachMemory: Codable, Equatable {
         isLatestSessionPersonalBest: Bool? = nil,
         coachDeliveryRead: CoachDeliveryRead? = nil,
         deliveryProfile: DeliveryProfile? = nil,
-        visualDeliveryRead: VisualDeliveryRead? = nil
+        visualDeliveryRead: VisualDeliveryRead? = nil,
+        firstWeekReadSnapshot: FirstWeekCoachingContract.FirstWeekReadSnapshot? = nil
     ) {
         self.updatedAt = updatedAt
         self.lastSessionID = lastSessionID
@@ -1067,6 +1280,7 @@ struct CoachMemory: Codable, Equatable {
         self.coachDeliveryRead = coachDeliveryRead
         self.deliveryProfile = deliveryProfile
         self.visualDeliveryRead = visualDeliveryRead
+        self.firstWeekReadSnapshot = firstWeekReadSnapshot
     }
 
     // Custom Decodable for backward compatibility — all momentum
@@ -1091,6 +1305,7 @@ struct CoachMemory: Codable, Equatable {
         case coachDeliveryRead
         case deliveryProfile
         case visualDeliveryRead
+        case firstWeekReadSnapshot
     }
 
     init(from decoder: Decoder) throws {
@@ -1132,6 +1347,10 @@ struct CoachMemory: Codable, Equatable {
         coachDeliveryRead = try c.decodeIfPresent(CoachDeliveryRead.self, forKey: .coachDeliveryRead)
         deliveryProfile = try c.decodeIfPresent(DeliveryProfile.self, forKey: .deliveryProfile)
         visualDeliveryRead = try c.decodeIfPresent(VisualDeliveryRead.self, forKey: .visualDeliveryRead)
+        firstWeekReadSnapshot = try c.decodeIfPresent(
+            FirstWeekCoachingContract.FirstWeekReadSnapshot.self,
+            forKey: .firstWeekReadSnapshot
+        )
     }
 }
 
@@ -1500,7 +1719,19 @@ enum CoachMemoryEngine {
             BaselineConfidence.from(sessionCount: evidenceCount)
         )
 
-        let lever = selectLever(profile: profile, baseline: baseline, trends: trends)
+        let boundedFirstRepSeed = BoundedFirstRepCoachingSeed.resolve(
+            sessions: sessions
+        ) ?? BoundedFirstRepCoachingSeed.restore(
+            intervention: previous?.activeIntervention,
+            sessions: sessions,
+            now: now
+        )
+        let lever = selectLever(
+            profile: profile,
+            baseline: baseline,
+            trends: trends,
+            boundedFirstRepSeed: boundedFirstRepSeed
+        )
         let voice = profile?.chosenStyleGoal
         let currentLever = lever?.area
         let goalFit: CoachMemoryGoalFit = {
@@ -1638,6 +1869,10 @@ enum CoachMemoryEngine {
                 outcomes: recommendationOutcomes,
                 sessions: sessions,
                 previous: previous?.activeIntervention,
+                boundedFirstRepSeed: lever?.confidence == .low
+                    && lever?.area == boundedFirstRepSeed?.area
+                    ? boundedFirstRepSeed
+                    : nil,
                 now: now,
                 calendar: calendar
             )
@@ -1705,6 +1940,7 @@ enum CoachMemoryEngine {
             deliveryRead: memory.coachDeliveryRead
         ) ?? previous?.deliveryProfile
         memory.visualDeliveryRead = previous?.visualDeliveryRead
+        memory.firstWeekReadSnapshot = previous?.firstWeekReadSnapshot
         // Derive the upcoming-moment line HERE (not inside the pure build) so
         // the case file knows what the user is preparing for. Mirrors the
         // `lastTransferReview` wiring: the store is read at the SessionFinalizer
@@ -1736,13 +1972,16 @@ enum CoachMemoryEngine {
     private static func selectLever(
         profile: CoachingProfile?,
         baseline: CommunicationBaseline,
-        trends: [SkillTrend]
+        trends: [SkillTrend],
+        boundedFirstRepSeed: BoundedFirstRepCoachingSeed.Projection? = nil
     ) -> LeverSelection? {
-        // Resolve the measured lever exactly as before — telemetry first,
-        // then a persistent blocker, then the stated voice goal. The
-        // stated-challenge reconciliation is applied AFTER, as a read on
-        // the chosen lever, so it never changes WHICH lever is selected
-        // (no silent focus switch — honesty invariant).
+        // Resolve measured evidence before stated intent: repeated telemetry,
+        // then a persistent blocker, then the exact bounded first-rep read.
+        // The explicit voice goal remains the honest fallback when none of
+        // those sources can support a lever. The stated-challenge
+        // reconciliation is applied AFTER, as a read on the chosen lever, so
+        // it never changes WHICH lever is selected (no silent focus switch —
+        // honesty invariant).
         var selection: LeverSelection?
         if let trend = strongestTrendLever(from: trends, profile: profile) {
             selection = LeverSelection(
@@ -1756,6 +1995,14 @@ enum CoachMemoryEngine {
                 area: area,
                 confidence: nil,
                 basis: "it keeps showing up in recent reps"
+            )
+        } else if let boundedFirstRepSeed {
+            // A single rep cannot become a trend. It can still set one bounded,
+            // explicitly low-confidence lever for the next exact comparison.
+            selection = LeverSelection(
+                area: boundedFirstRepSeed.area,
+                confidence: .low,
+                basis: boundedFirstRepSeed.basis
             )
         } else if let voice = profile?.chosenStyleGoal {
             selection = LeverSelection(
@@ -1964,10 +2211,41 @@ enum CoachMemoryEngine {
         outcomes: [RecommendationOutcome],
         sessions: [PracticeSession],
         previous: CoachIntervention?,
+        boundedFirstRepSeed: BoundedFirstRepCoachingSeed.Projection?,
         now: Date,
         calendar: Calendar
     ) -> CoachIntervention? {
-        guard var intervention = baseIntervention(pending: pending, outcomes: outcomes) else {
+        let carriedSeed: CoachIntervention? = previous.flatMap { prior in
+            guard BoundedFirstRepCoachingSeed.validates(
+                intervention: prior,
+                activationAt: prior.prescribedAt ?? .distantFuture,
+                sessions: sessions,
+                now: now
+            ) else { return nil }
+            return prior
+        }
+        let learnedIntervention = baseIntervention(
+            pending: pending,
+            outcomes: outcomes
+        ).map { intervention in
+            preservingBoundedFirstRepSource(
+                in: intervention,
+                pending: pending,
+                outcomes: outcomes,
+                carriedSeed: carriedSeed
+            )
+        }
+        // The first completed baseline closes any pre-rep recommendation
+        // cycle and starts the first-week comparison contract. Prefer its
+        // exact evaluator-owned seed once; subsequent builds have a validated
+        // carried seed and can therefore accept learned follow-through status.
+        let initialSeed = carriedSeed == nil
+            ? boundedFirstRepSeed?.intervention
+            : nil
+        guard var intervention = initialSeed
+                ?? learnedIntervention
+                ?? carriedSeed
+                ?? boundedFirstRepSeed?.intervention else {
             return nil
         }
         enrichWithCase(
@@ -1979,6 +2257,39 @@ enum CoachMemoryEngine {
             calendar: calendar
         )
         return intervention
+    }
+
+    /// A completed repeat legitimately updates review status/counts, but it
+    /// must not erase the exact Day-0 source receipt behind the same rendered
+    /// first-week prescription. A different ledger fingerprint remains free to
+    /// replace the seed through the ordinary recommendation owner.
+    private static func preservingBoundedFirstRepSource(
+        in intervention: CoachIntervention,
+        pending: RecommendationExposure?,
+        outcomes: [RecommendationOutcome],
+        carriedSeed: CoachIntervention?
+    ) -> CoachIntervention {
+        guard let carriedSeed,
+              let sourceSessionID = carriedSeed.sourceSessionID else {
+            return intervention
+        }
+        let authoritativeFingerprint = pending?.fingerprint
+            ?? outcomes.max(by: { $0.completedAt < $1.completedAt })?.fingerprint
+        let expectedPrefix = "first-week-seed|\(sourceSessionID.uuidString)|"
+        guard authoritativeFingerprint?.hasPrefix(expectedPrefix) == true,
+              intervention.title == carriedSeed.title,
+              boundedText(intervention.focus) == boundedText(carriedSeed.focus),
+              boundedText(intervention.target) == boundedText(carriedSeed.target),
+              intervention.mode == carriedSeed.mode else {
+            return intervention
+        }
+
+        var sourced = intervention
+        sourced.prescribedAt = carriedSeed.prescribedAt
+        sourced.sourceSessionID = sourceSessionID
+        sourced.skillArea = carriedSeed.skillArea
+        sourced.origin = carriedSeed.origin
+        return sourced
     }
 
     /// Attaches the case spine: a stable success criterion (carried forward
@@ -2614,6 +2925,36 @@ final class CoachMemoryStore: ObservableObject {
     func endSession() {
         currentMemory = nil
         UserTrajectoryCache.shared.invalidate()
+    }
+
+    /// Captures the account's first qualified Day-7 read exactly once. This
+    /// extends the existing durable coach-memory owner; it deliberately does
+    /// not introduce a second first-week store or storage key.
+    @discardableResult
+    func captureFirstWeekReadIfNeeded(
+        _ projection: FirstWeekCoachingContract.FirstWeekReadProjection,
+        expectedAccountID: String,
+        capturedAt: Date = Date()
+    ) -> FirstWeekCoachingContract.FirstWeekReadSnapshot? {
+        let expected = expectedAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !expected.isEmpty,
+              let active = accountIDProvider()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              active == expected,
+              var memory = currentMemory else {
+            return nil
+        }
+        if let saved = memory.firstWeekReadSnapshot {
+            return saved
+        }
+
+        let saved = FirstWeekCoachingContract.FirstWeekReadSnapshot(
+            capturedAt: capturedAt,
+            projection: projection
+        )
+        memory.firstWeekReadSnapshot = saved
+        currentMemory = memory
+        persist(memory)
+        return saved
     }
 
     func refresh(

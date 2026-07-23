@@ -97,6 +97,170 @@ struct HomeCoachRecommendationExposure: Equatable {
             prescribedDemand: prescribedDemand
         )
     }
+
+    /// Rehydrates the exact bounded fields already owned by the recommendation
+    /// ledger. This is the bridge used when Summary exposed a prescription but
+    /// CoachMemory has not yet projected it as a continuing intervention.
+    /// Scenario/tone/theme were never part of adherence provenance; restoring
+    /// them by inference would be less honest than keeping their neutral values.
+    static func restoring(
+        _ persisted: RecommendationExposure
+    ) -> HomeCoachRecommendationExposure? {
+        let focus = persisted.focus.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = persisted.target.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard persisted.adherenceSchemaVersion
+                == RecommendationAdherenceContract.schemaVersion,
+              !persisted.fingerprint.isEmpty,
+              !focus.isEmpty,
+              !target.isEmpty,
+              persisted.prescribedDemand.map({ $0.isValid(for: persisted.mode) })
+                ?? true else {
+            return nil
+        }
+        return HomeCoachRecommendationExposure(
+            fingerprint: persisted.fingerprint,
+            title: persisted.title,
+            focus: focus,
+            target: target,
+            mode: persisted.mode,
+            scenario: nil,
+            tone: nil,
+            suggestedTheme: .all,
+            prescribedDemand: persisted.prescribedDemand
+        )
+    }
+}
+
+/// Shared projection and acceptance boundary for Home-owned recommendations.
+/// The coach hero and first-week action screen both use this path so the copy
+/// the user sees, the persisted exposure, and the launched practice demand
+/// remain one coherent prescription.
+enum HomeCoachRecommendationPipeline {
+    static func coherentBlueprint(
+        profile: CoachingProfile?,
+        sessions: [PracticeSession],
+        sessionStreak: Int,
+        daysSinceLastSession: Int,
+        coachMemory: CoachMemory?,
+        imAvailable: Bool,
+        recommendationOutcomes: [RecommendationOutcome],
+        skillTrends: [SkillSnapshot]
+    ) -> RecommendationBiasBlueprint {
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessions)
+        let base = RecommendationBiasContextBuilder.context(
+            profile: profile,
+            sessions: eligibleSessions,
+            sessionStreak: sessionStreak,
+            daysSinceLastSession: daysSinceLastSession,
+            coachMemory: coachMemory,
+            imAvailable: imAvailable,
+            recommendationOutcomes: recommendationOutcomes,
+            summaryStyle: .compact
+        ).blueprint
+        return CurrentCoachingFocusPresentation.make(
+            trends: TrendAnalyzer.analyze(snapshots: skillTrends),
+            sessionCount: eligibleSessions.count
+        )?.applying(to: base) ?? base
+    }
+
+    static func title(
+        for blueprint: RecommendationBiasBlueprint,
+        sessionCount: Int,
+        activeMomentTitle: String?,
+        daysUntilActiveMoment: Int?
+    ) -> String {
+        guard sessionCount > 0 else { return "Welcome." }
+        if sessionCount < 3 { return "Start clean." }
+        if let activeMomentTitle,
+           let daysUntilActiveMoment,
+           daysUntilActiveMoment >= 0,
+           daysUntilActiveMoment <= 14 {
+            return HomeMomentCopy.title(
+                momentTitle: activeMomentTitle,
+                days: daysUntilActiveMoment
+            )
+        }
+        let focus = CoachDisplayCopy.normalized(blueprint.focus)
+        guard !focus.isEmpty else { return "Build a clean rep." }
+        let trimmed = focus.trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+        return "\(trimmed)."
+    }
+
+    static func exposure(
+        for blueprint: RecommendationBiasBlueprint,
+        title: String,
+        profile: CoachingProfile?,
+        recentSessions: [PracticeSession]
+    ) -> HomeCoachRecommendationExposure {
+        HomeCoachRecommendationExposure.make(
+            blueprint: blueprint,
+            title: title,
+            profile: profile,
+            recentSessions: recentSessions
+        )
+    }
+
+    @MainActor
+    static func recordShown(
+        _ exposure: HomeCoachRecommendationExposure,
+        goal: SpeakingStyleGoal?,
+        store: RecommendationLearningStore
+    ) {
+        store.recordShown(
+            fingerprint: exposure.fingerprint,
+            title: exposure.title,
+            focus: exposure.focus,
+            target: exposure.target,
+            mode: exposure.mode,
+            isAIBacked: false,
+            goal: goal,
+            prescribedDemand: exposure.prescribedDemand
+        )
+    }
+
+    /// Records the exact rendered exposure, marks it accepted only when the
+    /// live route still honors its mode/demand, and returns the route that
+    /// should actually launch. Operational fallbacks are deliberately not
+    /// counted as followed prescriptions.
+    @MainActor
+    static func accept(
+        _ exposure: HomeCoachRecommendationExposure,
+        modeAvailability: NextActionModeAvailability,
+        imAvailable: Bool,
+        goal: SpeakingStyleGoal?,
+        store: RecommendationLearningStore
+    ) -> PracticeModeLaunchProjection {
+        let launch = PracticeModeLaunchProjection.resolve(
+            displayedMode: exposure.mode,
+            scenario: exposure.scenario,
+            tone: exposure.tone,
+            prescribedDemand: exposure.prescribedDemand,
+            imAvailable: imAvailable,
+            modeAvailability: modeAvailability
+        )
+        RecommendationTapAttribution.apply(
+            launch: launch,
+            recordShown: {
+                recordShown(exposure, goal: goal, store: store)
+            },
+            recordAccepted: { mode in
+                store.markTapped(mode: mode)
+            }
+        )
+        if exposure.mode == .timed, launch.launchedMode == .timed {
+            let theme = exposure.suggestedTheme
+            if theme != .all {
+                UserDefaults.standard.set(
+                    theme.rawValue,
+                    forKey: "timedPractice.selectedTheme"
+                )
+            }
+        }
+        if !launch.acceptsDisplayedPrescription {
+            PracticeModeQuickStart.clear()
+        }
+        return launch
+    }
 }
 
 // MARK: - Plan-arc line (coach-parity eval move 4)
@@ -149,19 +313,22 @@ struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
 
-    /// Live scroll offset from the parent ScrollView, passed in from
-    /// ContentView's `homeScrollOffset`. Drives a barely-there interior
-    /// parallax on the radial-wash anchors — the card itself never
-    /// moves. Default `0` keeps preview + non-scroll call sites
-    /// compiling unchanged. Pinned to zero under reduce-motion.
+    /// Retained for source compatibility with previews and callers that still
+    /// pass Home's scroll position. The restrained card is intentionally
+    /// static and does not use scrolling to move decorative layers.
     var scrollOffset: CGFloat = 0
     /// Gate flag from `HomeSignalGate` (>= 1 completed rep). The row
     /// additionally self-gates on an actual active plan via
     /// `HomePlanArcLine` — both must hold before anything renders.
     var showsPlanArc: Bool = false
-    /// Home uses the coach gradient as the entire canvas. The legacy card
-    /// presentation remains available for previews and any embedded caller.
+    /// Retained for source compatibility. Both presentations now use the same
+    /// compact card language; Home no longer turns the coach surface into an
+    /// immersive canvas.
     var presentation: HomeCoachPresentation = .card
+    /// False while Home is only the retained routing root behind another
+    /// recommendation surface. The delayed dwell task is cancelled before it
+    /// can replace that surface's current exact ledger exposure.
+    var recordsRecommendationExposure: Bool = true
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -189,17 +356,6 @@ struct HomeCoachCard: View {
     @State private var lastRenderedRecommendationExposure: HomeCoachRecommendationExposure?
     @State private var plannedPhraseError: String?
 
-    // Emanation ray — a brief tinted pulse that fires from behind the
-    // character when a fresh recommendation arrives.
-    //
-    // `emanationProgress` runs 0.0 → 1.0 across the 700ms pulse:
-    //   • 0.0 (just fired):  opacity 0.5, scale 1.0  → ring visible at the character's size
-    //   • 1.0 (resting):     opacity 0.0, scale 1.6  → fully faded out, expanded
-    // At rest the value sits at 1.0 so the ray is invisible. Each
-    // trigger snaps it back to 0.0 (no animation) then animates to 1.0
-    // with ease-out — the classic radial-pulse shape.
-    @State private var emanationProgress: Double = 1.0
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isSelectedAppTab) private var isSelectedAppTab
 
@@ -210,52 +366,41 @@ struct HomeCoachCard: View {
             .blueprintForRendering(coherentRecommendationBlueprint)
         let renderedBlueprint = renderedAvailability.resolving(sourceBlueprint)
         let renderedExposure = recommendationExposure(for: renderedBlueprint)
-        return VStack(spacing: presentation == .immersive ? Spacing.md : Spacing.xs) {
-            ZStack {
-                emanationRay
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
                 NoumCharacter(
                     mood: displayedMood,
-                    tint: .white,
-                    size: presentation == .immersive ? 88 : 64
+                    tint: AppColor.brandBlue,
+                    size: 52
                 )
                 .accessibilityHidden(true)
-            }
 
-            // Title — punchy, 1-3 words usually. Drives the visual
-            // hierarchy. The earlier "one long coach sentence" pattern
-            // read as a paragraph; this reads as a coach speaking.
-            Text(coachTitle(for: renderedBlueprint))
-                .font(Typography.figtree(
-                    size: presentation == .immersive ? 34 : 22,
-                    weight: .bold,
-                    relativeTo: presentation == .immersive ? .largeTitle : .title2
-                ))
-                .foregroundStyle(AppColor.coachHeroInk)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Spacing.xs)
-                .accessibilityIdentifier("home.coachCard.title")
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Today’s focus")
+                        .microLabel(AppColor.proText)
 
-            // Subtitle — the why, in body weight, secondary. Conditional —
-            // hides cleanly when the variant only carries a title.
-            if let subtitle = coachSubtitle(for: renderedBlueprint) {
-                Text(subtitle)
-                    .font(presentation == .immersive
-                        ? Typography.manrope(size: 19, weight: .medium, relativeTo: .title3)
-                        : Typography.body)
-                    .foregroundStyle(AppColor.coachHeroInk)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Spacing.sm)
-                    .accessibilityIdentifier("home.coachCard.subtitle")
+                    Text(coachTitle(for: renderedBlueprint))
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.coachCard.title")
+
+                    if let subtitle = coachSubtitle(for: renderedBlueprint) {
+                        Text(subtitle)
+                            .font(Typography.body)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("home.coachCard.subtitle")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             VoiceAlignmentChip(
                 styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
                 mode: renderedExposure.mode,
-                tint: AppColor.coachHeroInk
+                tint: AppColor.proText
             )
-            .padding(.top, Spacing.xs)
 
             // M23 — Prep Session entry. Surfaces when the user has an
             // active BigMoment within 14 days. Sits ABOVE the Begin
@@ -272,15 +417,14 @@ struct HomeCoachCard: View {
                 } label: {
                     Text("Start \(renderedExposure.mode.displayLabel) instead")
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(AppColor.brandBlue)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(AppColor.coachHeroQuietSurface, in: Capsule())
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityIdentifier("home.coachCard.begin")
             } else {
-                PrimaryCTA(beginCTAText(for: renderedExposure.mode), tint: .white, labelTint: AppColor.coachHeroInk) {
+                PrimaryCTA(beginCTAText(for: renderedExposure.mode), tint: AppColor.brandBlue) {
                     beginRecommendedRep(renderedExposure: renderedExposure)
                 }
                 .accessibilityIdentifier("home.coachCard.begin")
@@ -294,22 +438,17 @@ struct HomeCoachCard: View {
                 planArcRow
             }
         }
-        .padding(.horizontal, presentation == .immersive ? Spacing.lg + Spacing.xs : Spacing.md)
-        .padding(.vertical, presentation == .immersive ? Spacing.lg + Spacing.xs : Spacing.md)
-        .frame(maxWidth: .infinity)
-        .background {
-            if presentation == .card {
-                coachCardBackground
-            }
-        }
-        // Tinted elevation in the hero's own gradient family — the ONE
-        // vibrant surface on Home (docs/UX_VISUAL_DIRECTION.md).
-        .shadow(
-            color: presentation == .card ? HeroGradient.coach.shadowTint.opacity(0.32) : .clear,
-            radius: 22,
-            x: 0,
-            y: 10
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.06), radius: 10, y: 4)
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
             syncMoodForFreshRecommendation()
@@ -318,15 +457,19 @@ struct HomeCoachCard: View {
             lastRenderedRecommendationExposure = renderedExposure
             syncMoodForFreshRecommendation()
         }
-        .task(id: "\(renderedExposure.fingerprint)|\(isSelectedAppTab)") {
+        .task(
+            id: "\(renderedExposure.fingerprint)|\(isSelectedAppTab)|\(recordsRecommendationExposure)"
+        ) {
             // A cold deep link briefly mounts Home before AppShell selects the
             // destination tab. Require a small, cancellable visibility dwell
             // so that transient mount is not counted as a shown prescription.
             // The tap path still records synchronously (and idempotently), so
             // a legitimate fast tap cannot lose its exposure event.
-            guard isSelectedAppTab else { return }
+            guard isSelectedAppTab, recordsRecommendationExposure else { return }
             try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled, isSelectedAppTab else { return }
+            guard !Task.isCancelled,
+                  isSelectedAppTab,
+                  recordsRecommendationExposure else { return }
             recordRecommendationShown(renderedExposure)
         }
         .alert(
@@ -346,15 +489,6 @@ struct HomeCoachCard: View {
 
     /// Label for the primary CTA. Keep it verb-led and natural rather than
     /// joining implementation labels with punctuation.
-    /// Maps live scroll offset (±120pt) to a ±5pt opposite-direction
-    /// gradient shift. Capped + zeroed under reduce-motion. The card
-    /// itself doesn't move — only the interior wash anchors do.
-    private var parallaxAmount: CGFloat {
-        guard !reduceMotion else { return 0 }
-        let normalized = max(-1, min(1, scrollOffset / 120))
-        return -normalized * 5
-    }
-
     private func beginCTAText(for mode: PracticeMode) -> String {
         // No-signal (empty-state, brand-new user): name the moment, not
         // the mode. This is the simplest door into the product.
@@ -362,114 +496,6 @@ struct HomeCoachCard: View {
             return "Start your first rep"
         }
         return "Start \(mode.displayLabel)"
-    }
-
-    /// Hero card chrome — replaces the standard `CardView` so the Coach
-    /// Card carries visual depth + a brand-tinted presence. The card now
-    /// reads as an "alive" iOS-26 hero rather than a tinted gradient:
-    /// the radial Pro-purple wash drifts slowly across the top, and a
-    /// `.regularMaterial` layer sits between the wash and the content so
-    /// the tint reads through frosted glass (the Apple Music / Fitness /
-    /// Sleep app pattern).
-    ///
-    /// Layers, bottom to top:
-    ///   1. White card surface (the canvas).
-    ///   2. Top-anchored radial purple wash with a slow drifting center
-    ///      — `(0.35, 0.0)` ↔ `(0.65, 0.15)` on a ~7s ease-in-out loop.
-    ///      Reduce-motion collapses this to a static center at `(0.5, 0.0)`
-    ///      so nothing animates.
-    ///   3. Trailing-anchored low-alpha mode-tint accent — keeps the
-    ///      "this is your recommendation" register.
-    ///   4. `.regularMaterial` frosted-glass overlay — desaturates the
-    ///      washes underneath without erasing them, giving the card the
-    ///      iOS-26 depth feel. Clipped to the card shape.
-    ///   5. Faint purple hairline border on top of the glass so the
-    ///      silhouette stays crisp.
-    /// Outer `.shadow` (applied by `body`) adds elevation in Pro-purple.
-    @ViewBuilder
-    private var coachCardBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        let dy = parallaxAmount
-        ZStack {
-            // The ONE vibrant surface on Home — the approved blue→cyan
-            // coach gradient (docs/UX_VISUAL_DIRECTION.md).
-            shape.fill(HeroGradient.coach.gradient)
-
-            // Drifting white highlight wash — keeps the "card breathes"
-            // quality on the gradient. Shifts by `dy` opposite the scroll
-            // direction (barely-there interior parallax); clipped so the
-            // offset gradient never escapes the silhouette.
-            highlightWash(in: shape)
-                .offset(y: dy)
-                .clipShape(shape)
-
-            // White hairline keeps the silhouette crisp on the canvas.
-            shape.strokeBorder(.white.opacity(0.22), lineWidth: 1)
-        }
-    }
-
-    /// White highlight wash with optional slow drift across the top of
-    /// the gradient hero. The TimelineView path samples the system
-    /// animation clock so the gradient redraws smoothly; reduce-motion
-    /// renders a single static highlight.
-    @ViewBuilder
-    private func highlightWash<S: Shape>(in shape: S) -> some View {
-        if reduceMotion {
-            shape.fill(
-                RadialGradient(
-                    colors: [.white.opacity(0.20), .white.opacity(0.05), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 340
-                )
-            )
-        } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                // 7s ease-in-out loop — "this card breathes," not
-                // "this card animates."
-                let phase = (sin(t * (2 * .pi / 7.0)) + 1) / 2
-                let centerX = 0.35 + 0.30 * phase
-                let centerY = 0.0 + 0.15 * phase
-                shape.fill(
-                    RadialGradient(
-                        colors: [.white.opacity(0.20), .white.opacity(0.05), Color.clear],
-                        center: UnitPoint(x: centerX, y: centerY),
-                        startRadius: 0,
-                        endRadius: 340
-                    )
-                )
-            }
-        }
-    }
-
-    /// Soft mode-tinted radial pulse that emanates from behind the
-    /// character when a fresh recommendation arrives. The pulse
-    /// progresses from `progress=0.0` (just fired: opacity 0.5,
-    /// scale 1.0) to `progress=1.0` (resting: opacity 0.0, scale 1.6)
-    /// over ~700ms via `withAnimation`. Reduce-motion users see no ray.
-    @ViewBuilder
-    private var emanationRay: some View {
-        if reduceMotion {
-            Color.clear
-                .frame(width: 1, height: 1)
-        } else {
-            let scale = 1.0 + 0.6 * emanationProgress
-            let opacity = 0.5 * (1.0 - emanationProgress)
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [accentTint.opacity(0.45), accentTint.opacity(0.0)],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 80
-                    )
-                )
-                .frame(width: 120, height: 120)
-                .scaleEffect(scale)
-                .opacity(opacity)
-                .allowsHitTesting(false)
-        }
     }
 
     // MARK: - Coach copy
@@ -489,29 +515,13 @@ struct HomeCoachCard: View {
     /// subtitle is the why (read only if the title earned attention).
 
     private func coachTitle(for blueprint: RecommendationBiasBlueprint) -> String {
-        guard hasSignal else {
-            return "Welcome."
-        }
-
-        if sessionStore.progressEligibleSessionCount < 3 {
-            return "Start clean."
-        }
-
-        if let moment = bigMomentStore.activeMoment,
-           let days = bigMomentStore.daysUntil(moment),
-           days >= 0 && days <= 14 {
-            return HomeMomentCopy.title(momentTitle: moment.title, days: days)
-        }
-
-        let focus = CoachDisplayCopy.normalized(blueprint.focus)
-        if !focus.isEmpty {
-            // Ensure punctuation closure — title reads as a complete
-            // imperative, not a fragment trailing into the subtitle.
-            let trimmed = focus.trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
-            return "\(trimmed)."
-        }
-
-        return "Build a clean rep."
+        let moment = bigMomentStore.activeMoment
+        return HomeCoachRecommendationPipeline.title(
+            for: blueprint,
+            sessionCount: sessionStore.progressEligibleSessionCount,
+            activeMomentTitle: moment?.title,
+            daysUntilActiveMoment: moment.flatMap { bigMomentStore.daysUntil($0) }
+        )
     }
 
     private func coachSubtitle(for blueprint: RecommendationBiasBlueprint) -> String? {
@@ -576,42 +586,21 @@ struct HomeCoachCard: View {
         return nil
     }
 
-    /// M23 — Prep Session CTA. Brand-purple secondary action surfaced
-    /// in the coach card hero when an active BigMoment is within 14
-    /// days. Tapping pushes `AppDestination.prepSession`, where the
-    /// PrepSessionPlanner assembles a 3-rep rehearsal sequence
-    /// tailored to the moment's category.
+    /// M23 — when a real moment is close, preparation becomes the card's one
+    /// primary action. The ordinary mode remains a quiet alternative below.
     @ViewBuilder
     private func prepSessionCTA(moment: BigMoment, days: Int) -> some View {
-        Button {
+        PrimaryCTA(
+            "Continue prep",
+            icon: moment.category.sfSymbol,
+            tint: AppColor.brandBlue
+        ) {
             navigationPath.append(AppDestination.prepSession)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: moment.category.sfSymbol)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.coachHeroInk)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Continue prep")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.coachHeroInk)
-                    Text("Three focused reps")
-                        .font(.caption)
-                        .foregroundStyle(AppColor.coachHeroInk)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.coachHeroInk)
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .padding(.top, Spacing.xs)
         .accessibilityIdentifier("home.coachCard.prepSession")
-        .accessibilityLabel(Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away"))
+        .accessibilityLabel(
+            Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away")
+        )
     }
 
     /// Compact 4-week plan-arc line under the Begin CTA — today's rep
@@ -808,40 +797,31 @@ struct HomeCoachCard: View {
             .availabilityAtTap(currentModeAvailability)
         let liveIMAvailability = RecommendationTapCapabilityLossUITestFixture
             .imAvailableAtTap(IMModeAvailability.isAvailable)
-        let launch = PracticeModeLaunchProjection.resolve(
-            displayedMode: exposure.mode,
-            scenario: exposure.scenario,
-            tone: exposure.tone,
-            prescribedDemand: exposure.prescribedDemand,
+        let launch = HomeCoachRecommendationPipeline.accept(
+            exposure,
+            modeAvailability: liveAvailability,
             imAvailable: liveIMAvailability,
-            modeAvailability: liveAvailability
+            goal: coachingProfileStore.profile?.chosenStyleGoal,
+            store: recommendationLearningStore
         )
-        RecommendationTapAttribution.apply(
-            launch: launch,
-            recordShown: {
-                // Cover a very fast tap before SwiftUI's onAppear callback settles.
-                // `recordShown` is idempotent for this exact visible fingerprint.
-                recordRecommendationShown(exposure)
-            },
-            recordAccepted: { mode in
-                recommendationLearningStore.markTapped(mode: mode)
-            }
-        )
-        if exposure.mode == .timed, launch.launchedMode == .timed {
-            let theme = exposure.suggestedTheme
-            if theme != .all {
-                UserDefaults.standard.set(
-                    theme.rawValue,
-                    forKey: "timedPractice.selectedTheme"
+        // A user who backed out of Day-0's prepared proof still has no usable
+        // signal. Their generic Home baseline CTA is an explicit new tap, so
+        // it may reseed the same framing prompt; it never arms Quick Start or
+        // opens the microphone. Once a qualifying persisted rep closes the
+        // handoff, ordinary recommendation routing resumes permanently.
+        if !hasSignal,
+           launch.launchedMode == .timed,
+           let preparation = AutoGuidedFirstRep.prepareUserInitiatedSpokenProof(),
+           let token = preparation.promptToken {
+            navigationPath.append(
+                AppDestination.timedPracticePrompt(
+                    token: token,
+                    difficulty: .medium
                 )
-            }
+            )
+        } else {
+            navigationPath.append(launch.destination)
         }
-        if !launch.acceptsDisplayedPrescription {
-            // A fallback is not a one-tap acceptance. Clear any interrupted
-            // handshake from an earlier Train launch before Timed mounts.
-            PracticeModeQuickStart.clear()
-        }
-        navigationPath.append(launch.destination)
     }
 
     // MARK: - Mood lifecycle
@@ -889,29 +869,6 @@ struct HomeCoachCard: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             isBursting = false
         }
-        // Fire the emanation ray in lockstep with the mood burst — the
-        // pulse paints the character's halo as a soft mode-tinted ring
-        // that fades outward over ~700ms.
-        triggerEmanation()
-    }
-
-    /// Snap the emanation back to its "just fired" state (progress 0)
-    /// without animation, then animate to resting (progress 1) over
-    /// 700ms with ease-out. Reduce-motion is checked at the call site
-    /// (the ray view itself also returns Color.clear under reduce-motion),
-    /// but we early-return here too so we never schedule a no-op animation.
-    private func triggerEmanation() {
-        guard !reduceMotion else { return }
-        // Reset instantly so a back-to-back trigger doesn't get
-        // interpolated from a partial-state mid-pulse.
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            emanationProgress = 0.0
-        }
-        withAnimation(.easeOut(duration: 0.7)) {
-            emanationProgress = 1.0
-        }
     }
 
     // MARK: - Derived state
@@ -922,10 +879,6 @@ struct HomeCoachCard: View {
 
     private var recommendedMode: PracticeMode {
         recommendationExposure.mode
-    }
-
-    private var accentTint: Color {
-        AppColor.tint(for: recommendedMode)
     }
 
     private var sessionStreak: Int {
@@ -939,7 +892,7 @@ struct HomeCoachCard: View {
     }
 
     private var coherentRecommendationBlueprint: RecommendationBiasBlueprint {
-        let base = RecommendationBiasContextBuilder.context(
+        HomeCoachRecommendationPipeline.coherentBlueprint(
             profile: coachingProfileStore.profile,
             sessions: sessionStore.sessions,
             sessionStreak: sessionStreak,
@@ -947,14 +900,8 @@ struct HomeCoachCard: View {
             coachMemory: coachMemoryStore.currentMemory,
             imAvailable: IMModeAvailability.isAvailable,
             recommendationOutcomes: recommendationLearningStore.outcomes,
-            summaryStyle: .compact
-        ).blueprint
-        let trends = TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
-        let coherentBlueprint = CurrentCoachingFocusPresentation.make(
-            trends: trends,
-            sessionCount: sessionStore.progressEligibleSessionCount
-        )?.applying(to: base) ?? base
-        return coherentBlueprint
+            skillTrends: skillTrendStore.snapshots
+        )
     }
 
     private var currentModeAvailability: NextActionModeAvailability {
@@ -972,8 +919,8 @@ struct HomeCoachCard: View {
     private func recommendationExposure(
         for blueprint: RecommendationBiasBlueprint
     ) -> HomeCoachRecommendationExposure {
-        HomeCoachRecommendationExposure.make(
-            blueprint: blueprint,
+        HomeCoachRecommendationPipeline.exposure(
+            for: blueprint,
             title: coachTitle(for: blueprint),
             profile: coachingProfileStore.profile,
             recentSessions: sessionStore.progressEligibleSessions
@@ -983,15 +930,10 @@ struct HomeCoachCard: View {
     private func recordRecommendationShown(
         _ exposure: HomeCoachRecommendationExposure
     ) {
-        recommendationLearningStore.recordShown(
-            fingerprint: exposure.fingerprint,
-            title: exposure.title,
-            focus: exposure.focus,
-            target: exposure.target,
-            mode: exposure.mode,
-            isAIBacked: false,
+        HomeCoachRecommendationPipeline.recordShown(
+            exposure,
             goal: coachingProfileStore.profile?.chosenStyleGoal,
-            prescribedDemand: exposure.prescribedDemand
+            store: recommendationLearningStore
         )
     }
 

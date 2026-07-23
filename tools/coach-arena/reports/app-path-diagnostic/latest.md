@@ -1,13 +1,13 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-10T03:37:43+00:00`
-- Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
+- Generated: `2026-07-22T21:18:38+00:00`
+- Candidate: `/private/tmp/noum-coach-arena-current.CmFX8Q/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `79.78/100`
+- Average: `81.16/100`
 - Passes score/coverage thresholds: `True`
 - Real-pipeline evidence passes: `False`
 - Evidence claim: `localEvaluationOnly`
-- Trace quality passes: `False`
+- Trace quality passes: `True`
 - Placeholder/fallback leaks: `0`
 - Local fixture failures: `0`
 
@@ -21,25 +21,25 @@
 
 ## Type Averages
 
-- `deepAssessment`: `80.67/100`
-- `groundedRead`: `80.5/100`
-- `quickMove`: `78.76/100`
-- `trustRepair`: `79.67/100`
+- `deepAssessment`: `83.5/100`
+- `groundedRead`: `82.89/100`
+- `quickMove`: `80.47/100`
+- `trustRepair`: `77.44/100`
 
 ## VISION Readiness Boundary
 
 - Production ready: `False`
-- Score: `18/100`
+- Score: `20/100`
 - Maximum allowed score: `20/100`
 - Claim: `localEvaluationSubstrateOnly`
 - Blockers: `noLiveProviderTranscriptSweep`, `noProfessionalCoachCalibration`, `noRealUserLongitudinalTransferOutcomes`, `noRealDeviceTestFlightVerification`, `operationalLaunchChecklistIncomplete`
 
-VISION production readiness 18/100; local target-shape 85/100; claim localEvaluationSubstrateOnly; blockers: noLiveProviderTranscriptSweep, noProfessionalCoachCalibration, noRealUserLongitudinalTransferOutcomes, noRealDeviceTestFlightVerification, operationalLaunchChecklistIncomplete.
+VISION production readiness 20/100; local target-shape 90/100; claim localEvaluationSubstrateOnly; blockers: noLiveProviderTranscriptSweep, noProfessionalCoachCalibration, noRealUserLongitudinalTransferOutcomes, noRealDeviceTestFlightVerification, operationalLaunchChecklistIncomplete.
 
 ## Real-Pipeline Evidence
 
-- `source Swift app-path freshness: source app-path git commit(s) do not match current HEAD: 1cd32331`
-- `trajectoryCacheHit true for 3 real-pipeline fixtures (required 5)`
+- `source Swift app-path freshness: dirty coach source files after app-path dump: .gitleaks.toml,.screenshots/2026-07-22_ui-polish/Archive.zip,AppStore/README.md,AppStore/aso-experiment.template.json,AppStore/commercial-reconciliation.md,AppStore/commercial-reconciliation.template.json,AppStore/launch-gates.md,AppStore/metadata/en-GB.json,+121 more`
+- `source Swift app-path freshness: unfingerprinted dirty behavior source: .gitleaks.toml,.screenshots/2026-07-22_ui-polish/Archive.zip,AppStore/README.md,AppStore/aso-experiment.template.json,AppStore/commercial-reconciliation.md,AppStore/commercial-reconciliation.template.json,AppStore/launch-gates.md,AppStore/metadata/en-GB.json,+115 more`
 
 ## Trace Audit
 
@@ -51,34 +51,36 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 ## Trace Quality
 
 - Eligible real-pipeline traces: `50`
-- Passes: `False`
-- Unique proof-test hashes: `29`
-- Max proof-test hash reuse: `5`
-- Max proof-test hash reuse allowed: `10`
+- Passes: `True`
+- Styled assessment traces: `18`
+- Declared-neutral assessment traces: `32`
+- Invalid assessment-provenance traces: `0`
+- Unique proof-test hashes: `12`
+- Max proof-test hash reuse: `4`
+- Max proof-test hash reuse allowed: `4`
 - Unique final-reply hashes: `50`
 - Max final-reply hash reuse: `1`
-- Distinct rounded confidence values: `10`
-- Trajectory-cache hits: `3`
-- Trajectory-cache hits required: `5`
+- Distinct rounded confidence values: `4`
+- Trajectory-cache hits: `30`
+- Trajectory-cache hits required: `1`
 - Missing trajectory-cache telemetry: `0`
 - Empty retrieval-card traces: `0`
-- Allowed empty retrieval-card traces: `40`
+- Allowed empty retrieval-card traces: `39`
 - Slow first-token traces: `0`
-- Trace quality failures: `trajectoryCacheHit true for 3 real-pipeline fixtures (required 5)`
 
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-09T21:31:51+00:00`
+- Previous generated: `2026-07-10T03:37:43+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
-- Candidate changed: `False`
+- Candidate changed: `True`
 - Fixture count changed: `False`
-- Average delta: `1.86`
-- Failure count delta: `-2`
-- Placeholder leak delta: `-1`
-- Pass state changed: `True`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `4.0`, `trustRepair` `2.78`
-- Cleared failures: `filler-pressure-007, not-easy-empathy-004`
+- Average delta: `1.38`
+- Failure count delta: `0`
+- Placeholder leak delta: `0`
+- Pass state changed: `False`
+- Type average deltas: `deepAssessment` `2.83`, `groundedRead` `2.39`, `quickMove` `1.71`, `trustRepair` `-2.23`
+- Cleared failures: `none`
 - New failures: `none`
 
 ## Coverage
@@ -91,31 +93,31 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `1cd32331`
+- Source trace git commits: `d90bb8922`
 - Source traces missing git commit: `0`
-- Current git commit: `9e7503af`
-- Source trace coach fingerprints: `sha256:af101abff73847d45a865779d3c5ed64a04b19359c45ba8a1006d1c35a3ad403`
+- Current git commit: `d90bb8922`
+- Source trace coach fingerprints: `sha256:fbfd50448e59ee42b191b650f79f0e5af7683c51bdea4a4a05b2ba678ba5f563`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:5954ca93db697b5198dac69054371d10426b96fa88baca5f461e3ea0d714ac13`
-- Source fingerprint matches current: `False`
-- Dirty coach source files: `0`
+- Current coach source fingerprint: `sha256:fbfd50448e59ee42b191b650f79f0e5af7683c51bdea4a4a05b2ba678ba5f563`
+- Source fingerprint matches current: `True`
+- Dirty coach source files: `129`
 - Source freshness passes: `False`
 - Coverage passes: `True`
 - Requested fixtures: `50`
 - Matched fixtures: `50`
 - Unmatched fixtures: `0`
 - Ambiguous fixtures: `0`
-- Source freshness failures: `source app-path git commit(s) do not match current HEAD: 1cd32331`
+- Source freshness failures: `dirty coach source files after app-path dump: .gitleaks.toml,.screenshots/2026-07-22_ui-polish/Archive.zip,AppStore/README.md,AppStore/aso-experiment.template.json,AppStore/commercial-reconciliation.md,AppStore/commercial-reconciliation.template.json,AppStore/launch-gates.md,AppStore/metadata/en-GB.json,+121 more`; `unfingerprinted dirty behavior source: .gitleaks.toml,.screenshots/2026-07-22_ui-polish/Archive.zip,AppStore/README.md,AppStore/aso-experiment.template.json,AppStore/commercial-reconciliation.md,AppStore/commercial-reconciliation.template.json,AppStore/launch-gates.md,AppStore/metadata/en-GB.json,+115 more`
 
 ## Worst Fixtures
 
-- `confidence-clean-stop-025` `quickMove`: `70/100` - no local failure reason
-- `not-informative-trust-repair-002` `trustRepair`: `71/100` - no local failure reason
-- `quote-guard-043` `groundedRead`: `71/100` - no local failure reason
-- `leadership-transfer-capture-026` `quickMove`: `72/100` - no local failure reason
-- `semantic-filler-use-040` `groundedRead`: `72/100` - no local failure reason
-- `prompt-echo-041` `groundedRead`: `72/100` - no local failure reason
-- `confidence-ending-009` `groundedRead`: `73/100` - no local failure reason
-- `grammar-leak-048` `quickMove`: `73/100` - no local failure reason
-- `leadership-update-008` `quickMove`: `74/100` - no local failure reason
-- `closing-ask-020` `quickMove`: `74/100` - no local failure reason
+- `not-easy-empathy-004` `trustRepair`: `75/100` - no local failure reason
+- `concise-answer-023` `quickMove`: `75/100` - no local failure reason
+- `barge-in-045` `trustRepair`: `75/100` - no local failure reason
+- `grammar-leak-048` `quickMove`: `75/100` - no local failure reason
+- `not-informative-trust-repair-002` `trustRepair`: `77/100` - no local failure reason
+- `polite-however-pushback-003` `trustRepair`: `77/100` - no local failure reason
+- `markdown-tts-015` `trustRepair`: `77/100` - no local failure reason
+- `too-much-writing-017` `trustRepair`: `77/100` - no local failure reason
+- `authoritative-distance-001` `deepAssessment`: `78/100` - no local failure reason
+- `filler-pressure-007` `quickMove`: `78/100` - no local failure reason

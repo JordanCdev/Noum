@@ -500,7 +500,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         insights: [String] = [],
         coachSummary: String? = nil,
         prompt: String? = nil,
-        theme: PromptTheme? = nil
+        theme: PromptTheme? = nil,
+        categoryRatings: [String: String] = [:]
     ) -> UUID? {
         // Only annotate the session THIS rep actually persisted. If the rep
         // produced no usable session (empty / too short), `lastSavedSessionID`
@@ -516,7 +517,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 insights: insights,
                 coachSummary: coachSummary,
                 prompt: prompt,
-                theme: theme
+                theme: theme,
+                categoryRatings: categoryRatings
             ),
             expectedMode: currentSessionMode,
             expectedSessionID: sessionID
@@ -591,6 +593,24 @@ class SpeechRecognizerViewModel: ObservableObject {
             correlationId: currentRepCorrelationID,
             mode: currentSessionMode.rawValue
         )
+        FlowEventGrowthEventSink.shared.record(
+            GrowthEvent(
+                correlationID: currentRepCorrelationID,
+                name: .practiceStarted,
+                entryPoint: .train
+            )
+        )
+        if !FlowEventLog.shared.growthEvents().contains(where: {
+            $0.name == .firstSpokenPracticeStarted
+        }) {
+            FlowEventGrowthEventSink.shared.record(
+                GrowthEvent(
+                    correlationID: currentRepCorrelationID,
+                    name: .firstSpokenPracticeStarted,
+                    entryPoint: .train
+                )
+            )
+        }
         sessionUpdateCount = 0
         totalLatencyMs = 0
         confidenceValues = []
@@ -753,6 +773,20 @@ class SpeechRecognizerViewModel: ObservableObject {
             activeSession = nil
             transcriptListenerTask?.cancel()
             transcriptListenerTask = nil
+
+            // Meter the provider that actually accepted this stream, not the
+            // configured preference. The receipt contains only route, whole
+            // audio seconds, outcome, and correlation ID — never speech text.
+            let resolvedProviderIdentifier = sessionToEnd.resolvedProviderIdentifier
+                ?? activeProviderIdentifier
+            AICallDiagnostics.commit(AICallDiagnostics.makeTranscriptionRecord(
+                correlationID: currentRepCorrelationID,
+                requestedCloud: provider.identifier != TranscriptionProviderID.local.rawValue,
+                resolvedProviderIdentifier: resolvedProviderIdentifier,
+                captureDurationSeconds: captureClock.duration(
+                    at: ProcessInfo.processInfo.systemUptime
+                )
+            ))
 
             // The provider's terminal receipt is authoritative. Never promote
             // an interim fragment merely because an earlier segment happened
@@ -1077,7 +1111,11 @@ class SpeechRecognizerViewModel: ObservableObject {
             return
         }
 
-        let sessionID = UUID()
+        // The growth funnel, local persisted row, summary, and optional
+        // externally verified observation must all describe the same rep.
+        // Reusing the capture correlation ID avoids an otherwise invisible
+        // split where a completed rep and its viewed summary cannot reconcile.
+        let sessionID = currentRepCorrelationID
         let accountLifecycleGeneration = AuthManager.shared.accountLifecycleGeneration
         guard let request = BeginCompetitiveObservationRequest(
             sessionID: sessionID,
@@ -1376,7 +1414,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         let finalizedSession = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
-                id: currentSessionPersistenceID,
+                // Ordinary private reps and externally observed reps share
+                // one stable identity from microphone start through summary.
+                id: currentSessionPersistenceID ?? currentRepCorrelationID,
                 transcript: transcribedText,
                 fillerWordCount: fillerWordCount,
                 duration: duration,
@@ -1405,6 +1445,43 @@ class SpeechRecognizerViewModel: ObservableObject {
                 "fillers": fillerWordCount,
             ]
         )
+        let eligibleSessionCount = sessionStore.progressEligibleSessionCount
+        let completedGrowthEvent = GrowthEvent(
+            correlationID: currentRepCorrelationID,
+            name: .practiceCompleted,
+            entryPoint: .train,
+            metrics: [
+                .durationMs: Int(duration * 1_000),
+                .sessionCount: eligibleSessionCount,
+            ]
+        )
+        FlowEventGrowthEventSink.shared.record(completedGrowthEvent)
+        if PracticeProgressEligibility.qualifies(finalizedSession) {
+            let milestoneName: GrowthEventName? = switch eligibleSessionCount {
+            case 2: .secondPracticeCompleted
+            case 3: .thirdPracticeCompleted
+            default: nil
+            }
+            if let milestoneName,
+               !FlowEventLog.shared.growthEvents().contains(where: {
+                   $0.name == milestoneName
+               }) {
+                FlowEventGrowthEventSink.shared.record(
+                    GrowthEvent(
+                        correlationID: currentRepCorrelationID,
+                        name: milestoneName,
+                        entryPoint: .train,
+                        metrics: [
+                            .durationMs: Int(duration * 1_000),
+                            .sessionCount: eligibleSessionCount,
+                        ]
+                    )
+                )
+            }
+        }
+        // First-week notification copy follows the unfinished coaching step,
+        // so refresh it immediately after the evidence owner commits this rep.
+        NotificationManager.shared.refreshScheduledNotifications()
         pastSessions = sessionStore.sessions
     }
 
@@ -1480,6 +1557,10 @@ struct PracticeSession: Identifiable, Codable {
     var mode: PracticeMode = .ahCounter
     var imConversationDetails: IMConversationDetails? = nil
     var score: Int? = nil
+    /// Evaluated per-dimension ratings captured with the session's score.
+    /// Empty for legacy or not-yet-annotated rows; the durable trend repair
+    /// path must never infer these values from presentation state.
+    var categoryRatings: [String: String] = [:]
     var xpEarned: Int? = nil
     var headline: String? = nil
     var insights: [String] = []
@@ -1525,6 +1606,11 @@ struct PracticeSession: Identifiable, Codable {
     /// `intentFocus` so the coach can quote the exact label back at the
     /// user rather than paraphrasing.
     var intentLabel: String? = nil
+    /// Exact transcript ladder that was shown for this rep, when one was
+    /// generated. Optional for legacy rows and reps whose coaching lever is not
+    /// textual. Review replays this snapshot instead of making another provider
+    /// request and risking a different recommendation for the same evidence.
+    var transcriptRewriteSnapshot: TranscriptRewriteSnapshot? = nil
     /// M26: per-session vocal-energy aggregate (mean RMS, peak,
     /// steadiness). Optional because (a) older persisted sessions
     /// decode without it and (b) reps shorter than the accumulator's
@@ -1555,6 +1641,7 @@ struct PracticeSession: Identifiable, Codable {
         case mode
         case imConversationDetails
         case score
+        case categoryRatings
         case xpEarned
         case headline
         case insights
@@ -1574,6 +1661,7 @@ struct PracticeSession: Identifiable, Codable {
         case grammarFindings
         case intentFocus
         case intentLabel
+        case transcriptRewriteSnapshot
         case vocalEnergyMetrics
         case repEventLocations
         case isEvaluationFixture
@@ -1589,6 +1677,7 @@ struct PracticeSession: Identifiable, Codable {
         mode: PracticeMode = .ahCounter,
         imConversationDetails: IMConversationDetails? = nil,
         score: Int? = nil,
+        categoryRatings: [String: String] = [:],
         xpEarned: Int? = nil,
         headline: String? = nil,
         insights: [String] = [],
@@ -1608,6 +1697,7 @@ struct PracticeSession: Identifiable, Codable {
         grammarFindings: [GrammarFinding]? = nil,
         intentFocus: CoachingPriority? = nil,
         intentLabel: String? = nil,
+        transcriptRewriteSnapshot: TranscriptRewriteSnapshot? = nil,
         vocalEnergyMetrics: VocalEnergyMetrics? = nil,
         repEventLocations: RepEventLocations? = nil,
         isEvaluationFixture: Bool = false,
@@ -1621,6 +1711,7 @@ struct PracticeSession: Identifiable, Codable {
         self.mode = mode
         self.imConversationDetails = imConversationDetails
         self.score = score
+        self.categoryRatings = categoryRatings
         self.xpEarned = xpEarned
         self.headline = headline
         self.insights = insights
@@ -1640,6 +1731,7 @@ struct PracticeSession: Identifiable, Codable {
         self.grammarFindings = grammarFindings
         self.intentFocus = intentFocus
         self.intentLabel = intentLabel
+        self.transcriptRewriteSnapshot = transcriptRewriteSnapshot
         self.vocalEnergyMetrics = vocalEnergyMetrics
         self.repEventLocations = repEventLocations
         self.isEvaluationFixture = isEvaluationFixture
@@ -1656,6 +1748,10 @@ struct PracticeSession: Identifiable, Codable {
         mode = try container.decodeIfPresent(PracticeMode.self, forKey: .mode) ?? .ahCounter
         imConversationDetails = try container.decodeIfPresent(IMConversationDetails.self, forKey: .imConversationDetails)
         score = try container.decodeIfPresent(Int.self, forKey: .score)
+        categoryRatings = try container.decodeIfPresent(
+            [String: String].self,
+            forKey: .categoryRatings
+        ) ?? [:]
         xpEarned = try container.decodeIfPresent(Int.self, forKey: .xpEarned)
         headline = try container.decodeIfPresent(String.self, forKey: .headline)
         insights = try container.decodeIfPresent([String].self, forKey: .insights) ?? []
@@ -1675,6 +1771,10 @@ struct PracticeSession: Identifiable, Codable {
         grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)
         intentFocus = try container.decodeIfPresent(CoachingPriority.self, forKey: .intentFocus)
         intentLabel = try container.decodeIfPresent(String.self, forKey: .intentLabel)
+        transcriptRewriteSnapshot = try container.decodeIfPresent(
+            TranscriptRewriteSnapshot.self,
+            forKey: .transcriptRewriteSnapshot
+        )
         vocalEnergyMetrics = try container.decodeIfPresent(VocalEnergyMetrics.self, forKey: .vocalEnergyMetrics)
         repEventLocations = try container.decodeIfPresent(RepEventLocations.self, forKey: .repEventLocations)
         isEvaluationFixture = try container.decodeIfPresent(Bool.self, forKey: .isEvaluationFixture) ?? false

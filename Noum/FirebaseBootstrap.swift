@@ -50,9 +50,7 @@ public enum FirebaseBootstrap {
         let isUnitTestHost = process.environment["XCTestConfigurationFilePath"] != nil
             && !process.arguments.contains("UI_TESTING")
         if isUnitTestHost {
-            if FirebaseApp.app() == nil {
-                FirebaseApp.configure()
-            }
+            _ = unitTestCoreReady
             return
         }
         #endif
@@ -63,6 +61,12 @@ public enum FirebaseBootstrap {
     /// Both the SwiftUI stored-property path and the UIKit delegate call
     /// `configure()`. A static-let initializer is process-wide and thread-safe,
     /// so App Check and Remote Config start exactly once without mutable flags.
+    #if canImport(FirebaseCore)
+    private static let unitTestCoreReady: Void = {
+        FirebaseApp.configure()
+    }()
+    #endif
+
     private static let runtimeServicesReady: Void = {
         #if canImport(FirebaseAppCheck)
         #if DEBUG || targetEnvironment(simulator)
@@ -77,12 +81,14 @@ public enum FirebaseBootstrap {
         #endif
 
         #if canImport(FirebaseCore)
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
-        }
+        // Do not use the default-app accessor as a readiness probe before
+        // setup: Firebase logs I-COR000003 whenever it returns nil. This
+        // process-wide initializer is the configuration guard, so configure
+        // the default app exactly once and treat successful return as ready.
+        FirebaseApp.configure()
         guard shouldStartOptionalServices(
             configurationPresent: true,
-            configured: FirebaseApp.app() != nil
+            configured: true
         ) else { return }
         #endif
 

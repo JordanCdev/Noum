@@ -27,6 +27,7 @@ struct ProductJourneyContractTests {
         #expect(aspiration.source == .onDevice)
         #expect(oneStep.text != transcript)
         #expect(aspiration.text != oneStep.text)
+        #expect(aspiration.text.hasPrefix("The release"))
     }
 
     @Test("Transcript ladder highlights only the changed lever")

@@ -1,0 +1,41 @@
+{
+  "default": {
+    "audience": "High-stakes professionals",
+    "headline": "Say the point clearly when it matters",
+    "proof": "Evidence from your own spoken reps"
+  },
+  "customProductPages": [
+    {
+      "id": "interview",
+      "audience": "Interview candidates",
+      "headline": "Answer the question. Then prove the point.",
+      "firstScreenshot": "Practise high-stakes interview answers"
+    },
+    {
+      "id": "leadership-meetings",
+      "audience": "Managers and leaders",
+      "headline": "Make the recommendation clear under pressure",
+      "firstScreenshot": "Train concise stakeholder answers"
+    },
+    {
+      "id": "presentations",
+      "audience": "Presenters and public speakers",
+      "headline": "Build a steadier opening and close",
+      "firstScreenshot": "Rehearse the moment before the room"
+    }
+  ],
+  "productPageOptimization": [
+    {
+      "id": "evidence",
+      "firstScreenshot": "Feedback grounded in your own words"
+    },
+    {
+      "id": "pressure",
+      "firstScreenshot": "Communicate clearly under pressure"
+    },
+    {
+      "id": "plan",
+      "firstScreenshot": "One focused rep, chosen for you"
+    }
+  ]
+}

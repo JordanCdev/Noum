@@ -54,6 +54,14 @@
       {
         "source": "/privacy",
         "destination": "/privacy.html"
+      },
+      {
+        "source": "/support",
+        "destination": "/support.html"
+      },
+      {
+        "source": "/how-noum-coaches",
+        "destination": "/how-noum-coaches.html"
       }
     ],
     "headers": [

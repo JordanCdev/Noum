@@ -142,7 +142,7 @@ performed with real speech on the candidate build and then reviewed by a human.
 | Guarded social cutover | `EXTERNAL` | Source locks and runbooks exist; production backup/quarantine, migration, trusted producer, coordinated deploy, readback, and two-device smoke require an authorized operator. The social surface correctly remains unavailable. |
 | Hosted policy and custom domain | `PARTIAL` | The Firebase-hosted privacy page exists and disclosure generation is source controlled. `noum.app` DNS/TLS/body-match proof is absent. |
 | Historical credential/session closure | `PARTIAL` | The known Deepgram/Google incident is documented as contained. Firebase CLI session revocation and residual AWS account inventory need owner-produced, independently reviewed evidence. |
-| Source-bound physical TestFlight 14-surface/77-check | `EXTERNAL` | Simulator builds/tests are not a signed archive or processed TestFlight build. Paid-team signing, upload, physical install, and exact checklist are absent. |
+| Source-bound physical TestFlight 14-surface/84-check | `EXTERNAL` | Simulator builds/tests are not a signed archive or processed TestFlight build. Paid-team signing, upload, physical install, and exact checklist are absent. |
 | Current-source live-provider sweep | `EXTERNAL` | Local deterministic provider traces are complete; a `--probe-live` artifact for this candidate is absent. |
 | Blinded professional review | `EXTERNAL` | Packet/validator exists; qualified independent ratings are absent. |
 | Longitudinal real-user transfer | `EXTERNAL` | Schema/validator and product loop exist; consented delayed outcomes are absent. |

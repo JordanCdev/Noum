@@ -46,7 +46,7 @@ FIREBASE_BACKEND_DEPLOYMENT_BLOCKER = (
 
 RELEASE_EVIDENCE_MANAGED_ARTIFACTS = [
     "coach-chat-conversation-expert-calibration-results-v2.json",
-    "coach-real-user-transfer-outcomes-v3.json",
+    "coach-real-user-transfer-outcomes-v4.json",
     "coach-real-device-testflight-qa-v3.json",
     "coach-operational-launch-checklist-v2.json",
 ]
@@ -224,17 +224,21 @@ EVIDENCE_REQUIREMENTS = {
     },
     "noRealUserLongitudinalTransferOutcomes": {
         "rowKey": "realUserLongitudinalTransferOutcomes",
-        "artifact": "coach-real-user-transfer-outcomes-v3.json",
-        "expectedSchemaVersion": "coach-real-user-transfer-outcomes-v3",
+        "artifact": "coach-real-user-transfer-outcomes-v4.json",
+        "expectedSchemaVersion": "coach-real-user-transfer-outcomes-v4",
         "requiredTopLevelKeys": [
             "schemaVersion",
+            "templateStatus",
             "studyProtocolVersion",
             "protocolRegistrationReference",
             "analysisPlanReference",
             "comparisonMethod",
             "benchmarkReference",
             "cohortDescription",
+            "studyAttestation",
+            "studyWindow",
             "enrollment",
+            "installCohort",
             "outcomeCount",
             "summary",
             "rows",
@@ -267,7 +271,7 @@ EVIDENCE_REQUIREMENTS = {
         "owner": "real device QA",
         "gate": (
             "Physical-device TestFlight verification for the exact 14-surface, "
-            "77-check M14 hardware sweep."
+            "84-check M14 hardware sweep, including the full StoreKit lifecycle."
         ),
         "nextStep": (
             "Run the release candidate on a physical TestFlight device and attach "
@@ -365,7 +369,7 @@ PROFESSIONAL_CALIBRATION_PACKET_FILE = "coach-chat-conversation-expert-calibrati
 PROFESSIONAL_CALIBRATION_PACKET_SCHEMA = "coach-chat-conversation-expert-calibration-v2"
 PROFESSIONAL_CALIBRATION_RESULTS_SCHEMA = "coach-chat-conversation-expert-calibration-results-v2"
 PROFESSIONAL_CALIBRATION_RUBRIC = "coach-parity-conversation-calibration-v2"
-PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION = 2
+PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION = 3
 PROFESSIONAL_CALIBRATION_MIN_CONVERSATION_COUNT = 39
 PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT = (
     PROFESSIONAL_CALIBRATION_MIN_CONVERSATION_COUNT
@@ -373,13 +377,17 @@ PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT = (
 )
 MIN_TRAJECTORY_CACHE_HIT_RATIO = 0.10
 
-REAL_USER_TRANSFER_SCHEMA = "coach-real-user-transfer-outcomes-v3"
-REAL_USER_TRANSFER_PROTOCOL = "coach-transfer-outcome-ledger-v3"
-REAL_USER_TRANSFER_REQUIRED_OUTCOMES = 10
-REAL_USER_TRANSFER_REQUIRED_USERS = 8
+REAL_USER_TRANSFER_SCHEMA = "coach-real-user-transfer-outcomes-v4"
+REAL_USER_TRANSFER_PROTOCOL = "coach-transfer-outcome-ledger-v4"
+REAL_USER_TRANSFER_REQUIRED_OUTCOMES = 30
+REAL_USER_TRANSFER_REQUIRED_USERS = 30
 REAL_USER_TRANSFER_REQUIRED_MOMENT_CATEGORIES = 4
 REAL_USER_TRANSFER_MAX_OUTCOMES_PER_USER = 2
 REAL_USER_TRANSFER_MIN_FOLLOW_UP_HOURS = 24
+REAL_USER_TRANSFER_MIN_STUDY_SECONDS = 28 * 24 * 60 * 60
+REAL_USER_TRANSFER_REQUIRED_RELEASE_INSTALLS = 200
+REAL_USER_TRANSFER_SCALE_INSTALLS = 500
+REAL_USER_TRANSFER_INSTALL_SOURCE = "appStoreConnectAnalytics"
 REAL_USER_TRANSFER_MIN_POSITIVE_RATE = 0.60
 REAL_USER_TRANSFER_MIN_NO_REGRESSION_RATE = 0.70
 REAL_USER_TRANSFER_MIN_COHORT_COMPLETION_RATE = 0.70
@@ -440,6 +448,13 @@ REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE = {
         "paywallOpensFromSettings",
         "monthlySandboxPurchase",
         "annualSandboxPurchase",
+        "annualTrialEligibilityAndExactTerms",
+        "annualTrialStarts",
+        "renewalPreservesEntitlement",
+        "cancellationRemainsActiveUntilExpiry",
+        "billingFailureFollowsVerifiedStoreKitState",
+        "refundRevokesEntitlement",
+        "expiryRemovesEntitlement",
         "restorePreviousPurchase",
         "coachModeEntitlement",
         "liveTranscriptEntitlement",
@@ -1841,6 +1856,8 @@ def calibration_packet_context(root):
     reviews_per_conversation = payload.get("requiredIndependentReviewsPerConversation")
     if strict_int(reviews_per_conversation) is not None and reviews_per_conversation > 0:
         context["requiredReviewsPerConversation"] = reviews_per_conversation
+        if reviews_per_conversation < PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION:
+            context["packetFailures"].append("sourcePacketBelowIndependentReviewFloor")
     required_count = payload.get("requiredReviewCount")
     if strict_int(required_count) is not None and required_count > 0:
         context["requiredReviewCount"] = required_count
@@ -2477,15 +2494,38 @@ def usable_evidence_reference(value):
     }
 
 
-def usable_iso8601_timestamp(value):
+def parse_iso8601_timestamp(value):
     normalized = trimmed_non_empty(value)
     if normalized is None:
-        return False
+        return None
     try:
         parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
     except ValueError:
-        return False
-    return parsed.tzinfo is not None
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def usable_iso8601_timestamp(value):
+    return parse_iso8601_timestamp(value) is not None
+
+
+def real_user_transfer_scale_signal(payload, release_contract_passes=False):
+    install_cohort = (
+        payload.get("installCohort")
+        if isinstance(payload.get("installCohort"), dict)
+        else {}
+    )
+    observed = strict_int(install_cohort.get("qualifiedInstallCount")) or 0
+    return {
+        "key": "scaleConversionCohortReadiness",
+        "observedCount": observed,
+        "requiredCount": REAL_USER_TRANSFER_SCALE_INSTALLS,
+        "ready": bool(
+            release_contract_passes
+            and observed >= REAL_USER_TRANSFER_SCALE_INSTALLS
+        ),
+        "blocking": False,
+    }
 
 
 def real_user_transfer_row_passes(row):
@@ -2509,8 +2549,11 @@ def real_user_transfer_row_passes(row):
     adverse_follow_up = usable_evidence_reference(
         row.get("adverseOutcomeFollowUpReference")
     )
+    positive_reported = row.get("positiveTransferReported")
+    negative_reported = row.get("negativeOutcomeReported")
     return bool(
         all(trimmed_non_empty(row.get(key)) for key in identity_keys)
+        and SHA256_PATTERN.fullmatch(row.get("userIDHash") or "") is not None
         and all(usable_evidence_reference(row.get(key)) for key in evidence_keys)
         and row.get("realWorldMomentOccurred") is True
         and row.get("followUpCompleted") is True
@@ -2521,6 +2564,9 @@ def real_user_transfer_row_passes(row):
         and pre_confidence is not None and 1 <= pre_confidence <= 5
         and post_confidence is not None and 1 <= post_confidence <= 5
         and row.get("audienceResponseEvidenceCollected") is True
+        and isinstance(positive_reported, bool)
+        and isinstance(negative_reported, bool)
+        and not (positive_reported and negative_reported)
         and (not adverse_reported or (adverse_resolved and adverse_follow_up))
         and row.get("causalityClaims") == []
     )
@@ -2533,6 +2579,128 @@ def real_user_transfer_contract_failures(payload):
     if any(not isinstance(row, dict) for row in rows):
         failures.append("invalidOutcomeRows")
     typed_rows = [row for row in rows if isinstance(row, dict)]
+
+    if payload.get("templateStatus") != "COLLECTED_EXTERNAL_EVIDENCE":
+        failures.append("transferNotMarkedCollected")
+
+    attestation = (
+        payload.get("studyAttestation")
+        if isinstance(payload.get("studyAttestation"), dict)
+        else {}
+    )
+    principal_id = trimmed_non_empty(attestation.get("principalInvestigatorID"))
+    analyst_id = trimmed_non_empty(attestation.get("analystID"))
+    if principal_id is None or analyst_id is None or principal_id == analyst_id:
+        failures.append("invalidStudyRoles")
+    required_attestations = [
+        "attestsCompleteEnrollmentAccounting",
+        "attestsWithdrawalsAndExclusionsWereRetained",
+        "attestsNegativeAndAdverseOutcomesWereRetained",
+        "attestsNoSyntheticParticipantsOrInstallsWereCounted",
+    ]
+    if any(attestation.get(key) is not True for key in required_attestations):
+        failures.append("incompleteStudyAttestation")
+    attestation_reference_keys = [
+        "attestationReference",
+        "participantConsentLogReference",
+        "withdrawalLogReference",
+        "exclusionLogReference",
+        "negativeOutcomeLogReference",
+        "adverseOutcomeLogReference",
+        "populationProvenanceReference",
+    ]
+    if (
+        not usable_iso8601_timestamp(attestation.get("attestedAtISO8601"))
+        or any(
+            not usable_evidence_reference(attestation.get(key))
+            for key in attestation_reference_keys
+        )
+    ):
+        failures.append("missingStudyAttestationEvidence")
+
+    study_window = (
+        payload.get("studyWindow")
+        if isinstance(payload.get("studyWindow"), dict)
+        else {}
+    )
+    study_started_at = parse_iso8601_timestamp(
+        study_window.get("startedAtISO8601")
+    )
+    study_completed_at = parse_iso8601_timestamp(
+        study_window.get("completedAtISO8601")
+    )
+    study_elapsed_seconds = None
+    if study_started_at is not None and study_completed_at is not None:
+        study_elapsed_seconds = (
+            study_completed_at - study_started_at
+        ).total_seconds()
+    if study_elapsed_seconds is None or study_elapsed_seconds < 0:
+        failures.append("invalidStudyWindow")
+    elif study_elapsed_seconds < REAL_USER_TRANSFER_MIN_STUDY_SECONDS:
+        failures.append("insufficientLongitudinalWindow")
+
+    install_cohort = (
+        payload.get("installCohort")
+        if isinstance(payload.get("installCohort"), dict)
+        else {}
+    )
+    qualified_installs = strict_int(install_cohort.get("qualifiedInstallCount"))
+    day1_eligible = strict_int(install_cohort.get("day1EligibleInstallCount"))
+    day1_retained = strict_int(install_cohort.get("day1RetainedInstallCount"))
+    day7_eligible = strict_int(install_cohort.get("day7EligibleInstallCount"))
+    day7_retained = strict_int(install_cohort.get("day7RetainedInstallCount"))
+    install_counts = [
+        qualified_installs,
+        day1_eligible,
+        day1_retained,
+        day7_eligible,
+        day7_retained,
+    ]
+    install_started_at = parse_iso8601_timestamp(
+        install_cohort.get("cohortStartedAtISO8601")
+    )
+    install_completed_at = parse_iso8601_timestamp(
+        install_cohort.get("cohortCompletedAtISO8601")
+    )
+    storefronts = install_cohort.get("storefronts")
+    install_metadata_valid = bool(
+        install_cohort.get("source") == REAL_USER_TRANSFER_INSTALL_SOURCE
+        and trimmed_non_empty(install_cohort.get("appVersion"))
+        and isinstance(storefronts, list)
+        and storefronts
+        and all(trimmed_non_empty(value) for value in storefronts)
+        and len(set(storefronts)) == len(storefronts)
+        and usable_evidence_reference(
+            install_cohort.get("qualificationCriteriaReference")
+        )
+        and usable_evidence_reference(
+            install_cohort.get("retentionEvidenceReference")
+        )
+        and install_started_at is not None
+        and install_completed_at is not None
+        and install_completed_at >= install_started_at
+        and study_started_at is not None
+        and study_completed_at is not None
+        and install_started_at >= study_started_at
+        and install_completed_at <= study_completed_at
+    )
+    if (
+        not install_metadata_valid
+        or any(value is None or value < 0 for value in install_counts)
+    ):
+        failures.append("invalidInstallCohort")
+    else:
+        if qualified_installs < REAL_USER_TRANSFER_REQUIRED_RELEASE_INSTALLS:
+            failures.append("insufficientQualifiedReleaseInstalls")
+        if day1_eligible < REAL_USER_TRANSFER_REQUIRED_RELEASE_INSTALLS:
+            failures.append("insufficientDay1EligibleInstalls")
+        if day7_eligible < REAL_USER_TRANSFER_REQUIRED_RELEASE_INSTALLS:
+            failures.append("insufficientDay7EligibleInstalls")
+        if not (
+            day1_retained <= day1_eligible <= qualified_installs
+            and day7_retained <= day7_eligible <= qualified_installs
+        ):
+            failures.append("invalidRetentionCounts")
 
     if payload.get("studyProtocolVersion") != REAL_USER_TRANSFER_PROTOCOL:
         failures.append(f"studyProtocolVersion={payload.get('studyProtocolVersion')}")
@@ -2548,7 +2716,7 @@ def real_user_transfer_contract_failures(payload):
         or outcome_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
         or len(rows) < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
     ):
-        failures.append("fewerThanTenOutcomes")
+        failures.append("fewerThanThirtyOutcomes")
     if outcome_count != len(rows) or strict_int(summary.get("rowCount")) != len(rows):
         failures.append("rowCountMismatch")
 
@@ -2564,26 +2732,48 @@ def real_user_transfer_contract_failures(payload):
     if len(set(outcome_keys)) != len(rows):
         failures.append("duplicateOutcomeIDs")
     append_ids_failure(failures, "missingRowIdentity", missing_identity)
+    invalid_user_hashes = [
+        row.get("outcomeID") or f"row-{index}"
+        for index, row in enumerate(typed_rows)
+        if SHA256_PATTERN.fullmatch(row.get("userIDHash") or "") is None
+    ]
+    append_ids_failure(failures, "invalidParticipantHashes", invalid_user_hashes)
 
     unique_users = len(set(user_keys))
     if (
         strict_int(summary.get("uniqueUserCount")) != unique_users
         or unique_users < REAL_USER_TRANSFER_REQUIRED_USERS
     ):
-        failures.append("insufficientUniqueUsers")
+        failures.append("insufficientQualifiedQualitativeParticipants")
 
     enrollment = payload.get("enrollment") if isinstance(payload.get("enrollment"), dict) else {}
     enrolled_users = strict_int(enrollment.get("enrolledUserCount"))
     completed_users = strict_int(enrollment.get("completedUserCount"))
     withdrawn_users = strict_int(enrollment.get("withdrawnUserCount"))
     excluded_users = strict_int(enrollment.get("excludedUserCount"))
-    enrollment_counts = [enrolled_users, completed_users, withdrawn_users, excluded_users]
+    qualified_users = strict_int(
+        enrollment.get("qualifiedQualitativeParticipantCount")
+    )
+    enrollment_counts = [
+        enrolled_users,
+        qualified_users,
+        completed_users,
+        withdrawn_users,
+        excluded_users,
+    ]
     enrollment_coherent = bool(
         all(value is not None and value >= 0 for value in enrollment_counts)
         and enrolled_users is not None and enrolled_users > 0
         and completed_users + withdrawn_users + excluded_users == enrolled_users
+        and qualified_users == unique_users
+        and qualified_users >= REAL_USER_TRANSFER_REQUIRED_USERS
         and completed_users == unique_users
+        and usable_evidence_reference(
+            enrollment.get("participantQualificationCriteriaReference")
+        )
         and usable_evidence_reference(enrollment.get("exclusionLogReference"))
+        and enrollment.get("exclusionLogReference")
+        == attestation.get("exclusionLogReference")
     )
     completion_rate = (
         completed_users / enrolled_users
@@ -2649,6 +2839,26 @@ def real_user_transfer_contract_failures(payload):
             failures.append(failure)
 
     positive_count = sum(row.get("positiveTransferReported") is True for row in typed_rows)
+    negative_count = sum(row.get("negativeOutcomeReported") is True for row in typed_rows)
+    invalid_outcome_classification = [
+        row.get("outcomeID") or f"row-{index}"
+        for index, row in enumerate(typed_rows)
+        if (
+            not isinstance(row.get("positiveTransferReported"), bool)
+            or not isinstance(row.get("negativeOutcomeReported"), bool)
+            or (
+                row.get("positiveTransferReported") is True
+                and row.get("negativeOutcomeReported") is True
+            )
+        )
+    ]
+    append_ids_failure(
+        failures,
+        "invalidOutcomeClassification",
+        invalid_outcome_classification,
+    )
+    if strict_int(summary.get("negativeOutcomeCount")) != negative_count:
+        failures.append("negativeOutcomeCountMismatch")
     minimum_positive_count = math.ceil(
         len(typed_rows) * REAL_USER_TRANSFER_MIN_POSITIVE_RATE
     )
@@ -2690,11 +2900,15 @@ def real_user_transfer_contract_failures(payload):
         or resolved_adverse_count != adverse_count
     ):
         failures.append("unresolvedAdverseOutcomes")
-    if (
-        (strict_int(summary.get("minimumDaysSinceFirstSession")) or 0) < 7
-        or (strict_int(summary.get("studyDurationDays")) or 0) < 14
-    ):
+    expected_study_duration_days = (
+        math.floor(study_elapsed_seconds / (24 * 60 * 60))
+        if study_elapsed_seconds is not None and study_elapsed_seconds >= 0
+        else None
+    )
+    if (strict_int(summary.get("minimumDaysSinceFirstSession")) or 0) < 7:
         failures.append("insufficientLongitudinalWindow")
+    if strict_int(summary.get("studyDurationDays")) != expected_study_duration_days:
+        failures.append("studyDurationMismatch")
     if any(row.get("causalityClaims") != [] for row in typed_rows):
         failures.append("causalityClaimsPresent")
 
@@ -3184,6 +3398,7 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
             "missingRequiredKeys": requirement.get("requiredTopLevelKeys", []),
             "passesLightweightContract": False,
             "contractFailures": ["missing"],
+            "nonBlockingSignals": [],
         }
 
     failures = []
@@ -3198,6 +3413,7 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
             "missingRequiredKeys": requirement.get("requiredTopLevelKeys", []),
             "passesLightweightContract": False,
             "contractFailures": [f"invalidJSON:{exc.msg}"],
+            "nonBlockingSignals": [],
         }
 
     if not isinstance(payload, dict):
@@ -3209,6 +3425,7 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
             "missingRequiredKeys": requirement.get("requiredTopLevelKeys", []),
             "passesLightweightContract": False,
             "contractFailures": ["invalidTopLevelType"],
+            "nonBlockingSignals": [],
         }
 
     expected_schema = requirement.get("expectedSchemaVersion")
@@ -3234,12 +3451,19 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
                 (source_expectations or {}).get("professionalCalibrationPacket"),
             )
         )
+    non_blocking_signals = []
     if expected_schema == REAL_USER_TRANSFER_SCHEMA:
         failures.extend(real_user_transfer_contract_failures(payload))
     if expected_schema == REAL_DEVICE_TESTFLIGHT_SCHEMA:
         failures.extend(real_device_testflight_contract_failures(payload))
     if expected_schema == OPERATIONAL_LAUNCH_SCHEMA:
         failures.extend(operational_launch_contract_failures(payload, source_expectations))
+
+    if expected_schema == REAL_USER_TRANSFER_SCHEMA:
+        non_blocking_signals.append(real_user_transfer_scale_signal(
+            payload,
+            release_contract_passes=not failures,
+        ))
 
     return {
         "parseStatus": "ok",
@@ -3249,6 +3473,7 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
         "missingRequiredKeys": missing_keys,
         "passesLightweightContract": not failures,
         "contractFailures": failures,
+        "nonBlockingSignals": non_blocking_signals,
     }
 
 
@@ -3301,6 +3526,11 @@ def evidence_artifact_audit(dump_dir, readiness=None):
 
     missing = [item for item in required if not item["present"]]
     present_but_blocked = [item for item in required if item["presentButStillBlocked"]]
+    non_blocking_signals = [
+        signal
+        for item in required
+        for signal in item.get("nonBlockingSignals", [])
+    ]
     return {
         "dumpDir": str(root),
         "dumpDirExists": root.is_dir(),
@@ -3326,6 +3556,7 @@ def evidence_artifact_audit(dump_dir, readiness=None):
         ],
         "presentButStillBlockedArtifacts": present_but_blocked,
         "sourceSidecars": source_sidecars,
+        "nonBlockingSignals": non_blocking_signals,
     }
 
 

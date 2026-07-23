@@ -239,7 +239,7 @@ struct CardView<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     init(
-        cornerRadius: CGFloat = CornerRadius.xl,
+        cornerRadius: CGFloat = CornerRadius.large,
         padding: CGFloat = Spacing.lg,
         @ViewBuilder content: @escaping () -> Content
     ) {
@@ -376,9 +376,10 @@ extension ButtonStyle where Self == PressableButtonStyle {
 
 /// Standardized primary CTA button.
 ///
-/// `labelTint` defaults to white (tinted capsule, white label). On a
-/// gradient hero pass `tint: .white, labelTint: <hero start colour>` for
-/// the inverted white-capsule register.
+/// `labelTint` defaults to white (solid tinted capsule, white label). A
+/// caller may still pass a light tint with a dark `labelTint`, but the shared
+/// control deliberately does not invent a decorative gradient: the action's
+/// hierarchy should come from its label and contrast, not changing colour.
 struct PrimaryCTA: View {
     let title: String
     let icon: String?
@@ -403,14 +404,14 @@ struct PrimaryCTA: View {
                         .font(.headline.weight(.semibold))
                 }
                 Text(title)
-                    .font(.headline.weight(.semibold))
+                    .font(Typography.cardLabel)
             }
             .foregroundStyle(isEnabled ? labelTint : AppColor.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.md)
             .background {
                 Capsule(style: .continuous)
-                    .fill(isEnabled ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(AppColor.innerSurface))
+                    .fill(isEnabled ? AnyShapeStyle(tint) : AnyShapeStyle(AppColor.innerSurface))
             }
             .overlay {
                 if !isEnabled {
@@ -471,7 +472,7 @@ struct ReadingScreenScaffold<Content: View>: View {
                 LazyVStack(alignment: .leading, spacing: Spacing.lg) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text(title)
-                            .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
+                            .font(Typography.screenTitle)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
 
@@ -742,7 +743,7 @@ struct GradientHeroCard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(style.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .shadow(color: style.shadowTint.opacity(0.30), radius: 18, y: 10)
+            .shadow(color: style.shadowTint.opacity(0.10), radius: 12, y: 6)
     }
 }
 
@@ -893,93 +894,6 @@ func dismissRecursively(from dismiss: DismissAction, times: Int = 2) {
         DispatchQueue.main.async {
             dismissRecursively(from: dismiss, times: times - 1)
         }
-    }
-}
-
-// MARK: - Milestone Celebration Overlay
-
-/// A full-screen milestone celebration that interrupts to celebrate achievements.
-struct MilestoneCelebrationOverlay: View {
-    let icon: String
-    let tint: Color
-    let title: String
-    let subtitle: String
-    let detail: String?
-    let onDismiss: () -> Void
-
-    @State private var appeared = false
-    @State private var dismissed = false
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(appeared ? 0.45 : 0)
-                .ignoresSafeArea()
-                .onTapGesture { dismissCelebration() }
-
-            VStack(spacing: 20) {
-                ZStack {
-                    Circle()
-                        .fill(tint.opacity(0.15))
-                        .frame(width: 100, height: 100)
-                        .scaleEffect(appeared ? 1.2 : 0.5)
-                    Circle()
-                        .stroke(tint.opacity(0.25), lineWidth: 2)
-                        .frame(width: 110, height: 110)
-                        .scaleEffect(appeared ? 1.3 : 0.4)
-                    Image(systemName: icon)
-                        .font(.system(size: 38, weight: .bold))
-                        .foregroundStyle(tint)
-                        .scaleEffect(appeared ? 1.0 : 0.3)
-                }
-
-                Text(title)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-
-                Text(subtitle)
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-
-                if let detail {
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.6))
-                        .multilineTextAlignment(.center)
-                }
-                // M25: Continue button removed. The celebration is a
-                // moment the user reads, not a screen they navigate.
-                // Auto-dismiss after 5s lands on summary without an
-                // interaction tax; tap-to-dismiss-anywhere stays so a
-                // user who wants to move on faster still can.
-            }
-            .padding(32)
-            .scaleEffect(appeared ? 1.0 : 0.7)
-            .opacity(appeared ? 1.0 : 0)
-        }
-        .opacity(dismissed ? 0 : 1)
-        .contentShape(Rectangle())
-        .onTapGesture { dismissCelebration() }
-        .onAppear {
-            withAnimation(.bouncySpring) { appeared = true }
-#if canImport(UIKit)
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-#endif
-            // Auto-advance to summary after 5s. Cancelled implicitly if
-            // the user taps to dismiss earlier (the second call into
-            // dismissCelebration is idempotent — `dismissed` already
-            // true on the second pass).
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                guard !dismissed else { return }
-                dismissCelebration()
-            }
-        }
-    }
-
-    private func dismissCelebration() {
-        withAnimation(.easeOut(duration: 0.25)) { dismissed = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onDismiss() }
     }
 }
 

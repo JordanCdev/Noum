@@ -3,6 +3,132 @@ import Foundation
 import UserNotifications
 #endif
 
+/// Pure coaching-contract calendar used by the first-week scheduler. Each
+/// day is a separate one-shot request, so its coaching meaning cannot remain
+/// frozen inside a repeating notification after the contract advances.
+struct FirstWeekNotificationSchedule {
+    struct Delivery: Equatable {
+        let day: Int
+        let fireAt: Date
+    }
+
+    /// The written receipt remains the acquisition cohort anchor, while the
+    /// notification program follows the spoken contract. Until a qualifying
+    /// baseline exists, `now` keeps one Day-0 reminder available instead of
+    /// silently expiring the journey seven calendar days after writing.
+    static func contractAnchor(
+        activationAt: Date,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> Date {
+        PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { activationAt <= $0.date && $0.date <= now }
+            .min(by: { $0.date < $1.date })?
+            .date ?? now
+    }
+
+    static func deliveries(
+        activationAt: Date,
+        now: Date,
+        reminderHour: Int,
+        reminderMinute: Int,
+        calendar: Calendar = .current
+    ) -> [Delivery] {
+        let activationDay = calendar.startOfDay(for: activationAt)
+        let hour = max(0, min(23, reminderHour))
+        let minute = max(0, min(59, reminderMinute))
+
+        return (0...FirstWeekCoachingContract.finalDay).compactMap { day in
+            guard let dayStart = calendar.date(
+                byAdding: .day,
+                value: day,
+                to: activationDay
+            ) else { return nil }
+            var components = calendar.dateComponents(
+                [.year, .month, .day],
+                from: dayStart
+            )
+            components.hour = hour
+            components.minute = minute
+            components.second = 0
+            guard let fireAt = calendar.date(from: components),
+                  fireAt > now else { return nil }
+            return Delivery(day: day, fireAt: fireAt)
+        }
+    }
+
+    /// The coaching contract owns daily-rhythm notification copy from the
+    /// activation calendar day through the end of Day 7. The Day-7 read stays
+    /// available later, but must not suppress the user's ordinary reminder
+    /// settings indefinitely.
+    static func isActivationWindowActive(
+        activationAt: Date,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard activationAt <= now else { return false }
+        let activationDay = calendar.startOfDay(for: activationAt)
+        let currentDay = calendar.startOfDay(for: now)
+        guard let elapsedDays = calendar.dateComponents(
+            [.day],
+            from: activationDay,
+            to: currentDay
+        ).day else {
+            return false
+        }
+        return (0...FirstWeekCoachingContract.finalDay).contains(elapsedDays)
+    }
+}
+
+/// Pure schedule projection for the three user-controlled rhythm toggles.
+/// During Days 0-7, generic streak/digest copy is withheld and the existing
+/// daily-reminder permission is projected onto the first-week contract. This
+/// preserves notification frequency consent while guaranteeing that any
+/// rhythm notification sent in the activation window names the unfinished
+/// coaching step.
+struct DailyRhythmNotificationPlan: Equatable {
+    let firstWeekWindowActive: Bool
+    let scheduleFirstWeekContract: Bool
+    let scheduleDailyReminder: Bool
+    let scheduleStreakWarning: Bool
+    let scheduleWeeklyDigest: Bool
+
+    static func resolve(
+        activationAt: Date?,
+        now: Date,
+        dailyReminderEnabled: Bool,
+        streakWarningEnabled: Bool,
+        weeklyDigestEnabled: Bool,
+        calendar: Calendar = .current
+    ) -> DailyRhythmNotificationPlan {
+        let firstWeekWindowActive = activationAt.map {
+            FirstWeekNotificationSchedule.isActivationWindowActive(
+                activationAt: $0,
+                now: now,
+                calendar: calendar
+            )
+        } ?? false
+
+        if firstWeekWindowActive {
+            return DailyRhythmNotificationPlan(
+                firstWeekWindowActive: true,
+                scheduleFirstWeekContract: dailyReminderEnabled,
+                scheduleDailyReminder: false,
+                scheduleStreakWarning: false,
+                scheduleWeeklyDigest: false
+            )
+        }
+
+        return DailyRhythmNotificationPlan(
+            firstWeekWindowActive: false,
+            scheduleFirstWeekContract: false,
+            scheduleDailyReminder: dailyReminderEnabled,
+            scheduleStreakWarning: streakWarningEnabled,
+            scheduleWeeklyDigest: weeklyDigestEnabled
+        )
+    }
+}
+
 @MainActor
 final class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
@@ -65,6 +191,10 @@ final class NotificationManager: ObservableObject {
     private let bigMomentT7Identifier = "noum.bigmoment.t7"
     private let bigMomentT1Identifier = "noum.bigmoment.t1"
     private let bigMomentCheckInIdentifier = "noum.bigmoment.checkin"
+    nonisolated static let firstWeekStageNotificationIdentifiers =
+        (0...FirstWeekCoachingContract.finalDay).map {
+            "noum.firstWeek.day.\($0)"
+        }
 
     /// Exact retired identifier retained for one-way migration cleanup. Never
     /// add requests with this identifier again; removing pending and delivered
@@ -157,8 +287,8 @@ final class NotificationManager: ObservableObject {
             center.removePendingNotificationRequests(withIdentifiers: [
                 dailyReminderIdentifier,
                 streakWarningIdentifier,
-                weeklyDigestIdentifier
-            ])
+                weeklyDigestIdentifier,
+            ] + Self.firstWeekStageNotificationIdentifiers)
 
             // Read authorization state passively — do NOT request, do NOT
             // surface the system prompt. The pre-prompt sheet handles asks.
@@ -170,13 +300,35 @@ final class NotificationManager: ObservableObject {
                 return
             }
 
-            if dailyReminderEnabled {
+            let now = Date()
+            let firstWeekSnapshot = FirstWeekCoachingSnapshotResolver.projection(
+                at: now
+            )
+            let contractAnchor = firstWeekSnapshot.map {
+                FirstWeekNotificationSchedule.contractAnchor(
+                    activationAt: $0.activation.completedAt,
+                    sessions: PracticeSessionStore.shared.sessions,
+                    now: now
+                )
+            }
+            let plan = DailyRhythmNotificationPlan.resolve(
+                activationAt: contractAnchor,
+                now: now,
+                dailyReminderEnabled: dailyReminderEnabled,
+                streakWarningEnabled: streakWarningEnabled,
+                weeklyDigestEnabled: weeklyDigestEnabled
+            )
+
+            if plan.scheduleFirstWeekContract {
+                await scheduleFirstWeekNotifications(now: now)
+            }
+            if plan.scheduleDailyReminder {
                 await scheduleDailyReminder()
             }
-            if streakWarningEnabled {
+            if plan.scheduleStreakWarning {
                 await scheduleStreakWarning()
             }
-            if weeklyDigestEnabled {
+            if plan.scheduleWeeklyDigest {
                 await scheduleWeeklyDigest()
             }
 
@@ -210,13 +362,18 @@ final class NotificationManager: ObservableObject {
     private func scheduleDailyReminder() async {
 #if canImport(UserNotifications)
         let content = UNMutableNotificationContent()
+        let snapshot = SharedNoumState.read()
         let copy = NotificationCopy.dailyReminder(
-            streakDays: SharedNoumState.read().currentStreak,
-            todayDone: SharedNoumState.read().repsToday > 0
+            streakDays: snapshot.currentStreak,
+            todayDone: snapshot.repsToday > 0
         )
         content.title = copy.title
         content.body = copy.body
         content.sound = .default
+        content.userInfo = attribution(
+            kind: .practiceReminder,
+            route: "noum://train"
+        )
 
         var components = DateComponents()
         components.hour = max(0, min(23, dailyReminderHour))
@@ -225,6 +382,60 @@ final class NotificationManager: ObservableObject {
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
         let request = UNNotificationRequest(identifier: dailyReminderIdentifier, content: content, trigger: trigger)
         try? await UNUserNotificationCenter.current().add(request)
+#endif
+    }
+
+    /// Installs the remaining activation-relative first-week days as separate
+    /// one-shot requests. Re-running this after a rep or check-in removes and
+    /// rebuilds them from the current evidence owners, so future routes always
+    /// point at the step that is still unfinished.
+    private func scheduleFirstWeekNotifications(now: Date) async {
+#if canImport(UserNotifications)
+        guard let current = FirstWeekCoachingSnapshotResolver.projection(at: now),
+              current.day <= FirstWeekCoachingContract.finalDay else {
+            return
+        }
+        let contractAnchor = FirstWeekNotificationSchedule.contractAnchor(
+            activationAt: current.activation.completedAt,
+            sessions: PracticeSessionStore.shared.sessions,
+            now: now
+        )
+        let deliveries = FirstWeekNotificationSchedule.deliveries(
+            activationAt: contractAnchor,
+            now: now,
+            reminderHour: dailyReminderHour,
+            reminderMinute: dailyReminderMinute
+        )
+        guard !deliveries.isEmpty else { return }
+
+        let center = UNUserNotificationCenter.current()
+        for delivery in deliveries {
+            guard let projected = FirstWeekCoachingSnapshotResolver.projection(
+                at: delivery.fireAt
+            ) else { continue }
+            let copy = NotificationCopy.firstWeek(intent: projected.notificationIntent)
+            let content = UNMutableNotificationContent()
+            content.title = copy.title
+            content.body = copy.body
+            content.sound = .default
+            content.userInfo = FirstWeekNotificationAttribution(
+                snapshot: projected
+            ).userInfo
+
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: delivery.fireAt
+            )
+            let request = UNNotificationRequest(
+                identifier: Self.firstWeekStageNotificationIdentifiers[delivery.day],
+                content: content,
+                trigger: UNCalendarNotificationTrigger(
+                    dateMatching: components,
+                    repeats: false
+                )
+            )
+            try? await center.add(request)
+        }
 #endif
     }
 
@@ -250,6 +461,10 @@ final class NotificationManager: ObservableObject {
         content.title = copy.title
         content.body = copy.body
         content.sound = .default
+        content.userInfo = attribution(
+            kind: .practiceReminder,
+            route: "noum://train"
+        )
 
         // 8 PM local — late enough to be useful, calm enough to avoid
         // countdown or loss-framed pressure.
@@ -273,6 +488,10 @@ final class NotificationManager: ObservableObject {
         content.title = copy.title
         content.body = copy.body
         content.sound = .default
+        content.userInfo = attribution(
+            kind: .weeklyRead,
+            route: "noum://home"
+        )
 
         // Sunday 7 PM local. ISO weekday 1 = Sunday.
         var components = DateComponents()
@@ -329,6 +548,10 @@ final class NotificationManager: ObservableObject {
             t7Content.title = "7 days to your \(categoryName)."
             t7Content.body = "Time for a focused rep."
             t7Content.sound = .default
+            t7Content.userInfo = attribution(
+                kind: .bigMoment,
+                route: "noum://train"
+            )
             let t7Trigger = UNCalendarNotificationTrigger(dateMatching: t7Components, repeats: false)
             let t7Request = UNNotificationRequest(
                 identifier: bigMomentT7Identifier,
@@ -347,6 +570,10 @@ final class NotificationManager: ObservableObject {
             t1Content.title = "Tomorrow is your \(categoryName)."
             t1Content.body = "One last rep — make it the one that builds confidence."
             t1Content.sound = .default
+            t1Content.userInfo = attribution(
+                kind: .bigMoment,
+                route: "noum://train"
+            )
             let t1Trigger = UNCalendarNotificationTrigger(dateMatching: t1Components, repeats: false)
             let t1Request = UNNotificationRequest(
                 identifier: bigMomentT1Identifier,
@@ -374,6 +601,10 @@ final class NotificationManager: ObservableObject {
             checkInContent.title = copy.title
             checkInContent.body = copy.body
             checkInContent.sound = .default
+            checkInContent.userInfo = attribution(
+                kind: .bigMoment,
+                route: "noum://home"
+            )
             let checkInTrigger = UNCalendarNotificationTrigger(dateMatching: checkInComponents, repeats: false)
             let checkInRequest = UNNotificationRequest(
                 identifier: bigMomentCheckInIdentifier,
@@ -451,6 +682,10 @@ final class NotificationManager: ObservableObject {
             practiceTitle: practiceTitle,
             nextMove: nextMove
         )
+        // A completed rep can change the first-week unfinished step. Re-arm
+        // the existing daily/weekly requests immediately so stale copy does
+        // not keep asking for work the user has already done.
+        refreshScheduledNotifications()
         await performFollowUpSchedule()
     }
 
@@ -496,6 +731,10 @@ final class NotificationManager: ObservableObject {
             relationship: pending.relationship,
             nextMove: pending.nextMove,
             challenge: retentionSnapshot.activeChallenge
+        )
+        content.userInfo = attribution(
+            kind: .reengagement,
+            route: "noum://train"
         )
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 60 * 60 * 18, repeats: false)
@@ -552,6 +791,17 @@ final class NotificationManager: ObservableObject {
         return "A short follow-up rep now will make the next conversation feel easier."
     }
 
+    private func attribution(
+        kind: GrowthNotificationKind,
+        route: String
+    ) -> [AnyHashable: Any] {
+        guard let url = URL(string: route),
+              let value = GrowthNotificationAttribution(kind: kind, route: url) else {
+            return [:]
+        }
+        return value.userInfo
+    }
+
     // MARK: - Authorization
 
     private func requestAuthorizationIfNeeded() async -> Bool {
@@ -565,9 +815,23 @@ final class NotificationManager: ObservableObject {
         case .denied:
             return false
         case .notDetermined:
+            let correlationID = UUID()
+            FlowEventGrowthEventSink.shared.record(
+                GrowthEvent(
+                    correlationID: correlationID,
+                    name: .notificationOptInPrompted
+                )
+            )
             let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            FlowEventGrowthEventSink.shared.record(
+                GrowthEvent(
+                    correlationID: correlationID,
+                    name: granted ? .notificationOptInAccepted : .notificationOptInDeclined,
+                    outcome: granted ? .succeeded : .cancelled
+                )
+            )
             FlowLog.log(
-                correlationId: UUID(),
+                correlationId: correlationID,
                 flow: .other,
                 stage: granted ? "notification.authorizationGranted" : "notification.authorizationDeclined",
                 outcome: granted ? .success : .skipped,

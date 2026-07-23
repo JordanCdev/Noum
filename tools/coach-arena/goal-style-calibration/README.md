@@ -65,7 +65,7 @@ Each row must also carry a coordinator-issued evidence-package access receipt
 ID and set `reviewerAttestsEvidenceWasReviewed` to `true`. A review based only
 on this repository packet is invalid.
 
-Every calibration case requires at least two distinct reviewers whose role is
+Every calibration case requires at least three distinct reviewers whose role is
 exactly `professional-communication-coach`. Each row must provide the complete
 rubric-dimension key set, using an integer from 0 through 100 or `null` when the
 dimension is unjudgeable. `overclaimRisk` is limited to `low`, `medium`, or

@@ -464,7 +464,7 @@ struct CoachChatConversationExpertCalibrationPacket: Codable, Equatable {
                 "Blinded professional-coach review packet: compare Noum's full multi-turn coaching conversation against what an excellent human communication coach would do.",
                 "Use the supplied user turns, candidate coach replies, and Noum context only; do not assume the app is validated or production-ready.",
                 "Evaluate diagnosis, case formulation, intervention, adaptation, perception limits, transfer setup, trust repair, and evidence calibration across the whole conversation.",
-                "Each conversation needs at least two independent professional communication-coach reviews before it can count as calibration evidence.",
+                "Each conversation needs at least three independent professional communication-coach reviews before it can count as calibration evidence.",
                 "Prefer useful, attuned, evidence-led coaching over polished generic advice; mark thin evidence and overclaims explicitly.",
                 "This packet gathers human calibration evidence only. Do not treat a completed packet as production readiness without longitudinal user outcomes and real-device QA."
             ].joined(separator: " "),
@@ -571,7 +571,7 @@ struct CoachChatConversationExpertCalibrationPacketRow: Codable, Equatable {
 struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
     static let expectedSchemaVersion = "coach-chat-conversation-expert-calibration-results-v2"
     static let expectedRubricVersion = "coach-parity-conversation-calibration-v2"
-    static let requiredReviewsPerConversation = 2
+    static let requiredReviewsPerConversation = 3
     static let requiredConversationIDs = CoachChatConversationCorpus
         .professionalCalibrationConversations
         .map(\.id)
@@ -788,25 +788,33 @@ struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
 }
 
 struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v3"
-    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v3"
-    static let requiredOutcomeCount = 10
-    static let requiredUniqueUserCount = 8
+    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v4"
+    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v4"
+    static let requiredOutcomeCount = 30
+    static let requiredUniqueUserCount = 30
     static let requiredMomentCategoryCount = 4
     static let maximumOutcomesPerUser = 2
     static let minimumFollowUpDelayHours = 24
+    static let minimumStudyDurationSeconds: TimeInterval = 28 * 24 * 60 * 60
+    static let requiredReleaseInstallCount = 200
+    static let scaleConversionInstallCount = 500
+    static let expectedInstallSource = "appStoreConnectAnalytics"
     static let minimumPositiveTransferRate = 0.60
     static let minimumNoRegressionRate = 0.70
     static let minimumCohortCompletionRate = 0.70
 
     let schemaVersion: String
+    let templateStatus: String
     let studyProtocolVersion: String
     let protocolRegistrationReference: String
     let analysisPlanReference: String
     let comparisonMethod: String
     let benchmarkReference: String
     let cohortDescription: String
+    let studyAttestation: StudyAttestation
+    let studyWindow: StudyWindow
     let enrollment: Enrollment
+    let installCohort: InstallCohort
     let outcomeCount: Int
     let summary: Summary
     let rows: [Row]
@@ -817,6 +825,11 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
 
     var qualifiesForReadiness: Bool {
         rejectionReasons.isEmpty
+    }
+
+    var scaleConversionCohortReady: Bool {
+        qualifiesForReadiness &&
+            installCohort.qualifiedInstallCount >= Self.scaleConversionInstallCount
     }
 
     var rejectionReasons: [String] {
@@ -833,6 +846,7 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let realWorldMoments = rows.filter(\.realWorldMomentOccurred).count
         let linkedInterventions = rows.filter { $0.linkedCoachInterventionCount > 0 }.count
         let positiveTransfer = rows.filter(\.positiveTransferReported).count
+        let negativeOutcomes = rows.filter(\.negativeOutcomeReported).count
         let audienceEvidence = rows.filter(\.audienceResponseEvidenceCollected).count
         let noRegression = rows.filter { $0.postMomentConfidence >= $0.preMomentConfidence }.count
         let adverseOutcomes = rows.filter(\.adverseOutcomeReported).count
@@ -850,11 +864,51 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let rowsMissingIdentity = rows.enumerated().compactMap { index, row -> String? in
             row.hasRequiredIdentity ? nil : row.outcomeIDForDiagnostics(index: index)
         }
+        let rowsWithInvalidParticipantHash = rows.enumerated().compactMap { index, row -> String? in
+            row.hasValidParticipantHash ? nil : row.outcomeIDForDiagnostics(index: index)
+        }
+        let rowsWithInvalidOutcomeClassification = rows.enumerated().compactMap { index, row -> String? in
+            row.hasValidOutcomeClassification ? nil : row.outcomeIDForDiagnostics(index: index)
+        }
+        let studyElapsedSeconds = studyWindow.elapsedSeconds
+        let expectedStudyDurationDays = studyElapsedSeconds.map {
+            Int(floor($0 / (24 * 60 * 60)))
+        }
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
         }
+        if templateStatus != "COLLECTED_EXTERNAL_EVIDENCE" {
+            reasons.append("transferNotMarkedCollected")
+        }
         if studyProtocolVersion != Self.expectedProtocolVersion {
             reasons.append("studyProtocolVersion=\(studyProtocolVersion)")
+        }
+        if !studyAttestation.isComplete {
+            reasons.append("incompleteStudyAttestation")
+        }
+        if !studyAttestation.hasRequiredEvidenceReferences {
+            reasons.append("missingStudyAttestationEvidence")
+        }
+        if studyElapsedSeconds == nil || (studyElapsedSeconds ?? 0) < 0 {
+            reasons.append("invalidStudyWindow")
+        } else if (studyElapsedSeconds ?? 0) < Self.minimumStudyDurationSeconds {
+            reasons.append("insufficientLongitudinalWindow")
+        }
+        if !installCohort.hasValidMetadata ||
+            !installCohort.isContained(in: studyWindow) {
+            reasons.append("invalidInstallCohort")
+        }
+        if installCohort.qualifiedInstallCount < Self.requiredReleaseInstallCount {
+            reasons.append("insufficientQualifiedReleaseInstalls")
+        }
+        if installCohort.day1EligibleInstallCount < Self.requiredReleaseInstallCount {
+            reasons.append("insufficientDay1EligibleInstalls")
+        }
+        if installCohort.day7EligibleInstallCount < Self.requiredReleaseInstallCount {
+            reasons.append("insufficientDay7EligibleInstalls")
+        }
+        if !installCohort.hasCoherentRetentionCounts {
+            reasons.append("invalidRetentionCounts")
         }
         if !Self.usableEvidenceReference(protocolRegistrationReference) ||
             !Self.usableEvidenceReference(analysisPlanReference) ||
@@ -865,6 +919,9 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
             reasons.append("unsupportedComparisonMethod=\(comparisonMethod)")
         }
         if !enrollment.isCoherent ||
+            enrollment.qualifiedQualitativeParticipantCount != uniqueUserIDs.count ||
+            enrollment.qualifiedQualitativeParticipantCount < Self.requiredUniqueUserCount ||
+            enrollment.exclusionLogReference != studyAttestation.exclusionLogReference ||
             enrollment.completionRate < Self.minimumCohortCompletionRate {
             reasons.append("invalidOrInsufficientCohortCompletion")
         }
@@ -872,7 +929,7 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
             reasons.append("completedUserCountMismatch")
         }
         if outcomeCount < Self.requiredOutcomeCount || rows.count < Self.requiredOutcomeCount {
-            reasons.append("fewerThanTenOutcomes")
+            reasons.append("fewerThanThirtyOutcomes")
         }
         if outcomeCount != rows.count || summary.rowCount != rows.count {
             reasons.append("rowCountMismatch")
@@ -883,9 +940,15 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         if !rowsMissingIdentity.isEmpty {
             reasons.append("missingRowIdentity=\(rowsMissingIdentity.joined(separator: ","))")
         }
+        if !rowsWithInvalidParticipantHash.isEmpty {
+            reasons.append("invalidParticipantHashes=\(rowsWithInvalidParticipantHash.joined(separator: ","))")
+        }
+        if !rowsWithInvalidOutcomeClassification.isEmpty {
+            reasons.append("invalidOutcomeClassification=\(rowsWithInvalidOutcomeClassification.joined(separator: ","))")
+        }
         if summary.uniqueUserCount != uniqueUserIDs.count ||
             summary.uniqueUserCount < Self.requiredUniqueUserCount {
-            reasons.append("insufficientUniqueUsers")
+            reasons.append("insufficientQualifiedQualitativeParticipants")
         }
         if summary.uniqueMomentCategoryCount != uniqueMomentCategories.count ||
             summary.uniqueMomentCategoryCount < Self.requiredMomentCategoryCount {
@@ -903,20 +966,27 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
             minimumObservedFollowUpDelay < Self.minimumFollowUpDelayHours {
             reasons.append("insufficientFollowUpDelay")
         }
-        if summary.completedFollowUpCount != completedFollowUps || completedFollowUps < 10 {
+        if summary.completedFollowUpCount != completedFollowUps ||
+            completedFollowUps < Self.requiredOutcomeCount {
             reasons.append("insufficientCompletedFollowUps")
         }
-        if summary.realWorldMomentCount != realWorldMoments || realWorldMoments < 10 {
+        if summary.realWorldMomentCount != realWorldMoments ||
+            realWorldMoments < Self.requiredOutcomeCount {
             reasons.append("insufficientRealWorldMoments")
         }
-        if summary.linkedInterventionOutcomeCount != linkedInterventions || linkedInterventions < 10 {
+        if summary.linkedInterventionOutcomeCount != linkedInterventions ||
+            linkedInterventions < Self.requiredOutcomeCount {
             reasons.append("insufficientLinkedInterventions")
         }
         if summary.positiveTransferCount != positiveTransfer ||
             positiveTransfer < requiredPositiveTransferCount {
             reasons.append("insufficientPositiveTransferOutcomes")
         }
-        if summary.audienceResponseEvidenceCount != audienceEvidence || audienceEvidence < 10 {
+        if summary.negativeOutcomeCount != negativeOutcomes {
+            reasons.append("negativeOutcomeCountMismatch")
+        }
+        if summary.audienceResponseEvidenceCount != audienceEvidence ||
+            audienceEvidence < Self.requiredOutcomeCount {
             reasons.append("insufficientAudienceResponseEvidence")
         }
         if summary.noRegressionOutcomeCount != noRegression ||
@@ -928,15 +998,19 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
             resolvedAdverseOutcomes != adverseOutcomes {
             reasons.append("unresolvedAdverseOutcomes")
         }
-        if summary.minimumDaysSinceFirstSession < 7 || summary.studyDurationDays < 14 {
+        if summary.minimumDaysSinceFirstSession < 7 {
             reasons.append("insufficientLongitudinalWindow")
+        }
+        if expectedStudyDurationDays == nil ||
+            summary.studyDurationDays != expectedStudyDurationDays! {
+            reasons.append("studyDurationMismatch")
         }
         if rows.contains(where: { !$0.causalityClaims.isEmpty }) {
             reasons.append("causalityClaimsPresent")
         }
         if rows.contains(where: { !$0.passesOutcomeFloor }) ||
             summary.passingOutcomeCount != passingRows.count ||
-            summary.passingOutcomeCount < 10 {
+            summary.passingOutcomeCount < Self.requiredOutcomeCount {
             reasons.append("outcomeFloorFailures")
         }
         if !summary.readinessWarnings.isEmpty {
@@ -966,6 +1040,16 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         ].contains(normalized)
     }
 
+    fileprivate static func iso8601Date(_ value: String) -> Date? {
+        let standard = ISO8601DateFormatter()
+        if let date = standard.date(from: value) {
+            return date
+        }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value)
+    }
+
     static func decode(from json: String) throws -> CoachRealUserTransferOutcomeEvidence {
         let data = Data(json.utf8)
         return try JSONDecoder().decode(CoachRealUserTransferOutcomeEvidence.self, from: data)
@@ -978,6 +1062,129 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
+    struct StudyAttestation: Codable, Equatable {
+        let principalInvestigatorID: String
+        let analystID: String
+        let attestationReference: String
+        let participantConsentLogReference: String
+        let withdrawalLogReference: String
+        let exclusionLogReference: String
+        let negativeOutcomeLogReference: String
+        let adverseOutcomeLogReference: String
+        let populationProvenanceReference: String
+        let attestedAtISO8601: String
+        let attestsCompleteEnrollmentAccounting: Bool
+        let attestsWithdrawalsAndExclusionsWereRetained: Bool
+        let attestsNegativeAndAdverseOutcomesWereRetained: Bool
+        let attestsNoSyntheticParticipantsOrInstallsWereCounted: Bool
+
+        var isComplete: Bool {
+            !principalInvestigatorID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !analystID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                principalInvestigatorID != analystID &&
+                CoachRealUserTransferOutcomeEvidence.iso8601Date(attestedAtISO8601) != nil &&
+                attestsCompleteEnrollmentAccounting &&
+                attestsWithdrawalsAndExclusionsWereRetained &&
+                attestsNegativeAndAdverseOutcomesWereRetained &&
+                attestsNoSyntheticParticipantsOrInstallsWereCounted
+        }
+
+        var hasRequiredEvidenceReferences: Bool {
+            [
+                attestationReference,
+                participantConsentLogReference,
+                withdrawalLogReference,
+                exclusionLogReference,
+                negativeOutcomeLogReference,
+                adverseOutcomeLogReference,
+                populationProvenanceReference
+            ].allSatisfy(CoachRealUserTransferOutcomeEvidence.usableEvidenceReference)
+        }
+    }
+
+    struct StudyWindow: Codable, Equatable {
+        let startedAtISO8601: String
+        let completedAtISO8601: String
+
+        var startedAt: Date? {
+            CoachRealUserTransferOutcomeEvidence.iso8601Date(startedAtISO8601)
+        }
+
+        var completedAt: Date? {
+            CoachRealUserTransferOutcomeEvidence.iso8601Date(completedAtISO8601)
+        }
+
+        var elapsedSeconds: TimeInterval? {
+            guard let startedAt, let completedAt else { return nil }
+            return completedAt.timeIntervalSince(startedAt)
+        }
+    }
+
+    struct InstallCohort: Codable, Equatable {
+        let source: String
+        let cohortStartedAtISO8601: String
+        let cohortCompletedAtISO8601: String
+        let appVersion: String
+        let storefronts: [String]
+        let qualifiedInstallCount: Int
+        let day1EligibleInstallCount: Int
+        let day1RetainedInstallCount: Int
+        let day7EligibleInstallCount: Int
+        let day7RetainedInstallCount: Int
+        let qualificationCriteriaReference: String
+        let retentionEvidenceReference: String
+
+        var cohortStartedAt: Date? {
+            CoachRealUserTransferOutcomeEvidence.iso8601Date(cohortStartedAtISO8601)
+        }
+
+        var cohortCompletedAt: Date? {
+            CoachRealUserTransferOutcomeEvidence.iso8601Date(cohortCompletedAtISO8601)
+        }
+
+        var hasValidMetadata: Bool {
+            source == CoachRealUserTransferOutcomeEvidence.expectedInstallSource &&
+                !appVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !storefronts.isEmpty &&
+                storefronts.allSatisfy {
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                } &&
+                Set(storefronts).count == storefronts.count &&
+                CoachRealUserTransferOutcomeEvidence.usableEvidenceReference(
+                    qualificationCriteriaReference
+                ) &&
+                CoachRealUserTransferOutcomeEvidence.usableEvidenceReference(
+                    retentionEvidenceReference
+                ) &&
+                cohortStartedAt != nil &&
+                cohortCompletedAt != nil &&
+                cohortCompletedAt! >= cohortStartedAt!
+        }
+
+        var hasCoherentRetentionCounts: Bool {
+            qualifiedInstallCount >= 0 &&
+                day1EligibleInstallCount >= 0 &&
+                day1RetainedInstallCount >= 0 &&
+                day7EligibleInstallCount >= 0 &&
+                day7RetainedInstallCount >= 0 &&
+                day1RetainedInstallCount <= day1EligibleInstallCount &&
+                day1EligibleInstallCount <= qualifiedInstallCount &&
+                day7RetainedInstallCount <= day7EligibleInstallCount &&
+                day7EligibleInstallCount <= qualifiedInstallCount
+        }
+
+        func isContained(in studyWindow: StudyWindow) -> Bool {
+            guard
+                let cohortStartedAt,
+                let cohortCompletedAt,
+                let studyStartedAt = studyWindow.startedAt,
+                let studyCompletedAt = studyWindow.completedAt
+            else { return false }
+            return cohortStartedAt >= studyStartedAt &&
+                cohortCompletedAt <= studyCompletedAt
+        }
+    }
+
     struct Summary: Codable, Equatable {
         let rowCount: Int
         let uniqueUserCount: Int
@@ -985,6 +1192,7 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let realWorldMomentCount: Int
         let linkedInterventionOutcomeCount: Int
         let positiveTransferCount: Int
+        let negativeOutcomeCount: Int
         let audienceResponseEvidenceCount: Int
         let noRegressionOutcomeCount: Int
         let adverseOutcomeCount: Int
@@ -1001,9 +1209,11 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
 
     struct Enrollment: Codable, Equatable {
         let enrolledUserCount: Int
+        let qualifiedQualitativeParticipantCount: Int
         let completedUserCount: Int
         let withdrawnUserCount: Int
         let excludedUserCount: Int
+        let participantQualificationCriteriaReference: String
         let exclusionLogReference: String
 
         var completionRate: Double {
@@ -1013,10 +1223,14 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
 
         var isCoherent: Bool {
             enrolledUserCount > 0 &&
+                qualifiedQualitativeParticipantCount >= 0 &&
                 completedUserCount >= 0 &&
                 withdrawnUserCount >= 0 &&
                 excludedUserCount >= 0 &&
                 completedUserCount + withdrawnUserCount + excludedUserCount == enrolledUserCount &&
+                CoachRealUserTransferOutcomeEvidence.usableEvidenceReference(
+                    participantQualificationCriteriaReference
+                ) &&
                 CoachRealUserTransferOutcomeEvidence.usableEvidenceReference(exclusionLogReference)
         }
     }
@@ -1034,6 +1248,7 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let preMomentConfidence: Int
         let postMomentConfidence: Int
         let positiveTransferReported: Bool
+        let negativeOutcomeReported: Bool
         let audienceResponseEvidenceCollected: Bool
         let adverseOutcomeReported: Bool
         let adverseOutcomeResolved: Bool
@@ -1051,6 +1266,17 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
                 !userIDHash.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !momentCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !interventionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var hasValidParticipantHash: Bool {
+            userIDHash.range(
+                of: "^sha256:[0-9a-f]{64}$",
+                options: .regularExpression
+            ) != nil
+        }
+
+        var hasValidOutcomeClassification: Bool {
+            !(positiveTransferReported && negativeOutcomeReported)
         }
 
         var hasRequiredEvidenceReferences: Bool {
@@ -1073,6 +1299,8 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
             return realWorldMomentOccurred &&
                 followUpCompleted &&
                 hasRequiredIdentity &&
+                hasValidParticipantHash &&
+                hasValidOutcomeClassification &&
                 hasRequiredEvidenceReferences &&
                 linkedCoachInterventionCount > 0 &&
                 daysSinceFirstNoumSession >= 7 &&
@@ -1148,6 +1376,13 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
             "paywallOpensFromSettings",
             "monthlySandboxPurchase",
             "annualSandboxPurchase",
+            "annualTrialEligibilityAndExactTerms",
+            "annualTrialStarts",
+            "renewalPreservesEntitlement",
+            "cancellationRemainsActiveUntilExpiry",
+            "billingFailureFollowsVerifiedStoreKitState",
+            "refundRevokesEntitlement",
+            "expiryRemovesEntitlement",
             "restorePreviousPurchase",
             "coachModeEntitlement",
             "liveTranscriptEntitlement",
@@ -3331,7 +3566,8 @@ struct CoachVisionProductionReadinessAudit: Codable, Equatable {
         if evidence.professionalCoachCalibrationRows >= CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount {
             score += 20
         }
-        if evidence.realUserLongitudinalOutcomeCount >= 10 {
+        if evidence.realUserLongitudinalOutcomeCount >=
+            CoachRealUserTransferOutcomeEvidence.requiredOutcomeCount {
             score += 26
         }
         if evidence.realDeviceTestFlightVerified {
@@ -3353,7 +3589,8 @@ struct CoachVisionProductionReadinessAudit: Codable, Equatable {
         if evidence.professionalCoachCalibrationRows < CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount {
             blockers.append(.noProfessionalCoachCalibration)
         }
-        if evidence.realUserLongitudinalOutcomeCount < 10 {
+        if evidence.realUserLongitudinalOutcomeCount <
+            CoachRealUserTransferOutcomeEvidence.requiredOutcomeCount {
             blockers.append(.noRealUserLongitudinalTransferOutcomes)
         }
         if !evidence.realDeviceTestFlightVerified {
@@ -3605,8 +3842,11 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
             }
             return "Professional calibration results rejected: \(professionalCalibration.rejectionReasons.joined(separator: ","))"
         }()
-        let realUserTransferEarned = evidence.realUserLongitudinalOutcomeCount >= 10 &&
+        let realUserTransferEarned = evidence.realUserLongitudinalOutcomeCount >=
+            CoachRealUserTransferOutcomeEvidence.requiredOutcomeCount &&
             realUserTransferOutcomes?.qualifiesForReadiness == true
+        let scaleConversionCohortEarned =
+            realUserTransferOutcomes?.scaleConversionCohortReady == true
         let realUserTransferSource = realUserTransferOutcomes?.schemaVersion ??
             CoachRealUserTransferOutcomeEvidence.expectedSchemaVersion
         let realUserTransferNotes: String = {
@@ -3614,7 +3854,7 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
                 return "Requires longitudinal off-app outcome follow-ups tied to real user transfer moments."
             }
             if realUserTransferOutcomes.qualifiesForReadiness {
-                return "\(realUserTransferOutcomes.rows.count) real-user transfer outcomes passed; cohort=\(realUserTransferOutcomes.cohortDescription)"
+                return "\(realUserTransferOutcomes.rows.count) real-user transfer outcomes passed across \(realUserTransferOutcomes.enrollment.qualifiedQualitativeParticipantCount) qualified participants and \(realUserTransferOutcomes.installCohort.qualifiedInstallCount) qualified installs; cohort=\(realUserTransferOutcomes.cohortDescription)"
             }
             return "Real-user transfer outcomes rejected: \(realUserTransferOutcomes.rejectionReasons.joined(separator: ","))"
         }()
@@ -3722,10 +3962,21 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
                 key: "realUserLongitudinalTransferOutcomes",
                 status: realUserTransferEarned ? .earned : .missing,
                 observedCount: evidence.realUserLongitudinalOutcomeCount,
-                requiredCount: 10,
+                requiredCount: CoachRealUserTransferOutcomeEvidence.requiredOutcomeCount,
                 source: realUserTransferSource,
                 blocker: realUserTransferEarned ? nil : .noRealUserLongitudinalTransferOutcomes,
                 notes: realUserTransferNotes
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "scaleConversionCohortReadiness",
+                status: scaleConversionCohortEarned ? .earned : .pending,
+                observedCount: realUserTransferOutcomes?.installCohort.qualifiedInstallCount ?? 0,
+                requiredCount: CoachRealUserTransferOutcomeEvidence.scaleConversionInstallCount,
+                source: realUserTransferSource,
+                blocker: nil,
+                notes: scaleConversionCohortEarned
+                    ? "At least 500 qualified installs are available for conversion judgment and material acquisition decisions."
+                    : "Nonblocking scale signal: first release requires 200 qualified D1/D7 installs; wait for 500 before judging trial conversion or spending materially on acquisition."
             ),
             CoachVisionProductionReadinessEvidenceRow(
                 key: "realDeviceTestFlightVerification",

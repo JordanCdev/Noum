@@ -123,7 +123,6 @@ struct SummaryView: View {
     @State private var miniDrillXPBreakdown: DrillXPEngine.Breakdown?
     @State private var committedMiniDrillOutcomeIDs: Set<UUID> = []
     @State private var showSecondaryDetails = false
-    @State private var coachNoteRevealed = false
     @State private var enhancedCoachNote: CoachNote?
     /// The strategic recommendation returned by the same finalization pass
     /// that committed this rep. Retained for immediate-finalization paths;
@@ -140,7 +139,11 @@ struct SummaryView: View {
     @State private var progressionDeltas: [AchievementProgressDelta] = []
     @State private var progressionNewUnlocks: [AchievementTier] = []
     @State private var progressionPreviousXP: Int = 0
+    @State private var showAllProgressUpdates = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.requestReview) private var requestReview
+    @State private var reviewPromptExitGate = SummaryReviewPromptExitGate()
+    @State private var transcriptUpgradeState: TranscriptUpgradePresentationState?
 
     private let aiCoachService: AICoachServicing = AICoachService()
 
@@ -284,6 +287,47 @@ struct SummaryView: View {
         }
     }
 
+    /// The immediate post-rep contract must offer one lever, not a transcript
+    /// upgrade and a separate plan prescription at the same time. While this
+    /// lane is loading or ready, the source-bound Review ladder owns the next
+    /// action. If it fails honestly, Summary restores the finalized plan card.
+    private var hasTranscriptUpgradeLane: Bool {
+        currentTranscriptRetryOutcome == nil
+            && currentRepIsProgressEligible
+            && premium.isPremium
+            && onStartLookingAhead != nil
+            && primaryWeakness != nil
+            && AIRewriteService.eligibility(
+                transcript: transcriptText,
+                confidence: currentStoredSession?.transcriptConfidence,
+                locale: localeSettings.current
+            ) == .eligible
+    }
+
+    private var transcriptUpgradeOwnsNextAction: Bool {
+        hasTranscriptUpgradeLane && transcriptUpgradeState != .unavailable
+    }
+
+    /// When Review owns the immediate action, keep the summary observation on
+    /// that exact language lever. A generic duration or momentum claim beside
+    /// an opening rewrite makes the coach appear to change its mind between
+    /// cards even when both statements are independently evidence-safe.
+    private var transcriptUpgradeObservation: String? {
+        guard transcriptUpgradeOwnsNextAction, let weakness = primaryWeakness else {
+            return nil
+        }
+        switch weakness {
+        case .opening:
+            return "The opening uses a tentative marker before the recommendation. The retry removes only that marker."
+        case .closing:
+            return "The ending softens after the main point. The retry keeps the point and removes only that softener."
+        case .structure:
+            return "The answer contains the point and its support, but not in the clearest order. The retry changes only that order."
+        case .concise:
+            return "The main point arrives after a longer lead-in. The retry brings it forward without changing the meaning."
+        }
+    }
+
     /// Transcript → a stronger version of the user's own words.
     ///
     /// This used to mount inside `expandableDetailsSection`, which defaults
@@ -311,10 +355,12 @@ struct SummaryView: View {
                     transcript: transcriptText,
                     weakness: weakness,
                     sourceSessionID: currentStoredSession?.id,
+                    sourcePrompt: sessionPrompt ?? currentStoredSession?.prompt,
                     targetDimension: goalOutcomeRead?.nextDimension?.label,
                     targetDimensionID: goalOutcomeRead?.nextDimension?.dimensionID,
                     goal: goalOutcomeRead?.style,
                     transcriptConfidence: currentStoredSession?.transcriptConfidence,
+                    savedSnapshot: currentStoredSession?.transcriptRewriteSnapshot,
                     onPracticePhrase: onStartLookingAhead.map { launch in
                         { intent in
                             guard let token = TimedPracticePromptHandoff.shared.offerToken(
@@ -343,6 +389,9 @@ struct SummaryView: View {
                             recommendationLearningStore.markTapped(mode: .timed)
                             launch(.timedPracticePrompt(token: token))
                         }
+                    },
+                    onPresentationStateChange: { state in
+                        transcriptUpgradeState = state
                     }
                 )
             } else {
@@ -578,7 +627,8 @@ struct SummaryView: View {
             fixBullets: postRepFixBullets,
             proof: resolvedProof,
             isMinimalEffort: isMinimalEffort,
-            deliveryReadLine: postRepDeliveryReadLine
+            deliveryReadLine: postRepDeliveryReadLine,
+            sourceDuration: effectiveDuration
         )
     }
 
@@ -744,7 +794,33 @@ struct SummaryView: View {
     /// toward the denominator.
     private func recordSummaryViewedIfNeeded() {
         guard let sessionID = currentStoredSession?.id else { return }
+        AutoGuidedFirstRep.markSummaryPresented(sessionID: sessionID)
         flowEventLog.recordSummaryViewed(correlationId: sessionID)
+        guard !flowEventLog.growthEvents().contains(where: {
+            $0.name == .summaryViewed && $0.correlationID == sessionID
+        }) else { return }
+        FlowEventGrowthEventSink.shared.record(
+            GrowthEvent(
+                correlationID: sessionID,
+                name: .summaryViewed,
+                entryPoint: .postPractice
+            )
+        )
+        // The structured fast lane records its own permissionless first value.
+        // A full-onboarding/control journey reaches first useful value only
+        // when the first persisted spoken rep's coaching summary is visible.
+        // Recording here prevents that cohort from being undercounted while
+        // preserving the prove-value-before-paywall boundary.
+        guard !flowEventLog.growthEvents().contains(where: {
+            $0.name == .firstValueDelivered
+        }) else { return }
+        FlowEventGrowthEventSink.shared.record(
+            GrowthEvent(
+                correlationID: sessionID,
+                name: .firstValueDelivered,
+                entryPoint: .postPractice
+            )
+        )
     }
 
     private func recordReviewExperimentExposureIfNeeded() {
@@ -886,13 +962,6 @@ struct SummaryView: View {
         return Array(messages.prefix(3))
     }
 
-    /// Parent-level choreography delay. Child celebration views already
-    /// collapse their own motion; this also removes the otherwise invisible
-    /// waits between them when Reduce Motion is enabled.
-    private func motionDelay(_ fullMotionDuration: Double) -> Double {
-        reduceMotion ? 0 : fullMotionDuration
-    }
-
     // MARK: - Body
 
     var body: some View {
@@ -904,32 +973,19 @@ struct SummaryView: View {
                     VStack(spacing: 16) {
                         // MODE CONSISTENCY NOTE (M20):
                         // IM, Sudden Death and Timed/other share TalkToNoumCTACard
-                        // as the single Ask Noum entry point. Sudden Death keeps an
-                        // arcade-style result hero while its cards below remain
-                        // coaching-first. Remaining divergences to address later:
+                        // as the single Ask Noum entry point. Every mode now opens
+                        // on the useful coaching read and prescribed next rep;
+                        // score/mode receipts are secondary. Remaining divergences:
                         //   - IM lacks BaselineComparisonCard equivalents for
                         //     WhatYouDidWell / WhatToImprove (uses IMReadCard instead)
                         //   - Ah-Counter has no dedicated mode-specific verdict card
                         //     (falls into the Timed/other path — acceptable for now)
                         if isIMSummary {
-                            // IM MODE — same 5-slot order as the timed
-                            // path (hero / read / move / one Ask door /
-                            // exit). IM has no verified ProofMoment
-                            // surface, so there is no WIN slot — known
-                            // gap; never fabricate one. The revised-read
-                            // acknowledgment folds into the read and a
-                            // due case review becomes the named next
-                            // move, mirroring the timed fold.
-                            IMVerdictCard(
-                                scoreValue: scoreValue,
-                                scoreAccent: scoreAccent,
-                                scoreEmoji: scoreEmoji,
-                                headline: headline,
-                                effectiveFillerCount: effectiveFillerCount,
-                                effectiveDuration: effectiveDuration,
-                                imConversationDetails: imConversationDetails
-                            )
-                            .cardEntrance(0)
+                            // IM has no verified ProofMoment surface, so the
+                            // exact-session debrief leads without inventing a
+                            // quote. The finalized prescription immediately
+                            // follows it; the numeric verdict is available in
+                            // Details with the rest of the analytical record.
                             IMDebriefCard(
                                 coachNote: coachNote,
                                 effectiveDuration: effectiveDuration,
@@ -940,13 +996,11 @@ struct SummaryView: View {
                                     { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
                                 }
                             )
-                            .cardEntrance(1)
-                            postRepProgressReceipt.cardEntrance(2)
-                            transcriptRetryComparisonSection.cardEntrance(2)
-                            rewriteSection.cardEntrance(3)
                             reviewExperimentActionCard
-                            .cardEntrance(4)
-                            .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+                                .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+                            transcriptRetryComparisonSection
+                            rewriteSection
+                            postRepProgressReceipt
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
@@ -957,64 +1011,38 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
-                            .cardEntrance(5)
-                            expandableDetailsSection.cardEntrance(6)
-                            SummaryExitPanel(onDone: onHome).cardEntrance(7)
+                            expandableDetailsSection
+                            SummaryExitPanel(onDone: completeSummaryReview)
                         } else {
-                            // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
-                            // The post-rep attention budget is small; only the
-                            // signals that fight for "what happened, what was
-                            // proven, what to do next" stay above the fold.
-                            // Everything analytical/secondary lives inside
-                            // `expandableDetailsSection` below.
-                            if isSuddenDeathSummary {
-                                SuddenDeathReviewCard(
-                                    points: suddenDeathGamePoints ?? 0,
-                                    multiplierLabels: suddenDeathMultiplierLabels,
-                                    tiersCleared: progressSegments,
-                                    fillerCount: effectiveFillerCount,
-                                    duration: effectiveDuration,
-                                    wordCount: suddenDeathTotalWords ?? transcriptWordCount
-                                )
-                                .cardEntrance(0)
-                            } else {
-                                HeroScoreCard(
-                                    scoreValue: scoreValue,
-                                    practiceTitle: practiceTitle,
-                                    scoreAccent: scoreAccent,
-                                    scoreEmoji: scoreEmoji,
-                                    headline: headline,
-                                    sessionPrompt: sessionPrompt,
-                                    effectiveFillerCount: effectiveFillerCount,
-                                    fillerTint: fillerTint,
-                                    fillerDelta: fillerDelta,
-                                    fillerAccessibilityLabel: summaryFillerPresentation.accessibilityLabel,
-                                    effectiveDuration: effectiveDuration,
-                                    durationAssessment: durationAssessment,
-                                    belowEvidenceFloor: isMinimalEffort,
-                                    toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
-                                )
-                                .cardEntrance(0)
-                            }
-                            // One bounded coaching pass. The existing read,
-                            // proof and fix selectors still feed
-                            // PostRepVerdictContent; presentation is composed
-                            // into one surface so the user reads it as a story.
+                            // TIMED / AH-COUNTER / SUDDEN DEATH all spend the
+                            // first attention slot on source-bound evidence.
+                            // `PostRepVerdictContent` is still fed by the exact
+                            // persisted session and remains honest below the
+                            // evidence floor.
                             PostRepDebriefCard(
                                 content: postRepVerdictContent,
                                 revisedChange: freshRevisedReadChange,
                                 reviewIntervention: activeReviewDueIntervention,
                                 onReview: activeReviewDueIntervention.map { intervention in
                                     { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
-                                }
+                                },
+                                suppressesNextMove: transcriptUpgradeOwnsNextAction,
+                                observationOverride: transcriptUpgradeObservation
                             )
-                            .cardEntrance(1)
-                            postRepProgressReceipt.cardEntrance(2)
-                            transcriptRetryComparisonSection.cardEntrance(2)
-                            rewriteSection.cardEntrance(3)
-                            reviewExperimentActionCard
-                            .cardEntrance(4)
-                            .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+                            transcriptRetryComparisonSection
+                            rewriteSection
+                            if !transcriptUpgradeOwnsNextAction {
+                                reviewExperimentActionCard
+                                    .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+                            }
+                            // Pressure Drill keeps its mode receipt visible for
+                            // the existing run-completion contract, but only
+                            // after the evidence and next action. Standard score
+                            // and metrics move behind Details.
+                            if isSuddenDeathSummary {
+                                resultOverviewCard
+                            }
+                            postRepProgressReceipt
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
@@ -1025,9 +1053,8 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
-                            .cardEntrance(5)
-                            expandableDetailsSection.cardEntrance(6)
-                            SummaryExitPanel(onDone: onHome).cardEntrance(7)
+                            expandableDetailsSection
+                            SummaryExitPanel(onDone: completeSummaryReview)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -1092,12 +1119,10 @@ struct SummaryView: View {
                         }
                     )
                 }
-                // VoiceOver escape: back-nav is hidden and swipe-back is
-                // disabled by design, and the only Done now lives at the
-                // END of the scroll. Expose a rotor action so a
-                // non-visual user is never trapped scrolling to exit.
+                // The native toolbar action is always visible. Preserve the
+                // named rotor action as an equivalent non-visual escape.
                 .accessibilityAction(named: Text("Done")) {
-                    onHome()
+                    completeSummaryReview()
                 }
                 .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
 
@@ -1125,12 +1150,26 @@ struct SummaryView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(CohesiveSummaryCopy.done) {
+                    completeSummaryReview()
+                }
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .accessibilityIdentifier("summary.toolbar.done")
+                .accessibilityHint("Finishes the review and returns to your journey.")
+            }
+        }
+        .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .disableSwipeBack()
         .onAppear(perform: setup)
         .onAppear(perform: recordSummaryViewedIfNeeded)
-        // Iteration 1: load the transcript-verified proof moment on every
-        // summary (not just the personal-best celebration) so the WIN card
-        // can lead with the user's own strongest line. Nil on a miss.
+        // Review prompting is deliberately absent from mount/elapsed-time
+        // effects. The one armed satisfaction moment is consumed only by the
+        // explicit Done action after the user has reached or chosen to exit
+        // the results.
         .task { await loadPersonalBestProof() }
         .sheet(isPresented: $showVideoPlayback) {
             if let recordingURL {
@@ -1138,7 +1177,7 @@ struct SummaryView: View {
             }
         }
         .sheet(isPresented: $showPaywall) {
-            PaywallView()
+            PaywallView(entryPoint: .postPractice)
         }
         .fullScreenCover(item: $activeMiniDrill) { drill in
             let _ = print("[QuickDrill] Present: \(drill.title) | id=\(drill.id) | type=\(MiniDrillType.from(variationId: drill.variation.id))")
@@ -1176,6 +1215,21 @@ struct SummaryView: View {
             )
         }
     }
+
+    /// The only StoreKit review-request boundary on Summary. Consume the
+    /// one-shot intent before navigation so rapid repeated activation cannot
+    /// issue more than one request, then preserve the existing exit route.
+    private func completeSummaryReview() {
+        if let moment = reviewPromptExitGate.consumeForExplicitExit() {
+            _ = AppReviewPromptCoordinator().requestIfEligible(
+                moment: moment,
+                qualifyingRepCount: sessionStore.progressEligibleSessionCount,
+                using: requestReview
+            )
+        }
+        onHome()
+    }
+
     /// Filler tint comes from the same quantity-qualified rate projection as
     /// the hero badge, fallback insight, and details comparison.
     private var fillerTint: Color {
@@ -1207,69 +1261,87 @@ struct SummaryView: View {
     /// The single presentation language for every post-rep progression event.
     /// It sits inside Results after the coaching read; no achievement, level,
     /// skill crossing, or personal best earns a separate mandatory screen.
+    private var postRepReceiptProjection: PostRepReceiptProjection? {
+        PostRepReceiptProjection.resolve(
+            milestone: sessionMilestone,
+            reachedNewPracticeLevel: progressionReachedNewPracticeLevel,
+            practiceLevelTitle: PracticeVolumeNarration.title(forXP: profile.xp),
+            skillEvents: preSummaryEvents,
+            newUnlocks: progressionNewUnlocks,
+            practiceCredit: PracticeVolumeNarration.verdictCreditLine(
+                xpEarned: earnedXPForPresentation,
+                eloquenceBonus: currentRepIsProgressEligible
+                    ? EloquenceXP.totalXP(for: eloquenceFindings)
+                    : 0
+            )
+        )
+    }
+
     @ViewBuilder
     private var postRepProgressReceipt: some View {
-        if sessionMilestone != nil
-            || !preSummaryEvents.isEmpty
-            || progressionReachedNewPracticeLevel
-            || !progressionNewUnlocks.isEmpty {
+        if let projection = postRepReceiptProjection {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Progress noted")
+                        Text("Progress from this rep")
                             .font(Typography.cardLabel)
                             .foregroundStyle(AppColor.textPrimary)
-                        Text("Recorded with this coaching read.")
+                        Text("Recorded with this coaching read")
                             .font(Typography.captionSmall)
                             .foregroundStyle(AppColor.textSecondary)
                     }
                 }
 
-                if let milestone = sessionMilestone {
-                    progressReceiptRow(
-                        title: milestone.title.trimmingCharacters(in: CharacterSet(charactersIn: ".")),
-                        detail: milestone.subtitle,
-                        systemImage: milestone.icon
-                    )
-                }
+                progressReceiptRow(projection.primary)
 
-                if progressionReachedNewPracticeLevel,
-                   sessionMilestone?.title != "Level up." {
-                    progressReceiptRow(
-                        title: "Practice milestone",
-                        detail: "Reached \(PracticeVolumeNarration.title(forXP: profile.xp))",
-                        systemImage: "waveform.path"
-                    )
-                }
-
-                ForEach(Array(preSummaryEvents.prefix(2))) { event in
-                    progressReceiptRow(
-                        title: event.headline,
-                        detail: event.subline,
-                        systemImage: event.skillArea.icon
-                    )
-                }
-
-                ForEach(Array(progressionNewUnlocks.prefix(2)), id: \.id) { tier in
-                    progressReceiptRow(
-                        title: tier.title,
-                        detail: "Practice milestone reached",
-                        systemImage: "checkmark.seal"
-                    )
-                }
-
-                if let credit = PracticeVolumeNarration.verdictCreditLine(
-                    xpEarned: earnedXPForPresentation,
-                    eloquenceBonus: currentRepIsProgressEligible
-                        ? EloquenceXP.totalXP(for: eloquenceFindings)
-                        : 0
-                ) {
-                    Text(credit)
+                if let credit = projection.practiceCredit {
+                    Label(credit, systemImage: "waveform.path")
                         .font(Typography.caption.monospacedDigit())
                         .foregroundStyle(AppColor.textSecondary)
+                        .accessibilityLabel("Practice volume. \(credit)")
+                }
+
+                if !projection.additional.isEmpty {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .standardSpring) {
+                            showAllProgressUpdates.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Text(
+                                showAllProgressUpdates
+                                    ? "Hide additional updates"
+                                    : "Show \(projection.additional.count) more update\(projection.additional.count == 1 ? "" : "s")"
+                            )
+                            .font(Typography.caption.weight(.semibold))
+                            Spacer(minLength: Spacing.xs)
+                            Image(systemName: showAllProgressUpdates ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("summary.progressReceipt.disclosure")
+                    .accessibilityLabel(
+                        showAllProgressUpdates
+                            ? "Hide additional progress updates"
+                            : "Show \(projection.additional.count) additional progress update\(projection.additional.count == 1 ? "" : "s")"
+                    )
+                    .accessibilityValue(showAllProgressUpdates ? "Expanded" : "Collapsed")
+
+                    if showAllProgressUpdates {
+                        VStack(spacing: Spacing.sm) {
+                            ForEach(projection.additional) { update in
+                                progressReceiptRow(update)
+                            }
+                        }
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                    }
                 }
             }
             .padding(Spacing.md)
@@ -1282,18 +1354,14 @@ struct SummaryView: View {
                 RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
             )
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("summary.progressReceipt")
         }
     }
 
-    private func progressReceiptRow(
-        title: String,
-        detail: String,
-        systemImage: String
-    ) -> some View {
+    private func progressReceiptRow(_ update: PostRepReceiptProjection.Update) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
-            Image(systemName: systemImage)
+            Image(systemName: update.systemImage)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AppColor.brandBlue)
                 .frame(width: 28, height: 28)
@@ -1301,15 +1369,17 @@ struct SummaryView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(update.title)
                     .font(Typography.subheadline.weight(.semibold))
                     .foregroundStyle(AppColor.textPrimary)
-                Text(detail)
+                Text(update.detail)
                     .font(Typography.caption)
                     .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(update.title). \(update.detail)")
     }
 
     private var progressionReachedNewPracticeLevel: Bool {
@@ -1317,28 +1387,81 @@ struct SummaryView: View {
             > PracticeVolumeNarration.level(forXP: progressionPreviousXP)
     }
 
+    /// The mode/score receipt remains available without claiming the first
+    /// attention slot. Standard and IM summaries reveal it through Details;
+    /// Pressure Drill shows it below the evidence-first coaching loop because
+    /// its run-completion screenshot and replay contract depend on that
+    /// dedicated receipt being mounted immediately.
+    @ViewBuilder
+    private var resultOverviewCard: some View {
+        if isIMSummary {
+            IMVerdictCard(
+                scoreValue: scoreValue,
+                scoreAccent: scoreAccent,
+                scoreEmoji: scoreEmoji,
+                headline: headline,
+                effectiveFillerCount: effectiveFillerCount,
+                effectiveDuration: effectiveDuration,
+                imConversationDetails: imConversationDetails
+            )
+        } else if isSuddenDeathSummary {
+            SuddenDeathReviewCard(
+                points: suddenDeathGamePoints ?? 0,
+                multiplierLabels: suddenDeathMultiplierLabels,
+                tiersCleared: progressSegments,
+                fillerCount: effectiveFillerCount,
+                duration: effectiveDuration,
+                wordCount: suddenDeathTotalWords ?? transcriptWordCount
+            )
+        } else {
+            HeroScoreCard(
+                scoreValue: scoreValue,
+                practiceTitle: practiceTitle,
+                scoreAccent: scoreAccent,
+                scoreEmoji: scoreEmoji,
+                headline: headline,
+                sessionPrompt: sessionPrompt,
+                effectiveFillerCount: effectiveFillerCount,
+                fillerTint: fillerTint,
+                fillerDelta: fillerDelta,
+                fillerAccessibilityLabel: summaryFillerPresentation.accessibilityLabel,
+                effectiveDuration: effectiveDuration,
+                durationAssessment: durationAssessment,
+                belowEvidenceFloor: isMinimalEffort,
+                toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
+            )
+        }
+    }
+
     private var expandableDetailsSection: some View {
         VStack(spacing: 12) {
             // "More from this rep" (collapsed by default) — the ONE
             // disclosure every demoted surface lives behind.
             //
-            // Holds the analytical pass: per-skill breakdowns (eloquence,
+            // Holds the score/mode receipt and analytical pass: per-skill breakdowns (eloquence,
             // pauses, pitch, word-choice, grammar, filler chips), the IM
             // signal pills + baseline comparison (demoted from above the
             // fold), the premium deep read + rewrite, video playback +
             // AI analysis, the share row, the session comparison, the
             // looking-ahead nudge and the deferred reflection prompt.
             // None of these are wrong to see — they just shouldn't fight
-            // the coach's read, the score, and the next move for the
+            // source-bound evidence, the coach's read, and the next move for the
             // user's first three seconds.
             if showSecondaryDetails {
                 VStack(spacing: 14) {
+                    if !isSuddenDeathSummary {
+                        resultOverviewCard
+                    }
+
+                    fullCoachReadDetail
+
                     // Practice credit — visible-but-demoted (progression
-                    // spine): the verdict above the fold stays score +
-                    // read + win + fix; the XP that accrued this rep
+                    // spine): the primary loop stays evidence + restrained
+                    // read + prescribed retry; the XP that accrued this rep
                     // reads as a quiet volume caption in here. Self-hides
                     // when nothing accrued (never renders "+0").
-                    if let credit = PracticeVolumeNarration.verdictCreditLine(
+                    if postRepReceiptProjection == nil,
+                       let credit = PracticeVolumeNarration.verdictCreditLine(
                         xpEarned: earnedXPForPresentation,
                         eloquenceBonus: currentRepIsProgressEligible
                             ? EloquenceXP.totalXP(for: eloquenceFindings)
@@ -1580,6 +1703,44 @@ struct SummaryView: View {
             .tint(.secondary)
             .padding(.horizontal, Spacing.xs)
         }
+    }
+
+    private var fullCoachReadDetail: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.magnifyingglass")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityHidden(true)
+                Text("Full coach read")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.textPrimary)
+            }
+
+            Text(postRepVerdictContent.readText)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let deliveryLine = postRepVerdictContent.deliveryReadLine {
+                Text(deliveryLine)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Full coach read. \(postRepVerdictContent.readText)")
     }
 
     /// Quiet share entry inside More-from-this-rep — the surviving home
@@ -2492,15 +2653,8 @@ struct SummaryView: View {
         progressionPreviousXP = result.previousXP
 
         animateXP(to: result.newXP)
-        // HeroScoreCard now owns the score-reveal beat — its ring draws in
-        // on appear and the haptic + verdict thump fire on the settle
-        // frame so the channels land together. The two verdicts without
-        // an animated ring (IM, Pressure Drill) keep the immediate
-        // punctuation here — same moment, same two channels.
-        if currentRepIsProgressEligible && (isIMSummary || isSuddenDeathSummary) {
-            CoachHaptic.scoreReveal()
-            InteractionSoundEngine.cue(.verdictReveal)
-        }
+        // Results now opens as one calm coaching receipt. Progress and score
+        // remain visible immediately without a separate sound or fanfare beat.
 
         // Capture every earned event for the single inline Results receipt.
         sessionMilestone = result.milestone
@@ -2508,6 +2662,18 @@ struct SummaryView: View {
             ? skillProgression.pendingLevelUps
             : []
         let completedRepCount = sessionStore.progressEligibleSessionCount
+
+        // App review is earned at a satisfaction moment, never at launch,
+        // after an error, or from a historical replay. A personal best after
+        // an earlier rep is the strongest verified-improvement signal;
+        // otherwise the pure policy first permits the third qualifying rep.
+        if currentRepIsProgressEligible, onStartLookingAhead != nil {
+            reviewPromptExitGate.arm(
+                result.isPersonalBest && completedRepCount > 1
+                    ? .firstVerifiedImprovement
+                    : .qualifyingRepCompleted
+            )
+        }
 
         // First-rep celebration used to stack on top of the summary. The
         // cohesive pass deliberately starts with the useful coaching read;
@@ -2520,16 +2686,6 @@ struct SummaryView: View {
         // The receipt owns presentation. Drain the pending overlay queue now so
         // no old full-screen event can leak into the next rep.
         skillProgression.consumeAll()
-
-        let revealDelay = motionDelay(0.8)
-        Task {
-            if revealDelay > 0 {
-                try? await Task.sleep(for: .seconds(revealDelay))
-            }
-            await MainActor.run {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.4)) { coachNoteRevealed = true }
-            }
-        }
 
         #if DEBUG
         presentRequestedMiniDrillCompletionFixtureIfNeeded()
@@ -2768,13 +2924,33 @@ extension SummaryView {
         let pathBinding = navigationPath
         let payloadId = payload.id
         let payloadMode = payload.mode
+        let journeyOrigin = store.journeyOrigin(for: payload.id)
         // Captured for "Practice Again" so IM reps re-arm the just-finished
         // scenario + tone instead of dropping back on the picker. The
         // other modes have no per-rep setup, so the router ignores this.
         let practiceAgainIMSetup = entry?.imConversationDetails?.setup
         self.onHome = {
             SummaryDataStore.shared.remove(for: payloadId)
-            pathBinding.wrappedValue = NavigationPath()
+            let disposition = SummaryJourneyExitRouter.disposition(
+                origin: journeyOrigin,
+                activeBigMomentID: BigMomentStore.shared.activeMoment?.id
+            )
+            guard disposition == .resumePreparation else {
+                pathBinding.wrappedValue = NavigationPath()
+                return
+            }
+
+            // Expected stack: preparation → practice → Summary. Pop the two
+            // transient destinations and leave the existing PrepSessionView
+            // in place so its observed stores refresh the readiness receipt.
+            var path = pathBinding.wrappedValue
+            guard path.count >= 3 else {
+                pathBinding.wrappedValue = NavigationPath()
+                return
+            }
+            path.removeLast()
+            path.removeLast()
+            pathBinding.wrappedValue = path
         }
         self.onSelectPracticeMode = {
             SummaryDataStore.shared.remove(for: payloadId)

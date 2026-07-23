@@ -237,6 +237,8 @@ typealias CoachChatDiagnosticRecorder = (
     _ now: Date
 ) -> Void
 
+typealias CoachChatUsageRecorder = (_ record: AICallDiagnosticRecord) -> Void
+
 /// Provider response extraction result for Ask Noum text replies. Kept typed
 /// so the service can preserve truncation honesty without treating every
 /// no-text response as a user-visible dead end.
@@ -1284,8 +1286,12 @@ actor AICoachChatService {
             reason: reason,
             statusCode: statusCode,
             startedAt: startedAt,
-            now: now
+            now: now,
+            usageAccounting: .informational
         )
+    }
+    private static let defaultUsageRecorder: CoachChatUsageRecorder = { record in
+        AICallDiagnostics.record(record)
     }
 
     /// Providers that refused recently sit at the BACK of the chain until
@@ -1298,6 +1304,7 @@ actor AICoachChatService {
     private let providerHTTPOverride: ((CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult)?
     private let semanticGateDryRunOverride: (() -> Bool)?
     private let diagnosticRecorder: CoachChatDiagnosticRecorder
+    private let usageRecorder: CoachChatUsageRecorder
     private let secureTransport: any CoachChatTransport
     private let cloudProcessingAllowed: () async -> Bool
 
@@ -1320,6 +1327,7 @@ actor AICoachChatService {
         self.providerHTTPOverride = nil
         self.semanticGateDryRunOverride = nil
         self.diagnosticRecorder = Self.defaultDiagnosticRecorder
+        self.usageRecorder = Self.defaultUsageRecorder
         self.secureTransport = FirebaseCoachChatTransport()
         self.cloudProcessingAllowed = {
             await MainActor.run {
@@ -1333,6 +1341,7 @@ actor AICoachChatService {
     /// introduced.
     init(
         secureTransport: any CoachChatTransport,
+        usageRecorder: CoachChatUsageRecorder? = nil,
         cloudProcessingAllowed: @escaping () async -> Bool = { true }
     ) {
         self.keyedProvidersOverride = nil
@@ -1341,6 +1350,7 @@ actor AICoachChatService {
         self.providerHTTPOverride = nil
         self.semanticGateDryRunOverride = nil
         self.diagnosticRecorder = Self.defaultDiagnosticRecorder
+        self.usageRecorder = usageRecorder ?? Self.defaultUsageRecorder
         self.secureTransport = secureTransport
         self.cloudProcessingAllowed = cloudProcessingAllowed
     }
@@ -1352,6 +1362,7 @@ actor AICoachChatService {
         providerHTTP: @escaping (CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult,
         semanticGateDryRun: (() -> Bool)? = nil,
         diagnosticRecorder: CoachChatDiagnosticRecorder? = nil,
+        usageRecorder: CoachChatUsageRecorder? = nil,
         secureTransport: any CoachChatTransport = FirebaseCoachChatTransport(),
         cloudProcessingAllowed: @escaping () async -> Bool = { true }
     ) {
@@ -1361,6 +1372,7 @@ actor AICoachChatService {
         self.providerHTTPOverride = providerHTTP
         self.semanticGateDryRunOverride = semanticGateDryRun
         self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
+        self.usageRecorder = usageRecorder ?? Self.defaultUsageRecorder
         self.secureTransport = secureTransport
         self.cloudProcessingAllowed = cloudProcessingAllowed
     }
@@ -1371,6 +1383,7 @@ actor AICoachChatService {
         localeSupportsAI: @escaping () -> Bool,
         semanticGateDryRun: (() -> Bool)? = nil,
         diagnosticRecorder: CoachChatDiagnosticRecorder? = nil,
+        usageRecorder: CoachChatUsageRecorder? = nil,
         secureTransport: any CoachChatTransport = FirebaseCoachChatTransport(),
         cloudProcessingAllowed: @escaping () async -> Bool = { true }
     ) {
@@ -1380,6 +1393,7 @@ actor AICoachChatService {
         self.providerHTTPOverride = nil
         self.semanticGateDryRunOverride = semanticGateDryRun
         self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
+        self.usageRecorder = usageRecorder ?? Self.defaultUsageRecorder
         self.secureTransport = secureTransport
         self.cloudProcessingAllowed = cloudProcessingAllowed
     }
@@ -1965,8 +1979,9 @@ actor AICoachChatService {
             return .failure(.unauthenticated)
         }
 
+        let providerStartedAt = Date()
+        var completion: CoachChatCompletion?
         do {
-            var completion: CoachChatCompletion?
             var partialGate = CoachStreamingPartialGate()
             for try await event in try transport.stream(request) {
                 switch event {
@@ -1980,9 +1995,25 @@ actor AICoachChatService {
             }
 
             guard let completion else {
+                recordProviderUsageDiagnostic(
+                    usage: nil,
+                    providerName: "Firebase / Vertex AI",
+                    model: nil,
+                    outcome: .failure,
+                    reason: "Secure coach request returned no completion",
+                    startedAt: providerStartedAt,
+                    correlationID: UUID(uuidString: request.requestID)
+                )
                 recordChatDiagnostic(.failure, "Secure coach returned no completion")
                 return .failure(.empty)
             }
+            recordSecureProviderUsage(
+                completion: completion,
+                outcome: .success,
+                reason: "Secure coach provider request completed",
+                startedAt: providerStartedAt,
+                correlationID: UUID(uuidString: request.requestID)
+            )
             guard CoachProviderTier.transportQualityTiersMatch(
                 completion.qualityTier,
                 request.qualityTier
@@ -2088,6 +2119,13 @@ actor AICoachChatService {
             recordChatDiagnostic(.success, "Secure coach reply accepted")
             return .reply(finalized)
         } catch let error as CoachChatTransportError {
+            recordSecureProviderUsage(
+                completion: completion,
+                outcome: .failure,
+                reason: "Secure coach provider request failed",
+                startedAt: providerStartedAt,
+                correlationID: UUID(uuidString: request.requestID)
+            )
             switch error {
             case .unauthenticated: return .failure(.unauthenticated)
             case .rateLimited: return .failure(.rateLimited)
@@ -2102,6 +2140,13 @@ actor AICoachChatService {
                 return .failure(.network)
             }
         } catch {
+            recordSecureProviderUsage(
+                completion: completion,
+                outcome: .failure,
+                reason: "Secure coach provider request failed",
+                startedAt: providerStartedAt,
+                correlationID: UUID(uuidString: request.requestID)
+            )
             return .failure(.network)
         }
     }
@@ -2475,7 +2520,7 @@ actor AICoachChatService {
                 )
                 await onProviderAttemptEvent?(.refused(providerChoice))
                 return .refused(.classify(status: status))
-            case .success(let extraction, let firstTokenAt, let usage):
+            case .success(let extraction, let firstTokenAt, _):
                 if let firstTokenAt {
                     recordChatDiagnostic(
                         .success,
@@ -2485,7 +2530,6 @@ actor AICoachChatService {
                         now: firstTokenAt
                     )
                 }
-                recordCacheUsageDiagnostic(usage: usage, provider: provider, startedAt: startedAt)
                 switch extraction {
                 case .text(let text):
                     let display = CoachReplyTextSanitizer.displayText(from: text)
@@ -9068,29 +9112,88 @@ actor AICoachChatService {
         )
     }
 
-    /// COST/LATENCY instrumentation only, separate from `recordChatDiagnostic`
-    /// so the existing `diagnosticRecorder` closure (and any test double built
-    /// against it) keeps its signature. A no-op when the provider response
-    /// carried no token data at all (e.g. a transport error never reached
-    /// `usage` parsing) — logging an empty cache record would just be noise.
-    private func recordCacheUsageDiagnostic(
+    /// Records the one cost-accounting diagnostic for a secure callable. A
+    /// deterministic brief did not invoke a paid model and therefore remains an
+    /// operational diagnostic only.
+    private func recordSecureProviderUsage(
+        completion: CoachChatCompletion?,
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        startedAt: Date,
+        correlationID: UUID?
+    ) {
+        guard completion?.generationMode != .deterministicBrief else { return }
+        let usage = completion.map {
+            CoachChatUsage(
+                inputTokens: $0.inputTokens,
+                outputTokens: $0.outputTokens,
+                cacheCreationInputTokens: nil,
+                cacheReadInputTokens: nil,
+                cachedContentTokenCount: nil
+            )
+        }
+        recordProviderUsageDiagnostic(
+            usage: usage,
+            providerName: "Firebase / Vertex AI",
+            model: completion?.model,
+            outcome: outcome,
+            reason: reason,
+            startedAt: startedAt,
+            correlationID: correlationID
+        )
+    }
+
+    /// The only path from a coach provider request into AI cost accounting.
+    /// Operational diagnostics continue through `recordChatDiagnostic`, but are
+    /// explicitly informational and cannot create duplicate unpriced events.
+    private func recordProviderUsageDiagnostic(
+        usage: CoachChatUsage?,
+        providerName: String,
+        model: String?,
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        statusCode: Int? = nil,
+        startedAt: Date,
+        now: Date = Date(),
+        correlationID: UUID? = nil
+    ) {
+        usageRecorder(AICallDiagnostics.makeRecord(
+            surface: Self.chatSurface,
+            providerName: providerName,
+            model: model,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            startedAt: startedAt,
+            now: now,
+            correlationID: correlationID,
+            cacheCreationInputTokens: usage?.cacheCreationInputTokens,
+            cacheReadInputTokens: usage?.cacheReadInputTokens,
+            inputTokens: usage?.inputTokens,
+            outputTokens: usage?.outputTokens,
+            cachedContentTokenCount: usage?.cachedContentTokenCount,
+            usageAccounting: .providerRequest
+        ))
+    }
+
+    private func recordProviderUsageDiagnostic(
         usage: CoachChatUsage?,
         provider: CoachChatProvider,
-        startedAt: Date
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        statusCode: Int? = nil,
+        startedAt: Date,
+        now: Date = Date()
     ) {
-        guard let usage, usage.hasAnyTokenData else { return }
-        AICallDiagnostics.record(
-            surface: Self.chatSurface,
+        recordProviderUsageDiagnostic(
+            usage: usage,
             providerName: provider.displayName,
             model: provider.model,
-            outcome: .success,
-            reason: usage.diagnosticSummary,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
             startedAt: startedAt,
-            cacheCreationInputTokens: usage.cacheCreationInputTokens,
-            cacheReadInputTokens: usage.cacheReadInputTokens,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            cachedContentTokenCount: usage.cachedContentTokenCount
+            now: now
         )
     }
 
@@ -9223,6 +9326,14 @@ actor AICoachChatService {
             let headerMs = Int(headersAt.timeIntervalSince(started) * 1_000)
             guard let http = response as? HTTPURLResponse else {
                 Self.log.error("stream transport non-http response provider=\(provider.displayName, privacy: .public) ms=\(headerMs, privacy: .public)")
+                recordProviderUsageDiagnostic(
+                    usage: nil,
+                    provider: provider,
+                    outcome: .failure,
+                    reason: "Streaming provider returned a non-HTTP response",
+                    startedAt: started,
+                    now: headersAt
+                )
                 recordChatDiagnostic(
                     .failure,
                     "Streaming non-HTTP response",
@@ -9242,6 +9353,15 @@ actor AICoachChatService {
                     }
                 }
                 Self.log.info("stream transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(headerMs, privacy: .public) bytes=\(errorBody.count, privacy: .public) retryAfter=\(retryAfter != nil, privacy: .public)")
+                recordProviderUsageDiagnostic(
+                    usage: nil,
+                    provider: provider,
+                    outcome: .fallback,
+                    reason: "Streaming provider refused the request",
+                    statusCode: http.statusCode,
+                    startedAt: started,
+                    now: headersAt
+                )
                 recordChatDiagnostic(
                     .fallback,
                     Self.failureReason(forHTTPStatus: http.statusCode, data: errorBody, provider: provider),
@@ -9270,6 +9390,16 @@ actor AICoachChatService {
             }
             let completedAt = Date()
             Self.log.info("stream transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(Int(completedAt.timeIntervalSince(started) * 1_000), privacy: .public) firstToken=\(firstTokenAt != nil, privacy: .public)")
+            recordProviderUsageDiagnostic(
+                usage: accumulator.usage,
+                provider: provider,
+                outcome: .success,
+                reason: accumulator.usage?.diagnosticSummary
+                    ?? "Streaming provider completed without usage units",
+                statusCode: http.statusCode,
+                startedAt: started,
+                now: completedAt
+            )
             recordChatDiagnostic(
                 .success,
                 "Streaming transport succeeded",
@@ -9280,6 +9410,13 @@ actor AICoachChatService {
             )
             return .success(accumulator.extractionResult, firstTokenReceivedAt: firstTokenAt, usage: accumulator.usage)
         } catch {
+            recordProviderUsageDiagnostic(
+                usage: nil,
+                provider: provider,
+                outcome: .failure,
+                reason: "Streaming provider transport failed",
+                startedAt: started
+            )
             recordChatDiagnostic(
                 .failure,
                 "Streaming transport error",
@@ -9297,8 +9434,45 @@ actor AICoachChatService {
         body: [String: Any]
     ) async throws -> ProviderHTTPResult {
         guard !Task.isCancelled else { throw CancellationError() }
+        let started = Date()
         if let providerHTTPOverride {
-            return try await providerHTTPOverride(provider, endpoint, key, body)
+            do {
+                let result = try await providerHTTPOverride(provider, endpoint, key, body)
+                let completedAt = Date()
+                switch result {
+                case .success(let data):
+                    let usage = Self.chatExtractUsage(from: data, provider: provider)
+                    recordProviderUsageDiagnostic(
+                        usage: usage,
+                        provider: provider,
+                        outcome: .success,
+                        reason: usage?.diagnosticSummary
+                            ?? "Provider completed without usage units",
+                        startedAt: started,
+                        now: completedAt
+                    )
+                case .refused(let status, _):
+                    recordProviderUsageDiagnostic(
+                        usage: nil,
+                        provider: provider,
+                        outcome: .fallback,
+                        reason: "Provider refused the request",
+                        statusCode: status,
+                        startedAt: started,
+                        now: completedAt
+                    )
+                }
+                return result
+            } catch {
+                recordProviderUsageDiagnostic(
+                    usage: nil,
+                    provider: provider,
+                    outcome: .failure,
+                    reason: "Provider transport failed",
+                    startedAt: started
+                )
+                throw error
+            }
         }
 
         var request = URLRequest(url: endpoint)
@@ -9320,7 +9494,6 @@ actor AICoachChatService {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let started = Date()
         let bodyBytes = request.httpBody?.count ?? 0
         Self.log.debug("transport start provider=\(provider.displayName, privacy: .public) host=\(endpoint.host ?? "unknown", privacy: .public) path=\(endpoint.path, privacy: .public) bodyBytes=\(bodyBytes, privacy: .public)")
         do {
@@ -9329,6 +9502,14 @@ actor AICoachChatService {
             let elapsedMs = Int(now.timeIntervalSince(started) * 1_000)
             guard let http = response as? HTTPURLResponse else {
                 Self.log.error("transport non-http response provider=\(provider.displayName, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public)")
+                recordProviderUsageDiagnostic(
+                    usage: nil,
+                    provider: provider,
+                    outcome: .failure,
+                    reason: "Provider returned a non-HTTP response",
+                    startedAt: started,
+                    now: now
+                )
                 recordChatDiagnostic(
                     .failure,
                     "Non-HTTP response",
@@ -9341,6 +9522,15 @@ actor AICoachChatService {
             let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
             Self.log.info("transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public) retryAfter=\(retryAfter != nil, privacy: .public)")
             guard (200..<300).contains(http.statusCode) else {
+                recordProviderUsageDiagnostic(
+                    usage: nil,
+                    provider: provider,
+                    outcome: .fallback,
+                    reason: "Provider refused the request",
+                    statusCode: http.statusCode,
+                    startedAt: started,
+                    now: now
+                )
                 recordChatDiagnostic(
                     .fallback,
                     Self.failureReason(forHTTPStatus: http.statusCode, data: data, provider: provider),
@@ -9351,6 +9541,17 @@ actor AICoachChatService {
                 )
                 return .refused(status: http.statusCode, retryAfter: retryAfter)
             }
+            let usage = Self.chatExtractUsage(from: data, provider: provider)
+            recordProviderUsageDiagnostic(
+                usage: usage,
+                provider: provider,
+                outcome: .success,
+                reason: usage?.diagnosticSummary
+                    ?? "Provider completed without usage units",
+                statusCode: http.statusCode,
+                startedAt: started,
+                now: now
+            )
             recordChatDiagnostic(
                 .success,
                 "Transport succeeded",
@@ -9361,6 +9562,13 @@ actor AICoachChatService {
             )
             return .success(data)
         } catch {
+            recordProviderUsageDiagnostic(
+                usage: nil,
+                provider: provider,
+                outcome: .failure,
+                reason: "Provider transport failed",
+                startedAt: started
+            )
             recordChatDiagnostic(
                 .failure,
                 "Transport error",

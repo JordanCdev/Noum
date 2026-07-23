@@ -1,0 +1,94 @@
+{
+  "identifier" : "7F976D8A-9FB7-4EA1-A90F-2AA0185BAF0B",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "9E8802F0-E3C2-4586-BC46-711220360331",
+      "localizations" : [
+
+      ],
+      "name" : "Noum Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "79.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "206403ED-34F5-446F-97D7-BADCD527F257",
+          "introductoryOffer" : {
+            "internalID" : "F1D7ABCA-EF7D-4143-8C35-B9BF5A35D7D0",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1W"
+          },
+          "localizations" : [
+            {
+              "description" : "Personalized evidence-led coaching, plans, and advanced practice.",
+              "displayName" : "Noum Pro Annual",
+              "locale" : "en_GB"
+            },
+            {
+              "description" : "Personalized evidence-led coaching, plans, and advanced practice.",
+              "displayName" : "Noum Pro Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.noum.pro.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Noum Pro Annual",
+          "subscriptionGroupID" : "9E8802F0-E3C2-4586-BC46-711220360331",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "11.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "A280B72D-A5F4-4C60-8B03-75CF9B7E9E29",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Personalized evidence-led coaching, plans, and advanced practice.",
+              "displayName" : "Noum Pro Monthly",
+              "locale" : "en_GB"
+            },
+            {
+              "description" : "Personalized evidence-led coaching, plans, and advanced practice.",
+              "displayName" : "Noum Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.noum.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Noum Pro Monthly",
+          "subscriptionGroupID" : "9E8802F0-E3C2-4586-BC46-711220360331",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

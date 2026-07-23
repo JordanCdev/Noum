@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "templateStatus": "AWAITING_REAL_EXPORTS",
+  "releaseBinding": {
+    "sourceGitCommit": "",
+    "appVersion": "",
+    "buildScope": "all-app-versions-and-builds"
+  },
+  "comparison": {
+    "periodStartDate": "",
+    "periodEndDateExclusive": "",
+    "asOfDate": "",
+    "cohortKind": "calendar-event",
+    "firstPartyTimeZone": "UTC",
+    "appStoreConnectTimeZone": "America/Los_Angeles",
+    "storefrontScope": "all-storefronts",
+    "subscriptionScope": "all-noum-subscriptions",
+    "metrics": [
+      "trial_started",
+      "renewal",
+      "billing_failure",
+      "refund",
+      "expiry"
+    ]
+  },
+  "sources": {
+    "firstParty": {
+      "schema": "noum-growth-daily-v2",
+      "path": "",
+      "sha256": "",
+      "rawExportSha256": ""
+    },
+    "appStoreConnectLifecycle": {
+      "schema": "asc-subscription-events-normalized-v1",
+      "reportKind": "subscription-event-report-1_3",
+      "path": "",
+      "sha256": "",
+      "rawExportSha256": ""
+    },
+    "appStoreConnectProceeds": null,
+    "currencyConversion": null
+  }
+}

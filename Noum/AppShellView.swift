@@ -9,6 +9,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case settings
 
     static let timedPromptTokenQueryName = "prompt-handoff"
+    static let timedDifficultyQueryName = "difficulty"
 
     var id: String { rawValue }
 
@@ -68,9 +69,12 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch (url.host?.lowercased(), component) {
         case ("practice", "timed"), ("train", "timed"):
             if let token = timedPromptToken(from: url) {
-                return .timedPracticePrompt(token: token)
+                return .timedPracticePrompt(
+                    token: token,
+                    difficulty: timedDifficulty(from: url)
+                )
             }
-            return .timedPractice(difficulty: nil)
+            return .timedPractice(difficulty: timedDifficulty(from: url))
         case ("practice", "impromptu"), ("train", "impromptu"):
             return .timedPractice(difficulty: nil)
         case ("practice", "pressure"), ("practice", "sudden-death"),
@@ -96,6 +100,10 @@ enum AppTab: String, CaseIterable, Identifiable {
         case ("ask", "type"), ("ask", "chat"),
              ("asknoum", "type"), ("asknoum", "chat"):
             return .askNoumTyped
+        case ("profile", "check-in"):
+            return .weeklyCheckIn
+        case ("home", "first-week-read"):
+            return .firstWeekRead
         default:
             return nil
         }
@@ -124,6 +132,14 @@ enum AppTab: String, CaseIterable, Identifiable {
         }
     }
 
+    static func isFirstWeekRecommendationActionRoute(_ url: URL) -> Bool {
+        url == FirstWeekNotificationAttribution.recommendationActionRoute
+    }
+
+    static func isFirstWeekSpokenProofRoute(_ url: URL) -> Bool {
+        url == FirstWeekNotificationAttribution.spokenBaselineActionRoute
+    }
+
     private static func timedPromptToken(from url: URL) -> UUID? {
         guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?
@@ -132,6 +148,17 @@ enum AppTab: String, CaseIterable, Identifiable {
             return nil
         }
         return UUID(uuidString: value)
+    }
+
+    private static func timedDifficulty(from url: URL) -> TimedPracticeDifficulty? {
+        guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == timedDifficultyQueryName })?
+            .value?
+            .lowercased() else {
+            return nil
+        }
+        return TimedPracticeDifficulty(rawValue: value)
     }
 }
 
@@ -263,9 +290,14 @@ struct AppShellView: View {
                 homePath = NavigationPath()
                 if let destination = AppTab.rootDestination(for: url) {
                     homePath.append(destination)
-                } else if url.host?.lowercased() == "bigmoment" || url.host?.lowercased() == "summary" {
-                    // These two routes create Home-owned presentation state
-                    // before navigation, so ContentView remains their owner.
+                } else if url.host?.lowercased() == "bigmoment"
+                    || url.host?.lowercased() == "summary"
+                    || AppTab.isFirstWeekRecommendationActionRoute(url)
+                    || AppTab.isFirstWeekSpokenProofRoute(url) {
+                    // These routes create Home-owned presentation state before
+                    // navigation, so ContentView remains their owner. The
+                    // first-week route is intentionally content-free and must
+                    // resolve the current prescription only after the tap.
                     homeRoute = url
                 }
             case .train:
@@ -488,6 +520,7 @@ struct AppDestinationView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var coachCheckInStore = CoachCheckInStore.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
 
     @ViewBuilder
@@ -501,9 +534,10 @@ struct AppDestinationView: View {
                 prescribedTimedDifficulty: difficulty
             )
                 .toolbar(.hidden, for: .tabBar)
-        case .timedPracticePrompt(let token):
+        case .timedPracticePrompt(let token, let difficulty):
             TimedPracticeView(
                 navigationPath: $navigationPath,
+                prescribedTimedDifficulty: difficulty,
                 promptHandoffToken: token
             )
             .toolbar(.hidden, for: .tabBar)
@@ -591,6 +625,14 @@ struct AppDestinationView: View {
                 initialMode: .type
             )
             .toolbar(.hidden, for: .tabBar)
+        case .weeklyCheckIn:
+            WeeklyCheckInSheet(store: coachCheckInStore)
+                .toolbar(.hidden, for: .tabBar)
+        case .firstWeekRead:
+            FirstWeekReadDetailView()
+                .toolbar(.hidden, for: .tabBar)
+        case .coachingMemory:
+            CoachingMemoryView()
         case .growthLibrary:
             GrowthLibraryView()
                 .toolbar(.hidden, for: .tabBar)
@@ -615,6 +657,12 @@ struct AppDestinationView: View {
         case .prepSession:
             PrepSessionView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)
+        case .preparationPractice(let route):
+            PreparationPracticeContextView(
+                route: route,
+                navigationPath: $navigationPath
+            )
+            .toolbar(.hidden, for: .tabBar)
         case .suddenDeathDifficultyDetail(let difficulty):
             SuddenDeathDifficultyRunsView(difficulty: difficulty)
                 .toolbar(.hidden, for: .tabBar)
@@ -631,6 +679,61 @@ struct AppDestinationView: View {
                 navigationPath: $navigationPath
             )
             .toolbar(.hidden, for: .tabBar)
+        }
+    }
+}
+
+/// Hosts the existing practice views without duplicating their lifecycle or
+/// result logic. The active origin is captured by `SummaryDataStore.store`
+/// immediately before those views push Summary, then cleared as this route
+/// leaves the hierarchy (including when the user switches tabs or backs out).
+private struct PreparationPracticeContextView: View {
+    let route: PreparationPracticeRoute
+    @Binding var navigationPath: NavigationPath
+
+    private var origin: SummaryJourneyOrigin {
+        .bigMomentPreparation(route)
+    }
+
+    var body: some View {
+        practiceView
+            .onAppear {
+                SummaryDataStore.shared.activateJourneyOrigin(origin)
+            }
+            .onDisappear {
+                SummaryDataStore.shared.deactivateJourneyOrigin(origin)
+            }
+    }
+
+    @ViewBuilder
+    private var practiceView: some View {
+        switch route.exercise {
+        case .timed(let difficulty):
+            TimedPracticeView(
+                navigationPath: $navigationPath,
+                prescribedTimedDifficulty: difficulty
+            )
+        case .timedPrompt(let token, let difficulty):
+            TimedPracticeView(
+                navigationPath: $navigationPath,
+                prescribedTimedDifficulty: difficulty,
+                promptHandoffToken: token
+            )
+        case .suddenDeath:
+            SuddenDeathPracticeView(navigationPath: $navigationPath)
+        case .conversation(let scenario, let tone):
+            if IMModeAvailability.isAvailable {
+                IMPracticeView(
+                    navigationPath: $navigationPath,
+                    preferredScenario: scenario,
+                    preferredTone: tone
+                )
+            } else {
+                // Capability can disappear after the plan rendered. Preserve
+                // the preparation return contract while failing closed to the
+                // same Timed surface as ordinary app routing.
+                TimedPracticeView(navigationPath: $navigationPath)
+            }
         }
     }
 }

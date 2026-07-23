@@ -62,6 +62,121 @@ private func makeChosenVoiceProfile(_ goal: SpeakingStyleGoal) -> CoachingProfil
     return profile
 }
 
+// MARK: - Durable transcript ladder
+
+struct TranscriptRewriteSnapshotTests {
+    private let sourceTranscript =
+        "I think maybe we should decide the owner, the deadline, and the first customer impact."
+
+    private func snapshot(
+        originalSnippet: String? = nil,
+        aspiration: String? = "We will assign one owner, set the deadline, and confirm the first customer impact."
+    ) -> TranscriptRewriteSnapshot {
+        TranscriptRewriteSnapshot(
+            weakness: .opening,
+            originalSnippet: originalSnippet ?? AIRewriteService.originalSnippet(
+                transcript: sourceTranscript,
+                weakness: .opening
+            ),
+            oneStepText: "We should decide the owner, the deadline, and the first customer impact.",
+            aspirationalText: aspiration,
+            origin: .provider,
+            createdAt: Date(timeIntervalSince1970: 2_100_000_000)
+        )
+    }
+
+    @Test func snapshotRoundTripsWithoutRegeneratingContent() throws {
+        let original = snapshot()
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(
+            TranscriptRewriteSnapshot.self,
+            from: data
+        )
+
+        #expect(decoded == original)
+        #expect(decoded.matches(sourceTranscript: sourceTranscript))
+        #expect(decoded.oneStepRewrite.text == original.oneStepText)
+        #expect(decoded.aspirationalRewrite?.text == original.aspirationalText)
+    }
+
+    @Test func legacySessionDecodesWithoutALadder() throws {
+        let session = PracticeSession(
+            transcript: sourceTranscript,
+            fillerWordCount: 0,
+            duration: 30,
+            date: Date(),
+            mode: .timed
+        )
+        var object = try #require(
+            JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(session)
+            ) as? [String: Any]
+        )
+        object.removeValue(forKey: "transcriptRewriteSnapshot")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(
+            PracticeSession.self,
+            from: legacyData
+        )
+        #expect(decoded.transcriptRewriteSnapshot == nil)
+    }
+
+    @MainActor
+    @Test func sessionStoreAcceptsOnlyTheExactSourceBoundSnapshot() throws {
+        let store = PracticeSessionStore.shared
+        let previousSessions = store.sessions
+        defer { store.replaceFromRemote(previousSessions) }
+
+        let session = PracticeSession(
+            transcript: sourceTranscript,
+            fillerWordCount: 1,
+            duration: 35,
+            date: Date(),
+            mode: .timed
+        )
+        store.replaceFromRemote([session])
+        let token = try #require(store.coachReadSaveToken(sessionID: session.id))
+
+        let mismatched = snapshot(originalSnippet: "Words from another rep")
+        #expect(store.saveTranscriptRewriteSnapshot(
+            expected: token,
+            snapshot: mismatched
+        ) == nil)
+        #expect(store.sessions.first?.transcriptRewriteSnapshot == nil)
+
+        let accepted = snapshot()
+        #expect(store.saveTranscriptRewriteSnapshot(
+            expected: token,
+            snapshot: accepted
+        ) == accepted)
+        #expect(store.sessions.first?.transcriptRewriteSnapshot == accepted)
+    }
+
+    @Test func retryReusesTheExactSourcePromptInsteadOfTheRewriteScript() {
+        let sourcePrompt = "A stakeholder asks: What do you recommend we do next?"
+        let rewritePrompt = "Say this line in your own voice: We should decide now."
+
+        #expect(
+            TranscriptRetryPrompt.resolve(
+                sourcePrompt: sourcePrompt,
+                fallbackRewritePrompt: rewritePrompt
+            ) == sourcePrompt
+        )
+    }
+
+    @Test func retryFallsBackToPhrasePracticeOnlyWhenTheSourceHadNoPrompt() {
+        let rewritePrompt = "Say this line in your own voice: We should decide now."
+
+        #expect(
+            TranscriptRetryPrompt.resolve(
+                sourcePrompt: "   ",
+                fallbackRewritePrompt: rewritePrompt
+            ) == rewritePrompt
+        )
+    }
+}
+
 // MARK: - Under-target scoring cap
 
 // A rep the app itself describes as "only Ns — the target range is X–Ys"

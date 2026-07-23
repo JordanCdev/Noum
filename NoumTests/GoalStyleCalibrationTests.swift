@@ -257,6 +257,7 @@ struct GoalStyleCalibrationTests {
 
         #expect(first == second)
         #expect(first.caseCount == SpeakingStyleGoal.allCases.count * 2)
+        #expect(GoalStyleCalibrationPacket.requiredIndependentReviewsPerCase == 3)
         #expect(Set(first.rows.map { $0.rubric.goalID }) == Set(SpeakingStyleGoal.allCases.map(\.rawValue)))
         #expect(first.rows.allSatisfy { !$0.sourceAssessmentID.isEmpty })
         #expect(first.rows.allSatisfy { row in
@@ -382,7 +383,10 @@ struct GoalStyleCalibrationTests {
             schemaVersion: GoalStyleCalibrationPacket.reviewResultsSchemaVersion,
             sourcePacketFingerprint: packet.packetFingerprint,
             sourceEvidencePackageFingerprint: packet.evidencePackageRequirement.packageFingerprint,
-            rows: [validReview(for: firstCase, reviewerID: "reviewer.001")]
+            rows: [
+                validReview(for: firstCase, reviewerID: "reviewer.001"),
+                validReview(for: firstCase, reviewerID: "reviewer.002"),
+            ]
         )
 
         let emptyReasons = packet.rejectionReasons(for: empty)
@@ -457,7 +461,8 @@ struct GoalStyleCalibrationTests {
                         scoreWithinAcceptableTolerance: false,
                         overclaimRisk: "high",
                         notes: "The candidate is structurally reviewable but not professionally approved."
-                    )
+                    ),
+                    validReview(for: source, reviewerID: "reviewer.003")
                 ]
             }
         )
@@ -471,7 +476,8 @@ struct GoalStyleCalibrationTests {
         packet.rows.flatMap { source in
             [
                 validReview(for: source, reviewerID: "reviewer.001"),
-                validReview(for: source, reviewerID: "reviewer.002")
+                validReview(for: source, reviewerID: "reviewer.002"),
+                validReview(for: source, reviewerID: "reviewer.003")
             ]
         }
     }

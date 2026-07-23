@@ -43,6 +43,12 @@ Reviewed historical findings, all verified inert on 2026-07-18.
   277e2b38  Noum/SpeechRecognizerViewModel.swift:5  generic-api-key
       Deepgram account:write key 025571b9-6cf4-4118-8c0d-532944ac0cca, revoked
       by the account owner on 2026-07-18 in project 1dca5364.
+
+  87041e9a  docs/TESTFLIGHT_QA.md:22  generic-api-key
+      FALSE POSITIVE. Independently re-read from the immutable commit on
+      2026-07-22: the match is the ordinary prose phrase "API,
+      revocation/replacement of the exposed credentials". No token or
+      credential material is present.
 """
 commits = [
   "1e67b4dd09e22a87be9ce6d31e19e0aef3733706",
@@ -50,4 +56,5 @@ commits = [
   "5ce23e7878a91cdbbe91919c98cec2310d385e4f",
   "15057607932b9d7d0b9444ecd762e2ef8bde3341",
   "277e2b388bb17d603011277a819b0bcaae517404",
+  "87041e9a1be95dfbbf12e72c7d908a4e2032e464",
 ]

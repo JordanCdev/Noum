@@ -350,6 +350,7 @@ struct PracticeModeSelectionView: View {
     /// several — explore-then-commit, not modal "one at a time".
     @State private var expandedModes: Set<PracticeMode> = []
     @State private var showOtherWays: Bool = false
+    @State private var showRecommendationReason: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isSelectedAppTab) private var isSelectedAppTab
 
@@ -496,7 +497,7 @@ struct PracticeModeSelectionView: View {
             || selectedMode != recommendation.mode
         return ReadingScreenScaffold(
             title: "Train",
-            subtitle: "Your coach has built today’s rep. The full library is there when you want it.",
+            subtitle: "Your coach picked one focused rep.",
             bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
         ) {
             recommendedRepHero(
@@ -582,11 +583,20 @@ struct PracticeModeSelectionView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            CoachBriefSurface(
-                observation: recommendation.reason,
-                nextMove: instruction,
-                tint: option.tint
-            )
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Image(systemName: "scope")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(option.tint)
+                    .accessibilityHidden(true)
+
+                Text(instruction)
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Focus. \(instruction)")
+            .accessibilityIdentifier("practiceModes.recommendedHero.focus")
 
             if let difficulty = recommendation.prescribedDemand?.timedDifficulty {
                 Label(difficulty.compactDemandLabel, systemImage: "timer")
@@ -599,6 +609,11 @@ struct PracticeModeSelectionView: View {
                     .accessibilityValue(difficulty.subtitle)
                     .accessibilityIdentifier("practiceModes.recommendedHero.timedDifficulty")
             }
+
+            recommendationReasonDisclosure(
+                recommendation.reason,
+                tint: option.tint
+            )
 
             if !showsFloatingStartCTA {
                 PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: AppColor.brandBlue) {
@@ -648,6 +663,47 @@ struct PracticeModeSelectionView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("practiceModes.recommendedHero")
         .accessibilityValue(recommendation.mode.displayLabel)
+    }
+
+    private func recommendationReasonDisclosure(_ reason: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Button {
+                animateMode {
+                    showRecommendationReason.toggle()
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Text("Why this rep?")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                    Spacer(minLength: 0)
+                    Image(systemName: showRecommendationReason ? "chevron.up" : "chevron.down")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("practiceModes.recommendedHero.reasonToggle")
+            .accessibilityLabel(showRecommendationReason ? "Hide why this rep was chosen" : "Show why this rep was chosen")
+
+            if showRecommendationReason {
+                Text(reason)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.bottom, Spacing.xs)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(tint.opacity(0.14))
+                .frame(height: 0.5)
+        }
     }
 
     private func recommendedSuccessMarker(tint: Color) -> some View {
@@ -729,7 +785,7 @@ struct PracticeModeSelectionView: View {
                         Text(PracticeModePrescriptionCopy.alternateSectionTitle)
                             .font(Typography.cardLabel)
                             .foregroundStyle(.primary)
-                        Text("Browse every exercise and learning path.")
+                        Text("Browse exercises and learning paths.")
                             .font(Typography.caption)
                             .foregroundStyle(AppColor.textSecondary)
                     }

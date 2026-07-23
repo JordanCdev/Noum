@@ -43,7 +43,7 @@ struct SoundscapePickerView: View {
                         .foregroundStyle(AppColor.brandBlue)
                 }
             }
-            .sheet(isPresented: $showPaywall) { PaywallView() }
+            .sheet(isPresented: $showPaywall) { PaywallView(entryPoint: .settings) }
             .onDisappear {
                 previewTask?.cancel()
                 engine.stop()

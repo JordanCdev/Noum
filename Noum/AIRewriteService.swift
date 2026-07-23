@@ -691,7 +691,8 @@ private enum OnDeviceRewriteHeuristics {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         guard !collapsed.isEmpty else { return "" }
-        return collapsed + "."
+        let first = String(collapsed.prefix(1)).uppercased()
+        return first + collapsed.dropFirst() + "."
     }
 
     private static func meaningfullyDiffers(_ candidate: String, from original: String) -> Bool {

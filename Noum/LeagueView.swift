@@ -42,7 +42,7 @@ struct LeagueView: View {
                 await league.refreshMembers(force: true)
             }
         }
-        .navigationTitle("")
+        .navigationTitle("Peer comparison")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -55,36 +55,34 @@ struct LeagueView: View {
     // MARK: - Header
 
     private var unavailableState: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Text("Peer comparison")
-                .font(Typography.bigStat)
-                .foregroundStyle(.primary)
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
                 Image(systemName: "lock.shield")
-                    .font(Typography.cardTitle)
+                    .font(Typography.headline)
                     .foregroundStyle(AppColor.brandBlue)
-                    .frame(width: 48, height: 48)
+                    .frame(width: 40, height: 40)
                     .background(AppColor.brandBlue.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
-                Text("Not available yet")
-                    .font(Typography.cardTitle)
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Not available yet")
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(.primary)
 
-                Text("Noum is keeping peer progress private until secure verification is ready. Your coaching and private progress continue as normal.")
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Noum will show comparisons only after verified peer activity is available. Your coaching is unaffected.")
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(AppColor.subtleBorder, lineWidth: 1)
-            )
         }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
         .accessibilityIdentifier("peerComparison.unavailable")
     }
 
@@ -103,72 +101,68 @@ struct LeagueView: View {
     }
 
     private var formingState: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Text("Peer comparison")
-                .font(Typography.bigStat)
-                .foregroundStyle(.primary)
-
-            authorityNotice
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
                 Image(systemName: "person.2.wave.2")
-                    .font(Typography.bigStat)
+                    .font(Typography.headline)
                     .foregroundStyle(AppColor.brandBlue)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 40, height: 40)
                     .background(AppColor.brandBlue.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
-                Text("Your peer group is still forming.")
-                    .font(Typography.cardTitle)
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Your peer group is forming")
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(.primary)
 
-                Text("This view appears when another speaker in your weekly group has real activity. Noum will not fill the space with sample standings.")
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("This appears when another active speaker is available.")
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                if league.isLoading {
-                    ProgressView()
-                        .tint(AppColor.brandBlue)
-                        .accessibilityLabel("Checking for active peers")
+                    if league.isLoading {
+                        ProgressView()
+                            .tint(AppColor.brandBlue)
+                            .accessibilityLabel("Checking for active peers")
+                    }
                 }
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(AppColor.subtleBorder, lineWidth: 1)
-            )
         }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
         .accessibilityIdentifier("peerComparison.forming")
     }
 
     private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        leagueTitle
-                        seePeaksLink
-                    }
-                } else {
-                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                        leagueTitle
-                        Spacer(minLength: 0)
-                        seePeaksLink
-                    }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    peerComparisonExplanation
+                    seePeaksLink
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    peerComparisonExplanation
+                    Spacer(minLength: 0)
+                    seePeaksLink
                 }
             }
-
-            Text(ratingStore.rating.hasRatedEvidence
-                 ? "A weekly comparison with active speakers at a similar rating."
-                 : "Complete one rated rep to create a fair comparison.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var peerComparisonExplanation: some View {
+        Text(ratingStore.rating.hasRatedEvidence
+             ? "A weekly comparison with active speakers at a similar rating."
+             : "Complete one rated rep to create a fair comparison.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var leagueTitle: some View {

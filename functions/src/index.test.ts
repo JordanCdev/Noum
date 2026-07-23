@@ -2614,6 +2614,125 @@ test("recommendation state is callable-only", () => {
   assert.doesNotMatch(callable, /assertSocialCallablesAvailable/);
 });
 
+test("growth aggregates are trusted, bounded, anonymous server writes", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  assert.match(
+    rules,
+    // eslint-disable-next-line max-len
+    /match \/_growthAggregateBatches\/\{document=\*\*\}[\s\S]*?allow read, write: if false;/
+  );
+  assert.match(
+    rules,
+    // eslint-disable-next-line max-len
+    /match \/_growthAggregatePeriods\/\{document=\*\*\}[\s\S]*?allow read, write: if false;/
+  );
+  assert.match(
+    rules,
+    // eslint-disable-next-line max-len
+    /match \/_growthActivationCohorts\/\{document=\*\*\}[\s\S]*?allow read, write: if false;/
+  );
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  const start = source.indexOf("export const recordGrowthAggregate");
+  const end = source.indexOf("function isAuthUserNotFound", start);
+  assert.equal(start >= 0 && end > start, true);
+  const callable = source.slice(start, end);
+  assert.match(callable, /enforceAppCheck: true/);
+  assert.match(callable, /assertTrustedCaller\(request\.auth, request\.app\)/);
+  assert.match(callable, /validateGrowthAggregate\(request\.data\)/);
+  assert.match(callable, /_accountDeletionState/);
+  assert.match(callable, /_growthAggregateBatches/);
+  assert.match(callable, /_growthAggregatePeriods/);
+  assert.match(callable, /_growthActivationCohorts/);
+  assert.match(callable, /activationCohortDay/);
+  assert.match(
+    callable,
+    // eslint-disable-next-line max-len
+    /accountActivatedCount: FieldValue\.increment\([\s\S]*?growth\.lifecycle\.accountActivated/
+  );
+  assert.match(
+    callable,
+    // eslint-disable-next-line max-len
+    /weeklyReadAmongDay1ReturnersCount: FieldValue\.increment/
+  );
+  assert.match(
+    callable,
+    // eslint-disable-next-line max-len
+    /unpricedAIUsageCount: FieldValue\.increment\([\s\S]*?input\.unpricedAIUsageCount/
+  );
+  assert.doesNotMatch(callable, /transaction\.set\([^)]*uid/u);
+});
+
+test("App Store notifications verify before anonymous writes", () => {
+  const rules = readFileSync(
+    resolve(process.cwd(), "../firestore.rules"),
+    "utf8"
+  );
+  assert.match(
+    rules,
+    // eslint-disable-next-line max-len
+    /match \/_appStoreNotificationMarkers\/\{document=\*\*\}[\s\S]*?allow read, write: if false;/
+  );
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  const handlerStart = source.indexOf(
+    "async function handleAppStoreServerNotification"
+  );
+  const productionStart = source.indexOf(
+    "export const appStoreServerNotificationsV2 = onRequest"
+  );
+  const sandboxStart = source.indexOf(
+    "export const appStoreServerNotificationsV2Sandbox = onRequest"
+  );
+  const handler = source.slice(handlerStart, productionStart);
+  const production = source.slice(productionStart, sandboxStart);
+  const sandboxEnd = source.indexOf("/**\n * True only", sandboxStart);
+  const sandbox = source.slice(sandboxStart, sandboxEnd);
+  assert.equal(handlerStart >= 0 && productionStart > handlerStart, true);
+  assert.match(handler, /parseAppStoreNotificationConfiguration\(/);
+  assert.match(handler, /appStoreSignedPayload\(request\.body\)/);
+  assert.match(handler, /createAppStoreNotificationVerifier\(configuration\)/);
+  assert.match(handler, /verifyAndProjectAppStoreNotification\(/);
+  assert.match(handler, /recordAppStoreLifecycleProjection\(projection\)/);
+  assert.match(handler, /appStoreNotificationHTTPStatus\(error\)/);
+  assert.doesNotMatch(handler, /error\.retryable \? 503 : 400/);
+  assert.equal(
+    handler.indexOf("verifyAndProjectAppStoreNotification(") <
+      handler.indexOf("recordAppStoreLifecycleProjection(projection)"),
+    true
+  );
+  for (const endpoint of [production, sandbox]) {
+    assert.match(endpoint, /invoker: "public"/);
+    assert.match(
+      endpoint,
+      /serviceAccount: APP_STORE_NOTIFICATIONS_RUNTIME_SERVICE_ACCOUNT/
+    );
+    assert.match(endpoint, /secrets: \[appStoreRootCertificates\]/);
+    assert.match(endpoint, /handleAppStoreServerNotification\(/);
+    assert.doesNotMatch(endpoint, /assertTrustedCaller|enforceAppCheck/);
+  }
+
+  const writerStart = source.indexOf(
+    "async function recordAppStoreLifecycleProjection"
+  );
+  const writer = source.slice(writerStart, handlerStart);
+  assert.match(writer, /_appStoreNotificationMarkers/);
+  assert.match(writer, /_growthAggregatePeriods/);
+  assert.match(writer, /markerSnapshot\.exists/);
+  assert.match(writer, /transaction\.create\(markerRef/);
+  for (const forbidden of [
+    "signedPayload",
+    "signedTransactionInfo",
+    "signedRenewalInfo",
+    "productId",
+    "appAccountToken",
+    "transactionId",
+  ]) {
+    assert.equal(writer.includes(forbidden), false, forbidden);
+  }
+});
+
 test(
   "exactly twelve competitive and social callables share the cutover gate",
   () => {

@@ -134,6 +134,7 @@ commits by SHA**. All 11 findings were classified before baselining:
 | `5ce23e78` | 2 × `gcp-api-key` | Revoked 2026-07-18 (above) |
 | `15057607` | AWS pair `AKIAWNEH4A…` | Invalid — STS returned `InvalidClientTokenId` |
 | `277e2b38` | Deepgram `025571b9…` | Revoked 2026-07-18 |
+| `87041e9a` | `generic-api-key` at `docs/TESTFLIGHT_QA.md:22` | False positive independently re-read 2026-07-22 — ordinary prose about the contained API incident; no token or credential material |
 
 Allowlisting is **by commit SHA only** — no rule, path, or regex is suppressed,
 so a secret in a new commit still fails. Verified both directions:

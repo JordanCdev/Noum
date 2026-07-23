@@ -63,6 +63,15 @@ enum NoumWebURLs {
     /// `firebase.json` rewrite `/privacy → /privacy.html`.
     static let privacy = URL(string: "https://noum-d0b6f.web.app/privacy")!
 
+    /// Public explanation of Noum's evidence boundaries. Keep this on the
+    /// verified Firebase origin until the custom-domain DNS/TLS/body gate is
+    /// complete; App Store metadata may move to `noum.app` only after that.
+    static let coachingMethod = URL(string: "https://noum-d0b6f.web.app/how-noum-coaches")!
+
+    /// Browser-based support destination for App Store Connect and users who
+    /// cannot open an email composer. The page links to the monitored inbox.
+    static let support = URL(string: "https://noum-d0b6f.web.app/support")!
+
     /// Apple's account-level subscription management surface. Account
     /// deletion never claims to cancel a StoreKit subscription automatically.
     static let manageSubscriptions = URL(string: "https://apps.apple.com/account/subscriptions")!

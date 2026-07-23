@@ -121,7 +121,7 @@ enum DevSeedData {
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_REWRITE_LADDER"),
            !sessions.isEmpty {
             let previous = sessions.removeLast()
-            sessions.append(makeSession(
+            var ladderSession = makeSession(
                 transcript: "Um, so I think the release should start next week because the support team has time to prepare. The customer message needs one clear decision.",
                 fillers: 1,
                 duration: previous.duration,
@@ -129,7 +129,13 @@ enum DevSeedData {
                 mode: previous.mode,
                 score: previous.score ?? 7,
                 pressure: previous.pressureLevel
-            ))
+            )
+            // Preserve the actual exercise demand so the screenshot tour
+            // proves a same-question retry rather than falling back to phrase
+            // rehearsal. This is ordinary PracticeSession state, not a second
+            // UI-test-only prompt owner.
+            ladderSession.prompt = "When should the release begin, and why?"
+            sessions.append(ladderSession)
         }
 
         // Write sessions to the store

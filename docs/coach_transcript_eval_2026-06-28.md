@@ -90,6 +90,13 @@ the 10 five-turn long-form conversations. As of the independent-review
 hardening, those 23 conversations require 46 completed professional review rows
 before the calibration blocker can clear.
 
+2026-07-22 qualified-coach floor correction: the current source-bound v2
+contract now requires three distinct qualified professional communication
+coaches per conversation. The release floor is therefore 39 conversations and
+117 completed review rows. Earlier references in this dated history to two
+reviewers, 23 conversations, 46 rows, or a fixed `requiredReviewCount: 46`
+describe superseded revisions and cannot clear the current readiness gate.
+
 2026-06-29 app-path conversation report update:
 `CoachChatConversationAppPathReport` schema v1 now replays the same 13
 three-turn target conversations through an isolated `AskNoumStore` plus the

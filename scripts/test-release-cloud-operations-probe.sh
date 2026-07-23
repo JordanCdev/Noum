@@ -11,7 +11,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s "$repo_root/scripts/tests" \
   -p 'test_release_cloud_operations_validator.py'
 PYTHONDONTWRITEBYTECODE=1 python3 "$validator" \
-  --source-contract "$repo_root/functions/src/index.ts"
+  --source-contract "$repo_root/functions/src/index.ts" \
+  --app-store-contract "$repo_root/functions/src/appStoreServerNotifications.ts" \
+  --functions-lockfile "$repo_root/functions/package-lock.json"
 
 false_binary="/usr/bin/false"
 if [[ ! -x "$false_binary" ]]; then
@@ -26,6 +28,7 @@ run_probe() {
   env -i \
     HOME="${HOME:-/tmp}" \
     PATH="$stub_directory:/usr/bin:/bin" \
+    NOUM_APP_STORE_APP_APPLE_ID=1234567890 \
     "$@" \
     "$probe" 2>&1
 }

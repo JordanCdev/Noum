@@ -161,6 +161,7 @@
 				AIConfig.plist.example,
 				BackendConfig.plist,
 				BackendConfig.plist.example,
+				Configuration/Noum.storekit,
 				"GoogleService-Info.plist.example",
 				Info.plist,
 				PRIVACY_AUDIT.md,

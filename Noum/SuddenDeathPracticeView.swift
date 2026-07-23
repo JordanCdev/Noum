@@ -1349,7 +1349,8 @@ struct SuddenDeathPracticeView: View {
                 "Survived \(result.roundsSurvived) rounds",
                 result.totalFillers == 0 ? "Zero fillers under pressure" : "\(result.totalFillers) filler(s) detected"
             ],
-            coachSummary: eval.feedback
+            coachSummary: eval.feedback,
+            categoryRatings: eval.categories.persistedCategoryRatings
         )
 
         let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
@@ -1379,7 +1380,8 @@ struct SuddenDeathPracticeView: View {
                     "Survived \(result.roundsSurvived) rounds",
                     "Ended: \(result.finalOutcome.label)"
                 ],
-                coachSummary: eval.feedback
+                coachSummary: eval.feedback,
+                categoryRatings: eval.categories.persistedCategoryRatings
             )
         )
         finalizedSessionID = session.id

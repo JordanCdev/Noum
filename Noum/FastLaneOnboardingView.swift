@@ -104,7 +104,7 @@ struct FastLaneOnboardingView: View {
         case .exercise:
             return "Write the response you would want to say. Noum will read its shape, not pretend to hear your delivery."
         case .result:
-            return "This is a structure read from writing. Spoken practice later unlocks delivery feedback."
+            return "The communication coach that only tells you what it can prove. Your next proof is spoken and always starts with your tap."
         }
     }
 
@@ -310,15 +310,32 @@ struct FastLaneOnboardingView: View {
                 .padding(Spacing.md)
                 .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 
-                Button(action: completeSetup) {
-                    Text("Continue to spoken coaching")
-                        .font(Typography.headline)
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                if let saveError {
+                    Text(saveError)
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("fastLane.error")
                 }
-                .buttonStyle(.borderedProminent)
+
+                PrimaryCTA(
+                    "Try a 30-second spoken proof",
+                    icon: "waveform.and.mic",
+                    action: startSpokenProof
+                )
+                .disabled(profileStore.onboardingDraft?.canStartSpokenProof != true)
+                .accessibilityIdentifier("fastLane.spokenProof")
+                .accessibilityHint("Opens a short Timed Practice setup. Recording and microphone permission begin only after you choose to start.")
+
+                Button(action: completeSetup) {
+                    Text("Complete my coaching profile")
+                        .font(Typography.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.bordered)
                 .tint(AppColor.brandBlue)
                 .accessibilityIdentifier("fastLane.completeSetup")
-                .accessibilityHint("Finishes your coaching profile before starting a spoken rep. Your two choices are kept.")
+                .accessibilityHint("Opens the full coaching profile setup. Your two choices are kept.")
 
                 Button(action: enterApp) {
                     Text("Explore Noum first")
@@ -394,8 +411,23 @@ struct FastLaneOnboardingView: View {
 
     private func completeSetup() {
         logChoice(stage: TransformationKPIEventStage.profileSetupTapped, reason: "profile setup selected after structured value")
-        logChoice(stage: TransformationKPIEventStage.liveUpgradeTapped, reason: "spoken coaching selected after structured value")
         onCompleteSetup()
+    }
+
+    private func startSpokenProof() {
+        saveError = nil
+        guard profileStore.onboardingDraft?.canStartSpokenProof == true,
+              let preparation = AutoGuidedFirstRep.prepareUserInitiatedSpokenProof(),
+              let route = AutoGuidedFirstRep.routeURL(for: preparation) else {
+            saveError = "Noum couldn't prepare the spoken proof. You can still enter Noum and start Timed Practice from Train."
+            return
+        }
+        logChoice(
+            stage: TransformationKPIEventStage.liveUpgradeTapped,
+            reason: "user initiated spoken proof after structured value"
+        )
+        DeepLinkRouter.shared.pending = route
+        onEnterApp()
     }
 
     private func enterApp() {

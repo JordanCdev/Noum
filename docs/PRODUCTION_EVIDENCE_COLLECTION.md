@@ -41,7 +41,7 @@ Confirm the dump contains:
 - `coach-chat-conversation-expert-calibration-v2.json`.
 
 The initialization command refuses stale sidecars, dirty coach source, an
-invalid packet, or a packet below the existing 39-conversation/78-review floor.
+invalid packet, or a packet below the existing 39-conversation/117-review floor.
 
 Before collecting Apple evidence, run the local signing/TestFlight preflight
 against an unsigned generic-iOS archive:
@@ -141,11 +141,13 @@ collection is complete.
 
 ## 5. Longitudinal real-user transfer
 
-File: `coach-real-user-transfer-outcomes-v3.json`.
+File: `coach-real-user-transfer-outcomes-v4.json`.
 
 Register the protocol, analysis plan, benchmark, participant-consent ledger,
-withdrawal ledger, exclusion ledger, adverse-outcome ledger, and signed study
-attestation. The principal investigator and analyst must be different people.
+withdrawal ledger, exclusion ledger, negative- and adverse-outcome ledgers,
+population-provenance record, and signed study attestation. The principal
+investigator and analyst must be different people, and the attestation must
+confirm that no synthetic participant or install was counted.
 
 For every retained outcome:
 
@@ -162,11 +164,15 @@ Enrollment must balance exactly:
 completed + withdrawn + excluded = enrolled
 ```
 
-The existing v3 validator additionally enforces cohort completion, participant
-and moment diversity, delayed follow-up, longitudinal duration, outcome floors,
-positive-transfer/non-regression thresholds, and complete adverse-resolution
-accounting. A real study that misses a threshold remains a valid study result
-but does not earn the release row.
+The v4 validator additionally enforces at least 28 actual elapsed days from
+timezone-aware timestamps, 30 distinct qualified SHA-256 participants, 200
+qualified App Store Connect installs with at least 200 D1-eligible and 200
+D7-eligible installs, cohort completion, participant and moment diversity,
+delayed follow-up, outcome floors, positive-transfer/non-regression thresholds,
+and complete adverse-resolution accounting. The 500-install conversion-scale
+signal is reported separately and never blocks first release. A real study that
+misses a release threshold remains a valid study result but does not earn the
+release row.
 
 Set `templateStatus` to `COLLECTED_EXTERNAL_EVIDENCE` only after the registered
 analysis and accounting are complete.
@@ -177,14 +183,14 @@ File: `coach-real-device-testflight-qa-v3.json`.
 
 The tester and verifier must be different people. The same TestFlight build and
 pseudonymous SHA-256 device identifier must be carried through all 14 rows.
-The contract contains exactly 77 required checks:
+The contract contains exactly 84 required checks:
 
 | Surface key | Required attachment kind | Required check keys |
 |---|---|---|
 | `liveActivity` | `screenRecording` | `dynamicIslandCompactExpanded`, `lockScreenPresentation`, `finishDismisses`, `forceQuitEnds` |
 | `aiPromptLatency` | `latencyTrace` | `productionPromptWithinBudget`, `repeatedBeginWithinBudget`, `airplaneModeCuratedFallback` |
 | `soundscapeAudioSession` | `audioSessionLog` | `focusCalmSteadyPlayback`, `stopsWhenRecordingStarts`, `phoneInterruptionRecovers`, `spotifyMixesPolitely` |
-| `storeKitPurchaseRestoreEntitlements` | `storeKitReceipt` | `paywallOpensFromSettings`, `monthlySandboxPurchase`, `annualSandboxPurchase`, `restorePreviousPurchase`, `coachModeEntitlement`, `liveTranscriptEntitlement`, `fillerTrackingEntitlement` |
+| `storeKitPurchaseRestoreEntitlements` | `storeKitReceipt` | `paywallOpensFromSettings`, `monthlySandboxPurchase`, `annualSandboxPurchase`, `annualTrialEligibilityAndExactTerms`, `annualTrialStarts`, `renewalPreservesEntitlement`, `cancellationRemainsActiveUntilExpiry`, `billingFailureFollowsVerifiedStoreKitState`, `refundRevokesEntitlement`, `expiryRemovesEntitlement`, `restorePreviousPurchase`, `coachModeEntitlement`, `liveTranscriptEntitlement`, `fillerTrackingEntitlement` |
 | `productionTranscriptionConsent` | `transcriptionConsentTrace` | `guestBootstrapCloudConsent`, `firebaseDeepgramRealMicrophoneRep`, `noPreConsentDataEgress`, `declineKeepsSupportedPracticeLocal`, `revokeKeepsSupportedPracticeLocal`, `unsupportedLocalExplainsCloudRequirement`, `settingsRecoveryRoute`, `productionAppCheckAccepted` |
 | `transcriptionFailureIntegrity` | `recordingIntegrityTrace` | `providerStartFailure`, `midSessionDisconnect`, `audioInterruption`, `bluetoothRouteChange`, `silence`, `finalWordDelay`, `failedAttemptNotPersisted`, `failedAttemptNotScored`, `failedAttemptNoXP`, `timerWaitsForCaptureReadiness` |
 | `pitchMetrics` | `pitchMetricsCapture` | `variedPitchClassification`, `monotoneClassification`, `shortWhisperSuppressed` |
@@ -198,7 +204,7 @@ The contract contains exactly 77 required checks:
 
 Each row's `checks` array must contain each listed `checkKey` exactly once with
 `passed: true`. Missing, unexpected, duplicate, or failed checks reject the
-artifact. The summary's `requiredCheckCount` must be 77 and
+artifact. The summary's `requiredCheckCount` must be 84 and
 `passedRequiredCheckCount` must match the checks that actually pass; setting a
 summary count or row-level `passed` flag by hand cannot smooth a failed check.
 
@@ -252,6 +258,74 @@ closure, protected social cutover, custom-domain verification, Apple release
 services, archive signing, and StoreKit configuration. Capture and close those
 before the final release decision even when they are not separate v2 item keys.
 
+The existing Firestore-rules deployment evidence must also bind the reviewed
+`recordGrowthAggregate` function and matching rules to the same release source.
+Its primary, verification, and command-output attachments must demonstrate an
+App-Check-protected authenticated call, deletion fencing, the server-side rate
+ceiling, anonymous batch idempotency, no upload while consent is off, and one
+consented closed-day upload whose allowlisted document contains no speech or
+user-identifying field. Attach the independently verified Firestore TTL policy
+for `_growthAggregateBatches.expiresAt` and an App Store Privacy review covering
+the optional first-party analytics flow. This evidence does not make the
+aggregate authoritative for trial conversion, proceeds, refunds, or Apple peer
+benchmarks; retain App Store Connect as the authority for those measures.
+The sample must also prove that `unpricedAIUsageCount` is persisted as a bounded
+daily total, equals the corresponding allowlisted event count, and survives an
+idempotent retry without double-counting. Commercial reconciliation must return
+`BLOCKED_UNPRICED_AI_USAGE` with no residual or margin whenever that count is
+non-zero; known priced costs remain visible, while on-device work contributes
+neither paid nor unpriced provider usage.
+
+The same source-bound deployment packet must treat App Store Server
+Notifications V2 as a distinct public-Apple trust boundary. The
+`appStoreServerNotificationsV2` and
+`appStoreServerNotificationsV2Sandbox` receivers remain disabled until the
+operator supplies Noum's numeric App Store app ID, a JSON array of current
+base64 DER Apple root certificates, the dedicated least-privilege runtime, and
+the two exact App Store Connect Version 2 URLs. Evidence must prove Apple's
+official Node library verified the outer notification JWS plus every present
+nested transaction and renewal JWS, with online certificate checks and exact
+bundle/environment/app-ID binding, before any write. Retain the test-notification
+status, a sandbox lifecycle trace, duplicate-delivery proof, forged/wrong-app
+rejection, function/parameter/IAM readback, and the TTL policy for
+`_appStoreNotificationMarkers.expiresAt`.
+
+Run the cloud-operations probe first with `NOUM_APP_STORE_APP_APPLE_ID` set and
+the default `pre-enable` phase, then rerun at the reviewed `sandbox-enabled` and
+`production-enabled` transitions. Retain the exact verifier-helper and
+package-lock SHA-256 values, Apple server-library version, effective secret IAM
+(including ancestor and project bindings), exact runtime-role allowlist,
+App-ID/secret/enable-variable readbacks, and the ACTIVE marker TTL result. A
+permanently invalid notification must produce no write and a 204
+acknowledgement because Apple retries both 4xx and 5xx Version 2 responses; a
+retryable online-verification, configuration, or storage failure must remain
+503. Capture one trace of each outcome without retaining the submitted JWS.
+
+The retained Firestore sample may show only source, production-or-sandbox,
+closed UTC day, allowlisted lifecycle counters, timestamps, TTL, and a one-way
+notification digest. It must not contain or be joinable through a signed JWS,
+receipt, notification UUID, product or subscription-group ID, transaction or
+original-transaction ID, app-account token, account/device/install ID, price,
+storefront, or user speech. Because the source deliberately keeps no account
+binding and never mutates entitlement, account deletion has no notification-
+owned user row to reconcile; test this by injecting decoded identifier fields
+and proving none crosses the aggregate projection. StoreKit remains the
+on-device entitlement authority and App Store Connect remains the proceeds,
+conversion, refund-rate, and peer-benchmark authority.
+
+Generate the required content-free reconciliation note with the source-bound
+contract in `AppStore/commercial-reconciliation.md` and
+`scripts/reconcile_app_store_commercial.py`. The evidence packet must retain the
+original App Store Connect Subscription Event Report, its reviewed
+identifier-free normalization, the first-party aggregate normalization, every
+SHA-256 binding, the result, command output, and a different verifier's review.
+Do not attach a Subscriber Report or include subscriber, account, device,
+installation, batch, document, or product identifiers in the discrepancy note.
+The utility deliberately refuses install/trial conversion cohorts, incomplete
+date coverage, and cross-currency arithmetic without a separately hashed FX
+receipt. Its calendar-label comparison also preserves the known Pacific-versus-
+UTC boundary caveat; it cannot establish exact timestamp parity.
+
 For that reason, the workflow adds a fail-closed `releasePrerequisites` array
 around the existing v2 artifact. It has exactly twelve rows and records:
 
@@ -278,8 +352,44 @@ and team identifiers redacted from the packet:
 - the marketing version and build number are newer than the previously released
   or uploaded candidate, and App Store change notes are drafted for that exact
   version/build pair;
+- `AppStore/release-assets.template.json` was copied outside the repository and
+  filled from that exact signed TestFlight candidate: seven default shots, the
+  dedicated lead shot for each of three custom product pages and three PPO
+  treatments, one 20–30 second preview, device sizes, deidentified fixture ID,
+  source commit, version/build, relative paths, SHA-256 values, and clean-source
+  attestation all pass `--verify-release-assets`;
+- the default listing, all three custom product pages, and all three PPO
+  treatments are uploaded to the intended version; their App Store Connect
+  deep links and the three public custom-page `ppid` URLs match the manifest;
+- `AppStore/aso-experiment.template.json` was pre-registered with the intended
+  version, source commit, GB/US storefronts, denominator, observation window,
+  and decision rules. After the app is Ready for Distribution and the live test
+  completes, the retained App Store Connect result covers the exact version,
+  storefront rows, unique-impression denominators, first-time-download
+  numerators, Apple's conversion/lift/status and confidence output, observation
+  window, decision (including an honest inconclusive decision), result export,
+  and independent verification, and passes
+  `--verify-aso-experiment-results`;
 - agreements, tax, and banking state does not block sale; and
 - the independently verified command/review output is bound to the same build.
+
+Do not change the v2 artifact's twelve-row `releasePrerequisites` schema to add
+separate media or ASO rows. For first release, put the final asset manifest,
+validator output, App Store Connect/public page link export, PPO configuration,
+pre-registration, and independent verification into the existing
+`appleReleaseServicesConfigured` evidence set. PPO tests only run once the app
+is Ready for Distribution and live, so add the later result manifest/export and
+its independent verification to the same retained Apple packet for the
+post-launch paid-acquisition/scale decision; do not hold the first release to an
+impossible pre-release result. The primary, verification, and command/review
+attachments remain distinct and hashed. A checked-in template, brief, simulator
+QA image, empty result, or self-verification is not evidence.
+
+The strict validators do not capture, encode, upload, configure, or run an
+experiment. Signed-release-candidate capture, preview encoding, and App Store
+Connect listing/CPP/PPO creation are first-release external blockers. Treatment
+results and their independent verification remain post-launch scale blockers
+until real operator evidence exists.
 
 Configuration evidence does not prove runtime behavior. The StoreKit sandbox
 purchase/restore row and physical Sign in with Apple check must still pass from

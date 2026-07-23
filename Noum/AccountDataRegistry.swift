@@ -581,7 +581,17 @@ extension AccountDataRegistry {
             participant("coaching-content-sync", [.accountKey(prefix: CoachingContentSyncJournal.storageKeyPrefix)], reload: {}, end: {}),
             participant("im-relationships", [.accountKey(prefix: "imRelationshipProfiles.")], reload: { IMRelationshipStore.shared.reloadForCurrentAccount() }, end: { IMRelationshipStore.shared.endSession() }),
             participant("recommendation-learning", [.accountKey(prefix: "recommendation.pending."), .accountKey(prefix: "recommendation.outcomes."), .accountKey(prefix: "recommendation.resetPending."), .accountKey(prefix: "recommendation.syncPending."), .accountKey(prefix: "recommendation.remoteRevision."), .accountKey(prefix: "recommendation.pendingMutationID.")], reload: { RecommendationLearningStore.shared.reloadForCurrentAccount() }, end: { RecommendationLearningStore.shared.reloadForCurrentAccount() }),
-            participant("flow-observability", [.accountKey(prefix: "flowEvents.recent.")], reload: { FlowEventLog.shared.reloadForCurrentAccount() }, end: { FlowEventLog.shared.endSession() }),
+            participant(
+                "flow-observability",
+                [
+                    .accountKey(prefix: "flowEvents.recent."),
+                    .accountKey(prefix: "\(FlowEventLog.aggregateConsentStorageKey)."),
+                    .accountKey(prefix: "\(FlowEventLog.aggregateCursorStorageKey)."),
+                    .accountKey(prefix: "\(FlowEventLog.aggregateCheckpointStorageKey)."),
+                ],
+                reload: { FlowEventLog.shared.reloadForCurrentAccount() },
+                end: { FlowEventLog.shared.endSession() }
+            ),
             participant("big-moments", [.accountKey(prefix: "bigMoment."), .accountKey(prefix: "bigMomentArchive."), .accountKey(prefix: "bigMomentOutcomes.")], reload: { BigMomentStore.shared.reloadForCurrentAccount() }, end: { BigMomentStore.shared.endSession() }),
             participant("forward-plan", [.accountKey(prefix: "forwardPlan.")], reload: { ForwardPlanStore.shared.reloadForCurrentAccount() }, end: { ForwardPlanStore.shared.endSession() }),
             participant("session-intent", [.accountKey(prefix: "sessionIntent.history.")], reload: { SessionIntentStore.shared.reloadForCurrentAccount() }, end: { SessionIntentStore.shared.endSession() }),
@@ -631,7 +641,7 @@ extension AccountDataRegistry {
             participant("roleplay", [.accountKey(prefix: "roleplayTurns.")], reload: { RoleplayStore.shared.reloadForCurrentAccount() }, end: { RoleplayStore.shared.endSession() }),
             participant("primary-focus", [.accountKey(prefix: "lastPrimaryFocus.")], reload: {}, end: {}),
             participant("prompt-history", [.accountKey(prefix: "noum.promptHistory."), .accountKey(prefix: "noum.promptHistory.texts.")], reload: {}, end: {}),
-            participant("account-prompts", [.accountKey(prefix: "noum.notification.prePrompt.seen."), .accountKey(prefix: "noum.notification.prePrompt.declinedAt."), .accountKey(prefix: "noum.deferredCapture.seen.goal."), .accountKey(prefix: "noum.deferredCapture.seen.whyNow."), .accountKey(prefix: "noum.deferredCapture.seen.successVision."), .accountKey(prefix: "noum.goalRefresh.lastDate."), .accountKey(prefix: FirstRunOnboardingGate.legacyCompletedKeyPrefix), .accountKey(prefix: AutoGuidedFirstRep.completedKeyPrefix)], reload: {}, end: { AutoGuidedFirstRep.cancelPendingLaunch() }),
+            participant("account-prompts", [.accountKey(prefix: "noum.notification.prePrompt.seen."), .accountKey(prefix: "noum.notification.prePrompt.declinedAt."), .accountKey(prefix: "noum.deferredCapture.seen.goal."), .accountKey(prefix: "noum.deferredCapture.seen.whyNow."), .accountKey(prefix: "noum.deferredCapture.seen.successVision."), .accountKey(prefix: "noum.goalRefresh.lastDate."), .accountKey(prefix: FirstRunOnboardingGate.legacyCompletedKeyPrefix), .accountKey(prefix: AutoGuidedFirstRep.completedKeyPrefix), .accountKey(prefix: AutoGuidedFirstRep.pendingSummaryKeyPrefix)], reload: {}, end: { AutoGuidedFirstRep.cancelPendingLaunch() }),
             participant("home-recommendations", [.accountBucket(prefix: "homeRecommendation.")], reload: {}, end: {}),
             participant("ai-rate-limits", [.accountBucket(prefix: "aiRateLimiter.")], reload: {}, end: { AIRateLimiter.shared.endSession() }),
         ]
@@ -682,6 +692,11 @@ extension AccountDataRegistry {
             endSession: { LeagueManager.shared.endSession() },
             snapshot: { LeagueManager.shared.exportSnapshot(for: $0) },
             delete: { LeagueManager.shared.deleteAllData(for: $0) }
+        ))
+        items.append(.legacyDeviceDefaults(
+            id: "legacy-device-subscription-lifecycle",
+            keys: [PremiumManager.lifecycleSnapshotKey],
+            defaults: defaults
         ))
         items.append(.legacyDeviceDefaults(
             id: "legacy-device-coaching",

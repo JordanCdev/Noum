@@ -284,6 +284,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /_growthAggregateBatches/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_growthAggregatePeriods/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_growthActivationCohorts/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_appStoreNotificationMarkers/{document=**} {
+      allow read, write: if false;
+    }
+
     match /_verifiedSessionEvidence/{document=**} {
       allow read, write: if false;
     }

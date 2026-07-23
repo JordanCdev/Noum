@@ -59,7 +59,7 @@ enum CoachChatConversationCorpus {
     static let professionalCoachCalibrationResultsArtifactFileName =
         "coach-chat-conversation-expert-calibration-results-v2.json"
     static let realUserTransferOutcomesArtifactFileName =
-        "coach-real-user-transfer-outcomes-v3.json"
+        "coach-real-user-transfer-outcomes-v4.json"
     static let realDeviceTestFlightArtifactFileName =
         "coach-real-device-testflight-qa-v3.json"
     static let operationalLaunchChecklistArtifactFileName =
@@ -2768,9 +2768,10 @@ struct CoachChatConversationCorpusTests {
             packet.requiredIndependentReviewsPerConversation ==
                 CoachProfessionalCalibrationEvidence.requiredReviewsPerConversation
         )
+        #expect(packet.requiredIndependentReviewsPerConversation == 3)
         #expect(packet.requiredReviewCount == CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount)
         #expect(packet.instructions.contains("do not assume the app is validated or production-ready"))
-        #expect(packet.instructions.contains("two independent professional communication-coach reviews"))
+        #expect(packet.instructions.contains("three independent professional communication-coach reviews"))
         #expect(packet.instructions.contains("longitudinal user outcomes"))
         #expect(packet.responseSchema.contains("\"calibrationDecision\""))
         #expect(packet.responseSchema.contains("\"reviewerID\""))
@@ -3644,7 +3645,10 @@ struct CoachChatConversationCorpusTests {
         )
         let rowsByKey = Dictionary(uniqueKeysWithValues: manifest.rows.map { ($0.key, $0) })
 
-        #expect(manifest.evidence.realUserLongitudinalOutcomeCount == 12)
+        #expect(
+            manifest.evidence.realUserLongitudinalOutcomeCount ==
+                CoachRealUserTransferOutcomeEvidence.requiredOutcomeCount
+        )
         #expect(rowsByKey["realUserLongitudinalTransferOutcomes"]?.status == .earned)
         #expect(rowsByKey["realUserLongitudinalTransferOutcomes"]?.blocker == nil)
         #expect(!manifest.audit.blockers.contains(.noRealUserLongitudinalTransferOutcomes))
@@ -4408,20 +4412,20 @@ struct CoachChatConversationCorpusTests {
     }
 
     @Test func professionalCalibrationEvidenceRequiresFullConversationCoverage() throws {
-        let singleReviewEvidence = Self.professionalCalibrationEvidence(
-            reviewsPerConversation: 1
+        let belowFloorEvidence = Self.professionalCalibrationEvidence(
+            reviewsPerConversation: 2
         )
-        let singleReviewDecoded = try CoachProfessionalCalibrationEvidence.decode(
-            from: singleReviewEvidence.encodedSortedJSON()
+        let belowFloorDecoded = try CoachProfessionalCalibrationEvidence.decode(
+            from: belowFloorEvidence.encodedSortedJSON()
         )
 
-        #expect(!singleReviewDecoded.qualifiesForReadiness)
-        #expect(singleReviewDecoded.rowsPassingCalibrationFloor == 0)
-        #expect(singleReviewDecoded.rejectionReasons.contains("missingFullConversationCoverage"))
-        #expect(singleReviewDecoded.rejectionReasons.contains { reason in
+        #expect(!belowFloorDecoded.qualifiesForReadiness)
+        #expect(belowFloorDecoded.rowsPassingCalibrationFloor == 0)
+        #expect(belowFloorDecoded.rejectionReasons.contains("missingFullConversationCoverage"))
+        #expect(belowFloorDecoded.rejectionReasons.contains { reason in
             reason.hasPrefix("insufficientReviewsPerConversation=")
         })
-        #expect(singleReviewDecoded.rejectionReasons.contains { reason in
+        #expect(belowFloorDecoded.rejectionReasons.contains { reason in
             reason.hasPrefix("insufficientPassingReviewsPerConversation=")
         })
 
@@ -4595,8 +4599,11 @@ struct CoachChatConversationCorpusTests {
         #expect(warningDecoded.rowsPassingOutcomeFloor == 0)
         #expect(warningDecoded.rejectionReasons.contains("readinessWarnings=insufficientFollowUpWindow"))
 
+        // Seven rejected positive rows move the retained 30-person cohort
+        // below its 60% positive-transfer floor (17/30), while the six
+        // explicitly negative outcomes remain in the artifact.
         let rejectedEvidence = Self.realUserTransferOutcomeEvidence(
-            rejectedRowIndices: [0, 1, 2, 3, 4]
+            rejectedRowIndices: Set(0..<7)
         )
         let rejectedDecoded = try CoachRealUserTransferOutcomeEvidence.decode(
             from: rejectedEvidence.encodedSortedJSON()
@@ -4618,9 +4625,10 @@ struct CoachChatConversationCorpusTests {
         )
 
         #expect(mixed.qualifiesForReadiness)
-        #expect(mixed.rowsPassingOutcomeFloor == 12)
-        #expect(mixed.summary.positiveTransferCount == 9)
-        #expect(mixed.summary.noRegressionOutcomeCount == 9)
+        #expect(mixed.rowsPassingOutcomeFloor == 30)
+        #expect(mixed.summary.positiveTransferCount == 21)
+        #expect(mixed.summary.negativeOutcomeCount == 6)
+        #expect(mixed.summary.noRegressionOutcomeCount == 27)
         #expect(mixed.summary.adverseOutcomeCount == 1)
         #expect(mixed.summary.resolvedAdverseOutcomeCount == 1)
 
@@ -4644,7 +4652,9 @@ struct CoachChatConversationCorpusTests {
 
         #expect(!concentratedUsers.qualifiesForReadiness)
         #expect(concentratedUsers.rowsPassingOutcomeFloor == 0)
-        #expect(concentratedUsers.rejectionReasons.contains("insufficientUniqueUsers"))
+        #expect(concentratedUsers.rejectionReasons.contains(
+            "insufficientQualifiedQualitativeParticipants"
+        ))
         #expect(concentratedUsers.rejectionReasons.contains("excessiveOutcomesPerUser"))
 
         let narrowCategories = try CoachRealUserTransferOutcomeEvidence.decode(
@@ -4677,6 +4687,47 @@ struct CoachChatConversationCorpusTests {
         #expect(sameHourFollowUp.rejectionReasons.contains("outcomeFloorFailures"))
     }
 
+    @Test func realUserTransferV4EnforcesFourWeekQualifiedCohortContract() throws {
+        let shortWindow = Self.realUserTransferOutcomeEvidence(
+            completedAtISO8601: "2026-07-29T11:59:59Z"
+        )
+        #expect(!shortWindow.qualifiesForReadiness)
+        #expect(shortWindow.rejectionReasons.contains("insufficientLongitudinalWindow"))
+
+        let twentyNineParticipants = Self.realUserTransferOutcomeEvidence(
+            duplicateLastParticipant: true
+        )
+        #expect(!twentyNineParticipants.qualifiesForReadiness)
+        #expect(twentyNineParticipants.rejectionReasons.contains(
+            "insufficientQualifiedQualitativeParticipants"
+        ))
+
+        let thinD7Cohort = Self.realUserTransferOutcomeEvidence(
+            day7EligibleInstallCount: 199
+        )
+        #expect(!thinD7Cohort.qualifiesForReadiness)
+        #expect(thinD7Cohort.rejectionReasons.contains("insufficientDay7EligibleInstalls"))
+    }
+
+    @Test func realUserTransferV4RejectsSyntheticOrUntrackedPopulationEvidence() throws {
+        let untrustedPopulation = Self.realUserTransferOutcomeEvidence(
+            invalidParticipantHashIndices: [0],
+            attestsNoSyntheticPopulation: false
+        )
+        #expect(!untrustedPopulation.qualifiesForReadiness)
+        #expect(untrustedPopulation.rejectionReasons.contains("incompleteStudyAttestation"))
+        #expect(untrustedPopulation.rejectionReasons.contains { reason in
+            reason.hasPrefix("invalidParticipantHashes=")
+        })
+        #expect(untrustedPopulation.rejectionReasons.contains("outcomeFloorFailures"))
+
+        let negativeCountMismatch = Self.realUserTransferOutcomeEvidence(
+            negativeOutcomeCountOverride: 5
+        )
+        #expect(!negativeCountMismatch.qualifiesForReadiness)
+        #expect(negativeCountMismatch.rejectionReasons.contains("negativeOutcomeCountMismatch"))
+    }
+
     @Test func realUserTransferOutcomeLoaderReturnsNilWhenSidecarIsMissing() throws {
         let directory = try Self.temporaryEvaluationDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -4707,7 +4758,7 @@ struct CoachChatConversationCorpusTests {
         )
 
         #expect(loaded?.qualifiesForReadiness == true)
-        #expect(loaded?.rowsPassingOutcomeFloor == 12)
+        #expect(loaded?.rowsPassingOutcomeFloor == 30)
         #expect(loaded?.cohortDescription == "closed-beta-transfer-cohort")
     }
 
@@ -4758,18 +4809,32 @@ struct CoachChatConversationCorpusTests {
 
     @Test func realDeviceTestFlightV3PinsExactSurfacesAndChecks() throws {
         #expect(CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.count == 14)
-        #expect(CoachRealDeviceTestFlightEvidence.requiredCheckCount == 77)
+        #expect(CoachRealDeviceTestFlightEvidence.requiredCheckCount == 84)
         #expect(
             Set(CoachRealDeviceTestFlightEvidence.requiredCheckKeysBySurface.keys) ==
                 Set(CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys)
         )
+        #expect(Set(
+            CoachRealDeviceTestFlightEvidence.requiredCheckKeysBySurface[
+                "storeKitPurchaseRestoreEntitlements"
+            ] ?? []
+        ).isSuperset(of: [
+            "annualTrialEligibilityAndExactTerms",
+            "annualTrialStarts",
+            "renewalPreservesEntitlement",
+            "cancellationRemainsActiveUntilExpiry",
+            "billingFailureFollowsVerifiedStoreKitState",
+            "refundRevokesEntitlement",
+            "expiryRemovesEntitlement",
+            "restorePreviousPurchase",
+        ]))
 
         let clean = try CoachRealDeviceTestFlightEvidence.decode(
             from: Self.realDeviceTestFlightEvidence().encodedSortedJSON()
         )
         #expect(clean.qualifiesForReadiness)
-        #expect(clean.summary.requiredCheckCount == 77)
-        #expect(clean.summary.passedRequiredCheckCount == 77)
+        #expect(clean.summary.requiredCheckCount == 84)
+        #expect(clean.summary.passedRequiredCheckCount == 84)
     }
 
     @Test func realDeviceTestFlightV3RejectsMissingUnexpectedDuplicateAndFailedChecks() throws {
@@ -5210,6 +5275,35 @@ struct CoachChatConversationCorpusTests {
         ])
         #expect(manifest.rows.filter { requiredExternalKeys.contains($0.key) }
             .allSatisfy { $0.status == .earned })
+        let releaseScaleRow = manifest.rows.first {
+            $0.key == "scaleConversionCohortReadiness"
+        }
+        #expect(releaseScaleRow?.status == .pending)
+        #expect(releaseScaleRow?.observedCount == 200)
+        #expect(releaseScaleRow?.requiredCount == 500)
+        #expect(releaseScaleRow?.blocker == nil)
+
+        let scaleManifest = CoachVisionProductionReadinessEvidenceManifest.make(
+            conversationReport: conversationReport,
+            longFormConversationReport: longFormConversationReport,
+            expertPacket: expertPacket,
+            textAppPathReport: textAppPathReport,
+            liveAppPathReport: liveAppPathReport,
+            liveProviderSweep: Self.liveProviderSweepEvidence(),
+            professionalCalibration: Self.professionalCalibrationEvidence(),
+            realUserTransferOutcomes: Self.realUserTransferOutcomeEvidence(
+                qualifiedInstallCount: 500
+            ),
+            realDeviceTestFlight: Self.realDeviceTestFlightEvidence(),
+            operationalLaunchChecklist: Self.operationalLaunchChecklistEvidence()
+        )
+        let scaleRow = scaleManifest.rows.first {
+            $0.key == "scaleConversionCohortReadiness"
+        }
+        #expect(scaleRow?.status == .earned)
+        #expect(scaleRow?.observedCount == 500)
+        #expect(scaleRow?.blocker == nil)
+        #expect(scaleManifest.audit == manifest.audit)
     }
 
     @Test func evaluationArtifactDumpDirectoryReadsXcodeAndSimulatorInputs() {
@@ -6180,17 +6274,31 @@ struct CoachChatConversationCorpusTests {
         )
     }
 
+    private static func transferParticipantHash(_ index: Int) -> String {
+        let hex = String(index + 1, radix: 16)
+        return "sha256:" + String(repeating: "0", count: max(0, 64 - hex.count)) + hex
+    }
+
     private static func realUserTransferOutcomeEvidence(
-        rowCount: Int = 12,
+        rowCount: Int = 30,
         readinessWarnings: [String] = [],
         rejectedRowIndices: Set<Int> = [],
         regressedRowIndices: Set<Int> = [],
         adverseRowIndices: Set<Int> = [],
         unresolvedAdverseRowIndices: Set<Int> = [],
         collapsedUserIDs: Bool = false,
+        duplicateLastParticipant: Bool = false,
+        invalidParticipantHashIndices: Set<Int> = [],
         collapsedMomentCategories: Bool = false,
         missingEvidenceReferenceIndices: Set<Int> = [],
-        lowFollowUpDelayIndices: Set<Int> = []
+        lowFollowUpDelayIndices: Set<Int> = [],
+        completedAtISO8601: String = "2026-07-29T12:00:00Z",
+        qualifiedParticipantCount: Int? = nil,
+        qualifiedInstallCount: Int = 200,
+        day1EligibleInstallCount: Int = 200,
+        day7EligibleInstallCount: Int = 200,
+        attestsNoSyntheticPopulation: Bool = true,
+        negativeOutcomeCountOverride: Int? = nil
     ) -> CoachRealUserTransferOutcomeEvidence {
         let rows = (0..<rowCount).map { index in
             let rejected = rejectedRowIndices.contains(index)
@@ -6198,6 +6306,7 @@ struct CoachChatConversationCorpusTests {
             let adverse = adverseRowIndices.contains(index)
             let adverseResolved = adverse && !unresolvedAdverseRowIndices.contains(index)
             let missingEvidence = missingEvidenceReferenceIndices.contains(index)
+            let retainedNegative = index >= max(0, rowCount - 6)
             let momentCategory = collapsedMomentCategories ? "presentation" : [
                 "presentation",
                 "interview",
@@ -6208,7 +6317,13 @@ struct CoachChatConversationCorpusTests {
             ][index % 6]
             return CoachRealUserTransferOutcomeEvidence.Row(
                 outcomeID: "transfer-outcome-\(index)",
-                userIDHash: collapsedUserIDs ? "user-\(index % 3)" : "user-\(index % 10)",
+                userIDHash: invalidParticipantHashIndices.contains(index)
+                    ? "participant-\(index)"
+                    : Self.transferParticipantHash(collapsedUserIDs
+                        ? index % 3
+                        : (duplicateLastParticipant && index == rowCount - 1
+                            ? max(0, index - 1)
+                            : index)),
                 momentCategory: momentCategory,
                 interventionID: "intervention-\(index)",
                 realWorldMomentOccurred: !rejected,
@@ -6218,7 +6333,8 @@ struct CoachChatConversationCorpusTests {
                 followUpDelayHours: lowFollowUpDelayIndices.contains(index) ? 4 : 36 + index,
                 preMomentConfidence: 2 + (index % 2),
                 postMomentConfidence: rejected || regressed ? 1 : 3 + (index % 2),
-                positiveTransferReported: !rejected && !regressed,
+                positiveTransferReported: !rejected && !regressed && !retainedNegative,
+                negativeOutcomeReported: !rejected && retainedNegative,
                 audienceResponseEvidenceCollected: !rejected,
                 adverseOutcomeReported: adverse,
                 adverseOutcomeResolved: adverseResolved,
@@ -6253,20 +6369,68 @@ struct CoachChatConversationCorpusTests {
         let maximumOutcomesPerUser = rowsByUser.values.map(\.count).max() ?? 0
         let minimumDays = rows.map(\.daysSinceFirstNoumSession).min() ?? 0
         let minimumFollowUpDelay = rows.map(\.followUpDelayHours).min() ?? 0
+        let resolvedQualifiedParticipantCount = qualifiedParticipantCount ?? uniqueUsers
+        let studyFormatter = ISO8601DateFormatter()
+        let studyDurationDays: Int = {
+            guard
+                let startedAt = studyFormatter.date(from: "2026-07-01T12:00:00Z"),
+                let completedAt = studyFormatter.date(from: completedAtISO8601)
+            else { return 0 }
+            return Int(floor(completedAt.timeIntervalSince(startedAt) / (24 * 60 * 60)))
+        }()
         return CoachRealUserTransferOutcomeEvidence(
             schemaVersion: CoachRealUserTransferOutcomeEvidence.expectedSchemaVersion,
+            templateStatus: "COLLECTED_EXTERNAL_EVIDENCE",
             studyProtocolVersion: CoachRealUserTransferOutcomeEvidence.expectedProtocolVersion,
-            protocolRegistrationReference: "registry://noum-transfer-v3",
-            analysisPlanReference: "registry://noum-transfer-v3/analysis",
+            protocolRegistrationReference: "registry://noum-transfer-v4",
+            analysisPlanReference: "registry://noum-transfer-v4/analysis",
             comparisonMethod: "prePostWithinUser",
-            benchmarkReference: "registry://noum-transfer-v3/benchmark",
+            benchmarkReference: "registry://noum-transfer-v4/benchmark",
             cohortDescription: "closed-beta-transfer-cohort",
+            studyAttestation: CoachRealUserTransferOutcomeEvidence.StudyAttestation(
+                principalInvestigatorID: "principal-investigator-a",
+                analystID: "independent-analyst-b",
+                attestationReference: "registry://noum-transfer-v4/attestation",
+                participantConsentLogReference: "registry://noum-transfer-v4/consent",
+                withdrawalLogReference: "registry://noum-transfer-v4/withdrawals",
+                exclusionLogReference: "registry://noum-transfer-v4/exclusions",
+                negativeOutcomeLogReference: "registry://noum-transfer-v4/negative-outcomes",
+                adverseOutcomeLogReference: "registry://noum-transfer-v4/adverse-outcomes",
+                populationProvenanceReference: "registry://noum-transfer-v4/population",
+                attestedAtISO8601: "2026-07-29T13:00:00Z",
+                attestsCompleteEnrollmentAccounting: true,
+                attestsWithdrawalsAndExclusionsWereRetained: true,
+                attestsNegativeAndAdverseOutcomesWereRetained: true,
+                attestsNoSyntheticParticipantsOrInstallsWereCounted:
+                    attestsNoSyntheticPopulation
+            ),
+            studyWindow: CoachRealUserTransferOutcomeEvidence.StudyWindow(
+                startedAtISO8601: "2026-07-01T12:00:00Z",
+                completedAtISO8601: completedAtISO8601
+            ),
             enrollment: CoachRealUserTransferOutcomeEvidence.Enrollment(
                 enrolledUserCount: uniqueUsers + 2,
+                qualifiedQualitativeParticipantCount: resolvedQualifiedParticipantCount,
                 completedUserCount: uniqueUsers,
                 withdrawnUserCount: 1,
                 excludedUserCount: 1,
-                exclusionLogReference: "registry://noum-transfer-v3/exclusions"
+                participantQualificationCriteriaReference:
+                    "registry://noum-transfer-v4/participant-criteria",
+                exclusionLogReference: "registry://noum-transfer-v4/exclusions"
+            ),
+            installCohort: CoachRealUserTransferOutcomeEvidence.InstallCohort(
+                source: CoachRealUserTransferOutcomeEvidence.expectedInstallSource,
+                cohortStartedAtISO8601: "2026-07-01T12:00:00Z",
+                cohortCompletedAtISO8601: completedAtISO8601,
+                appVersion: "1.0",
+                storefronts: ["GB", "US"],
+                qualifiedInstallCount: qualifiedInstallCount,
+                day1EligibleInstallCount: day1EligibleInstallCount,
+                day1RetainedInstallCount: min(60, day1EligibleInstallCount),
+                day7EligibleInstallCount: day7EligibleInstallCount,
+                day7RetainedInstallCount: min(35, day7EligibleInstallCount),
+                qualificationCriteriaReference: "registry://noum-transfer-v4/install-criteria",
+                retentionEvidenceReference: "registry://noum-transfer-v4/retention"
             ),
             outcomeCount: rowCount,
             summary: CoachRealUserTransferOutcomeEvidence.Summary(
@@ -6278,6 +6442,8 @@ struct CoachChatConversationCorpusTests {
                     $0.linkedCoachInterventionCount > 0
                 }.count,
                 positiveTransferCount: rows.filter(\.positiveTransferReported).count,
+                negativeOutcomeCount: negativeOutcomeCountOverride ??
+                    rows.filter(\.negativeOutcomeReported).count,
                 audienceResponseEvidenceCount: rows.filter(\.audienceResponseEvidenceCollected).count,
                 noRegressionOutcomeCount: rows.filter {
                     $0.postMomentConfidence >= $0.preMomentConfidence
@@ -6288,7 +6454,7 @@ struct CoachChatConversationCorpusTests {
                 }.count,
                 passingOutcomeCount: passingRows.count,
                 minimumDaysSinceFirstSession: minimumDays,
-                studyDurationDays: rowCount > 0 ? 42 : 0,
+                studyDurationDays: studyDurationDays,
                 uniqueMomentCategoryCount: uniqueMomentCategories,
                 verifiedEvidenceReferenceCount: rows.filter(\.hasRequiredEvidenceReferences).count,
                 minimumFollowUpDelayHours: minimumFollowUpDelay,
@@ -7053,7 +7219,8 @@ struct CoachVisionProductionReadinessAuditTests {
                 transcriptPracticeLoopVerified: true,
                 liveProviderRowsPassingFloor: CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount,
                 professionalCoachCalibrationRows: CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount,
-                realUserLongitudinalOutcomeCount: 12,
+                realUserLongitudinalOutcomeCount:
+                    CoachRealUserTransferOutcomeEvidence.requiredOutcomeCount,
                 realDeviceTestFlightVerified: true,
                 operationalLaunchChecklistComplete: true
             )

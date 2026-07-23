@@ -46,6 +46,13 @@ struct CoachingProfileDraft: Codable, Equatable {
         firstValueReceipt != nil && isCoherent
     }
 
+    /// The permissionless result has landed and the user may now choose the
+    /// spoken-proof handoff. This does not imply microphone permission or arm
+    /// capture; it only makes the user-initiated next action eligible.
+    var canStartSpokenProof: Bool {
+        hasCompletedFirstValue && firstValueReceipt?.modality == .structuredText
+    }
+
     /// A receipt is valid only for the authored exercise that belongs to this
     /// draft's context. This prevents a structurally valid result from another
     /// context (or arbitrary axes) from advancing the activation route.

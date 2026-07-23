@@ -713,10 +713,55 @@ private struct ImpromptuSettingsPanel: View {
 
 // MARK: - TimedPracticeView
 
+/// A content-bounded projection of the source-bound retry handoff. The view
+/// reads this model but never persists it; ownership remains with
+/// `TimedPracticePromptHandoff` and `RecommendationLearningStore`.
+struct TargetedRetryPresentation: Equatable {
+    static let badge = "SAME PROMPT · SAME TARGET"
+    static let permissionNote = "Microphone opens only after you tap Start."
+
+    let title: String
+    let focus: String
+    let prompt: String
+    let cues: [String]
+
+    init?(payload: TimedPracticePromptHandoff.Payload) {
+        guard let intent = payload.transcriptPracticeIntent,
+              intent.retryTarget.isSupported else {
+            return nil
+        }
+        title = "Try it once more"
+        focus = intent.target
+        prompt = payload.text
+        cues = Self.cues(for: intent.retryTarget.lever)
+    }
+
+    var cueAccessibilityLabel: String {
+        let ordered = cues.enumerated().map { index, cue in
+            "\(index + 1), \(cue)"
+        }.joined(separator: ". ")
+        return "Retry instructions. \(ordered)."
+    }
+
+    private static func cues(for lever: TranscriptPracticeLever) -> [String] {
+        switch lever {
+        case .opening:
+            return ["Answer first", "One proof point", "Then stop"]
+        case .closing:
+            return ["Name the decision", "Name the next step", "Then stop"]
+        case .structure:
+            return ["Lead with the point", "Use one signpost", "Land the answer"]
+        case .concise:
+            return ["Keep the meaning", "One main point", "Then stop"]
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.openURL) private var openURL
     @Binding var navigationPath: NavigationPath
     /// Exact per-rep demand carried by a rendered recommendation. This value
@@ -857,6 +902,10 @@ struct TimedPracticeView: View {
         ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
     }
 
+    private var targetedRetryPresentation: TargetedRetryPresentation? {
+        seededPromptPayload.flatMap(TargetedRetryPresentation.init(payload:))
+    }
+
     var body: some View {
         ZStack {
             backgroundLayer
@@ -939,8 +988,13 @@ struct TimedPracticeView: View {
             // redundant second Begin at the flagship first-rep moment.
             // `beginSession()` resolves the prompt and configures TTS itself,
             // so the work skipped here is not lost — just not done twice.
-            if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
-                if let seeded = consumeSeededPrompt() { question = seeded }
+            let quickStartRequested = phase == .setup
+                && PracticeModeQuickStart.consume(for: .timed)
+            let quickStartSeededPrompt = quickStartRequested
+                ? consumeSeededPrompt()
+                : nil
+            if quickStartRequested, targetedRetryPresentation == nil {
+                if let seeded = quickStartSeededPrompt { question = seeded }
                 // Consume the auto-guided first-rep instant-start one-shot. A
                 // returning-user QuickStart never armed it, so this is a no-op
                 // for them; for the auto-guided rep it drops the 15s countdown
@@ -964,7 +1018,10 @@ struct TimedPracticeView: View {
             // processes the state changes in one transaction.
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
-            let seededPrompt = consumeSeededPrompt()
+            // A source-bound retry consumes any stale quick-start authority
+            // above but deliberately remains on setup until its visible Start
+            // action is tapped. Reuse its already-consumed payload here.
+            let seededPrompt = quickStartSeededPrompt ?? consumeSeededPrompt()
             if question.isEmpty {
                 // A route-bound producer may supply one exact prompt. Ordinary
                 // Timed routes fall through to the established topic engine.
@@ -1005,7 +1062,7 @@ struct TimedPracticeView: View {
             if videoManager.isRecording { videoManager.stopRecording() }
         }
         .sheet(isPresented: $showPaywall) {
-            PaywallView()
+            PaywallView(entryPoint: .train)
         }
         .sheet(isPresented: $showSetupSettings) {
             NavigationStack {
@@ -1134,7 +1191,16 @@ struct TimedPracticeView: View {
 
     // MARK: - Setup Phase
 
+    @ViewBuilder
     private var setupContent: some View {
+        if let targetedRetryPresentation {
+            targetedRetrySetupContent(targetedRetryPresentation)
+        } else {
+            standardSetupContent
+        }
+    }
+
+    private var standardSetupContent: some View {
         FocusedPracticeScaffold(
             style: .timed,
             status: enableThinkingTime ? "Ready with 15-second prep" : "Ready for instant start",
@@ -1184,6 +1250,147 @@ struct TimedPracticeView: View {
         .accessibilityIdentifier("timedPractice.screen")
         .safeAreaInset(edge: .bottom) {
             setupBottomBar
+        }
+    }
+
+    private func targetedRetrySetupContent(
+        _ presentation: TargetedRetryPresentation
+    ) -> some View {
+        ZStack {
+            AppColor.screenBackground
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    Text(TargetedRetryPresentation.badge)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.brandBlue)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
+                        .background(
+                            AppColor.coachHeroQuietSurface,
+                            in: Capsule()
+                        )
+                        .accessibilityLabel("Same prompt, same target")
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text(presentation.title)
+                            .font(Typography.screenTitle)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+
+                        Text(presentation.focus)
+                            .font(Typography.subheadline)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("YOUR PROMPT")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textTertiary)
+
+                        Text(presentation.prompt)
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("timedPractice.prompt")
+                    }
+                    .padding(Spacing.lg)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        AppColor.cardBackground,
+                        in: RoundedRectangle(
+                            cornerRadius: CornerRadius.large,
+                            style: .continuous
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(
+                            cornerRadius: CornerRadius.large,
+                            style: .continuous
+                        )
+                        .stroke(AppColor.subtleBorder, lineWidth: 1)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Your prompt. \(presentation.prompt)")
+
+                    retryCueLayout(presentation)
+
+                    setupStartAction
+
+                    Text(targetedRetryMicrophoneNote)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(Spacing.sm)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            AppColor.tagBackground,
+                            in: RoundedRectangle(
+                                cornerRadius: CornerRadius.medium,
+                                style: .continuous
+                            )
+                        )
+                        .accessibilityIdentifier("timedPractice.targetedRetry.microphoneNote")
+                }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
+            }
+        }
+        .accessibilityIdentifier("timedPractice.targetedRetry.screen")
+    }
+
+    @ViewBuilder
+    private func retryCueLayout(_ presentation: TargetedRetryPresentation) -> some View {
+        let verticalCues = VStack(alignment: .leading, spacing: Spacing.xs) {
+            ForEach(Array(presentation.cues.enumerated()), id: \.offset) { _, cue in
+                retryCue(cue)
+            }
+        }
+
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                verticalCues
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Spacing.xs) {
+                        ForEach(Array(presentation.cues.enumerated()), id: \.offset) { _, cue in
+                            retryCue(cue)
+                        }
+                    }
+                    verticalCues
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.cueAccessibilityLabel)
+        .accessibilityHint("Instructions for this retry")
+        .accessibilityIdentifier("timedPractice.targetedRetry.cues")
+    }
+
+    private func retryCue(_ cue: String) -> some View {
+        Text(cue)
+            .font(Typography.caption)
+            .foregroundStyle(AppColor.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .background(AppColor.tagBackground, in: Capsule())
+    }
+
+    private var targetedRetryMicrophoneNote: String {
+        switch speechVM.microphonePermissionState {
+        case .granted:
+            return "Microphone starts only after you tap Start."
+        case .undetermined:
+            return TargetedRetryPresentation.permissionNote
+        case .denied:
+            return "Microphone access is off. Enable it in Settings before this retry can begin."
+        case .unknown:
+            return "Microphone is unavailable. Check your audio route before you tap Start."
         }
     }
 
@@ -2754,26 +2961,47 @@ struct TimedPracticeView: View {
 
     private var setupBottomBar: some View {
         VStack(spacing: 8) {
-            Button(action: { beginSession() }) {
-                HStack(spacing: 10) {
-                    Image(systemName: "bolt.fill")
-                        .font(.headline)
-                    Text("Start Timed Practice")
-                        .font(.headline.weight(.semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-            }
-            .background(.white, in: Capsule())
-            .foregroundStyle(AppColor.modeTimed)
-            .shadow(color: Color.black.opacity(0.18), radius: 18, y: 8)
-            .buttonStyle(.pressable)
-            .accessibilityIdentifier("timedPractice.begin")
+            setupStartAction
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 16)
         .background(.ultraThinMaterial)
+    }
+
+    private var setupStartAction: some View {
+        let isTargetedRetry = targetedRetryPresentation != nil
+        return Button(action: { beginSession() }) {
+            HStack(spacing: 10) {
+                if !isTargetedRetry {
+                    Image(systemName: "bolt.fill")
+                        .font(.headline)
+                        .accessibilityHidden(true)
+                }
+                Text(isTargetedRetry ? "Start targeted retry" : "Start Timed Practice")
+                    .font(Typography.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, Spacing.md)
+        }
+        .background(
+            isTargetedRetry ? AppColor.brandBlue : Color.white,
+            in: Capsule()
+        )
+        .foregroundStyle(isTargetedRetry ? Color.white : AppColor.modeTimed)
+        .shadow(
+            color: Color.black.opacity(isTargetedRetry ? 0.10 : 0.18),
+            radius: 18,
+            y: 8
+        )
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("timedPractice.begin")
+        .accessibilityHint(
+            isTargetedRetry
+                ? "Starts a retry using the same prompt and target"
+                : "Starts Timed Practice"
+        )
     }
 
     private var thinkingBottomBar: some View {
@@ -3162,9 +3390,15 @@ struct TimedPracticeView: View {
                 insights: result.insights,
                 coachSummary: result.feedback,
                 prompt: question,
-                theme: selectedTheme
+                theme: selectedTheme,
+                categoryRatings: result.categories.persistedCategoryRatings
             )
         )
+        if let scopedSession = sessionStore.accountScopedSession(id: finalized.id) {
+            _ = AutoGuidedFirstRep.reconcileQualifiedCompletion(
+                scopedSession: scopedSession
+            )
+        }
         RecommendationLearningStore.shared.recordOutcome(
             for: finalized,
             previousSessions: Array(sessionStore.sessions.dropFirst())
@@ -3262,8 +3496,15 @@ struct TimedPracticeView: View {
                 insights: result.insights,
                 coachSummary: result.feedback,
                 prompt: question,
-                theme: selectedTheme
+                theme: selectedTheme,
+                categoryRatings: result.categories.persistedCategoryRatings
             )
+            if let savedSessionID,
+               let scopedSession = sessionStore.accountScopedSession(id: savedSessionID) {
+                _ = AutoGuidedFirstRep.reconcileQualifiedCompletion(
+                    scopedSession: scopedSession
+                )
+            }
             if let savedSessionID,
                let promptHandoffToken,
                seededPromptPayload?.competitiveObservationIntent?.challengeID != nil {

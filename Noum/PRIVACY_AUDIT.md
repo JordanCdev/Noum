@@ -312,7 +312,7 @@ Friend data (names, optionally phone numbers from your contacts) is stored on yo
 You can delete your account and all associated data from Settings > Account > Delete Account. This removes your data from our cloud services and your device. Video recordings saved to your Photos library are managed by you separately.
 
 **Contact us**
-If you have questions about your data, contact us at [privacy@noum.app] (replace with actual contact).
+If you have questions about your data, contact us at [noumsupport@gmail.com](mailto:noumsupport@gmail.com).
 
 ---
 
@@ -396,7 +396,7 @@ This outline is structured around actual data flows identified in the audit. It 
 - Users will be notified of material changes
 
 ### X. Contact
-- [privacy@noum.app]
+- [noumsupport@gmail.com](mailto:noumsupport@gmail.com)
 
 ---
 

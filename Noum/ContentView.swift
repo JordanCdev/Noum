@@ -101,39 +101,97 @@ struct HomePrimaryActionPresentation: Equatable {
     }
 }
 
-// Home-only time-of-day ambient. The four buckets shift the canvas
-// gradient softly through the day: warm-light mornings → cool airy
-// middays → richer purple-pink evenings → deeper-saturated nights.
-// Other screens keep `LightGradientBackground` from DesignSystem —
-// this is home-only.
-private enum HourBucket: Int {
-    case morning, midday, evening, night
+/// One compact Home row for the existing first-week coaching contract.
+/// Copy, routing, and evidence strength stay owned by the contract; this type
+/// only turns its current snapshot into a calm, testable presentation.
+struct FirstWeekHomeEntryPresentation: Equatable {
+    enum Style: Equatable {
+        case nextStep
+        case durableRead
+    }
 
-    static func current(date: Date = Date()) -> HourBucket {
-        let hour = Calendar.current.component(.hour, from: date)
-        switch hour {
-        case 5..<11:  return .morning
-        case 11..<17: return .midday
-        case 17..<22: return .evening
-        default:      return .night
+    let title: String
+    let body: String
+    let systemImage: String
+    let style: Style
+    let route: URL
+    let accessibilityIdentifier: String
+    let accessibilityHint: String
+
+    static func make(
+        snapshot: FirstWeekCoachingContract.Snapshot
+    ) -> FirstWeekHomeEntryPresentation? {
+        let route = FirstWeekNotificationAttribution(snapshot: snapshot).route
+
+        switch snapshot.nextAction {
+        case .recordSpokenBaseline:
+            return nextStep(
+                snapshot: snapshot,
+                route: route,
+                systemImage: "waveform.and.mic",
+                accessibilityHint: "Starts the spoken baseline rep"
+            )
+        case .repeatRep(let mode):
+            return nextStep(
+                snapshot: snapshot,
+                route: route,
+                systemImage: mode?.iconName ?? "arrow.clockwise",
+                accessibilityHint: "Starts the next rep in your first-week plan"
+            )
+        case .compareAndAdapt(_, let mode):
+            return nextStep(
+                snapshot: snapshot,
+                route: route,
+                systemImage: mode?.iconName ?? "arrow.triangle.2.circlepath",
+                accessibilityHint: "Starts the comparison rep in your first-week plan"
+            )
+        case .realWorldCheckIn:
+            return nextStep(
+                snapshot: snapshot,
+                route: route,
+                systemImage: "bubble.left.and.text.bubble.right",
+                accessibilityHint: "Opens a short real-world coaching check-in"
+            )
+        case .reviewFirstWeekRead:
+            guard let read = snapshot.firstWeekRead else { return nil }
+            return FirstWeekHomeEntryPresentation(
+                title: "Your first-week read",
+                body: firstWeekReadBody(read),
+                systemImage: "text.book.closed.fill",
+                style: .durableRead,
+                route: route,
+                accessibilityIdentifier: "home.firstWeekRead.open",
+                accessibilityHint: "Opens your durable first-week coaching read"
+            )
         }
     }
 
-    var start: Color {
-        switch self {
-        case .morning: return Color(red: 0.961, green: 0.949, blue: 1.000)
-        case .midday:  return Color(red: 0.969, green: 0.969, blue: 1.000)
-        case .evening: return Color(red: 0.941, green: 0.929, blue: 0.980)
-        case .night:   return Color(red: 0.914, green: 0.898, blue: 0.961)
-        }
+    private static func nextStep(
+        snapshot: FirstWeekCoachingContract.Snapshot,
+        route: URL,
+        systemImage: String,
+        accessibilityHint: String
+    ) -> FirstWeekHomeEntryPresentation {
+        let line = NotificationCopy.firstWeek(intent: snapshot.notificationIntent)
+        return FirstWeekHomeEntryPresentation(
+            title: line.title,
+            body: line.body,
+            systemImage: systemImage,
+            style: .nextStep,
+            route: route,
+            accessibilityIdentifier: snapshot.nextAction.accessibilityIdentifier,
+            accessibilityHint: accessibilityHint
+        )
     }
 
-    var end: Color {
-        switch self {
-        case .morning: return Color(red: 0.980, green: 0.980, blue: 0.988)
-        case .midday:  return Color(red: 0.929, green: 0.949, blue: 1.000)
-        case .evening: return Color(red: 0.980, green: 0.941, blue: 0.980)
-        case .night:   return Color(red: 0.949, green: 0.929, blue: 0.980)
+    private static func firstWeekReadBody(
+        _ read: FirstWeekCoachingContract.FirstWeekReadProjection
+    ) -> String {
+        switch read.whatChanged {
+        case .verifiedComparison:
+            return "A qualified comparison and your next-week plan are ready."
+        case .notYetProven:
+            return "See what Noum can support and what still needs evidence."
         }
     }
 }
@@ -360,6 +418,8 @@ struct ContentView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var coachCheckInStore = CoachCheckInStore.shared
     // M15 Phase 4 — Home discipline. Off by default; developer accounts
     // can flip it in Settings for inspection while normal users follow the
     // signal gate.
@@ -370,13 +430,11 @@ struct ContentView: View {
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
     @Binding private var navigationPath: NavigationPath
-    @State private var hourBucket: HourBucket = HourBucket.current()
-    @State private var showBigMomentIntake: Bool = false
     @State private var showGoalReview: Bool = false
     @State private var showDeferredCoachingSetup = false
+    @State private var showFirstWeekRecommendationAction = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
-    private let launchedWithDeepLink = ProcessInfo.processInfo.arguments.contains("-DeepLink")
     @Binding private var externalRoute: URL?
     private let isEmbeddedInTabShell: Bool
 
@@ -399,27 +457,24 @@ struct ContentView: View {
     private var homeAccessibilityIsSuppressed: Bool {
         HomeAccessibilityModalGate(
             onboardingPresented: isOnboardingUITesting,
-            notificationPromptPresented: notificationPrePrompt.pendingPrompt,
-            bigMomentIntakePresented: showBigMomentIntake
+            notificationPromptPresented: notificationPrePrompt.pendingPrompt
         ).suppressesUnderlyingHome
+    }
+
+    private var firstWeekSnapshot: FirstWeekCoachingContract.Snapshot? {
+        // Observe the existing evidence owners so saving a check-in or adapting
+        // a prescription updates the compact entry without a second state owner.
+        _ = coachMemoryStore.currentMemory
+        _ = coachCheckInStore.checkIns
+        return FirstWeekCoachingSnapshotResolver.current()
+    }
+
+    private var firstWeekEntryPresentation: FirstWeekHomeEntryPresentation? {
+        firstWeekSnapshot.flatMap(FirstWeekHomeEntryPresentation.make)
     }
 
     var body: some View {
         homePresentationContent
-        .onChange(of: coachingProfileStore.profile) { old, new in
-            let autoFireKey = "bigMomentIntake.hasAutoFired"
-            if old == nil, new != nil,
-               !UserDefaults.standard.bool(forKey: autoFireKey),
-               !launchedWithDeepLink,
-               !deepLinkRouter.hasReceivedRouteThisLaunch,
-               navigationPath.isEmpty,
-               deepLinkRouter.pending == nil,
-               BigMomentStore.shared.activeMoment == nil,
-               !showBigMomentIntake {
-                UserDefaults.standard.set(true, forKey: autoFireKey)
-                showBigMomentIntake = true
-            }
-        }
         .onChange(of: deepLinkRouter.pending) { _, url in
             guard !isEmbeddedInTabShell, let url else { return }
             consumeDeepLink(url)
@@ -433,13 +488,11 @@ struct ContentView: View {
             bigMomentStore.archiveExpiredIfNeeded()
             dailyGoal.recompute()
             WordOfTheDayManager.shared.ensureForToday()
-            refreshHourBucket()
             if !isEmbeddedInTabShell, let url = deepLinkRouter.pending {
                 consumeDeepLink(url)
             }
         }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
-            refreshHourBucket()
             bigMomentStore.archiveExpiredIfNeeded()
         }
     }
@@ -466,34 +519,27 @@ struct ContentView: View {
         .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
             NotificationPrePromptSheet()
         }
-        .sheet(isPresented: $showBigMomentIntake) {
-            BigMomentIntakeView()
-        }
     }
 
     private var homeNavigationContent: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
-                // Time-of-day ambient — morning lavender / midday airy /
-                // evening soft purple-pink / night deeper saturation.
-                // Home-only; other screens keep LightGradientBackground.
-                homeBackground
+                // Home now shares Noum's neutral reading canvas. Coaching
+                // emphasis belongs to the compact card, not the whole screen.
+                AppColor.screenBackground
                     .ignoresSafeArea()
 
-                GeometryReader { container in
-                    ScrollView(showsIndicators: false) {
-                        GeometryReader { proxy in
-                            Color.clear
-                                .preference(key: HomeScrollOffsetKey.self, value: proxy.frame(in: .named("homeScroll")).minY)
-                        }
-                        .frame(height: 0)
-
-                        VStack(spacing: 0) {
-                            cohesiveHomeCards(availableHeight: container.size.height)
-                        }
-                        .frame(minHeight: container.size.height, alignment: .top)
-                        .padding(.bottom, isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding)
+                ScrollView(showsIndicators: false) {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(key: HomeScrollOffsetKey.self, value: proxy.frame(in: .named("homeScroll")).minY)
                     }
+                    .frame(height: 0)
+
+                    VStack(spacing: 0) {
+                        cohesiveHomeCards
+                    }
+                    .padding(.bottom, isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding)
                 }
             }
             .coordinateSpace(name: "homeScroll")
@@ -509,56 +555,13 @@ struct ContentView: View {
             .navigationDestination(for: AppDestination.self) { destination in
                 AppDestinationView(destination: destination, navigationPath: $navigationPath)
             }
-        }
-    }
-
-    /// Home-only ambient background. Other screens keep using
-    /// `LightGradientBackground` from DesignSystem — this is a thin
-    /// time-of-day-aware sibling that gives the home canvas its own
-    /// quiet personality without pulling the rest of the app along.
-    /// 1.2s ease-in-out fade between bucket boundaries keeps the
-    /// transition soft. Reduce-motion: no fade, the new gradient
-    /// snaps in but is still subtle enough to be invisible at-a-glance.
-    private var homeBackground: some View {
-        ZStack {
-            HeroGradient.coach.gradient
-
-            RadialGradient(
-                colors: [.white.opacity(0.30), .white.opacity(0.06), .clear],
-                center: UnitPoint(x: 0.52, y: 0.04),
-                startRadius: 0,
-                endRadius: 390
-            )
-
-            LinearGradient(
-                colors: [hourBucket.start.opacity(0.20), hourBucket.end.opacity(0.04)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            Circle()
-                .stroke(.white.opacity(0.10), lineWidth: 1)
-                .frame(width: 330, height: 330)
-                .offset(x: -185, y: 300)
-
-            LinearGradient(
-                colors: [.white.opacity(0.34), .clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 170)
-            .frame(maxHeight: .infinity, alignment: .top)
-        }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 1.2), value: hourBucket)
-    }
-
-    /// Re-evaluates the bucket from the wall clock. Setting the same
-    /// value is a no-op (SwiftUI dedupes Equatable @State writes), so
-    /// it's cheap to call from the 5-minute timer + onAppear.
-    private func refreshHourBucket() {
-        let next = HourBucket.current()
-        if hourBucket != next {
-            hourBucket = next
+            .navigationDestination(
+                isPresented: $showFirstWeekRecommendationAction
+            ) {
+                FirstWeekRecommendationActionView(
+                    navigationPath: $navigationPath
+                )
+            }
         }
     }
 
@@ -876,7 +879,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func cohesiveHomeCards(availableHeight: CGFloat) -> some View {
+    private var cohesiveHomeCards: some View {
         let presentation = homePrimaryAction
 
         if presentation.kind == .pendingOutcomeCheckIn,
@@ -888,27 +891,39 @@ struct ContentView: View {
         } else {
             HomeCoachCard(
                 navigationPath: $navigationPath,
-                scrollOffset: homeScrollOffset,
                 showsPlanArc: false,
-                presentation: .immersive
+                recordsRecommendationExposure: !showFirstWeekRecommendationAction
             )
-            .frame(minHeight: max(500, availableHeight - 148))
             .cardEntrance(0)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.lg)
         }
 
         homeProgressReceipt
             .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.cardGap)
+
+        // Days 0–6 show exactly one unfinished first-week step. Day 7 keeps
+        // the same durable read entry and direct Home navigation behavior.
+        if let firstWeekEntryPresentation {
+            firstWeekEntryCard(firstWeekEntryPresentation)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
+                .cardEntrance(1)
+        }
 
         if coachingProfileStore.profile == nil,
            coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true {
             deferredCoachingSetupCard
                 .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
                 .cardEntrance(1)
         }
 
         if presentation.showsAskNoum {
             homeAskNoumRow
                 .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
                 .cardEntrance(1)
         }
 
@@ -917,10 +932,12 @@ struct ContentView: View {
             if showGoalReview {
                 GoalRefreshInlineCard()
                     .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.cardGap)
                     .cardEntrance(2)
             } else {
                 homeGoalReviewRow
                     .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.cardGap)
                     .cardEntrance(2)
             }
         case .outcomeAcknowledgement:
@@ -929,12 +946,14 @@ struct ContentView: View {
                     bigMomentStore.consumeOutcomeAck()
                 }
                 .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
                 .cardEntrance(2)
                 .transition(.opacity)
             }
         case .ratingReview:
             homeRatingReviewRow
                 .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
                 .cardEntrance(2)
         case nil:
             EmptyView()
@@ -1061,25 +1080,25 @@ struct ContentView: View {
             HStack(spacing: Spacing.md) {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.coachHeroInk)
-                    .frame(width: 32, height: 32)
-                    .background(AppColor.coachHeroInk.opacity(0.10), in: Circle())
+                    .foregroundStyle(tint)
+                    .frame(width: 36, height: 36)
+                    .background(tint.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
                         .font(Typography.cardLabel)
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(AppColor.textPrimary)
                     Text(body)
                         .font(Typography.caption)
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.coachHeroInk)
+                    .foregroundStyle(AppColor.textTertiary)
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, Spacing.md)
@@ -1088,8 +1107,13 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .overlay(alignment: .top) {
-            Rectangle().fill(AppColor.coachHeroInk.opacity(0.18)).frame(height: 1)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(tint.opacity(0.12), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(body)")
@@ -1116,7 +1140,8 @@ struct ContentView: View {
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 scrollOffset: homeScrollOffset,
-                showsPlanArc: gate.planArc
+                showsPlanArc: gate.planArc,
+                recordsRecommendationExposure: !showFirstWeekRecommendationAction
             ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
         }
         if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
@@ -1263,7 +1288,8 @@ struct ContentView: View {
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 scrollOffset: homeScrollOffset,
-                showsPlanArc: gate.planArc
+                showsPlanArc: gate.planArc,
+                recordsRecommendationExposure: !showFirstWeekRecommendationAction
             ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
         }
         // Quiet streak status — the ONE status line the
@@ -1301,6 +1327,11 @@ struct ContentView: View {
         if gate.journey {
             journeyPreviewCard.cardEntrance(2)
         }
+        // Keep the legacy split stack coherent if it is used by a preview or
+        // restored later: the same row serves Days 0–6 and the Day-7 read.
+        if let firstWeekEntryPresentation {
+            firstWeekEntryCard(firstWeekEntryPresentation).cardEntrance(3)
+        }
         // H1 — Home-gap fill. The AI Weekly Insight card
         // below is gated on 3 current-week reps and is
         // usually absent, which left dead space under the
@@ -1316,11 +1347,101 @@ struct ContentView: View {
                 sessionStore: sessionStore,
                 ratingStore: ratingStore,
                 clutchWordStore: ClutchWordStore.shared,
-                coachingProfileStore: coachingProfileStore
+                coachingProfileStore: coachingProfileStore,
+                contentMode: .rollingWeeklyOnly
             )
             .cardEntrance(6)
         }
         roleplayEntryRow.cardEntrance(7)
+    }
+
+    private func firstWeekEntryCard(
+        _ presentation: FirstWeekHomeEntryPresentation
+    ) -> some View {
+        let tint = presentation.style == .durableRead
+            ? AppColor.pro
+            : AppColor.brandBlue
+
+        return Button {
+            openFirstWeekEntry(presentation)
+        } label: {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                Image(systemName: presentation.systemImage)
+                    .font(.headline)
+                    .foregroundStyle(tint)
+                    .frame(width: 44, height: 44)
+                    .background(tint.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(presentation.title)
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text(presentation.body)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.md)
+            .background(
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(presentation.title). \(presentation.body)")
+        .accessibilityIdentifier(presentation.accessibilityIdentifier)
+        .accessibilityHint(presentation.accessibilityHint)
+    }
+
+    private func openFirstWeekEntry(
+        _ presentation: FirstWeekHomeEntryPresentation
+    ) {
+        // Preserve the existing Day-7 push on Home. Earlier steps route
+        // through AppShell so practice and check-in owners retain their tabs.
+        if presentation.style == .durableRead {
+            navigationPath.append(AppDestination.firstWeekRead)
+        } else if AppTab.isFirstWeekSpokenProofRoute(presentation.route) {
+            startFirstWeekSpokenProof()
+        } else if presentation.route == FirstWeekNotificationAttribution.recommendationActionRoute {
+            showFirstWeekRecommendationAction = true
+        } else if isEmbeddedInTabShell {
+            deepLinkRouter.pending = presentation.route
+        } else if let destination = AppTab.rootDestination(for: presentation.route) {
+            replaceNavigationPath(with: destination)
+        } else {
+            consumeDeepLink(presentation.route)
+        }
+    }
+
+    /// Day 0 uses Home as a content-free rendezvous. Re-resolve the live
+    /// contract only after the user's tap, then create one process-local
+    /// prompt token and push the existing Timed engine. This path never arms
+    /// Quick Start, asks for microphone permission, or opens capture itself.
+    private func startFirstWeekSpokenProof() {
+        guard let snapshot = FirstWeekCoachingSnapshotResolver.projection(at: Date()),
+              snapshot.nextAction == .recordSpokenBaseline,
+              let preparation = AutoGuidedFirstRep.prepareUserInitiatedSpokenProof(
+                accountID: snapshot.accountID
+              ),
+              let promptToken = preparation.promptToken,
+              !preparation.automaticallyStartsCapture else {
+            return
+        }
+        showFirstWeekRecommendationAction = false
+        replaceNavigationPath(
+            with: .timedPracticePrompt(token: promptToken, difficulty: .medium)
+        )
     }
 
     private var homeAskNoumRow: some View {
@@ -1332,19 +1453,19 @@ struct ContentView: View {
             HStack(alignment: .center, spacing: Spacing.md) {
                 Image(systemName: "message.fill")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(tint.opacity(0.55), in: Circle())
+                    .foregroundStyle(AppColor.proText)
+                    .frame(width: 36, height: 36)
+                    .background(AppColor.proQuietSurface, in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(HomeAskNoumShortcut.title)
-                        .font(Typography.captionSmall.weight(.bold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(AppColor.textPrimary)
 
                     Text(body)
                         .font(Typography.caption)
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(AppColor.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1352,7 +1473,7 @@ struct ContentView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.coachHeroInk)
+                    .foregroundStyle(AppColor.textTertiary)
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1361,8 +1482,13 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .overlay(alignment: .top) {
-            Rectangle().fill(AppColor.coachHeroInk.opacity(0.20)).frame(height: 1)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(tint.opacity(0.12), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body)."))
@@ -1450,15 +1576,9 @@ struct ContentView: View {
         .padding(.top, HomeShortcutDockLayout.backdropTopPadding)
         .frame(maxWidth: .infinity)
         .background(alignment: .bottom) {
-            LinearGradient(
-                colors: [
-                    AppColor.lightGradientEnd.opacity(HomeShortcutDockLayout.backdropTopOpacity),
-                    AppColor.lightGradientEnd.opacity(0.96)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .bottom)
+            AppColor.screenBackground
+                .opacity(HomeShortcutDockLayout.backdropTopOpacity)
+                .ignoresSafeArea(edges: .bottom)
         }
         .accessibilityElement(children: .contain)
     }
@@ -1538,7 +1658,15 @@ struct ContentView: View {
         case "settings":
             replaceNavigationPath(with: .settings)
         case "home":
-            replaceNavigationPath()
+            if AppTab.isFirstWeekSpokenProofRoute(url) {
+                replaceNavigationPath()
+                startFirstWeekSpokenProof()
+            } else if AppTab.isFirstWeekRecommendationActionRoute(url) {
+                replaceNavigationPath()
+                showFirstWeekRecommendationAction = true
+            } else {
+                replaceNavigationPath()
+            }
         case "league":
             navigationPath.append(AppDestination.league)
         case "path":
@@ -1562,9 +1690,24 @@ struct ContentView: View {
         case "lessons":
             navigationPath.append(AppDestination.lessons)
         case "bigmoment":
-            showBigMomentIntake = true
-#if DEBUG
+            replaceNavigationPath(with: .bigMomentIntake)
         case "summary":
+            if let sessionID = AutoGuidedFirstRep.pendingSummarySessionID(from: url),
+               let accountID = authManager.currentAccountID,
+               let session = AutoGuidedFirstRep.pendingSummarySession(
+                   in: sessionStore.sessions,
+                   accountID: accountID
+               ),
+               session.id == sessionID,
+               let payload = SummaryDataStore.shared.storeRecoveredTimedSummary(
+                   session: session,
+                   recentSessions: sessionStore.sessions,
+                   profile: coachingProfileStore.profile
+               ) {
+                replaceNavigationPath(with: .summary(payload))
+                return
+            }
+#if DEBUG
             // Test-only: render the post-rep Summary for the most-recent
             // seeded session so the redesigned summary can be screenshotted
             // without completing a live (audio) rep. Minimal Entry — the coach
@@ -1595,7 +1738,7 @@ struct ContentView: View {
                     imConversationDetails: nil,
                     explicitMode: .timed,
                     recordingURL: nil,
-                    sessionPrompt: nil,
+                    sessionPrompt: session.prompt,
                     sessionTheme: nil,
                     feedbackCategories: [],
                     strongMoments: [],

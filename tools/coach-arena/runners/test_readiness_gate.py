@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 import io
 import json
 import plistlib
@@ -398,12 +399,15 @@ def complete_professional_calibration_evidence(
 def complete_real_user_transfer_evidence():
     rows = []
     categories = ["presentation", "interview", "leadership", "conflict", "client-call", "networking"]
-    for index in range(12):
+    for index in range(30):
         category = categories[index % len(categories)]
         outcome_id = f"transfer-outcome-{index}"
+        positive = index < 24
         rows.append({
             "outcomeID": outcome_id,
-            "userIDHash": f"user-{index % 10}",
+            "userIDHash": "sha256:" + hashlib.sha256(
+                f"transfer-user-{index}".encode("utf-8")
+            ).hexdigest(),
             "momentCategory": category,
             "interventionID": f"intervention-{index}",
             "realWorldMomentOccurred": True,
@@ -412,8 +416,9 @@ def complete_real_user_transfer_evidence():
             "daysSinceFirstNoumSession": 14 + index,
             "followUpDelayHours": 36 + index,
             "preMomentConfidence": 2 + (index % 2),
-            "postMomentConfidence": 3 + (index % 2),
-            "positiveTransferReported": True,
+            "postMomentConfidence": (3 + (index % 2)) if positive else 1,
+            "positiveTransferReported": positive,
+            "negativeOutcomeReported": not positive,
             "audienceResponseEvidenceCollected": True,
             "adverseOutcomeReported": False,
             "adverseOutcomeResolved": False,
@@ -428,38 +433,76 @@ def complete_real_user_transfer_evidence():
         })
     return {
         "schemaVersion": gate.REAL_USER_TRANSFER_SCHEMA,
+        "templateStatus": "COLLECTED_EXTERNAL_EVIDENCE",
         "studyProtocolVersion": gate.REAL_USER_TRANSFER_PROTOCOL,
-        "protocolRegistrationReference": "registry://noum-transfer-v3",
-        "analysisPlanReference": "registry://noum-transfer-v3/analysis",
+        "protocolRegistrationReference": "registry://noum-transfer-v4",
+        "analysisPlanReference": "registry://noum-transfer-v4/analysis",
         "comparisonMethod": "prePostWithinUser",
-        "benchmarkReference": "registry://noum-transfer-v3/benchmark",
+        "benchmarkReference": "registry://noum-transfer-v4/benchmark",
         "cohortDescription": "closed-beta-transfer-cohort",
+        "studyAttestation": {
+            "principalInvestigatorID": "principal-investigator-a",
+            "analystID": "independent-analyst-b",
+            "attestationReference": "registry://noum-transfer-v4/attestation",
+            "participantConsentLogReference": "registry://noum-transfer-v4/consent",
+            "withdrawalLogReference": "registry://noum-transfer-v4/withdrawals",
+            "exclusionLogReference": "registry://noum-transfer-v4/exclusions",
+            "negativeOutcomeLogReference": "registry://noum-transfer-v4/negative-outcomes",
+            "adverseOutcomeLogReference": "registry://noum-transfer-v4/adverse-outcomes",
+            "populationProvenanceReference": "registry://noum-transfer-v4/population",
+            "attestedAtISO8601": "2026-07-29T12:00:00Z",
+            "attestsCompleteEnrollmentAccounting": True,
+            "attestsWithdrawalsAndExclusionsWereRetained": True,
+            "attestsNegativeAndAdverseOutcomesWereRetained": True,
+            "attestsNoSyntheticParticipantsOrInstallsWereCounted": True,
+        },
+        "studyWindow": {
+            "startedAtISO8601": "2026-07-01T12:00:00Z",
+            "completedAtISO8601": "2026-07-29T12:00:00Z",
+        },
         "enrollment": {
-            "enrolledUserCount": 12,
-            "completedUserCount": 10,
-            "withdrawnUserCount": 1,
-            "excludedUserCount": 1,
-            "exclusionLogReference": "registry://noum-transfer-v3/exclusions",
+            "enrolledUserCount": 34,
+            "qualifiedQualitativeParticipantCount": 30,
+            "completedUserCount": 30,
+            "withdrawnUserCount": 2,
+            "excludedUserCount": 2,
+            "participantQualificationCriteriaReference": "registry://noum-transfer-v4/participant-criteria",
+            "exclusionLogReference": "registry://noum-transfer-v4/exclusions",
+        },
+        "installCohort": {
+            "source": gate.REAL_USER_TRANSFER_INSTALL_SOURCE,
+            "cohortStartedAtISO8601": "2026-07-01T12:00:00Z",
+            "cohortCompletedAtISO8601": "2026-07-29T12:00:00Z",
+            "appVersion": "1.0",
+            "storefronts": ["GB", "US"],
+            "qualifiedInstallCount": 200,
+            "day1EligibleInstallCount": 200,
+            "day1RetainedInstallCount": 60,
+            "day7EligibleInstallCount": 200,
+            "day7RetainedInstallCount": 35,
+            "qualificationCriteriaReference": "registry://noum-transfer-v4/install-criteria",
+            "retentionEvidenceReference": "registry://noum-transfer-v4/retention",
         },
         "outcomeCount": len(rows),
         "summary": {
             "rowCount": len(rows),
-            "uniqueUserCount": 10,
+            "uniqueUserCount": 30,
             "completedFollowUpCount": len(rows),
             "realWorldMomentCount": len(rows),
             "linkedInterventionOutcomeCount": len(rows),
-            "positiveTransferCount": len(rows),
+            "positiveTransferCount": 24,
+            "negativeOutcomeCount": 6,
             "audienceResponseEvidenceCount": len(rows),
-            "noRegressionOutcomeCount": len(rows),
+            "noRegressionOutcomeCount": 24,
             "adverseOutcomeCount": 0,
             "resolvedAdverseOutcomeCount": 0,
             "passingOutcomeCount": len(rows),
             "minimumDaysSinceFirstSession": 14,
-            "studyDurationDays": 42,
+            "studyDurationDays": 28,
             "uniqueMomentCategoryCount": len(categories),
             "verifiedEvidenceReferenceCount": len(rows),
             "minimumFollowUpDelayHours": 36,
-            "maximumOutcomesPerUser": 2,
+            "maximumOutcomesPerUser": 1,
             "readinessWarnings": [],
         },
         "rows": rows,
@@ -635,7 +678,7 @@ def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_c
         "coach-chat-conversation-expert-calibration-results-v2.json": (
             complete_professional_calibration_evidence()
         ),
-        "coach-real-user-transfer-outcomes-v3.json": complete_real_user_transfer_evidence(),
+        "coach-real-user-transfer-outcomes-v4.json": complete_real_user_transfer_evidence(),
         "coach-real-device-testflight-qa-v3.json": complete_real_device_testflight_evidence(),
         "coach-operational-launch-checklist-v2.json": complete_operational_launch_evidence(
             git_commit if re.fullmatch(r"[0-9a-f]{40}", git_commit) else
@@ -1098,7 +1141,7 @@ class ReadinessGateTests(unittest.TestCase):
             "blockers": [],
         }
         cases = [
-            ("coach-real-user-transfer-outcomes-v3.json", "rows"),
+            ("coach-real-user-transfer-outcomes-v4.json", "rows"),
             ("coach-real-device-testflight-qa-v3.json", "rows"),
             ("coach-operational-launch-checklist-v2.json", "items"),
         ]
@@ -1148,16 +1191,16 @@ class ReadinessGateTests(unittest.TestCase):
             for failure in gate.operational_launch_contract_failures(operational)
         ))
 
-    def test_real_device_v3_contract_pins_fourteen_surfaces_and_seventy_seven_checks(self):
+    def test_real_device_v3_contract_pins_fourteen_surfaces_and_eighty_four_checks(self):
         self.assertEqual(len(gate.REAL_DEVICE_REQUIRED_SURFACES), 14)
-        self.assertEqual(gate.REAL_DEVICE_REQUIRED_CHECK_COUNT, 77)
+        self.assertEqual(gate.REAL_DEVICE_REQUIRED_CHECK_COUNT, 84)
         self.assertEqual(
             set(gate.REAL_DEVICE_REQUIRED_CHECKS_BY_SURFACE),
             set(gate.REAL_DEVICE_REQUIRED_SURFACES),
         )
         evidence = complete_real_device_testflight_evidence()
-        self.assertEqual(evidence["summary"]["requiredCheckCount"], 77)
-        self.assertEqual(evidence["summary"]["passedRequiredCheckCount"], 77)
+        self.assertEqual(evidence["summary"]["requiredCheckCount"], 84)
+        self.assertEqual(evidence["summary"]["passedRequiredCheckCount"], 84)
         self.assertEqual(gate.real_device_testflight_contract_failures(evidence), [])
 
     def test_real_device_v3_checks_fail_closed_when_missing_unexpected_duplicated_or_failed(self):
@@ -1240,19 +1283,19 @@ class ReadinessGateTests(unittest.TestCase):
             row = transfer["rows"][index]
             row["positiveTransferReported"] = False
             row["postMomentConfidence"] = row["preMomentConfidence"] - 1
-        transfer["summary"]["positiveTransferCount"] = 9
-        transfer["summary"]["noRegressionOutcomeCount"] = 9
+        transfer["summary"]["positiveTransferCount"] = 21
+        transfer["summary"]["noRegressionOutcomeCount"] = 21
 
         self.assertEqual(gate.real_user_transfer_contract_failures(transfer), [])
 
     def test_transfer_contract_rejects_distribution_below_registered_floors(self):
         transfer = complete_real_user_transfer_evidence()
-        for index in [0, 1, 2, 3, 4]:
+        for index in [0, 1, 2, 3, 4, 5, 6]:
             row = transfer["rows"][index]
             row["positiveTransferReported"] = False
             row["postMomentConfidence"] = row["preMomentConfidence"] - 1
-        transfer["summary"]["positiveTransferCount"] = 7
-        transfer["summary"]["noRegressionOutcomeCount"] = 7
+        transfer["summary"]["positiveTransferCount"] = 17
+        transfer["summary"]["noRegressionOutcomeCount"] = 17
 
         failures = gate.real_user_transfer_contract_failures(transfer)
         self.assertIn("insufficientPositiveTransferOutcomes", failures)
@@ -1284,6 +1327,141 @@ class ReadinessGateTests(unittest.TestCase):
         failures = gate.real_user_transfer_contract_failures(transfer)
         self.assertIn("missingPreregisteredStudyReferences", failures)
         self.assertIn("invalidOrInsufficientCohortCompletion", failures)
+
+    def test_transfer_v4_requires_twenty_eight_actual_elapsed_days(self):
+        transfer = complete_real_user_transfer_evidence()
+        transfer["studyWindow"]["completedAtISO8601"] = "2026-07-29T11:59:59Z"
+        transfer["installCohort"]["cohortCompletedAtISO8601"] = (
+            "2026-07-29T11:59:59Z"
+        )
+        transfer["summary"]["studyDurationDays"] = 28
+
+        failures = gate.real_user_transfer_contract_failures(transfer)
+        self.assertIn("insufficientLongitudinalWindow", failures)
+        self.assertIn("studyDurationMismatch", failures)
+
+        complete = complete_real_user_transfer_evidence()
+        self.assertEqual(gate.real_user_transfer_contract_failures(complete), [])
+
+    def test_transfer_v4_requires_thirty_qualified_distinct_participants(self):
+        transfer = complete_real_user_transfer_evidence()
+        transfer["rows"][-1]["userIDHash"] = transfer["rows"][-2]["userIDHash"]
+        transfer["summary"]["uniqueUserCount"] = 29
+        transfer["summary"]["maximumOutcomesPerUser"] = 2
+        transfer["enrollment"].update({
+            "enrolledUserCount": 33,
+            "qualifiedQualitativeParticipantCount": 29,
+            "completedUserCount": 29,
+        })
+
+        failures = gate.real_user_transfer_contract_failures(transfer)
+        self.assertIn(
+            "insufficientQualifiedQualitativeParticipants",
+            failures,
+        )
+        self.assertIn("invalidOrInsufficientCohortCompletion", failures)
+
+    def test_transfer_v4_requires_two_hundred_qualified_d1_and_d7_installs(self):
+        fields_and_failures = [
+            ("qualifiedInstallCount", "insufficientQualifiedReleaseInstalls"),
+            ("day1EligibleInstallCount", "insufficientDay1EligibleInstalls"),
+            ("day7EligibleInstallCount", "insufficientDay7EligibleInstalls"),
+        ]
+        for field, expected_failure in fields_and_failures:
+            with self.subTest(field=field):
+                transfer = complete_real_user_transfer_evidence()
+                transfer["installCohort"][field] = 199
+                if field == "qualifiedInstallCount":
+                    transfer["installCohort"]["day1EligibleInstallCount"] = 199
+                    transfer["installCohort"]["day7EligibleInstallCount"] = 199
+                failures = gate.real_user_transfer_contract_failures(transfer)
+                self.assertIn(expected_failure, failures)
+
+        incoherent = complete_real_user_transfer_evidence()
+        incoherent["installCohort"]["day7RetainedInstallCount"] = 201
+        self.assertIn(
+            "invalidRetentionCounts",
+            gate.real_user_transfer_contract_failures(incoherent),
+        )
+
+    def test_transfer_v4_requires_real_population_attestation_and_sha256_users(self):
+        transfer = complete_real_user_transfer_evidence()
+        transfer["studyAttestation"][
+            "attestsNoSyntheticParticipantsOrInstallsWereCounted"
+        ] = False
+        transfer["studyAttestation"]["populationProvenanceReference"] = ""
+        transfer["rows"][0]["userIDHash"] = "synthetic-user-0"
+
+        failures = gate.real_user_transfer_contract_failures(transfer)
+        self.assertIn("incompleteStudyAttestation", failures)
+        self.assertIn("missingStudyAttestationEvidence", failures)
+        self.assertTrue(any(
+            failure.startswith("invalidParticipantHashes=")
+            for failure in failures
+        ))
+        self.assertIn("outcomeFloorFailures", failures)
+
+    def test_transfer_v4_reconciles_attrition_and_retained_negative_outcomes(self):
+        transfer = complete_real_user_transfer_evidence()
+        self.assertEqual(transfer["summary"]["negativeOutcomeCount"], 6)
+        self.assertEqual(gate.real_user_transfer_contract_failures(transfer), [])
+
+        transfer["summary"]["negativeOutcomeCount"] = 5
+        transfer["studyAttestation"]["withdrawalLogReference"] = ""
+        failures = gate.real_user_transfer_contract_failures(transfer)
+        self.assertIn("negativeOutcomeCountMismatch", failures)
+        self.assertIn("missingStudyAttestationEvidence", failures)
+
+        impossible = complete_real_user_transfer_evidence()
+        impossible["rows"][0]["negativeOutcomeReported"] = True
+        failures = gate.real_user_transfer_contract_failures(impossible)
+        self.assertTrue(any(
+            failure.startswith("invalidOutcomeClassification=")
+            for failure in failures
+        ))
+        self.assertIn("outcomeFloorFailures", failures)
+
+    def test_five_hundred_install_scale_signal_never_blocks_release_readiness(self):
+        local_readiness = {
+            "score": 20,
+            "localTargetShapeScore": 90,
+            "blockers": list(gate.EVIDENCE_REQUIREMENTS),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_complete_evidence(root)
+
+            release_audit = gate.evidence_artifact_audit(root, local_readiness)
+            release_status = gate.readiness_with_verified_artifacts(
+                local_readiness,
+                release_audit,
+            )
+            scale_at_release = next(
+                signal for signal in release_audit["nonBlockingSignals"]
+                if signal["key"] == "scaleConversionCohortReadiness"
+            )
+            self.assertFalse(scale_at_release["ready"])
+            self.assertFalse(scale_at_release["blocking"])
+            self.assertEqual(scale_at_release["observedCount"], 200)
+
+            transfer_path = root / "coach-real-user-transfer-outcomes-v4.json"
+            transfer = json.loads(transfer_path.read_text(encoding="utf-8"))
+            transfer["installCohort"]["qualifiedInstallCount"] = 500
+            transfer_path.write_text(json.dumps(transfer), encoding="utf-8")
+
+            scale_audit = gate.evidence_artifact_audit(root, local_readiness)
+            scale_status = gate.readiness_with_verified_artifacts(
+                local_readiness,
+                scale_audit,
+            )
+            scale_at_five_hundred = next(
+                signal for signal in scale_audit["nonBlockingSignals"]
+                if signal["key"] == "scaleConversionCohortReadiness"
+            )
+            self.assertTrue(scale_at_five_hundred["ready"])
+            self.assertEqual(scale_at_five_hundred["observedCount"], 500)
+            self.assertEqual(scale_status, release_status)
+            self.assertEqual(release_status["blockers"], [])
 
     def test_launch_ready_rejects_prompt_layer_report_family(self):
         readiness = {
@@ -1689,6 +1867,39 @@ class ReadinessGateTests(unittest.TestCase):
         ))
         self.assertIn("rowCalibrationFloorFailures", failures)
         self.assertIn("overallUsefulnessBelowFloor", failures)
+
+    def test_professional_calibration_packet_cannot_lower_three_coach_floor(self):
+        self.assertEqual(
+            gate.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION,
+            3,
+        )
+        conversation_count = (
+            gate.PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT + 1
+        ) // 2
+        conversation_ids = [
+            f"calibration-floor-conversation-{index:02d}"
+            for index in range(conversation_count)
+        ]
+        packet = calibration_packet_payload(conversation_ids=conversation_ids)
+        packet["requiredIndependentReviewsPerConversation"] = 2
+        packet["requiredReviewCount"] = len(conversation_ids) * 2
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / gate.PROFESSIONAL_CALIBRATION_PACKET_FILE).write_text(
+                json.dumps(packet),
+                encoding="utf-8",
+            )
+            context = gate.calibration_packet_context(root)
+
+        self.assertGreaterEqual(
+            packet["requiredReviewCount"],
+            gate.PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT,
+        )
+        self.assertIn(
+            "sourcePacketBelowIndependentReviewFloor",
+            context["packetFailures"],
+        )
 
     def test_artifact_gate_rejects_empty_source_sidecars(self):
         with tempfile.TemporaryDirectory() as temp_dir:

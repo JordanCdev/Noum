@@ -275,7 +275,8 @@ still needs real-hardware/TestFlight QA.
 - Historical credential/endpoint and exposed Firebase-session incidents closed,
   with independent verification and provider usage/billing audit.
 - A source-bound TestFlight build installed on physical hardware and the exact
-  14-surface/77-check schema completed for that same build.
+  14-surface/84-check schema completed for that same build, including the full
+  StoreKit trial and subscription lifecycle.
 - All five independent launch artifacts accepted: current-source live-provider
   sweep, blinded professional review, longitudinal real-user transfer,
   physical TestFlight QA, and operational launch sign-off.

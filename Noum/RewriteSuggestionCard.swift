@@ -1,6 +1,12 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+enum TranscriptUpgradePresentationState: Equatable {
+    case loading
+    case ready
+    case unavailable
+}
+
 // MARK: - Rewrite Suggestion Card (Pro)
 //
 // Pro-only card that asks `AIRewriteService` to rewrite the user's
@@ -23,12 +29,15 @@ struct RewriteSuggestionCard: View {
     let transcript: String
     let weakness: AIRewriteService.Weakness
     var sourceSessionID: UUID? = nil
+    var sourcePrompt: String? = nil
     var targetDimension: String? = nil
     var targetDimensionID: String? = nil
     var goal: SpeakingStyleGoal? = nil
     var transcriptConfidence: Double? = nil
+    var savedSnapshot: TranscriptRewriteSnapshot? = nil
     var onPracticePhrase: ((PhrasePracticeIntent) -> Void)? = nil
     var onPracticeRewrite: ((TranscriptPracticePrescription) -> Void)? = nil
+    var onPresentationStateChange: ((TranscriptUpgradePresentationState) -> Void)? = nil
 
     @StateObject private var phraseBank = PhraseBankStore.shared
     @State private var oneStepRewrite: Rewrite?
@@ -38,6 +47,7 @@ struct RewriteSuggestionCard: View {
     @State private var didSave = false
     @State private var showPhraseBank = false
     @State private var ladderCorrelationID = UUID()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -85,7 +95,9 @@ struct RewriteSuggestionCard: View {
         }
     }
 
-    private var rewriteID: String { "\(weakness.rawValue)-\(transcript.hashValue)" }
+    private var rewriteID: String {
+        "\(weakness.rawValue)-\(transcript.hashValue)-\(savedSnapshot?.oneStepText.hashValue ?? 0)"
+    }
 
     // MARK: - Header
 
@@ -122,7 +134,7 @@ struct RewriteSuggestionCard: View {
 
     private func ladderState(_ oneStep: Rewrite) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            ladderRung(
+            ReviewTranscriptStep(
                 eyebrow: "WHAT I HEARD",
                 text: Text(originalSnippet),
                 detail: "Verified from this rep",
@@ -130,7 +142,7 @@ struct RewriteSuggestionCard: View {
                 identifier: "rewrite.original"
             )
 
-            ladderRung(
+            ReviewTranscriptStep(
                 eyebrow: "ONE-STEP UPGRADE",
                 text: TranscriptChangeHighlighter.highlightedText(
                     original: originalSnippet,
@@ -144,7 +156,7 @@ struct RewriteSuggestionCard: View {
             targetRung
 
             if let aspirationalRewrite {
-                ladderRung(
+                ReviewTranscriptStep(
                     eyebrow: "ASPIRATIONAL END STATE",
                     text: TranscriptChangeHighlighter.highlightedText(
                         original: originalSnippet,
@@ -227,37 +239,6 @@ struct RewriteSuggestionCard: View {
         .accessibilityIdentifier("rewrite.retryTarget")
     }
 
-    private func ladderRung(
-        eyebrow: String,
-        text: Text,
-        detail: String,
-        tint: Color,
-        identifier: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow)
-                .font(Typography.micro.weight(.heavy))
-                .tracking(0.5)
-                .foregroundStyle(tint)
-            text
-                .font(Typography.body.weight(.medium))
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(detail)
-                .font(Typography.micro)
-                .foregroundStyle(AppColor.textSecondary)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(tint.opacity(0.22), lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(identifier)
-    }
-
     private var failureState: some View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle")
@@ -329,11 +310,25 @@ struct RewriteSuggestionCard: View {
 
     private func loadLadder() async {
         guard oneStepRewrite == nil, !isLoading else { return }
+        onPresentationStateChange?(.loading)
+        if let savedSnapshot,
+           savedSnapshot.weakness == weakness,
+           savedSnapshot.matches(sourceTranscript: transcript) {
+            oneStepRewrite = savedSnapshot.oneStepRewrite
+            aspirationalRewrite = savedSnapshot.aspirationalRewrite
+            onPresentationStateChange?(.ready)
+            return
+        }
         guard transcript.count >= 40,
               transcriptConfidence.map({ $0 >= 0.55 }) ?? true else {
             didFail = true
+            onPresentationStateChange?(.unavailable)
             return
         }
+        let saveToken = sourceSessionID.flatMap {
+            PracticeSessionStore.shared.coachReadSaveToken(sessionID: $0)
+        }
+        let snapshotCreatedAt = Date()
         isLoading = true
         didFail = false
         // Voice from the live profile so the rewrite nudges toward the
@@ -353,14 +348,24 @@ struct RewriteSuggestionCard: View {
         await MainActor.run {
             if let oneStep {
                 isLoading = false
-                withAnimation(.standardSpring) { oneStepRewrite = oneStep }
+                withAnimation(reduceMotion ? nil : .standardSpring) {
+                    oneStepRewrite = oneStep
+                }
+                onPresentationStateChange?(.ready)
                 FlowEventLog.shared.recordTranscriptLadderShown(
                     correlationId: ladderCorrelationID,
                     lever: TranscriptPracticeLever(weakness: weakness)
                 )
+                persistSnapshot(
+                    oneStep: oneStep,
+                    aspiration: nil,
+                    expected: saveToken,
+                    createdAt: snapshotCreatedAt
+                )
             } else {
                 isLoading = false
                 didFail = true
+                onPresentationStateChange?(.unavailable)
             }
         }
         guard oneStep != nil, !Task.isCancelled else { return }
@@ -379,9 +384,40 @@ struct RewriteSuggestionCard: View {
             isLoading = false
             if let aspiration,
                aspiration.text.caseInsensitiveCompare(oneStep?.text ?? "") != .orderedSame {
-                withAnimation(.standardSpring) { aspirationalRewrite = aspiration }
+                withAnimation(reduceMotion ? nil : .standardSpring) {
+                    aspirationalRewrite = aspiration
+                }
+                if let oneStep {
+                    persistSnapshot(
+                        oneStep: oneStep,
+                        aspiration: aspiration,
+                        expected: saveToken,
+                        createdAt: snapshotCreatedAt
+                    )
+                }
             }
         }
+    }
+
+    private func persistSnapshot(
+        oneStep: Rewrite,
+        aspiration: Rewrite?,
+        expected token: CoachReadSaveToken?,
+        createdAt: Date
+    ) {
+        guard let token else { return }
+        let snapshot = TranscriptRewriteSnapshot(
+            weakness: weakness,
+            originalSnippet: originalSnippet,
+            oneStepText: oneStep.text,
+            aspirationalText: aspiration?.text,
+            origin: .init(oneStep.source),
+            createdAt: createdAt
+        )
+        _ = PracticeSessionStore.shared.saveTranscriptRewriteSnapshot(
+            expected: token,
+            snapshot: snapshot
+        )
     }
 
     private func resetAndRetry() {
@@ -389,6 +425,7 @@ struct RewriteSuggestionCard: View {
         aspirationalRewrite = nil
         didFail = false
         didSave = false
+        onPresentationStateChange?(.loading)
         Task { await loadLadder() }
     }
 
@@ -419,7 +456,10 @@ struct RewriteSuggestionCard: View {
             onPracticeRewrite(TranscriptPracticePrescription(
                 correlationID: ladderCorrelationID,
                 sourceSessionID: sourceSessionID,
-                suggestedPrompt: intent.suggestedPrompt,
+                suggestedPrompt: TranscriptRetryPrompt.resolve(
+                    sourcePrompt: sourcePrompt,
+                    fallbackRewritePrompt: intent.suggestedPrompt
+                ),
                 title: "One-step \(retryTarget.lever.focusLabel) upgrade",
                 focus: retryTarget.lever.focusLabel,
                 target: retryTarget.lever.successMeasure,
@@ -430,6 +470,52 @@ struct RewriteSuggestionCard: View {
         } else {
             onPracticePhrase?(intent)
         }
+    }
+}
+
+/// Shared visual rung for the production Review ladder. It owns presentation
+/// only; the exact source/rewrite content remains in `PracticeSession` and the
+/// transcript-retry handoff. Flexible height keeps it usable at AX5.
+struct ReviewTranscriptStep: View {
+    let eyebrow: String
+    let text: Text
+    let detail: String
+    let tint: Color
+    let identifier: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(eyebrow)
+                .font(Typography.micro.weight(.heavy))
+                .tracking(0.5)
+                .foregroundStyle(tint)
+            text
+                .font(Typography.body.weight(.medium))
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(detail)
+                .font(Typography.micro)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(
+                cornerRadius: CornerRadius.medium,
+                style: .continuous
+            )
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: CornerRadius.medium,
+                style: .continuous
+            )
+            .stroke(tint.opacity(0.22), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
     }
 }
 

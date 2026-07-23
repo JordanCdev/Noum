@@ -1,15 +1,15 @@
-# Coach Arena — run_2026-07-21_07-56-12
+# Coach Arena — run_2026-07-22_20-45-54
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `cf7ddc980` on `ux-overhaul` (+38 dirty) · prompt: CoachContextBuilder.swift@60f4e431af2889da, AICoachChatService.swift@63c0994da7ff1738
+Git: `d90bb8922` on `ux-overhaul` (+130 dirty) · prompt: CoachContextBuilder.swift@60f4e431af2889da, AICoachChatService.swift@c94248ed8c511998
 
 ## Headline
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **69.6** (▲ +0.7) | 70 | ❌ |
-| Deep-assessment mean | 78.4 (▲ +1.7) | 70 | ✅ |
-| Trust-repair mean | 72 (▲ +0.7) | 65 | ✅ |
+| Gold-suite mean | **69.6** (±0) | 70 | ❌ |
+| Deep-assessment mean | 78.4 (±0) | 70 | ✅ |
+| Trust-repair mean | 72 (±0) | 65 | ✅ |
 | Missing captures | 0 | 0 | ✅ |
 | Fixture score floor | 22 | 60 | ❌ |
 | Sub-70 fixtures | 21 | 0 | ❌ |
@@ -27,7 +27,7 @@ Finalizer changed 45 generated replies before user display (displaySanitizer 41,
 | Comparable app-path report | `tools/coach-arena/reports/app-path/latest.md` |
 | App-path source of truth | canonical `tools/coach-arena/reports/app-path/` only |
 | Nested duplicate app-path path | stale duplicate present at tools/coach-arena/tools/coach-arena/reports/app-path/latest.json (generated 2026-07-05T23:09:49+00:00); ignore this path |
-| Latest canonical app-path generated | `2026-07-20T18:42:37+00:00` |
+| Latest canonical app-path generated | `2026-07-21T08:38:18+00:00` |
 | Latest canonical app-path average | `81.16/100` |
 | App-path evidence gate (incl. source freshness) | `true` · claim `realPipelineEvidence` |
 | App-path trace-level quality (traces real/complete/unique) | `true` |
@@ -79,7 +79,7 @@ Diagnostic only: replay judge scores remain tied to raw captured replies, and re
 | greeting | 1 | 56 | (±0) |
 | leadership-update | 1 | 60 | (±0) |
 | metadata-trap | 1 | 64 | (±0) |
-| synthetic-conversation | 11 | 66.3 | (▲ +2.1) |
+| synthetic-conversation | 11 | 66.3 | (±0) |
 | mechanics | 6 | 67.2 | (±0) |
 | trust-repair | 9 | 68.3 | (±0) |
 | repetition-callout | 1 | 69 | (±0) |
@@ -91,7 +91,7 @@ Diagnostic only: replay judge scores remain tied to raw captured replies, and re
 | interview-prep | 1 | 75 | (±0) |
 | transfer | 3 | 77 | (±0) |
 | emotional | 4 | 78.5 | (±0) |
-| deep-assessment | 6 | 80 | (▲ +2.8) |
+| deep-assessment | 6 | 80 | (±0) |
 | fabrication-trap | 1 | 81 | (±0) |
 | pressure-mode | 3 | 82 | (±0) |
 | confidence-ending | 1 | 83 | (±0) |

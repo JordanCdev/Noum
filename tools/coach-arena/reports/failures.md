@@ -1,4 +1,4 @@
-# Coach Arena failures — run_2026-07-21_07-56-12
+# Coach Arena failures — run_2026-07-22_20-45-54
 
 21 below 70 / capped / missing — **15 substantive gap(s)** (the real coach-parity signal) and **6 voice/residue cap(s)** (judge rated substance excellent; a prompt/finalizer cleanup, ux/chat-owned). Split so residue caps don't masquerade as the worst coaching failures.
 

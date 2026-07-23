@@ -1,5 +1,149 @@
 # Noum — Current state
 
+## 2026-07-22 — App Store success system adversarially closed; external launch gates remain NO-GO
+
+The locally implemented Day-0 and first-week journey has been tightened around
+the actual spoken-evidence boundary. A written activation still defines the
+growth cohort, but the coaching contract remains on Day 0 until the first
+qualifying spoken baseline. Its Day-0-to-Day-7 stages, evidence window, durable
+read, and unfinished-step notifications then share that spoken anchor. Day
+index observability uses elapsed local calendar days rather than active-session
+ordinal. Verified examples now require a progress-eligible session longer than
+eight seconds with one coherent verbatim 4–14-word thought; a high score alone
+cannot make a quote supportable.
+
+The first explicit spoken handoff also has an exact-session crash-recovery
+receipt. If the app terminates after the qualifying session is persisted but
+before Summary navigation completes, hydration restores only that account's
+pending session and reconstructs its presentation from durable Timed Practice
+evidence. The receipt carries only the session UUID, is cleared only when that
+exact Summary is presented, participates in account deletion, and does not
+resurrect historical sessions for an already-established account.
+
+Growth aggregates are now schema v2. Every upload is bound to the earliest
+content-free activation cohort day in UTC, fails closed without an activation
+anchor, and updates a separate cohort rollup in the same idempotent Functions
+transaction. The cohort projection contains activation count, elapsed active
+day distribution, second-rep-within-48-hours count, and weekly-read views among
+Day-1 returners without account identifiers or speech. First-week reads no
+longer request an unused AI narrative; the independent proof task remains. App
+Store Server Notifications accept only the exact reviewed monthly and annual
+Noum product identifiers, including renewal/cross-grade validation, before any
+bounded lifecycle projection is stored.
+
+Local release hygiene is current again. Processor disclosures were regenerated
+from the reviewed manifest. The cloud-probe test now supplies all three source
+contracts plus an inert numeric App Apple ID, so static readiness passes 22/22
+without contacting production. The one new Gitleaks match was independently
+re-read from immutable commit `87041e9a` and confirmed to be ordinary prose in
+`docs/TESTFLIGHT_QA.md`; it is allowlisted by that commit only and the full
+1,189-commit scan now passes with no unreviewed findings.
+
+Source-current verification is green. The complete serialized unit target
+reports 4,680 results: 4,678 passed, two expected StoreKit runtime failures,
+and zero unexpected failures or skips. Within it, 183 focused launch-system
+tests and a separate 74-test adversarial audit pass; the signed fresh-install
+written-value → explicit spoken rep → Summary → contextual paywall UI route
+passes 1/1; focused first-week/paywall/Summary visual tests pass 3/3. The two
+expected failures are the installed Xcode 26 simulator runtime's empty StoreKit
+product list/internal synchronization error; all four deterministic
+source/package contracts pass. Functions passes 191 source tests plus nine
+deployment guards; release scripts pass 114 tests. A fresh
+optimized Release simulator build succeeds, passes strict code-signature and
+bundle-secret/config scans, and contains no development StoreKit catalog or
+provider configuration.
+
+The checked-in App Store package and all local static contracts pass, while
+live URL validation correctly fails because `https://noum.app/privacy` has not
+been deployed with the reviewed launch content. The TestFlight preflight is
+also correctly blocked: the working tree is not a clean source-bound archive,
+there is no Apple Distribution identity or matching App Store profiles, and no
+physical TestFlight, operational, or StoreKit lifecycle evidence exists.
+App Store Connect products/prices/trial, URLs, CPP/PPO assets, ASSN/aggregate
+deployment and IAM/TTL, physical-device QA, live-provider evaluation, blinded
+professional review, and the four-week real-user beta therefore remain hard
+release gates. Production remains correctly **NO-GO**.
+
+## 2026-07-21 — App Store success system implemented locally; external launch gates remain NO-GO
+
+M14 now has a connected activation, retention, commercial-observability, and
+distribution foundation instead of a collection of uncoordinated launch
+features. The permissionless written first value remains first, followed by an
+explicit, user-started 30-second spoken proof. The first seven days project one
+unfinished coaching step from existing session, coach-memory, prescription,
+check-in, Path, and weekly-read owners. Day-7 produces a durable first-week read
+whose comparison and verified example fail closed when the referenced evidence
+is missing or falls outside the activation window.
+
+The existing `FlowEventLog` now accepts a typed, bounded growth vocabulary for
+activation, rep milestones, summaries, weekly reads, paywall source, StoreKit
+lifecycle, notification attribution, and AI usage estimates without prompts,
+transcripts, account identifiers, product identifiers, or arbitrary metadata.
+Text-model usage is priced from bounded token receipts; cloud transcription is
+priced from the provider that actually accepted the stream and whole audio
+seconds. Unknown cloud routes remain explicitly unpriced, and an on-device
+fallback never records paid provider usage.
+The consented closed-day aggregate now carries that unpriced off-device usage
+as an explicit bounded count through the existing callable and anonymous daily
+period document. It must exactly match the allowlisted unpriced event count.
+Commercial reconciliation retains known priced cost but returns
+`BLOCKED_UNPRICED_AI_USAGE` with no residual or contribution margin whenever
+the count is non-zero, so missing provider units can no longer look free.
+StoreKit remains the authority for products, prices, introductory-offer
+eligibility, renewal dates, entitlements, restore, cancellation, billing,
+refund, and expiry states. Annual is the default presentation only when the
+product is returned by StoreKit; monthly remains equally available, and trial
+copy appears only for a verified eligible offer. Review prompting is armed only
+after three qualifying reps or the first verified improvement and can be
+consumed only by an explicit Summary exit.
+Lifecycle reconciliation now enumerates verified StoreKit subscription status
+even when the product catalog is unavailable; loaded product metadata only
+enriches price and period copy. An empty status stream with prior or current
+verified entitlement resolves to an explicit unknown state and cannot invent
+an expiry or revoke access.
+
+App Store Server Notifications V2 ingestion is now implemented locally but is
+fail-closed and undeployed. Environment-specific production and sandbox HTTPS
+receivers use Apple's official Node verifier for the outer notification plus
+present nested transaction/renewal JWS values, exact app/environment binding,
+online certificate checks, anonymous daily lifecycle counters, and a TTL'd
+one-way replay marker. No JWS, receipt, notification UUID, product/transaction,
+account/device, or speech identifier crosses the storage projection, and the
+receiver never mutates a user's entitlement. Production and sandbox remain
+disabled until the numeric App Store app ID, current Apple root-certificate
+secret, dedicated runtime/IAM, Version 2 URLs, TTL, sandbox lifecycle, and
+independent readback evidence are completed through the manual launch actions.
+The release validator now binds the verifier helper and exact locked Apple
+library artifact, checks the runtime's exact project/effective IAM allowlist,
+and requires ACTIVE marker TTL plus phase-specific App-ID/secret/enable
+readbacks. Permanently invalid notifications use a documented 204 no-write
+acknowledgement (Apple retries 4xx as well as 5xx); retryable failures remain
+503.
+
+The source-controlled App Store package now contains en-GB/en-US metadata,
+seven-shot and preview briefs, three custom-product-page briefs, three product
+page optimization variants, launch/growth gates, and local support/privacy/
+coaching-trust pages. The repository package validator passes. Its live mode
+correctly fails because `https://noum.app/privacy` still serves placeholder
+content, so deployment and App Store Connect configuration remain release
+blockers rather than completion claims.
+
+Source-current verification passes the fresh-install spoken-proof UI route
+(1/1), 158 focused activation, first-week, growth/privacy/cost, lifecycle,
+trust-copy, speech-integrity, and review-policy tests with zero failures or
+skips, 185 Functions tests, nine deploy-lock tests, and 113 release-script
+tests. The local StoreKit suite passes its four deterministic
+catalog/scheme/credential/packaging contracts; its two runtime purchase
+contracts are explicit expected failures because the installed Xcode 26 CLI
+returns an empty product list / StoreKit internal synchronization error. A
+fresh Release simulator build succeeds and contains no development `.storekit`
+catalog, development configuration, or App Check debug credential. External evidence is
+unchanged: production-domain deployment, App Store Connect pricing and trial
+configuration, CPP/PPO asset upload, physical sandbox/TestFlight purchase
+lifecycle, live-provider evaluation, blinded professional review, and the
+four-week real-user beta are still required. Production therefore remains
+correctly **NO-GO**.
+
 ## 2026-07-21 — Plan-first UX and coach-output hardening; production remains NO-GO
 
 The user-facing practice loop is now quieter and more intentional. Path uses an
@@ -3056,7 +3200,7 @@ dSYMs, extension points, compiled StoreKit/authentication paths, privacy/export
 metadata, and identity-bound App Store profiles. Existing-archive inspection
 also rejects a dirty or moved checkout even when the embedded commit matches.
 The physical TestFlight schema
-now requires exactly 14 named surfaces and 77 named checks from one independently
+now requires exactly 14 named surfaces and 84 named checks from one independently
 verified build. This Mac still has zero valid Apple Distribution identities and
 zero matching App Store profiles; no sign, export, upload, or Apple-account
 mutation was attempted.
@@ -3231,11 +3375,14 @@ English goal-outcome inference. `PracticeLocale` and `LocaleSettingsManager`
 remain the locale owners.
 
 The longitudinal readiness contract is now
-`coach-real-user-transfer-outcomes-v3`. It requires a registered protocol and
-analysis plan, coherent enrollment/withdrawal/exclusion accounting, full-row
-retention, at least 60% positive transfer and 70% non-regression, and documented
-resolution of every adverse outcome. Mixed and negative results remain visible;
-the gate no longer rewards a perfect, cherry-picked sample.
+`coach-real-user-transfer-outcomes-v4`. It requires a registered protocol and
+analysis plan, at least 28 elapsed days, 30 qualified qualitative participants,
+200 qualified D1/D7 installs, coherent enrollment/withdrawal/exclusion
+accounting, population provenance, full-row retention, at least 60% positive
+transfer and 70% non-regression, and documented resolution of every adverse
+outcome. Mixed and negative results remain visible; the gate no longer rewards
+a perfect, cherry-picked sample. A distinct 500-install scale signal remains
+nonblocking for first release.
 
 Verification: the integrated simulator run passed 155 tests across the locale
 boundary, goal outcomes, Phrase Bank/practice intent, Summary prescription,
@@ -4268,7 +4415,8 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
 - **Auth & accounts** — Apple, Google, anonymous "Guest" via Firebase.
   Account deletion wipes per-account UserDefaults, Firebase Auth user,
   and backend records.
-- **Premium tier** — StoreKit 2 with Monthly ($4.99) and Annual ($29.99),
+- **Premium tier** — StoreKit 2 with Monthly (£11.99) and Annual (£79.99),
+  plus a seven-day annual introductory trial only when StoreKit confirms eligibility,
   feature gates for Coach Mode, Live Transcript, Filler Tracking,
   Trends, Video, Saved Transcripts, Unlimited Async Challenges, AI
   Video Analysis (5/mo), 100 AI coaching reads.

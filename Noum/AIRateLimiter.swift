@@ -47,7 +47,7 @@ import Combine
 @MainActor
 final class AIRateLimiter: ObservableObject {
 
-    static let shared = AIRateLimiter()
+    static let shared = AIRateLimiter(growthEventSink: FlowEventGrowthEventSink.shared)
 
     /// Bumps whenever a write changes what `remainingToday(kind:)`
     /// would return for any kind — i.e. on a successful
@@ -74,6 +74,12 @@ final class AIRateLimiter: ObservableObject {
 
     enum Kind: String, CaseIterable {
         case postRepCoachNote
+
+        fileprivate var growthSurface: AIUsageSurface {
+            switch self {
+            case .postRepCoachNote: return .postRepCoachNote
+            }
+        }
     }
 
     // MARK: - Caps
@@ -99,6 +105,7 @@ final class AIRateLimiter: ObservableObject {
     private let accountIDProvider: () -> String?
     private let now: () -> Date
     private let premiumProvider: () -> Bool
+    private let growthEventSink: (any GrowthEventSink)?
 
     /// In-memory only — debounce is best-effort and resets on cold
     /// launch (which is the right behaviour: a fresh launch is a
@@ -109,7 +116,8 @@ final class AIRateLimiter: ObservableObject {
         defaults: UserDefaults = .standard,
         accountIDProvider: (() -> String?)? = nil,
         now: @escaping () -> Date = Date.init,
-        premiumProvider: (() -> Bool)? = nil
+        premiumProvider: (() -> Bool)? = nil,
+        growthEventSink: (any GrowthEventSink)? = nil
     ) {
         self.defaults = defaults
         if let provider = accountIDProvider {
@@ -123,6 +131,7 @@ final class AIRateLimiter: ObservableObject {
         } else {
             self.premiumProvider = { PremiumManager.shared.isPremium }
         }
+        self.growthEventSink = growthEventSink
     }
 
     // MARK: - Public API
@@ -145,7 +154,8 @@ final class AIRateLimiter: ObservableObject {
         let dayKey = Self.dayKey(for: now)
         let countKey = storageCountKey(kind: kind, dayKey: dayKey)
         let current = defaults.integer(forKey: countKey)
-        let cap = currentCap()
+        let isPremium = premiumProvider()
+        let cap = isPremium ? Self.premiumDailyCap : Self.freeDailyCap
         guard current < cap else { return false }
 
         // Record. Persist immediately so a process kill mid-burst
@@ -156,6 +166,20 @@ final class AIRateLimiter: ObservableObject {
         // so any observer's body recomputation reads the post-consume
         // remainingToday number, never the pre-consume one.
         changeToken &+= 1
+        // This is a reservation, not a claim that a provider call completed or
+        // incurred cost. Actual token cost enters the growth ledger only via an
+        // `AIUsageCostRecord` after provider usage exists.
+        growthEventSink?.record(GrowthEvent(
+            createdAt: now,
+            name: .aiBudgetReserved,
+            outcome: .recorded,
+            subscriptionState: isPremium ? .paid : .free,
+            aiSurface: kind.growthSurface,
+            metrics: [
+                .dailyUsageCount: current + 1,
+                .dailyUsageCap: cap,
+            ]
+        ))
         return true
     }
 

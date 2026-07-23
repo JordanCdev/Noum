@@ -78,6 +78,7 @@ enum CoachTraceStage {
     static let accepted = "coach.accepted"
     static let classified = "coach.classified"
     static let goalResolved = "coach.goalResolved"
+    static let memoryLoaded = "coach.memoryLoaded"
     static let evidenceLoaded = "coach.evidenceLoaded"
     static let rubricSelected = "coach.rubricSelected"
     static let promptAssembled = "coach.promptAssembled"
@@ -86,6 +87,7 @@ enum CoachTraceStage {
     static let providerRetried = "coach.providerRetried"
     static let providerRefused = "coach.providerRefused"
     static let providerFinished = "coach.providerFinished"
+    static let streamFirstBuffered = "coach.streamFirstBuffered"
     static let streamFirstVisible = "coach.streamFirstVisible"
     static let gatePassed = "coach.gatePassed"
     static let gateRepaired = "coach.gateRepaired"
@@ -100,6 +102,7 @@ enum CoachTraceStage {
         accepted,
         classified,
         goalResolved,
+        memoryLoaded,
         evidenceLoaded,
         rubricSelected,
         promptAssembled,
@@ -108,6 +111,7 @@ enum CoachTraceStage {
         providerRetried,
         providerRefused,
         providerFinished,
+        streamFirstBuffered,
         streamFirstVisible,
         gatePassed,
         gateRepaired,
@@ -427,13 +431,22 @@ final class FlowEventLog: ObservableObject {
     static let shared = FlowEventLog(accountScoped: true)
     nonisolated static let defaultStorageKey = "flowEvents.recent"
     nonisolated static let defaultMaxRecords = 500
+    nonisolated static let aggregateConsentStorageKey = "growthAggregate.consent"
+    nonisolated static let aggregateCursorStorageKey = "growthAggregate.cursor"
+    nonisolated static let aggregateCheckpointStorageKey = "growthAggregate.checkpoint"
+    nonisolated static let maximumAggregateBackfillDays = 7
 
     @Published private(set) var events: [FlowEvent] = []
+    @Published private(set) var aggregateConsent: GrowthAggregateConsent = .notDetermined
+    @Published private(set) var lastAggregatePeriodEnd: Date?
+    @Published private(set) var aggregateUploadStatus: GrowthAggregateUploadStatus = .idle
 
     private let defaults: UserDefaults
     private let storageKey: String
     private let maxRecords: Int
     private let accountScoped: Bool
+    private var pendingAggregateCheckpoint: GrowthAggregateUploadCheckpoint?
+    private var aggregateUploadIsInFlight = false
 
     init(
         defaults: UserDefaults = .standard,
@@ -745,11 +758,88 @@ final class FlowEventLog: ObservableObject {
 
     func endSession() {
         events = []
+        aggregateConsent = .notDetermined
+        lastAggregatePeriodEnd = nil
+        pendingAggregateCheckpoint = nil
+        aggregateUploadIsInFlight = false
+        aggregateUploadStatus = .idle
+    }
+
+    /// Product analytics is off until the user makes an explicit choice.
+    /// Denial removes any unsent retry envelope; the successful-period cursor
+    /// remains so a later opt-in cannot resend previously acknowledged data.
+    func setAggregateConsent(_ consent: GrowthAggregateConsent) {
+        aggregateConsent = consent
+        defaults.set(consent.rawValue, forKey: effectiveAccountKey(Self.aggregateConsentStorageKey))
+        if consent != .granted {
+            pendingAggregateCheckpoint = nil
+            defaults.removeObject(forKey: effectiveAccountKey(Self.aggregateCheckpointStorageKey))
+            aggregateUploadStatus = .idle
+        }
+    }
+
+    /// Uploads at most seven closed calendar days. Today's partial activity is
+    /// never sent, and a bounded cursor prevents a late opt-in from turning the
+    /// local diagnostic ring into an unbounded historical export.
+    @discardableResult
+    func uploadClosedGrowthAggregatePeriods(
+        transport: any GrowthAggregateTransport,
+        now: Date = Date(),
+        calendar: Calendar = FlowEventLog.utcCalendar,
+        appVersion: String = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "unknown",
+        buildNumber: String = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "unknown",
+        maximumPeriods: Int = FlowEventLog.maximumAggregateBackfillDays
+    ) async throws -> Int {
+        guard aggregateConsent == .granted,
+              !aggregateUploadIsInFlight,
+              maximumPeriods > 0 else { return 0 }
+        aggregateUploadIsInFlight = true
+        defer { aggregateUploadIsInFlight = false }
+        aggregateUploadStatus = .uploading
+
+        let uploader = GrowthAggregateUploader(transport: transport)
+        var uploaded = 0
+        do {
+            for _ in 0..<min(maximumPeriods, Self.maximumAggregateBackfillDays) {
+                guard let period = nextClosedAggregatePeriod(now: now, calendar: calendar) else {
+                    break
+                }
+                let checkpoint = aggregateCheckpoint(for: period, generatedAt: now)
+                let didUpload = try await uploader.uploadIfConsented(
+                    consent: aggregateConsent,
+                    events: growthEvents(),
+                    period: period,
+                    batchID: checkpoint.batchID,
+                    appVersion: appVersion,
+                    buildNumber: buildNumber,
+                    generatedAt: checkpoint.generatedAt
+                )
+                acknowledgeAggregatePeriod(period)
+                if didUpload { uploaded += 1 }
+            }
+            aggregateUploadStatus = uploaded > 0 ? .uploaded : .idle
+            return uploaded
+        } catch {
+            aggregateUploadStatus = .waitingToRetry
+            throw error
+        }
     }
 
     /// Events for one flow, in chronological (oldest-first) order.
     func events(correlationId: UUID) -> [FlowEvent] {
         events.filter { $0.correlationId == correlationId }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Typed, privacy-sanitized growth events in chronological order. The
+    /// underlying flow ledger remains the only persisted owner.
+    func growthEvents() -> [GrowthEvent] {
+        events
+            .compactMap { GrowthPrivacyGuard.sanitize($0)?.event }
+            .sorted { $0.createdAt < $1.createdAt }
     }
 
     /// The most recent flows, each as an ordered group. Newest flow first.
@@ -852,6 +942,7 @@ final class FlowEventLog: ObservableObject {
     }
 
     private func load() {
+        loadAggregateState()
         guard let data = defaults.data(forKey: effectiveStorageKey),
               let decoded = try? JSONDecoder().decode([FlowEvent].self, from: data) else {
             events = []
@@ -866,13 +957,109 @@ final class FlowEventLog: ObservableObject {
     }
 
     private var effectiveStorageKey: String {
-        guard accountScoped else { return storageKey }
+        effectiveAccountKey(storageKey)
+    }
+
+    private func effectiveAccountKey(_ key: String) -> String {
+        guard accountScoped else { return key }
         let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
-        return "\(storageKey).\(accountID)"
+        return "\(key).\(accountID)"
+    }
+
+    nonisolated private static var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    private func loadAggregateState() {
+        let rawConsent = defaults.object(
+            forKey: effectiveAccountKey(Self.aggregateConsentStorageKey)
+        ) as? Int
+        aggregateConsent = rawConsent.flatMap(GrowthAggregateConsent.init(rawValue:))
+            ?? .notDetermined
+        lastAggregatePeriodEnd = defaults.object(
+            forKey: effectiveAccountKey(Self.aggregateCursorStorageKey)
+        ) as? Date
+        guard let data = defaults.data(
+            forKey: effectiveAccountKey(Self.aggregateCheckpointStorageKey)
+        ) else {
+            pendingAggregateCheckpoint = nil
+            aggregateUploadStatus = .idle
+            return
+        }
+        pendingAggregateCheckpoint = try? JSONDecoder().decode(
+            GrowthAggregateUploadCheckpoint.self,
+            from: data
+        )
+        aggregateUploadStatus = pendingAggregateCheckpoint == nil ? .idle : .waitingToRetry
+    }
+
+    private func nextClosedAggregatePeriod(
+        now: Date,
+        calendar: Calendar
+    ) -> DateInterval? {
+        let closedEnd = calendar.startOfDay(for: now)
+        let earliestEvent = growthEvents().map(\.createdAt).min()
+        guard let earliestEvent else { return nil }
+        let earliestDay = calendar.startOfDay(for: earliestEvent)
+        let backfillFloor = calendar.date(
+            byAdding: .day,
+            value: -Self.maximumAggregateBackfillDays,
+            to: closedEnd
+        ) ?? earliestDay
+        let start = max(lastAggregatePeriodEnd ?? earliestDay, backfillFloor)
+        guard start < closedEnd,
+              let end = calendar.date(byAdding: .day, value: 1, to: start),
+              end <= closedEnd else { return nil }
+        return DateInterval(start: start, end: end)
+    }
+
+    private func aggregateCheckpoint(
+        for period: DateInterval,
+        generatedAt: Date
+    ) -> GrowthAggregateUploadCheckpoint {
+        if let pendingAggregateCheckpoint,
+           pendingAggregateCheckpoint.periodStart == period.start,
+           pendingAggregateCheckpoint.periodEnd == period.end {
+            return pendingAggregateCheckpoint
+        }
+        let checkpoint = GrowthAggregateUploadCheckpoint(
+            periodStart: period.start,
+            periodEnd: period.end,
+            batchID: UUID(),
+            generatedAt: generatedAt
+        )
+        pendingAggregateCheckpoint = checkpoint
+        if let data = try? JSONEncoder().encode(checkpoint) {
+            defaults.set(
+                data,
+                forKey: effectiveAccountKey(Self.aggregateCheckpointStorageKey)
+            )
+        }
+        return checkpoint
+    }
+
+    private func acknowledgeAggregatePeriod(_ period: DateInterval) {
+        lastAggregatePeriodEnd = period.end
+        defaults.set(
+            period.end,
+            forKey: effectiveAccountKey(Self.aggregateCursorStorageKey)
+        )
+        pendingAggregateCheckpoint = nil
+        defaults.removeObject(
+            forKey: effectiveAccountKey(Self.aggregateCheckpointStorageKey)
+        )
     }
 
     private func trimmed(_ source: [FlowEvent]) -> [FlowEvent] {
         let ordered = source.sorted { $0.createdAt > $1.createdAt }
+        func earliest(stage: String) -> FlowEvent? {
+            ordered
+                .filter { $0.stage == stage }
+                .min { $0.createdAt < $1.createdAt }
+        }
+
         // These records anchor cohort denominators and must survive the bounded
         // diagnostics ring. Pin the earliest structured-value delivery rather
         // than the newest one so a duplicate emission can never move a user's
@@ -901,9 +1088,24 @@ final class FlowEventLog: ObservableObject {
                 }
                 .min(by: { $0.createdAt < $1.createdAt })
         }
-        let pinned = Array([
-            ordered.filter { $0.stage == "activation.firstEligible" }
-                .min(by: { $0.createdAt < $1.createdAt }),
+
+        // Put the commercial funnel anchors first. A deliberately tiny test or
+        // diagnostic ring must keep the denominator and first three rep
+        // milestones before lower-priority experiment diagnostics.
+        let pinnedCandidates: [FlowEvent?] = [
+            earliest(stage: GrowthEventName.accountActivated.rawValue),
+            earliest(stage: GrowthEventName.firstValueDelivered.rawValue),
+            earliest(stage: GrowthEventName.firstWrittenValueDelivered.rawValue),
+            earliest(stage: GrowthEventName.firstSpokenPracticeStarted.rawValue),
+            earliest(stage: GrowthEventName.practiceCompleted.rawValue),
+            earliest(stage: GrowthEventName.summaryViewed.rawValue),
+            earliest(stage: GrowthEventName.secondPracticeCompleted.rawValue),
+            earliest(stage: GrowthEventName.thirdPracticeCompleted.rawValue),
+            ordered.filter {
+                $0.stage == GrowthEventName.entitlementActivated.rawValue
+                    || $0.stage == GrowthEventName.purchaseSucceeded.rawValue
+            }.min { $0.createdAt < $1.createdAt },
+            earliest(stage: "activation.firstEligible"),
             assignment.flatMap { frozen in
                 ordered.first(where: {
                     $0.stage == TransformationKPIEventStage.activationExperimentAssigned
@@ -920,13 +1122,12 @@ final class FlowEventLog: ObservableObject {
                 })
             },
             reviewExposure,
-            ordered.filter { $0.stage == TransformationKPIEventStage.reviewSurfaceOpened }
-                .min(by: { $0.createdAt < $1.createdAt }),
-            ordered.filter { $0.stage == TransformationKPIEventStage.structuredValueDelivered }
-                .min(by: { $0.createdAt < $1.createdAt }),
+            earliest(stage: TransformationKPIEventStage.reviewSurfaceOpened),
+            earliest(stage: TransformationKPIEventStage.structuredValueDelivered),
             ordered.first(where: { $0.stage.hasPrefix("transformation.helpfulness") }),
-        ].compactMap { $0 }.prefix(maxRecords))
-        let pinnedIDs = Set(pinned.map(\.id))
+        ]
+        let pinned = Array(pinnedCandidates.compactMap { $0 }.prefix(maxRecords))
+        let pinnedIDs = Set(pinned.map { $0.id })
         let recentCapacity = max(0, maxRecords - pinned.count)
         let recent = ordered.filter { !pinnedIDs.contains($0.id) }.prefix(recentCapacity)
         return (Array(recent) + pinned).sorted { $0.createdAt > $1.createdAt }
@@ -954,8 +1155,9 @@ enum CoachTraceSupportUITestFixture {
         let start = Date(timeIntervalSince1970: 1_782_000_000)
         let stages: [(String, AICallDiagnosticOutcome, String, [String: Int])] = [
             (CoachTraceStage.accepted, .success, "request accepted; app=2.4 build=208 source=ui-test", [:]),
-            (CoachTraceStage.goalResolved, .success, "goal=authoritative provenance=explicit-choice", [:]),
             (CoachTraceStage.classified, .success, "intent=coaching response=personal depth=deepAssessment", ["historyRows": 9, "userCharacters": 3_000]),
+            (CoachTraceStage.goalResolved, .success, "goal=authoritative provenance=explicit-choice", [:]),
+            (CoachTraceStage.memoryLoaded, .success, "memory=bounded-case", ["hasMemory": 1, "memoryEvidence": 4]),
             (CoachTraceStage.evidenceLoaded, .success, "memory=bounded-case selectedLever=structure evidence=session+proof+knowledge", ["eligibleSessions": 4, "hasMemory": 1, "knowledgeCards": 3]),
             (CoachTraceStage.rubricSelected, .success, "rubric=authoritative active=1", ["dimensions": 3]),
             (CoachTraceStage.promptAssembled, .success, "redacted prompt modules assembled", ["characters": 8_240, "modules": 7]),

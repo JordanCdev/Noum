@@ -8,6 +8,66 @@ import AVFAudio
 
 // MARK: - Navigation Destination Types
 
+/// The exact practice surface launched from a Big Moment rehearsal step.
+/// This is route context, not a second owner for the rehearsal plan: the plan
+/// and active moment remain in `PrepSessionPlanner` and `BigMomentStore`.
+struct PreparationPracticeRoute: Hashable {
+    enum Exercise: Hashable {
+        case timed(difficulty: TimedPracticeDifficulty?)
+        case timedPrompt(token: UUID, difficulty: TimedPracticeDifficulty?)
+        case suddenDeath
+        case conversation(
+            scenario: IMConversationScenario?,
+            tone: IMTargetTone?
+        )
+    }
+
+    /// Distinguishes two launches for the same moment during overlapping
+    /// SwiftUI transitions. It carries no speech or account content.
+    let launchID: UUID
+    let momentID: UUID
+    let exercise: Exercise
+
+    init(
+        launchID: UUID = UUID(),
+        momentID: UUID,
+        exercise: Exercise
+    ) {
+        self.launchID = launchID
+        self.momentID = momentID
+        self.exercise = exercise
+    }
+}
+
+/// Presentation-only provenance stamped onto a Summary payload while the
+/// corresponding practice route is active. It is intentionally process-local:
+/// durable coaching evidence continues to belong to the session and Big Moment
+/// stores, while a terminated navigation stack does not pretend it can be
+/// resumed exactly.
+enum SummaryJourneyOrigin: Hashable {
+    case bigMomentPreparation(PreparationPracticeRoute)
+}
+
+enum SummaryExitDisposition: Equatable {
+    case appSectionRoot
+    case resumePreparation
+}
+
+/// Pure guard for the Summary Done route. A stale payload must not resume a
+/// different Big Moment that happened to replace the one the rep prepared for.
+enum SummaryJourneyExitRouter {
+    static func disposition(
+        origin: SummaryJourneyOrigin?,
+        activeBigMomentID: UUID?
+    ) -> SummaryExitDisposition {
+        guard case .bigMomentPreparation(let route) = origin,
+              route.momentID == activeBigMomentID else {
+            return .appSectionRoot
+        }
+        return .resumePreparation
+    }
+}
+
 enum AppDestination: Hashable {
     case practiceSelection
     /// Timed Practice with an optional per-rep prescription. `nil` preserves
@@ -17,7 +77,10 @@ enum AppDestination: Hashable {
     /// A seeded Timed route bound to one process-local prompt handoff. The
     /// opaque token carries no user content and prevents another Timed route
     /// from consuming or replacing the visible launch's prompt.
-    case timedPracticePrompt(token: UUID)
+    case timedPracticePrompt(
+        token: UUID,
+        difficulty: TimedPracticeDifficulty? = nil
+    )
     case suddenDeathPractice
     case ahCounterPractice
     case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
@@ -42,6 +105,16 @@ enum AppDestination: Hashable {
     /// Typed Ask Noum entry for accessibility, UI tests, and users who want the
     /// thread directly. The main `askNoum` case remains the live coach session.
     case askNoumTyped
+    /// The existing weekly coach check-in, reached directly from a first-week
+    /// notification without creating a second capture or persistence owner.
+    case weeklyCheckIn
+    /// Durable detail route for the evidence-bounded first-week read. Home can
+    /// expose this independently of the rolling AI weekly-insight signal gate.
+    case firstWeekRead
+    /// Inspectable, account-scoped coaching context. The destination is a
+    /// projection only; `CoachMemoryStore` and `CoachingProfileStore` remain
+    /// the durable owners.
+    case coachingMemory
     case growthLibrary
     /// Detail view for a single past session, addressable by session ID so
     /// surfaces like the Growth Library can deep-link straight to "the
@@ -57,6 +130,10 @@ enum AppDestination: Hashable {
     /// PrepSessionPlanner's plan and provides per-step launchers into
     /// Timed, Sudden Death, and IM.
     case prepSession
+    /// A practice destination with explicit Big Moment rehearsal provenance.
+    /// The wrapped surface is still the existing mode view; this route only
+    /// lets its resulting Summary return to the rehearsal plan.
+    case preparationPractice(PreparationPracticeRoute)
     /// Per-difficulty drill-down for Sudden Death runs. Reached from
     /// the breakdown card on `SessionHistoryView` when the user filters
     /// to Sudden Death and taps a difficulty row. Renders the full run
@@ -73,6 +150,35 @@ enum AppDestination: Hashable {
     /// Home "Practise a real conversation" entry card.
     case roleplaySetup
     case roleplayRun(scenario: RoleplayScenario, startingLevel: RoleplayPressureLevel)
+}
+
+extension PreparationPracticeRoute {
+    /// Converts only the three practice destinations that the preparation
+    /// planner is allowed to launch. Other app destinations fail closed.
+    init?(
+        launchID: UUID = UUID(),
+        momentID: UUID,
+        destination: AppDestination
+    ) {
+        let exercise: Exercise
+        switch destination {
+        case .timedPractice(let difficulty):
+            exercise = .timed(difficulty: difficulty)
+        case .timedPracticePrompt(let token, let difficulty):
+            exercise = .timedPrompt(token: token, difficulty: difficulty)
+        case .suddenDeathPractice:
+            exercise = .suddenDeath
+        case .imPractice(let scenario, let tone):
+            exercise = .conversation(scenario: scenario, tone: tone)
+        default:
+            return nil
+        }
+        self.init(
+            launchID: launchID,
+            momentID: momentID,
+            exercise: exercise
+        )
+    }
 }
 
 /// Pure router for the Summary "Practice Again" CTA. Carved out of
@@ -297,17 +403,116 @@ final class SummaryDataStore {
     }
 
     private var entries: [UUID: Entry] = [:]
+    private var activeJourneyOrigin: SummaryJourneyOrigin?
+    private var journeyOrigins: [UUID: SummaryJourneyOrigin] = [:]
 
     func store(_ entry: Entry, for id: UUID) {
         entries[id] = entry
+        if let activeJourneyOrigin {
+            journeyOrigins[id] = activeJourneyOrigin
+        } else {
+            journeyOrigins.removeValue(forKey: id)
+        }
     }
 
     func retrieve(for id: UUID) -> Entry? {
         entries[id]
     }
 
+    func journeyOrigin(for id: UUID) -> SummaryJourneyOrigin? {
+        journeyOrigins[id]
+    }
+
+    /// Called by the explicit preparation-practice route while its existing
+    /// practice view is visible. `store(_:for:)` snapshots the value against
+    /// the new Summary ID before navigation pushes the Summary.
+    func activateJourneyOrigin(_ origin: SummaryJourneyOrigin) {
+        activeJourneyOrigin = origin
+    }
+
+    /// Equality prevents an outgoing transition from clearing a newer launch
+    /// that appeared before the old view's `onDisappear` callback arrived.
+    func deactivateJourneyOrigin(_ origin: SummaryJourneyOrigin) {
+        guard activeJourneyOrigin == origin else { return }
+        activeJourneyOrigin = nil
+    }
+
     func remove(for id: UUID) {
         entries.removeValue(forKey: id)
+        journeyOrigins.removeValue(forKey: id)
+    }
+
+    /// Rebuilds the ordinary Timed Summary from its exact durable row after a
+    /// termination between persistence and navigation. The session store stays
+    /// the evidence owner; this recreates presentation data only and never
+    /// writes another session or invents a metric that was not persisted.
+    func storeRecoveredTimedSummary(
+        session: PracticeSession,
+        recentSessions: [PracticeSession],
+        profile: CoachingProfile?
+    ) -> SummaryPayload? {
+        guard session.mode == .timed,
+              PracticeProgressEligibility.qualifies(session) else {
+            return nil
+        }
+
+        let difficulty = session.practiceDemand?.timedDifficulty ?? .medium
+        let comparisonSessions = recentSessions.filter { $0.id != session.id }
+        let reevaluated = PracticeEvaluator.evaluateTimedPractice(
+            transcript: session.transcript,
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            difficulty: difficulty,
+            recentSessions: comparisonSessions,
+            profile: profile,
+            transcriptConfidence: session.transcriptConfidence,
+            question: session.prompt
+        )
+        let assessment: DurationAssessment
+        if session.duration < difficulty.targetRange.min {
+            assessment = .tooShort
+        } else if session.duration > difficulty.targetRange.max {
+            assessment = .tooLong
+        } else {
+            assessment = .onTarget
+        }
+
+        let payloadID = UUID()
+        store(
+            Entry(
+                transcript: AttributedString(session.transcript),
+                fillerCount: session.fillerWordCount,
+                duration: session.duration,
+                score: session.score ?? reevaluated.score,
+                progressSegments: 0,
+                xpEarned: session.xpEarned ?? reevaluated.xpEarned,
+                finalizedSessionID: session.id,
+                committedFinalization: nil,
+                suddenDeathGamePoints: nil,
+                suddenDeathMultiplierLabels: [],
+                suddenDeathTotalWords: nil,
+                showDuration: false,
+                practiceTitle: PracticeMode.timed.displayLabel,
+                feedbackOverride: session.coachSummary ?? reevaluated.feedback,
+                headlineOverride: session.headline ?? reevaluated.headline,
+                scoreBreakdown: reevaluated.segments,
+                insights: session.insights.isEmpty ? reevaluated.insights : session.insights,
+                recentSessions: recentSessions,
+                imConversationDetails: nil,
+                explicitMode: .timed,
+                recordingURL: nil,
+                sessionPrompt: session.prompt,
+                sessionTheme: session.theme,
+                feedbackCategories: reevaluated.categories,
+                strongMoments: reevaluated.strongMoments,
+                weakMoments: reevaluated.weakMoments,
+                durationAssessment: assessment,
+                targetRange: difficulty.targetRange,
+                onStartDrill: nil
+            ),
+            for: payloadID
+        )
+        return SummaryPayload(id: payloadID, mode: .timed)
     }
 }
 
@@ -1388,6 +1593,15 @@ enum AICallDiagnosticOutcome: String, Codable, CaseIterable {
     }
 }
 
+/// Whether one diagnostic is the accounting record for a provider request or
+/// only an operational breadcrumb about that request. A provider request may
+/// have many breadcrumbs (stream opened, quality gate passed, reply accepted),
+/// but exactly one request record is allowed to enter the growth cost ledger.
+enum AICallUsageAccounting: String, Codable, Equatable {
+    case providerRequest
+    case informational
+}
+
 struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
     let id: UUID
     let createdAt: Date
@@ -1411,6 +1625,17 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
     /// Gemini implicit-caching token count. Anthropic reports cache activity
     /// via the two fields above instead.
     var cachedContentTokenCount: Int? = nil
+    /// Content-free, whole billable seconds for speech/audio providers. Nil on
+    /// text calls and legacy diagnostics; never derived from transcript text.
+    var audioDurationSeconds: Int? = nil
+    /// Optional for backward-compatible decoding of diagnostics persisted before
+    /// request-level accounting existed. Nil retains the legacy provider-request
+    /// behavior; new informational records opt out explicitly.
+    var usageAccounting: AICallUsageAccounting? = nil
+
+    var recordsProviderUsage: Bool {
+        usageAccounting != .informational
+    }
 
     var statusLabel: String {
         statusCode.map { "HTTP \($0)" } ?? outcome.title
@@ -1435,7 +1660,9 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
         cacheReadInputTokens: Int? = nil,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
-        cachedContentTokenCount: Int? = nil
+        cachedContentTokenCount: Int? = nil,
+        audioDurationSeconds: Int? = nil,
+        usageAccounting: AICallUsageAccounting = .providerRequest
     ) -> AICallDiagnosticRecord {
         AICallDiagnosticRecord(
             id: id,
@@ -1452,7 +1679,9 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,
             outputTokens: outputTokens,
-            cachedContentTokenCount: cachedContentTokenCount
+            cachedContentTokenCount: cachedContentTokenCount,
+            audioDurationSeconds: audioDurationSeconds.map { min(max(0, $0), 86_400) },
+            usageAccounting: usageAccounting
         )
     }
 
@@ -1524,6 +1753,7 @@ final class AICallDiagnosticsStore: ObservableObject {
                 record.outcome.rawValue,
                 record.statusCode.map { "HTTP \($0)" } ?? "no HTTP status",
                 record.latencyMs.map { "\($0)ms" } ?? "latency unknown",
+                record.audioDurationSeconds.map { "\($0) audio seconds" } ?? "audio units unavailable",
                 record.correlationID.map { "trace \($0)" } ?? "trace unknown",
                 record.reason
             ].joined(separator: " | ")
@@ -1560,7 +1790,9 @@ enum AICallDiagnostics {
         cacheReadInputTokens: Int? = nil,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
-        cachedContentTokenCount: Int? = nil
+        cachedContentTokenCount: Int? = nil,
+        audioDurationSeconds: Int? = nil,
+        usageAccounting: AICallUsageAccounting = .providerRequest
     ) -> AICallDiagnosticRecord {
         let latencyMs = startedAt.map { max(0, Int(now.timeIntervalSince($0) * 1_000)) }
         return AICallDiagnosticRecord.make(
@@ -1577,14 +1809,117 @@ enum AICallDiagnostics {
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,
             outputTokens: outputTokens,
-            cachedContentTokenCount: cachedContentTokenCount
+            cachedContentTokenCount: cachedContentTokenCount,
+            audioDurationSeconds: audioDurationSeconds,
+            usageAccounting: usageAccounting
+        )
+    }
+
+    /// Builds the single terminal diagnostic for a practice transcription.
+    /// Provider and duration are bounded; prompt and transcript are not inputs.
+    nonisolated static func makeTranscriptionRecord(
+        id: UUID = UUID(),
+        correlationID: UUID,
+        requestedCloud: Bool,
+        resolvedProviderIdentifier: String,
+        captureDurationSeconds: TimeInterval,
+        now: Date = Date()
+    ) -> AICallDiagnosticRecord {
+        let resolved = resolvedProviderIdentifier
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fellBackOnDevice = requestedCloud
+            && resolved == TranscriptionProviderID.local.rawValue
+        let duration = captureDurationSeconds.isFinite && captureDurationSeconds > 0
+            ? min(86_400, max(1, Int(ceil(captureDurationSeconds))))
+            : nil
+        return AICallDiagnosticRecord.make(
+            id: id,
+            createdAt: now,
+            surface: "Practice transcription",
+            provider: resolved,
+            model: resolved == TranscriptionProviderID.deepgram.rawValue
+                ? "nova-2"
+                : nil,
+            outcome: fellBackOnDevice ? .fallback : .success,
+            reason: fellBackOnDevice
+                ? "Cloud transcription resolved on device"
+                : "Transcription provider finalized",
+            correlationID: correlationID,
+            audioDurationSeconds: duration
         )
     }
 
     nonisolated static func record(_ record: AICallDiagnosticRecord) {
         Task { @MainActor in
-            AICallDiagnosticsStore.shared.record(record)
+            commit(record)
         }
+    }
+
+    /// Single projection boundary for provider diagnostics. Diagnostics remain
+    /// owned by their existing store; token-bearing records additionally emit
+    /// a bounded, content-free cost estimate into the existing flow ledger.
+    @MainActor
+    @discardableResult
+    static func commit(_ record: AICallDiagnosticRecord) -> Bool {
+        commit(
+            record,
+            diagnosticsStore: .shared,
+            growthEventSink: FlowEventGrowthEventSink.shared
+        )
+    }
+
+    @MainActor
+    @discardableResult
+    static func commit(
+        _ record: AICallDiagnosticRecord,
+        diagnosticsStore: AICallDiagnosticsStore,
+        growthEventSink: any GrowthEventSink
+    ) -> Bool {
+        diagnosticsStore.record(record)
+        guard record.recordsProviderUsage else {
+            return false
+        }
+        let provider = AIUsageProviderFamily.classify(
+            provider: record.provider,
+            model: record.model
+        )
+        // Deliberate local work and a cloud-start fallback completed entirely
+        // on device. Keep the diagnostic outcome, but never manufacture a paid
+        // AI usage event for it.
+        guard provider != .onDevice else {
+            return false
+        }
+        let pricing = AIUsagePricingCatalog.pricing(for: record)
+        if let pricing,
+           let usage = AIUsageCostEstimator.estimate(
+                diagnostic: record,
+                pricing: pricing
+           ) {
+            return growthEventSink.record(usage.growthEvent)
+        }
+        // A provider attempt without priced token/audio units must not silently
+        // become a zero-cost call. Preserve only the bounded provider/surface
+        // families and mark unit economics incomplete until reconciled.
+        guard record.outcome != .skipped else {
+            return false
+        }
+        var metrics: [GrowthMetric: Int] = [
+            .pricingVersion: pricing?.version ?? AIUsagePricingCatalog.currentVersion,
+            .latencyMs: record.latencyMs ?? 0,
+        ]
+        if let audioSeconds = record.audioDurationSeconds, audioSeconds > 0 {
+            metrics[.audioSeconds] = audioSeconds
+        }
+        return growthEventSink.record(GrowthEvent(
+            id: record.id,
+            createdAt: record.createdAt,
+            correlationID: record.correlationID ?? record.id,
+            name: .aiUsageUnpriced,
+            outcome: record.outcome.growthUsageOutcome,
+            aiSurface: AIUsageSurface.classify(record.surface),
+            aiProvider: provider,
+            metrics: metrics
+        ))
     }
 
     nonisolated static func record(
@@ -1624,7 +1959,8 @@ enum AICallDiagnostics {
         cacheReadInputTokens: Int? = nil,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
-        cachedContentTokenCount: Int? = nil
+        cachedContentTokenCount: Int? = nil,
+        usageAccounting: AICallUsageAccounting = .providerRequest
     ) {
         let record = makeRecord(
             surface: surface,
@@ -1640,7 +1976,8 @@ enum AICallDiagnostics {
             cacheReadInputTokens: cacheReadInputTokens,
             inputTokens: inputTokens,
             outputTokens: outputTokens,
-            cachedContentTokenCount: cachedContentTokenCount
+            cachedContentTokenCount: cachedContentTokenCount,
+            usageAccounting: usageAccounting
         )
         self.record(record)
     }
@@ -7097,6 +7434,17 @@ struct FeedbackCategory: Identifiable, Codable {
     static let dimensions = ["Opening", "Structure", "Relevance", "Depth", "Clarity", "Pace", "Close"]
 }
 
+extension Array where Element == FeedbackCategory {
+    /// Durable category projection used by the annotation boundary. This is
+    /// intentionally derived from the evaluator's bounded dimensions, while
+    /// keeping Summary itself presentation-only.
+    var persistedCategoryRatings: [String: String] {
+        reduce(into: [:]) { ratings, category in
+            ratings[category.dimension] = category.rating.rawValue
+        }
+    }
+}
+
 // MARK: - AI Video Analysis Result
 
 struct VideoAnalysisResult: Codable {
@@ -8999,9 +9347,10 @@ extension PracticeSession {
 }
 
 struct PracticeSessionDraft {
-    /// Preallocated only when an external authority must bind the rep before
-    /// capture starts. Ordinary private reps leave this nil and preserve the
-    /// store's existing UUID-at-append behavior.
+    /// Preallocated when a caller needs one stable identity across capture,
+    /// persistence, growth measurement, summary, or external verification.
+    /// Other draft builders may leave this nil and preserve the store's
+    /// UUID-at-append behavior.
     let id: UUID?
     let transcript: String
     let fillerWordCount: Int
@@ -9084,6 +9433,7 @@ struct PracticeSessionAnnotation: Equatable {
     let coachSummary: String?
     var prompt: String? = nil
     var theme: PromptTheme? = nil
+    var categoryRatings: [String: String] = [:]
 
     static let empty = PracticeSessionAnnotation(
         score: nil,
@@ -9151,6 +9501,17 @@ final class PracticeSessionStore: ObservableObject {
             )
         }
         UserTrajectoryCache.shared.invalidate()
+
+        // AccountDataRegistry reloads session history before trend, baseline,
+        // and coach-memory owners. Defer repair one main-queue turn so those
+        // existing owners have loaded the same account first. Both the epoch
+        // and storage scope are rechecked immediately before the synchronous
+        // mutation, preventing an account transition from reconciling the old
+        // account's latest row into the new account's coaching stores.
+        scheduleDurableCoachingEvidenceRepair(
+            accountScope: accountScope,
+            repairEpoch: loadedAccountEpoch
+        )
     }
 
     func reloadForCurrentAccount() {
@@ -9222,6 +9583,7 @@ final class PracticeSessionStore: ObservableObject {
         // real rep that now sits at sessions[0].
         if let expectedSessionID, latest.id != expectedSessionID { return }
         latest.score = annotation.score
+        latest.categoryRatings = annotation.categoryRatings
         latest.xpEarned = annotation.xpEarned
         latest.headline = annotation.headline
         latest.insights = annotation.insights
@@ -9232,11 +9594,29 @@ final class PracticeSessionStore: ObservableObject {
         persist()
         UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(latest)
+        if PracticeProgressEligibility.qualifies(latest) {
+            // Annotation is the final durable evaluation write for ordinary
+            // microphone-backed modes. Close the existing one-shot learning
+            // exposure before rebuilding memory so the current intervention
+            // and current lever describe the same completed rep.
+            RecommendationLearningStore.shared.recordOutcome(
+                for: latest,
+                previousSessions: progressEligibleSessions.filter { $0.id != latest.id }
+            )
+            _ = SessionFinalizer.reconcileDurableCoachingEvidence(
+                triggeringSessionID: latest.id
+            )
+        }
     }
 
-    func annotate(sessionID: UUID, annotation: PracticeSessionAnnotation) {
+    func annotate(
+        sessionID: UUID,
+        annotation: PracticeSessionAnnotation,
+        reconcileCoachingEvidence: Bool = true
+    ) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         sessions[index].score = annotation.score
+        sessions[index].categoryRatings = annotation.categoryRatings
         sessions[index].xpEarned = annotation.xpEarned
         sessions[index].headline = annotation.headline
         sessions[index].insights = annotation.insights
@@ -9244,6 +9624,12 @@ final class PracticeSessionStore: ObservableObject {
         persist()
         UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(sessions[index])
+        if reconcileCoachingEvidence,
+           PracticeProgressEligibility.qualifies(sessions[index]) {
+            _ = SessionFinalizer.reconcileDurableCoachingEvidence(
+                triggeringSessionID: sessions[index].id
+            )
+        }
     }
 
     /// Issues an account-scoped compare-and-swap token for one exact saved row.
@@ -9289,6 +9675,32 @@ final class PracticeSessionStore: ObservableObject {
         return feedback
     }
 
+    /// Persists the exact transcript ladder already shown for one source rep.
+    /// The same account-scoped source token used by the coach-read boundary
+    /// prevents a late provider response from crossing an account switch or
+    /// attaching to a changed row. Review only renders snapshots accepted here.
+    @discardableResult
+    func saveTranscriptRewriteSnapshot(
+        expected token: CoachReadSaveToken,
+        snapshot: TranscriptRewriteSnapshot
+    ) -> TranscriptRewriteSnapshot? {
+        guard let index = sessions.firstIndex(where: { $0.id == token.source.sessionID }) else {
+            return nil
+        }
+        let liveSession = sessions[index]
+        guard !liveSession.isEvaluationFixture,
+              token.matches(accountScope: currentAccountID, session: liveSession),
+              snapshot.matches(sourceTranscript: liveSession.transcript) else {
+            return nil
+        }
+
+        sessions[index].transcriptRewriteSnapshot = snapshot
+        persist()
+        UserTrajectoryCache.shared.invalidate()
+        syncSessionIfPossible(sessions[index])
+        return snapshot
+    }
+
     func deleteSession(id: UUID) {
         sessions.removeAll { $0.id == id }
         persist()
@@ -9301,6 +9713,10 @@ final class PracticeSessionStore: ObservableObject {
             .sorted { $0.date > $1.date }
         persist()
         UserTrajectoryCache.shared.invalidate()
+        scheduleDurableCoachingEvidenceRepair(
+            accountScope: currentAccountID,
+            repairEpoch: loadedAccountEpoch
+        )
     }
 
     /// Remote bootstrap may refresh clean rows, but an exact session whose
@@ -9322,6 +9738,30 @@ final class PracticeSessionStore: ObservableObject {
         sessions = merged.values.sorted { $0.date > $1.date }
         persist()
         UserTrajectoryCache.shared.invalidate()
+        scheduleDurableCoachingEvidenceRepair(
+            accountScope: currentAccountID,
+            repairEpoch: loadedAccountEpoch
+        )
+    }
+
+    /// Rebuilds derived coaching evidence only after the session source has
+    /// settled. Local reload and both remote hydration paths share this single
+    /// scheduling boundary so a new-device bootstrap cannot silently skip the
+    /// durable trend/memory projection. A signed-in scope requires the epoch
+    /// issued by its local reload; guest repair retains the existing nil scope.
+    private func scheduleDurableCoachingEvidenceRepair(
+        accountScope: String?,
+        repairEpoch: PracticeSessionStoreEpoch?
+    ) {
+        guard accountScope == nil || repairEpoch?.accountScope == accountScope else {
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.loadedAccountEpoch == repairEpoch,
+                  self.currentAccountID == accountScope else { return }
+            _ = SessionFinalizer.reconcileDurableCoachingEvidence()
+        }
     }
 
     private func persist() {
@@ -11482,7 +11922,12 @@ enum PracticeSessionFinalizer {
         // rep if the user goes straight back into another session.
         SessionIntentStore.shared.consume(sessionID: session.id)
         if annotation != .empty {
-            store.annotate(sessionID: session.id, annotation: annotation)
+            // Wait until baseline/rating/path state below is durable before the
+            // same persisted row updates trends and CoachMemory.
+            store.annotate(sessionID: session.id,
+                annotation: annotation,
+                reconcileCoachingEvidence: false
+            )
         }
         let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
 
@@ -11586,12 +12031,18 @@ enum PracticeSessionFinalizer {
         // enforced by `PostRepCoachNoteStore.record`).
         Self.recordPostRepCoachNote(for: finalized)
 
-        // Ask Noum may be opened before the summary lifecycle performs the
-        // richer coach-memory refresh. Warm a session/baseline/rating snapshot
-        // now so the first chat turn after a rep is not a cold trajectory read;
-        // `SessionFinalizer` and `CoachMemoryStore.persist` will refresh it
-        // again once the durable case formulation lands.
-        _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+        // An annotated row is now fully evaluated, so skill snapshot + current
+        // lever commit at the same durable boundary as baseline/rating/path.
+        // Ordinary microphone paths append first and persist their evaluation
+        // through `annotateLatest`; that store boundary performs this same
+        // reconciliation with the real score. Reload repair can recover an
+        // evaluated row after a later owner load, while an unannotated
+        // crash-window row deliberately remains Review-only.
+        if annotation != .empty {
+            _ = SessionFinalizer.reconcileDurableCoachingEvidence(
+                triggeringSessionID: finalized.id
+            )
+        }
 
         return finalized
     }

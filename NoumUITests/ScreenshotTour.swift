@@ -671,34 +671,10 @@ final class ScreenshotTour: XCTestCase {
         let profileApp = launchSeededAt("noum://profile", extraArgs: ["FORCE_WEEKLY_CHECKIN"])
         XCTAssertTrue(profileApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
 
-        let evidenceToggle = profileApp.descendants(matching: .any)["profile.evidenceHub.toggle"].firstMatch
-        if !evidenceToggle.waitForExistence(timeout: 3) {
-            profileApp.swipeUp(velocity: .slow)
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        XCTAssertTrue(evidenceToggle.waitForExistence(timeout: 5))
-        guard evidenceToggle.exists else {
-            attach(profileApp, name: "\(name)-missing-toggle")
-            profileApp.terminate()
-            return
-        }
-
-        evidenceToggle.tap()
-        Thread.sleep(forTimeInterval: 0.5)
-
-        let evidenceRow = profileApp.descendants(matching: .any)["profile.evidence.baselineMap.row"].firstMatch
-        scrollUntilVisible(evidenceRow, in: profileApp, maxSwipes: 5)
-        XCTAssertTrue(evidenceRow.waitForExistence(timeout: 5))
-        guard evidenceRow.exists else {
-            attach(profileApp, name: "\(name)-missing-evidence-row")
-            profileApp.terminate()
-            return
-        }
-        evidenceRow.tap()
-        Thread.sleep(forTimeInterval: 0.5)
-
+        // The due real-world check-in is now part of Profile's active
+        // coaching loop. It no longer lives behind the evidence library.
         let checkInCard = profileApp.descendants(matching: .any)["profile.weeklyCheckIn.start"].firstMatch
-        scrollUntilVisible(checkInCard, in: profileApp, maxSwipes: 6)
+        scrollUntilVisible(checkInCard, in: profileApp, maxSwipes: 4)
         XCTAssertTrue(checkInCard.waitForExistence(timeout: 5))
         guard checkInCard.exists else {
             attach(profileApp, name: "\(name)-missing-card")
@@ -774,10 +750,17 @@ final class ScreenshotTour: XCTestCase {
         let visibleFrame = app.frame.insetBy(dx: 0, dy: 120)
 
         for _ in 0..<maxSwipes {
-            if element.exists, visibleFrame.contains(CGPoint(x: element.frame.midX, y: element.frame.midY)) {
-                return
+            if element.exists {
+                let midpoint = CGPoint(x: element.frame.midX, y: element.frame.midY)
+                if visibleFrame.contains(midpoint) { return }
+                if midpoint.y < visibleFrame.minY {
+                    app.swipeDown(velocity: .slow)
+                } else {
+                    app.swipeUp(velocity: .slow)
+                }
+            } else {
+                app.swipeUp(velocity: .slow)
             }
-            app.swipeUp(velocity: .slow)
             Thread.sleep(forTimeInterval: 0.45)
         }
     }
@@ -844,6 +827,184 @@ final class ScreenshotTour: XCTestCase {
         app.terminate()
     }
 
+    /// Captures the production Review ladder and follows its existing
+    /// source-bound handoff into the same-prompt, same-target retry setup.
+    /// This is the primary Figma-to-SwiftUI proof loop for Phase 1.
+    @MainActor
+    func testCapturePhaseOneReviewRetryJourney() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE",
+            "plateauedAdvanced",
+            "UI_TESTING_PREMIUM",
+            "UI_TESTING_REWRITE_LADDER",
+            "-DeepLink",
+            "noum://summary"
+        ]
+        app.launch()
+        _ = app.wait(for: .runningForeground, timeout: 10)
+
+        XCTAssertTrue(
+            app.otherElements["summary.postRepVerdict"].waitForExistence(timeout: 10),
+            "The seeded rep should open the evidence-first summary."
+        )
+        Thread.sleep(forTimeInterval: 2.5)
+        deepAttach(app, name: "F-01-evidence-first-summary")
+
+        let practiseUpgrade = app.buttons["rewrite.practiceOneStep"].firstMatch
+        scrollUntilVisible(practiseUpgrade, in: app, maxSwipes: 10)
+        XCTAssertTrue(
+            practiseUpgrade.waitForExistence(timeout: 12),
+            "The premium seed should render a source-bound one-step upgrade."
+        )
+        guard practiseUpgrade.exists else {
+            app.terminate()
+            return
+        }
+
+        let verifiedOriginal = app.descendants(matching: .any)["rewrite.original"].firstMatch
+        if verifiedOriginal.waitForExistence(timeout: 3) {
+            scrollUntilCentered(verifiedOriginal, in: app, maxSwipes: 4)
+        }
+        deepAttach(app, name: "F-02-review-transcript-ladder")
+        let aspiration = app.descendants(matching: .any)["rewrite.aspirational"].firstMatch
+        if aspiration.waitForExistence(timeout: 3) {
+            scrollUntilCentered(aspiration, in: app, maxSwipes: 5)
+            deepAttach(app, name: "F-02b-review-aspiration-retry")
+        }
+        scrollUntilVisible(practiseUpgrade, in: app, maxSwipes: 4)
+        practiseUpgrade.tap()
+        let targetedRetry = app.descendants(matching: .any)["timedPractice.targetedRetry.screen"].firstMatch
+        XCTAssertTrue(
+            targetedRetry.waitForExistence(timeout: 10),
+            "Practising the upgrade should preserve the same prompt and target."
+        )
+        XCTAssertTrue(
+            app.staticTexts["When should the release begin, and why?"]
+                .waitForExistence(timeout: 3),
+            "Targeted Retry should ask the source question instead of rehearsing the rewrite as a script."
+        )
+        Thread.sleep(forTimeInterval: 0.8)
+        deepAttach(app, name: "F-03-targeted-retry")
+        app.terminate()
+    }
+
+    /// Captures both halves of the contextual Ask Noum contract: the bounded
+    /// evidence attached before the user types, and the evidence-aware coach
+    /// response after one explicit user question. The reply is deterministic
+    /// in the UI harness; production still uses the configured provider.
+    @MainActor
+    func testCapturePhaseOneContextualAskJourney() throws {
+        let app = launchSeededAt(
+            "noum://ask/type",
+            extraArgs: [
+                "UI_TESTING_AUTHENTICATED_COACH",
+                "UI_TESTING_CLEAR_ASK_NOUM",
+                "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY"
+            ]
+        )
+
+        let attachedContext = app.descendants(matching: .any)["askNoum.attachedContext"]
+        XCTAssertTrue(
+            attachedContext.waitForExistence(timeout: 10),
+            "Ask Noum should disclose the bounded coaching context before the user sends anything."
+        )
+        Thread.sleep(forTimeInterval: 1.0)
+        deepAttach(app, name: "F-08-ask-contextual")
+
+        let askField = app.textViews.firstMatch.exists
+            ? app.textViews.firstMatch : app.textFields.firstMatch
+        XCTAssertTrue(askField.waitForExistence(timeout: 6))
+        guard askField.exists else {
+            app.terminate()
+            return
+        }
+
+        askField.tap()
+        askField.typeText("How do I make the next answer more direct?")
+        let send = app.buttons["askNoum.inputControl"]
+        XCTAssertTrue(send.waitForExistence(timeout: 3))
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+
+        let response = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Answer first, proof second."))
+            .firstMatch
+        XCTAssertTrue(
+            response.waitForExistence(timeout: 10),
+            "The contextual coach reply should land as one usable next action."
+        )
+        if response.exists {
+            scrollUntilCentered(response, in: app, maxSwipes: 5)
+        }
+        Thread.sleep(forTimeInterval: 0.6)
+        deepAttach(app, name: "F-09-ask-contextual-response")
+        app.terminate()
+    }
+
+    /// Captures the inspectable, evidence-honest Coaching Memory destination
+    /// from the existing Profile library route.
+    @MainActor
+    func testCaptureCoachingMemoryOnly() throws {
+        let app = launchSeededAt("noum://profile")
+        XCTAssertTrue(app.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+        expandProfileLibrary(in: app)
+
+        let row = app.descendants(matching: .any)["profile.library.coachingMemory"].firstMatch
+        scrollUntilVisible(row, in: app, maxSwipes: 6)
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        guard row.exists else {
+            app.terminate()
+            return
+        }
+
+        row.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["coachingMemory.screen"]
+                .waitForExistence(timeout: 8)
+        )
+        Thread.sleep(forTimeInterval: 0.8)
+        deepAttach(app, name: "F-04-coaching-memory")
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "F-05-coaching-memory-details")
+        app.terminate()
+    }
+
+    /// Captures the single calm progression destination that now composes
+    /// Path, skill evidence, practice volume, and achievements without a
+    /// separate persistence owner or chained celebration overlay.
+    @MainActor
+    func testCaptureUnifiedProgressOnly() throws {
+        let app = launchSeededAt("noum://profile")
+        XCTAssertTrue(app.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+        expandProfileLibrary(in: app)
+
+        let row = app.descendants(matching: .any)["profile.library.achievements"].firstMatch
+        scrollUntilVisible(row, in: app, maxSwipes: 6)
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        guard row.exists else {
+            app.terminate()
+            return
+        }
+
+        row.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["milestones.screen"].waitForExistence(timeout: 8)
+        )
+        // Let the native iOS 26 tab highlight fully settle before capture.
+        // Otherwise the screenshot can preserve a transient liquid-glass tap
+        // bloom over Home even though Profile remains the selected tab.
+        Thread.sleep(forTimeInterval: 3.2)
+        deepAttach(app, name: "F-06-unified-progress")
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "F-07-unified-progress-details")
+        app.terminate()
+    }
+
     /// Walks onboarding stage by stage — every screen a first-time user sees
     /// before they reach any value at all.
     @MainActor
@@ -892,6 +1053,41 @@ final class ScreenshotTour: XCTestCase {
         app.swipeUp(velocity: .slow)
         Thread.sleep(forTimeInterval: 0.5)
         deepAttach(app, name: "P-02-paywall-details")
+        app.terminate()
+    }
+
+    /// Captures the durable Day-7 coaching contract from the real first-week
+    /// destination. The improving seed's earliest qualifying rep is older than
+    /// seven days, so the production resolver must build (and then revalidate)
+    /// the read from its account-scoped sessions and coach memory.
+    @MainActor
+    func testCaptureFirstWeekRead() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE",
+            "improvingIntermediate",
+            "-DeepLink",
+            "noum://home/first-week-read"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["firstWeek.read.detail"]
+                .waitForExistence(timeout: 12),
+            "The first-week deep link should render the durable read destination."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["firstWeek.read.card"]
+                .waitForExistence(timeout: 5),
+            "The first-week destination should contain the bounded coaching read."
+        )
+        Thread.sleep(forTimeInterval: 1.0)
+        deepAttach(app, name: "W-01-first-week-read-top")
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "W-02-first-week-read-details")
         app.terminate()
     }
 

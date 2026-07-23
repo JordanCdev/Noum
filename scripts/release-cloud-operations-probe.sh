@@ -10,6 +10,8 @@ readonly production_operations_email="noumsupport@gmail.com"
 project="${NOUM_FIREBASE_PROJECT:-$production_project}"
 region="${NOUM_FUNCTIONS_REGION:-$production_region}"
 operations_email="${NOUM_OPERATIONS_EMAIL:-$production_operations_email}"
+app_store_app_apple_id="${NOUM_APP_STORE_APP_APPLE_ID:-}"
+app_store_notification_phase="${NOUM_APP_STORE_NOTIFICATION_PHASE:-pre-enable}"
 
 # This command produces release evidence, so an environment override must not
 # let a correctly configured lookalike project stand in for production.
@@ -25,6 +27,17 @@ if [[ "$operations_email" != "$production_operations_email" ]]; then
   echo "Cloud operations probe is pinned to the production operations channel." >&2
   exit 2
 fi
+if [[ ! "$app_store_app_apple_id" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NOUM_APP_STORE_APP_APPLE_ID must be Noum's explicit numeric App Apple ID." >&2
+  exit 2
+fi
+case "$app_store_notification_phase" in
+  pre-enable|sandbox-enabled|production-enabled) ;;
+  *)
+    echo "NOUM_APP_STORE_NOTIFICATION_PHASE is not a reviewed release phase." >&2
+    exit 2
+    ;;
+esac
 
 for command in gcloud python3 curl; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -34,7 +47,9 @@ for command in gcloud python3 curl; do
 done
 
 python3 "$runtime_validator" \
-  --source-contract "$repo_root/functions/src/index.ts"
+  --source-contract "$repo_root/functions/src/index.ts" \
+  --app-store-contract "$repo_root/functions/src/appStoreServerNotifications.ts" \
+  --functions-lockfile "$repo_root/functions/package-lock.json"
 
 echo "Production Firebase contract: project=$project region=$region operations=$operations_email"
 if [[ -z "$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null)" ]]; then
@@ -54,6 +69,10 @@ gcloud firestore backups schedules list \
   --project="$project" \
   --database='(default)' \
   --format=json > "$work/backups.json"
+gcloud firestore fields ttls list \
+  --project="$project" \
+  --database='(default)' \
+  --format=json > "$work/firestore-ttls.json"
 gcloud logging metrics list \
   --project="$project" \
   --format=json > "$work/metrics.json"
@@ -71,8 +90,35 @@ gcloud functions list \
 gcloud secrets get-iam-policy DEEPGRAM_MANAGEMENT_KEY \
   --project="$project" \
   --format=json > "$work/deepgram-secret-iam.json"
+gcloud secrets get-iam-policy APP_STORE_ROOT_CERTIFICATES_BASE64 \
+  --project="$project" \
+  --format=json > "$work/appstore-root-secret-iam.json"
 gcloud projects get-iam-policy "$project" \
   --format=json > "$work/project-iam.json"
+gcloud projects get-ancestors "$project" \
+  --format=json > "$work/project-ancestors.json"
+
+asset_scope="$(python3 - "$work/project-ancestors.json" "$project" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+ancestors = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+project = sys.argv[2]
+organizations = [item for item in ancestors if item.get("type") == "organization"]
+folders = [item for item in ancestors if item.get("type") == "folder"]
+if organizations:
+    print(f"organizations/{organizations[-1]['id']}")
+elif folders:
+    print(f"folders/{folders[-1]['id']}")
+else:
+    print(f"projects/{project}")
+PY
+)"
+gcloud asset get-effective-iam-policy \
+  --scope="$asset_scope" \
+  --names="//secretmanager.googleapis.com/projects/$project_number/secrets/APP_STORE_ROOT_CERTIFICATES_BASE64" \
+  --format=json > "$work/appstore-root-secret-effective-iam.json"
 
 python3 - "$work" "$project" "$operations_email" <<'PY'
 import json
@@ -175,7 +221,9 @@ python3 "$runtime_validator" \
   --snapshot-dir "$work" \
   --project "$project" \
   --region "$region" \
-  --project-number "$project_number"
+  --project-number "$project_number" \
+  --app-store-app-apple-id "$app_store_app_apple_id" \
+  --app-store-notification-phase "$app_store_notification_phase"
 
 "$(cd "$(dirname "$0")" && pwd)/release-live-privacy-probe.sh"
 

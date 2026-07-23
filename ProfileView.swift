@@ -78,6 +78,7 @@ struct ProfileCompositionPlan: Equatable {
 
 enum ProfileLibraryRow: String, Equatable {
     case coachingEvidence
+    case coachingMemory
     case growthLibrary
     case allReps
     case personalBests
@@ -96,6 +97,7 @@ struct ProfileLibraryPresentation: Equatable {
     ) -> ProfileLibraryPresentation {
         var rows: [ProfileLibraryRow] = [
             .coachingEvidence,
+            .coachingMemory,
             .growthLibrary,
             .allReps,
             .personalBests,
@@ -1108,19 +1110,19 @@ struct ProfileRatingHeroPresentation: Equatable {
         let directionLine: String
         if rating.ratingHistory.count < 3 {
             let remaining = max(1, 3 - rating.ratingHistory.count)
-            directionLine = "Baseline forming — \(remaining) more rated rep\(remaining == 1 ? "" : "s") will show a direction."
+            directionLine = "Baseline forming · \(remaining) rated rep\(remaining == 1 ? "" : "s") remaining"
         } else {
             switch rating.currentTrend {
             case .improving:
-                directionLine = "Moving up across recent rated reps."
+                directionLine = "Moving up across recent reps"
             case .stable:
-                directionLine = "Holding steady across recent rated reps."
+                directionLine = "Holding steady across recent reps"
             case .declining:
-                directionLine = "One more rated rep will clarify the direction."
+                directionLine = "One more rep will clarify the direction"
             case .newIssue:
-                directionLine = "A new pattern needs one confirming rep."
+                directionLine = "New pattern · needs one confirming rep"
             case .resolved:
-                directionLine = "A recent issue is no longer showing up."
+                directionLine = "A recent issue is no longer showing up"
             }
         }
         return ProfileRatingHeroPresentation(value: rating.overall, directionLine: directionLine)
@@ -1601,6 +1603,11 @@ struct ProfileView: View {
 
                 profileCoachReadCard
 
+                // A due real-world check-in is part of the active coaching
+                // loop, not evidence-library content. The row self-hides when
+                // cadence says it is not due.
+                weeklyCheckInCard
+
                 if shouldAskTransformationQuestion {
                     transformationQuestionCard
                 }
@@ -1654,28 +1661,46 @@ struct ProfileView: View {
     }
 
     private var transformationQuestionCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("A quick reality check")
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(AppColor.textSecondary)
-            Text("Did Noum help you move toward the speaker you want to be?")
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: Spacing.sm) {
-                transformationResponseButton(title: "Yes", value: "yes")
-                transformationResponseButton(title: "Not yet", value: "notYet")
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                transformationQuestionCopy
+                transformationButtons
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                transformationQuestionCopy
+                transformationButtons
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.transformationQuestion")
+    }
+
+    private var transformationQuestionCopy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("Did this help outside the app?")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
+            Text("Your answer shapes the next coaching step.")
+                .font(Typography.captionSmall)
+                .foregroundStyle(AppColor.textSecondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var transformationButtons: some View {
+        HStack(spacing: Spacing.xs) {
+            transformationResponseButton(title: "Yes", value: "yes")
+            transformationResponseButton(title: "Not yet", value: "notYet")
+        }
     }
 
     private func transformationResponseButton(title: String, value: String) -> some View {
@@ -1688,8 +1713,10 @@ struct ProfileView: View {
             ))
         } label: {
             Text(title)
+                .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.brandBlue)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, Spacing.md)
+                .frame(minHeight: 44)
                 .background(AppColor.cardBackground, in: Capsule())
                 .overlay(
                     Capsule().stroke(AppColor.brandBlue.opacity(0.35), lineWidth: 1)
@@ -1719,7 +1746,7 @@ struct ProfileView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(AppColor.pro)
                     .accessibilityHidden(true)
-                Text("Current coaching focus")
+                Text("Current focus")
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(AppColor.textSecondary)
             }
@@ -1728,6 +1755,7 @@ struct ProfileView: View {
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(3)
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "scope")
@@ -1735,10 +1763,16 @@ struct ProfileView: View {
                     .foregroundStyle(AppColor.brandBlue)
                     .padding(.top, 3)
                     .accessibilityHidden(true)
-                Text(presentation.nextMove)
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Next rep")
+                        .font(Typography.captionSmall.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                    Text(presentation.nextMove)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                }
             }
 
             if let evidenceCaption = presentation.evidenceCaption {
@@ -1748,11 +1782,11 @@ struct ProfileView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(AppColor.pro.opacity(0.12), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
@@ -1866,9 +1900,9 @@ struct ProfileView: View {
                         Text("Library")
                             .font(Typography.subheadline.weight(.semibold))
                             .foregroundStyle(AppColor.textPrimary)
-                        Text("Evidence, history, and account tools")
+                        Text("Evidence and history")
                             .font(Typography.captionSmall)
-                            .foregroundStyle(AppColor.textPrimary)
+                            .foregroundStyle(AppColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1948,6 +1982,18 @@ struct ProfileView: View {
             }
             .buttonStyle(.pressable)
             .accessibilityIdentifier("profile.evidence.library")
+
+        case .coachingMemory:
+            NavigationLink(value: AppDestination.coachingMemory) {
+                profileLibraryRowLabel(
+                    title: "Coaching memory",
+                    subtitle: coachingMemoryLibrarySubtitle,
+                    icon: "brain.head.profile",
+                    tint: AppColor.brandBlue
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.library.coachingMemory")
 
         case .allReps:
             NavigationLink(value: AppDestination.sessionHistory) {
@@ -2072,6 +2118,16 @@ struct ProfileView: View {
             return "Appears when another speaker is available"
         }
         return peerCount == 1 ? "Compare with one active peer" : "Compare with \(peerCount) active peers"
+    }
+
+    private var coachingMemoryLibrarySubtitle: String {
+        guard let memory = coachMemoryStore.currentMemory else {
+            return "Context Noum can use across reps"
+        }
+        if let lever = memory.currentLever {
+            return "Current lever · \(lever.displayName)"
+        }
+        return "Goal and preferences you have shared"
     }
 
     private var baselineCoachMap: BaselineCoachMap {
@@ -2288,26 +2344,11 @@ struct ProfileView: View {
     private var profileEvidenceDetails: some View {
         let plan = evidenceDetailPlan
         return VStack(spacing: Spacing.cardGap) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("At a glance")
-                    .font(Typography.sectionHero)
-                    .foregroundStyle(.primary)
-                Text("Your current focus and next move come first. Open the supporting evidence only when you need it.")
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
             profileCoachReadCard
 
-            if plan.surfaces.contains(.weeklyCheckIn) {
-                weeklyCheckInCard
-            }
-
             evidenceDisclosure(
-                title: "Why this plan",
-                subtitle: "Baseline, repeated patterns, and how Noum decides what to try next.",
+                title: "Why this focus",
+                subtitle: "Baseline and repeated patterns",
                 systemImage: "doc.text.magnifyingglass",
                 identifier: "profile.evidence.whyPlan.toggle",
                 isExpanded: showCoachReadEvidence,
@@ -2336,8 +2377,8 @@ struct ProfileView: View {
             }
 
             evidenceDisclosure(
-                title: "Progress evidence",
-                subtitle: "Rating history, practice volume, and pressure-rep records.",
+                title: "Progress over time",
+                subtitle: "Rating, practice, and pressure records",
                 systemImage: "chart.xyaxis.line",
                 identifier: "profile.evidence.progress.toggle",
                 isExpanded: showProgressionEvidence,
@@ -2569,37 +2610,36 @@ struct ProfileView: View {
 
     private var compactSpeakingRatingHero: some View {
         let presentation = ProfileRatingHeroPresentation.make(rating: ratingStore.rating)
-        return VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(spacing: Spacing.xs) {
+        return HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.xs) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
                     .accessibilityHidden(true)
                 Text("Speaking rating")
                     .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                }
+
+                Text(presentation.directionLine)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(AppColor.progressHeroInk)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text("\(presentation.value)")
-                .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
-                .foregroundStyle(AppColor.progressHeroInk)
+                .font(Typography.figtreeNumeric(size: 36, relativeTo: .largeTitle))
+                .foregroundStyle(AppColor.textPrimary)
                 .contentTransition(reduceMotion ? .identity : .numericText())
-
-            Text(presentation.directionLine)
-                .font(Typography.subheadline.weight(.medium))
-                .foregroundStyle(AppColor.progressHeroInk)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            HeroGradient.progress.gradient,
-            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        )
-        .shadow(
-            color: HeroGradient.progress.shadowTint.opacity(0.16),
-            radius: 12,
-            x: 0,
-            y: 6
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Speaking rating \(presentation.value). \(presentation.directionLine)")

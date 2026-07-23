@@ -66,6 +66,95 @@ private struct DeleteAccountCallableResponse: Codable, Sendable {
     let requestID: String
 }
 
+enum GrowthAggregateTransportError: Error, Equatable {
+    case notConfigured
+    case unauthenticated
+    case invalidResponse
+}
+
+struct GrowthAggregateCallableRequest: Codable, Sendable {
+    static let schemaVersion = GrowthAggregateBatch.schemaVersion
+
+    let schemaVersion: Int
+    let batchID: String
+    let appVersion: String
+    let buildNumber: String
+    let generatedAtMilliseconds: Int64
+    let periodStartMilliseconds: Int64
+    let periodEndMilliseconds: Int64
+    let activationCohortDay: String
+    let eventCounts: [String: Int]
+    let paywallSourceCounts: [String: Int]
+    let planSelectionCounts: [String: Int]
+    let trialEligibilityCounts: [String: Int]
+    let inactiveReasonCounts: [String: Int]
+    let notificationOpenCounts: [String: Int]
+    let activeDayIndexCounts: [String: Int]
+    let firstWrittenValueDurationBucketCounts: [String: Int]
+    let secondPracticeWithin48HoursCount: Int
+    let weeklyReadAmongDay1ReturnersCount: Int
+    let estimatedAICostMicros: Int64
+    let estimatedAICostCurrency: String
+    let unpricedAIUsageCount: Int
+    let aiBudgetReservationCount: Int
+
+    init(batch: GrowthAggregateBatch) {
+        schemaVersion = Self.schemaVersion
+        batchID = batch.batchID.uuidString.lowercased()
+        appVersion = batch.appVersion
+        buildNumber = batch.buildNumber
+        generatedAtMilliseconds = Self.milliseconds(batch.generatedAt)
+        periodStartMilliseconds = Self.milliseconds(batch.periodStart)
+        periodEndMilliseconds = Self.milliseconds(batch.periodEnd)
+        activationCohortDay = batch.activationCohortDay
+        eventCounts = Dictionary(uniqueKeysWithValues: batch.eventCounts.map {
+            ($0.key.rawValue, $0.value)
+        })
+        paywallSourceCounts = Self.integerKeyed(batch.paywallSourceCounts)
+        planSelectionCounts = Self.integerKeyed(batch.planSelectionCounts)
+        trialEligibilityCounts = Self.integerKeyed(batch.trialEligibilityCounts)
+        inactiveReasonCounts = Self.integerKeyed(batch.inactiveReasonCounts)
+        notificationOpenCounts = Self.integerKeyed(batch.notificationOpenCounts)
+        activeDayIndexCounts = Dictionary(uniqueKeysWithValues: batch.activeDayIndexCounts.map {
+            (String($0.key), $0.value)
+        })
+        firstWrittenValueDurationBucketCounts = batch.firstWrittenValueDurationBucketCounts
+        secondPracticeWithin48HoursCount = batch.secondPracticeWithin48HoursCount
+        weeklyReadAmongDay1ReturnersCount = batch.weeklyReadAmongDay1ReturnersCount
+        estimatedAICostMicros = batch.estimatedAICostMicros
+        estimatedAICostCurrency = batch.estimatedAICostCurrency.rawValue
+        unpricedAIUsageCount = batch.unpricedAIUsageCount
+        aiBudgetReservationCount = batch.aiBudgetReservationCount
+    }
+
+    private static func milliseconds(_ date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 * 1_000).rounded())
+    }
+
+    private static func integerKeyed<Key: RawRepresentable>(
+        _ values: [Key: Int]
+    ) -> [String: Int] where Key.RawValue == Int, Key: Hashable {
+        Dictionary(uniqueKeysWithValues: values.map {
+            (String($0.key.rawValue), $0.value)
+        })
+    }
+}
+
+private struct GrowthAggregateCallableResponse: Codable, Sendable {
+    let accepted: Bool
+    let duplicate: Bool
+    let batchID: String
+}
+
+/// The only production implementation of `GrowthAggregateTransport`. Firebase
+/// Auth and App Check protect the callable, but the request body deliberately
+/// contains no UID, installation ID, device ID, event UUID, or user content.
+struct BackendGrowthAggregateTransport: GrowthAggregateTransport {
+    func upload(_ batch: GrowthAggregateBatch) async throws {
+        try await BackendSyncManager.shared.uploadGrowthAggregate(batch)
+    }
+}
+
 struct BackendBootstrap: Codable {
     let xp: Int?
     let profile: CoachingProfile?
@@ -362,6 +451,7 @@ actor BackendSyncManager {
     static let functionsRegion = SocialAuthorityCallable.region
     static let deleteAccountFunctionName = "deleteAccount"
     static let syncRecommendationStateFunctionName = "syncRecommendationState"
+    static let recordGrowthAggregateFunctionName = "recordGrowthAggregate"
     static let beginCompetitiveObservationFunctionName = SocialAuthorityCallable.beginCompetitiveObservation
     static let completeCompetitiveObservationFunctionName = SocialAuthorityCallable.completeCompetitiveObservation
     static let recordPeerSessionFunctionName = SocialAuthorityCallable.recordPeerSession
@@ -710,6 +800,41 @@ actor BackendSyncManager {
         }
         let lane = recommendationSyncLane(for: accountID)
         await lane.enqueue(snapshot)
+    }
+
+    /// Sends one already-sanitized aggregate batch. The active account is
+    /// checked locally against Firebase Auth for consent/lifecycle coherence,
+    /// but is intentionally omitted from the callable payload and storage.
+    func uploadGrowthAggregate(_ batch: GrowthAggregateBatch) async throws {
+#if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else {
+            throw GrowthAggregateTransportError.notConfigured
+        }
+        guard let accountID = await MainActor.run(body: {
+            AuthManager.shared.currentAccountID
+        }), AuthManager.shouldSyncBackend(accountID: accountID) else {
+            throw GrowthAggregateTransportError.unauthenticated
+        }
+        do {
+            try requireFirebaseAccount(accountID)
+        } catch {
+            throw GrowthAggregateTransportError.unauthenticated
+        }
+        let request = GrowthAggregateCallableRequest(batch: batch)
+        let functions = Functions.functions(region: Self.functionsRegion)
+        let callable: Callable<
+            GrowthAggregateCallableRequest,
+            GrowthAggregateCallableResponse
+        > = functions.httpsCallable(Self.recordGrowthAggregateFunctionName)
+        let response = try await callable.call(request)
+        guard response.accepted,
+              response.batchID.caseInsensitiveCompare(request.batchID) == .orderedSame else {
+            throw GrowthAggregateTransportError.invalidResponse
+        }
+#else
+        _ = batch
+        throw GrowthAggregateTransportError.notConfigured
+#endif
     }
 
     nonisolated static func shouldSyncCoachingContent(

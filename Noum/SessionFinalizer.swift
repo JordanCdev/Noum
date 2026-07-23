@@ -35,12 +35,230 @@ struct SessionFinalizationResult {
     let eloquenceBonusXP: Int
 }
 
+// MARK: - Durable coaching evidence
+
+/// The pure decision behind the session-to-coaching evidence handoff.
+///
+/// `PracticeSessionFinalizer` owns durable session completion. Summary may be
+/// skipped, interrupted, or reconstructed after a relaunch, so neither the
+/// skill snapshot nor the coach's current lever can use view presentation as
+/// their commit receipt. The existing stores already carry the two receipts we
+/// need: `SkillSnapshot.sessionId` and `CoachMemory.lastSessionID`.
+struct DurableCoachingEvidencePlan: Equatable {
+    let sessionID: UUID
+    let shouldRecordSkillSnapshot: Bool
+    let shouldRefreshCoachMemory: Bool
+}
+
+enum DurableCoachingEvidencePlanner {
+    static func make(
+        triggeringSessionID: UUID?,
+        sessions: [PracticeSession],
+        snapshots: [SkillSnapshot],
+        memory: CoachMemory?
+    ) -> DurableCoachingEvidencePlan? {
+        makeFromEvaluatedSessions(
+            triggeringSessionID: triggeringSessionID,
+            sessions: evaluatedSessions(in: sessions),
+            snapshots: snapshots,
+            memory: memory
+        )
+    }
+
+    static func evaluatedSessions(
+        in sessions: [PracticeSession]
+    ) -> [PracticeSession] {
+        // Persistence precedes evaluation for microphone-backed modes. A row
+        // in that crash window is useful Review history, but it cannot become
+        // scored coaching evidence until its annotation lands.
+        PracticeProgressEligibility.eligibleSessions(in: sessions)
+            .filter { $0.score != nil }
+    }
+
+    /// Internal projection for a set already admitted through
+    /// `evaluatedSessions(in:)`. Reconciliation uses this overload so the same
+    /// exact rows drive planning, lookup, and coach-memory refresh.
+    static func makeFromEvaluatedSessions(
+        triggeringSessionID: UUID?,
+        sessions: [PracticeSession],
+        snapshots: [SkillSnapshot],
+        memory: CoachMemory?
+    ) -> DurableCoachingEvidencePlan? {
+        guard let latest = latestEligibleSession(in: sessions) else { return nil }
+
+        let target: PracticeSession
+        if let triggeringSessionID {
+            guard let exact = sessions.first(where: { $0.id == triggeringSessionID }) else {
+                return nil
+            }
+            target = exact
+        } else {
+            target = latest
+        }
+
+        let shouldRecord = !snapshots.contains(where: { $0.sessionId == target.id })
+        let shouldRefresh = target.id == latest.id
+            && (shouldRecord
+                || memoryNeedsRefresh(
+                    latestSession: latest,
+                    eligibleSessions: sessions,
+                    memory: memory
+                ))
+        return DurableCoachingEvidencePlan(
+            sessionID: target.id,
+            shouldRecordSkillSnapshot: shouldRecord,
+            shouldRefreshCoachMemory: shouldRefresh
+        )
+    }
+
+    /// Persisted history is normally newest-first, but remote reconciliation
+    /// and tests are allowed to provide another ordering. Date is authoritative;
+    /// equal dates preserve store order so the result stays deterministic.
+    private static func latestEligibleSession(
+        in eligibleSessions: [PracticeSession]
+    ) -> PracticeSession? {
+        eligibleSessions.enumerated().max { lhs, rhs in
+            if lhs.element.date != rhs.element.date {
+                return lhs.element.date < rhs.element.date
+            }
+            return lhs.offset > rhs.offset
+        }?.element
+    }
+
+    private static func memoryNeedsRefresh(
+        latestSession: PracticeSession,
+        eligibleSessions: [PracticeSession],
+        memory: CoachMemory?
+    ) -> Bool {
+        guard let memory else { return true }
+        guard memory.lastSessionID != latestSession.id else { return false }
+        guard let previousID = memory.lastSessionID,
+              let previousSession = eligibleSessions.first(where: { $0.id == previousID }) else {
+            // The persisted session list is the evidence authority. A memory
+            // without a resolvable source cannot suppress repair indefinitely.
+            return true
+        }
+        return previousSession.date <= latestSession.date
+    }
+}
+
 // MARK: - Session Finalizer
 
 /// Extracts lifecycle logic into a single service shared by completion and summary flows.
 /// Handles XP application, achievement evaluation, milestone detection, and trend recording.
 @MainActor
 enum SessionFinalizer {
+
+    /// Commits the evidence needed for cross-session trend and current-lever
+    /// continuity from an exact persisted row. Repeated calls are harmless:
+    /// the existing session IDs in SkillTrendStore and CoachMemory are the
+    /// durable receipts, so Summary, annotation, and relaunch repair cannot
+    /// append duplicate snapshots or repeatedly rewrite the same memory.
+    @discardableResult
+    static func reconcileDurableCoachingEvidence(
+        triggeringSessionID: UUID? = nil
+    ) -> DurableCoachingEvidencePlan? {
+        let sessionStore = PracticeSessionStore.shared
+        let trendStore = SkillTrendStore.shared
+        let memoryStore = CoachMemoryStore.shared
+        let sessions = DurableCoachingEvidencePlanner.evaluatedSessions(
+            in: sessionStore.sessions
+        )
+        guard let plan = DurableCoachingEvidencePlanner.makeFromEvaluatedSessions(
+            triggeringSessionID: triggeringSessionID,
+            sessions: sessions,
+            snapshots: trendStore.snapshots,
+            memory: memoryStore.currentMemory
+        ),
+              let session = sessions.first(where: { $0.id == plan.sessionID }) else {
+            return nil
+        }
+
+        if plan.shouldRecordSkillSnapshot {
+            guard let snapshot = skillSnapshot(from: session) else { return nil }
+            trendStore.record(snapshot)
+        }
+
+        if plan.shouldRefreshCoachMemory {
+            let trends = TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
+            let profile = CoachingProfileStore.shared.profile
+            let currentForwardPlan = ForwardPlanStore.shared.currentPlan(
+                activeBigMomentID: BigMomentStore.shared.activeMoment?.id,
+                chosenStyleGoal: profile?.chosenStyleGoal
+            )
+            memoryStore.refresh(
+                profile: profile,
+                baseline: BaselineStore.shared.baseline,
+                sessions: sessions,
+                trends: trends,
+                forwardPlan: currentForwardPlan,
+                lastSessionID: session.id,
+                pendingIntervention: RecommendationLearningStore.shared.pendingExposure,
+                recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
+                latestReflection: SessionReflectionStore.shared.latest,
+                reflectionHistory: SessionReflectionStore.shared.history,
+                latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first,
+                upcomingMoment: BigMomentStore.shared.activeMoment
+            )
+        }
+
+        if plan.shouldRecordSkillSnapshot || plan.shouldRefreshCoachMemory {
+            _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+            FlowLog.log(
+                correlationId: session.id,
+                flow: .practiceRep,
+                stage: "coaching-evidence.reconciled",
+                reason: plan.shouldRefreshCoachMemory
+                    ? "durable skill snapshot and coach memory current"
+                    : "durable skill snapshot current",
+                numerics: [
+                    "snapshotInserted": plan.shouldRecordSkillSnapshot ? 1 : 0,
+                    "memoryRefreshed": plan.shouldRefreshCoachMemory ? 1 : 0,
+                ]
+            )
+        }
+        return plan
+    }
+
+    static func skillSnapshot(from session: PracticeSession) -> SkillSnapshot? {
+        guard let score = session.score else { return nil }
+        let qualifiedFillerRate = FillerBurden.quantityQualified(session)?.ratePerMinute
+        let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(session)
+        let comparisonMetricSchemaVersion: Int? = if qualifiedFillerRate != nil,
+                                                     qualifiedPaceWPM != nil {
+            session.comparisonMetricSchemaVersion
+        } else {
+            nil
+        }
+        let pauseFilledRatio: Double? = if let metrics = session.pauseMetrics,
+                                               metrics.count > 0 {
+            metrics.filledRatio
+        } else {
+            nil
+        }
+        let pitchMonotone = session.pitchMetrics.flatMap { metrics in
+            metrics.isReliable ? metrics.monotoneScore : nil
+        }
+        let wpm = session.duration > 0
+            ? Double(session.wordCount) / session.duration * 60
+            : 0
+        return SkillSnapshot(
+            sessionId: session.id,
+            date: session.date,
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            wpm: wpm,
+            qualifiedFillerRatePerMinute: qualifiedFillerRate,
+            qualifiedPaceWPM: qualifiedPaceWPM,
+            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
+            score: score,
+            categoryRatings: session.categoryRatings,
+            pauseRate: pauseRateForTrend(session: session),
+            pitchMonotone: pitchMonotone,
+            pauseFilledRatio: pauseFilledRatio
+        )
+    }
 
     /// Neutral result for a Summary that cannot be tied to an eligible saved
     /// row. Keeping this construction beside the mutation owner ensures the
@@ -208,37 +426,15 @@ enum SessionFinalizer {
         // Details drawer instead of pre-empting the coach's read.
         let showProgression = PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: newUnlocks.count)
 
-        // Record skill snapshot for trend analysis
         var categoryMap: [String: String] = [:]
         for seg in scoreBreakdown {
             categoryMap[seg.title] = seg.value
         }
-        // Pull pause-rate from the freshly-finalized session so the trend
-        // analyzer can pick up pause progress without re-tokenising the
-        // transcript. nil for sessions whose provider didn't emit timings.
-        let pauseRate = pauseRateForTrend(session: finalizedSession)
-        // Pull pitch monotone score for the trend analyzer — only when the
-        // PitchAnalyzer reading was reliable (≥10 voiced windows, mean inside
-        // 70–400Hz). Hides M10's noisy reads from the trend pill.
-        let pitchMonotone: Double? = {
-            guard let metrics = finalizedSession.pitchMetrics,
-                  metrics.isReliable else { return nil }
-            return metrics.monotoneScore
-        }()
-        // Pull the filled-pause ratio so calmer-delivery users get a real
-        // week-over-week reading on the profile goal-progress ring. Only
-        // emit when the session actually contained pauses — a zero-pause
-        // rep would falsely look like "perfect calmness" (filledRatio = 0
-        // by definition when count = 0).
-        let pauseFilledRatio: Double? = {
-            guard let metrics = finalizedSession.pauseMetrics,
-                  metrics.count > 0 else { return nil }
-            return metrics.filledRatio
-        }()
         // Persist duration-derived evidence only when it can be tied back to
         // the exact saved session and that row clears the historical metric
-        // boundary. The raw snapshot still records score/category/duration for
-        // every general-progress rep; filler/pace trends remain optional.
+        // boundary. Skill snapshot persistence itself already happened at the
+        // durable session boundary; these values remain Summary-local inputs
+        // for its verdict and next-action projection.
         let qualifiedFillerRate = FillerBurden.quantityQualified(finalizedSession)?.ratePerMinute
         let qualifiedPaceWPM = SessionQualifier.quantityQualifiedWordsPerMinute(finalizedSession)
         let comparisonMetricSchemaVersion: Int? = if qualifiedFillerRate != nil,
@@ -247,21 +443,6 @@ enum SessionFinalizer {
         } else {
             nil
         }
-        SkillTrendStore.shared.recordFromSession(
-            sessionId: latestSessionID,
-            fillerCount: effectiveFillerCount,
-            duration: effectiveDuration,
-            wordCount: transcriptWordCount,
-            score: scoreValue,
-            qualifiedFillerRatePerMinute: qualifiedFillerRate,
-            qualifiedPaceWPM: qualifiedPaceWPM,
-            comparisonMetricSchemaVersion: comparisonMetricSchemaVersion,
-            categoryRatings: categoryMap,
-            pauseRate: pauseRate,
-            pitchMonotone: pitchMonotone,
-            pauseFilledRatio: pauseFilledRatio
-        )
-
         // Schedule follow-up reminder
         Task {
             await notificationManager.scheduleFollowUpReminder(
@@ -315,29 +496,6 @@ enum SessionFinalizer {
         // queues a SkillLevelUpEvent that the summary inline-celebrates.
         // Downward crossings are stored silently — we never punish-shame.
         SkillProgressionStore.shared.record(trends: skillTrends)
-
-        // Persistent coach memory — the durable working read that Ask Noum
-        // carries between conversations. Updated after trend recording so
-        // the stored formulation can notice focus shifts from the latest rep.
-        let currentForwardPlan = ForwardPlanStore.shared.currentPlan(
-            activeBigMomentID: BigMomentStore.shared.activeMoment?.id,
-            chosenStyleGoal: coachingProfileStore.profile?.chosenStyleGoal
-        )
-        CoachMemoryStore.shared.refresh(
-            profile: coachingProfileStore.profile,
-            baseline: BaselineStore.shared.baseline,
-            sessions: progressSessions,
-            trends: skillTrends,
-            forwardPlan: currentForwardPlan,
-            lastSessionID: latestSessionID,
-            pendingIntervention: RecommendationLearningStore.shared.pendingExposure,
-            recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
-            latestReflection: SessionReflectionStore.shared.latest,
-            reflectionHistory: SessionReflectionStore.shared.history,
-            latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first,
-            upcomingMoment: BigMomentStore.shared.activeMoment
-        )
-        _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
 
         let milestone = detectMilestone(
             levelBefore: levelBefore,

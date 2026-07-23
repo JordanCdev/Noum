@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "coach-real-user-transfer-outcomes-v3",
+  "schemaVersion": "coach-real-user-transfer-outcomes-v4",
   "templateStatus": "NOT_PRODUCTION_EVIDENCE",
-  "studyProtocolVersion": "coach-transfer-outcome-ledger-v3",
+  "studyProtocolVersion": "coach-transfer-outcome-ledger-v4",
   "protocolRegistrationReference": "",
   "analysisPlanReference": "",
   "comparisonMethod": "prePostWithinUser",
@@ -14,18 +14,41 @@
     "participantConsentLogReference": "",
     "withdrawalLogReference": "",
     "exclusionLogReference": "",
+    "negativeOutcomeLogReference": "",
     "adverseOutcomeLogReference": "",
+    "populationProvenanceReference": "",
     "attestedAtISO8601": "",
     "attestsCompleteEnrollmentAccounting": false,
     "attestsWithdrawalsAndExclusionsWereRetained": false,
-    "attestsNegativeAndAdverseOutcomesWereRetained": false
+    "attestsNegativeAndAdverseOutcomesWereRetained": false,
+    "attestsNoSyntheticParticipantsOrInstallsWereCounted": false
+  },
+  "studyWindow": {
+    "startedAtISO8601": "",
+    "completedAtISO8601": ""
   },
   "enrollment": {
     "enrolledUserCount": 0,
+    "qualifiedQualitativeParticipantCount": 0,
     "completedUserCount": 0,
     "withdrawnUserCount": 0,
     "excludedUserCount": 0,
+    "participantQualificationCriteriaReference": "",
     "exclusionLogReference": ""
+  },
+  "installCohort": {
+    "source": "appStoreConnectAnalytics",
+    "cohortStartedAtISO8601": "",
+    "cohortCompletedAtISO8601": "",
+    "appVersion": "",
+    "storefronts": [],
+    "qualifiedInstallCount": 0,
+    "day1EligibleInstallCount": 0,
+    "day1RetainedInstallCount": 0,
+    "day7EligibleInstallCount": 0,
+    "day7RetainedInstallCount": 0,
+    "qualificationCriteriaReference": "",
+    "retentionEvidenceReference": ""
   },
   "outcomeCount": 0,
   "summary": {
@@ -35,6 +58,7 @@
     "realWorldMomentCount": 0,
     "linkedInterventionOutcomeCount": 0,
     "positiveTransferCount": 0,
+    "negativeOutcomeCount": 0,
     "audienceResponseEvidenceCount": 0,
     "noRegressionOutcomeCount": 0,
     "adverseOutcomeCount": 0,

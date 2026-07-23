@@ -237,7 +237,7 @@ too, so weak trajectory-cache coverage is visible before the Python scorer
 turns it into a launch-blocking trace-quality failure.
 The calibration result sidecar is similarly staged against the exported
 `coach-chat-conversation-expert-calibration-v2.json` packet: Python checks the
-packet fingerprint, the 39-conversation / 78-review floor, two independent
+packet fingerprint, the 39-conversation / 117-review floor, three independent
 professional reviewers per conversation, passing usefulness ratings, no
 unsafe/unready rows, and no unresolved revision notes before the sidecar can
 pass staging.

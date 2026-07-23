@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "templateStatus": "TEMPLATE_NOT_RELEASE_EVIDENCE",
+  "releaseBinding": {
+    "sourceGitCommit": "",
+    "marketingVersion": "",
+    "buildNumber": "",
+    "fixtureID": "",
+    "captureDistributionChannel": "",
+    "releaseCandidateEvidencePath": "",
+    "releaseCandidateEvidenceSha256": "",
+    "sourceTreeClean": false
+  },
+  "deviceTargets": [
+    {
+      "id": "iphone-6.9-1320x2868-portrait",
+      "platform": "iOS",
+      "displayClass": "6.9-inch",
+      "orientation": "portrait",
+      "widthPixels": 1320,
+      "heightPixels": 2868,
+      "screenshotFormat": "png-or-jpeg",
+      "allowsAlpha": false
+    },
+    {
+      "id": "iphone-preview-886x1920-portrait",
+      "platform": "iOS",
+      "displayClass": "iPhone-app-preview",
+      "orientation": "portrait",
+      "widthPixels": 886,
+      "heightPixels": 1920,
+      "previewFormat": "h264-or-prores422hq",
+      "maximumFrameRate": 30
+    }
+  ],
+  "screenshotAssets": [
+    {
+      "id": "default-01-pressure",
+      "sequence": 1,
+      "purpose": "Communicate clearly under pressure",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "default-02-spoken-rep",
+      "sequence": 2,
+      "purpose": "Complete a focused spoken rep",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "default-03-evidence",
+      "sequence": 3,
+      "purpose": "See evidence from your own words",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "default-04-next-move",
+      "sequence": 4,
+      "purpose": "Follow one next move",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "default-05-pattern-evidence",
+      "sequence": 5,
+      "purpose": "Watch a pattern become evidence",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "default-06-real-moment",
+      "sequence": 6,
+      "purpose": "Prepare for the real moment",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "default-07-privacy",
+      "sequence": 7,
+      "purpose": "Your words stay under your control",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "cpp-interview-01",
+      "sequence": 1,
+      "purpose": "Practise high-stakes interview answers",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "cpp-leadership-meetings-01",
+      "sequence": 1,
+      "purpose": "Train concise stakeholder answers",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "cpp-presentations-01",
+      "sequence": 1,
+      "purpose": "Rehearse the moment before the room",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "ppo-evidence-01",
+      "sequence": 1,
+      "purpose": "Feedback grounded in your own words",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "ppo-pressure-01",
+      "sequence": 1,
+      "purpose": "Communicate clearly under pressure",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    },
+    {
+      "id": "ppo-plan-01",
+      "sequence": 1,
+      "purpose": "One focused rep, chosen for you",
+      "deviceTargetID": "iphone-6.9-1320x2868-portrait",
+      "filePath": "",
+      "sha256": ""
+    }
+  ],
+  "pageMappings": {
+    "default": {
+      "locales": [
+        "en-GB",
+        "en-US"
+      ],
+      "appStoreConnectDeepLink": "",
+      "screenshotAssetIDs": [
+        "default-01-pressure",
+        "default-02-spoken-rep",
+        "default-03-evidence",
+        "default-04-next-move",
+        "default-05-pattern-evidence",
+        "default-06-real-moment",
+        "default-07-privacy"
+      ]
+    },
+    "customProductPages": [
+      {
+        "id": "interview",
+        "appStoreConnectDeepLink": "",
+        "publicProductPageURL": "",
+        "screenshotAssetIDs": [
+          "cpp-interview-01",
+          "default-02-spoken-rep",
+          "default-03-evidence",
+          "default-04-next-move",
+          "default-05-pattern-evidence",
+          "default-06-real-moment",
+          "default-07-privacy"
+        ]
+      },
+      {
+        "id": "leadership-meetings",
+        "appStoreConnectDeepLink": "",
+        "publicProductPageURL": "",
+        "screenshotAssetIDs": [
+          "cpp-leadership-meetings-01",
+          "default-02-spoken-rep",
+          "default-03-evidence",
+          "default-04-next-move",
+          "default-05-pattern-evidence",
+          "default-06-real-moment",
+          "default-07-privacy"
+        ]
+      },
+      {
+        "id": "presentations",
+        "appStoreConnectDeepLink": "",
+        "publicProductPageURL": "",
+        "screenshotAssetIDs": [
+          "cpp-presentations-01",
+          "default-02-spoken-rep",
+          "default-03-evidence",
+          "default-04-next-move",
+          "default-05-pattern-evidence",
+          "default-06-real-moment",
+          "default-07-privacy"
+        ]
+      }
+    ],
+    "productPageOptimization": [
+      {
+        "id": "evidence",
+        "appStoreConnectTreatmentDeepLink": "",
+        "screenshotAssetIDs": [
+          "ppo-evidence-01",
+          "default-02-spoken-rep",
+          "default-03-evidence",
+          "default-04-next-move",
+          "default-05-pattern-evidence",
+          "default-06-real-moment",
+          "default-07-privacy"
+        ]
+      },
+      {
+        "id": "pressure",
+        "appStoreConnectTreatmentDeepLink": "",
+        "screenshotAssetIDs": [
+          "ppo-pressure-01",
+          "default-02-spoken-rep",
+          "default-03-evidence",
+          "default-04-next-move",
+          "default-05-pattern-evidence",
+          "default-06-real-moment",
+          "default-07-privacy"
+        ]
+      },
+      {
+        "id": "plan",
+        "appStoreConnectTreatmentDeepLink": "",
+        "screenshotAssetIDs": [
+          "ppo-plan-01",
+          "default-02-spoken-rep",
+          "default-03-evidence",
+          "default-04-next-move",
+          "default-05-pattern-evidence",
+          "default-06-real-moment",
+          "default-07-privacy"
+        ]
+      }
+    ]
+  },
+  "appPreview": {
+    "id": "default-rep-evidence-next-action",
+    "locales": [
+      "en-GB",
+      "en-US"
+    ],
+    "deviceTargetID": "iphone-preview-886x1920-portrait",
+    "minimumDurationSeconds": 20,
+    "maximumDurationSeconds": 30,
+    "filePath": "",
+    "sha256": ""
+  }
+}

@@ -184,9 +184,50 @@ final class AccountDataRegistryTests: XCTestCase {
             "practice-locale", "roleplay", "primary-focus", "prompt-history",
             "account-prompts", "home-recommendations", "ai-rate-limits",
             "friends", "challenges", "clubs", "feedback-requests", "league",
-            "legacy-device-coaching", "app-managed-recordings",
+            "legacy-device-subscription-lifecycle", "legacy-device-coaching",
+            "app-managed-recordings",
         ])
         XCTAssertTrue(registry.coverage.hasParity)
+    }
+
+    func testStoreKitLifecycleSnapshotExportsAndDeletesAsUnattributedDeviceData() throws {
+        let suite = "AccountDataRegistryStoreKitLifecycle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(
+            try JSONEncoder().encode(SubscriptionLifecycleSnapshot.free),
+            forKey: PremiumManager.lifecycleSnapshotKey
+        )
+        let registry = AccountDataRegistry.production(defaults: defaults)
+        let participant = try XCTUnwrap(registry.participants.first {
+            $0.id == "legacy-device-subscription-lifecycle"
+        })
+
+        XCTAssertEqual(participant.scope, .legacyDeviceUnattributed)
+        XCTAssertEqual(
+            participant.claimedKeys(
+                in: Set(defaults.dictionaryRepresentation().keys),
+                accountID: "account-a"
+            ),
+            Set([PremiumManager.lifecycleSnapshotKey])
+        )
+
+        let entries = try participant.export(accountID: "account-a")
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try data(
+                in: entries,
+                path: "data/legacy-device-subscription-lifecycle.json"
+            )
+        ) as? [String: Any])
+        XCTAssertEqual(
+            payload["scope"] as? String,
+            AccountDataScope.legacyDeviceUnattributed.rawValue
+        )
+        let records = try XCTUnwrap(payload["records"] as? [String: Any])
+        XCTAssertNotNil(records[PremiumManager.lifecycleSnapshotKey] as? [String: Any])
+
+        try participant.delete(accountID: "account-a")
+        XCTAssertNil(defaults.object(forKey: PremiumManager.lifecycleSnapshotKey))
     }
 
     func testDrillHistoryExportAndDeletionStayAccountIsolatedFromLegacyHistory() throws {

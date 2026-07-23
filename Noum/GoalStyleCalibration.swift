@@ -401,7 +401,7 @@ struct GoalStyleCalibrationPacket: Codable, Equatable {
     static let reviewResultsSchemaVersion = "goal-style-score-professional-calibration-results-v1"
     static let evidencePackageSchemaVersion = "goal-style-score-source-evidence-package-v1"
     static let artifactFileName = "goal-style-score-professional-calibration-v1.json"
-    static let requiredIndependentReviewsPerCase = 2
+    static let requiredIndependentReviewsPerCase = 3
     static let requiredReviewerRole = "professional-communication-coach"
     static let maximumReviewNotesCharacters = 2_000
     static let allowedOverclaimRisks: Set<String> = ["low", "medium", "high"]

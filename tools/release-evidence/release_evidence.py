@@ -37,7 +37,7 @@ MANAGED_ARTIFACTS = {
         "noProfessionalCoachCalibration",
     ),
     "realUserTransfer": (
-        "coach-real-user-transfer-outcomes-v3.json",
+        "coach-real-user-transfer-outcomes-v4.json",
         "noRealUserLongitudinalTransferOutcomes",
     ),
     "realDeviceTestFlight": (
@@ -637,6 +637,7 @@ def validate_transfer(run_dir, payload, manifest, index, failures):
         "attestsCompleteEnrollmentAccounting",
         "attestsWithdrawalsAndExclusionsWereRetained",
         "attestsNegativeAndAdverseOutcomesWereRetained",
+        "attestsNoSyntheticParticipantsOrInstallsWereCounted",
     ):
         if attestation.get(key) is not True:
             add_failure(failures, "transferStudyAttestationMissing", key)
@@ -647,7 +648,9 @@ def validate_transfer(run_dir, payload, manifest, index, failures):
         "participantConsentLogReference": "participantConsentLog",
         "withdrawalLogReference": "withdrawalLog",
         "exclusionLogReference": "exclusionLog",
+        "negativeOutcomeLogReference": "negativeOutcomeLog",
         "adverseOutcomeLogReference": "adverseOutcomeLog",
+        "populationProvenanceReference": "realPopulationProvenance",
     }
     for field, kind in study_refs.items():
         validate_reference(
@@ -663,14 +666,48 @@ def validate_transfer(run_dir, payload, manifest, index, failures):
     enrollment = payload.get("enrollment") if isinstance(payload.get("enrollment"), dict) else {}
     if enrollment.get("exclusionLogReference") != attestation.get("exclusionLogReference"):
         add_failure(failures, "transferExclusionLogReferenceMismatch")
-    counts = [
+    accounting_counts = [
         enrollment.get("enrolledUserCount"), enrollment.get("completedUserCount"),
         enrollment.get("withdrawnUserCount"), enrollment.get("excludedUserCount"),
     ]
-    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts):
+    qualified_count = enrollment.get("qualifiedQualitativeParticipantCount")
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in accounting_counts + [qualified_count]
+    ):
         add_failure(failures, "transferEnrollmentCountsInvalid")
-    elif sum(counts[1:]) != counts[0]:
+    elif sum(accounting_counts[1:]) != accounting_counts[0]:
         add_failure(failures, "transferEnrollmentAccountingMismatch")
+    validate_reference(
+        enrollment.get("participantQualificationCriteriaReference"),
+        "participantQualificationCriteria",
+        run_dir,
+        index,
+        failures,
+        "transfer.enrollment.participantQualificationCriteriaReference",
+    )
+
+    install_cohort = (
+        payload.get("installCohort")
+        if isinstance(payload.get("installCohort"), dict)
+        else {}
+    )
+    validate_reference(
+        install_cohort.get("qualificationCriteriaReference"),
+        "installQualificationCriteria",
+        run_dir,
+        index,
+        failures,
+        "transfer.installCohort.qualificationCriteriaReference",
+    )
+    validate_reference(
+        install_cohort.get("retentionEvidenceReference"),
+        "appStoreRetentionEvidence",
+        run_dir,
+        index,
+        failures,
+        "transfer.installCohort.retentionEvidenceReference",
+    )
 
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
     row_reference_kinds = {
@@ -1172,16 +1209,23 @@ def validate_run(run_dir: Path, repo_root: Path):
     validate_promotion_approval(run_dir, manifest, index, payloads, failures)
     gate_failures, gate_statuses = existing_validator_failures(run_dir, payloads)
     failures.extend(item for item in gate_failures if item not in failures)
+    non_blocking_signals = [
+        signal
+        for status in gate_statuses.values()
+        for signal in status.get("nonBlockingSignals", [])
+    ]
     return {
         "schemaVersion": "noum-release-evidence-validation-v1",
         "runDir": str(run_dir),
         "passes": not failures,
         "failureCount": len(failures),
         "failures": failures,
+        "nonBlockingSignals": non_blocking_signals,
         "existingReadinessValidator": {
             key: {
                 "passes": status.get("passesLightweightContract"),
                 "contractFailures": status.get("contractFailures") or [],
+                "nonBlockingSignals": status.get("nonBlockingSignals") or [],
             }
             for key, status in gate_statuses.items()
         },
@@ -1395,6 +1439,18 @@ def summarize_transfer(payload):
         if row.get("adverseOutcomeResolved") is True
         and GATE.usable_evidence_reference(row.get("adverseOutcomeFollowUpReference"))
     ]
+    study_window = (
+        payload.get("studyWindow")
+        if isinstance(payload.get("studyWindow"), dict)
+        else {}
+    )
+    study_started_at = parse_iso8601(study_window.get("startedAtISO8601"))
+    study_completed_at = parse_iso8601(study_window.get("completedAtISO8601"))
+    study_duration_days = 0
+    if study_started_at is not None and study_completed_at is not None:
+        elapsed_seconds = (study_completed_at - study_started_at).total_seconds()
+        if elapsed_seconds >= 0:
+            study_duration_days = int(elapsed_seconds // (24 * 60 * 60))
     payload["outcomeCount"] = len(rows)
     payload["summary"].update({
         "rowCount": len(rows),
@@ -1403,6 +1459,7 @@ def summarize_transfer(payload):
         "realWorldMomentCount": sum(row.get("realWorldMomentOccurred") is True for row in rows),
         "linkedInterventionOutcomeCount": sum((GATE.strict_int(row.get("linkedCoachInterventionCount")) or 0) > 0 for row in rows),
         "positiveTransferCount": sum(row.get("positiveTransferReported") is True for row in rows),
+        "negativeOutcomeCount": sum(row.get("negativeOutcomeReported") is True for row in rows),
         "audienceResponseEvidenceCount": sum(row.get("audienceResponseEvidenceCollected") is True for row in rows),
         "noRegressionOutcomeCount": sum(
             GATE.strict_int(row.get("preMomentConfidence")) is not None
@@ -1414,6 +1471,7 @@ def summarize_transfer(payload):
         "resolvedAdverseOutcomeCount": len(resolved_adverse),
         "passingOutcomeCount": sum(GATE.real_user_transfer_row_passes(row) for row in rows),
         "minimumDaysSinceFirstSession": min((value for value in days if value is not None), default=0),
+        "studyDurationDays": study_duration_days,
         "uniqueMomentCategoryCount": len(set(moments)),
         "verifiedEvidenceReferenceCount": sum(
             all(GATE.usable_evidence_reference(row.get(field)) for field in evidence_fields)

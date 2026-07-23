@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-23",
+  "figma": {
+    "fileKey": "srCgE5IP3rWoNMWtHo3AnI",
+    "fileName": "Noum — Product Journey & Design System",
+    "url": "https://www.figma.com/design/srCgE5IP3rWoNMWtHo3AnI",
+    "mappingStrategy": "Repository-owned SwiftUI mapping. No published Code Connect dependency."
+  },
+  "components": [
+    {
+      "figmaComponent": "Action / Button",
+      "figmaNodeId": "27:21",
+      "swiftUI": {
+        "symbol": "PrimaryCTA",
+        "file": "DesignSystem.swift"
+      },
+      "variables": [
+        "color/action/primary",
+        "color/action/secondary",
+        "color/text/on-accent",
+        "size/action/height",
+        "size/touch-target/min",
+        "radius/capsule",
+        "duration/snappy"
+      ],
+      "statesAndVariants": [
+        "Hierarchy=Primary|Secondary|Tertiary",
+        "State=Default|Pressed|Loading|Disabled"
+      ],
+      "accessibility": "Minimum 44-point target; combines label and state; loading announces progress once; press motion is removed when Reduce Motion is enabled.",
+      "implementationStatus": "partial",
+      "notes": "Primary and disabled behavior exist. Consolidate secondary, tertiary, destructive, and loading presentation instead of adding another button owner."
+    },
+    {
+      "figmaComponent": "Status / Badge",
+      "figmaNodeId": "27:36",
+      "swiftUI": {
+        "symbol": "SummaryChip",
+        "file": "Noum/SummaryCards.swift"
+      },
+      "variables": [
+        "color/action/secondary",
+        "color/feedback/positive",
+        "color/feedback/caution",
+        "color/pro/quiet-surface",
+        "radius/capsule"
+      ],
+      "statesAndVariants": [
+        "Tone=Recommended|Verified|Pro|Caution|Complete"
+      ],
+      "accessibility": "Color is paired with a semantic label; the containing view supplies a complete accessibility label when the badge changes evidence meaning.",
+      "implementationStatus": "partial",
+      "notes": "Specialized chips already exist. Introduce one presentation API without replacing feature-specific behavior."
+    },
+    {
+      "figmaComponent": "Coaching / Card",
+      "figmaNodeId": "30:35",
+      "swiftUI": {
+        "symbol": "HomeCoachCard / CoachBriefSurface / PostRepDebriefCard",
+        "files": [
+          "Noum/HomeCoachCard.swift",
+          "DesignSystem.swift",
+          "Noum/PostRepVerdictCard.swift"
+        ]
+      },
+      "variables": [
+        "color/background/surface",
+        "color/coaching/ink",
+        "color/coaching/quiet-surface",
+        "color/action/primary",
+        "radius/xl",
+        "spacing/card-gap"
+      ],
+      "statesAndVariants": [
+        "Type=Recommendation|Evidence|Targeted retry|Ask Noum",
+        "next-step state=prescribed practice|resume prep|check-in|targeted retry"
+      ],
+      "accessibility": "Reads decision, evidence provenance or recommendation reason, then exactly one primary action. Targeted retry is announced as the same prompt and same target.",
+      "implementationStatus": "partial",
+      "notes": "Reuse current cards and state owners. Extract only shared presentation where it removes duplication."
+    },
+    {
+      "figmaComponent": "Review / Transcript step",
+      "figmaNodeId": "30:52",
+      "swiftUI": {
+        "symbol": "ReviewTranscriptStep (extract from RewriteSuggestionCard.ladderRung)",
+        "file": "Noum/RewriteSuggestionCard.swift"
+      },
+      "variables": [
+        "color/background/surface",
+        "color/coaching/quiet-surface",
+        "color/pro/quiet-surface",
+        "color/text/primary",
+        "radius/large"
+      ],
+      "statesAndVariants": [
+        "Step=Original|One-step upgrade|Aspirational",
+        "generation=loading|success|truthful failure"
+      ],
+      "accessibility": "Each step is one VoiceOver element that includes ordinal, authorship, text, and provenance. Changed words must not rely on color alone.",
+      "implementationStatus": "implemented",
+      "notes": "Shared by Summary and historical Review. Review restores the exact source-bound TranscriptRewriteSnapshot and never regenerates it on appearance."
+    },
+    {
+      "figmaComponent": "Navigation / Tab bar",
+      "figmaNodeId": "31:136",
+      "swiftUI": {
+        "symbol": "AppShellView / AppTab / AppTabAccessibilityBridge",
+        "file": "Noum/AppShellView.swift"
+      },
+      "variables": [
+        "color/background/surface",
+        "color/action/primary",
+        "color/text/primary",
+        "spacing/tab-root-clearance",
+        "device/safe-area/bottom"
+      ],
+      "statesAndVariants": [
+        "Active=Home|Train|Review|Profile|Settings"
+      ],
+      "accessibility": "Production remains native TabView with five named tabs, independent NavigationStack paths, safe-area handling, and UIKit accessibility bridging.",
+      "implementationStatus": "implemented",
+      "notes": "Do not replace the native tab bar with a custom SwiftUI replica. The Figma component documents visual intent only."
+    },
+    {
+      "figmaComponent": "Progress / Outcome row",
+      "figmaNodeId": "31:169",
+      "swiftUI": {
+        "symbol": "ProgressOutcomeRow (extract from SummaryView.progressReceiptRow)",
+        "files": [
+          "Noum/SummaryView.swift",
+          "Noum/PostRepReceiptProjection.swift"
+        ]
+      },
+      "variables": [
+        "color/background/surface",
+        "color/feedback/positive",
+        "color/action/primary",
+        "color/text/secondary",
+        "radius/large"
+      ],
+      "statesAndVariants": [
+        "Type=Personal best|Level|Achievement|Milestone"
+      ],
+      "accessibility": "One combined element reads outcome type, detection-safe title, source or date, and progress. No chained full-screen celebration.",
+      "implementationStatus": "implemented",
+      "notes": "ProgressOutcomeRow now provides the restrained inline receipt used by Unified Progress. Summary continues to use its existing receipt projection so no progress owner was duplicated."
+    },
+    {
+      "figmaComponent": "Progress / Landmark",
+      "figmaNodeId": "31:189",
+      "swiftUI": {
+        "symbol": "ProgressLandmark (extract from PathJourneyView.landmarksCard)",
+        "files": [
+          "Noum/PathJourneyView.swift",
+          "Noum/PathProgressManager.swift"
+        ]
+      },
+      "variables": [
+        "color/background/surface",
+        "color/action/primary",
+        "color/feedback/positive",
+        "color/text/tertiary",
+        "radius/large"
+      ],
+      "statesAndVariants": [
+        "State=Complete|Current|Upcoming"
+      ],
+      "accessibility": "State is expressed with icon and text. Upcoming means evidence is still needed; it never announces failure or a game lock.",
+      "implementationStatus": "implemented",
+      "notes": "ProgressLandmark is a view-only projection with complete, current, and upcoming variants. PathProgressManager remains authoritative."
+    },
+    {
+      "figmaComponent": "System / State panel",
+      "figmaNodeId": "33:36",
+      "swiftUI": {
+        "symbol": "SystemStatePanel (compose existing EmptyStateView and ErrorCard presentation)",
+        "files": [
+          "Noum/EmptyStateView.swift",
+          "DesignSystem.swift",
+          "Noum/TimedPracticeView.swift"
+        ]
+      },
+      "variables": [
+        "color/background/surface",
+        "color/background/inner",
+        "color/feedback/warning-surface",
+        "color/action/primary",
+        "radius/xl"
+      ],
+      "statesAndVariants": [
+        "State=Loading|Empty|Error|Offline|Permission"
+      ],
+      "accessibility": "Loading is bounded and cancellable; errors retain work and expose Retry; offline never claims cloud evidence; microphone permission is requested only after Start.",
+      "implementationStatus": "partial",
+      "notes": "Unify chrome while leaving feature state and recovery logic with the existing owner."
+    },
+    {
+      "figmaComponent": "Memory / Item",
+      "figmaNodeId": "33:59",
+      "swiftUI": {
+        "symbol": "CoachingMemoryItemCard",
+        "files": [
+          "Noum/CoachingMemoryView.swift",
+          "Noum/SettingsView.swift"
+        ]
+      },
+      "variables": [
+        "color/background/surface",
+        "color/text/primary",
+        "color/text/secondary",
+        "color/action/primary",
+        "radius/large"
+      ],
+      "statesAndVariants": [
+        "Kind=Current lever|Work context|Voice preference",
+        "evidence=added by user|observed|confirmed|hypothesis awaiting confirmation"
+      ],
+      "accessibility": "Each item is grouped and reads its kind, remembered value, provenance, and uncertainty. The 56-point Manage action routes to existing correction and removal controls.",
+      "implementationStatus": "implemented",
+      "notes": "CoachMemoryStore and CoachingProfileStore remain authoritative. Direct per-card editing was intentionally omitted because current owners cannot truthfully support it; Manage all memory opens the existing real controls."
+    }
+  ],
+  "screens": [
+    {
+      "figmaScreen": "Home / Today",
+      "figmaNodeId": "43:12",
+      "prototypeNodeId": "73:6",
+      "swiftUI": ["ContentView", "HomeCoachCard"],
+      "files": ["Noum/ContentView.swift", "Noum/HomeCoachCard.swift"],
+      "stateOwners": ["FirstWeekCoachingContract", "RecommendationLearningStore", "BigMomentStore", "CoachCheckInStore"],
+      "implementationStatus": "align-existing"
+    },
+    {
+      "figmaScreen": "Prescribed Practice",
+      "figmaNodeId": "43:72",
+      "prototypeNodeId": "73:30",
+      "swiftUI": ["PracticeModeSelectionView"],
+      "files": ["Noum/PracticeModeSelectionView.swift"],
+      "stateOwners": ["RecommendationLearningStore", "PracticeSessionStore"],
+      "implementationStatus": "align-existing"
+    },
+    {
+      "figmaScreen": "Post-rep Summary",
+      "figmaNodeId": "46:74",
+      "prototypeNodeId": "73:48",
+      "swiftUI": ["SummaryView", "PostRepDebriefCard", "RewriteSuggestionCard"],
+      "files": ["Noum/SummaryView.swift", "Noum/PostRepVerdictCard.swift", "Noum/RewriteSuggestionCard.swift"],
+      "stateOwners": ["SummaryDataStore", "PostRepReceiptProjection"],
+      "implementationStatus": "implemented",
+      "gap": null,
+      "notes": "Verified evidence exposes original-transcript provenance and source duration. When the durable transcript upgrade is ready, it owns the single next action so a competing generic plan is not shown."
+    },
+    {
+      "figmaScreen": "Review / Latest rep",
+      "figmaNodeId": "46:112",
+      "prototypeNodeId": "73:66",
+      "swiftUI": ["SessionHistoryView", "SessionHistoryDetailView", "ReviewStoryCard"],
+      "files": ["Noum/SessionHistoryView.swift"],
+      "stateOwners": ["SummaryDataStore", "SessionStore"],
+      "implementationStatus": "implemented",
+      "gap": null,
+      "notes": "The exact original, one-step upgrade, aspiration and target are restored from TranscriptRewriteSnapshot; historical Review never regenerates the ladder."
+    },
+    {
+      "figmaScreen": "Targeted Retry",
+      "figmaNodeId": "48:125",
+      "prototypeNodeId": "73:81",
+      "swiftUI": ["TimedPracticeView", "TranscriptRetryComparisonCard"],
+      "files": ["Noum/TimedPracticeView.swift", "Noum/SummaryCards.swift"],
+      "stateOwners": ["TranscriptPracticeIntent", "TimedPracticePromptHandoff", "RecommendationLearningStore"],
+      "implementationStatus": "implemented",
+      "gap": null,
+      "notes": "Retry reuses the exact source prompt and one-step target. The aspirational rewrite remains a model, not a script the user must recite."
+    },
+    {
+      "figmaScreen": "Ask Noum / Contextual",
+      "figmaNodeId": "48:155",
+      "prototypeNodeIds": ["73:105", "73:205"],
+      "swiftUI": ["CoachSessionView", "AskNoumView"],
+      "files": ["Noum/CoachSessionView.swift", "Noum/AskNoumView.swift"],
+      "stateOwners": ["AskNoumStore", "CoachMemoryStore", "CoachingProfileStore"],
+      "implementationStatus": "implemented",
+      "gap": null,
+      "notes": "Attached context is inspectable and bounded before typing. The verified UI harness covers a contextual question and one usable coach response. Manage routes to real existing controls; unsupported per-turn removal was not fabricated."
+    },
+    {
+      "figmaScreen": "Progress / Path",
+      "figmaNodeId": "50:126",
+      "prototypeNodeId": "73:137",
+      "swiftUI": ["PathJourneyView", "PathJourneyArtwork"],
+      "files": ["Noum/PathJourneyView.swift"],
+      "stateOwners": ["PathProgressManager", "FirstWeekCoachingContract"],
+      "implementationStatus": "implemented"
+    },
+    {
+      "figmaScreen": "Coaching Memory",
+      "figmaNodeId": "50:191",
+      "prototypeNodeId": "73:173",
+      "swiftUI": ["CoachingMemoryView", "CoachingMemoryItemCard", "YourDataView"],
+      "files": ["Noum/CoachingMemoryView.swift", "ProfileView.swift", "Noum/AppShellView.swift", "Noum/SettingsView.swift"],
+      "stateOwners": ["CoachMemoryStore", "CoachingProfileStore"],
+      "implementationStatus": "implemented",
+      "gap": null
+    },
+    {
+      "figmaScreen": "Unified Progress",
+      "figmaNodeId": "50:253",
+      "prototypeNodeId": "73:189",
+      "swiftUI": ["AchievementsTreeView", "ProgressOutcomeRow"],
+      "files": ["Noum/AchievementsTreeView.swift", "Noum/PathJourneyView.swift", "Noum/ProfileView.swift", "Noum/PostRepReceiptProjection.swift"],
+      "stateOwners": ["RatingStore", "ProfileManager", "AchievementStore", "PathProgressManager"],
+      "implementationStatus": "implemented",
+      "gap": null
+    }
+  ]
+}

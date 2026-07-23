@@ -58,6 +58,7 @@ struct BigMomentIntakeView: View {
     @State private var title: String = ""
     @State private var includeDate: Bool = false
     @State private var selectedDate: Date = Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date()
+    @State private var didComplete = false
     @FocusState private var titleFieldFocused: Bool
 
     var onSave: (() -> Void)?
@@ -74,62 +75,66 @@ struct BigMomentIntakeView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AppColor.screenBackground
-                    .ignoresSafeArea()
+        ZStack {
+            AppColor.screenBackground
+                .ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: Spacing.lg) {
-                        headerSection
-                        categorySection
-                        titleSection
-                        dateSection
-                        Spacer(minLength: Spacing.lg)
-                    }
-                    .padding(.horizontal, Spacing.screenH)
-                    .padding(.top, Spacing.md)
-                    .padding(.bottom, Spacing.lg)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    headerSection
+                    categorySection
+                    titleSection
+                    dateSection
+                    Spacer(minLength: Spacing.lg)
                 }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Not now") {
-                        onSkip?()
-                        dismiss()
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("bigMoment.intake.skip")
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        saveMoment()
-                        onSave?()
-                        dismiss()
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(canSave ? AppColor.brandBlue : Color.secondary)
-                    .disabled(!canSave)
-                    .accessibilityIdentifier("bigMoment.intake.save")
-                }
-            }
-            .interactiveDismissDisabled(false)
         }
+        .safeAreaInset(edge: .bottom) {
+            PrimaryCTA("Save moment", tint: AppColor.brandBlue) {
+                saveAndDismiss()
+            }
+            .disabled(!canSave)
+            .accessibilityIdentifier("bigMoment.intake.save")
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.md)
+            .padding(.bottom, Spacing.sm)
+            .background {
+                LinearGradient(
+                    colors: [
+                        AppColor.screenBackground.opacity(0),
+                        AppColor.screenBackground,
+                        AppColor.screenBackground
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea(edges: .bottom)
+            }
+        }
+        .navigationTitle("Prepare")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .interactiveDismissDisabled(false)
+        .onDisappear {
+            if !didComplete {
+                onSkip?()
+            }
+        }
+        .accessibilityIdentifier("bigMoment.intake")
     }
 
     // MARK: - Sections
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("What's coming up?")
+            Text("Prepare for a real moment")
                 .font(Typography.figtree(size: 24, weight: .bold, relativeTo: .title2))
                 .foregroundStyle(.primary)
-            Text("Name the moment so your coach can help you prepare for it.")
+            Text("Tell Noum what’s coming up so your next reps can prepare you.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -351,6 +356,14 @@ struct BigMomentIntakeView: View {
         Task {
             await NotificationManager.shared.scheduleBigMomentCountdown(for: moment)
         }
+    }
+
+    private func saveAndDismiss() {
+        guard canSave else { return }
+        saveMoment()
+        didComplete = true
+        onSave?()
+        dismiss()
     }
 }
 

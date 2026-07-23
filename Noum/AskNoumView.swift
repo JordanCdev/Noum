@@ -286,6 +286,83 @@ enum AskNoumEvidenceMetadata {
     }
 }
 
+/// User-facing projection of the bounded personal context available to Ask
+/// Noum. This is deliberately a presentation value rather than another state
+/// owner: the source of truth remains the existing profile, practice, proof,
+/// memory, and thread stores that `CoachReplyPipeline` already reads.
+///
+/// Keep the labels categorical. They explain what can enter secure coaching
+/// without rendering speech content or creating content-bearing analytics.
+struct AskNoumAttachedContextPresentation: Equatable {
+    static let maximumVerifiedQuotes = 3
+    static let privacyExplanation = "These categories stay inside Ask Noum’s secure coaching flow. Growth analytics never records your words, prompts, or transcripts."
+
+    let headline: String
+    let categoryLine: String
+
+    static func make(
+        latestTimedPracticeLabel: String?,
+        hasLatestTimedTranscript: Bool,
+        hasRecentPractice: Bool,
+        verifiedQuoteCount: Int,
+        currentFocus: String?,
+        hasSavedGoal: Bool,
+        conversationMessageCount: Int
+    ) -> AskNoumAttachedContextPresentation {
+        let practiceLabel = normalized(latestTimedPracticeLabel)
+        let focus = normalized(currentFocus)
+
+        let headline: String
+        switch (practiceLabel, focus) {
+        case let (practice?, focus?):
+            headline = "\(practice) · focus: \(focus)"
+        case let (practice?, nil):
+            headline = "\(practice) coaching context"
+        case let (nil, focus?):
+            headline = "Current focus: \(focus)"
+        case (nil, nil):
+            headline = "Your coaching context"
+        }
+
+        var categories: [String] = []
+        if hasRecentPractice {
+            categories.append("recent rep summaries")
+        }
+        if hasLatestTimedTranscript, let practiceLabel {
+            categories.append("latest \(practiceLabel) transcript")
+        }
+        let boundedQuotes = min(max(0, verifiedQuoteCount), maximumVerifiedQuotes)
+        if boundedQuotes > 0 {
+            categories.append("\(boundedQuotes) verified \(boundedQuotes == 1 ? "quote" : "quotes")")
+        }
+        if focus != nil {
+            categories.append("current coaching focus")
+        }
+        if hasSavedGoal {
+            categories.append("saved speaking goal")
+        }
+        if conversationMessageCount > 0 {
+            // AskNoumStore owns and enforces its replay limit. The UI names the
+            // bounded category without duplicating that persistence constant.
+            categories.append("this bounded conversation")
+        }
+
+        let categoryLine = categories.isEmpty
+            ? "No personal evidence is attached yet."
+            : "Attached: \(categories.joined(separator: " · "))."
+        return AskNoumAttachedContextPresentation(
+            headline: headline,
+            categoryLine: categoryLine
+        )
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+}
+
 enum AskNoumVisibleCopy {
     static let currentFocus = "Current focus"
     static let reviewFocus = "Review your focus"
@@ -532,6 +609,7 @@ struct AskNoumView: View {
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var proofMomentStore = ProofMomentStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
     /// Established mode suggestions depend on account-scoped cloud consent.
@@ -602,6 +680,7 @@ struct AskNoumView: View {
     @StateObject private var voiceSettings = IMVoicePlaybackSettingsManager.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(
         sessionStore: PracticeSessionStore,
@@ -687,7 +766,7 @@ struct AskNoumView: View {
 
             VStack(spacing: 0) {
                 header
-                currentFocusStrip
+                attachedContextCard
                 ScrollViewReader { proxy in
                     ScrollView {
                         // Zero-height offset probe — publishes the scroll
@@ -988,30 +1067,136 @@ struct AskNoumView: View {
         .background(AppColor.screenBackground)
     }
 
+    // MARK: - Attached context
+
+    /// Glanceable, inspectable context receipt from the same stores the reply
+    /// pipeline already uses. It replaces the ambiguous one-line focus pill:
+    /// the user can now see the bounded categories in play and reach the
+    /// existing trajectory/privacy owners without opening a blank chat path.
     @ViewBuilder
-    private var currentFocusStrip: some View {
-        if canDisplayPersistedThread, !store.messages.isEmpty,
-           let line = Self.currentFocusValue(caseFile: coachMemoryStore.currentMemory?.caseFile) {
-            HStack(spacing: 6) {
-                Image(systemName: "scope")
-                    .font(Typography.captionSmall.weight(.semibold))
-                    .foregroundStyle(AppColor.pro.opacity(0.85))
-                Text(line)
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+    private var attachedContextCard: some View {
+        if canDisplayPersistedThread {
+            let presentation = attachedContextPresentation
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                attachedContextHeader
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(presentation.headline)
+                        .font(Typography.body.weight(.bold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("askNoum.currentFocus")
+
+                    Text(presentation.categoryLine)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Attached coaching context. \(presentation.headline). \(presentation.categoryLine)")
+                .accessibilityIdentifier("askNoum.attachedContext.summary")
+
+                Text(AskNoumAttachedContextPresentation.privacyExplanation)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+                    .accessibilityIdentifier("askNoum.attachedContext.privacy")
             }
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 6)
-            .background(AppColor.pro.opacity(0.06), in: Capsule())
-            .padding(.horizontal, Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Current focus: \(line)")
-            .accessibilityIdentifier("askNoum.currentFocus")
+            .background(
+                AppColor.pro.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(AppColor.pro.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.horizontal, Spacing.lg)
+            .padding(.bottom, Spacing.xs)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("askNoum.attachedContext")
         }
+    }
+
+    @ViewBuilder
+    private var attachedContextHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                attachedContextLabel
+                attachedContextManagementMenu
+            }
+        } else {
+            HStack(spacing: Spacing.sm) {
+                attachedContextLabel
+                Spacer(minLength: Spacing.sm)
+                attachedContextManagementMenu
+            }
+        }
+    }
+
+    private var attachedContextLabel: some View {
+        Label("Context attached", systemImage: "paperclip")
+            .font(Typography.captionSmall.weight(.semibold))
+            .foregroundStyle(AppColor.pro)
+            .textCase(.uppercase)
+            .tracking(0.6)
+            .accessibilityHidden(true)
+    }
+
+    private var attachedContextManagementMenu: some View {
+        Menu {
+            Button {
+                showTrajectorySheet = true
+            } label: {
+                Label("Review goals and evidence", systemImage: "list.bullet.rectangle")
+            }
+
+            Button {
+                navigationPath.append(AppDestination.settings)
+            } label: {
+                Label("Cloud processing settings", systemImage: "lock.shield")
+            }
+        } label: {
+            Text("Manage")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .padding(.horizontal, Spacing.sm)
+                .frame(minWidth: 72, minHeight: 44)
+                .background(
+                    AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        }
+        .accessibilityLabel("Manage attached coaching context")
+        .accessibilityHint("Review goals and evidence, or open cloud processing settings.")
+        .accessibilityIdentifier("askNoum.attachedContext.manage")
+    }
+
+    private var attachedContextPresentation: AskNoumAttachedContextPresentation {
+        let eligibleSessions = PracticeProgressEligibility.eligibleSessions(in: sessionStore.sessions)
+        let latestTimedPractice = eligibleSessions
+            .filter { $0.mode == .timed }
+            .max(by: { $0.date < $1.date })
+        let focus = Self.currentFocusValue(caseFile: coachMemoryStore.currentMemory?.caseFile)
+            ?? coachMemoryStore.currentMemory?.currentLever?.displayName
+        let compatibleProofCount = proofMomentStore.recent(
+            limit: AskNoumAttachedContextPresentation.maximumVerifiedQuotes,
+            compatibleWith: voice
+        ).count
+
+        return AskNoumAttachedContextPresentation.make(
+            latestTimedPracticeLabel: latestTimedPractice?.mode.displayLabel,
+            hasLatestTimedTranscript: latestTimedPractice?.transcript
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty == false,
+            hasRecentPractice: !eligibleSessions.isEmpty,
+            verifiedQuoteCount: compatibleProofCount,
+            currentFocus: focus,
+            hasSavedGoal: coachingProfileStore.profile != nil,
+            conversationMessageCount: store.replayForModel.count
+        )
     }
 
     // MARK: - Thread options
@@ -1045,11 +1230,9 @@ struct AskNoumView: View {
                 Button {
                     showTrajectorySheet = true
                 } label: {
-                    Label("Your trajectory", systemImage: "brain")
+                    Label("Manage attached context", systemImage: "brain")
                 }
-                // "Your trajectory" names the noun, not the action. The hint
-                // says what opens and where the content comes from.
-                .accessibilityHint("Opens what Noum has learned from your practice so far.")
+                .accessibilityHint("Reviews the goals, recent reps, and trends Noum can use for coaching.")
                 .accessibilityIdentifier("askNoum.trajectoryMenuItem")
 
                 if !store.messages.isEmpty {

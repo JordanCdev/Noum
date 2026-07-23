@@ -224,7 +224,7 @@ struct PrivacyProductionContractTests {
             repositoryRoot.appendingPathComponent("public/privacy.html"),
         ]
         let requiredDisclosures = [
-            "July 17, 2026",
+            "July 21, 2026",
             "Noum itself does not store your email address, phone number, or password in Noum profile or session records.",
             "Guest access first attempts anonymous Firebase Authentication during a bounded launch window.",
             "If that attempt cannot complete, Noum creates a Keychain-backed local-only guest so practice can continue on this device.",
@@ -2512,7 +2512,8 @@ struct TypedCoachEvidencePipelineWireTests {
 
         let trace = try #require(FlowEventLog.shared.recentCoachTraces(limit: 20)
             .first(where: { $0.correlationId == ids.coachID }))
-        let stages = Set(trace.events.map(\.stage))
+        let orderedStages = trace.events.map(\.stage)
+        let stages = Set(orderedStages)
         for expectedStage in [
             CoachTraceStage.accepted,
             CoachTraceStage.classified,
@@ -2524,6 +2525,22 @@ struct TypedCoachEvidencePipelineWireTests {
         ] {
             #expect(stages.contains(expectedStage), "Missing trace stage \(expectedStage)")
         }
+        let semanticPath = [
+            CoachTraceStage.classified,
+            CoachTraceStage.goalResolved,
+            CoachTraceStage.memoryLoaded,
+            CoachTraceStage.evidenceLoaded,
+            CoachTraceStage.rubricSelected,
+            CoachTraceStage.promptAssembled,
+        ]
+        let semanticIndexes = try semanticPath.map { stage in
+            try #require(orderedStages.firstIndex(of: stage), "Missing trace stage \(stage)")
+        }
+        #expect(semanticIndexes == semanticIndexes.sorted())
+        #expect(CoachTraceStage.all.isSuperset(of: [
+            CoachTraceStage.streamFirstBuffered,
+            CoachTraceStage.streamFirstVisible,
+        ]))
         let classified = try #require(trace.events.first(where: { $0.stage == CoachTraceStage.classified }))
         #expect(classified.numerics["userCharacters"] == 3_000)
         #expect(trace.terminalState == .accepted)
