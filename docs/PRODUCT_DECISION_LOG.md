@@ -94,11 +94,33 @@ research pass (deep-research report 10), with one founder override noted below.
 | Design-gate medium | **Figma first (two variants per surface), one decision, then SwiftUI** | Parallel low-fidelity exploration is cheaper than SwiftUI divergence; discipline is the hard gate, not more design | No SwiftUI restyling before an approved frame |
 | Sequencing | **Slice 1 (first value loop) outranks M14 ops when engineering time conflicts** | The first complete coaching loop is the value mechanism; M14 gates are mostly operator-owned and proceed in parallel | Build order follows §17 slices; release gates continue independently |
 
+### Research-refined defaults — 2026-07-24 (pre-Figma pass)
+
+Refinements from the pre-Figma deep-research pass
+(`DEEP_RESEARCH_BRIEF_2026-07-24.md` → report 11). These sharpen the founder
+decisions above without contradicting them; each carries its own validation
+before locking.
+
+| Refinement | Working default | Validate via |
+|---|---|---|
+| Price points | US-led anchor **$9.99/mo · $69.99/yr**; localize **£8.99/£59.99 UK**, **€10.99/€74.99 EU** (native price points, not FX conversion) | Server-side A/B vs $12.99/$89.99 at the same placement |
+| Free model | **Hybrid**: 7-day full-access trial triggered after first value + perpetual metered free lane (3 coached reps/week) | Hybrid vs freemium-only on D7 activation, D30 conversion/retention |
+| Rewrite-ladder allowance | **One full free ladder/week after the free first week** (answers SPEC_rewrite_ladder_reliability's open question) | 0 vs 1 vs 3 ladders/week |
+| Paywall trigger | **After the first retry comparison** (the causality moment), refining "after first value" | Post-review vs post-retry A/B; guardrail = first-loop completion |
+| Paywall design | Honest **timeline paywall**, annual preselected, plain billing language | Timeline vs benefits-list A/B |
+| Voice-identity variants (orb revamp) | Design exactly three: **breathing orb · aurora ribbon · typographic presence**; reject anthropomorphic/waveform-toy directions | Figma preference test ("most trustworthy for difficult-conversation coaching") |
+| Motion parameters | Voice response feel ≤~120 ms; idle breathing ~4–5 s; Reduce Motion = fades, no spatial/depth movement | Three motion levels, two-minute mock call |
+| IA challenger | Test 4-tab vs **Coach / Practice / You** (the strongest 3-area case) using Maze/Lyssna, ~10 participants/arm, tasks: start practice · find change · correct focus · prep real moment; thresholds ≥80/70/70% direct success, split-within-10-points → stay prototype | Unmoderated first-click + prototype test, ~$100–150 |
+| Terminology | "**Practice**"/"**take**" primary in UI; "rep" demoted to secondary shorthand — PROTOTYPE, medium-low confidence, do NOT mass-rename yet | Cold-user preference test UK+US |
+| Privacy posture | **Delete raw audio quickly by default**; transcripts + coaching memory retained only as needed, user-controllable — stricter than market norm on audio | Two privacy descriptions in usability tests |
+| Reminder cadence | ≤3 pushes/week: one neutral rhythm, one plan-linked (only on strong evidence), one pre-moment | 1 vs 2 vs 3 cohorts; opt-out rate first-class |
+| Aspirational rewrite framing | "A stronger version of your line," never "how a great speaker would say it" — attainability is the motivator | Close vs perfect rewrites on motivation-to-retry |
+
 ### Founder decisions still open
 
 | Decision | Status | Working default |
 |---|---|---|
-| Free-tier allowance and subscription price | Working default set, needs unit-economics calibration | 3 free coached reps/week + first-week review free; ~£9.99/month or £69.99/year. Next research pass should be commercial calibration, not more product UX |
+| Final price lock | Refined defaults above; lock after live paywall A/B | $9.99/$69.99 US-led, localized |
 | Initial go-to-market wedge | Deferred to commercial planning | Validate with adults facing meaningful work communication moments |
 | Human-coach calibration investment | Deferred until budget allows | Small blinded expert review before any broad claims |
 | Public claim about replacing a human coach | **Settled: never claim parity** (VISION non-negotiable) | Position as personalised AI coaching |
