@@ -78,18 +78,30 @@
 | Weekly review composition | learning, change, uncertainty, next plan | Exact duration and detail need testing | Week-one pilot |
 | Social comparison visibility | Secondary and opt-in | User value and harm differ by audience | Controlled prototype/test |
 
-## Founder decisions remaining
+## Founder decisions — resolved 2026-07-23
 
-| Decision | Why founder judgement is required | Recommended default until decided |
+Resolved via `FOUNDER_DECISION_SHEET_2026-07-23.md` and the founder-decision
+research pass (deep-research report 10), with one founder override noted below.
+
+| Decision | Resolution | Rationale | Implementation consequence |
+|---|---|---|---|
+| League/friend leaderboard at launch | **Hidden from core journey; code retained** | Leaderboard effects are mixed and design-dependent; SDT risk to intrinsic motivation; social can't safely ship pre-cutover anyway | Stays behind release gates, out of primary nav; revisit later as an opt-in layer |
+| Path as named destination | **Folds under Progress as the plan's visual layer** | Tabs reflect top-level hierarchy; Path as a peer destination tells a second progress story | "Path" survives as branded metaphor and visual grammar inside one Progress narrative |
+| Default coach persona | **Warm-professional; directness earned over time or on explicit request** | Working-alliance evidence: warmth builds the trust that later makes challenge land; "Be direct with me" style requests are honoured immediately | No harsh-by-default copy; directness escalates with evidence or by request |
+| Live-call surface and orb | **Live call stays the core relationship surface; the orb VISUAL is explicitly not locked — founder authorises revamp or replacement** (overrides report 10's "centerpiece" framing) | The relationship mode is proven; the current orb rendering is not sacred brand equity | Design gate may propose a new live-call identity within brand rules (SF Symbols + motion + colour + shape; no characters, no anthropomorphic companion framing) |
+| Paywall timing | **Strong paywall only after first meaningful coaching value** (first real review or first retry) | Category norms + trust-dependent product; harder variants testable later | Free path must reach the first review/retry unblocked |
+| Data retention defaults | **Minimise by default; explicit keep/export/delete controls** | ICO storage-limitation guidance; privacy posture as commercial asset | Audit current retention behaviour pre-launch; continuity features become opt-in retention |
+| Design-gate medium | **Figma first (two variants per surface), one decision, then SwiftUI** | Parallel low-fidelity exploration is cheaper than SwiftUI divergence; discipline is the hard gate, not more design | No SwiftUI restyling before an approved frame |
+| Sequencing | **Slice 1 (first value loop) outranks M14 ops when engineering time conflicts** | The first complete coaching loop is the value mechanism; M14 gates are mostly operator-owned and proceed in parallel | Build order follows §17 slices; release gates continue independently |
+
+### Founder decisions still open
+
+| Decision | Status | Working default |
 |---|---|---|
-| Initial go-to-market wedge | Mission can be broad, acquisition cannot | Validate with adults facing meaningful work communication moments |
-| Fate of League/friend leaderboard at launch | Strategic retention and brand choice | Hide from core journey; do not remove code yet |
-| Whether Path remains a named brand destination | Brand identity versus simplicity | Keep under Progress during prototype |
-| Monetisation and paywall timing | Commercial strategy | Demonstrate first meaningful coaching value before strong paywall |
-| Free-tier allowance and subscription price | Unit economics and positioning | Keep separate from UX architecture decision |
-| Public claim about replacing a human coach | Brand/legal/reputation risk | Position as personalised AI coaching; do not claim parity yet |
-| Human-coach calibration investment | Budget and credibility strategy | Run a small blinded expert review before broad claims |
-| Data retention defaults for transcripts/audio | Privacy posture and operational cost | Minimise retention; make controls explicit |
+| Free-tier allowance and subscription price | Working default set, needs unit-economics calibration | 3 free coached reps/week + first-week review free; ~£9.99/month or £69.99/year. Next research pass should be commercial calibration, not more product UX |
+| Initial go-to-market wedge | Deferred to commercial planning | Validate with adults facing meaningful work communication moments |
+| Human-coach calibration investment | Deferred until budget allows | Small blinded expert review before any broad claims |
+| Public claim about replacing a human coach | **Settled: never claim parity** (VISION non-negotiable) | Position as personalised AI coaching |
 
 ## Deferred
 
