@@ -1,0 +1,3 @@
+## ux-overhaul...origin/ux-overhaul
+?? .screenshots/2026-07-23_autostop-f441dd019-1638/
+?? artifacts/

@@ -1,0 +1,20 @@
+f441dd019 (HEAD -> ux-overhaul, origin/ux-overhaul) chngs
+d90bb8922 fix(coach): recover in-app chat follow-ups
+6f0d80352 test(coach): refresh app-path evidence
+6a27e42cd feat(ux): harden coaching and progress flows
+cf7ddc980 feat(ui): unify guided practice and progression
+c34b0505a chngs
+43f5185fd Document merged vision-gap candidate
+56cfc2f0d Merge vision gap closure into ux-overhaul
+75a96d888 (codex/vision-gap-closure) Refresh source-bound vision evidence
+1197735c0 handoffs
+bde1db5a4 Cover clipped profile header audit boundary
+bc7398098 Stabilize clipped ladder accessibility audit
+b7fe501b3 Bind vision audit to complete UI soak
+cdce32af9 Stabilize full journey UI regression gate
+413253ff2 Refresh source-bound vision audit
+a63085fb1 Harden accessible coaching journey states
+d14d297e7 Record accessibility journey evidence
+005c109a9 Harden core journey accessibility
+6c2688a53 Document vision completion gaps
+5f25e6a24 Prove coach requests across scene transitions

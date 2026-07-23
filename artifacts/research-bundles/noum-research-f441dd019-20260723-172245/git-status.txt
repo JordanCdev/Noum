@@ -1,0 +1,16 @@
+# pwd
+/Users/jordan/src/GitHub/Noum
+
+# git status --short --branch
+## ux-overhaul...origin/ux-overhaul
+?? .screenshots/2026-07-23_autostop-f441dd019-1638/
+?? .screenshots/2026-07-23_autostop-f441dd019-1721/
+?? artifacts/
+
+# git rev-parse HEAD
+f441dd0191eb08f79ea159583878c1558f900df7
+
+# git worktree list (main worktree only relevant)
+/Users/jordan/src/GitHub/Noum                                                    f441dd019 [ux-overhaul]
+/Users/jordan/src/GitHub/Noum-arena-agent                                        960c70a8f [agent/arena]
+/Users/jordan/src/GitHub/Noum-chat-agent                                         a169ff3aa [agent/chat]

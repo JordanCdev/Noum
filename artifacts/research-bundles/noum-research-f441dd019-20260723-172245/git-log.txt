@@ -1,0 +1,50 @@
+f441dd019 chngs
+d90bb8922 fix(coach): recover in-app chat follow-ups
+6f0d80352 test(coach): refresh app-path evidence
+6a27e42cd feat(ux): harden coaching and progress flows
+cf7ddc980 feat(ui): unify guided practice and progression
+c34b0505a chngs
+43f5185fd Document merged vision-gap candidate
+56cfc2f0d Merge vision gap closure into ux-overhaul
+75a96d888 Refresh source-bound vision evidence
+1197735c0 handoffs
+bde1db5a4 Cover clipped profile header audit boundary
+bc7398098 Stabilize clipped ladder accessibility audit
+b7fe501b3 Bind vision audit to complete UI soak
+cdce32af9 Stabilize full journey UI regression gate
+413253ff2 Refresh source-bound vision audit
+a63085fb1 Harden accessible coaching journey states
+d14d297e7 Record accessibility journey evidence
+005c109a9 Harden core journey accessibility
+6c2688a53 Document vision completion gaps
+5f25e6a24 Prove coach requests across scene transitions
+98626ad19 Add redacted coach trace support export
+7b8552d79 Refresh source-bound journey evidence
+6b1dabcfc Align independent readiness scoring
+57333a2f0 Refresh transcript practice corpus
+4131c1060 Fix Settings accessibility picker layout
+2282efd49 Harden coaching request terminal contracts
+7ac5087c6 Refresh product journey evidence and handoff
+fe0498e29 Complete transcript practice adaptation loop
+87041e9a1 Document product journey evidence and launch boundary
+6712ee74d Isolate app-path evidence state
+424347b3c Verify transcript ladder practice journey
+c9a8714f2 Keep vulnerable repairs aligned with user intent
+aafee3ce1 Score single-turn evidence without fake continuity
+86ecbb8fc Keep vulnerable coaching supportive and actionable
+c405aa210 Align app-path scoring with response intent
+3b0ebe164 Harden multi-turn coaching corpus and live replies
+f58bfe492 Align app-path semantics with response intent
+b157ccc01 Build coherent coaching journey and terminal traces
+2bcb1ccff record Ask Noum production deployment
+08985b393 Size seeded reps to their duration and make the fixture hermetic
+a3ccb1041 Surface the rewrite card, announce coach state to VoiceOver, cut dead code
+b1fc40d24 Close legacy credential leak and baseline history scan
+f4f8fa4fb fix Ask Noum goal continuity and diagnostics
+716b9fc7b fix
+ee8c995c1 Prevent false Ask Noum evidence claims
+bb38f4d6d Fix Ask Noum callable invocation
+cd4697e09 Record Ask Noum v2 production deployment
+86334ed45 Add scoped Ask Noum backend deployment
+fb339e310 chngs
+5c9348b3d chngs

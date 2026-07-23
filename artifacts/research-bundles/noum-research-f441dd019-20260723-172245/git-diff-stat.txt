@@ -1,0 +1,9 @@
+# git diff --stat HEAD (working tree vs HEAD)
+(empty = no tracked-file modifications)
+
+# git diff --stat main...HEAD (branch vs main)
+ .../templates/professional-calibration.json        |    33 +
+ .../templates/real-device-testflight.json          |   363 +
+ .../templates/real-user-transfer.json              |    78 +
+ .../tests/test_release_evidence.py                 |  1211 +++
+ 910 files changed, 1181523 insertions(+), 24268 deletions(-)
