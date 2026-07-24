@@ -60,3 +60,6 @@ Page `171:497`. Journey Today→Recording→Processing→Review→RetryRec→Com
 
 ## V4.3 Founder Final (in flight, 2026-07-24, per deep-research report 12)
 Page `179:497`. Screens: Today `179:498` (recomposed hero + idle trace) · Recording `179:544` (mirrored Noum trace) · Processing `179:576` (task copy) · Review `179:606` (−1 line) · Retry rec `179:641` (SHARPER TARGET diff) · Result `179:673` (receded original + comparative traces) · Updated Today `179:706` (unmistakable state) · Progress `179:759`. Darks `181:538/597/631/676/742` (semantic emphasis explicit). AX5 proof `181:497`, VO board `181:506`. Loop wired incl. Updated→Progress. Exports + sheets in artifacts/figma/v4.3-founder-final/. Critique running.
+
+## V4.3 CRITIQUED + REVISED (2026-07-24)
+3-lens critique PASS; blockers fixed (countdown margin, dark first-try recede) + 7 ride-alongs. Final exports + sheets + REVIEW.md in artifacts/figma/v4.3-founder-final/. READY FOR FOUNDER SIGN-OFF. Next after sign-off: componentization + variable rebinding, then SwiftUI Slice 1.
