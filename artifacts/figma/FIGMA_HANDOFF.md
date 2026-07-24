@@ -28,7 +28,7 @@ One violet gradient hero per app — Today's prescription, the coach's daily bri
 - You set: memory inspector, preferences, privacy/retention controls, settings.
 - Earned-progress arrival + collapsed signal motion comps; milestone moment.
 - Dark mode for all screens (components are mode-ready; screens 02/05/06 are light-only except Dark Today).
-- Live-call full state matrix (9 states × 3 directions — only identity + annotations exist).
+- (Live-call state matrices: DONE at freeze — 131:497/132:497/132:554.)
 - Dynamic Type variants beyond the AX example; VoiceOver annotation per remaining screen.
 
 ## FROZEN — 2026-07-24
