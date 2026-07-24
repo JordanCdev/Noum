@@ -54,3 +54,6 @@ Page `137:497` "10 Production polish V2". V1 refs locked: 137:498/541/572. V2 fr
 
 ## V4.1 Production journey (2026-07-24)
 Founder approved the polish layer ("V4"). Page `161:497` "11 V4.1 Production journey": complete wired journey Today `161:498` → Practice `162:497` (NEW) → Recording `163:497` (NEW, voice-reactive) → Review `161:568` → Retry `164:497` (NEW) → Comparison `164:515` (NEW) → Progress update `161:598` (earned-arrival banner). Darks: `161:670`/`166:672`/`166:702`. States: processing/low-evidence/rewrite-unavailable/offline `166:497–590`. Handoff annotations `167:497`. 2× exports + JOURNEY.md in artifacts/figma/v4.1/. Componentization + SwiftUI deferred until V4.1 journey approval.
+
+## V4.2 Compressed loop (2026-07-24)
+Page `171:497`. Journey Today→Recording→Processing→Review→RetryRec→Comparison→TodayUpdated (+Progress). Briefings removed, one voice-trace motif, violet-only actions, SF-convention tab glyphs. 3-lens critique + revision applied (incl. dark recede-inversion fix). Exports + REVIEW.md in artifacts/figma/v4.2/. V4.1 untouched.
