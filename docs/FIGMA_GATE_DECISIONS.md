@@ -70,3 +70,16 @@ SF Pro fonts are locally-installed system fonts and render with broken metrics t
 - Live-call: 10-state matrices for all three directions (`131:497` D1, `132:497` D2, `132:554` D3) with Reduce Motion and reproducibility notes (D1 = pure SwiftUI shapes; D2 = Metal/mesh-gradient, needs runtime justification; D3 = cheapest pure SwiftUI). **No winner chosen — preference test required.**
 - Product states added (page 05, `133:497–133:712`): first-session minimal evidence, earned-progress arrival, goal-changed (evidence carried over, no identity shaming), low-capacity, no-upcoming-moment, offline.
 - IA: H2 Coach/Practice/You wired prototype built (`134:497/530/546`); H1 = approved screens. 17 prototype links verified, zero dead hotspots.
+
+---
+
+## Production polish V2 — 2026-07-24
+
+Page `137:497`. V1 approved frames remain locked; V2 candidates await founder acceptance: Today `138:497` (+dark `150:497`), Review `139:497`, Progress `141:497`. Full record: `artifacts/figma/production-polish-v2/REVIEW.md`.
+
+Key decisions made in this pass:
+- **Motif law:** the waveform mark lives in exactly two homes — Today hero presence + active tab glyph. Never stamped beside titles.
+- **Transformation integrity:** the one-step rewrite highlights what now leads in the user's own words; Noum never inserts its own phrasing while claiming "your words." ("nothing added, nothing lost" is the contract.)
+- **Amber canonized:** `color/feedback/caution` marks honest lapses (hollow ring + text label, never color alone).
+- **Edge-to-edge hero** replaces card-on-canvas on Today; blue CTA straddles the hero seam.
+- Vocabulary: the trained behaviour's failure mode is "wind-up" on every surface.

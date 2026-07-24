@@ -34,6 +34,9 @@ One violet gradient hero per app — Today's prescription, the coach's daily bri
 ## FROZEN — 2026-07-24
 The gate is frozen: approved frames locked except defects, components style+variable-bound, states/prototypes verified. Two tests remain before their locks (live-call direction, IA choice) — everything else is implementable now.
 
+## V2 layer (2026-07-24)
+Page 10 holds the production-polish V2 candidates (REVIEW.md in production-polish-v2/ has node IDs, critic record, remaining weaknesses). If the founder accepts V2: rebind to variables/styles, re-base the product/Review states onto V2, complete dark set, then update the component map statuses before Slice 1 visuals are final.
+
 ## How to resume
 
 Read `FIGMA_PROGRESS.md` (node IDs + constraints — especially the SF-font trap and text-node recipe), then continue with the gaps above using page-04 components and the approved screens as the source of truth.
