@@ -26,9 +26,10 @@
 
 ### Page 01: IA board `107:497` — coaching loop pills, H1 four-tab vs H2 Coach/Practice/You, task-test plan with thresholds
 
-## In flight
-- Five critic subagents (IA/flow, visual, a11y, coaching-content, SwiftUI feasibility) reviewing gate exports.
-- IA critic verdict received: **Today-B, Review-A, Progress-A**; system rule: violet-filled surface = startable next step ONLY; fixes queued.
+## Gate DECIDED (see docs/FIGMA_GATE_DECISIONS.md, commit f6ecc6da7)
+- 4 critics returned (SwiftUI critic hit session limit; feasibility assessed inline from codebase knowledge).
+- **Approved: one-hero hybrid** — Today = B's violet hero (fixes applied), Review = A transcript-first, Progress = A trajectory.
+- APPROVED screens built on page 02 row 2: Today `109:497`, Review `110:497`, Progress `111:497` (all critic fixes: blue CTA out of hero, 100% white on darkened gradient, ✓ not green dots, real adjustment buttons, one tertiary chevron row, WHAT NOUM HEARD, +2 reps this week, score inside evaluation disclosure).
 
 ## Remaining
 - Aggregate critic verdicts → choose system → FIGMA_GATE_DECISIONS.md
