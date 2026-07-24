@@ -13,7 +13,7 @@
 | 04 Review | V4.1 / 04 Review | `161:568` (dark `166:672`) | V4 Review |
 | 05 Retry briefing | V4.1 / 05 Retry briefing | `164:497` | NEW — single-purpose modal |
 | 06 Comparison | V4.1 / 06 Comparison | `164:515` | NEW — V4-based rebuild |
-| 07 Progress update | V4.1 / 07 Progress update | `161:598` (dark `166:702`) | V4 Progress + earned arrival |
+| 07 Progress update | V4.1 / 07 Progress update | `161:598` (dark `169:520`) | V4 Progress + earned arrival |
 
 **Wiring:** Today Start → Practice → Recording ("I'm done") → Review ("Try it again now") → Retry ("Start retry") → Comparison ("Done for today") → Progress update. Recording-for-retry is elided in the prototype (returns to comparison directly).
 
@@ -32,6 +32,9 @@ Handoff board `167:497` carries per-screen VO order, Dynamic Type behavior, RM r
 ## Exports (this directory, true 2×)
 
 01–07 light · 01/04/07 dark · journey-strip.png (the review artifact).
+
+## Verification (round 2)
+Fresh-eyes journey critic: handoffs clean, arc lands, visual coherence held. Four trust-level defects found and FIXED: rep-ledger contradiction (now one canon: held twice prior → three of four after today's pressure hold), non-verbatim first-try transcript on Comparison (now verbatim truncation of Review's quote), Stage row clipped behind the tab bar (unclipped), motion-spec annotations leaked as product copy on Recording/Processing (moved to canvas annotations). Also: battery chrome on all screens, Retry gets title + idle motif, "Plan review · Friday" disambiguated from the real-moment "Stakeholder review". Remaining known: S1/S2 both offer "Start rep" (S2 is the Practice-tab alternate entry, documented); Retry stays deliberately minimal.
 
 ## Honest remaining
 
