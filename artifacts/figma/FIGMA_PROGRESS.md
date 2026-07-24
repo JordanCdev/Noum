@@ -57,3 +57,6 @@ Founder approved the polish layer ("V4"). Page `161:497` "11 V4.1 Production jou
 
 ## V4.2 Compressed loop (2026-07-24)
 Page `171:497`. Journey Today→Recording→Processing→Review→RetryRec→Comparison→TodayUpdated (+Progress). Briefings removed, one voice-trace motif, violet-only actions, SF-convention tab glyphs. 3-lens critique + revision applied (incl. dark recede-inversion fix). Exports + REVIEW.md in artifacts/figma/v4.2/. V4.1 untouched.
+
+## V4.3 Founder Final (in flight, 2026-07-24, per deep-research report 12)
+Page `179:497`. Screens: Today `179:498` (recomposed hero + idle trace) · Recording `179:544` (mirrored Noum trace) · Processing `179:576` (task copy) · Review `179:606` (−1 line) · Retry rec `179:641` (SHARPER TARGET diff) · Result `179:673` (receded original + comparative traces) · Updated Today `179:706` (unmistakable state) · Progress `179:759`. Darks `181:538/597/631/676/742` (semantic emphasis explicit). AX5 proof `181:497`, VO board `181:506`. Loop wired incl. Updated→Progress. Exports + sheets in artifacts/figma/v4.3-founder-final/. Critique running.
