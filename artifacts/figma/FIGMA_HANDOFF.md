@@ -1,5 +1,7 @@
 # Figma Design Gate — Handoff
 
+> **SUPERSEDED for current work: see `V4_4_FINAL_HANDOFF.md` (design phase closed at V4.4).** This file remains the gate-era record.
+
 **Date:** 2026-07-24 · **File:** https://www.figma.com/design/srCgE5IP3rWoNMWtHo3AnI/
 **Decision record:** `docs/FIGMA_GATE_DECISIONS.md` · **Component map:** `docs/FIGMA_SWIFTUI_COMPONENT_MAP.md` · **Resume log:** `FIGMA_PROGRESS.md`
 

@@ -66,3 +66,6 @@ Page `179:497`. Screens: Today `179:498` (recomposed hero + idle trace) · Recor
 
 ## V4.4 Founder Sign-off (2026-07-24)
 Page `191:497` per report 13. Recording family 192:*, darks 194:*, in-file sheets 195:*. 3-lens critique → revision (stale-export trap, offline clip, label centering, dark green-death root-caused: grey bucket swallowed g<0.5 greens). Exports + REVIEW.md in artifacts/figma/v4.4-founder-polish/. SIGN-OFF READY. After sign-off: componentization + rebinding → SwiftUI Slice 1.
+
+## DESIGN PHASE CLOSED — 2026-07-24
+V4.4 signed off. Authoritative handoff: artifacts/figma/V4_4_FINAL_HANDOFF.md (node IDs, locked decisions, traps, next task, fresh-session startup prompt). No further design passes.
