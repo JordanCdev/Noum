@@ -45,3 +45,6 @@ Practice tab + recording states · Ask Noum set · Progress deep set (weekly rev
 
 ## Known constraints
 - use_figma: SF fonts broken (above); Inter style is "Semi Bold" (space), Nunito is "SemiBold" (no space); one setCurrentPageAsync per call; text = load font → set fontName → characters → size; width-constrained text = textAutoResize HEIGHT + resize.
+
+## CLOSED — gate frozen 2026-07-24
+Closing run: stale boards archived (21:2, 40:2 → 00), fresh foundations `128:497`, scripted lint fixed (33 texts style-bound, +4 role styles, quiet button 45pt, 2 fills bound), live-call 10-state matrices ×3 (`131:497`,`132:497`,`132:554`), six Today product states (`133:*`), H2 wired prototype (`134:*`), 17 prototype links verified zero dead. Approved frames LOCKED. Remaining tests: live-call preference test, IA task test (H1 vs H2), Stark manual run in-editor.

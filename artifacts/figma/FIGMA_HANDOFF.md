@@ -31,6 +31,9 @@ One violet gradient hero per app — Today's prescription, the coach's daily bri
 - Live-call full state matrix (9 states × 3 directions — only identity + annotations exist).
 - Dynamic Type variants beyond the AX example; VoiceOver annotation per remaining screen.
 
+## FROZEN — 2026-07-24
+The gate is frozen: approved frames locked except defects, components style+variable-bound, states/prototypes verified. Two tests remain before their locks (live-call direction, IA choice) — everything else is implementable now.
+
 ## How to resume
 
 Read `FIGMA_PROGRESS.md` (node IDs + constraints — especially the SF-font trap and text-node recipe), then continue with the gaps above using page-04 components and the approved screens as the source of truth.

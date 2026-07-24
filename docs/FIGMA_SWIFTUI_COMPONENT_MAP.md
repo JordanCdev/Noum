@@ -28,6 +28,8 @@
 | Live call D3 typographic presence | 115:548 | ditto | — | breathe/keypoints type-on | Reduce Motion: static, instant keypoints | prototype |
 | Paywall timeline | 119:497 | new `PaywallTimelineView` (post-first-retry trigger) | surface, coach accents | annual preselected | timeline rows read in order | to build |
 
+**Added at freeze:** Today product states `133:497` first-session · `133:540` earned-arrival · `133:583` goal-changed · `133:626` low-capacity · `133:669` no-moment · `133:712` offline. Live-call state matrices `131:497` (D1) `132:497` (D2) `132:554` (D3). H2 IA prototype `134:497/134:530/134:546`. Foundations board `128:497`. New text styles: Typography/Eyebrow·Button·Chip·Row (components fully style-bound; diff text intentionally mixed for the highlight).
+
 **Screens (page 02 approved / 05 / 06 / 07):** Today `109:497` · Review `110:497` · Progress `111:497` · Review states 1–5 `116:497/116:528/116:562/116:598/117:506` · Onboarding 1–5 `118:506/118:527/118:548/118:564/118:583` · Dark Today `120:497` · Paywall `119:497` · A11y contract `123:497`.
 
 **Implementation order (per contract §17 slices):** Slice 1 = Review reveal + coached absence + retry (reuses most existing code) → Today hero → Progress. No new state owners; `CoachPlanSnapshot` feeds Today, existing session/rewrite stores feed Review.

@@ -56,3 +56,17 @@ SF Pro fonts are locally-installed system fonts and render with broken metrics t
 - 4-tab vs 3-tab IA: task-test plan with thresholds on page 01; keep 4-tab as prototype until run.
 - Live-call identity: three directions (breathing orb / aurora / typographic presence) to be built in 06 and preference-tested.
 - Exact motion values on device (tokens carry Reduce Motion zeros already).
+
+---
+
+## Freeze addendum — 2026-07-24 (closing run)
+
+**THE FIGMA GATE IS FROZEN.** Approved frames `109:497` (Today), `110:497` (Review), `111:497` (Progress) are locked except for defects. Changes now follow the decision-log governance: record evidence → propose → update — never silently.
+
+### Closing-run corrections
+- Stale-metadata note: Figma's REST metadata endpoint intermittently reports only a subset of pages; the plugin API (`use_figma`) confirmed all ten pages 00–09 exist and is the source of truth.
+- Stale Figtree/Manrope foundations board and the old Home/Train/Review/Profile/Settings journey board moved to 00 Archive; fresh foundations board `128:497` states the only valid guidance (Nunito/Inter mocks ↔ SF Pro device; Path under Progress; both IAs are hypotheses; no Material 3 / Simple DS in production frames; iOS 26 kit for native chrome only).
+- Scripted lint (Stark/Design Lint are interactive plugins the MCP cannot drive — equivalent checks scripted): 33 unbound texts bound to styles (+4 new role styles: Eyebrow/Button/Chip/Row), 2 decorative fills bound, Quiet button raised to 45pt. Remaining intentional: the one-step diff text is mixed-font by design (the highlight); hero interior whites are raw by design (on-gradient). Run Stark manually in-editor before first TestFlight designs review for certification-grade numbers.
+- Live-call: 10-state matrices for all three directions (`131:497` D1, `132:497` D2, `132:554` D3) with Reduce Motion and reproducibility notes (D1 = pure SwiftUI shapes; D2 = Metal/mesh-gradient, needs runtime justification; D3 = cheapest pure SwiftUI). **No winner chosen — preference test required.**
+- Product states added (page 05, `133:497–133:712`): first-session minimal evidence, earned-progress arrival, goal-changed (evidence carried over, no identity shaming), low-capacity, no-upcoming-moment, offline.
+- IA: H2 Coach/Practice/You wired prototype built (`134:497/530/546`); H1 = approved screens. 17 prototype links verified, zero dead hotspots.
