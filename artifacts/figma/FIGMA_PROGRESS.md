@@ -31,11 +31,17 @@
 - **Approved: one-hero hybrid** — Today = B's violet hero (fixes applied), Review = A transcript-first, Progress = A trajectory.
 - APPROVED screens built on page 02 row 2: Today `109:497`, Review `110:497`, Progress `111:497` (all critic fixes: blue CTA out of hero, 100% white on darkened gradient, ✓ not green dots, real adjustment buttons, one tertiary chevron row, WHAT NOUM HEARD, +2 reps this week, score inside evaluation disclosure).
 
-## Remaining
-- Aggregate critic verdicts → choose system → FIGMA_GATE_DECISIONS.md
-- Apply winner fixes; componentize (page 04) with variable bindings
-- Expand: 05 core loop (onboarding→retry incl. 5 Review states), 06 relationship (live-call 3 identity directions × states, Ask Noum set, paywall timeline, You/memory), 07 dark mode + Dynamic Type + VoiceOver + Reduce Motion, 08 prototype links, 09 handoff
-- FIGMA_SWIFTUI_COMPONENT_MAP.md, FIGMA_HANDOFF.md, exports to approved/rejected dirs
+## Completed after gate decision
+- Components page 04: 17 variable-bound components (atoms 112:497–112:511, evidence+hero 113:497–113:515, states+nav 114:497–114:516)
+- 05: five Review states (116:497 reveal / 116:528 coached absence / 116:562 failed / 116:598 Pro row / 117:506 comparison-dominant) + onboarding 1–5 (118:506/527/548/564/583)
+- 06: live-call identity directions D1 breathing 115:497, D2 aurora 115:522, D3 typographic 115:548 + paywall timeline 119:497
+- 07: dark Today 120:497 + accessibility contract 123:497 + AX example 123:524
+- 08: prototype wired (02: Today→Review→Progress cycle + tab links; 05: onboarding chain→reveal→comparison) + pointer note
+- 09: handoff board 124:497 · docs: FIGMA_GATE_DECISIONS.md, FIGMA_SWIFTUI_COMPONENT_MAP.md, FIGMA_HANDOFF.md
+- Exports: artifacts/figma/approved/ (today/review/progress/dark/paywall/livecall), rejected/, gate-exports/
+
+## Remaining (next run — see FIGMA_HANDOFF.md "Not yet designed")
+Practice tab + recording states · Ask Noum set · Progress deep set (weekly review, Path visual, evaluation, real moments) · You/memory/settings · dark mode for remaining screens (components are mode-ready) · live-call full state matrices · per-screen VO annotations beyond Review/Today
 
 ## Known constraints
 - use_figma: SF fonts broken (above); Inter style is "Semi Bold" (space), Nunito is "SemiBold" (no space); one setCurrentPageAsync per call; text = load font → set fontName → characters → size; width-constrained text = textAutoResize HEIGHT + resize.
