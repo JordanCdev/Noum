@@ -63,3 +63,6 @@ Page `179:497`. Screens: Today `179:498` (recomposed hero + idle trace) · Recor
 
 ## V4.3 CRITIQUED + REVISED (2026-07-24)
 3-lens critique PASS; blockers fixed (countdown margin, dark first-try recede) + 7 ride-alongs. Final exports + sheets + REVIEW.md in artifacts/figma/v4.3-founder-final/. READY FOR FOUNDER SIGN-OFF. Next after sign-off: componentization + variable rebinding, then SwiftUI Slice 1.
+
+## V4.4 Founder Sign-off (2026-07-24)
+Page `191:497` per report 13. Recording family 192:*, darks 194:*, in-file sheets 195:*. 3-lens critique → revision (stale-export trap, offline clip, label centering, dark green-death root-caused: grey bucket swallowed g<0.5 greens). Exports + REVIEW.md in artifacts/figma/v4.4-founder-polish/. SIGN-OFF READY. After sign-off: componentization + rebinding → SwiftUI Slice 1.
