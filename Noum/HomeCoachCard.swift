@@ -362,9 +362,17 @@ struct HomeCoachCard: View {
     /// `home.screen` wait. Offsets only; curves come from the shared
     /// motion tokens (`.settle`).
     private enum HeroEntranceBeat {
-        static let traceWake: TimeInterval = 0.35
+        static let traceWake: TimeInterval = 0.28
         static let ctaDelay: TimeInterval = 0.12
+        /// Commit handoff: the trace lifts toward the recording surface's
+        /// presence for one beat before the push, so Today flows into the
+        /// rep instead of cutting away. All business state (acceptance,
+        /// arming, ledger) runs BEFORE the delay — only navigation waits.
+        static let handoff: TimeInterval = 0.18
     }
+    /// True during the commit handoff beat — the hero trace lifts while
+    /// the push is in flight. Reset when Home reappears on pop-back.
+    @State private var heroHandoff = false
     @State private var plannedPhraseError: String?
     /// The earned evidence event this visit is announcing (258:1078).
     /// Resolved once on appear, acknowledged immediately so the next Home
@@ -449,6 +457,13 @@ struct HomeCoachCard: View {
                 reduceMotion ? nil : .listChange,
                 value: commitCTAPressed
             )
+            // Commit handoff (Moment A): the trace lifts toward the
+            // recording presence during the pre-push beat.
+            .scaleEffect(heroHandoff ? 1.1 : 1)
+            .animation(
+                reduceMotion ? nil : NoumMotion.screenContinuation,
+                value: heroHandoff
+            )
 
             heroActions(renderedExposure: renderedExposure)
                 .padding(.top, Spacing.lg)
@@ -492,6 +507,8 @@ struct HomeCoachCard: View {
         }
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
+            // Pop-back from a rep: the handoff lift settles home again.
+            heroHandoff = false
             playEntranceChoreography()
             resolveEarnedState(for: renderedBlueprint)
         }
@@ -640,7 +657,9 @@ struct HomeCoachCard: View {
            days >= 0 && days <= 14 {
             VStack(spacing: Spacing.xs) {
                 ImmersiveCTA(title: "Continue prep", isPressed: $commitCTAPressed) {
-                    navigationPath.append(AppDestination.prepSession)
+                    commitWithHandoff {
+                        navigationPath.append(AppDestination.prepSession)
+                    }
                 }
                 .accessibilityIdentifier("home.coachCard.prepSession")
                 .accessibilityLabel(
@@ -1002,12 +1021,14 @@ struct HomeCoachCard: View {
            launch.launchedMode == .timed,
            let preparation = AutoGuidedFirstRep.prepareUserInitiatedSpokenProof(),
            let token = preparation.promptToken {
-            navigationPath.append(
-                AppDestination.timedPracticePrompt(
-                    token: token,
-                    difficulty: .medium
+            commitWithHandoff {
+                navigationPath.append(
+                    AppDestination.timedPracticePrompt(
+                        token: token,
+                        difficulty: .medium
+                    )
                 )
-            )
+            }
         } else {
             // V4.6 — the hero IS the briefing (target, reason, clock), so
             // Start lands directly in the rep flow. Same one-shot arming
@@ -1019,7 +1040,25 @@ struct HomeCoachCard: View {
             if launch.acceptsDisplayedPrescription {
                 PracticeModeQuickStart.arm(for: launch.launchedMode)
             }
-            navigationPath.append(launch.destination)
+            commitWithHandoff {
+                navigationPath.append(launch.destination)
+            }
+        }
+    }
+
+    /// Moment A commit continuity: every business mutation has already run
+    /// by the time this is called — only the navigation push rides the
+    /// 180ms handoff beat while the trace lifts. Reduce Motion pushes
+    /// immediately with no beat.
+    private func commitWithHandoff(_ push: @escaping () -> Void) {
+        guard !reduceMotion else {
+            push()
+            return
+        }
+        withAnimation(NoumMotion.screenContinuation) { heroHandoff = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(HeroEntranceBeat.handoff * 1_000_000_000))
+            push()
         }
     }
 

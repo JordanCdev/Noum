@@ -443,6 +443,11 @@ struct TranscriptRetryComparisonCard: View {
     @State private var enteredOutcomeID: UUID?
     @State private var cardSettled = false
     @State private var payoffLanded = false
+    /// One restrained expansion pulse on the payoff row — improved only,
+    /// fired on the same settle frame as the earnedEvidence haptic so the
+    /// felt and seen beats are one moment. Never loops, never on held/
+    /// regressed, skipped under Reduce Motion.
+    @State private var payoffPulse = false
     /// Trigger for the one-shot changed-word brighten wave; never toggled
     /// under Reduce Motion (the static highlight is the RM presentation).
     @State private var waveTrigger = false
@@ -575,7 +580,8 @@ struct TranscriptRetryComparisonCard: View {
                 }
                 .foregroundStyle(AppColor.positive)
                 .opacity(payoffLanded ? 1 : 0)
-                .scaleEffect(payoffLanded ? 1 : 0.97, anchor: .leading)
+                .scaleEffect(payoffLanded ? 1 : 0.94, anchor: .leading)
+                .scaleEffect(payoffPulse ? 1.045 : 1, anchor: .leading)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("transcriptRetry.payoff")
             }
@@ -686,6 +692,14 @@ struct TranscriptRetryComparisonCard: View {
             fireResultHaptic()
             if result == .improved || result == .held {
                 waveTrigger.toggle()
+            }
+            if result == .improved {
+                // The one visual pulse, paired with the two-beat haptic.
+                withAnimation(NoumMotion.earnedProgress) { payoffPulse = true }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    withAnimation(NoumMotion.earnedProgress) { payoffPulse = false }
+                }
             }
         }
     }
