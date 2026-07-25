@@ -203,6 +203,7 @@ struct AppShellView: View {
         TabView(selection: $selectedTab) {
             ContentView(navigationPath: $homePath, externalRoute: $homeRoute)
                 .environment(\.isSelectedAppTab, selectedTab == .home)
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem { tabLabel(.home) }
                 .tag(AppTab.home)
 
@@ -214,6 +215,7 @@ struct AppShellView: View {
                 .environment(\.isAppTabRoot, true)
                 .environment(\.isSelectedAppTab, selectedTab == .train)
             }
+            .toolbar(.hidden, for: .tabBar)
             .tabItem { tabLabel(.train) }
             .tag(AppTab.train)
 
@@ -222,6 +224,7 @@ struct AppShellView: View {
                     .environment(\.isAppTabRoot, true)
                     .environment(\.isSelectedAppTab, selectedTab == .review)
             }
+            .toolbar(.hidden, for: .tabBar)
             .tabItem { tabLabel(.review) }
             .tag(AppTab.review)
 
@@ -230,6 +233,7 @@ struct AppShellView: View {
                     .environment(\.isAppTabRoot, true)
                     .environment(\.isSelectedAppTab, selectedTab == .profile)
             }
+            .toolbar(.hidden, for: .tabBar)
             .tabItem { tabLabel(.profile) }
             .tag(AppTab.profile)
 
@@ -238,10 +242,14 @@ struct AppShellView: View {
                     .environment(\.isAppTabRoot, true)
                     .environment(\.isSelectedAppTab, selectedTab == .settings)
             }
+            .toolbar(.hidden, for: .tabBar)
             .tabItem { tabLabel(.settings) }
             .tag(AppTab.settings)
         }
         .tint(AppColor.brandBlue)
+        .overlay(alignment: .bottom) {
+            v46TabBar
+        }
         .background {
             AppTabAccessibilityBridge(
                 identifiers: AppTab.allCases.map(\.accessibilityIdentifier)
@@ -263,6 +271,70 @@ struct AppShellView: View {
     private func tabLabel(_ tab: AppTab) -> some View {
         Label(tab.title, systemImage: tab.systemImage)
             .accessibilityIdentifier(tab.accessibilityIdentifier)
+    }
+
+    // MARK: - V4.6 floating capsule navigation (258:947)
+    //
+    // Four areas — Today · Practice · Progress · You. Settings folds under
+    // You (its tab remains routable for deep links; the bar highlights You
+    // while it is frontmost). Selection is never colour-alone: the pill,
+    // the glyph tint, and the label weight move together.
+
+    private var v46TabBar: some View {
+        HStack(spacing: 0) {
+            v46TabButton(.home, title: "Today", glyph: "sun.max")
+            v46TabButton(.train, title: "Practice", glyph: "waveform")
+            v46TabButton(.review, title: "Progress", glyph: "chart.line.uptrend.xyaxis")
+            v46TabButton(.profile, title: "You", glyph: "person.crop.circle")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, Spacing.xs)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.white.opacity(0.94))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 24, y: 8)
+        }
+        .padding(.bottom, Spacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("app.v46TabBar")
+    }
+
+    private func v46TabButton(_ tab: AppTab, title: String, glyph: String) -> some View {
+        let isSelected = selectedTab == tab
+            || (tab == .profile && selectedTab == .settings)
+        return Button {
+            selectedTab = tab
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: glyph)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(
+                        isSelected ? AppColor.coachAccent : AppColor.neutralReceded.opacity(0.75)
+                    )
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(Typography.figtree(size: 10.5, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))
+                    .foregroundStyle(isSelected ? AppColor.coachingInk : AppColor.neutralReceded)
+            }
+            .padding(.horizontal, 15)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(AppColor.proQuietSurface)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier(tab.accessibilityIdentifier)
     }
 
     private func destinationStack<Root: View>(
