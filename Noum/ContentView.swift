@@ -433,6 +433,7 @@ struct ContentView: View {
     @State private var showGoalReview: Bool = false
     @State private var showDeferredCoachingSetup = false
     @State private var showFirstWeekRecommendationAction = false
+    @State private var showAdjustPractice = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     @Binding private var externalRoute: URL?
@@ -523,11 +524,29 @@ struct ContentView: View {
 
     private var homeNavigationContent: some View {
         NavigationStack(path: $navigationPath) {
+            GeometryReader { screenProxy in
             ZStack {
-                // Home now shares Noum's neutral reading canvas. Coaching
-                // emphasis belongs to the compact card, not the whole screen.
-                AppColor.screenBackground
+                // V4.6 Today — warm editorial canvas with the violet wash
+                // rising softly from the bottom (Figma 258:944). The hero
+                // itself bleeds behind the status bar, so the scroll view
+                // ignores the top safe area and the hero pads its content.
+                AppColor.warmCanvas
                     .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    LinearGradient(
+                        colors: [
+                            AppColor.coachAccent.opacity(0),
+                            AppColor.coachAccent.opacity(0.08)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 200)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
 
                 ScrollView(showsIndicators: false) {
                     GeometryReader { proxy in
@@ -537,10 +556,12 @@ struct ContentView: View {
                     .frame(height: 0)
 
                     VStack(spacing: 0) {
-                        cohesiveHomeCards
+                        cohesiveHomeCards(topInset: screenProxy.safeAreaInsets.top)
                     }
                     .padding(.bottom, isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding)
                 }
+                .ignoresSafeArea(edges: .top)
+            }
             }
             .coordinateSpace(name: "homeScroll")
             .toolbar(.hidden, for: .navigationBar)
@@ -879,7 +900,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private var cohesiveHomeCards: some View {
+    private func cohesiveHomeCards(topInset: CGFloat) -> some View {
         let presentation = homePrimaryAction
 
         if presentation.kind == .pendingOutcomeCheckIn,
@@ -887,16 +908,21 @@ struct ContentView: View {
             BigMomentOutcomeInlineCard(moment: moment)
                 .cardEntrance(0)
                 .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.lg)
+                .padding(.top, topInset + Spacing.lg)
         } else {
+            // V4.6 hero — full-bleed gradient section with the quiet Adjust
+            // row on the canvas beneath it (one tertiary row per screen).
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 showsPlanArc: false,
-                recordsRecommendationExposure: !showFirstWeekRecommendationAction
+                recordsRecommendationExposure: !showFirstWeekRecommendationAction,
+                heroTopInset: topInset
             )
             .cardEntrance(0)
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.top, Spacing.lg)
+
+            adjustPracticeRow
+                .padding(.horizontal, Spacing.xl)
+                .padding(.top, Spacing.xs)
         }
 
         homeProgressReceipt
@@ -957,6 +983,54 @@ struct ContentView: View {
                 .cardEntrance(2)
         case nil:
             EmptyView()
+        }
+    }
+
+    /// V4.6 quiet adjustment (258:945) — the screen's one tertiary row.
+    /// Every option launches exactly what it names: a per-rep answer clock
+    /// (never rewriting saved settings — `AppDestination.timedPractice`'s
+    /// documented semantics) or the manual practice catalogue.
+    private var adjustPracticeRow: some View {
+        Button {
+            showAdjustPractice = true
+        } label: {
+            Text("Adjust practice \u{203A}")
+                .font(Typography.manrope(size: 12, weight: .semibold, relativeTo: .caption))
+                .foregroundStyle(AppColor.neutralReceded.opacity(0.75))
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text("Adjust practice"))
+        .accessibilityHint(Text("Choose a different answer clock for this rep, or pick practice manually."))
+        .accessibilityIdentifier("home.adjustPractice")
+        .confirmationDialog(
+            "Adjust practice",
+            isPresented: $showAdjustPractice,
+            titleVisibility: .visible
+        ) {
+            ForEach([TimedPracticeDifficulty.easy, .medium, .hard]) { difficulty in
+                if let seconds = difficulty.duration {
+                    Button("\(seconds)s answer clock") {
+                        CoachHaptic.drillStart()
+                        PracticeModeQuickStart.arm(for: .timed)
+                        navigationPath.append(
+                            AppDestination.timedPractice(difficulty: difficulty)
+                        )
+                    }
+                }
+            }
+            Button("Free — no countdown") {
+                CoachHaptic.drillStart()
+                PracticeModeQuickStart.arm(for: .timed)
+                navigationPath.append(AppDestination.timedPractice(difficulty: .free))
+            }
+            Button("Choose practice manually") {
+                navigationPath.append(AppDestination.practiceSelection)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This shapes today's rep only — your plan and saved settings don't change.")
         }
     }
 

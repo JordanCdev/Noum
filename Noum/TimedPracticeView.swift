@@ -228,6 +228,11 @@ private enum TimedSessionPhase: Equatable {
     case thinking
     case briefReveal
     case speaking
+    /// V4.6 — the honest wait between "I'm done" and Review. Wraps the
+    /// existing stop→finalize→evaluate pipeline; every entry terminates as
+    /// ready (Summary push), retryable error, truthful low-evidence
+    /// fallback, or user cancellation. Never indefinite.
+    case processing
 }
 
 // MARK: - Background Layer (extracted for render isolation)
@@ -245,25 +250,16 @@ private struct BackgroundLayerView: View {
             FocusedPracticeBackground(style: .timed)
         } else if phase == .speaking && isFullScreenCameraActive {
             Color.black.ignoresSafeArea()
-        } else if phase == .speaking && !showLiveTranscript {
-            ZStack {
-                LinearGradient(
-                    colors: [timingState.immersiveGradientStart, timingState.immersiveGradientEnd],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                .animation(reduceMotion ? nil : .easeInOut(duration: 1.8), value: timingState)
-
-                RadialGradient(
-                    colors: [timingState.vividColor.opacity(timingState.glowOpacity * 0.3), .clear],
-                    center: .center,
-                    startRadius: 40,
-                    endRadius: 360
-                )
-                .ignoresSafeArea()
-                .animation(reduceMotion ? nil : .easeInOut(duration: 1.4), value: timingState)
-            }
+        } else if (phase == .speaking && !showLiveTranscript) || phase == .processing {
+            // V4.6 recording/processing surface (258:981 / 258:994) — one
+            // static dark stage. Time pressure is carried by the amber clock
+            // and the cue line, never by shifting the room around the speaker.
+            LinearGradient(
+                colors: [AppColor.immersiveTop, AppColor.immersiveBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
         } else if phase == .thinking {
             LinearGradient(
                 colors: [
@@ -880,6 +876,17 @@ struct TimedPracticeView: View {
     @State private var spotlightPulse: Bool = false
     @State private var currentTimingState: ImpromptuTimingState = .neutral
     @State private var lastMilestoneState: ImpromptuTimingState = .neutral
+    /// Last moment the microphone reported voice-level signal — drives the
+    /// presentation-only silence state on the V4.6 recording surface.
+    @State private var lastVoiceActivityAt: Date = .distantPast
+
+    // V4.6 Processing state — wraps the existing finalize pipeline; no
+    // parallel state machine. The task handle makes user cancellation a
+    // real terminal, not a UI mask over continuing work.
+    @State private var finalizationTask: Task<Void, Never>?
+    @State private var processingFailure: String?
+    @State private var processingStartedAt: Date = .distantPast
+    @State private var processingCorrelationId = UUID()
     @State private var milestoneScale: CGFloat = 1.0
     @State private var breathePhase: Bool = false
     @State private var recPulse: Bool = false
@@ -925,6 +932,9 @@ struct TimedPracticeView: View {
                     case .speaking:
                         speakingContent
                             .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    case .processing:
+                        processingContent
+                            .transition(.opacity)
                     }
                 }
                 .frame(maxHeight: .infinity)
@@ -956,7 +966,7 @@ struct TimedPracticeView: View {
         .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(phase == .speaking || phase == .thinking)
+        .navigationBarBackButtonHidden(phase == .speaking || phase == .thinking || phase == .processing)
         .toolbar {
             if phase == .speaking || phase == .thinking {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -2190,21 +2200,26 @@ struct TimedPracticeView: View {
             }
 
             VStack(spacing: 0) {
-                // Pressure mode indicator (shown when pressure toggle is on)
-                if practiceSettings.pressureModeEnabled && activeDrill == nil {
-                    pressureBanner
-                }
+                // The V4.6 immersive stage folds drill/pressure context into
+                // its REC chip and cue line — stacked banners would compete
+                // with the prompt. Camera and transcript layouts keep them.
+                if isFullScreenCameraActive || showLiveTranscript {
+                    // Pressure mode indicator (shown when pressure toggle is on)
+                    if practiceSettings.pressureModeEnabled && activeDrill == nil {
+                        pressureBanner
+                    }
 
-                // Drill constraint banner (shown during Next Rep sessions)
-                if let drill = activeDrill {
-                    drillBanner(drill)
-                }
+                    // Drill constraint banner (shown during Next Rep sessions)
+                    if let drill = activeDrill {
+                        drillBanner(drill)
+                    }
 
-                // Goal-aware intent reminder — shows for ~4s at session start
-                // so the user sees what voice they're working toward every rep.
-                // Suppressed when an active drill already owns the intent surface.
-                if activeDrill == nil, let voice = coachingProfileStore.profile?.chosenStyleGoal {
-                    VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
+                    // Goal-aware intent reminder — shows for ~4s at session start
+                    // so the user sees what voice they're working toward every rep.
+                    // Suppressed when an active drill already owns the intent surface.
+                    if activeDrill == nil, let voice = coachingProfileStore.profile?.chosenStyleGoal {
+                        VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
+                    }
                 }
 
                 if isFullScreenCameraActive {
@@ -2595,50 +2610,78 @@ struct TimedPracticeView: View {
     // MARK: - Classic / Immersive Layout
 
     private var speakingImmersiveLayout: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                Spacer(minLength: 20)
-
-                // Central orb
-                spotlightOrb
-                    .padding(.horizontal, 32)
-
-                Spacer(minLength: 16)
-
-                // Stage label
-                VStack(spacing: 6) {
-                    Text(timingState.spotlightLabel)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(timingState == .neutral ? .white.opacity(0.9) : timingState.vividColor)
-                        .contentTransition(.interpolate)
-                        .scaleEffect(milestoneScale)
-                    Text(timingState.spotlightSublabel)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.4))
-                        .contentTransition(.interpolate)
+        // V4.6 recording surface (258:981 / silence 258:1195 / final seconds
+        // 258:1252). The prompt stays dominant for the whole rep; the trace
+        // renders the microphone's live read; exactly one quiet cue speaks.
+        VStack(spacing: 0) {
+            HStack(alignment: .center) {
+                recordingStatusChip
+                Spacer(minLength: Spacing.sm)
+                if let clock = recordingClockText {
+                    Text(clock)
+                        .font(Typography.monoDigit(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline)))
+                        .foregroundStyle(isInFinalSeconds ? AppColor.caution : .white.opacity(0.85))
+                        .accessibilityLabel(Text(isInFinalSeconds ? "\(remainingSeconds) seconds left" : clock))
                 }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: timingState)
+            }
+            .padding(.top, Spacing.xs)
 
-                Spacer(minLength: 16)
+            // V4.6 — the prompt stays dominant for the whole rep (frozen
+            // frame 258:981). The legacy hide-prompt preference still
+            // governs the transcript/camera layouts, not this stage.
+            if !question.isEmpty {
+                Text("\u{201C}\(question)\u{201D}")
+                    .font(Typography.figtree(size: 25, weight: .heavy, relativeTo: .title))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Spacing.xxxl)
+                    .accessibilityIdentifier("timedPractice.prompt")
+            }
 
-                // Prompt pill (if visible)
-                if effectiveKeepPromptVisible {
-                    spotlightPromptPill
-                        .padding(.bottom, 8)
-                }
+            Spacer(minLength: Spacing.lg)
 
-                // Filler chip (if visible)
+            VoiceTrace(
+                variant: .live,
+                level: CGFloat(speechVM.audioLevel),
+                isQuiet: isSilentStretch
+            )
+            .frame(maxWidth: .infinity)
+
+            Spacer(minLength: Spacing.lg)
+
+            VStack(spacing: Spacing.xs) {
+                Text(recordingCue)
+                    .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: recordingCue)
+                    .accessibilityIdentifier("timedPractice.cue")
+
                 if showFillerWords && speechVM.fillerWordCount > 0 {
                     spotlightFillerChip
-                        .padding(.bottom, 8)
                 }
 
                 if speechVM.connectionError != nil {
                     Text("Transcription issue")
                         .font(.caption2)
                         .foregroundStyle(.red.opacity(0.6))
-                        .padding(.bottom, 4)
                 }
+            }
+            .padding(.horizontal, Spacing.md)
+
+            Spacer(minLength: Spacing.xxl)
+        }
+        .padding(.horizontal, Spacing.xl)
+        .onAppear {
+            lastVoiceActivityAt = Date()
+        }
+        .onChange(of: speechVM.audioLevel) { _, level in
+            if level > 0.1 {
+                lastVoiceActivityAt = Date()
             }
         }
         .onChange(of: timingState) { _, newState in
@@ -2646,10 +2689,207 @@ struct TimedPracticeView: View {
                 lastMilestoneState = newState
                 if newState != .neutral {
                     triggerMilestoneHaptic(for: newState)
-                    triggerMilestoneAnimation()
                 }
             }
         }
+    }
+
+    /// "REC · <context>" — a fixed-format live-status readout (the one
+    /// register where uppercase is allowed). Folds retry/drill/pressure
+    /// context into the chip so no banner has to stack above the prompt.
+    private var recordingStatusChip: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .opacity(reduceMotion ? 0.9 : (recPulse ? 1.0 : 0.45))
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                    value: recPulse
+                )
+            Text(recordingModeLabel)
+                .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
+                .tracking(1.2)
+                .foregroundStyle(.white.opacity(0.8))
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.08), in: Capsule())
+        .onAppear { recPulse = true }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Recording. \(recordingModeLabel.replacingOccurrences(of: "REC · ", with: "").capitalized)."))
+    }
+
+    private var recordingModeLabel: String {
+        if targetedRetryPresentation != nil { return "REC · TARGETED RETRY" }
+        if let drill = activeDrill { return "REC · \(drill.title.uppercased())" }
+        if practiceSettings.pressureModeEnabled { return "REC · PRESSURE ON" }
+        return "REC · TIMED PRACTICE"
+    }
+
+    /// Remaining time when the rep has a real clock, elapsed otherwise.
+    /// The V4.6 surface always shows the clock — the silence and
+    /// final-seconds states depend on it — so the legacy orb-layout
+    /// timer-display preference governs only the transcript/camera layouts.
+    private var recordingClockText: String? {
+        if totalDuration > 0 {
+            return "\(formattedTime(remainingSeconds)) left"
+        }
+        return formattedTime(elapsedSeconds)
+    }
+
+    /// Presentation-only final-seconds window (amber clock + "Land the
+    /// close"). Scoring and timing policy are untouched.
+    private var isInFinalSeconds: Bool {
+        totalDuration > 0 && remainingSeconds > 0 && remainingSeconds <= 10
+    }
+
+    /// Presentation-only quiet stretch: ~2.5 s without voice-level signal
+    /// while recording. Dims the trace and swaps the cue — never touches
+    /// scoring, transcripts, or the clock.
+    private var isSilentStretch: Bool {
+        speechVM.isRecording
+            && lastVoiceActivityAt != .distantPast
+            && Date().timeIntervalSince(lastVoiceActivityAt) > 2.5
+    }
+
+    /// Exactly one quiet cue below the trace. Precedence: final-seconds
+    /// close (act now) → silence reassurance → retry lever → drill
+    /// constraint → timing sublabel.
+    private var recordingCue: String {
+        if isInFinalSeconds {
+            return "Land the close"
+        }
+        if isSilentStretch {
+            return "Quiet is fine \u{2014} thinking counts. The clock keeps running."
+        }
+        if let retry = targetedRetryPresentation {
+            return retry.cues.prefix(2).joined(separator: " \u{2014} ")
+        }
+        if let drill = activeDrill {
+            return drill.constraint
+        }
+        return timingState.spotlightSublabel
+    }
+
+    // MARK: - V4.6 Processing (258:994)
+
+    /// The settling stage between "I'm done" and Review: same rep, same
+    /// trace geometry, calmer. Failure swaps the trace for a bounded,
+    /// truthful low-evidence state with a real retry.
+    private var processingContent: some View {
+        VStack(spacing: 0) {
+            HStack {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(AppColor.voiceLive)
+                        .frame(width: 8, height: 8)
+                    Text("READING YOUR REP")
+                        .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.08), in: Capsule())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("Reading your rep"))
+                Spacer(minLength: 0)
+            }
+            .padding(.top, Spacing.xs)
+
+            Text(processingHeadline)
+                .font(Typography.figtree(size: 26, weight: .heavy, relativeTo: .title))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+                .padding(.top, Spacing.xxxl)
+                .accessibilityIdentifier("timedPractice.processing.headline")
+
+            Spacer(minLength: Spacing.lg)
+
+            if let failure = processingFailure {
+                VStack(spacing: Spacing.lg) {
+                    Text(failure)
+                        .font(Typography.manrope(size: 15, weight: .regular, relativeTo: .subheadline))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("timedPractice.processing.failure")
+
+                    ImmersiveCTA(title: "Try the same prompt again") {
+                        processingFailure = nil
+                        restartSession()
+                    }
+                    .accessibilityIdentifier("timedPractice.processing.retry")
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Back to Today")
+                            .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
+                            .foregroundStyle(.white.opacity(0.65))
+                            .frame(minHeight: 44)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("timedPractice.processing.exit")
+                }
+                .padding(.horizontal, Spacing.md)
+            } else {
+                VoiceTrace(variant: .settling)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("timedPractice.processing.trace")
+
+                Spacer(minLength: Spacing.lg)
+
+                Text("Your words, your timing \u{2014} one read coming")
+                    .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Spacing.md)
+            }
+
+            Spacer(minLength: Spacing.xxl)
+        }
+        .padding(.horizontal, Spacing.xl)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timedPractice.processing.screen")
+    }
+
+    /// Names what Noum is actually checking — the trained lever when this
+    /// rep is a targeted retry, otherwise an honest generic read.
+    private var processingHeadline: String {
+        if processingFailure != nil {
+            return "That rep didn\u{2019}t give Noum enough."
+        }
+        guard let intent = seededPromptPayload?.transcriptPracticeIntent else {
+            return "Reading how this rep landed\u{2026}"
+        }
+        switch intent.retryTarget.lever {
+        case .opening:   return "Checking whether the answer lands first\u{2026}"
+        case .closing:   return "Checking whether the close lands\u{2026}"
+        case .structure: return "Checking whether the point leads\u{2026}"
+        case .concise:   return "Checking what you kept\u{2026}"
+        }
+    }
+
+    /// User cancellation — an explicit, logged terminal state. Recording has
+    /// already stopped; cancelling abandons the analysis and returns home.
+    private func cancelProcessing() {
+        finalizationTask?.cancel()
+        finalizationTask = nil
+        isStopping = false
+        FlowLog.log(
+            correlationId: processingCorrelationId,
+            flow: .practiceRep,
+            stage: "rep.processing.cancelled",
+            reason: "user cancelled during analysis"
+        )
+        dismiss()
     }
 
     // MARK: Spotlight Orb
@@ -2957,6 +3197,34 @@ struct TimedPracticeView: View {
                 EmptyView()
             case .speaking:
                 speakingBottomBar
+            case .processing:
+                processingBottomBar
+            }
+        }
+    }
+
+    /// V4.6 Processing escape — a quiet text action in the CTA hotspot,
+    /// never a pill: cancelling must not outweigh the transition to Review.
+    private var processingBottomBar: some View {
+        Group {
+            if processingFailure == nil {
+                Button {
+                    cancelProcessing()
+                } label: {
+                    Text("Cancel")
+                        .font(Typography.figtree(size: 15, weight: .bold, relativeTo: .subheadline))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .contentShape(Capsule(style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("timedPractice.processing.cancel")
+                .accessibilityHint("Stops the analysis and returns to Today. The rep is not scored.")
+                .padding(.horizontal, Spacing.xl)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.md)
+            } else {
+                Color.clear.frame(height: 0)
             }
         }
     }
@@ -3043,6 +3311,17 @@ struct TimedPracticeView: View {
             } else if isCamera {
                 // Camera mode: stop button is in the overlay panel, no bottom bar needed
                 Color.clear.frame(height: 0)
+            } else if isImmersive {
+                // V4.6 — the white immersive pill ends the rep.
+                VStack(spacing: 0) {
+                    ImmersiveCTA(title: "I\u{2019}m done", isLoading: isStopping) {
+                        stopSession()
+                    }
+                    .accessibilityIdentifier("timedPractice.end")
+                }
+                .padding(.horizontal, Spacing.xl)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.md)
             } else {
                 VStack(spacing: 8) {
                     Button(action: { stopSession() }) {
@@ -3055,17 +3334,8 @@ struct TimedPracticeView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                     }
-                    .background(
-                        isImmersive
-                            ? AnyShapeStyle(Color.white.opacity(0.15))
-                            : AnyShapeStyle(Color.red),
-                        in: Capsule()
-                    )
+                    .background(Color.red, in: Capsule())
                     .foregroundStyle(.white)
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(isImmersive ? 0.2 : 0), lineWidth: 1)
-                    )
                     .buttonStyle(.pressable)
                     .disabled(isStopping)
                     .opacity(isStopping ? 0.5 : 1)
@@ -3467,16 +3737,53 @@ struct TimedPracticeView: View {
         speakingTask = nil
         if videoManager.isRecording { videoManager.stopRecording() }
 
-        Task { @MainActor in
+        // V4.6 — settle onto the Processing surface (settleToProcessing;
+        // Reduce Motion users get the state swap without the move).
+        processingFailure = nil
+        processingStartedAt = Date()
+        processingCorrelationId = UUID()
+        updateWithMotion(.v46Quick) { phase = .processing }
+        FlowLog.log(
+            correlationId: processingCorrelationId,
+            flow: .practiceRep,
+            stage: "rep.processing.entered"
+        )
+
+        finalizationTask = Task { @MainActor in
             let completion = await speechVM.stopRecordingAwaitingFinalization()
             // Wait for video recording delegate to finish writing the file
             // The delegate publishes an explicit terminal state when the file is ready or failed.
             if enableVideoRecording {
                 _ = await videoManager.waitForRecordingFinalization()
             }
+            guard !Task.isCancelled else { return }
 
             guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
                 isStopping = false
+                if speechVM.connectionError != nil {
+                    // Transport/startup failures already own their recovery
+                    // affordance on the speaking surface — a retryable error,
+                    // never a spinner.
+                    FlowLog.log(
+                        correlationId: processingCorrelationId,
+                        flow: .practiceRep,
+                        stage: "rep.processing.retryableError",
+                        reason: "recording completion gate refused; connection error present"
+                    )
+                    updateWithMotion(.v46Quick) { phase = .speaking }
+                } else {
+                    // Truthful low-evidence terminal: the capture finished but
+                    // carried no usable speech to coach.
+                    FlowLog.log(
+                        correlationId: processingCorrelationId,
+                        flow: .practiceRep,
+                        stage: "rep.processing.lowEvidence",
+                        reason: "no usable speech in finalized capture"
+                    )
+                    updateWithMotion(.v46ReduceMotionFade) {
+                        processingFailure = "Noum couldn\u{2019}t hear enough speech to coach this rep. Nothing was scored."
+                    }
+                }
                 return
             }
             CoachHaptic.sessionComplete()
@@ -3530,6 +3837,19 @@ struct TimedPracticeView: View {
                 }
             }
 
+            // Let the settling trace land before Review — the frozen
+            // processing→review beat (1.4 s auto, prototype 258:994),
+            // capped so a fast pipeline never fakes longer work than it did.
+            let dwellRemaining = 1.4 - Date().timeIntervalSince(processingStartedAt)
+            if dwellRemaining > 0 {
+                try? await Task.sleep(for: .seconds(dwellRemaining))
+            }
+            guard !Task.isCancelled else { return }
+            FlowLog.log(
+                correlationId: processingCorrelationId,
+                flow: .practiceRep,
+                stage: "rep.processing.ready"
+            )
             pushSummary(finalizedSessionID: savedSessionID)
         }
     }
@@ -3556,6 +3876,10 @@ struct TimedPracticeView: View {
     private func resetState(keepPrompt: Bool) {
         speakingTask?.cancel()
         thinkingTask?.cancel()
+        finalizationTask?.cancel()
+        finalizationTask = nil
+        processingFailure = nil
+        lastVoiceActivityAt = .distantPast
         speechVM.resetCurrentSession()
         thinkingCountdown = practiceSettings.pressureModeEnabled ? 8 : 15
         elapsedSeconds = 0
@@ -3612,8 +3936,10 @@ struct TimedPracticeView: View {
     private func cleanup() {
         speakingTask?.cancel()
         thinkingTask?.cancel()
+        finalizationTask?.cancel()
         speakingTask = nil
         thinkingTask = nil
+        finalizationTask = nil
         ttsEngine.stopSpeaking(at: .immediate)
         if videoManager.isRecording { videoManager.stopRecording() }
         // If the user backs out mid-thinking-window, stop ambience so

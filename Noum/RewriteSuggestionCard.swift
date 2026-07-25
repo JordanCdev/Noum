@@ -566,7 +566,7 @@ struct EditorialCTAButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(.white)
             .background(
-                configuration.isPressed ? AppColor.actionPressed : AppColor.pro,
+                configuration.isPressed ? AppColor.actionPressed : AppColor.coachingInk,
                 in: Capsule()
             )
             .opacity(configuration.isPressed ? 0.96 : 1)

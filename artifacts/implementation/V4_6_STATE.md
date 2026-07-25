@@ -1,0 +1,45 @@
+# V4.6 Implementation State
+
+**Branch:** `claude/v4-6-swiftui-implementation` (isolated worktree `/Users/jordan/src/GitHub/Noum-v46-impl`, base `ux-overhaul` @ `97028234a`)
+**Updated:** 2026-07-25 (Slice 2 in flight)
+
+## Completed frames
+
+| Frame | Node | Status | Evidence |
+|---|---|---|---|
+| Review / Explore / Retry / Comparison | 258:1006/1309/1032/1045 | DONE in base commit 97028234a (previous session) | Fresh worktree build + 20/20 targeted tests (ProductJourneyContractTests, AccessibilityContrastTests) via xcresult on iPhone 17 Pro iOS 26.5 |
+| Today | 258:934 | Implemented + verified on sim | `.screenshots/v46-slice2/01-today.png` vs Today-final.png |
+| Recording — live | 258:981 | Implemented + verified end-to-end on sim (scripted provider; prompt dominant, chip, clock, level-reactive trace, cue, pill; honest retryable-error terminal also exercised via real 401) | `.screenshots/v46-slice2/02-recording-live.png` |
+| Recording — silence | 258:1195 | Implemented + verified (dimmed trace + reassurance cue at ~2.5 s quiet) | `03-recording-silence.png` |
+| Recording — final seconds | 258:1252 | Implemented + verified (amber clock 0:07 + "Land the close"; cue outranks silence) | `04-recording-final-seconds.png` |
+| Processing | 258:994 | Implemented + verified (`.processing` phase wraps the existing finalize pipeline; READING YOUR REP chip, settling trace, cue, quiet Cancel; 1.4 s frozen beat; low-evidence/retryable/cancelled terminals + FlowLog stages; auto-stop at 0:00 routes through the same path) | `05-processing.png` (mid-dissolve), `06-review-after-rep.png` (loop closes into Review) |
+
+## Key changes so far (Slice 2)
+
+- `DesignSystem.swift` — V4.6 tokens (coachingInk #4C2BB8, coachAccent #7C3AED, heroGradientStart/End, warmCanvas, immersiveTop/Bottom), Spacing.xl/xxl/xxxl, CornerRadius.pill/hero, `ImmersiveCTA` (white pill: pressed 84%, disabled, 3-dot loading, RM-safe), V4.6 motion tokens (v46Settle/v46Quick/v46Dissolve/v46ReduceMotionFade).
+- `Noum/VoiceTrace.swift` (NEW) — the single voice motif: idleHero/earnedHero/live/settling variants from frozen geometry + `VoiceTraceDayCluster` for Progress. Live variant is level-reactive (5% quantised, RM = static bars); all traces `accessibilityHidden`.
+- `Noum/HomeCoachCard.swift` — V4.6 Today hero (eyebrow → headline → reason → real meta clauses → idle trace → one dominant Start; prep precedence retained as contextual slot). Start now arms `PracticeModeQuickStart` so the hero IS the briefing (no setup interstitial). All existing ids/pipelines preserved.
+- `Noum/ContentView.swift` — warm canvas + bottom violet wash, top-bleed hero scroll, left-aligned "Adjust practice ›" + confirmationDialog (real per-rep answer clocks + manual catalogue; never rewrites saved settings).
+- `Noum/TimedPracticeView.swift` — V4.6 recording surface (static dark stage, REC chip w/ folded drill/pressure context, remaining clock incl. amber final-seconds, dominant quoted prompt, level-reactive VoiceTrace, single cue w/ precedence finalSeconds→silence→retry→drill→sublabel, ImmersiveCTA "I'm done"); `.processing` phase (honest terminals; 1s max dwell before Review); banners suppressed on immersive stage only.
+- `Noum/RewriteSuggestionCard.swift` — editorial CTA fill aligned to contract coachingInk (#4C2BB8, was `pro`).
+- `Noum/SpeechRecognizerViewModel.swift` — `UITestScriptedTranscriptionProvider` (DEBUG-only, `UI_TESTING_TRANSCRIPTION_SCRIPTED`): deterministic full-loop capture without live STT.
+- `NoumTests/V46CoachingLoopSurfaceTests.swift` (NEW) — trace geometry + scripted-seam gate contracts.
+
+## Known deviations / notes
+
+- Status bar renders dark over the violet hero (app pins `.preferredColorScheme(.light)`); resolved with the Slice 4 theme work.
+- Hero clock preference: the V4.6 recording surface always shows the clock (silence/final-seconds depend on it); legacy timer-display preference still governs transcript/camera layouts.
+- Recording clock is the session clock (e.g. 2:30 standard policy); the difficulty's 60/30/15s "answer clock" remains the scoring target range — mock's "0:12 left" is a session near its end.
+- SpotlightOrbView + milestone scale animation are no longer used by the immersive layout (kept for camera/transcript paths pending Slice 4 cleanup decision).
+
+## Blockers (real)
+
+- **Live STT unavailable in this environment**: Deepgram key in local gitignored plists returns 401 (revoked in the 2026-07-18 leak closure — chip filed for Jordan); simulator SFSpeechRecognizer interrupts mid-session. Full-loop verification proceeds via the scripted DEBUG provider; real-device/live-provider verification remains for Jordan.
+
+## Current commit
+
+- Base: 97028234a (Slice 1). Slice 2 not yet committed.
+
+## Exact next task
+
+Scripted-provider full-loop run on sim: capture recording live/silence/final-seconds, processing, review, comparison → fix visual deltas (≤3 iterations) → targeted tests → commit Slice 2.

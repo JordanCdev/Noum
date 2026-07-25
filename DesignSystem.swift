@@ -20,6 +20,10 @@ enum CornerRadius {
     static let large: CGFloat = 24
     /// Extra-large: hero cards, full-width panels, sheets (28pt)
     static let xl: CGFloat = 28
+    /// V4.6 immersive pill CTA (30pt — capsule of the 58pt pill).
+    static let pill: CGFloat = 30
+    /// V4.6 Today hero bottom bleed (36pt).
+    static let hero: CGFloat = 36
 }
 
 // MARK: - Spacing
@@ -40,6 +44,12 @@ enum Spacing {
     static let screenH: CGFloat = 20
     /// Inter-card spacing (14pt)
     static let cardGap: CGFloat = 14
+    /// V4.6 hero interior padding / section rhythm (24pt)
+    static let xl: CGFloat = 24
+    /// V4.6 large section air (32pt)
+    static let xxl: CGFloat = 32
+    /// V4.6 hero bottom air / generous section break (40pt)
+    static let xxxl: CGFloat = 40
 
     /// Reserved scroll clearance for an immersive screen's safe-area action.
     static let focusedActionClearance: CGFloat = 112
@@ -171,6 +181,26 @@ enum AppColor {
     /// this fill clears AA with wide margin.
     static let actionPressed = Color(red: 0.247, green: 0.141, blue: 0.60)
 
+    // MARK: V4.6 Coaching Loop (frozen page-17 token contract)
+
+    /// Coaching ink (#4C2BB8) — editorial CTA fill, improved-phrase tint,
+    /// selected tab label, ink labels on the white immersive pill. White
+    /// labels on this fill clear AA with wide margin (~8.6:1).
+    static let coachingInk = Color(red: 0.298, green: 0.169, blue: 0.722)
+    /// Coach accent (#7C3AED) — trace bars and evidence marks on light
+    /// editorial surfaces. Decorative/graphic colour, never body text.
+    static let coachAccent = Color(red: 0.486, green: 0.227, blue: 0.929)
+    /// Today hero gradient stops (#4D3CC7 → #7A45E0 at ~141°). The hero is
+    /// the app's single marquee gradient; nothing else may use these stops.
+    static let heroGradientStart = Color(red: 0.302, green: 0.235, blue: 0.780)
+    static let heroGradientEnd = Color(red: 0.478, green: 0.271, blue: 0.878)
+    /// Warm editorial canvas (#FAF9F7) behind the V4.6 loop's light screens.
+    static let warmCanvas = Color(red: 0.980, green: 0.976, blue: 0.969)
+    /// Natively-dark immersive surface stops for Recording/Processing
+    /// (#1B1625 → #100D19). These screens are dark in both appearances.
+    static let immersiveTop = Color(red: 0.106, green: 0.086, blue: 0.145)
+    static let immersiveBottom = Color(red: 0.063, green: 0.051, blue: 0.098)
+
     // MARK: Text
 
     /// Primary text (use .primary for most cases)
@@ -242,6 +272,23 @@ extension Animation {
     static func coachLineStagger(_ index: Int) -> Animation {
         .easeOut(duration: 0.3).delay(0.15 + Double(index) * 0.15)
     }
+
+    // MARK: V4.6 Motion Contract (page-17 transition names)
+    //
+    // Standard timings from the frozen motion sheet. Every use MUST branch
+    // on `accessibilityReduceMotion`, replacing the smart-animate value with
+    // the paired RM fade — `Animation.v46ReduceMotionFade` (200 ms) unless
+    // the sheet names a different fallback. Never hardcode these durations
+    // at call sites.
+
+    /// pushRecording · closeLoop · tabToProgress — 340 ms settle.
+    static let v46Settle = Animation.easeInOut(duration: 0.34)
+    /// settleToProcessing · retrySamePrompt — 260 ms.
+    static let v46Quick = Animation.easeInOut(duration: 0.26)
+    /// revealReview dissolve — 600 ms (same under RM, no drift).
+    static let v46Dissolve = Animation.easeInOut(duration: 0.6)
+    /// Reduce Motion pair for the smart-animate steps — 200 ms fade.
+    static let v46ReduceMotionFade = Animation.easeInOut(duration: 0.2)
 }
 
 // MARK: - Shared View Components
@@ -435,6 +482,82 @@ struct PrimaryCTA: View {
             }
         }
         .buttonStyle(.pressable)
+    }
+}
+
+/// V4.6 immersive primary action — the white pill on gradient/dark surfaces
+/// ("Start rep", "I'm done"). One geometry: full-width capsule, ≥58 pt, ink
+/// label. Pressed dims the fill to 84 % (a state cue, not motion — safe under
+/// Reduce Motion by construction); disabled drops fill/label opacity; loading
+/// swaps the label for three ink dots and announces "Starting". The capsule
+/// grows with wrapped labels at accessibility sizes, radius following height.
+struct ImmersiveCTA: View {
+    let title: String
+    var isLoading: Bool = false
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var loadingPhase: Int = 0
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Text(title)
+                    .font(Typography.figtree(size: 17, weight: .bold, relativeTo: .headline))
+                    .foregroundStyle(AppColor.coachingInk.opacity(isEnabled ? 1 : 0.45))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(isLoading ? 0 : 1)
+                if isLoading {
+                    loadingDots
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(ImmersiveCTAButtonStyle(isEnabled: isEnabled))
+        .accessibilityLabel(Text(isLoading ? "Starting" : title))
+        .disabled(isLoading)
+    }
+
+    private var loadingDots: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(AppColor.coachingInk)
+                    .frame(width: 7, height: 7)
+                    .opacity(reduceMotion ? 0.8 : (loadingPhase == index ? 1 : 0.35))
+            }
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            loadingPhase = 0
+        }
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(280))
+                loadingPhase = (loadingPhase + 1) % 3
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ImmersiveCTAButtonStyle: ButtonStyle {
+    let isEnabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Color.white.opacity(
+                    isEnabled ? (configuration.isPressed ? 0.84 : 1) : 0.40
+                ),
+                in: Capsule(style: .continuous)
+            )
+            .shadow(color: Color.black.opacity(0.06), radius: 24, y: 8)
     }
 }
 

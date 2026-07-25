@@ -329,6 +329,9 @@ struct HomeCoachCard: View {
     /// recommendation surface. The delayed dwell task is cancelled before it
     /// can replace that surface's current exact ledger exposure.
     var recordsRecommendationExposure: Bool = true
+    /// Top safe-area inset measured by the host — the V4.6 hero bleeds
+    /// behind the status bar, so its content pads down by this amount.
+    var heroTopInset: CGFloat = 0
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -366,69 +369,45 @@ struct HomeCoachCard: View {
             .blueprintForRendering(coherentRecommendationBlueprint)
         let renderedBlueprint = renderedAvailability.resolving(sourceBlueprint)
         let renderedExposure = recommendationExposure(for: renderedBlueprint)
-        return VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .top, spacing: Spacing.sm) {
-                NoumCharacter(
-                    mood: displayedMood,
-                    tint: AppColor.brandBlue,
-                    size: 52
-                )
-                .accessibilityHidden(true)
+        // V4.6 Today hero (Figma 258:934) — the app's single marquee
+        // gradient. Structure: eyebrow → one target headline → one reason →
+        // practice meta → idle voice trace → one dominant Start. All copy
+        // still flows from the existing recommendation pipeline; only the
+        // presentation changed.
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("Today")
+                .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline))
+                .foregroundStyle(.white.opacity(0.8))
+                .accessibilityAddTraits(.isHeader)
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Today’s focus")
-                        .microLabel(AppColor.proText)
+            Text(coachTitle(for: renderedBlueprint))
+                .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, Spacing.xxl)
+                .accessibilityIdentifier("home.coachCard.title")
 
-                    Text(coachTitle(for: renderedBlueprint))
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("home.coachCard.title")
-
-                    if let subtitle = coachSubtitle(for: renderedBlueprint) {
-                        Text(subtitle)
-                            .font(Typography.body)
-                            .foregroundStyle(AppColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("home.coachCard.subtitle")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if let subtitle = coachSubtitle(for: renderedBlueprint) {
+                Text(subtitle)
+                    .font(Typography.manrope(size: 15.5, weight: .regular, relativeTo: .subheadline))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Spacing.md)
+                    .accessibilityIdentifier("home.coachCard.subtitle")
             }
 
-            VoiceAlignmentChip(
-                styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
-                mode: renderedExposure.mode,
-                tint: AppColor.proText
-            )
+            Text(heroMetaText(for: renderedBlueprint))
+                .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
+                .foregroundStyle(.white.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, Spacing.xl)
 
-            // M23 — Prep Session entry. Surfaces when the user has an
-            // active BigMoment within 14 days. Sits ABOVE the Begin
-            // button so the prep CTA reads as the higher-priority next
-            // action — "your moment is close, this is what the coach
-            // would have you do." Standard mode rep stays as the
-            // secondary action below.
-            if let moment = bigMomentStore.activeMoment,
-               let days = bigMomentStore.daysUntil(moment),
-               days >= 0 && days <= 14 {
-                prepSessionCTA(moment: moment, days: days)
-                Button {
-                    beginRecommendedRep(renderedExposure: renderedExposure)
-                } label: {
-                    Text("Start \(renderedExposure.mode.displayLabel) instead")
-                        .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.pressable)
-                .accessibilityIdentifier("home.coachCard.begin")
-            } else {
-                PrimaryCTA(beginCTAText(for: renderedExposure.mode), tint: AppColor.brandBlue) {
-                    beginRecommendedRep(renderedExposure: renderedExposure)
-                }
-                .accessibilityIdentifier("home.coachCard.begin")
-            }
+            VoiceTrace(variant: .idleHero)
+                .frame(maxWidth: .infinity)
+                .padding(.top, Spacing.xxl)
+
+            heroActions(renderedExposure: renderedExposure)
+                .padding(.top, Spacing.xxl)
 
             // The cohesive Home intentionally suppresses the generic plan arc,
             // but an explicitly saved line is a concrete current-week action,
@@ -436,19 +415,30 @@ struct HomeCoachCard: View {
             // surface without reopening the broader plan row.
             if showsPlanArc || currentPlannedPhrase != nil {
                 planArcRow
+                    .padding(.top, Spacing.xs)
             }
         }
-        .padding(Spacing.lg)
+        .padding(.horizontal, Spacing.xl)
+        .padding(.top, heroTopInset + Spacing.sm)
+        .padding(.bottom, Spacing.xxxl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            AppColor.cardBackground,
-            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.12), lineWidth: 1)
+        .background {
+            UnevenRoundedRectangle(
+                cornerRadii: .init(
+                    bottomLeading: CornerRadius.hero,
+                    bottomTrailing: CornerRadius.hero
+                ),
+                style: .continuous
+            )
+            .fill(
+                LinearGradient(
+                    colors: [AppColor.heroGradientStart, AppColor.heroGradientEnd],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .shadow(color: AppColor.coachAccent.opacity(0.28), radius: 22, y: 14)
         }
-        .shadow(color: Color.black.opacity(0.06), radius: 10, y: 4)
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
             syncMoodForFreshRecommendation()
@@ -586,21 +576,98 @@ struct HomeCoachCard: View {
         return nil
     }
 
-    /// M23 — when a real moment is close, preparation becomes the card's one
-    /// primary action. The ordinary mode remains a quiet alternative below.
+    /// The hero's one dominant action. M23 precedence preserved: when a real
+    /// moment is within 14 days, preparation is the primary action and the
+    /// ordinary rep stays as a quiet alternative — the V4.6 "contextual
+    /// upcoming moment" slot. Otherwise one Start pill, nothing else.
     @ViewBuilder
-    private func prepSessionCTA(moment: BigMoment, days: Int) -> some View {
-        PrimaryCTA(
-            "Continue prep",
-            icon: moment.category.sfSymbol,
-            tint: AppColor.brandBlue
-        ) {
-            navigationPath.append(AppDestination.prepSession)
+    private func heroActions(
+        renderedExposure: HomeCoachRecommendationExposure
+    ) -> some View {
+        if let moment = bigMomentStore.activeMoment,
+           let days = bigMomentStore.daysUntil(moment),
+           days >= 0 && days <= 14 {
+            VStack(spacing: Spacing.xs) {
+                ImmersiveCTA(title: "Continue prep") {
+                    navigationPath.append(AppDestination.prepSession)
+                }
+                .accessibilityIdentifier("home.coachCard.prepSession")
+                .accessibilityLabel(
+                    Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away")
+                )
+
+                Button {
+                    beginRecommendedRep(renderedExposure: renderedExposure)
+                } label: {
+                    Text("Start \(renderedExposure.mode.displayLabel) instead")
+                        .font(Typography.captionSmall.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("home.coachCard.begin")
+            }
+        } else {
+            ImmersiveCTA(title: beginCTAText(for: renderedExposure.mode)) {
+                beginRecommendedRep(renderedExposure: renderedExposure)
+            }
+            .accessibilityIdentifier("home.coachCard.begin")
         }
-        .accessibilityIdentifier("home.coachCard.prepSession")
-        .accessibilityLabel(
-            Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away")
+    }
+
+    // MARK: - Hero meta line
+    //
+    // "Timed practice · 30s answer clock · Week 2 of 4" — every clause is
+    // real, sentence case, and self-suppresses when its datum is absent
+    // (the V4.6 clause rule: never render placeholder metadata).
+
+    private func heroMetaText(for blueprint: RecommendationBiasBlueprint) -> String {
+        var clauses = [heroModeClause(for: blueprint.recommendedMode)]
+        if let clock = heroClockClause(for: blueprint) {
+            clauses.append(clock)
+        }
+        if let week = heroPlanWeekClause {
+            clauses.append(week)
+        }
+        return clauses.joined(separator: " \u{00B7} ")
+    }
+
+    private func heroModeClause(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:          return "Timed practice"
+        case .suddenDeath:    return "Pressure drill"
+        case .ahCounter:      return "Filler control"
+        case .imConversation: return "Conversation practice"
+        }
+    }
+
+    private func heroClockClause(for blueprint: RecommendationBiasBlueprint) -> String? {
+        switch blueprint.recommendedMode {
+        case .timed:
+            let difficulty = blueprint.suggestedTimedDifficulty ?? .medium
+            guard let seconds = difficulty.duration else { return "free clock" }
+            return "\(seconds)s answer clock"
+        case .suddenDeath:    return "one breath"
+        case .ahCounter:      return "90s rep"
+        case .imConversation: return nil
+        }
+    }
+
+    /// "Week N of 4" only while the active plan is live and aligned — a
+    /// stale or absent plan renders nothing rather than a wrong claim.
+    private var heroPlanWeekClause: String? {
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: forwardPlanStore.activePlan,
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
+            activeBigMomentID: bigMomentStore.activeMoment?.id
         )
+        guard case .live(let plan, _) = state,
+              let week = plan.currentWeek(now: Date(), calendar: .current) else {
+            return nil
+        }
+        return "Week \(week.weekIndex) of 4"
     }
 
     /// Compact 4-week plan-arc line under the Begin CTA — today's rep
@@ -625,15 +692,15 @@ struct HomeCoachCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bookmark.fill")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .accessibilityHidden(true)
                     Text("Week \(plannedPhrase.target.weekIndex) phrase \u{2014} practice your saved line")
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, Spacing.sm)
@@ -661,15 +728,15 @@ struct HomeCoachCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .accessibilityHidden(true)
                     Text(line)
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(AppColor.coachHeroInk)
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, Spacing.sm)
@@ -820,6 +887,10 @@ struct HomeCoachCard: View {
                 )
             )
         } else {
+            // V4.6 — the hero IS the briefing (target, reason, clock), so
+            // Start lands directly in the rep flow. Same one-shot arming
+            // contract as the picker/Ask Noum tap launches.
+            PracticeModeQuickStart.arm(for: launch.launchedMode)
             navigationPath.append(launch.destination)
         }
     }
