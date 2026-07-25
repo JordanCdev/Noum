@@ -779,7 +779,7 @@ struct TimedPracticeView: View {
     // declarations, but Timed never auto-interrupts setup with a focus sheet.
 
     // Session state
-    @AppStorage("timedPractice.selectedTheme") private var selectedThemeRaw: String = PromptTheme.all.rawValue
+    @AppStorage(PromptTheme.selectedDefaultsKey) private var selectedThemeRaw: String = PromptTheme.all.rawValue
     @State private var question: String = ""
     @State private var wordOfTheDayTarget: String?
     @State private var phase: TimedSessionPhase = .setup
@@ -1284,6 +1284,12 @@ struct TimedPracticeView: View {
                             in: Capsule()
                         )
                         .accessibilityLabel("Same prompt, same target")
+                        // The retry-variant marker lives on this always-first
+                        // leaf: container-level identifiers in this stack do
+                        // not reliably materialize as accessibility elements,
+                        // and the screen root below must carry the canonical
+                        // Timed identity.
+                        .accessibilityIdentifier("timedPractice.targetedRetry.screen")
 
                     VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text(presentation.title)
@@ -1351,8 +1357,14 @@ struct TimedPracticeView: View {
                 .padding(.top, Spacing.md)
                 .padding(.bottom, Spacing.lg)
             }
+            // Every Timed entry — standard setup, prescribed launch, targeted
+            // retry — exposes the one canonical screen identity that routing
+            // contracts address. The retry-specific marker sits on the badge
+            // leaf above; the scroll root is the element that reliably
+            // materializes in the accessibility tree, so the canonical
+            // identity lives here.
+            .accessibilityIdentifier("timedPractice.screen")
         }
-        .accessibilityIdentifier("timedPractice.targetedRetry.screen")
     }
 
     @ViewBuilder

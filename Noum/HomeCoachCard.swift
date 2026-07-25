@@ -247,15 +247,14 @@ enum HomeCoachRecommendationPipeline {
                 store.markTapped(mode: mode)
             }
         )
-        if exposure.mode == .timed, launch.launchedMode == .timed {
-            let theme = exposure.suggestedTheme
-            if theme != .all {
-                UserDefaults.standard.set(
-                    theme.rawValue,
-                    forKey: "timedPractice.selectedTheme"
-                )
-            }
-        }
+        // The prescribed theme intentionally never writes into the user's
+        // persisted manual Timed setup (`PromptTheme.selectedDefaultsKey`).
+        // That slot belongs to an explicit setup choice; overwriting it made
+        // one accepted prescription leak into every later manual or fallback
+        // launch. Prompt bias still applies: with the default "All Themes"
+        // selection, `PracticeTopics.next` resolves prompts through
+        // `themeBias(for: profile)` — the same mapping that produced
+        // `exposure.suggestedTheme` in the first place.
         if !launch.acceptsDisplayedPrescription {
             PracticeModeQuickStart.clear()
         }
@@ -1012,8 +1011,14 @@ struct HomeCoachCard: View {
         } else {
             // V4.6 — the hero IS the briefing (target, reason, clock), so
             // Start lands directly in the rep flow. Same one-shot arming
-            // contract as the picker/Ask Noum tap launches.
-            PracticeModeQuickStart.arm(for: launch.launchedMode)
+            // contract as the picker/Ask Noum tap launches. A capability
+            // fallback must NOT re-arm: `accept` just cleared the handshake
+            // because the mode that opens is not the mode the user saw, and
+            // an unseen mode auto-starting the microphone is exactly the
+            // interrupted-one-tap leak the other surfaces fail closed on.
+            if launch.acceptsDisplayedPrescription {
+                PracticeModeQuickStart.arm(for: launch.launchedMode)
+            }
             navigationPath.append(launch.destination)
         }
     }

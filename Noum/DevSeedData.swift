@@ -138,6 +138,14 @@ enum DevSeedData {
             sessions.append(ladderSession)
         }
 
+        // Practice-setup baseline. Seed personas never made a manual Timed
+        // theme choice, so a forced seed must not inherit one from the
+        // simulator's long-lived container (hand sessions — and, before the
+        // fix, prescription writes — leave residue here). Without this reset
+        // the "default Timed setup" contract in seeded UI runs depends on
+        // whatever the container last held.
+        UserDefaults.standard.removeObject(forKey: PromptTheme.selectedDefaultsKey)
+
         // Write sessions to the store
         let store = PracticeSessionStore.shared
         // Clear existing sessions by writing empty, then append seed data

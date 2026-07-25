@@ -3,6 +3,12 @@ import Foundation
 // MARK: - Prompt Theme
 
 enum PromptTheme: String, CaseIterable, Identifiable, Codable {
+    /// Persisted manual theme selection for Timed setup. This slot belongs to
+    /// the user's explicit choice in setup; prescriptions carry their theme
+    /// bias through `PracticeTopics.themeBias` at prompt resolution and must
+    /// never write here.
+    static let selectedDefaultsKey = "timedPractice.selectedTheme"
+
     case all = "All Themes"
     case general = "General"
     case workCareer = "Work & Career"
