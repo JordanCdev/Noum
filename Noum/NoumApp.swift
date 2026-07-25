@@ -242,7 +242,9 @@ struct NoumApp: App {
     @ViewBuilder
     private var rootView: some View {
         rootContent
-        .preferredColorScheme(.light)
+        // V4.6: the semantic theme is now trait-resolving (AppColor dynamic
+        // tokens per the frozen dark contract), so the app follows the
+        // system appearance instead of pinning light.
         // M3 typography redesign: default body text uses Manrope. Views can
         // override with the Figtree-backed `Typography.headline` /
         // `Typography.cardTitle` etc. for headlines.

@@ -560,7 +560,7 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         cohesiveHomeCards(topInset: screenProxy.safeAreaInsets.top)
                     }
-                    .padding(.bottom, isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding)
+                    .padding(.bottom, isEmbeddedInTabShell ? Spacing.tabRootNavigationClearance : HomeShortcutDockLayout.scrollBottomPadding)
                 }
                 .ignoresSafeArea(edges: .top)
             }

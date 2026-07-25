@@ -248,7 +248,13 @@ struct AppShellView: View {
         }
         .tint(AppColor.brandBlue)
         .overlay(alignment: .bottom) {
-            v46TabBar
+            // The capsule lives on the four tab ROOTS only — pushed
+            // destinations (summary, recording, settings detail, …) own
+            // their full height, matching the frozen screens.
+            if !v46TabBarHidden {
+                v46TabBar
+                    .transition(.opacity)
+            }
         }
         .background {
             AppTabAccessibilityBridge(
@@ -280,6 +286,16 @@ struct AppShellView: View {
     // while it is frontmost). Selection is never colour-alone: the pill,
     // the glyph tint, and the label weight move together.
 
+    private var v46TabBarHidden: Bool {
+        switch selectedTab {
+        case .home: return !homePath.isEmpty
+        case .train: return !trainPath.isEmpty
+        case .review: return !reviewPath.isEmpty
+        case .profile: return !profilePath.isEmpty
+        case .settings: return !settingsPath.isEmpty
+        }
+    }
+
     private var v46TabBar: some View {
         HStack(spacing: 0) {
             v46TabButton(.home, title: "Today", glyph: "sun.max")
@@ -291,14 +307,17 @@ struct AppShellView: View {
         .padding(.vertical, Spacing.xs)
         .background {
             Capsule(style: .continuous)
-                .fill(Color.white.opacity(0.94))
+                .fill(AppColor.cardBackground.opacity(0.94))
                 .overlay(
                     Capsule(style: .continuous)
-                        .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                        .stroke(AppColor.subtleBorder, lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.08), radius: 24, y: 8)
         }
         .padding(.bottom, Spacing.xs)
+        // Navigation chrome caps its own scaling (native tab bars do the
+        // same); screen content carries the accessibility sizes.
+        .dynamicTypeSize(...DynamicTypeSize.large)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("app.v46TabBar")
     }

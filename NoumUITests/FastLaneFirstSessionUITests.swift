@@ -141,9 +141,13 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["timedPractice.screen"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["summary.postRepVerdict"].exists)
 
-        let settingsTab = app.buttons["nav.settings"]
-        XCTAssertTrue(settingsTab.waitForExistence(timeout: 5))
-        settingsTab.tap()
+        // V4.6 four-tab IA: Settings lives under You (gear on Profile root).
+        let youTab = app.buttons["nav.social"]
+        XCTAssertTrue(youTab.waitForExistence(timeout: 5))
+        youTab.tap()
+        let openSettings = app.buttons["profile.openSettings"]
+        XCTAssertTrue(openSettings.waitForExistence(timeout: 5))
+        openSettings.tap()
         XCTAssertTrue(
             app.descendants(matching: .any)["settings.screen"].waitForExistence(timeout: 5)
         )

@@ -34,6 +34,14 @@
 - `DevSeedData.seedV46ComparableEvidenceIfRequested` (`UI_TESTING_V46_EVIDENCE`) — 4 comparable outcomes (3 holds incl. under-pressure today, 1 pressure lapse) through the store's own persistence.
 - Verified on sim: Updated Today hero (chip/headline/meta/earned trace — `.screenshots/v46-slice3/01-updated-today.png`) and Progress head with the exact frozen subtitle derived from real ledger data (`02-progress-head.png`). Deviation: with an active BigMoment ≤14 days, prep keeps the CTA slot (contextual-moment precedence) — the earned CTA override applies only to the ordinary branch.
 
+## Slice 4 (dark theme, capsule nav, AX/RM/offline proofs)
+
+- **Dark mode shipped**: `AppColor` semantic tokens are now trait-resolving per the frozen contract (screen #FAF9F7→#17151C, cards → warm dark surfaces, ink/accent → #9061F9, receded → #8A93A4, pressed → #7A4FF0, quiet violet → #2B2440, feedback colours explicitly mapped — never grey-bucketed); the root `.preferredColorScheme(.light)` pin is removed. Immersive recording/processing stay natively dark.
+- **Capsule nav completed**: bar hides on pushed destinations (tab roots only), caps its own Dynamic Type like native chrome, uses dynamic card/border tokens in dark. Settings entry added to the You root (`profile.openSettings` gear → existing `AppDestination.settings`); `noum://settings` still routes. UI tests re-pointed (NoumUITests ×2, FastLaneFirstSessionUITests ×1).
+- **Tour extended**: `testCaptureV46RetryComparisonLoop` completes retry → scripted recording → processing → same-target comparison card (closes the last visual-coverage gap).
+- **Proof captures** in `.screenshots/v46-slice4/`: dark-01-updated-today, dark-02-review, dark-03-progress, ax3-today, ax5-review (34pt quote wraps, nothing truncated), rm-recording (static bars at drawn state, no ambient motion), offline-provider-failure (honest retryable card).
+- Home scroll clearance raised to the tab-root constant so cards never sit under the floating capsule.
+
 ## Known deviations / notes
 
 - Status bar renders dark over the violet hero (app pins `.preferredColorScheme(.light)`); resolved with the Slice 4 theme work.

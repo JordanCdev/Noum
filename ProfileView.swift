@@ -1632,6 +1632,22 @@ struct ProfileView: View {
         .background(AppColor.screenBackground.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        // V4.6 four-area IA — Settings lives under You. The gear pushes the
+        // existing settings destination; the settings tab remains routable
+        // for deep links only.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: AppDestination.settings) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier("profile.openSettings")
+            }
+        }
         .accessibilityIdentifier("profile.screen")
         .sheet(isPresented: $showPaywall) { PaywallView() }
         .sheet(item: $profileOutcomeMoment) { moment in

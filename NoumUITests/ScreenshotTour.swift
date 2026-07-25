@@ -891,6 +891,79 @@ final class ScreenshotTour: XCTestCase {
         app.terminate()
     }
 
+    /// V4.6 — completes the loop the retry journey above stops short of:
+    /// targeted retry → scripted recording → processing → the same-target
+    /// comparison card. `UI_TESTING_TRANSCRIPTION_SCRIPTED` makes the rep
+    /// deterministic (no live STT, no network); the scripted transcript
+    /// intentionally overlaps the seeded source rep so the comparator's
+    /// meaning-overlap floor is honestly met.
+    @MainActor
+    func testCaptureV46RetryComparisonLoop() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE",
+            "plateauedAdvanced",
+            "UI_TESTING_PREMIUM",
+            "UI_TESTING_REWRITE_LADDER",
+            "UI_TESTING_MICROPHONE_GRANTED",
+            "UI_TESTING_TRANSCRIPTION_SCRIPTED",
+            "-DeepLink",
+            "noum://summary"
+        ]
+        app.launch()
+        _ = app.wait(for: .runningForeground, timeout: 10)
+
+        let practiseUpgrade = app.buttons["rewrite.practiceOneStep"].firstMatch
+        scrollUntilVisible(practiseUpgrade, in: app, maxSwipes: 10)
+        XCTAssertTrue(
+            practiseUpgrade.waitForExistence(timeout: 12),
+            "The premium seed should render a source-bound one-step upgrade."
+        )
+        practiseUpgrade.tap()
+
+        let begin = app.buttons["timedPractice.begin"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 10))
+        begin.tap()
+
+        // Skip the think window when present; the rep itself stays live.
+        let startNow = app.buttons["timedPractice.startNow"]
+        if startNow.waitForExistence(timeout: 6) {
+            startNow.tap()
+        }
+
+        let endRep = app.buttons["timedPractice.end"]
+        XCTAssertTrue(
+            endRep.waitForExistence(timeout: 10),
+            "The V4.6 recording surface should be live with the scripted provider."
+        )
+        // Let the scripted transcript stream a few clauses (~2.2 words/s).
+        Thread.sleep(forTimeInterval: 9)
+        deepAttach(app, name: "V46-01-recording-live")
+        endRep.tap()
+
+        let processing = app.descendants(matching: .any)["timedPractice.processing.screen"].firstMatch
+        if processing.waitForExistence(timeout: 3) {
+            deepAttach(app, name: "V46-02-processing")
+        }
+
+        XCTAssertTrue(
+            app.otherElements["summary.postRepVerdict"].waitForExistence(timeout: 25),
+            "The scripted retry should finalize into the review."
+        )
+        let comparison = app.descendants(matching: .any)["transcriptRetry.comparison"].firstMatch
+        scrollUntilVisible(comparison, in: app, maxSwipes: 12)
+        XCTAssertTrue(
+            comparison.waitForExistence(timeout: 10),
+            "The retry must land the same-target comparison card."
+        )
+        scrollUntilCentered(comparison, in: app, maxSwipes: 4)
+        Thread.sleep(forTimeInterval: 1.0)
+        deepAttach(app, name: "V46-03-comparison-payoff")
+        app.terminate()
+    }
+
     /// Captures both halves of the contextual Ask Noum contract: the bounded
     /// evidence attached before the user types, and the evidence-aware coach
     /// response after one explicit user question. The reply is deterministic
