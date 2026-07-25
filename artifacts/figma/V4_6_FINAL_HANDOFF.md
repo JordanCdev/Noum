@@ -62,6 +62,24 @@ Today→Recording (SA340) · Recording→Processing (SA260) · Processing auto 1
 4. Processing's remaining premium-ness is motion (SwiftUI), by design.
 5. Human tests still open: live-call identity D1/D2/D3, 4-tab IA (plans on page 01).
 
+## Report-18 compression addendum (2026-07-25, applied in place on page 17 — pre-sign-off iteration, no history fork)
+
+Report 18 was written against page 16 and never saw this page; most of its Top-6 was already done here. Genuine deltas applied (light + dark, exports refreshed and re-validated):
+- **Review** `258:1006`/`258:1395` — helper one step quieter (12pt @70%); +12pt below the improved phrase (CTA + disclosure moved down). The hero phrase now owns its band outright.
+- **Comparison** `258:1045`/`258:1421` — plan line demoted one step (14pt @90%); read order is result → improvement → plan.
+- **Updated Today** `258:1078`/`258:1454` — earned-trace air completed to +12 total; CTA +6.
+- **Processing** `258:994` — settling trace rescaled ×1.1 (352×154) + glow enlarged, recentred.
+
+Rejected from report 18, with reasons:
+- **New page "12 V4.6 — Compressed Coaching Loop"** — would fork history from stale page-16 sources; page 17 is the live pre-sign-off page (and "12" is V4.2's number — fourth numbering slip).
+- **Progress 3 rows → 2 + "inline lapse chip"** — the lapse keeps a full respectful row (honest ledger; a chip trivializes it and adds chrome the report itself bans).
+- **Copy swaps** ("Checking what held.", "What held this week…", "Same prompt. Sharper entry.") — each is more generic than the current task-specific, signed-off copy.
+- **Hiding reflection behind new disclosure** — already last-and-quiet below the CTA; a new collapse affordance = new chrome.
+- **Transformation timing 180–240ms** — the 600ms token transformation is a signed-off decision (V4.4 motion pairs); RM fallback already instant.
+- **Global type/motif normalization via styles** — contracted to the componentization/implementation phase on the SwiftUI board, not a mock-level edit.
+
+Density vs report 18's group targets (counted from the annotated boards): Today 5 ✓ · Recording 4 ✓ · Processing 3 ✓ · Review 5 ✓ · Retry 4 ✓ · Comparison 5 ✓ · Updated 4 ✓ · Progress 6 ✓ — all within target.
+
 ## Verdict
 
 **Ready for founder review: yes.** **Ready for SwiftUI implementation with no further major design pass: yes** — screen structure, copy, tokens-or-documented-exceptions, states, motion contract, and accessibility proof are all specified; remaining work is founder taste calls (items 1–3 above) and the build itself (componentize/rebind during implementation per the board, then Slice 1 per `docs/SPEC_rewrite_ladder_reliability.md`).
