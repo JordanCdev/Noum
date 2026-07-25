@@ -85,9 +85,9 @@ struct WeeklyDigestGoalCopyTests {
         let twoReps = NotificationCopy.weeklyDigest(weeklyReps: 2)
 
         #expect(oneRep.title.contains("1 rep"))
-        #expect(oneRep.body.hasPrefix("1 rep is on the record."))
+        #expect(oneRep.body.hasPrefix("1 rep banked this week."))
         #expect(twoReps.title.contains("2 reps"))
-        #expect(twoReps.body.hasPrefix("2 reps are on the record."))
+        #expect(twoReps.body.hasPrefix("2 reps banked this week."))
 
         for line in [oneRep, twoReps] {
             #expect(!line.body.localizedCaseInsensitiveContains("one more rep"))

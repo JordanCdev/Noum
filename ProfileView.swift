@@ -1216,6 +1216,10 @@ struct ProfileTransferStatusContent: Equatable {
     let destination: AppDestination?
     let moment: BigMoment?
 
+    /// `voice` is currently unread: the planner's intro no longer takes a
+    /// register parameter, and this row's detail lines are voice-neutral.
+    /// The parameter stays because the call signature is pinned by tests
+    /// and it remains the seam for register-tuning the detail line.
     static func make(
         activeMoment: BigMoment?,
         pendingOutcomeMoment: BigMoment?,
@@ -1256,7 +1260,6 @@ struct ProfileTransferStatusContent: Equatable {
             let plan = PrepSessionPlanner.plan(
                 bigMoment: activeMoment,
                 daysRemaining: clampedDays,
-                voice: voice,
                 modeAvailability: .failClosed
             )
             let readiness = PrepSessionPlanner.readiness(
@@ -4282,7 +4285,7 @@ struct ProfileView: View {
     private func shareInviteLink() {
         let url = "https://apps.apple.com/app/noum/id6740486498"
         let activityVC = UIActivityViewController(
-            activityItems: ["Practice speaking with me on Noum. It is like a gym for your voice.", URL(string: url)!],
+            activityItems: ["Practice speaking with me on Noum — a gym for your voice.", URL(string: url)!],
             applicationActivities: nil
         )
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,

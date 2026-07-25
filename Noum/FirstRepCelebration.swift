@@ -531,7 +531,7 @@ struct FirstRepCelebration: View {
         }
         switch voice {
         case .authoritative:
-            if fillerCount == 0 { return "Clean line, first time out. That's authority showing up early." }
+            if fillerCount == 0 { return "Clean line, first time out. Hold that standard." }
             if fillerCount <= 2 { return "A couple of fillers in your opener. That's a tell, not a habit yet." }
             return "Fillers cluster early when the moment matters. We work the pause next."
         case .warm:

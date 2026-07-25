@@ -112,6 +112,7 @@ struct VoiceTrace: View {
     var showsGlow: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     /// Ambient breath phase for the hero presences — the coach is quietly
     /// alive, never performing. Reduce Motion keeps the drawn state.
     @State private var isBreathing = false
@@ -157,7 +158,11 @@ struct VoiceTrace: View {
                 } else {
                     bar(height: height * heightScale, opacity: variant.opacities[index])
                         .scaleEffect(
-                            y: breathes ? (isBreathing ? 1.0 : 0.84) : 1.0,
+                            // The resting (non-breathing) scale is always the
+                            // drawn 1.0 — the breath dips to 0.84 and back only
+                            // while armed, so a Reduce Motion toggle can never
+                            // strand the squashed frame.
+                            y: (breathes && isBreathing) ? 0.84 : 1.0,
                             anchor: .center
                         )
                         .animation(
@@ -174,6 +179,33 @@ struct VoiceTrace: View {
         .onAppear {
             guard breathes else { return }
             isBreathing = true
+        }
+        // Reduce Motion can flip mid-session and `onAppear` never re-fires:
+        // arm the breath when motion returns, settle to the drawn state
+        // (without animating) when it goes.
+        .onChange(of: reduceMotion) { _, _ in
+            if breathes {
+                isBreathing = true
+            } else {
+                var settle = Transaction()
+                settle.disablesAnimations = true
+                withTransaction(settle) { isBreathing = false }
+            }
+        }
+        // `repeatForever` driven by a one-shot state flip can freeze
+        // mid-scale across a background/foreground cycle. Re-arm on return:
+        // reset the phase without animation (the resting scale is the drawn
+        // state, so there is no visible pop), then restart the loop on the
+        // next runloop tick.
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active, breathes else { return }
+            var reset = Transaction()
+            reset.disablesAnimations = true
+            withTransaction(reset) { isBreathing = false }
+            DispatchQueue.main.async {
+                guard breathes else { return }
+                isBreathing = true
+            }
         }
         .animation(
             reduceMotion ? nil : .easeOut(duration: 0.12),

@@ -537,7 +537,7 @@ struct SessionHistoryListView: View {
                     Text(SessionHistoryListModel.collapsedLabel(for: collapsedSessions))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(isExpanded ? "Tap to tuck them away" : "Tap to show them")
+                    Text(isExpanded ? "Tap to hide them" : "Tap to show them")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

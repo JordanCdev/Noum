@@ -17,14 +17,39 @@ enum NoumWebURLs {
     static let supportEmail = "noumsupport@gmail.com"
     static let supportMail = URL(string: "mailto:\(supportEmail)")!
 
-    /// General support draft with a triage subject. Content-free — no
-    /// account identifiers or coaching content in the email body.
-    static func supportMailComposed(subject: String) -> URL {
+    /// Ask Noum unavailable-after-retries support draft. Privacy-safe
+    /// diagnostics only — the typed unavailability reason code, the failed
+    /// re-check count, and app/OS versions, so support can distinguish a
+    /// deploy gap from a transient service blip. Never account identifiers,
+    /// transcripts, or coaching content (same boundary as
+    /// `deletionSupportMail`).
+    static func askNoumUnavailableSupportMail(
+        reasonCode: String,
+        failedRecheckCount: Int,
+        appVersion: String,
+        systemVersion: String
+    ) -> URL {
         var components = URLComponents()
         components.scheme = "mailto"
         components.path = supportEmail
         components.queryItems = [
-            URLQueryItem(name: "subject", value: subject)
+            URLQueryItem(
+                name: "subject",
+                value: "Noum unavailable after retries"
+            ),
+            URLQueryItem(
+                name: "body",
+                value: """
+                Ask Noum shows as unavailable after retries.
+
+                Reason code: \(reasonCode)
+                Failed re-checks: \(failedRecheckCount)
+                App version: \(appVersion)
+                System: \(systemVersion)
+
+                Please do not include practice transcripts or other coaching content.
+                """
+            )
         ]
         return components.url ?? supportMail
     }

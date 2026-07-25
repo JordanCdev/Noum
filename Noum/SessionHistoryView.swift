@@ -926,7 +926,7 @@ struct SessionHistoryDetailView: View {
             }
 
             ReviewTranscriptStep(
-                eyebrow: "WHAT NOUM HEARD · VERIFIED \(RepDurationLabel.mss(session.duration))",
+                eyebrow: "FROM YOUR TRANSCRIPT · VERIFIED \(RepDurationLabel.mss(session.duration))",
                 text: TranscriptChangeHighlighter.recededText(
                     original: snapshot.originalSnippet,
                     revision: snapshot.oneStepText

@@ -313,10 +313,6 @@ struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
 
-    /// Retained for source compatibility with previews and callers that still
-    /// pass Home's scroll position. The restrained card is intentionally
-    /// static and does not use scrolling to move decorative layers.
-    var scrollOffset: CGFloat = 0
     /// Gate flag from `HomeSignalGate` (>= 1 completed rep). The row
     /// additionally self-gates on an actual active plan via
     /// `HomePlanArcLine` — both must hold before anything renders.
@@ -449,9 +445,11 @@ struct HomeCoachCard: View {
                     endPoint: .bottomTrailing
                 )
             )
-            // Bleed above the content top so no canvas sliver can ever show
-            // between the hero and the physical top edge.
-            .padding(.top, -80)
+            // Bleed generously above the content top so no canvas sliver can
+            // show between the hero and the physical top edge — even on a
+            // hard rubber-band pull. Background only, clipped by the
+            // ScrollView at rest, so layout is unaffected.
+            .padding(.top, -240)
             .shadow(color: AppColor.coachAccent.opacity(0.28), radius: 22, y: 14)
         }
         .onAppear {

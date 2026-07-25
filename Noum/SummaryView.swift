@@ -2031,7 +2031,7 @@ struct SummaryView: View {
                     Text("Monthly coaching limit reached")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text("You've made great use of AI coaching this month. Fresh analyses will be available \(aiSettings.resetDateFormatted).")
+                    Text("You've used this month's coaching analyses. Fresh ones will be available \(aiSettings.resetDateFormatted).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

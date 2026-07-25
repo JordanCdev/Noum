@@ -115,7 +115,7 @@ struct SkillProgressView: View {
                 HStack(spacing: 2) {
                     Image(systemName: "arrow.down.right")
                         .font(.system(size: 8, weight: .bold))
-                    Text("Slipping")
+                    Text("Needs a rep")
                         .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                 }
                 .foregroundStyle(AppColor.caution)

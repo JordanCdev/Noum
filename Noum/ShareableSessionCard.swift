@@ -222,7 +222,7 @@ struct ShareableSessionCard: View {
                 .font(Typography.caption.weight(.bold))
                 .foregroundStyle(.white)
             Spacer()
-            Text("Sharper speaking, one rep.")
+            Text("Sharper speaking, one rep at a time.")
                 .font(Typography.caption)
                 .foregroundStyle(.white.opacity(0.78))
         }

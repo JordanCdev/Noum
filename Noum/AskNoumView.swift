@@ -10,11 +10,11 @@ import os
 // by `CoachContextBuilder` at send-time.
 //
 // Layout (top to bottom):
-//   • Header: NoumCharacter (voice-tinted orb) + the coach's name. The orb
-//     REACTS to the thread (`orbMood`) — `.thinking` while a reply is
-//     composing/writing, `.coaching` once a conversation exists, a `.calm`
-//     greeting at the empty state. Existing threads open compact by default;
-//     first contact gets the fuller identity moment.
+//   • Header: a crisp waveform badge on the quiet violet surface + the
+//     coach's name. The in-thread typing indicator (`pendingDots`, a small
+//     `.thinking` NoumCharacter) carries the coach's thinking state.
+//     Existing threads open compact by default; first contact gets the
+//     fuller identity moment.
 //   • Current focus strip: visible only when the thread has messages and the
 //     case file has an active target/focus.
 //   • Empty state (no messages): one recommended ask, with alternatives tucked
@@ -37,7 +37,8 @@ import os
 //     back to send-only when voice can't be served.
 //
 // Brand alignment: white cards on light background, brand-purple accents
-// for the coach surface, NoumCharacter as the coach's embodiment.
+// for the coach surface, the waveform badge as the coach's mark (the
+// NoumCharacter orb survives only as the in-thread typing indicator).
 
 /// Pure presentation contract for a typed transport limitation. Keeping the
 /// retry policy beside the copy prevents a permanent on-device identity from
@@ -87,6 +88,53 @@ struct AskNoumAvailabilityPresentation: Equatable {
                 showsCheckAgain: true,
                 connectsLocalGuest: false
             )
+        }
+    }
+}
+
+/// Pure policy for the unavailable banner's escalation affordance. Repeated
+/// failed re-checks on a *reportable* reason lead the banner with a support
+/// report; self-resolving states never route to support. Kept beside
+/// `AskNoumAvailabilityPresentation` so the copy and the escalation policy
+/// gating the same banner live together — and stay testable without SwiftUI.
+enum AskNoumAvailabilityRecheckPolicy {
+    /// Failed re-checks on a reportable reason before "Report issue" leads.
+    static let reportThreshold = 2
+
+    /// Only failures where reporting is the real remediation count toward
+    /// the threshold. `.authenticationPending` settles on its own once auth
+    /// hydrates, `.debugProviderMissing` is a debug-build configuration
+    /// state, and `.localOnlyGuest` has its own Connect affordance — none
+    /// of those is a support issue.
+    static func countsTowardReport(_ reason: CoachChatUnavailableReason) -> Bool {
+        switch reason {
+        case .authenticationPending, .debugProviderMissing, .localOnlyGuest:
+            return false
+        case .secureSessionMissing, .backendVersionMissing, .service:
+            return true
+        }
+    }
+
+    /// Whether the banner should lead with "Report issue" for this reason
+    /// at this failed-re-check count. A quiet re-check always stays
+    /// alongside the report so recovery never requires leaving the screen.
+    static func shouldOfferReport(
+        reason: CoachChatUnavailableReason,
+        failedRechecks: Int
+    ) -> Bool {
+        countsTowardReport(reason) && failedRechecks >= reportThreshold
+    }
+
+    /// Privacy-safe diagnostic code for the support draft — a stable label
+    /// per typed reason, never account or content data.
+    static func reportCode(for reason: CoachChatUnavailableReason) -> String {
+        switch reason {
+        case .authenticationPending: return "authenticationPending"
+        case .localOnlyGuest: return "localOnlyGuest"
+        case .secureSessionMissing: return "secureSessionMissing"
+        case .backendVersionMissing: return "backendVersionMissing"
+        case .debugProviderMissing: return "debugProviderMissing"
+        case .service: return "service"
         }
     }
 }
@@ -299,6 +347,10 @@ struct AskNoumAttachedContextPresentation: Equatable {
 
     let headline: String
     let categoryLine: String
+    /// One short line for the visible context pill, derived from the SAME
+    /// resolved inputs as the VoiceOver wording — so the pill never claims
+    /// a focus that didn't resolve or evidence that isn't attached.
+    let summaryLine: String
 
     static func make(
         latestTimedPracticeLabel: String?,
@@ -350,9 +402,25 @@ struct AskNoumAttachedContextPresentation: Equatable {
         let categoryLine = categories.isEmpty
             ? "No personal evidence is attached yet."
             : "Attached: \(categories.joined(separator: " · "))."
+
+        let summaryLine: String
+        switch (hasRecentPractice, focus != nil) {
+        case (true, true):
+            summaryLine = "Using your recent reps + current focus"
+        case (true, false):
+            summaryLine = "Using your recent reps"
+        case (false, true):
+            summaryLine = "Using your current focus"
+        case (false, false):
+            summaryLine = categories.isEmpty
+                ? "No personal evidence attached yet"
+                : "Using your coaching context"
+        }
+
         return AskNoumAttachedContextPresentation(
             headline: headline,
-            categoryLine: categoryLine
+            categoryLine: categoryLine,
+            summaryLine: summaryLine
         )
     }
 
@@ -365,10 +433,14 @@ struct AskNoumAttachedContextPresentation: Equatable {
 
 enum AskNoumVisibleCopy {
     static let currentFocus = "Current focus"
-    static let reviewFocus = "Review your focus"
+    // "Coach check-in", not "Review your focus" — "focus" already labels the
+    // strip and the context pill on the same empty screen, and the chip is a
+    // coach priority signal rather than case-file vocabulary (the visible-copy
+    // test bans case-file language like "review due").
+    static let coachCheckIn = "Coach check-in"
     static let askNoum = "Ask Noum"
 
-    static let primaryLabels = [currentFocus, reviewFocus, askNoum]
+    static let primaryLabels = [currentFocus, coachCheckIn, askNoum]
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -638,8 +710,13 @@ struct AskNoumView: View {
     // trajectory", opened from the memory-usage pill under the latest coach
     // reply (and from the thread options menu for discoverability).
     @State private var showTrajectorySheet = false
-    /// Failed availability re-checks this visit; two failures swap the
-    /// retry affordance for a real remediation (support report).
+    /// Failed availability re-checks this visit on reportable reasons
+    /// (`AskNoumAvailabilityRecheckPolicy`); at the threshold the banner
+    /// leads with a support report, with a quiet re-check kept alongside.
+    /// Reset by the `liveCoachAvailability` observer whenever availability
+    /// is restored by ANY path — appear task, auth event, banner re-check,
+    /// or a successful reply — so a stale count never fast-tracks the next
+    /// outage to "Report issue".
     @State private var availabilityRecheckFailures = 0
 
     // S4 — live top offset of the thread ScrollView, published by the
@@ -684,6 +761,13 @@ struct AskNoumView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Foregrounding re-probes an unavailable coach (see the scenePhase
+    /// observer) so a recovered backend never stays hidden behind the banner.
+    @Environment(\.scenePhase) private var scenePhase
+    /// "Report issue" opens the pre-filled support mail; the completion
+    /// falls back to the hosted support page when no mail client handles
+    /// `mailto:` — the tap must never silently no-op.
+    @Environment(\.openURL) private var openURL
 
     init(
         sessionStore: PracticeSessionStore,
@@ -702,10 +786,10 @@ struct AskNoumView: View {
     }
 
     private var voice: SpeakingStyleGoal? {
-        // The CHOSEN voice, not the always-populated effective default — so the
-        // header/persona stay generic ("Your speaking coach.") until the user
-        // actually picks a voice, and the coach offers to set one instead of
-        // inventing "authoritative."
+        // The CHOSEN voice, not the always-populated effective default — so
+        // the header/persona stay generic ("Your personal communications
+        // coach.") until the user actually picks a voice, and the coach
+        // offers to set one instead of inventing "authoritative."
         coachingProfileStore.profile?.chosenStyleGoal
     }
 
@@ -724,7 +808,7 @@ struct AskNoumView: View {
     }
 
     /// True once the thread has scrolled up past a small threshold. Collapses
-    /// the header to a compact bar (small orb + name, no subtitle) so the
+    /// the header to a compact bar (small badge + name, no subtitle) so the
     /// conversation gets the screen back. The 24pt deadband keeps the header
     /// from twitching on tiny rubber-band offsets at rest. Only meaningful
     /// when there are messages to scroll — the empty state never scrolls far
@@ -735,18 +819,6 @@ struct AskNoumView: View {
 
     private var characterStage: NoumCharacter.Stage {
         ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-    }
-
-    /// Conversational mood for the header presence. Reacts to the thread so the
-    /// orb reads as a coach who is *with you*: `.thinking` while a reply is
-    /// composing OR writing (the progressive reveal), settling to `.coaching`
-    /// (the warmer, leaning-in read) once a conversation exists, and a gentle
-    /// `.calm` greeting before the first message. Pure read — no state, same
-    /// shape as `isHeaderCompact`.
-    private var orbMood: NoumCharacter.Mood {
-        if isDayZero { return .calm }
-        if store.isAwaitingReply || revealingMessageID != nil { return .thinking }
-        return store.messages.isEmpty ? .calm : .coaching
     }
 
     /// Bounded, honest read of what's currently feeding personalization —
@@ -994,6 +1066,26 @@ struct AskNoumView: View {
                 await refreshAvailability()
             }
         }
+        // Availability restored by ANY path — the appear task, an auth
+        // event, a banner re-check, or a successful reply — clears the
+        // failed-re-check count, so a stale count never fast-tracks the
+        // next outage straight to "Report issue".
+        .onChange(of: liveCoachAvailability) { _, availability in
+            if availability == .available {
+                availabilityRecheckFailures = 0
+            }
+        }
+        // Returning to the app re-probes an unavailable coach so a
+        // recovered backend never stays invisible behind the banner.
+        // Guarded to the unavailable state — a healthy composer shouldn't
+        // flash "Connecting…" on every foreground.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active,
+                  case .unavailable = liveCoachAvailability else { return }
+            Task { @MainActor in
+                await refreshAvailability()
+            }
+        }
         .onDisappear {
             // S5 — barge-in/teardown: never let the coach's voice bleed across
             // a navigation pop. Mirrors `SuddenDeathPracticeView.stopPromptReadout`
@@ -1085,29 +1177,40 @@ struct AskNoumView: View {
         // One quiet line, not a briefing card: the user needs to KNOW the
         // coach reads their context and be able to manage it — the detail
         // itself lives behind Manage (goals/evidence sheet). Full wording
-        // is preserved for VoiceOver.
+        // is preserved for VoiceOver. The visible line comes from the same
+        // presentation the VoiceOver label uses, so it never claims a focus
+        // that didn't resolve or evidence that isn't attached.
         if canDisplayPersistedThread {
             let presentation = attachedContextPresentation
-            HStack(alignment: .center, spacing: Spacing.xs) {
-                Image(systemName: "paperclip")
-                    .font(Typography.captionSmall.weight(.semibold))
-                    .foregroundStyle(AppColor.pro)
-                    .accessibilityHidden(true)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    // AX sizes: one capsule line truncates — stack the
+                    // summary above Manage and let it wrap to two lines.
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        attachedContextSummaryLine(presentation, lineLimit: 2)
+                        attachedContextManagementMenu
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        AppColor.pro.opacity(0.07),
+                        in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    )
+                } else {
+                    HStack(alignment: .center, spacing: Spacing.xs) {
+                        attachedContextSummaryLine(presentation, lineLimit: 1)
 
-                Text("Using your recent reps + current focus")
-                    .font(Typography.captionSmall.weight(.semibold))
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("askNoum.attachedContext.summary")
+                        Spacer(minLength: Spacing.xs)
 
-                Spacer(minLength: Spacing.xs)
-
-                attachedContextManagementMenu
+                        attachedContextManagementMenu
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 40)
+                    .background(AppColor.pro.opacity(0.07), in: Capsule())
+                }
             }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 6)
-            .frame(minHeight: 40)
-            .background(AppColor.pro.opacity(0.07), in: Capsule())
             .padding(.horizontal, Spacing.lg)
             .padding(.bottom, Spacing.xs)
             .accessibilityElement(children: .contain)
@@ -1116,29 +1219,22 @@ struct AskNoumView: View {
         }
     }
 
-    @ViewBuilder
-    private var attachedContextHeader: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 4) {
-                attachedContextLabel
-                attachedContextManagementMenu
-            }
-        } else {
-            HStack(spacing: Spacing.sm) {
-                attachedContextLabel
-                Spacer(minLength: Spacing.sm)
-                attachedContextManagementMenu
-            }
-        }
-    }
+    private func attachedContextSummaryLine(
+        _ presentation: AskNoumAttachedContextPresentation,
+        lineLimit: Int
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+            Image(systemName: "paperclip")
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(AppColor.pro)
+                .accessibilityHidden(true)
 
-    private var attachedContextLabel: some View {
-        Label("Context attached", systemImage: "paperclip")
-            .font(Typography.captionSmall.weight(.semibold))
-            .foregroundStyle(AppColor.pro)
-            .textCase(.uppercase)
-            .tracking(0.6)
-            .accessibilityHidden(true)
+            Text(presentation.summaryLine)
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(AppColor.textSecondary)
+                .lineLimit(lineLimit)
+                .accessibilityIdentifier("askNoum.attachedContext.summary")
+        }
     }
 
     private var attachedContextManagementMenu: some View {
@@ -1472,12 +1568,30 @@ struct AskNoumView: View {
 
     private var emptyStateHeadline: String {
         if activeCaseSubtitle != nil {
-            return "Start with your current focus."
+            // Not "current focus" — that word is reserved for the strip and
+            // pill on the same screen so it lands at most twice per screen.
+            return "Start with what you're working on."
         }
         if let voice = voice {
-            return "Start with your \(voice.title.lowercased())."
+            return Self.voiceEmptyStateHeadline(for: voice)
         }
         return "Start with a coaching read."
+    }
+
+    /// Grammatical per-voice opener. Most voice TITLES are adjectival
+    /// ("Warm and welcoming") and can't stand alone as a noun, so they take
+    /// a "voice" suffix; "Executive presence" already ends in a noun and
+    /// takes none. Static + exhaustive so a new voice case forces a
+    /// deliberate reading here.
+    static func voiceEmptyStateHeadline(for voice: SpeakingStyleGoal) -> String {
+        switch voice {
+        case .authoritative: return "Start with your authoritative voice."
+        case .warm: return "Start with your warm and welcoming voice."
+        case .concise: return "Start with your concise and sharp voice."
+        case .persuasive: return "Start with your persuasive voice."
+        case .executive: return "Start with your executive presence."
+        case .storytelling: return "Start with your storytelling voice."
+        }
     }
 
     // MARK: - Standing plan landing strip
@@ -1560,7 +1674,7 @@ struct AskNoumView: View {
                         .foregroundStyle(AppColor.pro)
                         .padding(.top, 2)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(AskNoumVisibleCopy.reviewFocus)
+                        Text(AskNoumVisibleCopy.coachCheckIn)
                             .font(Typography.captionSmall.weight(.semibold))
                             .foregroundStyle(AppColor.pro)
                         Text(CoachContextBuilder.interventionReviewStarterHeadline(for: intervention))
@@ -2856,10 +2970,10 @@ struct AskNoumView: View {
 
     // MARK: - Pending typing indicator
     //
-    // Replaces the legacy three-dot pulse with a small `.thinking` orb —
-    // same coach character that lives in the header, sized down to
-    // bubble-glyph register. Reads as "Noum is thinking about what you
-    // said" with continuity to the rest of the surface. Reduce-motion
+    // Replaces the legacy three-dot pulse with a small `.thinking`
+    // NoumCharacter orb at bubble-glyph register — the one place the orb
+    // survives now the header carries the crisp waveform badge. Reads as
+    // "Noum is thinking about what you said". Reduce-motion
     // is handled inside `NoumCharacter` itself (the orb collapses to a
     // static glow at small sizes), so no extra gate here.
 
@@ -2968,27 +3082,36 @@ struct AskNoumView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: Spacing.xs)
                 if presentation.showsCheckAgain {
-                    if availabilityRecheckFailures >= 2 {
-                        // Two failed re-checks: retrying is no longer the
-                        // remediation — reporting is. Pre-filled support
-                        // mail so the report carries the diagnostic subject.
-                        Link("Report issue", destination: NoumWebURLs.supportMailComposed(
-                            subject: "Noum unavailable after retries"
-                        ))
-                        .font(Typography.caption.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("askNoum.reportIssue")
+                    if AskNoumAvailabilityRecheckPolicy.shouldOfferReport(
+                        reason: reason,
+                        failedRechecks: availabilityRecheckFailures
+                    ) {
+                        // Repeated failed re-checks on a reportable reason:
+                        // reporting leads, with pre-filled privacy-safe
+                        // diagnostics. A quiet re-check stays alongside so
+                        // recovery never requires leaving the screen — a
+                        // success resets the counter and clears the banner.
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Button("Report issue") {
+                                reportAvailabilityIssue(reason: reason)
+                            }
+                            .font(Typography.caption.weight(.bold))
+                            .foregroundStyle(AppColor.brandBlue)
+                            .frame(minHeight: 44)
+                            .accessibilityHint("Opens a pre-filled support email, or the support page when no mail app is set up.")
+                            .accessibilityIdentifier("askNoum.reportIssue")
+
+                            Button("Check again") {
+                                recheckAvailability()
+                            }
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("askNoum.checkAgainQuiet")
+                        }
                     } else {
                         Button("Check again") {
-                            Task {
-                                await refreshAvailability()
-                                if case .unavailable = liveCoachAvailability {
-                                    availabilityRecheckFailures += 1
-                                } else {
-                                    availabilityRecheckFailures = 0
-                                }
-                            }
+                            recheckAvailability()
                         }
                         .font(Typography.caption.weight(.bold))
                         .foregroundStyle(AppColor.brandBlue)
@@ -3015,6 +3138,47 @@ struct AskNoumView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("askNoum.availability")
         }
+    }
+
+    /// Re-probe availability from the banner. Increments the failure count
+    /// only when the re-check lands on a reason where reporting is real
+    /// remediation — an aborted probe that leaves `.checking` neither counts
+    /// nor resets, and a genuine restore resets the counter via the
+    /// `liveCoachAvailability` observer (never a spurious reset here).
+    private func recheckAvailability() {
+        Task { @MainActor in
+            await refreshAvailability()
+            if case .unavailable(let reason) = liveCoachAvailability,
+               AskNoumAvailabilityRecheckPolicy.countsTowardReport(reason) {
+                availabilityRecheckFailures += 1
+            }
+        }
+    }
+
+    /// Open the pre-filled support draft. `mailto:` silently no-ops on
+    /// devices with no mail client configured, so the completion falls back
+    /// to the hosted support page — "Report issue" is never a dead tap.
+    /// Diagnostics stay privacy-safe: typed reason code, re-check count,
+    /// and version strings only.
+    private func reportAvailabilityIssue(reason: CoachChatUnavailableReason) {
+        let mail = NoumWebURLs.askNoumUnavailableSupportMail(
+            reasonCode: AskNoumAvailabilityRecheckPolicy.reportCode(for: reason),
+            failedRecheckCount: availabilityRecheckFailures,
+            appVersion: Self.appVersionSummary,
+            systemVersion: ProcessInfo.processInfo.operatingSystemVersionString
+        )
+        openURL(mail) { accepted in
+            if !accepted {
+                openURL(NoumWebURLs.support)
+            }
+        }
+    }
+
+    /// Marketing version + build, same read Settings' about row uses.
+    private static var appVersionSummary: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        return "\(version) (\(build))"
     }
 
     private func retryLastTurn() {

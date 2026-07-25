@@ -31,7 +31,7 @@ struct RewriteSuggestionCard: View {
     var sourceSessionID: UUID? = nil
     var sourcePrompt: String? = nil
     /// Duration of the verified source rep; renders in the provenance eyebrow
-    /// ("WHAT NOUM HEARD · VERIFIED 0:48"). Nil keeps the eyebrow duration-free.
+    /// ("FROM YOUR TRANSCRIPT · VERIFIED 0:48"). Nil keeps the eyebrow duration-free.
     var sourceDuration: TimeInterval? = nil
     var targetDimension: String? = nil
     var targetDimensionID: String? = nil
@@ -142,9 +142,9 @@ struct RewriteSuggestionCard: View {
 
     private var provenanceEyebrow: String {
         if let sourceDuration, sourceDuration > 0 {
-            return "WHAT NOUM HEARD · VERIFIED \(RepDurationLabel.mss(sourceDuration))"
+            return "FROM YOUR TRANSCRIPT · VERIFIED \(RepDurationLabel.mss(sourceDuration))"
         }
-        return "WHAT NOUM HEARD · VERIFIED"
+        return "FROM YOUR TRANSCRIPT · VERIFIED"
     }
 
     private func ladderState(_ oneStep: Rewrite) -> some View {
@@ -264,7 +264,7 @@ struct RewriteSuggestionCard: View {
             Text(target.lever.successMeasure)
                 .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
-            Text("Noum will compare this lever with the verified source rep; the aspiration is not scored.")
+            Text("Noum will score your retry against the original rep; the target itself isn't scored.")
                 .font(Typography.micro)
                 .foregroundStyle(AppColor.textSecondary)
         }

@@ -164,7 +164,7 @@ final class AchievementStore: ObservableObject {
 
         // ─── CONSISTENCY ───────────────────────────────
         let streakTargets = [3, 7, 14, 30]
-        let streakTitles = ["Rhythm Builder", "Week Warrior", "Fortnight Force", "Iron Habit"]
+        let streakTitles = ["Rhythm Builder", "Week Warrior", "Two-Week Streak", "Iron Habit"]
         let streakDescs = [
             "Practice 3 days in a row.",
             "Practice 7 days in a row.",
@@ -304,7 +304,7 @@ final class AchievementStore: ObservableObject {
         tiers.append(AchievementTier(
             id: "modes_pressure_60",
             tierIndex: 1,
-            title: "Minute Man",
+            title: "The Full Minute",
             description: "Survive 60+ seconds in a Pressure Drill.",
             symbolName: "bolt.fill",
             track: .modes,

@@ -97,10 +97,6 @@ struct SettingsView: View {
     @StateObject private var flowEvents = FlowEventLog.shared
 
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
-    // AppStorage key read by ContentView; flipping this on shows every
-    // home card from rep 1. Lives under Advanced — power-user surface only.
-    @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
-
     // Persisted so an advanced user who opens the section doesn't have to
     // re-open it every launch. Default collapsed so first-open is calm.
     @AppStorage("settings.advancedExpanded") private var advancedExpanded: Bool = false
@@ -391,7 +387,6 @@ struct SettingsView: View {
                 }
 
                 if authManager.isDeveloper {
-                    section(label: "Home reveal") { advancedHomeCard }
                     section(label: "Developer tools") { transcriptionProviderCard }
                     section(label: "AI calls") { aiCallDiagnosticsCard }
                     section(label: "Debug traces") { flowEventsCard }
@@ -411,17 +406,6 @@ struct SettingsView: View {
         #else
         false
         #endif
-    }
-
-    private var advancedHomeCard: some View {
-        cardContainer(spacing: Spacing.sm) {
-            SettingsToggleRow(
-                title: "Show advanced home cards",
-                subtitle: "Developer inspection override. Normal accounts follow the signal-gated Home reveal.",
-                isOn: $showAllHomeCards,
-                accessibilityHint: "Shows active optional home cards immediately for developer accounts while keeping retired dashboard cards hidden."
-            )
-        }
     }
 
     // MARK: - Section Wrapper
@@ -2094,7 +2078,7 @@ struct SettingsView: View {
                 Divider()
                 Text("Conversation voice quality")
                     .font(.subheadline.weight(.semibold))
-                Text("Noum prioritizes Google Cloud first and quietly falls back to OpenAI if needed.")
+                Text("Noum uses Google Cloud first, with automatic fallback to OpenAI if needed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -3124,7 +3108,7 @@ struct YourDataView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes Noum's bounded cross-session case file. Your practice sessions and measured progress remain.")
+            Text("This removes the coaching memory Noum carries between sessions. Your practice sessions and measured progress remain.")
         }
         .onAppear {
             goalMemoryDraft = coachMemoryStore.currentMemory?.statedGoalSummary ?? ""
@@ -3213,7 +3197,7 @@ struct YourDataView: View {
             }
 
             if let memory = coachMemoryStore.currentMemory {
-                Text("Case file updated \(memory.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("Memory updated \(memory.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 dataRow(
@@ -3236,7 +3220,7 @@ struct YourDataView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Your stated goal")
                         .font(.subheadline.weight(.semibold))
-                    Text("User-authored · direct provenance · updated \(memory.updatedAt.formatted(date: .abbreviated, time: .omitted))")
+                    Text("Written by you · updated \(memory.updatedAt.formatted(date: .abbreviated, time: .omitted))")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AppColor.positive)
                     TextField("What should your communication help you do?", text: $goalMemoryDraft, axis: .vertical)

@@ -180,7 +180,7 @@ final class AccountDataRegistryTests: XCTestCase {
             "coach-check-ins", "coach-letters", "post-rep-notes",
             "coach-memory", "proof-moments", "phrase-bank", "ask-noum", "pressure-history",
             "drill-history", "daily-goal", "streak-freeze", "path-progress", "lessons",
-            "skill-progression", "daily-challenges", "word-of-day",
+            "skill-progression", "daily-challenges", "v46-earned-evidence", "word-of-day",
             "practice-locale", "roleplay", "primary-focus", "prompt-history",
             "account-prompts", "home-recommendations", "ai-rate-limits",
             "friends", "challenges", "clubs", "feedback-requests", "league",

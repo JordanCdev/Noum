@@ -77,7 +77,7 @@ struct CoachPersona: Equatable {
         openings: [
             "Here's my read.",
             "Verdict on that rep.",
-            "Straight from the tape:"
+            "Straight from your rep:"
         ],
         closings: [
             "That's the move.",

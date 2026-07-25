@@ -170,7 +170,7 @@ struct AhCounterView: View {
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("Filler Control")
                                 .font(Typography.bigStat)
-                            Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely while Noum listens.")
+                            Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely and watch the count update as you go.")
                                 .font(Typography.subheadline)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -470,7 +470,7 @@ struct AhCounterView: View {
             style: .clarity,
             status: "Filler Control",
             title: "Keep the thought. Lose the filler.",
-            subtitle: "Speak naturally while Noum listens live."
+            subtitle: "Speak naturally — live feedback appears as you talk."
         ) {
             Button {
                 CoachHaptic.selectionTap()
@@ -610,7 +610,7 @@ struct AhCounterView: View {
                 .background(AppColor.modeAhCounter.opacity(0.11), in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Noum listens live")
+                Text("Live feedback")
                     .font(Typography.cardLabel)
                 Text("Start when ready. Fillers, clean time, and your transcript appear as you speak.")
                     .font(Typography.caption)

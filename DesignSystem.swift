@@ -132,6 +132,18 @@ enum AppColor {
     )
     /// Lighter brand blue for gradients
     static let brandBlueLight = Color(red: 0.26, green: 0.63, blue: 1.00)
+    /// Small brand-blue copy on tint-washed hero cards (eyebrows, "Why
+    /// this rep?"). The standard dark `brandBlue` computes ~3.5–3.9:1 once
+    /// the recommended card's 0.16-alpha mode-tint wash lifts the surface,
+    /// below the 4.5:1 small-text threshold. This register keeps the exact
+    /// light-mode value (5.9:1+ on washed white cards) and lifts dark mode
+    /// to the `brandBlueLight` value: 4.63:1 against the brightest hero
+    /// wash (Pressure Drill orange at 0.16 over #211D2B) and 6.08:1 on the
+    /// plain dark card.
+    static let brandBlueOnWash = dynamicColor(
+        light: (0.10, 0.32, 0.70),
+        dark: (0.26, 0.63, 1.00)
+    )
 
     /// High-contrast foreground for the light blue-to-cyan coaching hero.
     /// The darkest raw hero stop still clears WCAG AA for body copy, while
@@ -170,6 +182,20 @@ enum AppColor {
     static let modeCrutch = Color(red: 0.78, green: 0.32, blue: 0.50)
     /// Pace Training mode — teal, distinct from modeAhCounter's green
     static let modePace = Color(red: 0.15, green: 0.72, blue: 0.78)
+
+    // MARK: Mode Action Registers
+    //
+    // Filled-CTA surfaces for the two mode tints too bright to hold a
+    // white label (white on raw modePace = 2.41:1, on raw modeSuddenDeath
+    // = 2.45:1 — below AA at any size). Same hue family, darkened until
+    // the white 17pt-semibold label computes ≥4.5:1; the fills are static,
+    // so the ratio holds in both colour schemes. Use these ONLY for filled
+    // action surfaces — icons, washes, and strokes keep the raw tints.
+
+    /// Pressure Drill filled-action surface — white label = 4.78:1.
+    static let modeSuddenDeathAction = Color(red: 0.66, green: 0.38, blue: 0.10)
+    /// Pace Training filled-action surface — white label = 4.71:1.
+    static let modePaceAction = Color(red: 0.06, green: 0.50, blue: 0.55)
 
     // MARK: Focused Practice Canvas
 

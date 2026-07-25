@@ -886,7 +886,7 @@ actor PostRepCoachNoteService {
         switch persona.voice {
         case .authoritative:
             return fillerCount == 0
-                ? "Zero fillers — that's authority on tape."
+                ? "Zero fillers — that's what authority sounds like."
                 : "\(fillerCount) filler\(fillerCount == 1 ? "" : "s") — well below your usual rate."
         case .warm:
             return fillerCount == 0

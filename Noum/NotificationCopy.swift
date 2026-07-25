@@ -217,7 +217,7 @@ enum NotificationCopy {
             // They've already practiced — soft "double-down" pull, not a guilt nudge.
             return NotificationLine(
                 title: "Stack a second rep",
-                body: "Today's already counts. A second rep is where the muscle gets built."
+                body: "Today already counts. A second rep is where the muscle gets built."
             )
         }
 
@@ -240,7 +240,7 @@ enum NotificationCopy {
         case 7...:
             return NotificationLine(
                 title: "\(streakDays) days of steady practice",
-                body: "Habits this old are worth one more rep today."
+                body: "A habit this established is worth one more rep today."
             )
         default:
             return NotificationLine(
@@ -342,7 +342,7 @@ enum NotificationCopy {
         case 1...2:
             line = NotificationLine(
                 title: "Light week — \(weeklyReps) rep\(weeklyReps == 1 ? "" : "s")",
-                body: "\(weeklyReps) rep\(weeklyReps == 1 ? " is" : "s are") on the record. Open Noum to review the week when it suits you."
+                body: "\(weeklyReps) rep\(weeklyReps == 1 ? "" : "s") banked this week. Open Noum to review the week when it suits you."
             )
         case 3...4:
             line = NotificationLine(
@@ -357,7 +357,7 @@ enum NotificationCopy {
         case 7...:
             line = NotificationLine(
                 title: "Top week — \(weeklyReps) reps cleared",
-                body: "A week of regular practice is on the record. Open Noum to review the evidence."
+                body: "A full week of regular practice, banked. Open Noum to see how it added up."
             )
         default:
             line = NotificationLine(

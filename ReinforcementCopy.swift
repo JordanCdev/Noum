@@ -177,7 +177,7 @@ enum DrillCompletionCopy {
         case .answerDevelopment:
             return succeeded ? "Fully Developed" : "Go Deeper"
         case .conciseSpeaking:
-            return succeeded ? "Tight and Focused" : "Trim the Fat"
+            return succeeded ? "Tight and Focused" : "Trim the Extras"
         case .pauseUsage:
             return succeeded ? "Deliberate Pauses" : "Let It Breathe"
         case .vocalEmphasis:
@@ -417,7 +417,7 @@ enum MilestoneCopy {
     static func sessionCount(_ count: Int) -> (title: String, subtitle: String, detail: String?) {
         switch count {
         case 10:
-            return ("10 Sessions", "Double digits. You're building a real skill.", "Most people stop at 3.")
+            return ("10 Sessions", "Double digits. You're building a real skill.", "This is where practice starts compounding.")
         case 25:
             return ("25 Sessions", "Serious commitment. Your patterns are locked in.", nil)
         case 50:

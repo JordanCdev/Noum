@@ -5,8 +5,17 @@ final class PrepSessionAvailabilityUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// The seeded beginner opens the prep surface with qualifying Timed reps
+    /// already logged since the moment was set, while Pressure Drill is
+    /// rating-gated and Conversation Practice is unavailable without cloud
+    /// consent. Under ordered attribution the earliest timed rep credits the
+    /// warm-up and each gated step is credited by its offered Timed fallback,
+    /// so the plan reads fully covered — honestly marked — instead of
+    /// dead-ending on an unavailable shape. Step rows combine their text for
+    /// VoiceOver, so assertions match on element labels rather than raw
+    /// static texts.
     @MainActor
-    func testLockedPrepShapesRenderAndRouteToTimedFallback() throws {
+    func testGatedShapesReadAsHonestFallbackCoverageAndRouteToTimed() throws {
         let app = XCUIApplication()
         app.launchArguments += [
             "UI_TESTING",
@@ -24,38 +33,57 @@ final class PrepSessionAvailabilityUITests: XCTestCase {
                 .waitForExistence(timeout: 15),
             "The seeded upcoming moment should open the real Prep surface."
         )
-        XCTAssertTrue(app.staticTexts["Build-up rep: Timed Practice"].waitForExistence(timeout: 5))
+
+        func element(labelContaining fragment: String) -> XCUIElement {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", fragment))
+                .firstMatch
+        }
+
+        // The gated steps keep their honest fallback naming.
         XCTAssertTrue(
-            app.staticTexts["Complete one rated rep before Pressure Drill. Start with Timed Practice."]
+            element(labelContaining: "Build-up rep: Timed Practice")
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.staticTexts["Question rehearsal: Timed Practice"].waitForExistence(timeout: 5))
         XCTAssertTrue(
-            app.staticTexts["Conversation Practice isn't available here yet. Start with Timed Practice."]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.staticTexts["Pressure Round unavailable · Timed fallback offered"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.staticTexts["Audience Simulation unavailable · Timed fallback offered"]
+            element(labelContaining: "Question rehearsal: Timed Practice")
                 .waitForExistence(timeout: 5)
         )
 
-        let readinessLine = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS[c] %@", "remain untested")
-        ).firstMatch
-        scrollUntilHittable(readinessLine, in: app, attempts: 6)
+        // Fallback-covered steps read done but never claim the unavailable
+        // shape itself was rehearsed.
         XCTAssertTrue(
-            readinessLine.waitForExistence(timeout: 5),
-            "Timed fallbacks must not count as Pressure or audience rehearsal."
+            element(labelContaining: "the pressure round itself is still untested")
+                .waitForExistence(timeout: 5),
+            "A step covered via the Timed fallback must stay honest about the untested shape."
+        )
+        XCTAssertTrue(
+            element(labelContaining: "the audience simulation itself is still untested")
+                .waitForExistence(timeout: 5),
+            "The last step's fallback coverage must be honest too — it has no later row to carry it."
+        )
+
+        // Every step is covered, so nothing may still read locked.
+        XCTAssertFalse(
+            element(labelContaining: "Unlocks after").exists,
+            "Fallback coverage must advance the lock sequence — no step may dead-end."
+        )
+
+        // The intro's arc names only what the rendered plan actually offers.
+        XCTAssertTrue(
+            element(labelContaining: "two focused Timed Practice passes")
+                .waitForExistence(timeout: 5),
+            "With both shapes gated the intro must not promise pressure or audience rounds."
         )
 
         let planAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        planAttachment.name = "prep-locked-shapes-timed-fallbacks"
+        planAttachment.name = "prep-fallback-covered-honest-plan"
         planAttachment.lifetime = .keepAlways
         add(planAttachment)
+
+        // Covered steps stay re-runnable: every row keeps its own action.
+        XCTAssertTrue(app.buttons["prepSession.step.1.begin"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["prepSession.step.3.begin"].exists)
 
         let pressureFallback = app.buttons["prepSession.step.2.begin"]
         scrollUntilHittable(pressureFallback, in: app, attempts: 6, direction: .down)

@@ -740,7 +740,7 @@ struct PathJourneyView: View {
                         Text(
                             isUnlocked
                                 ? "Reached through repeated practice."
-                                : "Keep practicing. This landmark becomes available when the habit is repeatable."
+                                : "Keep practicing — this landmark unlocks once the habit is holding."
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

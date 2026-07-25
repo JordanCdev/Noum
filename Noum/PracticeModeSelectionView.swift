@@ -328,13 +328,10 @@ struct PracticeModeSelectionView: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
-    @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var skillTrendStore = SkillTrendStore.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
-    @StateObject private var baselineStore = BaselineStore.shared
-    @StateObject private var goalRefresh = GoalRefreshManager.shared
     /// The engine result stays unresolved in state. The hero resolves this
     /// whole blueprint against one live capability snapshot each render,
     /// preventing independently cached mode/copy/setup fields from drifting.
@@ -440,18 +437,6 @@ struct PracticeModeSelectionView: View {
         )
     }
 
-    private var recommendedMode: PracticeMode {
-        renderedRecommendation.mode
-    }
-
-    private var recommendedOption: ModeOption {
-        options.first(where: { $0.mode == recommendedMode }) ?? options[0]
-    }
-
-    private var alternateOptions: [ModeOption] {
-        options.filter { $0.mode != recommendedOption.mode }
-    }
-
     private var primaryOption: ModeOption {
         options.first(where: { $0.mode == selectedMode }) ?? options[0]
     }
@@ -465,12 +450,17 @@ struct PracticeModeSelectionView: View {
         return primaryOption.title
     }
 
+    /// Filled-capsule surface for the floating Start CTA only. Pace and
+    /// Pressure Drill swap their decorative tints (white label 2.4:1) for
+    /// the darkened action registers so the label clears AA; icons and
+    /// washes elsewhere keep the raw tints.
     private var activeStartTint: Color {
-        if paceSelected { return paceOption.tint }
+        if paceSelected { return AppColor.modePaceAction }
         if crutchSelected { return crutchOption.tint }
         if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
             return AppColor.modeTimed
         }
+        if selectedMode == .suddenDeath { return AppColor.modeSuddenDeathAction }
         return primaryOption.tint
     }
 
@@ -496,16 +486,21 @@ struct PracticeModeSelectionView: View {
         let showsFloatingStartCTA = crutchSelected
             || paceSelected
             || selectedMode != recommendation.mode
+        // The scaffold already adds `tabRootNavigationClearance` for tab
+        // roots and the safeAreaInset CTA insets the scroll view by its own
+        // height; stacking `floatingTabBarClearance` here as well left a
+        // large dead strip under the browse list. The capsule clearance
+        // lives on the floating CTA itself (see `safeAreaInset` below).
         return ReadingScreenScaffold(
             title: "Train",
             subtitle: "Your coach picked one focused rep.",
-            bottomClearance: (showsFloatingStartCTA ? 96 : Spacing.lg)
-                + (isAppTabRoot ? Spacing.floatingTabBarClearance : 0)
+            bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
         ) {
             // Browsing collapses the prescription to one clickable line so
-            // the catalogue owns the screen; it expands again on tap and
-            // resets automatically when the view remounts (navigation away
-            // or a completed rep).
+            // the catalogue owns the screen; it expands again on tap. The
+            // tab-root instance is retained by TabView, so the reset is
+            // explicit: leaving the tab, completing a rep, or a capability
+            // change all restore the hero (see `resetBrowseState`).
             if showOtherWays {
                 compactRecommendedRow(recommendation, option: recommendationOption)
             } else {
@@ -557,6 +552,7 @@ struct PracticeModeSelectionView: View {
             selectedMode = recommendation.mode
             crutchSelected = false
             paceSelected = false
+            resetBrowseState()
         }
         .onChange(of: IMModeAvailability.isAvailable) { _, _ in
             refreshRecommendationForCapabilityChange()
@@ -564,6 +560,23 @@ struct PracticeModeSelectionView: View {
         .onChange(of: ratingStore.rating.hasRatedEvidence) { _, _ in
             refreshRecommendationForCapabilityChange()
         }
+        .onChange(of: isSelectedAppTab) { _, isSelected in
+            // The Train tab root never remounts — TabView retains it. Reset
+            // the browse state as the user leaves the tab (off-screen, so no
+            // visible motion) so every fresh visit leads with the hero.
+            // Pushes within the tab (starting a rep) keep the state; the
+            // post-rep reset above owns that path.
+            guard !isSelected else { return }
+            resetBrowseState()
+        }
+    }
+
+    /// Restores the prescription hero as the leading element. The tab-root
+    /// instance is retained across tab switches and reps, so this replaces
+    /// the remount-driven reset the pushed instance gets for free.
+    private func resetBrowseState() {
+        showOtherWays = false
+        showRecommendationReason = false
     }
 
     // MARK: - Recommended Rep
@@ -587,7 +600,11 @@ struct PracticeModeSelectionView: View {
         _ recommendation: TrainRecommendationProjection,
         option: ModeOption
     ) -> some View {
-        Button {
+        // Same demand guard as the hero: `prescribedDemand` is nil unless
+        // the recommendation itself is Timed, so a leftover blueprint
+        // difficulty can never surface under a non-timed prescription.
+        let demandLabel = recommendation.prescribedDemand?.timedDifficulty?.compactDemandLabel
+        return Button {
             animateMode { showOtherWays = false }
         } label: {
             HStack(spacing: Spacing.sm) {
@@ -603,8 +620,8 @@ struct PracticeModeSelectionView: View {
                         .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(AppColor.textPrimary)
                         .lineLimit(1)
-                    if let demand = recommendation.blueprint.suggestedTimedDifficulty?.compactDemandLabel {
-                        Text(demand)
+                    if let demandLabel {
+                        Text(demandLabel)
                             .font(Typography.captionSmall)
                             .foregroundStyle(AppColor.textSecondary)
                     }
@@ -631,7 +648,11 @@ struct PracticeModeSelectionView: View {
             )
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel(Text("Recommended rep, \(option.title). Expands the recommendation."))
+        .accessibilityLabel(Text(
+            demandLabel.map { "Recommended rep, \(option.title), \($0)" }
+                ?? "Recommended rep, \(option.title)"
+        ))
+        .accessibilityHint(Text("Expands the recommendation."))
         .accessibilityIdentifier("practiceModes.recommendedCompact")
     }
 
@@ -649,9 +670,12 @@ struct PracticeModeSelectionView: View {
                 modeIcon(option)
 
                 VStack(alignment: .leading, spacing: 6) {
+                    // `brandBlueOnWash`, not `brandBlue`: the eyebrow sits
+                    // in the card's tint-wash region where the standard dark
+                    // register drops below the small-text AA threshold.
                     Text(PracticeModePrescriptionCopy.displayHeroEyebrow)
                         .font(Typography.caption)
-                        .foregroundStyle(AppColor.brandBlue)
+                        .foregroundStyle(AppColor.brandBlueOnWash)
 
                     Text(recommendation.title)
                         .font(Typography.cardTitle)
@@ -753,7 +777,7 @@ struct PracticeModeSelectionView: View {
                 HStack(spacing: Spacing.xs) {
                     Text("Why this rep?")
                         .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
+                        .foregroundStyle(AppColor.brandBlueOnWash)
                     Spacer(minLength: 0)
                     Image(systemName: showRecommendationReason ? "chevron.up" : "chevron.down")
                         .font(Typography.captionSmall.weight(.bold))
@@ -781,64 +805,6 @@ struct PracticeModeSelectionView: View {
             Rectangle()
                 .fill(tint.opacity(0.14))
                 .frame(height: 0.5)
-        }
-    }
-
-    private func recommendedSuccessMarker(tint: Color) -> some View {
-        let recommendation = renderedRecommendation
-        return Group {
-            if let line = PracticeModePrescriptionCopy.prescriptionLine(
-                focus: recommendation.focus,
-                target: recommendation.target
-            ) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "target")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(tint)
-                        .accessibilityHidden(true)
-
-                    Text(line)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(line)
-            }
-        }
-    }
-
-    /// One quiet, non-interactive line tying the prescription to the user's
-    /// stated goal. Gated by `PracticeModeGoalGrounding` (self-suppresses on
-    /// no profile, thin baseline evidence, or a due goal check-in), so a
-    /// cold-start user never sees fabricated goal progress.
-    @ViewBuilder
-    private var goalGroundingRow: some View {
-        if let line = PracticeModeGoalGrounding.line(
-            profile: coachingProfileStore.profile,
-            baseline: baselineStore.baseline,
-            goalRefreshDue: goalRefresh.shouldPresent
-        ) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "flag")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-
-                Text(line)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, Spacing.xs)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(line)
-            .accessibilityIdentifier("practiceModes.recommendedHero.goalGrounding")
         }
     }
 
@@ -1146,217 +1112,6 @@ struct PracticeModeSelectionView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private var otherWaysSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            sectionToggleButton(
-                title: PracticeModePrescriptionCopy.alternateSectionTitle,
-                isExpanded: showOtherWays,
-                accessibilityID: "practiceModes.otherWays"
-            ) {
-                showOtherWays.toggle()
-            }
-
-            if showOtherWays {
-                VStack(spacing: Spacing.cardGap) {
-                    ForEach(alternateOptions) { option in
-                        modeCard(option)
-                    }
-                    crutchCard
-                    paceCard
-                }
-                .transition(reduceMotion
-                    ? .opacity
-                    : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func sectionToggleButton(
-        title: String,
-        isExpanded: Bool,
-        accessibilityID: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            animateMode {
-                action()
-            }
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                Text(title)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 0)
-
-                Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, Spacing.xs)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(accessibilityID)
-        .accessibilityLabel(title)
-        .accessibilityHint(isExpanded ? "Collapses this section." : "Expands this section.")
-    }
-
-    // MARK: - Header
-
-    private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Display treatment — the picker reads as an iOS premium
-            // screen header ("pick your next rep" is a curated menu
-            // moment), not a settings-list title. The richer 32pt
-            // rounded weight is the single biggest signal that the
-            // surface below is a curation, not a list.
-            Text("Your next rep")
-                .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
-                .foregroundStyle(.primary)
-
-            Text("One focused rep, then the coaching gets more specific.")
-                .font(Typography.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
-    // MARK: - Mode Card
-
-    private func modeCard(_ option: ModeOption) -> some View {
-        let recommendation = renderedRecommendation
-        let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
-        let isRecommended = option.mode == recommendation.mode
-        let isExpanded = expandedModes.contains(option.mode)
-        let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
-
-        return VStack(spacing: 0) {
-            Button {
-                guard !isLocked else { return }
-                animateMode {
-                    selectedMode = option.mode
-                    crutchSelected = false
-                    paceSelected = false
-                    // Collapse every other mode so the selected one stands
-                    // out and the list stays compact.
-                    expandedModes = [option.mode]
-                }
-                CoachHaptic.selectionTap()
-            } label: {
-                HStack(alignment: .top, spacing: Spacing.md) {
-                    modeIcon(option)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        let snapshot = masteryStore.snapshot(for: option.mode)
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(option.title)
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.9)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            // Visual-only chevron — the actual tap target
-                            // is the transparent overlay button below.
-                            // Drawing the icon inside the row label keeps
-                            // the existing layout coherent; using an
-                            // overlay button avoids nesting buttons
-                            // (which SwiftUI doesn't tap-route).
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
-                        }
-
-                        if isRecommended || snapshot.sessionsLogged > 0 {
-                            HStack(spacing: 6) {
-                                if isRecommended {
-                                    recommendedPill(tint: option.tint)
-                                }
-
-                                if snapshot.sessionsLogged > 0 {
-                                    ModeMasteryBadge(snapshot: snapshot)
-                                        .fixedSize(horizontal: true, vertical: false)
-                                }
-
-                                Spacer(minLength: 0)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        Text(option.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-
-                        if isLocked {
-                            Label(PracticeModePrescriptionCopy.pressureLockedDisplayHint, systemImage: "lock.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(option.tint)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        if isRecommended {
-                            Text(recommendation.reason)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(option.tint)
-                                .padding(.top, 2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Image(systemName: isLocked ? "lock.fill" : isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(isLocked ? Color.secondary.opacity(0.45) : isSelected ? option.tint : Color.secondary.opacity(0.4))
-                        .accessibilityHidden(true)
-                }
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.pressable)
-            .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
-            .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
-            .accessibilityHint(isLocked ? PracticeModePrescriptionCopy.pressureLockedDisplayHint : option.subtitle)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .overlay(alignment: .topTrailing) {
-                expandToggleButton(for: option, isExpanded: isExpanded)
-            }
-
-            if isExpanded {
-                modeExpandedSection(option)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.bottom, Spacing.lg)
-                    .transition(reduceMotion
-                        ? .opacity
-                        : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(modeCardBackground(option, isRecommended: isRecommended, isSelected: isSelected))
-        // Recommended carries a soft tint-ambient shadow even at
-        // rest — that's the "this is tonight's pick" signal. The
-        // selected sharp shadow stacks on top so the chosen card
-        // still earns a touch more elevation than the others.
-        .shadow(
-            color: isRecommended ? option.tint.opacity(0.16) : .clear,
-            radius: 20,
-            y: 10
-        )
-        .shadow(
-            color: isSelected ? option.tint.opacity(0.10) : .clear,
-            radius: 16,
-            y: 8
-        )
-        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-    }
-
     /// Transparent tap target overlaying the visible chevron icon.
     /// Separating this from the row Button lets the user "preview" a
     /// mode (expand without selecting) — important for first-timers
@@ -1591,243 +1346,6 @@ struct PracticeModeSelectionView: View {
         .accessibilityHidden(true)
     }
 
-    private func recommendedPill(tint: Color) -> some View {
-        Text("Recommended")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(tint.opacity(0.12), in: Capsule())
-            .accessibilityHidden(true)
-    }
-
-    private func accessibilityLabel(_ option: ModeOption, isRecommended: Bool) -> String {
-        isRecommended ? "\(option.title), recommended" : option.title
-    }
-
-    // MARK: - Cut the Crutch Card
-
-    private var crutchCard: some View {
-        let isSelected = crutchSelected
-        let tint = crutchOption.tint
-
-        return VStack(spacing: 0) {
-            Button {
-                animateMode {
-                    crutchSelected = true
-                    paceSelected = false
-                }
-                CoachHaptic.selectionTap()
-            } label: {
-                HStack(alignment: .top, spacing: Spacing.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .fill(tint.opacity(0.14))
-                            .frame(width: 52, height: 52)
-                        Image(systemName: crutchOption.systemImage)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(tint)
-                    }
-                    .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Text(crutchOption.title)
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.primary)
-                            Spacer(minLength: 0)
-                        }
-                        Text(crutchOption.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.4))
-                        .accessibilityHidden(true)
-                }
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.pressable)
-            .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-            .accessibilityIdentifier("practiceMode.cutTheCrutch")
-            .accessibilityLabel(crutchOption.title)
-            .accessibilityHint(crutchOption.subtitle)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-
-            // "Start now" mirrors the per-mode affordance — same secondary
-            // CTA pattern, same tint integration, same one-tap semantics.
-            // Only visible once the card is selected so the picker reads
-            // calm at rest; appears with the same expand-style transition
-            // the four mode rows use for their reveal block.
-            if isSelected {
-                crutchQuickStartButton(tint: tint)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.bottom, Spacing.lg)
-                    .transition(reduceMotion
-                        ? .opacity
-                        : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(
-                    isSelected ? tint.opacity(0.32) : Color.white.opacity(0.72),
-                    lineWidth: isSelected ? 1.5 : 1
-                )
-        )
-        .shadow(
-            color: isSelected ? tint.opacity(0.10) : .clear,
-            radius: 16,
-            y: 8
-        )
-    }
-
-    /// Cut the Crutch sibling of `quickStartButton`. The drill isn't a
-    /// `PracticeMode`, so it routes through `cutTheCrutchPractice` with
-    /// its own armed flag — same UX, separate plumbing.
-    private func crutchQuickStartButton(tint: Color) -> some View {
-        Button {
-            CoachHaptic.selectionTap()
-            PracticeModeQuickStart.armCrutch()
-            navigationPath.append(AppDestination.cutTheCrutchPractice)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.footnote.weight(.bold))
-                Text("Start Cut the Crutch")
-                    .font(.subheadline.weight(.semibold))
-            }
-            .foregroundStyle(tint)
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(tint.opacity(0.10), in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(tint.opacity(0.18), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.pressable)
-        .accessibilityIdentifier("practiceMode.cutTheCrutch.quickStart")
-        .accessibilityLabel("Start now, Cut the Crutch")
-        .accessibilityHint("Starts Cut the Crutch immediately with your saved defaults.")
-    }
-
-    // MARK: - Pace Training Card
-
-    private var paceCard: some View {
-        let isSelected = paceSelected
-        let tint = paceOption.tint
-
-        return VStack(spacing: 0) {
-            Button {
-                animateMode {
-                    paceSelected = true
-                    crutchSelected = false
-                }
-                CoachHaptic.selectionTap()
-            } label: {
-                HStack(alignment: .top, spacing: Spacing.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .fill(tint.opacity(0.14))
-                            .frame(width: 52, height: 52)
-                        Image(systemName: paceOption.systemImage)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(tint)
-                    }
-                    .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Text(paceOption.title)
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.primary)
-                            Spacer(minLength: 0)
-                        }
-                        Text(paceOption.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.4))
-                        .accessibilityHidden(true)
-                }
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.pressable)
-            .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-            .accessibilityIdentifier("practiceMode.paceTraining")
-            .accessibilityLabel(paceOption.title)
-            .accessibilityHint(paceOption.subtitle)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-
-            if isSelected {
-                paceQuickStartButton(tint: tint)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.bottom, Spacing.lg)
-                    .transition(reduceMotion
-                        ? .opacity
-                        : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(
-                    isSelected ? tint.opacity(0.32) : Color.white.opacity(0.72),
-                    lineWidth: isSelected ? 1.5 : 1
-                )
-        )
-        .shadow(
-            color: isSelected ? tint.opacity(0.10) : .clear,
-            radius: 16,
-            y: 8
-        )
-    }
-
-    private func paceQuickStartButton(tint: Color) -> some View {
-        Button {
-            CoachHaptic.selectionTap()
-            navigationPath.append(AppDestination.paceTrainingPractice)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.footnote.weight(.bold))
-                Text("Start Pace Training")
-                    .font(.subheadline.weight(.semibold))
-            }
-            .foregroundStyle(tint)
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(tint.opacity(0.10), in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(tint.opacity(0.18), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.pressable)
-        .accessibilityIdentifier("practiceMode.paceTraining.quickStart")
-        .accessibilityLabel("Start Pace Training")
-        .accessibilityHint("Starts a Pace Training drill.")
-    }
-
     // MARK: - Bottom CTA
 
     private var startCTA: some View {
@@ -2026,6 +1544,7 @@ struct PracticeModeSelectionView: View {
         selectedMode = recommendation.mode
         crutchSelected = false
         paceSelected = false
+        resetBrowseState()
     }
 
     // MARK: - Recent-session signals (feed RecommendationBiasEngine)

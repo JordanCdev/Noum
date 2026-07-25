@@ -58,10 +58,22 @@ struct PrepRepStep: Equatable {
         PracticeModePrescriptionCopy.beginLabel(for: renderedMode.displayLabel)
     }
 
-    var readinessLabel: String {
-        let shape = PrepSessionReadiness.shapeName(for: mode).capitalized
-        guard isAvailabilityFallback else { return shape }
-        return "\(shape) unavailable · Timed fallback offered"
+    /// Quiet availability marker rendered on the step's own row while it is
+    /// locked (and voiced in its accessibility label), so the fallback status
+    /// is visible even on the last step, which has no later row's lock line
+    /// to carry it. Nil when the planned shape is available.
+    var fallbackMarkerLine: String? {
+        guard isAvailabilityFallback else { return nil }
+        let shape = PrepSessionReadiness.shapeName(for: mode)
+        let sentenceShape = shape.prefix(1).uppercased() + String(shape.dropFirst())
+        return "\(sentenceShape) unavailable — a Timed fallback is offered."
+    }
+
+    /// Honest coverage line for a step credited via its Timed fallback: the
+    /// step reads done, but never claims the unavailable shape itself was
+    /// rehearsed.
+    var coveredViaFallbackLine: String {
+        "Covered with the Timed fallback — the \(PrepSessionReadiness.shapeName(for: mode)) itself is still untested."
     }
 
     /// Recheck only the action that was rendered. A capability loss may fail
@@ -131,17 +143,19 @@ struct PrepSessionReadiness: Equatable {
 
     var coveredCount: Int { coveredModes.count }
 
-    /// User-facing line for the prep readiness card. Calm, no pass/fail.
+    /// User-facing line for the Profile prep row. Calm, no pass/fail. Uses the
+    /// rehearsal surface's steps/shapes vocabulary so both surfaces read as one
+    /// system.
     var line: String {
         switch level {
         case .notStarted:
-            return "No rehearsal reps logged yet. Start with the warm-up; partial completion still counts."
+            return "No rehearsal reps logged yet. Start with the warm-up — partial prep still counts."
         case .underway:
             let remaining = plannedModes.filter { !coveredModes.contains($0) }
             let remainingNames = remaining.map(Self.shapeName(for:)).joined(separator: " and ")
-            return "You've completed \(coveredCount) of \(plannedModes.count) practice rounds. Next: \(remainingNames)."
+            return "You've covered \(coveredCount) of \(plannedModes.count) rehearsal steps. Next: \(remainingNames)."
         case .rehearsed:
-            return "You've completed all \(plannedModes.count) practice rounds. One more pass close to the day can test what still holds."
+            return "All \(plannedModes.count) rehearsal steps covered. One more pass close to the day can test what still holds."
         }
     }
 
@@ -158,42 +172,6 @@ struct PrepSessionReadiness: Equatable {
         }
     }
 
-    /// Availability-aware line for the rendered Prep surface. Readiness still
-    /// credits only the stable planned shapes; this explains why a runnable
-    /// Timed fallback does not pretend the unavailable shape was rehearsed.
-    func displayLine(for steps: [PrepRepStep]) -> String {
-        guard level != .rehearsed else { return line }
-        let uncoveredUnavailable = steps.filter {
-            $0.isAvailabilityFallback && !coveredModes.contains($0.mode)
-        }
-        guard !uncoveredUnavailable.isEmpty else { return line }
-
-        let unavailableNames = uncoveredUnavailable
-            .map { Self.shapeName(for: $0.mode) }
-            .joined(separator: " and ")
-        let sentenceUnavailableNames = unavailableNames.prefix(1).uppercased()
-            + String(unavailableNames.dropFirst())
-        let availabilityNote = "\(sentenceUnavailableNames) \(uncoveredUnavailable.count == 1 ? "remains" : "remain") untested until available; Timed fallback \(uncoveredUnavailable.count == 1 ? "is" : "reps are") available."
-
-        switch level {
-        case .notStarted:
-            return "No rehearsal reps logged yet. Start with the warm-up. \(availabilityNote)"
-        case .underway:
-            let availableRemaining = steps.filter {
-                !coveredModes.contains($0.mode) && !$0.isAvailabilityFallback
-            }
-            guard !availableRemaining.isEmpty else {
-                return "You've completed \(coveredCount) of \(plannedModes.count) planned rehearsal shapes. \(availabilityNote)"
-            }
-            let nextNames = availableRemaining
-                .map { Self.shapeName(for: $0.mode) }
-                .joined(separator: " and ")
-            return "You've completed \(coveredCount) of \(plannedModes.count) planned rehearsal shapes. Next: \(nextNames). \(availabilityNote)"
-        case .rehearsed:
-            return line
-        }
-    }
-
     static func shapeName(for mode: PracticeMode) -> String {
         switch mode {
         case .timed:          return "warm-up"
@@ -201,6 +179,41 @@ struct PrepSessionReadiness: Equatable {
         case .ahCounter:      return "filler drill"
         case .imConversation: return "audience simulation"
         }
+    }
+}
+
+/// Per-step display state for the rendered rehearsal list. Derived by ordered
+/// attribution (see `PrepSessionPlanner.stepStatuses`): completing a gated
+/// step's offered Timed fallback advances the lock sequence — the plan can
+/// never dead-end on an unavailable shape — while `coveredViaFallback` keeps
+/// the row from overclaiming that the shape itself was rehearsed.
+struct PrepStepStatus: Equatable {
+    enum Phase: Equatable {
+        case done
+        case current
+        case locked
+    }
+
+    let phase: Phase
+    /// True when the step was credited by a rep in its offered Timed fallback
+    /// mode rather than the planned shape itself.
+    let coveredViaFallback: Bool
+    /// Shape name of the first uncovered earlier step — the real unlock
+    /// precondition. Present only while locked. Out-of-band Train reps can
+    /// cover later shapes first, so this is never assumed to be index − 1.
+    let unlockShapeName: String?
+    /// True when that blocking step's planned shape is unavailable, so its
+    /// offered Timed fallback is what actually unlocks this step.
+    let unlockViaFallbackAvailable: Bool
+
+    /// User-facing lock line. The fallback case gets its own sentence so the
+    /// availability note never garbles the unlock condition.
+    var unlockLine: String? {
+        guard phase == .locked, let unlockShapeName else { return nil }
+        guard unlockViaFallbackAvailable else {
+            return "Unlocks after the \(unlockShapeName)."
+        }
+        return "Unlocks after the \(unlockShapeName) — its Timed fallback counts."
     }
 }
 
@@ -233,16 +246,12 @@ enum PrepSessionPlanner {
     /// - Parameters:
     ///   - bigMoment: the active moment (carries category + title)
     ///   - daysRemaining: days until the moment; copy adapts to proximity
-    ///   - voice: coaching voice (currently unused but reserved for
-    ///     register tuning — authoritative vs warm coaches frame the
-    ///     intro differently in a future iteration)
     ///   - modeAvailability: capability snapshot owning rendered step copy and
     ///     routes. It is intentionally required so no new caller can silently
     ///     render a gated exercise as available.
     static func plan(
         bigMoment: BigMoment,
         daysRemaining: Int,
-        voice: SpeakingStyleGoal? = nil,
         modeAvailability: NextActionModeAvailability
     ) -> PrepSessionPlan {
         let category = bigMoment.category
@@ -255,7 +264,6 @@ enum PrepSessionPlanner {
             category: category,
             title: bigMoment.title,
             days: daysRemaining,
-            voice: voice,
             steps: steps
         )
         return PrepSessionPlan(
@@ -376,6 +384,71 @@ enum PrepSessionPlanner {
         )
     }
 
+    /// Derive the rendered list's per-step state. Pure — same inputs as
+    /// `readiness(plan:sessions:momentCreatedAt:)`, but attribution is
+    /// per-step: steps are walked in order and each consumes the earliest
+    /// unconsumed qualifying rep whose mode matches the step's planned shape
+    /// or, when that shape is unavailable, its offered Timed fallback.
+    /// Planned-shape reps are preferred so a real pressure rep is never
+    /// mislabelled as fallback coverage. One timed rep credits the warm-up
+    /// only; a second timed rep credits a gated step's fallback. Readiness
+    /// stays the honest shape-coverage read for the coach and Profile — this
+    /// derivation only keeps the lock sequence passable.
+    static func stepStatuses(
+        plan: PrepSessionPlan,
+        sessions: [PracticeSession],
+        momentCreatedAt: Date
+    ) -> [PrepStepStatus] {
+        let windowReps = sessions
+            .filter {
+                $0.date >= momentCreatedAt
+                    && PracticeProgressEligibility.qualifies($0)
+            }
+            .sorted { $0.date < $1.date }
+        var consumed = [Bool](repeating: false, count: windowReps.count)
+
+        func consumeEarliest(_ mode: PracticeMode) -> Bool {
+            guard let index = windowReps.indices.first(where: {
+                !consumed[$0] && windowReps[$0].mode == mode
+            }) else { return false }
+            consumed[index] = true
+            return true
+        }
+
+        let coverage: [(covered: Bool, viaFallback: Bool)] = plan.steps.map { step in
+            if consumeEarliest(step.mode) { return (true, false) }
+            if step.isAvailabilityFallback, consumeEarliest(step.renderedMode) {
+                return (true, true)
+            }
+            return (false, false)
+        }
+
+        let firstOpenIndex = coverage.firstIndex { !$0.covered }
+        return plan.steps.indices.map { index in
+            let phase: PrepStepStatus.Phase
+            if coverage[index].covered {
+                phase = .done
+            } else if index == firstOpenIndex {
+                phase = .current
+            } else {
+                phase = .locked
+            }
+            var unlockShapeName: String?
+            var unlockViaFallbackAvailable = false
+            if phase == .locked, let firstOpenIndex {
+                let blocking = plan.steps[firstOpenIndex]
+                unlockShapeName = PrepSessionReadiness.shapeName(for: blocking.mode)
+                unlockViaFallbackAvailable = blocking.isAvailabilityFallback
+            }
+            return PrepStepStatus(
+                phase: phase,
+                coveredViaFallback: coverage[index].viaFallback,
+                unlockShapeName: unlockShapeName,
+                unlockViaFallbackAvailable: unlockViaFallbackAvailable
+            )
+        }
+    }
+
     // MARK: - Category-specific IM scenarios
 
     /// Adversarial prompts tailored to the BigMomentCategory. Reserved for a
@@ -455,26 +528,26 @@ enum PrepSessionPlanner {
         category: BigMomentCategory,
         title: String,
         days: Int,
-        voice: SpeakingStyleGoal?,
         steps: [PrepRepStep]? = nil
     ) -> String {
         let categoryName = category.displayName
-        let titleClause: String
-        if title.count <= 40, !title.isEmpty {
-            titleClause = "Your \(categoryName) (\(title))"
-        } else {
-            titleClause = "Your \(categoryName)"
-        }
+        // Two casings: the clause opens the sentence for days > 1 but sits
+        // mid-sentence for the day-of and day-before lines.
+        let titleDetail = (title.count <= 40 && !title.isEmpty) ? " (\(title))" : ""
+        let midSentenceClause = "your \(categoryName)\(titleDetail)"
+        let sentenceStartClause = "Your \(categoryName)\(titleDetail)"
 
         let proximity: String
-        if days <= 1 {
-            proximity = "Tomorrow is \(titleClause). One last set of reps — make them count."
+        if days <= 0 {
+            proximity = "Today is the day — \(midSentenceClause) is here. Keep it light: one steady pass is enough."
+        } else if days == 1 {
+            proximity = "Tomorrow is \(midSentenceClause). One last set of reps — make them count."
         } else if days <= 3 {
-            proximity = "\(titleClause) is \(days) days away. These reps are the difference between rehearsed and rattled."
+            proximity = "\(sentenceStartClause) is \(days) days away. These reps are the difference between rehearsed and rattled."
         } else if days <= 7 {
-            proximity = "\(titleClause) is a week out. Time to load the rehearsals."
+            proximity = "\(sentenceStartClause) is a week out. Time to load the rehearsals."
         } else {
-            proximity = "\(titleClause) is \(days) days away. Build the muscle now so the moment feels lighter."
+            proximity = "\(sentenceStartClause) is \(days) days away. Build the muscle now so the moment feels lighter."
         }
 
         let pressureAvailable: Bool
@@ -490,12 +563,22 @@ enum PrepSessionPlanner {
             pressureAvailable = true
             conversationAvailable = true
         }
-        // The step list below carries the plan itself; the intro carries
-        // the WHY — the arc deliberately mirrors the real moment
-        // (graduated exposure: ease in → hold pressure → rehearse the
-        // actual shape), so repeating the step names here was noise.
-        _ = (pressureAvailable, conversationAvailable)
-        let arc = "The plan mirrors the day itself: ease in, hold up under pressure, then rehearse what you'll actually face."
+        // The step list below carries the plan itself; the intro carries the
+        // WHY (graduated exposure: ease in → hold pressure → rehearse the
+        // actual shape). The arc names only what the rendered plan actually
+        // contains — when a shape is gated, the sentence describes its Timed
+        // stand-in instead of promising an exercise the list doesn't offer.
+        let arc: String
+        switch (pressureAvailable, conversationAvailable) {
+        case (true, true):
+            arc = "The plan mirrors the day itself: ease in, hold up under pressure, then rehearse what you'll actually face."
+        case (false, true):
+            arc = "The plan mirrors the day itself: ease in, build up in Timed Practice, then rehearse what you'll actually face."
+        case (true, false):
+            arc = "The plan mirrors the day itself: ease in, hold up under pressure, then rehearse a likely question in Timed Practice."
+        case (false, false):
+            arc = "The plan mirrors the day itself: ease in, then two focused Timed Practice passes — one controlled build-up, one likely question."
+        }
 
         return "\(proximity) \(arc)"
     }
