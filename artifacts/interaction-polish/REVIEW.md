@@ -71,3 +71,20 @@ VoiceTrace breath now stops the moment the scene leaves `.active` (transaction-s
 ## Exact next interaction-polish task
 
 Record + critique Moment C end-to-end (seeded `UI_TESTING_TRANSCRIPT_RETRY_IMPROVED` → Summary → transformation replay → retry → comparison pulse → Updated Today receipt), then Train selection/CTA-ownership continuity and the Ask Noum request lifecycle (optimistic send → thinking → landed) as Round 2.
+
+## Round 2 — full-loop critique + payoff tune (goal: complete & production-ready)
+
+**Full-loop recording:** `after/full-loop-ladder-retry-comparison.mp4` — captured while `GoalOutcomeLoopUITests/testTranscriptLadderPractisesOneStepRewriteFromSummary` drove the real flow (test GREEN on this branch, so the replay overlay + choreography survive every pinned assertion, incl. rung hittability and the exact route-bound prompt). Action window ≈ 15:00–16:52; frames extracted at 5fps for critique.
+
+| Beat | Critic finding | Decision |
+|---|---|---|
+| Phrase transformation (frames ~010–020) | Sequence lands: receded "Um, so" + hero TRY THIS + explanation + **Replay** affordance all present in the settled frame; staged reveal completes inside the 620ms budget | SHIP |
+| Retry compression | Same-prompt route preserved (test-pinned prompt equality) | SHIP (pre-existing behavior, re-proven) |
+| Comparison payoff (frame ~150) | "The target moved / ✓ First hold." lands with first-try receded and retry forward; payoff line presence read slightly under the "unmistakably rewarding" bar at rest scale | TUNED: entrance origin 0.97→0.94 and pulse 1.03→1.045 (still one pulse, improved-only, on the haptic frame). Full unit target re-run GREEN after the tune |
+| Updated Today | Ledger inheritance already proven in the V4.6.1 pass (announcement → 10-min-floor receipt) | SHIP |
+
+**Reduce Motion round-2 sweep:** RM stills captured (`after/rm-summary-top.png`, `after/rm-ladder2.png` — the run happened to draw the honest "no confident rewrite" fallback, itself rendering correctly with zero motion). The transformation's RM branch is one structural boolean: all phases set instantly, replay affordance never mounts. App-wide RM stillness previously proven by md5-identical frame pairs.
+
+**Gate status:** three signature moments implemented ✓ · recordings exist ✓ · loop continuity on video ✓ · reward perceptible (tuned) ✓ · real mic drives trace ✓ · RM meaning retained ✓ · no off-screen ambient ✓ · no new state owners ✓ · build + full NoumTests target + ladder UI test green ✓ · deviations documented ✓ · **iPhone haptic pass: OPEN — requires a physical device in hand** (checklist above). That is the single item between this branch and merge.
+
+**Exact next merge step:** after the device haptic pass, `git merge --no-ff claude/v46-motion-polish` into `ux-overhaul` (branch already contains ux-overhaul's prescription-leak fix as its base).

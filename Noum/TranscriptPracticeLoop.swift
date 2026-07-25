@@ -580,8 +580,8 @@ struct TranscriptRetryComparisonCard: View {
                 }
                 .foregroundStyle(AppColor.positive)
                 .opacity(payoffLanded ? 1 : 0)
-                .scaleEffect(payoffLanded ? 1 : 0.97, anchor: .leading)
-                .scaleEffect(payoffPulse ? 1.03 : 1, anchor: .leading)
+                .scaleEffect(payoffLanded ? 1 : 0.94, anchor: .leading)
+                .scaleEffect(payoffPulse ? 1.045 : 1, anchor: .leading)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("transcriptRetry.payoff")
             }
