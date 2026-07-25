@@ -57,6 +57,9 @@ enum Spacing {
     /// views use this as outer padding so copy is clipped above navigation,
     /// rather than merely remaining scrollable underneath it.
     static let tabRootNavigationClearance: CGFloat = 92
+    /// Height + air of the V4.6 floating capsule bar — bottom-anchored
+    /// controls on tab roots pad by this so the capsule never covers them.
+    static let floatingTabBarClearance: CGFloat = 72
 }
 
 // MARK: - App Colors
@@ -120,10 +123,13 @@ enum AppColor {
     static let pro = Color(red: 0.56, green: 0.28, blue: 0.92)
     /// Lighter pro purple for gradients
     static let proLight = Color(red: 0.82, green: 0.52, blue: 1.0)
-    /// Primary brand blue. This darker action register keeps white labels
-    /// above AA contrast on buttons; brighter blues remain available for
-    /// decorative gradients and mode identity.
-    static let brandBlue = Color(red: 0.10, green: 0.32, blue: 0.70)
+    /// Primary brand blue. The darker light-mode register keeps white
+    /// labels above AA on buttons; dark mode lifts it so blue text and
+    /// icons stay legible on the near-black canvas.
+    static let brandBlue = dynamicColor(
+        light: (0.10, 0.32, 0.70),
+        dark: (0.30, 0.52, 0.95)
+    )
     /// Lighter brand blue for gradients
     static let brandBlueLight = Color(red: 0.26, green: 0.63, blue: 1.00)
 

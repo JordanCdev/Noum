@@ -17,6 +17,18 @@ enum NoumWebURLs {
     static let supportEmail = "noumsupport@gmail.com"
     static let supportMail = URL(string: "mailto:\(supportEmail)")!
 
+    /// General support draft with a triage subject. Content-free — no
+    /// account identifiers or coaching content in the email body.
+    static func supportMailComposed(subject: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = supportEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject)
+        ]
+        return components.url ?? supportMail
+    }
+
     /// Account-deletion support needs the same opaque request reference that
     /// appears in server logs. The local phase helps triage without exposing
     /// an account identifier or coaching content in the email draft.

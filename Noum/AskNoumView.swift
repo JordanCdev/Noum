@@ -638,6 +638,9 @@ struct AskNoumView: View {
     // trajectory", opened from the memory-usage pill under the latest coach
     // reply (and from the thread options menu for discoverability).
     @State private var showTrajectorySheet = false
+    /// Failed availability re-checks this visit; two failures swap the
+    /// retry affordance for a real remediation (support report).
+    @State private var availabilityRecheckFailures = 0
 
     // S4 — live top offset of the thread ScrollView, published by the
     // zero-height probe inside it (`AskNoumScrollOffsetKey`). Drives the
@@ -1022,18 +1025,22 @@ struct AskNoumView: View {
 
     private var header: some View {
         HStack(spacing: Spacing.sm) {
-            NoumCharacter(
-                // Living-coach-presence: the orb REACTS to the thread via
-                // `orbMood` — `.thinking` while composing/writing a reply,
-                // `.coaching` (warmer, leaning-in) once a conversation
-                // exists, a gentle `.calm` greeting before the first
-                // message. It shrinks on scroll but never disappears, so the
-                // coach stays a present, reacting embodiment even compact.
-                mood: orbMood,
-                tint: AppColor.pro,
-                size: isHeaderCompact ? 30 : 42,
-                stage: characterStage
+            // Crisp brand badge — the waveform mark on the quiet violet
+            // surface. The rendered orb read as a fuzzy blob at header
+            // size; the typing indicator in-thread still carries the
+            // coach's "thinking" state, so nothing is lost.
+            ZStack {
+                Circle()
+                    .fill(AppColor.proQuietSurface)
+                Image(systemName: "waveform")
+                    .font(.system(size: isHeaderCompact ? 13 : 18, weight: .semibold))
+                    .foregroundStyle(AppColor.coachAccent)
+            }
+            .frame(
+                width: isHeaderCompact ? 30 : 42,
+                height: isHeaderCompact ? 30 : 42
             )
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Noum")
                     // Hardcoded 22pt swapped for the shared type scale:
@@ -1075,46 +1082,36 @@ struct AskNoumView: View {
     /// existing trajectory/privacy owners without opening a blank chat path.
     @ViewBuilder
     private var attachedContextCard: some View {
+        // One quiet line, not a briefing card: the user needs to KNOW the
+        // coach reads their context and be able to manage it — the detail
+        // itself lives behind Manage (goals/evidence sheet). Full wording
+        // is preserved for VoiceOver.
         if canDisplayPersistedThread {
             let presentation = attachedContextPresentation
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                attachedContextHeader
+            HStack(alignment: .center, spacing: Spacing.xs) {
+                Image(systemName: "paperclip")
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(presentation.headline)
-                        .font(Typography.body.weight(.bold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("askNoum.currentFocus")
-
-                    Text(presentation.categoryLine)
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Attached coaching context. \(presentation.headline). \(presentation.categoryLine)")
-                .accessibilityIdentifier("askNoum.attachedContext.summary")
-
-                Text(AskNoumAttachedContextPresentation.privacyExplanation)
-                    .font(Typography.captionSmall)
+                Text("Using your recent reps + current focus")
+                    .font(Typography.captionSmall.weight(.semibold))
                     .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("askNoum.attachedContext.privacy")
+                    .lineLimit(1)
+                    .accessibilityIdentifier("askNoum.attachedContext.summary")
+
+                Spacer(minLength: Spacing.xs)
+
+                attachedContextManagementMenu
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                AppColor.pro.opacity(0.07),
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(AppColor.pro.opacity(0.14), lineWidth: 1)
-            )
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 6)
+            .frame(minHeight: 40)
+            .background(AppColor.pro.opacity(0.07), in: Capsule())
             .padding(.horizontal, Spacing.lg)
             .padding(.bottom, Spacing.xs)
             .accessibilityElement(children: .contain)
+            .accessibilityLabel("Attached coaching context. \(presentation.headline). \(presentation.categoryLine). \(AskNoumAttachedContextPresentation.privacyExplanation)")
             .accessibilityIdentifier("askNoum.attachedContext")
         }
     }
@@ -1290,10 +1287,10 @@ struct AskNoumView: View {
         if store.isAwaitingReply {
             return store.hasLandedCoachReply ? "Thinking\u{2026}" : "Reading your context\u{2026}"
         }
-        if let voice = voice {
-            return "Your \(voice.title.lowercased()) coach."
-        }
-        return "Your speaking coach."
+        // Generic professional identity — the voice target is a training
+        // emphasis, not the coach's personality ("your warm and welcoming
+        // coach" read oddly as a persona claim).
+        return "Your personal communications coach."
     }
 
     private var activeCaseSubtitle: String? {
@@ -2971,12 +2968,32 @@ struct AskNoumView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: Spacing.xs)
                 if presentation.showsCheckAgain {
-                    Button("Check again") {
-                        Task { await refreshAvailability() }
+                    if availabilityRecheckFailures >= 2 {
+                        // Two failed re-checks: retrying is no longer the
+                        // remediation — reporting is. Pre-filled support
+                        // mail so the report carries the diagnostic subject.
+                        Link("Report issue", destination: NoumWebURLs.supportMailComposed(
+                            subject: "Noum unavailable after retries"
+                        ))
+                        .font(Typography.caption.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("askNoum.reportIssue")
+                    } else {
+                        Button("Check again") {
+                            Task {
+                                await refreshAvailability()
+                                if case .unavailable = liveCoachAvailability {
+                                    availabilityRecheckFailures += 1
+                                } else {
+                                    availabilityRecheckFailures = 0
+                                }
+                            }
+                        }
+                        .font(Typography.caption.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
                     }
-                    .font(Typography.caption.weight(.bold))
-                    .foregroundStyle(AppColor.brandBlue)
-                    .frame(minHeight: 44)
                 } else if presentation.connectsLocalGuest {
                     Button("Connect") {
                         Task { @MainActor in

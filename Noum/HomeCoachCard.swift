@@ -396,7 +396,7 @@ struct HomeCoachCard: View {
                 .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, activeEarned == nil ? Spacing.xxl : Spacing.md)
+                .padding(.top, activeEarned == nil ? Spacing.lg : Spacing.sm)
                 .accessibilityIdentifier("home.coachCard.title")
 
             if activeEarned == nil, let subtitle = coachSubtitle(for: renderedBlueprint) {
@@ -412,14 +412,14 @@ struct HomeCoachCard: View {
                 .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
                 .foregroundStyle(.white.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Spacing.xl)
+                .padding(.top, Spacing.lg)
 
             VoiceTrace(variant: activeEarned == nil ? .idleHero : .earnedHero)
                 .frame(maxWidth: .infinity)
-                .padding(.top, Spacing.xxl)
+                .padding(.top, Spacing.lg)
 
             heroActions(renderedExposure: renderedExposure)
-                .padding(.top, Spacing.xxl)
+                .padding(.top, Spacing.lg)
 
             // The cohesive Home intentionally suppresses the generic plan arc,
             // but an explicitly saved line is a concrete current-week action,
@@ -432,7 +432,7 @@ struct HomeCoachCard: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.top, heroTopInset + Spacing.sm)
-        .padding(.bottom, Spacing.xxxl)
+        .padding(.bottom, Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             UnevenRoundedRectangle(
@@ -449,6 +449,9 @@ struct HomeCoachCard: View {
                     endPoint: .bottomTrailing
                 )
             )
+            // Bleed above the content top so no canvas sliver can ever show
+            // between the hero and the physical top edge.
+            .padding(.top, -80)
             .shadow(color: AppColor.coachAccent.opacity(0.28), radius: 22, y: 14)
         }
         .onAppear {

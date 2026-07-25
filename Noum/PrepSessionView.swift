@@ -67,8 +67,7 @@ struct PrepSessionView: View {
                 modeAvailability: modeAvailability
             )
             introCard(plan: plan, moment: moment, days: days)
-            stepsCard(plan: plan)
-            readinessCard(plan: plan, moment: moment)
+            stepsCard(plan: plan, moment: moment)
             footerNote(moment: moment)
         } else {
             emptyState
@@ -111,14 +110,36 @@ struct PrepSessionView: View {
         .accessibilityIdentifier("prepSession.intro")
     }
 
-    private func stepsCard(plan: PrepSessionPlan) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
+    /// One list = plan AND status. The three shapes run in order — a
+    /// deliberate graduated-exposure arc (ease in → pressure → the real
+    /// shape) — so later steps stay locked until the previous shape has
+    /// been covered. Done reads green at a glance, the current step is the
+    /// only actionable one, locked steps say what unlocks them. This
+    /// replaces the separate "Where you stand" card, which repeated the
+    /// same three items with a second, easily-misread status vocabulary.
+    private func stepsCard(plan: PrepSessionPlan, moment: BigMoment) -> some View {
+        let readiness = PrepSessionPlanner.readiness(
+            plan: plan,
+            sessions: sessionStore.sessions,
+            momentCreatedAt: moment.createdAt
+        )
+        let firstOpenIndex = plan.steps.firstIndex {
+            !readiness.coveredModes.contains($0.mode)
+        }
+        return VStack(alignment: .leading, spacing: Spacing.md) {
             Text("REHEARSAL PLAN")
                 .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .tracking(0.8)
             ForEach(Array(plan.steps.enumerated()), id: \.offset) { index, step in
-                stepRow(index: index + 1, step: step)
+                let done = readiness.coveredModes.contains(step.mode)
+                let isCurrent = index == firstOpenIndex
+                stepRow(
+                    index: index + 1,
+                    step: step,
+                    state: done ? .done : (isCurrent ? .current : .locked),
+                    unlocksAfter: index > 0 ? plan.steps[index - 1].readinessLabel : nil
+                )
                 if index < plan.steps.count - 1 {
                     Divider()
                 }
@@ -127,93 +148,124 @@ struct PrepSessionView: View {
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .accessibilityIdentifier("prepSession.plan")
     }
 
-    private func stepRow(index: Int, step: PrepRepStep) -> some View {
+    private enum PrepStepState {
+        case done
+        case current
+        case locked
+    }
+
+    private func stepRow(
+        index: Int,
+        step: PrepRepStep,
+        state: PrepStepState,
+        unlocksAfter: String?
+    ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: 8) {
-                Text("\(index)")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(AppColor.brandBlue, in: Circle())
+                Group {
+                    switch state {
+                    case .done:
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 22, height: 22)
+                            .background(AppColor.positive, in: Circle())
+                    case .current:
+                        Text("\(index)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 22, height: 22)
+                            .background(AppColor.brandBlue, in: Circle())
+                    case .locked:
+                        Image(systemName: "lock.fill")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 22)
+                            .background(Color.secondary.opacity(0.14), in: Circle())
+                    }
+                }
+                .accessibilityHidden(true)
+
                 Text(step.displayLabel)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(state == .locked ? .secondary : .primary)
                 Spacer()
             }
-            Text(step.rationale)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 30)
-            Button {
-                launch(step: step)
-            } label: {
-                HStack(spacing: 4) {
-                    Text(step.startLabel)
-                        .font(.footnote.weight(.semibold))
-                    Image(systemName: "arrow.right")
-                        .font(.caption2.weight(.bold))
+            .opacity(state == .locked ? 0.75 : 1)
+
+            switch state {
+            case .done:
+                Text("Covered — run it again any time.")
+                    .font(.footnote)
+                    .foregroundStyle(AppColor.positive)
+                    .padding(.leading, 30)
+            case .current:
+                Text(step.rationale)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 30)
+            case .locked:
+                if let unlocksAfter {
+                    Text("Unlocks after \(unlocksAfter.lowercased()).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 30)
                 }
-                .foregroundStyle(AppColor.brandBlue)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
-                .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
             }
-            .buttonStyle(.plain)
-            .padding(.leading, 30)
-            .accessibilityHint(step.rationale)
-            .accessibilityIdentifier("prepSession.step.\(index).begin")
+
+            if state != .locked {
+                Button {
+                    launch(step: step)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(state == .done ? "Run again" : step.startLabel)
+                            .font(.footnote.weight(.semibold))
+                        Image(systemName: "arrow.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .foregroundStyle(state == .done ? AppColor.textSecondary : AppColor.brandBlue)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(
+                        (state == .done ? Color.secondary.opacity(0.10) : AppColor.brandBlue.opacity(0.10)),
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 30)
+                .accessibilityHint(step.rationale)
+                .accessibilityIdentifier("prepSession.step.\(index).begin")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(prepStepAccessibilityLabel(index: index, step: step, state: state)))
+    }
+
+    private func prepStepAccessibilityLabel(
+        index: Int,
+        step: PrepRepStep,
+        state: PrepStepState
+    ) -> String {
+        switch state {
+        case .done: return "Step \(index), \(step.displayLabel), covered."
+        case .current: return "Step \(index), \(step.displayLabel), up next. \(step.rationale)"
+        case .locked: return "Step \(index), \(step.displayLabel), locked until the previous step is covered."
+        }
     }
 
     private func footerNote(moment: BigMoment) -> some View {
-        Text("Choose a step to start. You can return between reps; partial completion still counts.")
+        Text("Steps unlock in order. You can return between reps — partial prep still counts.")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.leading)
             .padding(.horizontal, Spacing.xs)
-    }
-
-    /// F2 — "Where you stand": an honest snapshot of which rehearsal shapes the
-    /// user has run since setting this moment. A row per shape (covered =
-    /// filled check) + a calm line. Never a pass/fail gate — partial prep is
-    /// valid (matches the flow's anti-goal contract).
-    private func readinessCard(plan: PrepSessionPlan, moment: BigMoment) -> some View {
-        let readiness = PrepSessionPlanner.readiness(
-            plan: plan,
-            sessions: sessionStore.sessions,
-            momentCreatedAt: moment.createdAt
-        )
-        return VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("WHERE YOU STAND")
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .tracking(0.8)
-            ForEach(plan.steps, id: \.mode) { step in
-                let done = readiness.coveredModes.contains(step.mode)
-                HStack(spacing: 8) {
-                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(done ? AppColor.positive : Color.secondary.opacity(0.5))
-                    Text(step.readinessLabel)
-                        .font(.subheadline)
-                        .foregroundStyle(done ? .primary : .secondary)
-                    Spacer()
-                }
-            }
-            Text(readiness.displayLine(for: plan.steps))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .accessibilityIdentifier("prepSession.readiness")
     }
 
     private var emptyState: some View {

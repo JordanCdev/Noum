@@ -112,12 +112,21 @@ struct VoiceTrace: View {
     var showsGlow: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Ambient breath phase for the hero presences — the coach is quietly
+    /// alive, never performing. Reduce Motion keeps the drawn state.
+    @State private var isBreathing = false
 
     /// Quantised to 5 % steps (the SpotlightOrb idiom) so 30 Hz level
     /// updates don't thrash layout; animated with a quick ease so the
     /// response still reads as immediate.
     private var quantisedLevel: CGFloat {
         (level * 20).rounded() / 20
+    }
+
+    /// Only the hero presences breathe; the live/settling stages already
+    /// carry their own meaning through level and settle.
+    private var breathes: Bool {
+        (variant == .idleHero || variant == .earnedHero) && !reduceMotion
     }
 
     /// Height multiplier for the live variant. Resting bars sit at 45 %
@@ -147,8 +156,24 @@ struct VoiceTrace: View {
                     mirroredBar(height: height, opacity: variant.opacities[index])
                 } else {
                     bar(height: height * heightScale, opacity: variant.opacities[index])
+                        .scaleEffect(
+                            y: breathes ? (isBreathing ? 1.0 : 0.84) : 1.0,
+                            anchor: .center
+                        )
+                        .animation(
+                            breathes
+                                ? .easeInOut(duration: 2.4)
+                                    .repeatForever(autoreverses: true)
+                                    .delay(Double(index) * 0.14)
+                                : nil,
+                            value: isBreathing
+                        )
                 }
             }
+        }
+        .onAppear {
+            guard breathes else { return }
+            isBreathing = true
         }
         .animation(
             reduceMotion ? nil : .easeOut(duration: 0.12),
