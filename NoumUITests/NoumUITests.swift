@@ -13,16 +13,11 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 5))
         app.terminate()
 
-        // The journey card is gated by HomeSignalGate (path-node unlocked OR
-        // coaching profile set). As of the Growth-Library push,
-        // DevSeedData.injectProfile(.improvingIntermediate) also seeds
-        // CoachingProfileStore — so on a seeded simulator the card renders
-        // and tap-by-id works again. Earlier sessions used a deep-link
-        // fallback (noum://path); restored to the tap-the-card pattern now
-        // that the seed covers the gate. Defensive fallback to the deep
-        // link if the card somehow isn't visible (slow simulator startup,
-        // scroll position), so the test still asserts the screen is
-        // reachable rather than hard-failing on a flake.
+        // The V4.6 one-screen Home no longer renders a journey card, so the
+        // tap-by-id branch below normally falls through to the noum://path
+        // deep-link fallback. Both paths assert the journey screen is
+        // reachable; the tap branch is kept so a future Home entry point
+        // is exercised automatically if one returns.
         let pathApp = launchApp()
         let pathCard = pathApp.descendants(matching: .any)["home.path"]
         if pathCard.waitForExistence(timeout: 5) {
@@ -637,10 +632,8 @@ final class NoumUITests: XCTestCase {
         let app = XCUIApplication()
         // UI_TESTING suppresses the splash / onboarding hero.
         // UI_TESTING_SEED injects the improving-intermediate dev profile so
-        // the home renders its populated layout (which is where home.path /
-        // home.rank etc. live — the empty-state home swaps in HomeCoachCard's
-        // no-signal branch + secondaryDiscoveryCard, with the journey
-        // card hidden).
+        // the home renders its populated layout instead of the cold-start
+        // empty state.
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED"]
         app.launch()
         return app

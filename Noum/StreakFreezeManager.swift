@@ -11,30 +11,6 @@ import UserNotifications
 
 // MARK: - Streak first-sight policy
 
-/// Pure decision for the Home streak line's one-shot flame pop: animate
-/// only when the displayed day count is genuinely HIGHER than the last
-/// count this install has shown the user. Separated from the manager so
-/// the honesty rules are unit-testable without UserDefaults.
-///
-/// Rules (league-promotion-guard precedent):
-///   • `lastSeen == nil` (first launch / fresh account) → seed silently.
-///     A new install must never pop a day-N streak it never watched grow.
-///   • Higher count → animate exactly once, then persist (never repeats).
-///   • Equal count (incl. a freeze-spend shown as the same number) → silent.
-///   • Lower count (drop/reset) → persist silently, never animate
-///     (never punish-shame).
-enum StreakFirstSight {
-    struct Outcome: Equatable {
-        let animate: Bool
-        let persist: Int
-    }
-
-    static func evaluate(lastSeen: Int?, current: Int) -> Outcome {
-        guard let lastSeen else { return Outcome(animate: false, persist: current) }
-        return Outcome(animate: current > lastSeen, persist: current)
-    }
-}
-
 // MARK: - Streak Freeze Manager
 
 /// Streak protection — one freeze auto-earned per ISO week, automatically
@@ -82,7 +58,6 @@ final class StreakFreezeManager: ObservableObject {
     private let availableKeyPrefix = "noum.streakFreeze.available."
     private let lastEarnedWeekKeyPrefix = "noum.streakFreeze.lastEarnedWeek."
     private let consumedDatesKeyPrefix = "noum.streakFreeze.consumedDates."
-    private let lastSeenStreakKeyPrefix = "noum.streakFreeze.lastSeenStreakDay."
 
     private var lastEarnedWeekKey: String = ""
     private var consumedDates: [Date] = []
@@ -104,7 +79,6 @@ final class StreakFreezeManager: ObservableObject {
     private var availableKey: String { availableKeyPrefix + Self.currentAccountID() }
     private var lastEarnedKey: String { lastEarnedWeekKeyPrefix + Self.currentAccountID() }
     private var consumedKey: String { consumedDatesKeyPrefix + Self.currentAccountID() }
-    private var lastSeenStreakKey: String { lastSeenStreakKeyPrefix + Self.currentAccountID() }
 
     // MARK: - Public API
 
@@ -117,26 +91,6 @@ final class StreakFreezeManager: ObservableObject {
     /// Marks the freeze-just-consumed nudge as seen.
     func consumeFreezeNudge() {
         freezeJustConsumedToday = false
-    }
-
-    /// One-shot gate for the Home streak line's first-sight motion.
-    /// Returns true exactly once per genuine day-count increment, then
-    /// persists the new count so the pop never replays (tab switches,
-    /// relaunches, scroll re-appearances all return false). Policy lives
-    /// on `StreakFirstSight`; this is just the persistence shim. The
-    /// caller must invoke this regardless of Reduce Motion so drops and
-    /// freeze-days stay marked as seen.
-    func takeStreakFirstSightIncrement() -> Bool {
-        let defaults = UserDefaults.standard
-        // `object(forKey:) as? Int` distinguishes "never seeded" from a
-        // stored 0 — the first-launch seed guard the league-promotion bug
-        // taught us to keep.
-        let stored = defaults.object(forKey: lastSeenStreakKey) as? Int
-        let outcome = StreakFirstSight.evaluate(lastSeen: stored, current: currentStreak)
-        if stored != outcome.persist {
-            defaults.set(outcome.persist, forKey: lastSeenStreakKey)
-        }
-        return outcome.animate
     }
 
     /// Recompute `currentStreak`, applying a freeze if today is missed and one

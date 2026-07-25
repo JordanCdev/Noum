@@ -627,6 +627,10 @@ extension AccountDataRegistry {
             participant("pressure-history", [.accountKey(prefix: "suddenDeath.runHistory.")], reload: { SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount() }, end: { SuddenDeathRunHistoryStore.shared.endSession() }),
             participant("drill-history", [.accountKey(prefix: "drillHistory.")], reload: { DrillHistoryStore.shared.reloadForCurrentAccount() }, end: { DrillHistoryStore.shared.endSession() }),
             participant("daily-goal", [.accountKey(prefix: "noum.dailyGoal.reps."), .accountKey(prefix: "noum.dailyGoal.drillCompletions."), .accountKey(prefix: "noum.dailyGoal.lastCelebrationDay.")], reload: { DailyGoalManager.shared.reloadForCurrentAccount() }, end: { DailyGoalManager.shared.reloadForCurrentAccount() }),
+            // `lastSeenStreakDay` no longer has a writer (the Home streak
+            // line's first-sight pop went with the V4.6 one-screen Home) but
+            // stays registered so legacy values remain exportable/deletable —
+            // same policy as the retired Daily Challenge key below.
             participant("streak-freeze", [.accountKey(prefix: "noum.streakFreeze.available."), .accountKey(prefix: "noum.streakFreeze.lastEarnedWeek."), .accountKey(prefix: "noum.streakFreeze.consumedDates."), .accountKey(prefix: "noum.streakFreeze.lastSeenStreakDay.")], reload: { StreakFreezeManager.shared.reloadForCurrentAccount() }, end: { StreakFreezeManager.shared.reloadForCurrentAccount() }),
             participant("path-progress", [.accountKey(prefix: "noum.pathProgress.unlocked."), .accountKey(prefix: "noum.pathProgress.initialized."), .accountKey(prefix: "noum.journey.lastSeenPracticedDays.")], reload: { PathProgressManager.shared.reloadForCurrentAccount() }, end: { PathProgressManager.shared.reloadForCurrentAccount() }),
             participant("lessons", [.accountKey(prefix: "noum.lessons.progress.")], reload: { LessonStore.shared.reloadForCurrentAccount() }, end: { LessonStore.shared.endSession() }),

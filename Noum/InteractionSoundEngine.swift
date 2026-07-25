@@ -56,9 +56,6 @@ enum InteractionCue: String, CaseIterable {
     /// Same brush, duller cutoff start — distinction by timbre, not
     /// pitch sequence, so it reads as "quieter", never as a fail-buzzer.
     case drillCompleteIncomplete
-    /// Damped wooden tock: 140 Hz sine, heavy damping. First sight of a
-    /// genuinely higher streak day (lastSeen-guarded by the caller).
-    case streakFirstSight
     /// Quiet exhale: low-passed pink noise fading in then out, barely
     /// above the noise floor. Live-call presence punctuation.
     case coachTurnExhale
@@ -73,7 +70,6 @@ enum InteractionCue: String, CaseIterable {
         case .countSettle:             return 0.012
         case .drillCompleteSuccess:    return 0.20
         case .drillCompleteIncomplete: return 0.20
-        case .streakFirstSight:        return 0.08
         case .coachTurnExhale:         return 0.30
         }
     }
@@ -217,12 +213,6 @@ struct InteractionCueSynth {
             onePole(&filterA, input: x, cutoffHz: cutoff)
             let envelope = pow(1.0 - t / d, 1.4)
             return filterA * Float(envelope) * 0.9
-
-        case .streakFirstSight:
-            // 140 Hz heavily damped sine — a damped wooden tock.
-            let body = sin(2 * .pi * 140 * t) * exp(-t / 0.016) * 0.5
-            let release = clamp01((d - t) / 0.008)
-            return Float(body * release)
 
         case .coachTurnExhale:
             // Low-passed pink noise under a sin² window — fades in and

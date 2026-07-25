@@ -374,10 +374,6 @@ extension Animation {
     /// must land on the fill's settle frame (count-settle tick) so the
     /// channels can't drift apart. Never hardcode 0.6 at a call site.
     static let progressFillDuration: TimeInterval = 0.6
-    /// Streak-line pop choreography — flame pop, number roll, and reset
-    /// all key off this delay so the channels can't drift. Never hardcode
-    /// 0.4 at a call site.
-    static let streakPopDelay: TimeInterval = 0.4
     /// Progress bar fill — smooth linear-to-ease
     static let progressFill = Animation.easeOut(duration: progressFillDuration)
     /// Staggered list item entrance — pass index for delay

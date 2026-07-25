@@ -313,9 +313,9 @@ struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
 
-    /// Gate flag from `HomeSignalGate` (>= 1 completed rep). The row
-    /// additionally self-gates on an actual active plan via
-    /// `HomePlanArcLine` — both must hold before anything renders.
+    /// Host-supplied gate (>= 1 completed rep). The row additionally
+    /// self-gates on an actual active plan via `HomePlanArcLine` — both
+    /// must hold before anything renders.
     var showsPlanArc: Bool = false
     /// Retained for source compatibility. Both presentations now use the same
     /// compact card language; Home no longer turns the coach surface into an

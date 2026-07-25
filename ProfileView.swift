@@ -2721,8 +2721,7 @@ struct ProfileView: View {
                                     // Seed the collapsed scale in its own
                                     // pass so the pop has a real start frame
                                     // — a same-pass animated write coalesces
-                                    // into a no-op (same discipline as
-                                    // HomeStreakStatusLine's number roll).
+                                    // into a no-op.
                                     weeklyDeltaChipScale = 0.6
                                     DispatchQueue.main.async {
                                         withAnimation(.statDelta) { weeklyDeltaChipScale = 1.0 }
