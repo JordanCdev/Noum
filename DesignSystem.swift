@@ -644,6 +644,10 @@ struct PrimaryCTA: View {
 struct ImmersiveCTA: View {
     let title: String
     var isLoading: Bool = false
+    /// Surfaces the button's real press state to the host (V4.6.1 armed
+    /// trace: the Today hero gains while the commit CTA is held). Optional
+    /// so every other call site is unaffected.
+    var isPressed: Binding<Bool>? = nil
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -667,7 +671,7 @@ struct ImmersiveCTA: View {
             .frame(maxWidth: .infinity, minHeight: 58)
             .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(ImmersiveCTAButtonStyle(isEnabled: isEnabled))
+        .buttonStyle(ImmersiveCTAButtonStyle(isEnabled: isEnabled, pressBinding: isPressed))
         .accessibilityLabel(Text(isLoading ? "Starting" : title))
         .disabled(isLoading)
     }
@@ -698,6 +702,7 @@ struct ImmersiveCTA: View {
 
 private struct ImmersiveCTAButtonStyle: ButtonStyle {
     let isEnabled: Bool
+    var pressBinding: Binding<Bool>? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
@@ -713,6 +718,9 @@ private struct ImmersiveCTAButtonStyle: ButtonStyle {
             .scaleEffect(!reduceMotion && configuration.isPressed ? 0.985 : 1)
             .animation(.tapFeedback, value: configuration.isPressed)
             .shadow(color: Color.black.opacity(0.06), radius: 24, y: 8)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                pressBinding?.wrappedValue = pressed
+            }
     }
 }
 

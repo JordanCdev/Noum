@@ -60,3 +60,23 @@
 ## Exact next task
 
 Scripted-provider full-loop run on sim: capture recording live/silence/final-seconds, processing, review, comparison → fix visual deltas (≤3 iterations) → targeted tests → commit Slice 2.
+
+## V4.6.1/V4.6.2 motion & haptics (2026-07-25, on ux-overhaul)
+
+- Semantic motion vocabulary + gated haptic register are LIVE (see
+  `artifacts/motion/MOTION_SPEC.md` — the canonical temporal contract,
+  mirrored in Figma page 18 `280:497`). All raw UIFeedbackGenerator
+  call sites migrated; `withMotion` is the blessed RM guard.
+- Signature moments implemented: Today hero entrance + armed trace
+  (real CTA press state via `ImmersiveCTA(isPressed:)`), earned
+  announcement on `payoffReveal` + `earnedEvidence` two-beat haptic,
+  comparison payoff settle-frame, Progress grow-in, Train morph/dim,
+  Rehearsal focus/count, Ask Noum presence states + banner arc,
+  tab-bar pill glide (bar-scoped `matchedGeometryEffect`) + selection
+  haptic.
+- Proof: `.screenshots/2026-07-25_v461-motion/` (incl. md5-identical
+  RM pair). Device haptic proof STILL OWED — simulator cannot render
+  haptics; run the register on a physical iPhone before TestFlight.
+- Pre-existing red (chip filed, reproduces at clean HEAD):
+  RecommendationSurfaceRouting theme-leak ×2, GoalOutcomeLoop ladder
+  rung.

@@ -353,6 +353,9 @@ struct HomeCoachCard: View {
     /// Reduce Motion sets both flags without animation (instant appear).
     @State private var heroTextSettled = false
     @State private var heroCTASettled = false
+    /// Real press state of the commit CTA — while held, the hero trace
+    /// gains slightly (the V4.6.1 "armed" presence state).
+    @State private var commitCTAPressed = false
 
     /// Choreography beats (V4.6.1 plan §3 Today): headline block settles
     /// at 0 ms, the trace breath arms at +350 ms, the CTA settles at
@@ -436,10 +439,17 @@ struct HomeCoachCard: View {
             // beat after the headline settles (the entrance's second beat).
             VoiceTrace(
                 variant: activeEarned == nil ? .idleHero : .earnedHero,
-                wakeDelay: HeroEntranceBeat.traceWake
+                wakeDelay: HeroEntranceBeat.traceWake,
+                armed: commitCTAPressed
             )
             .frame(maxWidth: .infinity)
             .padding(.top, Spacing.lg)
+            // Armed gain follows the CTA's real press state. Reduce Motion
+            // gets the same state cue instantly (the animation collapses).
+            .animation(
+                reduceMotion ? nil : .listChange,
+                value: commitCTAPressed
+            )
 
             heroActions(renderedExposure: renderedExposure)
                 .padding(.top, Spacing.lg)
@@ -630,7 +640,7 @@ struct HomeCoachCard: View {
            let days = bigMomentStore.daysUntil(moment),
            days >= 0 && days <= 14 {
             VStack(spacing: Spacing.xs) {
-                ImmersiveCTA(title: "Continue prep") {
+                ImmersiveCTA(title: "Continue prep", isPressed: $commitCTAPressed) {
                     navigationPath.append(AppDestination.prepSession)
                 }
                 .accessibilityIdentifier("home.coachCard.prepSession")
@@ -652,7 +662,8 @@ struct HomeCoachCard: View {
             }
         } else {
             ImmersiveCTA(
-                title: activeEarned?.ctaOverride ?? beginCTAText(for: renderedExposure.mode)
+                title: activeEarned?.ctaOverride ?? beginCTAText(for: renderedExposure.mode),
+                isPressed: $commitCTAPressed
             ) {
                 beginRecommendedRep(renderedExposure: renderedExposure)
             }
@@ -709,7 +720,7 @@ struct HomeCoachCard: View {
             activeEarned = earned
         }
         V46EarnedEvidenceLedger.acknowledge(earned.outcomeID, accountID: accountID)
-        CoachHaptic.trendBreakthrough()
+        CoachHaptic.earnedEvidence()
     }
 
     /// One-shot entrance (V4.6.1): the headline block settles immediately,

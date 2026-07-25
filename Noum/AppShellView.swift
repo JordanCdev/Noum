@@ -191,6 +191,10 @@ extension EnvironmentValues {
 struct AppShellView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @State private var selectedTab: AppTab = .home
+    /// Shared geometry space for the capsule's selection pill so it glides
+    /// between tabs instead of blinking (V4.6.1 micro-interaction).
+    @Namespace private var tabPillNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var homeRoute: URL?
     @State private var homePath = NavigationPath()
@@ -315,6 +319,9 @@ struct AppShellView: View {
                 .shadow(color: Color.black.opacity(0.08), radius: 24, y: 8)
         }
         .padding(.bottom, Spacing.xs)
+        // Pill glide is scoped to the BAR's subtree only — the TabView
+        // content switch stays instant. Reduce Motion: pill just appears.
+        .animation(reduceMotion ? nil : .listChange, value: selectedTab)
         // Navigation chrome caps its own scaling (native tab bars do the
         // same); screen content carries the accessibility sizes.
         .dynamicTypeSize(...DynamicTypeSize.large)
@@ -326,6 +333,11 @@ struct AppShellView: View {
         let isSelected = selectedTab == tab
             || (tab == .profile && selectedTab == .settings)
         return Button {
+            guard selectedTab != tab else { return }
+            // Discrete selection haptic on genuine tab changes only —
+            // re-tapping the current tab stays silent (register map:
+            // input acknowledgment, never a haptic on every tap).
+            CoachHaptic.selectionTap()
             selectedTab = tab
         } label: {
             VStack(spacing: 3) {
@@ -346,6 +358,10 @@ struct AppShellView: View {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(AppColor.proQuietSurface)
+                        // The pill glides to the newly selected tab; under
+                        // Reduce Motion the withMotion branch above mutates
+                        // without a transaction, so the pill just appears.
+                        .matchedGeometryEffect(id: "v46TabPill", in: tabPillNamespace)
                 }
             }
             .contentShape(Rectangle())

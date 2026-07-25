@@ -692,7 +692,7 @@ struct TranscriptRetryComparisonCard: View {
 
     private func fireResultHaptic() {
         switch result {
-        case .improved: CoachHaptic.trendBreakthrough()
+        case .improved: CoachHaptic.earnedEvidence()
         case .held: CoachHaptic.drillIncomplete()
         case .regressed, .needsMoreEvidence: break
         }

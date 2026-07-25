@@ -77,6 +77,22 @@ enum CoachHaptic {
         #endif
     }
 
+    /// Earned-evidence payoff — two soft rising transients (0.55 then
+    /// 0.85, 100 ms apart). Reserved for ledger/outcome-bound earned
+    /// moments (the Today earned announcement, a verified improved retry):
+    /// a felt "that changed something", calmer than the milestone
+    /// patterns, never fired for held/regressed/insufficient evidence.
+    static func earnedEvidence() {
+        guard isEnabled else { return }
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.impactOccurred(intensity: 0.55)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+            generator.impactOccurred(intensity: 0.85)
+        }
+        #endif
+    }
+
     /// Light selection tap — UI interaction feedback.
     static func selectionTap() {
         guard isEnabled else { return }

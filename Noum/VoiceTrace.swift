@@ -117,6 +117,11 @@ struct VoiceTrace: View {
     /// Reduce Motion settle and scenePhase re-arm logic are untouched
     /// (a delayed re-arm of a quiet loop is invisible).
     var wakeDelay: TimeInterval = 0
+    /// Armed state — the user is pressing the commit CTA. Hero variants
+    /// gain slightly (bars +6 %, opacity lifted) so the trace visibly
+    /// stands to attention. A state cue bound to real press state, never
+    /// an ambient effect: under Reduce Motion the gain applies instantly.
+    var armed: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -145,6 +150,19 @@ struct VoiceTrace: View {
         return 0.45 + 0.55 * min(max(quantisedLevel, 0), 1)
     }
 
+    /// Render-time armed gain for the hero presences. Deliberately a
+    /// multiplier, not a geometry-table variant, so the pinned bar tables
+    /// (V46CoachingLoopSurfaceTests) stay authoritative.
+    private var armedGain: CGFloat {
+        armed && (variant == .idleHero || variant == .earnedHero) ? 1.06 : 1
+    }
+
+    private func armedOpacity(_ base: CGFloat) -> CGFloat {
+        armed && (variant == .idleHero || variant == .earnedHero)
+            ? min(base + 0.08, 1)
+            : base
+    }
+
     var body: some View {
         bars
             .background {
@@ -163,7 +181,10 @@ struct VoiceTrace: View {
                 if variant.hasMirror {
                     mirroredBar(height: height, opacity: variant.opacities[index])
                 } else {
-                    bar(height: height * heightScale, opacity: variant.opacities[index])
+                    bar(
+                        height: height * heightScale * armedGain,
+                        opacity: armedOpacity(variant.opacities[index])
+                    )
                         .scaleEffect(
                             // The resting (non-breathing) scale is always the
                             // drawn 1.0 — the breath dips to 0.84 and back only
