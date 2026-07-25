@@ -139,7 +139,8 @@ struct VoiceTrace: View {
     /// Only the hero presences breathe; the live/settling stages already
     /// carry their own meaning through level and settle.
     private var breathes: Bool {
-        (variant == .idleHero || variant == .earnedHero) && !reduceMotion
+        (variant == .idleHero || variant == .earnedHero)
+            && NoumMotion.ambientAllowed(reduceMotion: reduceMotion, scenePhase: scenePhase)
     }
 
     /// Height multiplier for the live variant. Resting bars sit at 45 %
@@ -226,7 +227,15 @@ struct VoiceTrace: View {
         // state, so there is no visible pop), then restart the loop on the
         // next runloop tick.
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active, breathes else { return }
+            guard newPhase == .active else {
+                // Ambient motion never runs off-screen: settle the loop
+                // (no animation) the moment the scene leaves .active.
+                var settle = Transaction()
+                settle.disablesAnimations = true
+                withTransaction(settle) { isBreathing = false }
+                return
+            }
+            guard breathes else { return }
             var reset = Transaction()
             reset.disablesAnimations = true
             withTransaction(reset) { isBreathing = false }

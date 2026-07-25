@@ -198,9 +198,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// session start; finalized at session end via
     /// `currentSessionVocalEnergy()`.
     private let vocalEnergyAccumulator = VocalEnergyAccumulator()
-    /// RMS smoothing coefficient — higher = snappier, lower = calmer. 0.30
-    /// reads as "alive" without jittering on consonants.
-    private static let audioLevelSmoothing: Double = 0.30
+    // Envelope shaping moved to `AudioEnvelope` (NoumMotion.swift):
+    // asymmetric attack/decay + noise-floor gate, unit-tested. Speech
+    // onset reads in ~70ms; release breathes out over ~260ms; a silent
+    // room reads as stillness instead of consonant jitter.
 
     /// Confidence threshold for the general filler count (non-pressure modes).
     /// Detections at or above this level are counted. Default: 0.65 (catches clear
@@ -965,8 +966,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             self.vocalEnergyAccumulator.append(level: level)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let blended = self.audioLevel * (1 - Self.audioLevelSmoothing) + level * Self.audioLevelSmoothing
-                self.audioLevel = min(max(blended, 0), 1)
+                self.audioLevel = AudioEnvelope.step(current: self.audioLevel, sample: level)
             }
             let data = Self.pcm16Data(from: buffer)
             _ = observationCapture?.append(buffer)

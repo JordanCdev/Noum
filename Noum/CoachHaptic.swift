@@ -249,6 +249,28 @@ enum CoachHaptic {
         #endif
     }
 
+    // MARK: - Semantic owners (V4.6 polish layer)
+    //
+    // Views request MOMENTS by name; the register map above stays the
+    // single source of pattern truth. New call sites use these — never a
+    // raw generator, never a pattern chosen by loudness.
+
+    /// Small choice changed (rows, chips, tabs, mic arm).
+    static func selection() { selectionTap() }
+    /// The user committed to a rep or a send — the consequential tap.
+    static func actionStart() { drillStart() }
+    /// A session/action reached its honest end.
+    static func actionComplete() { sessionComplete() }
+    /// Gentle non-verdict acknowledgment (held result, reply landed).
+    static func gentleAcknowledgement() { drillIncomplete() }
+    /// Milestone celebrations stay RewardEngine `.major`-gated.
+    static func milestone() { levelUp() }
+    /// A live capability became unavailable (paired with a visible notice).
+    static func warning() { unavailableNotice() }
+    /// Honest failure boundary (e.g. Sudden Death round lost). Decisive,
+    /// never repeated, never fired for thin evidence.
+    static func failure() { gameOver() }
+
     /// Pressure session complete — definitive ending with ascending taps.
     static func pressureSessionComplete() {
         guard isEnabled else { return }

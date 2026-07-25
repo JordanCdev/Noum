@@ -55,6 +55,11 @@ struct RewriteSuggestionCard: View {
     /// Reduce Motion arrives in the settled state instantly — same
     /// information, no motion (frozen RM contract).
     @State private var revealReceded = false
+    /// Beat 3 of the owned sequence (PhraseTransformationBeat.explain):
+    /// the explanation line appears after the visual change.
+    @State private var explainRevealed = false
+    /// Replay re-arms only after the sequence settles.
+    @State private var transformationSettled = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -173,10 +178,39 @@ struct RewriteSuggestionCard: View {
                 detail: "Changed words are highlighted · meaning and voice preserved",
                 tint: AppColor.proText,
                 identifier: "rewrite.oneStep",
-                hero: true
+                hero: true,
+                detailVisible: explainRevealed
             )
             .opacity(revealReceded ? 1 : 0)
             .offset(y: revealReceded ? 0 : 8)
+            // The strengthened phrase resolves one beat after the recede
+            // (PhraseTransformationBeat.resolve); the original's recede
+            // rides the un-delayed transaction on the step above.
+            .animation(
+                reduceMotion ? nil : NoumMotion.phraseTransformation
+                    .delay(PhraseTransformationBeat.resolve),
+                value: revealReceded
+            )
+            .animation(
+                reduceMotion ? nil : .v46ReduceMotionFade,
+                value: explainRevealed
+            )
+            .overlay(alignment: .topTrailing) {
+                if transformationSettled && !reduceMotion {
+                    Button {
+                        Task { await playTransformation(replay: true) }
+                    } label: {
+                        Label("Replay", systemImage: "arrow.counterclockwise")
+                            .font(Typography.micro.weight(.semibold))
+                            .foregroundStyle(AppColor.proText.opacity(0.8))
+                            .padding(8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("rewrite.replayTransformation")
+                    .accessibilityHint("Plays the phrase transformation again.")
+                }
+            }
 
             targetRung
 
@@ -241,15 +275,47 @@ struct RewriteSuggestionCard: View {
         }
         .task {
             guard !revealReceded else { return }
-            if reduceMotion {
-                revealReceded = true
-            } else {
-                try? await Task.sleep(nanoseconds: 450_000_000)
-                withAnimation(.easeOut(duration: 0.6)) {
-                    revealReceded = true
-                }
-            }
+            await playTransformation()
         }
+    }
+
+    /// The owned transformation sequence (PhraseTransformationBeat):
+    /// exact transcript is already on screen → 450ms read dwell → let-go
+    /// words recede (beat 1) while the strengthened phrase resolves one
+    /// beat later (beat 2, via the rung's delayed animation) → the
+    /// explanation surfaces after the visual change (beat 3). Reduce
+    /// Motion arrives settled instantly — one accessible comparison.
+    @MainActor
+    private func playTransformation(replay: Bool = false) async {
+        if reduceMotion {
+            revealReceded = true
+            explainRevealed = true
+            transformationSettled = true
+            return
+        }
+        if replay {
+            var reset = Transaction()
+            reset.disablesAnimations = true
+            withTransaction(reset) {
+                revealReceded = false
+                explainRevealed = false
+                transformationSettled = false
+            }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+        } else {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+        }
+        withAnimation(NoumMotion.phraseTransformation) {
+            revealReceded = true
+        }
+        try? await Task.sleep(nanoseconds: UInt64(PhraseTransformationBeat.explain * 1_000_000_000))
+        withAnimation(.v46ReduceMotionFade) {
+            explainRevealed = true
+        }
+        try? await Task.sleep(
+            nanoseconds: UInt64((PhraseTransformationBeat.settled - PhraseTransformationBeat.explain) * 1_000_000_000)
+        )
+        transformationSettled = true
     }
 
     private var targetRung: some View {
@@ -520,6 +586,9 @@ struct ReviewTranscriptStep: View {
     /// (decision: the transformation IS the teaching). Only the TRY THIS rung
     /// sets this.
     var hero: Bool = false
+    /// Phrase-transformation beat 3: the explanation surfaces AFTER the
+    /// visual change has landed. Only the TRY THIS rung drives this.
+    var detailVisible: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -536,6 +605,7 @@ struct ReviewTranscriptStep: View {
                 .font(Typography.micro)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .opacity(detailVisible ? 1 : 0)
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)

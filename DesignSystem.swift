@@ -717,7 +717,13 @@ private struct ImmersiveCTAButtonStyle: ButtonStyle {
             // Motion keeps the dim-only state cue.
             .scaleEffect(!reduceMotion && configuration.isPressed ? 0.985 : 1)
             .animation(.tapFeedback, value: configuration.isPressed)
-            .shadow(color: Color.black.opacity(0.06), radius: 24, y: 8)
+            // Fill, scale, and shadow respond together: pressed sits
+            // closer to the surface (tighter, lower shadow).
+            .shadow(
+                color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.06),
+                radius: configuration.isPressed ? 12 : 24,
+                y: configuration.isPressed ? 4 : 8
+            )
             .onChange(of: configuration.isPressed) { _, pressed in
                 pressBinding?.wrappedValue = pressed
             }
