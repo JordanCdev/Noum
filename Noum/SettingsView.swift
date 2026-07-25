@@ -564,25 +564,15 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var profileHeroMark: some View {
-        if let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal {
-            VoiceGoalIcon(
-                goal: chosenVoice,
-                size: 22,
-                containerSize: 56,
-                cornerRadius: 18
-            )
-            .accessibilityHidden(true)
-        } else {
-            // Neutral pre-goal presence. Once the user chooses a voice target,
-            // Settings should echo that identity rather than another generic
-            // waveform mark.
-            NoumCharacter(
-                mood: .calm,
-                tint: profileHeroTint,
-                size: 56
-            )
-            .accessibilityHidden(true)
-        }
+        // One neutral brand presence. The voice-target identity already
+        // lives in the subtitle chip — repeating its glyph here read as a
+        // duplicate icon, not reinforcement.
+        NoumCharacter(
+            mood: .calm,
+            tint: profileHeroTint,
+            size: 56
+        )
+        .accessibilityHidden(true)
     }
 
     private var profileHeroAccessibilityLabel: String {

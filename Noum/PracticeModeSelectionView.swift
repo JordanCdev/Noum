@@ -350,6 +350,7 @@ struct PracticeModeSelectionView: View {
     /// several — explore-then-commit, not modal "one at a time".
     @State private var expandedModes: Set<PracticeMode> = []
     @State private var showOtherWays: Bool = false
+    @Environment(\.isAppTabRoot) private var isAppTabRoot
     @State private var showRecommendationReason: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isSelectedAppTab) private var isSelectedAppTab
@@ -498,13 +499,22 @@ struct PracticeModeSelectionView: View {
         return ReadingScreenScaffold(
             title: "Train",
             subtitle: "Your coach picked one focused rep.",
-            bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
+            bottomClearance: (showsFloatingStartCTA ? 96 : Spacing.lg)
+                + (isAppTabRoot ? Spacing.floatingTabBarClearance : 0)
         ) {
-            recommendedRepHero(
-                recommendation,
-                option: recommendationOption,
-                showsFloatingStartCTA: showsFloatingStartCTA
-            )
+            // Browsing collapses the prescription to one clickable line so
+            // the catalogue owns the screen; it expands again on tap and
+            // resets automatically when the view remounts (navigation away
+            // or a completed rep).
+            if showOtherWays {
+                compactRecommendedRow(recommendation, option: recommendationOption)
+            } else {
+                recommendedRepHero(
+                    recommendation,
+                    option: recommendationOption,
+                    showsFloatingStartCTA: showsFloatingStartCTA
+                )
+            }
             freeSelectSection
         }
         .navigationTitle("")
@@ -515,6 +525,7 @@ struct PracticeModeSelectionView: View {
         .safeAreaInset(edge: .bottom) {
             if showsFloatingStartCTA {
                 startCTA
+                    .padding(.bottom, isAppTabRoot ? Spacing.floatingTabBarClearance : 0)
             }
         }
         .task {
@@ -556,6 +567,73 @@ struct PracticeModeSelectionView: View {
     }
 
     // MARK: - Recommended Rep
+
+    /// The recommendation the catalogue hides and the compact row names.
+    private var currentRecommendedMode: PracticeMode? {
+        let imAvailable = IMModeAvailability.isAvailable
+        return TrainRecommendationProjection.resolve(
+            blueprint: cachedRecommendationBlueprint,
+            availability: NextActionModeAvailability(
+                rating: ratingStore.rating,
+                imConversationAvailable: imAvailable
+            ),
+            visibleModes: modeOptions(imConversationAvailable: imAvailable).map(\.mode)
+        ).mode
+    }
+
+    /// Collapsed prescription while the user browses manually — still one
+    /// tap to bring the full recommendation back.
+    private func compactRecommendedRow(
+        _ recommendation: TrainRecommendationProjection,
+        option: ModeOption
+    ) -> some View {
+        Button {
+            animateMode { showOtherWays = false }
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: option.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 32, height: 32)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recommended \u{00B7} \(option.title)")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .lineLimit(1)
+                    if let demand = recommendation.blueprint.suggestedTimedDifficulty?.compactDemandLabel {
+                        Text(demand)
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                }
+
+                Spacer(minLength: Spacing.xs)
+
+                Image(systemName: "chevron.up")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text("Recommended rep, \(option.title). Expands the recommendation."))
+        .accessibilityIdentifier("practiceModes.recommendedCompact")
+    }
 
     private func recommendedRepHero(
         _ recommendation: TrainRecommendationProjection,
@@ -912,8 +990,11 @@ struct PracticeModeSelectionView: View {
     }
 
     private var exerciseLibraryRows: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+        // The prescription card above IS the recommended mode's entry —
+        // repeating it in the catalogue read as a duplicate.
+        let browseOptions = options.filter { $0.mode != currentRecommendedMode }
+        return VStack(spacing: 0) {
+            ForEach(Array(browseOptions.enumerated()), id: \.element.id) { index, option in
                 if index > 0 {
                     Divider().padding(.leading, 72)
                 }

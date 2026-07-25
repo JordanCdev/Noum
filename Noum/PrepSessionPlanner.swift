@@ -288,7 +288,7 @@ enum PrepSessionPlanner {
             return PrepRepStep(
                 mode: plannedMode,
                 displayLabel: "Warm-up: two-minute timed rep",
-                rationale: "Loosen up. No pressure — just get your voice on tape.",
+                rationale: "Ease in gently — settle your pace and shape one clear opening.",
                 renderedLaunch: launch
             )
         case (.suddenDeath, .suddenDeath):
@@ -461,9 +461,9 @@ enum PrepSessionPlanner {
         let categoryName = category.displayName
         let titleClause: String
         if title.count <= 40, !title.isEmpty {
-            titleClause = "your \(categoryName) (\(title))"
+            titleClause = "Your \(categoryName) (\(title))"
         } else {
-            titleClause = "your \(categoryName)"
+            titleClause = "Your \(categoryName)"
         }
 
         let proximity: String
@@ -490,18 +490,13 @@ enum PrepSessionPlanner {
             pressureAvailable = true
             conversationAvailable = true
         }
-        let sequence: String
-        switch (pressureAvailable, conversationAvailable) {
-        case (true, true):
-            sequence = "Three reps: warm up, run a pressure round, then take questions from the kind of audience you're walking into."
-        case (false, true):
-            sequence = "Three reps: warm up, use Timed Practice for one controlled build-up, then take questions from the kind of audience you're walking into."
-        case (true, false):
-            sequence = "Three reps: warm up, run a pressure round, then rehearse one likely question in Timed Practice."
-        case (false, false):
-            sequence = "Three reps: warm up, then use two focused Timed Practice passes — one controlled answer and one likely question."
-        }
+        // The step list below carries the plan itself; the intro carries
+        // the WHY — the arc deliberately mirrors the real moment
+        // (graduated exposure: ease in → hold pressure → rehearse the
+        // actual shape), so repeating the step names here was noise.
+        _ = (pressureAvailable, conversationAvailable)
+        let arc = "The plan mirrors the day itself: ease in, hold up under pressure, then rehearse what you'll actually face."
 
-        return "\(proximity) \(sequence)"
+        return "\(proximity) \(arc)"
     }
 }

@@ -1483,24 +1483,20 @@ struct ContentView: View {
         return Button {
             openFirstWeekEntry(presentation)
         } label: {
-            HStack(alignment: .center, spacing: Spacing.md) {
+            // V4.6 density: one-line quiet row — the detail lives on the
+            // destination (and stays in the VoiceOver label below).
+            HStack(alignment: .center, spacing: Spacing.sm) {
                 Image(systemName: presentation.systemImage)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 32, height: 32)
                     .background(tint.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(presentation.title)
-                        .font(Typography.cardLabel)
-                        .foregroundStyle(AppColor.textPrimary)
-                    Text(presentation.body)
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(presentation.title)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(1)
 
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
@@ -1508,8 +1504,9 @@ struct ContentView: View {
                     .foregroundStyle(AppColor.textTertiary)
                     .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
             .background(
                 AppColor.cardBackground,
                 in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
@@ -1568,35 +1565,31 @@ struct ContentView: View {
         return Button {
             navigationPath.append(AppDestination.askNoum)
         } label: {
-            HStack(alignment: .center, spacing: Spacing.md) {
+            // V4.6 density: one-line quiet row; the evidence line stays in
+            // the VoiceOver label and inside the thread itself.
+            HStack(alignment: .center, spacing: Spacing.sm) {
                 Image(systemName: "message.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AppColor.proText)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 32)
                     .background(AppColor.proQuietSurface, in: Circle())
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text(HomeAskNoumShortcut.title)
-                        .font(Typography.cardLabel)
-                        .foregroundStyle(AppColor.textPrimary)
+                Text(HomeAskNoumShortcut.title)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(1)
 
-                    Text(body)
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(AppColor.textTertiary)
                     .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)

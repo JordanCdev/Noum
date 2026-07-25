@@ -2489,22 +2489,9 @@ struct ProfileView: View {
     private var identityHeader: some View {
         let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
         let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
+        // One icon only — the voice target's small glyph beside the subtitle.
+        // The former 52pt leading tile duplicated it and added no meaning.
         return HStack(spacing: Spacing.sm) {
-            if let chosenVoice {
-                VoiceGoalIcon(
-                    goal: chosenVoice,
-                    size: 20,
-                    containerSize: 52,
-                    cornerRadius: CornerRadius.medium
-                )
-            } else {
-                NoumCharacter(
-                    mood: .calm,
-                    tint: premium.isPremium ? AppColor.pro : AppColor.brandBlue,
-                    size: 52
-                )
-            }
-
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack(spacing: 8) {
                     Text(displayName)
