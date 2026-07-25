@@ -361,22 +361,106 @@ struct PrepSessionAvailabilityTests {
             title: "Board pitch",
             days: 1
         )
-        #expect(tomorrow.contains("Tomorrow is your presentation (Board pitch)."))
-        #expect(!tomorrow.contains("is Your"))
+        #expect(tomorrow.proximity.contains("Tomorrow is your presentation (Board pitch)."))
+        #expect(!tomorrow.proximity.contains("is Your"))
 
         let today = PrepSessionPlanner.introCopy(
             category: .presentation,
             title: "Board pitch",
             days: 0
         )
-        #expect(today.hasPrefix("Today is the day"))
-        #expect(today.contains("your presentation (Board pitch)"))
+        #expect(today.proximity.hasPrefix("Today is the day"))
+        #expect(today.proximity.contains("your presentation (Board pitch)"))
 
         let sentenceStart = PrepSessionPlanner.introCopy(
             category: .presentation,
             title: "Board pitch",
             days: 5
         )
-        #expect(sentenceStart.hasPrefix("Your presentation (Board pitch)"))
+        #expect(sentenceStart.proximity.hasPrefix("Your presentation (Board pitch)"))
+    }
+
+    // MARK: - Intro copy split (proximity / arc)
+
+    @Test func introSplitsIntoProximityAndArcWithVerbatimVariants() {
+        // All four availability arc variants, byte-identical to the
+        // pre-split paragraph — the split only separates rendering weight,
+        // never rewords.
+        let all = plan(.allAvailable)
+        #expect(
+            all.arcCopy
+                == "The plan mirrors the day itself: ease in, hold up under pressure, then rehearse what you'll actually face."
+        )
+
+        let pressureGated = plan(NextActionModeAvailability(
+            suddenDeathAvailable: false,
+            imConversationAvailable: true
+        ))
+        #expect(
+            pressureGated.arcCopy
+                == "The plan mirrors the day itself: ease in, build up in Timed Practice, then rehearse what you'll actually face."
+        )
+
+        let conversationGated = plan(NextActionModeAvailability(
+            suddenDeathAvailable: true,
+            imConversationAvailable: false
+        ))
+        #expect(
+            conversationGated.arcCopy
+                == "The plan mirrors the day itself: ease in, hold up under pressure, then rehearse a likely question in Timed Practice."
+        )
+
+        let bothGated = plan(.failClosed)
+        #expect(
+            bothGated.arcCopy
+                == "The plan mirrors the day itself: ease in, then two focused Timed Practice passes — one controlled build-up, one likely question."
+        )
+
+        // The proximity sentence keeps the day-aware urgency verbatim
+        // (the shared fixture plans at 5 days out).
+        #expect(
+            all.proximityCopy
+                == "Your presentation (Board pitch) is a week out. Time to load the rehearsals."
+        )
+
+        // The joined paragraph is exactly proximity + space + arc, so any
+        // consumer of the full intro reads the same coach thought as before.
+        #expect(all.introductionCopy == "\(all.proximityCopy) \(all.arcCopy)")
+    }
+
+    // MARK: - Covered-step indicator count
+
+    @Test func coveredStepCountMatchesRenderedStatusesIncludingFallbackCredit() {
+        // Real-shape coverage counts one step per covered rep.
+        let openPlan = plan(.allAvailable)
+        #expect(PrepSessionPlanner.coveredStepCount(in: statuses(openPlan, reps: [])) == 0)
+        #expect(
+            PrepSessionPlanner.coveredStepCount(
+                in: statuses(openPlan, reps: [rep(.timed, minutesAfter: 1)])
+            ) == 1
+        )
+
+        // Fallback-inclusive: a gated step credited via its offered Timed
+        // fallback counts as covered — the header indicator mirrors the
+        // rendered rows, while Profile's readiness keeps the shape-honest
+        // count. The divergence is deliberate.
+        let gatedPlan = plan(NextActionModeAvailability(
+            suddenDeathAvailable: false,
+            imConversationAvailable: true
+        ))
+        let fallbackReps = [
+            rep(.timed, minutesAfter: 1),
+            rep(.timed, minutesAfter: 2),
+        ]
+        let s = statuses(gatedPlan, reps: fallbackReps)
+        #expect(s[1].coveredViaFallback)
+        #expect(PrepSessionPlanner.coveredStepCount(in: s) == 2)
+
+        let readiness = PrepSessionPlanner.readiness(
+            plan: gatedPlan,
+            sessions: fallbackReps,
+            momentCreatedAt: momentCreatedAt
+        )
+        #expect(readiness.coveredCount == 1)
     }
 }

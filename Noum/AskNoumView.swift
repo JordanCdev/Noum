@@ -742,6 +742,25 @@ struct AskNoumView: View {
     @State private var pendingReplyCoachID: UUID? = nil
     @State private var pendingReplyLease: AskNoumReplyLease? = nil
 
+    // V4.6.1 — reply-landed presence beat. Incremented exactly once per
+    // revealed reply (at reveal completion), it drives a one-shot bounce on
+    // the header's waveform badge. Only the motion path increments it — the
+    // reveal never runs under Reduce Motion — so RM users are structurally
+    // exempt from the pulse (they keep the haptic ack instead).
+    @State private var replyLandedPulse = 0
+
+    // V4.6.1 — availability episode tracking for the banner's feedback
+    // beats. `coachUnavailableEpisodeActive` is true from the moment the
+    // coach becomes unavailable until a genuine restore: the warning haptic
+    // fires only on the opening edge, so failed re-checks bouncing through
+    // `.checking` back to `.unavailable` never re-buzz. A restore that ends
+    // an episode shows the transient "Back online." confirmation, which
+    // auto-fades via `restoredConfirmationTask` (cancelled on teardown and
+    // whenever a fresh probe supersedes it).
+    @State private var coachUnavailableEpisodeActive = false
+    @State private var showsCoachRestoredConfirmation = false
+    @State private var restoredConfirmationTask: Task<Void, Never>? = nil
+
     // Voice input wrapper — shipped in `AskNoumVoiceInput.swift`. Single
     // instance per view so the tap-to-toggle lifecycle owns the audio
     // engine + recognition task. Tap once → start recording; tap again
@@ -864,7 +883,16 @@ struct AskNoumView: View {
                                 // Keep them quarantined until this account has fresh evidence.
                                 dayZeroIntroCard
                             } else if store.messages.isEmpty {
+                                // V4.6.1 — when the first message lands, the
+                                // intro card compresses + fades away (driven
+                                // by the `listChange` animation on the
+                                // container below) so the conversation
+                                // visibly takes the screen. Reduce Motion
+                                // keeps the paired plain fade.
                                 standardEmptyState
+                                    .transition(reduceMotion
+                                        ? .opacity
+                                        : .scale(scale: 0.94, anchor: .top).combined(with: .opacity))
                             } else {
                                 ForEach(store.messages) { message in
                                     messageRow(message: message)
@@ -914,6 +942,14 @@ struct AskNoumView: View {
                         }
                         .padding(.horizontal, Spacing.md)
                         .padding(.top, Spacing.md)
+                        // V4.6.1 — animates the empty-state → conversation
+                        // handoff (and its reverse on a thread clear). Keyed
+                        // to the emptiness flip only, so ordinary message
+                        // appends never re-trigger a container animation.
+                        .animation(
+                            reduceMotion ? .v46ReduceMotionFade : .listChange,
+                            value: store.messages.isEmpty
+                        )
                     }
                     .coordinateSpace(name: "askNoumScroll")
                     .scrollDismissesKeyboard(.interactively)
@@ -962,6 +998,24 @@ struct AskNoumView: View {
                                landed.role == .coach, !landed.isPending, !landed.text.isEmpty {
                                 startReveal(of: landed, proxy: proxy)
                             } else {
+                                // V4.6.1 — reply-landed ack for Reduce Motion
+                                // users: the word reveal never runs under RM,
+                                // so this observer is their only landing
+                                // moment. Guarded to THIS turn's reply — a
+                                // just-landed reply is the thread's LAST row;
+                                // a failure resolves the pending row to a
+                                // system notice and a cancel removes it, so
+                                // neither (nor any older reply) can fire it.
+                                // Suppressed while the mic records. The
+                                // motion path fires the same ack at reveal
+                                // completion instead — exactly one of the
+                                // two ever runs per reply.
+                                if reduceMotion,
+                                   let landed = store.messages.last,
+                                   landed.role == .coach, !landed.isPending, !landed.text.isEmpty,
+                                   voiceInput.state != .recording {
+                                    CoachHaptic.selectionTap()
+                                }
                                 revealingMessageID = nil
                                 revealedText = ""
                             }
@@ -1074,6 +1128,33 @@ struct AskNoumView: View {
             if availability == .available {
                 availabilityRecheckFailures = 0
             }
+            // V4.6.1 — availability feedback beats, once per EPISODE:
+            // the soft warning double-tick fires only on the edge INTO
+            // `.unavailable` (never on `.checking`, never again while
+            // failed re-checks bounce through `.checking` and back). A
+            // restore that closes an episode shows the transient
+            // "Back online." row — visual confirmation only, no haptic
+            // on good news the banner is already announcing.
+            switch availability {
+            case .unavailable:
+                if !coachUnavailableEpisodeActive {
+                    coachUnavailableEpisodeActive = true
+                    CoachHaptic.unavailableNotice()
+                }
+            case .available:
+                if coachUnavailableEpisodeActive {
+                    coachUnavailableEpisodeActive = false
+                    presentRestoredConfirmation()
+                }
+            case .checking:
+                // A fresh probe (send/retry) supersedes any lingering
+                // restore confirmation — the row must reflect the probe,
+                // not stale good news.
+                if showsCoachRestoredConfirmation {
+                    restoredConfirmationTask?.cancel()
+                    showsCoachRestoredConfirmation = false
+                }
+            }
         }
         // Returning to the app re-probes an unavailable coach so a
         // recovered backend never stays invisible behind the banner.
@@ -1102,6 +1183,11 @@ struct AskNoumView: View {
             // Never let a half-written reveal mutate state after we've left.
             revealTask?.cancel()
             replyTask?.cancel()
+            // The transient "Back online." confirmation joins the same
+            // teardown — its auto-fade task must never write state after
+            // a pop, and a re-push starts from the quiet resting bar.
+            restoredConfirmationTask?.cancel()
+            showsCoachRestoredConfirmation = false
             if let pendingReplyCoachID, let pendingReplyLease {
                 _ = store.cancelPendingCoachTurn(
                     id: pendingReplyCoachID,
@@ -1127,6 +1213,14 @@ struct AskNoumView: View {
                 Image(systemName: "waveform")
                     .font(.system(size: isHeaderCompact ? 13 : 18, weight: .semibold))
                     .foregroundStyle(AppColor.coachAccent)
+                    // V4.6.1 — one subtle bounce when a reply finishes
+                    // landing (the badge "speaks"). The crisp badge stays —
+                    // the full orb was deliberately dropped at header size —
+                    // so the mood-pulse semantic lands as a discrete symbol
+                    // bounce instead. RM-safe by construction: the trigger
+                    // only increments on the reveal path, which never runs
+                    // under Reduce Motion.
+                    .symbolEffect(.bounce, value: replyLandedPulse)
             }
             .frame(
                 width: isHeaderCompact ? 30 : 42,
@@ -3035,6 +3129,13 @@ struct AskNoumView: View {
         .background(.ultraThinMaterial)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: voiceInput.partialTranscript)
+        // V4.6.1 — the availability banner settles between its states
+        // (checking / unavailable / restored) instead of jump-cutting.
+        // Reduce Motion keeps the paired plain fade per the V4.6 contract:
+        // the banner is a state swap, not an entrance, so it fades rather
+        // than appearing instantly.
+        .animation(reduceMotion ? .v46ReduceMotionFade : .settle, value: liveCoachAvailability)
+        .animation(reduceMotion ? .v46ReduceMotionFade : .settle, value: showsCoachRestoredConfirmation)
     }
 
     @ViewBuilder
@@ -3069,6 +3170,7 @@ struct AskNoumView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)
+            .transition(.opacity)
             .accessibilityIdentifier("askNoum.availabilityChecking")
         } else if case .unavailable(let reason) = liveCoachAvailability {
             let presentation = AskNoumAvailabilityPresentation.resolve(reason)
@@ -3135,8 +3237,44 @@ struct AskNoumView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)
+            .transition(.opacity)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("askNoum.availability")
+        } else if showsCoachRestoredConfirmation {
+            // V4.6.1 — transient confirmation that an unavailable episode
+            // just ended. Informative, not a dead footer: it names the
+            // recovery once, then auto-fades so the resting bar stays
+            // quiet. `bolt` mirrors the unavailable banner's `bolt.slash`.
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "bolt")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.positive)
+                Text("Back online.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .transition(.opacity)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("askNoum.availabilityRestored")
+        }
+    }
+
+    /// V4.6.1 — transient confirmation after an unavailable episode ends:
+    /// "Back online." holds for a short dwell, then fades out (the banner
+    /// container's `settle`/RM-fade animation drives both edges). State
+    /// change only — the dwell is a display hold, not an animation timing,
+    /// so no motion token applies to it. The task is cancelled by teardown
+    /// and by any fresh `.checking` probe.
+    private func presentRestoredConfirmation() {
+        restoredConfirmationTask?.cancel()
+        showsCoachRestoredConfirmation = true
+        restoredConfirmationTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            showsCoachRestoredConfirmation = false
         }
     }
 
@@ -3723,6 +3861,16 @@ struct AskNoumView: View {
                 try? await Task.sleep(nanoseconds: 30_000_000) // ~30ms/word
             }
             if Task.isCancelled { return }
+            // V4.6.1 — the reply has fully landed: one soft ack (selection
+            // register — an acknowledgment, not an earned-progress beat)
+            // plus the header badge's one-shot bounce. This is the motion
+            // users' half of the reply-landed pair; RM users get the same
+            // ack from the `isAwaitingReply` observer, since no reveal is
+            // ever armed for them. Haptic suppressed while the mic records.
+            if voiceInput.state != .recording {
+                CoachHaptic.selectionTap()
+            }
+            replyLandedPulse += 1
             // Hand back to the store's full `message.text` (identical to the
             // assembled string) so the bubble's source of truth is the store.
             revealingMessageID = nil

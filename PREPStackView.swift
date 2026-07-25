@@ -559,11 +559,7 @@ struct PREPStackView: View {
     }
 
     private func updateWithMotion(_ animation: Animation, _ updates: () -> Void) {
-        if reduceMotion {
-            updates()
-        } else {
-            withAnimation(animation, updates)
-        }
+        withMotion(reduceMotion, animation, updates)
     }
 
     private func cancelDrill() {

@@ -69,9 +69,17 @@ struct PrepSessionView: View {
                 daysRemaining: days,
                 modeAvailability: modeAvailability
             )
+            // One-shot entrance stagger: intro → plan → footer. The view
+            // mounts fresh per navigation push, so the entrance replays only
+            // on genuine re-entry, never on pop-back from a rep (the modifier
+            // guards on its own hasAppeared state). CardEntranceModifier is
+            // the blessed stagger — Reduce Motion appears instantly.
             introCard(plan: plan, moment: moment, days: days)
+                .cardEntrance(0)
             stepsCard(plan: plan, moment: moment)
+                .cardEntrance(1)
             footerNote(moment: moment)
+                .cardEntrance(2)
         } else {
             emptyState
         }
@@ -90,9 +98,16 @@ struct PrepSessionView: View {
                     .foregroundStyle(AppColor.brandBlue)
                     .tracking(0.8)
             }
-            Text(plan.introductionCopy)
+            Text(plan.proximityCopy)
                 .font(Typography.body)
                 .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            // The arc sentence carries the WHY at a quieter weight so the
+            // proximity line leads. Same copy as before, just re-weighted.
+            Text(plan.arcCopy)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -139,11 +154,20 @@ struct PrepSessionView: View {
             // Identifier lives on the header, not the card container — a
             // container-level identifier blankets descendants and would stomp
             // the per-step "prepSession.step.N.begin" button identifiers.
-            Text("REHEARSAL PLAN")
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .tracking(0.8)
-                .accessibilityIdentifier("prepSession.plan")
+            HStack(alignment: .firstTextBaseline) {
+                Text("REHEARSAL PLAN")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .tracking(0.8)
+                    .accessibilityIdentifier("prepSession.plan")
+                Spacer()
+                // Fallback-inclusive count derived from the SAME statuses
+                // the rows render, so the header can never disagree with
+                // the list beneath it.
+                Text("\(PrepSessionPlanner.coveredStepCount(in: statuses)) of \(plan.steps.count) covered")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+            }
             ForEach(Array(plan.steps.enumerated()), id: \.offset) { index, step in
                 stepRow(
                     index: index + 1,
@@ -179,7 +203,7 @@ struct PrepSessionView: View {
                         .foregroundStyle(status.phase == .locked ? .secondary : .primary)
                     Spacer()
                 }
-                .opacity(status.phase == .locked ? 0.75 : 1)
+                .opacity(status.phase == .locked ? 0.6 : 1)
 
                 switch status.phase {
                 case .done:
@@ -245,7 +269,7 @@ struct PrepSessionView: View {
                         in: Capsule()
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .padding(.leading, stepIndent)
                 .accessibilityLabel(
                     status.phase == .done
@@ -257,6 +281,19 @@ struct PrepSessionView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Static hierarchy cue, not motion: the current step carries a 3pt
+        // accent bar in the card gutter so the one actionable row reads
+        // first. Decorative only — hidden from VoiceOver so the combined
+        // row label keeps its shape.
+        .overlay(alignment: .leading) {
+            if status.phase == .current {
+                Capsule()
+                    .fill(AppColor.brandBlue)
+                    .frame(width: 3)
+                    .offset(x: -Spacing.sm)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     @ViewBuilder
@@ -342,6 +379,10 @@ struct PrepSessionView: View {
     /// the resulting Summary; BigMomentStore remains the state owner, and Done
     /// returns to this plan only while the same moment is still active.
     private func launch(step: PrepRepStep) {
+        // Commitment register (A2 map) — same beat as the Home coach card
+        // Begin and the Train floating Start. All three steps funnel through
+        // here, and the pattern is settings-gated inside CoachHaptic.
+        CoachHaptic.drillStart()
         let imAvailable = IMModeAvailability.isAvailable
         let tapAvailability = NextActionModeAvailability(
             rating: ratingStore.rating,

@@ -109,14 +109,22 @@ struct IMScenarioConfig: Equatable {
 /// coach intro copy that frames everything as a rehearsal for the
 /// specific upcoming moment.
 struct PrepSessionPlan: Equatable {
-    /// Coach voice intro shown on the prep landing card. References
-    /// the BigMoment category + days remaining + the warm-up sequence.
-    let introductionCopy: String
+    /// Coach voice intro, split into its two sentences so the view can
+    /// weight them separately: the proximity sentence names the event +
+    /// days remaining at body weight; the arc sentence is the quieter WHY
+    /// line beneath it. Content is byte-identical to the pre-split
+    /// paragraph — only the rendering weight changed.
+    let proximityCopy: String
+    let arcCopy: String
     /// The three reps, in order: warmup → pressure → audience sim.
     let steps: [PrepRepStep]
     /// IM scenario seed for the third step. Nil when the rendered audience
     /// step has fallen back to Timed so stale conversation setup cannot leak.
     let imScenario: IMScenarioConfig?
+
+    /// Joined single-paragraph intro — the two sentences remain one coach
+    /// thought for consumers that read the full copy.
+    var introductionCopy: String { "\(proximityCopy) \(arcCopy)" }
 }
 
 /// F2 — an honest read of how rehearsed the user is for the upcoming moment,
@@ -267,7 +275,8 @@ enum PrepSessionPlanner {
             steps: steps
         )
         return PrepSessionPlan(
-            introductionCopy: intro,
+            proximityCopy: intro.proximity,
+            arcCopy: intro.arc,
             steps: steps,
             imScenario: steps.last?.renderedMode == .imConversation
                 ? scenario(for: category)
@@ -449,6 +458,16 @@ enum PrepSessionPlanner {
         }
     }
 
+    /// Count of steps the rendered list reads as covered — `.done` phases
+    /// from `stepStatuses`' ordered attribution, so a gated step credited by
+    /// its offered Timed fallback counts (fallback-inclusive by
+    /// construction; this is the plan surface's own truth). Profile's
+    /// readiness keeps the shape-honest count — the divergence is
+    /// intentional and unit-pinned.
+    static func coveredStepCount(in statuses: [PrepStepStatus]) -> Int {
+        statuses.filter { $0.phase == .done }.count
+    }
+
     // MARK: - Category-specific IM scenarios
 
     /// Adversarial prompts tailored to the BigMomentCategory. Reserved for a
@@ -521,15 +540,17 @@ enum PrepSessionPlanner {
 
     // MARK: - Coach intro copy
 
-    /// Intro paragraph for the prep landing card. References the
-    /// category + days remaining in coach voice. Days-aware: a 2-day
-    /// intro reads differently than a 12-day intro.
+    /// Intro copy for the prep landing card, returned as its two sentences
+    /// so the view can render the proximity line at body weight and the arc
+    /// line quieter. References the category + days remaining in coach
+    /// voice. Days-aware: a 2-day intro reads differently than a 12-day
+    /// intro.
     static func introCopy(
         category: BigMomentCategory,
         title: String,
         days: Int,
         steps: [PrepRepStep]? = nil
-    ) -> String {
+    ) -> (proximity: String, arc: String) {
         let categoryName = category.displayName
         // Two casings: the clause opens the sentence for days > 1 but sits
         // mid-sentence for the day-of and day-before lines.
@@ -580,6 +601,6 @@ enum PrepSessionPlanner {
             arc = "The plan mirrors the day itself: ease in, then two focused Timed Practice passes — one controlled build-up, one likely question."
         }
 
-        return "\(proximity) \(arc)"
+        return (proximity, arc)
     }
 }

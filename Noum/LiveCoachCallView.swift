@@ -338,9 +338,7 @@ struct LiveCoachCallView: View {
     // already name who you're talking to, so the bar stays clean and leading.
     private var liveBar: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65))
-                .frame(width: 8, height: 8)
+            liveDot
             Text(loopActive ? "Live" : "Coach")
                 .font(Typography.micro.weight(.bold))
                 .tracking(1.5)
@@ -349,6 +347,33 @@ struct LiveCoachCallView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(loopActive ? "Live call with Noum" : "Coach call with Noum")
+    }
+
+    /// V4.6.1 — the live-dot breathes while the call is engaged, so "Live"
+    /// reads as an ongoing state rather than a static label. Driven by a
+    /// `TimelineView` phase (NoumCharacter's idiom) instead of a
+    /// `repeatForever` animation, so backgrounding can never strand a
+    /// mid-breath frame and no scenePhase re-arm is needed. The 2.4s cycle
+    /// matches the VoiceTrace breath cadence. Reduce Motion and the idle
+    /// pre-call state keep the static dot. Decorative only — the combined
+    /// pill label above carries the accessible state.
+    @ViewBuilder
+    private var liveDot: some View {
+        if loopActive && !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let phase = context.date.timeIntervalSinceReferenceDate
+                let breath = (sin(phase * 2 * .pi / 2.4) + 1) / 2 // 0…1
+                Circle()
+                    .fill(Color.red.opacity(0.62 + 0.28 * breath))
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(0.92 + 0.16 * breath)
+            }
+            .frame(width: 8, height: 8)
+        } else {
+            Circle()
+                .fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65))
+                .frame(width: 8, height: 8)
+        }
     }
 
     // MARK: - Presence (the face)
@@ -362,6 +387,12 @@ struct LiveCoachCallView: View {
             // alternative. Disabled when speech input isn't available so it
             // never offers a dead tap.
             Button(action: micTapped) {
+                // NOTE (V4.6.1): `NoumCharacter(audioLevel:)` exists so the
+                // orb can track the speaker's voice, but `AskNoumVoiceInput`
+                // exposes no real level (its taps feed the recognizer only).
+                // Deliberately NOT synthesized here — a fake envelope would
+                // fabricate presence. Pipe a real smoothed level through the
+                // voice-input owner before claiming this parameter.
                 NoumCharacter(mood: orbMood, tint: AppColor.pro, size: 136, stage: characterStage)
                     .accessibilityHidden(true)
             }
@@ -693,8 +724,14 @@ struct LiveCoachCallView: View {
             return
         }
         deadMicNotice = nil
+        // V4.6.1 call haptics (register map, CoachHaptic.swift): explicit
+        // Send/barge-in taps are commitments → `drillStart`; arming the mic
+        // is an input ack → `selectionTap` (only when the mic can really
+        // open, so a dead tap never buzzes). All routed through the
+        // settings-gated CoachHaptic register.
         if loopActive {
             if speaker.isSpeaking {
+                CoachHaptic.drillStart()  // barge-in commit: taking the floor
                 store.markLatestCoachTurnVoiceBargeIn()
                 speaker.stop()        // barge-in: cut the coach off
                 startRecording()      // and take the floor
@@ -702,14 +739,17 @@ struct LiveCoachCallView: View {
                 // Primary button SENDS the captured turn (same path as the
                 // hands-free silence send), instead of cancelling it. Users
                 // read the old "Stop" as "discard" and lost their utterance.
+                CoachHaptic.drillStart()  // send commit
                 voiceInput.stopAndSend()  // → onFinalTranscript → handleUtterance
             } else {
                 // Push-to-talk: idle mic + Talk tap = take the floor again.
                 // (Under the old auto re-arm loop an idle tap meant "end the
                 // session"; ending the call now belongs to Leave alone.)
+                if voiceInput.isAvailable { CoachHaptic.selectionTap() }
                 startRecording()
             }
         } else {
+            if voiceInput.isAvailable { CoachHaptic.selectionTap() }
             loopActive = true
             speaker.stop()
             startRecording()
@@ -739,6 +779,10 @@ struct LiveCoachCallView: View {
               !voiceInput.partialTranscript.isEmpty,
               Date().timeIntervalSince(lastPartialAt) > silenceThreshold
         else { return }
+        // Hands-free send: the pause itself is the action, so it gets the
+        // soft selection ack — the firmer `drillStart` stays reserved for
+        // the user's own explicit Send/barge-in taps.
+        CoachHaptic.selectionTap()
         voiceInput.stopAndSend()  // → onFinalTranscript → handleUtterance
     }
 
@@ -756,6 +800,10 @@ struct LiveCoachCallView: View {
               )
         else { return }
         deadMicNotice = LiveCallMicWatchdog.notice
+        // Warning register — paired with the visible dead-mic notice. Fires
+        // once per arming: `endLoop()` clears `recordingArmedAt`, so the
+        // guard above can't re-flag until the next Talk tap re-arms.
+        CoachHaptic.unavailableNotice()
         endLoop()
     }
 

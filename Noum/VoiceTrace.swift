@@ -110,6 +110,13 @@ struct VoiceTrace: View {
     var isQuiet: Bool = false
     /// Adds the violet glow halo behind mirrored variants.
     var showsGlow: Bool = true
+    /// V4.6.1 hero entrance choreography: delays the start of the first
+    /// breath cycle so the trace visibly wakes after the headline settles.
+    /// The resting silhouette always draws immediately — only the ambient
+    /// loop waits. Applied inside the breath animation itself, so the
+    /// Reduce Motion settle and scenePhase re-arm logic are untouched
+    /// (a delayed re-arm of a quiet loop is invisible).
+    var wakeDelay: TimeInterval = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -169,7 +176,7 @@ struct VoiceTrace: View {
                             breathes
                                 ? .easeInOut(duration: 2.4)
                                     .repeatForever(autoreverses: true)
-                                    .delay(Double(index) * 0.14)
+                                    .delay(wakeDelay + Double(index) * 0.14)
                                 : nil,
                             value: isBreathing
                         )

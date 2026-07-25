@@ -218,6 +218,21 @@ enum CoachHaptic {
         #endif
     }
 
+    /// Unavailable / warning notice — soft double-tick. Warning register:
+    /// fired when a live capability becomes unavailable (coach transport,
+    /// dead mic), never for mere `.checking`, and never as a fail-buzzer
+    /// on user performance. Always paired with a visible banner or notice.
+    static func unavailableNotice() {
+        guard isEnabled else { return }
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.impactOccurred(intensity: 0.5)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            generator.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
     /// Pressure session complete — definitive ending with ascending taps.
     static func pressureSessionComplete() {
         guard isEnabled else { return }

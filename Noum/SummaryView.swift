@@ -95,6 +95,11 @@ struct SummaryView: View {
     @State private var nextLevel: String = ""
     @State private var xpToNext: Int = 0
     @State private var didApplyXP = false
+    /// One-shot guard + settle state for the score receipt's payoff beat
+    /// (fires when `resultOverviewCard` first mounts — immediately for
+    /// Pressure Drill, on Details expand otherwise).
+    @State private var scoreRevealHasRun = false
+    @State private var scoreCardSettled = false
     @State private var aiFeedback: AICoachFeedback?
     @State private var isRequestingAIFeedback = false
     @State private var aiError: String?
@@ -1416,6 +1421,44 @@ struct SummaryView: View {
     /// dedicated receipt being mounted immediately.
     @ViewBuilder
     private var resultOverviewCard: some View {
+        Group {
+            resultOverviewCardContent
+        }
+        // V4.6.1 score-settle beat: the receipt lands on `payoffReveal`
+        // timing with the result-lands haptic + verdict brush on the settle
+        // frame. Pre-state stays visible (0.85/0.98) so existence and the
+        // run-completion screenshot contract are never delayed.
+        .opacity(scoreCardSettled ? 1 : 0.85)
+        .scaleEffect(scoreCardSettled ? 1 : 0.98)
+        .onAppear(perform: runScoreReveal)
+    }
+
+    /// One-shot per summary. Under Reduce Motion the receipt appears
+    /// instantly (entrance-choreography RM contract) while the haptic and
+    /// cue still land — sound and haptics are not motion. Below the
+    /// evidence floor the card settles silently: an empty ring is not a
+    /// verdict worth punctuating.
+    private func runScoreReveal() {
+        guard !scoreRevealHasRun else { return }
+        scoreRevealHasRun = true
+        if reduceMotion {
+            scoreCardSettled = true
+            guard !isMinimalEffort else { return }
+            CoachHaptic.scoreReveal()
+            InteractionSoundEngine.cue(.verdictReveal)
+            return
+        }
+        withAnimation(.payoffReveal, completionCriteria: .logicallyComplete) {
+            scoreCardSettled = true
+        } completion: {
+            guard !isMinimalEffort else { return }
+            CoachHaptic.scoreReveal()
+            InteractionSoundEngine.cue(.verdictReveal)
+        }
+    }
+
+    @ViewBuilder
+    private var resultOverviewCardContent: some View {
         if isIMSummary {
             IMVerdictCard(
                 scoreValue: scoreValue,

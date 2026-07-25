@@ -133,8 +133,10 @@ struct CoachSessionView: View {
                         onSwitchToType: { transition(to: .type) },
                         onLeave: { if !navigationPath.isEmpty { navigationPath.removeLast() } }
                     )
+                    .transition(modeSwapTransition)
                 case .type:
                     typedSurface(onGoLive: enterLiveIfEligible)
+                        .transition(modeSwapTransition)
                 }
             }
         }
@@ -174,6 +176,17 @@ struct CoachSessionView: View {
         transition(to: .live)
     }
 
+    /// V4.6.1 — the live↔type swap is a mode change, not a navigation push,
+    /// so it settles rather than hard-cuts: cross-fade plus a slight scale
+    /// settle on both sides. Reduce Motion keeps the paired plain fade
+    /// (`v46ReduceMotionFade`) per the frozen motion contract — never an
+    /// instant jump-cut between two full-screen surfaces.
+    private var modeSwapTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .scale(scale: 0.98))
+    }
+
     private func transition(to nextMode: Mode) {
         guard mode != nextMode else { return }
         if mode == .type, nextMode == .live {
@@ -184,12 +197,8 @@ struct CoachSessionView: View {
                 reason: "user upgraded from typed coach to live coach"
             ))
         }
-        if reduceMotion {
+        withAnimation(reduceMotion ? .v46ReduceMotionFade : .settle) {
             mode = nextMode
-        } else {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                mode = nextMode
-            }
         }
     }
 }

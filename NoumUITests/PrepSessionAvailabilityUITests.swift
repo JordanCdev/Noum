@@ -69,11 +69,20 @@ final class PrepSessionAvailabilityUITests: XCTestCase {
             "Fallback coverage must advance the lock sequence — no step may dead-end."
         )
 
-        // The intro's arc names only what the rendered plan actually offers.
+        // The intro's arc — now its own quieter line beneath the proximity
+        // sentence — names only what the rendered plan actually offers.
         XCTAssertTrue(
             element(labelContaining: "two focused Timed Practice passes")
                 .waitForExistence(timeout: 5),
             "With both shapes gated the intro must not promise pressure or audience rounds."
+        )
+
+        // The plan header's covered indicator mirrors the rendered rows —
+        // fallback-inclusive, so the fully covered seed reads 3 of 3.
+        XCTAssertTrue(
+            element(labelContaining: "3 of 3 covered")
+                .waitForExistence(timeout: 5),
+            "The REHEARSAL PLAN header should carry the fallback-inclusive covered count."
         )
 
         let planAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())

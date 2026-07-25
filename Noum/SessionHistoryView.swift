@@ -177,6 +177,9 @@ struct SessionHistoryView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var isProgressExpanded = ReviewProgressDisclosure.defaultExpanded
+    /// One-shot settle for the progress head's accent underline (once per
+    /// view lifetime — the head itself is not identity-keyed on data).
+    @State private var underlineSettled = false
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isAppTabRoot) private var isAppTabRoot
@@ -331,12 +334,17 @@ struct SessionHistoryView: View {
                             label: day.label,
                             isLapse: day.isLapse
                         )
+                        .modifier(V46TrajectoryGrowIn(index: index, reduceMotion: reduceMotion))
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, Spacing.xxl)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(presentation.chartAccessibilitySummary))
+                // Keyed on the trajectory content: fresh evidence re-grows the
+                // clusters once; scrolling back never replays (the modifiers'
+                // one-shot state survives while the identity holds).
+                .id(trajectoryIdentity(for: presentation))
 
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(presentation.rows) { row in
@@ -365,8 +373,17 @@ struct SessionHistoryView: View {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(AppColor.coachAccent)
                     .frame(width: 40, height: 3)
+                    .scaleEffect(x: underlineSettled ? 1 : 0, anchor: .leading)
                     .padding(.top, Spacing.lg)
                     .accessibilityHidden(true)
+                    .onAppear {
+                        guard !underlineSettled else { return }
+                        // Settles in with the cluster grow-in on the shared
+                        // progress-acknowledgement clock. RM: static.
+                        withMotion(reduceMotion, .progressAck) {
+                            underlineSettled = true
+                        }
+                    }
 
                 if let reviewTitle = presentation.reviewRowTitle {
                     Button {
@@ -411,6 +428,14 @@ struct SessionHistoryView: View {
             ? [10, 35, 52, 35, 10]
             : [8, 26, 33, 26, 8]
         return base.map { $0 * day.intensity }
+    }
+
+    /// Stable identity for the current trajectory data — the cluster grow-in
+    /// keys on this so it runs once per evidence state, not once per visit.
+    private func trajectoryIdentity(for presentation: V46ProgressPresentation) -> String {
+        presentation.trajectory
+            .map { "\($0.label)|\($0.intensity)|\($0.isLapse)" }
+            .joined(separator: "·")
     }
 
     // MARK: - Development
@@ -637,6 +662,32 @@ struct SessionHistoryView: View {
         .accessibilityIdentifier("emptyState.history")
     }
 
+}
+
+/// One-time grow-in for a trajectory day cluster: the bars rise from a low
+/// crouch into their honest heights, staggered left-to-right. The owning
+/// container is `.id`-keyed on the trajectory content, so fresh evidence
+/// re-grows once and scrolling back never replays (the one-shot state
+/// survives while the identity holds — LazyVStack retains loaded views).
+/// Reduce Motion: static, full height immediately, no fade. The cluster is
+/// already `accessibilityHidden` decoration, so the motion adds nothing to
+/// (and removes nothing from) the spoken chart summary.
+private struct V46TrajectoryGrowIn: ViewModifier {
+    let index: Int
+    let reduceMotion: Bool
+    @State private var grown = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(y: grown ? 1 : 0.35, anchor: .bottom)
+            .opacity(grown ? 1 : 0.6)
+            .onAppear {
+                guard !grown else { return }
+                withMotion(reduceMotion, .stagger(index)) {
+                    grown = true
+                }
+            }
+    }
 }
 
 /// Visible to surfaces outside SessionHistoryView (e.g. Growth Library's

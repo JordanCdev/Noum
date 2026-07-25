@@ -345,14 +345,24 @@ struct HomeCoachCard: View {
     @StateObject private var pathProgress = PathProgressManager.shared
     private var bigMomentStore: BigMomentStore { .shared }
 
-    /// True while a fresh-recommendation burst is showing the `.excited`
-    /// mood. The displayed mood otherwise reads from `restingMood` so the
-    /// computed `hasSignal` value drives the empty/populated mood
-    /// directly — no first-paint flash where a stale `@State` default
-    /// disagrees with the actual state for a frame.
-    @State private var isBursting: Bool = false
-    @State private var lastSeenRecommendationKey: String = ""
     @State private var lastRenderedRecommendationExposure: HomeCoachRecommendationExposure?
+    /// V4.6.1 hero entrance choreography — one-shot per mount (the
+    /// CardEntrance precedent: replays on a cold remount, never on a
+    /// pop-return to the retained Home). Content is never invisible:
+    /// blocks start at 0.97 scale / 0.85 opacity and settle to identity.
+    /// Reduce Motion sets both flags without animation (instant appear).
+    @State private var heroTextSettled = false
+    @State private var heroCTASettled = false
+
+    /// Choreography beats (V4.6.1 plan §3 Today): headline block settles
+    /// at 0 ms, the trace breath arms at +350 ms, the CTA settles at
+    /// +120 ms — total well inside ScreenshotTour's 1.5 s post-
+    /// `home.screen` wait. Offsets only; curves come from the shared
+    /// motion tokens (`.settle`).
+    private enum HeroEntranceBeat {
+        static let traceWake: TimeInterval = 0.35
+        static let ctaDelay: TimeInterval = 0.12
+    }
     @State private var plannedPhraseError: String?
     /// The earned evidence event this visit is announcing (258:1078).
     /// Resolved once on appear, acknowledged immediately so the next Home
@@ -375,47 +385,65 @@ struct HomeCoachCard: View {
         // still flows from the existing recommendation pipeline; only the
         // presentation changed.
         return VStack(alignment: .leading, spacing: 0) {
-            Text("Today")
-                .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline))
-                .foregroundStyle(.white.opacity(0.8))
-                .accessibilityAddTraits(.isHeader)
+            // Headline block — first beat of the entrance choreography.
+            // The nested stack is layout-neutral (same alignment, zero
+            // spacing) and lets the whole block settle as one unit.
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Today")
+                    .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .accessibilityAddTraits(.isHeader)
 
-            // V4.6 Updated Today (258:1078) — the earned chip announces one
-            // un-acknowledged retry-comparison win; the hero's structure
-            // tightens to chip → headline → meta → earned trace → CTA.
-            if let earned = activeEarned {
-                earnedChip(earned.chipText)
-                    .padding(.top, Spacing.sm)
-            }
+                // V4.6 Updated Today (258:1078) — the earned chip announces one
+                // un-acknowledged retry-comparison win; the hero's structure
+                // tightens to chip → headline → meta → earned trace → CTA.
+                // The chip/headline/meta swaps ride the announcement's
+                // payoff transaction (see `resolveEarnedState`).
+                if let earned = activeEarned {
+                    earnedChip(earned.chipText)
+                        .padding(.top, Spacing.sm)
+                        .transition(.opacity)
+                }
 
-            Text(activeEarned?.headlineOverride ?? coachTitle(for: renderedBlueprint))
-                .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, activeEarned == nil ? Spacing.lg : Spacing.sm)
-                .accessibilityIdentifier("home.coachCard.title")
-
-            if activeEarned == nil, let subtitle = coachSubtitle(for: renderedBlueprint) {
-                Text(subtitle)
-                    .font(Typography.manrope(size: 15.5, weight: .regular, relativeTo: .subheadline))
-                    .foregroundStyle(.white.opacity(0.85))
+                Text(activeEarned?.headlineOverride ?? coachTitle(for: renderedBlueprint))
+                    .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
+                    .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Spacing.md)
-                    .accessibilityIdentifier("home.coachCard.subtitle")
+                    .padding(.top, activeEarned == nil ? Spacing.lg : Spacing.sm)
+                    .contentTransition(.opacity)
+                    .accessibilityIdentifier("home.coachCard.title")
+
+                if activeEarned == nil, let subtitle = coachSubtitle(for: renderedBlueprint) {
+                    Text(subtitle)
+                        .font(Typography.manrope(size: 15.5, weight: .regular, relativeTo: .subheadline))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Spacing.md)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("home.coachCard.subtitle")
+                }
+
+                Text(activeEarned?.metaOverride ?? heroMetaText(for: renderedBlueprint))
+                    .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Spacing.lg)
+                    .contentTransition(.opacity)
             }
+            .heroEntrance(settled: heroTextSettled)
 
-            Text(activeEarned?.metaOverride ?? heroMetaText(for: renderedBlueprint))
-                .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
-                .foregroundStyle(.white.opacity(0.7))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Spacing.lg)
-
-            VoiceTrace(variant: activeEarned == nil ? .idleHero : .earnedHero)
-                .frame(maxWidth: .infinity)
-                .padding(.top, Spacing.lg)
+            // The trace draws at rest immediately; its breath arms one
+            // beat after the headline settles (the entrance's second beat).
+            VoiceTrace(
+                variant: activeEarned == nil ? .idleHero : .earnedHero,
+                wakeDelay: HeroEntranceBeat.traceWake
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.top, Spacing.lg)
 
             heroActions(renderedExposure: renderedExposure)
                 .padding(.top, Spacing.lg)
+                .heroEntrance(settled: heroCTASettled)
 
             // The cohesive Home intentionally suppresses the generic plan arc,
             // but an explicitly saved line is a concrete current-week action,
@@ -424,6 +452,7 @@ struct HomeCoachCard: View {
             if showsPlanArc || currentPlannedPhrase != nil {
                 planArcRow
                     .padding(.top, Spacing.xs)
+                    .heroEntrance(settled: heroCTASettled)
             }
         }
         .padding(.horizontal, Spacing.xl)
@@ -454,12 +483,11 @@ struct HomeCoachCard: View {
         }
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
-            syncMoodForFreshRecommendation()
+            playEntranceChoreography()
             resolveEarnedState(for: renderedBlueprint)
         }
         .onChange(of: renderedExposure.fingerprint) { _, _ in
             lastRenderedRecommendationExposure = renderedExposure
-            syncMoodForFreshRecommendation()
         }
         .task(
             id: "\(renderedExposure.fingerprint)|\(isSelectedAppTab)|\(recordsRecommendationExposure)"
@@ -662,6 +690,13 @@ struct HomeCoachCard: View {
     /// Resolve the once-per-event earned announcement. Acknowledging on
     /// first render is what enforces "shown once, then collapsed" — the
     /// @State copy keeps this visit stable while the ledger moves on.
+    ///
+    /// V4.6.1 announcement beat: the chip, headline/meta overrides and
+    /// the idleHero→earnedHero trace flip all land on one payoff reveal
+    /// (Reduce Motion: 200 ms cross-fade), with the milestone-register
+    /// haptic fired once — the nil-guard plus the immediate ledger
+    /// acknowledge are the once-per-event contract, so neither the
+    /// animation nor the haptic can replay.
     private func resolveEarnedState(for blueprint: RecommendationBiasBlueprint) {
         guard activeEarned == nil else { return }
         let accountID = AuthManager.shared.currentAccountID
@@ -670,8 +705,27 @@ struct HomeCoachCard: View {
             suggestedNextDifficulty: blueprint.suggestedTimedDifficulty,
             acknowledgedOutcomeIDs: V46EarnedEvidenceLedger.acknowledgedIDs(accountID: accountID)
         ) else { return }
-        activeEarned = earned
+        withAnimation(reduceMotion ? .v46ReduceMotionFade : .payoffReveal) {
+            activeEarned = earned
+        }
         V46EarnedEvidenceLedger.acknowledge(earned.outcomeID, accountID: accountID)
+        CoachHaptic.trendBreakthrough()
+    }
+
+    /// One-shot entrance (V4.6.1): the headline block settles immediately,
+    /// the CTA follows one beat later; the trace's breath arms on its own
+    /// `wakeDelay`. Guarded on the settled flag so pop-returns to the
+    /// retained Home never replay it; a cold remount starts fresh @State
+    /// and plays again. Reduce Motion: instant appear, no animation.
+    private func playEntranceChoreography() {
+        guard !heroTextSettled else { return }
+        guard !reduceMotion else {
+            heroTextSettled = true
+            heroCTASettled = true
+            return
+        }
+        withAnimation(.settle) { heroTextSettled = true }
+        withAnimation(.settle.delay(HeroEntranceBeat.ctaDelay)) { heroCTASettled = true }
     }
 
     // MARK: - Hero meta line
@@ -953,52 +1007,12 @@ struct HomeCoachCard: View {
         }
     }
 
-    // MARK: - Mood lifecycle
-    //
-    // The character defaults to `restingMood` — `.coaching` (slight tilt,
-    // "the coach has something to say") for the populated state, or
-    // `.listening` (symmetric arc-pulses, "the coach is hearing you for
-    // the first time") for the empty state. When the active recommendation
-    // changes (e.g. after a finalize that produces a new suggested mode),
-    // brief `.excited` for ~1s then settle back to the resting mood.
-    // Reduce-motion users skip the burst entirely.
-
-    private var recommendationKey: String {
-        recommendationExposure.fingerprint
-    }
-
-    /// Base mood the card rests in when no fresh-recommendation burst is
-    /// firing. Empty-state (no signal) reads `.listening` — symmetric arc-
-    /// pulses around the character, framing "the coach is hearing you for
-    /// the first time". Once the user has reps, the mood settles into
-    /// `.coaching` — the slight tilt that frames "the coach has something
-    /// to say." Two registers, honest to the moment.
-    private var restingMood: NoumCharacter.Mood {
-        hasSignal ? .coaching : .listening
-    }
-
-    /// Mood actually rendered on the character. Derives live from
-    /// `restingMood` unless an `.excited` burst is active — so a cold-
-    /// start empty-state user sees `.listening` from frame zero, no
-    /// `@State` default ever flashing through.
-    private var displayedMood: NoumCharacter.Mood {
-        isBursting ? .excited : restingMood
-    }
-
-    private func syncMoodForFreshRecommendation() {
-        let key = recommendationKey
-        defer { lastSeenRecommendationKey = key }
-        guard !reduceMotion else { return }
-        // Only burst on a real change, not on first appear (first appear
-        // already has the character's onAppear entrance animation).
-        guard !lastSeenRecommendationKey.isEmpty, lastSeenRecommendationKey != key else {
-            return
-        }
-        isBursting = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            isBursting = false
-        }
-    }
+    // NOTE (V4.6.1): the mood lifecycle (`isBursting`/`restingMood`/
+    // `displayedMood`) was deleted, not rewired. It drove a NoumCharacter
+    // the V4.6 hero no longer renders, and its burst fired on fingerprint
+    // changes that happen almost exclusively while Home is off-screen
+    // (post-rep, retained tab root) — a beat that would never be seen.
+    // Dead state either way; deletion is the honest, smaller change.
 
     // MARK: - Derived state
 
@@ -1111,6 +1125,18 @@ struct HomeCoachCard: View {
         return Calendar.current.dateComponents([.day], from: latest.date, to: Date()).day ?? 0
     }
 
+}
+
+/// Entrance settle for the hero's blocks (V4.6.1): starts at 0.97 scale /
+/// 0.85 opacity — visible from the first frame, never invisible — and
+/// settles to identity. The driving state change carries the motion token
+/// (`.settle`); Reduce Motion sets the flags without animation, so the
+/// blocks simply appear settled.
+private extension View {
+    func heroEntrance(settled: Bool) -> some View {
+        scaleEffect(settled ? 1 : 0.97)
+            .opacity(settled ? 1 : 0.85)
+    }
 }
 
 #if DEBUG

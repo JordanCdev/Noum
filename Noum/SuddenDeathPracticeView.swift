@@ -225,7 +225,7 @@ struct SuddenDeathPracticeView: View {
                words >= engine.roundConfig.minimumWords,
                previousWords < engine.roundConfig.minimumWords {
                 wordThresholdHapticFired = true
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                CoachHaptic.xpEarned()
             }
         }
         .onChange(of: speechVM.pressureDrillFillerCount) { _, count in

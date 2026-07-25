@@ -401,6 +401,44 @@ extension Animation {
     static let v46Dissolve = Animation.easeInOut(duration: 0.6)
     /// Reduce Motion pair for the smart-animate steps — 200 ms fade.
     static let v46ReduceMotionFade = Animation.easeInOut(duration: 0.2)
+
+    // MARK: V4.6.1 semantic vocabulary
+    //
+    // One motion vocabulary for the whole app: three speeds and two payoff
+    // specials, each an alias onto an existing curve so no parallel timing
+    // system can drift. Surface code uses THESE names; the raw curves above
+    // stay for legacy call sites.
+
+    /// Finger-tracking press feedback (buttons, capsules).
+    static let tapFeedback = Animation.buttonSquish
+    /// List compress/expand, selection dim, chip swaps — quick.
+    static let listChange = Animation.snappySpring
+    /// Entrances, reveals, CTA arrival — the default settle.
+    static let settle = Animation.standardSpring
+    /// Earned-moment reveal (comparison payoff, earned-hero flip) —
+    /// 600 ms transformation per the signed-off V4.4 motion pairs.
+    /// Beat companion: `payoffRevealDuration` — a haptic or cue that must
+    /// land on the settle frame reads this, never a hardcoded 0.6.
+    static let payoffRevealDuration: TimeInterval = 0.6
+    static let payoffReveal = Animation.spring(response: payoffRevealDuration, dampingFraction: 0.86)
+    /// Progress update acknowledgement (bars, counts) — reuses progressFill
+    /// so the fill and its settle-frame beat stay on one clock.
+    static let progressAck = Animation.progressFill
+}
+
+/// The blessed imperative Reduce-Motion guard: apply `changes` inside
+/// `withAnimation(animation)` normally, or instantly when Reduce Motion is
+/// on. Views read `@Environment(\.accessibilityReduceMotion)` and pass it
+/// in — this helper exists so the branch is written once, not per surface.
+@MainActor
+func withMotion(_ reduceMotion: Bool, _ animation: Animation, _ changes: () -> Void) {
+    if reduceMotion {
+        changes()
+    } else {
+        withAnimation(animation) {
+            changes()
+        }
+    }
 }
 
 // MARK: - Shared View Components
@@ -660,6 +698,7 @@ struct ImmersiveCTA: View {
 
 private struct ImmersiveCTAButtonStyle: ButtonStyle {
     let isEnabled: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -669,6 +708,10 @@ private struct ImmersiveCTAButtonStyle: ButtonStyle {
                 ),
                 in: Capsule(style: .continuous)
             )
+            // Tactile press: subtle scale alongside the fill dim. Reduce
+            // Motion keeps the dim-only state cue.
+            .scaleEffect(!reduceMotion && configuration.isPressed ? 0.985 : 1)
+            .animation(.tapFeedback, value: configuration.isPressed)
             .shadow(color: Color.black.opacity(0.06), radius: 24, y: 8)
     }
 }

@@ -586,13 +586,7 @@ struct AhCounterView: View {
     }
 
     private func updateWithMotion(_ animation: Animation, _ changes: () -> Void) {
-        if reduceMotion {
-            changes()
-        } else {
-            withAnimation(animation) {
-                changes()
-            }
-        }
+        withMotion(reduceMotion, animation, changes)
     }
 
     private var shouldShowTranscriptCard: Bool {

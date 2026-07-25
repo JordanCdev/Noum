@@ -2007,7 +2007,7 @@ struct TimedPracticeView: View {
     }
 
     private func setPromptTheme(_ theme: PromptTheme) {
-        UISelectionFeedbackGenerator().selectionChanged()
+        CoachHaptic.selectionTap()
         animateSetupChange {
             selectedTheme = theme
             question = ""
@@ -2020,13 +2020,7 @@ struct TimedPracticeView: View {
     }
 
     private func updateWithMotion(_ animation: Animation, _ changes: () -> Void) {
-        if reduceMotion {
-            changes()
-        } else {
-            withAnimation(animation) {
-                changes()
-            }
-        }
+        withMotion(reduceMotion, animation, changes)
     }
 
     private func themeTint(_ theme: PromptTheme) -> Color {
@@ -2969,9 +2963,13 @@ struct TimedPracticeView: View {
     // MARK: Haptics
 
     private func triggerMilestoneHaptic(for state: ImpromptuTimingState) {
-        let generator = UIImpactFeedbackGenerator(style: state == .red || state == .overtime ? .heavy : .medium)
-        generator.prepare()
-        generator.impactOccurred()
+        // Routed through the gated register: urgency pattern for the
+        // critical states, countdown beat for ordinary crossings.
+        if state == .red || state == .overtime {
+            CoachHaptic.timerUrgency()
+        } else {
+            CoachHaptic.countdownBeat()
+        }
     }
 
     // MARK: - TTS
@@ -3417,7 +3415,7 @@ struct TimedPracticeView: View {
 
         // Haptic feedback for session start fires before the AI hop so the
         // tap feels immediate even if prompt selection takes a beat.
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        CoachHaptic.drillStart()
 
         if usesInjectedFirstValueLoop {
             if speechProject == nil {
@@ -3489,7 +3487,7 @@ struct TimedPracticeView: View {
     }
 
     private func skipThinkingAndSpeak() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        CoachHaptic.selectionTap()
         ttsEngine.stopSpeaking(at: .immediate)
         isSpeakingPrompt = false
         thinkingTask?.cancel()
@@ -3826,9 +3824,7 @@ struct TimedPracticeView: View {
 
             // Celebration haptic for good scores
             if result.score >= 70 {
-                let gen = UINotificationFeedbackGenerator()
-                gen.prepare()
-                gen.notificationOccurred(.success)
+                CoachHaptic.drillSuccess()
                 updateWithMotion(.bouncySpring) {
                     showCelebration = true
                 }
@@ -3905,7 +3901,7 @@ struct TimedPracticeView: View {
     /// Bypasses the setup page guard in beginSession().
     private func launchSessionFlow() {
         if ttsEngine.delegate == nil { configureTTSDelegate() }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        CoachHaptic.drillStart()
 
         enforcePremiumFeatureAvailability()
         let useThinkingTime = effectiveThinkingTime

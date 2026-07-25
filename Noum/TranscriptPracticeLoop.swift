@@ -435,6 +435,18 @@ struct TranscriptRetryComparisonCard: View {
     /// exists. Nil hides the "Next:" sentence.
     var nextClockSeconds: Int? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// One-shot entrance guard keyed on the outcome identity — Summary can
+    /// re-resolve on sheet/dialog round-trips, so bare `onAppear` would
+    /// replay the payoff beat (same idiom as `MiniDrillResultView`'s
+    /// `hasRunEntrance`, hardened against outcome re-resolution).
+    @State private var enteredOutcomeID: UUID?
+    @State private var cardSettled = false
+    @State private var payoffLanded = false
+    /// Trigger for the one-shot changed-word brighten wave; never toggled
+    /// under Reduce Motion (the static highlight is the RM presentation).
+    @State private var waveTrigger = false
+
     private var comparison: TranscriptRetryComparison? {
         outcome.transcriptRetryComparison
     }
@@ -562,40 +574,45 @@ struct TranscriptRetryComparisonCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(AppColor.positive)
+                .opacity(payoffLanded ? 1 : 0)
+                .scaleEffect(payoffLanded ? 1 : 0.97, anchor: .leading)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("transcriptRetry.payoff")
             }
 
+            // The capsule shares the payoff beat's transaction so the
+            // settle-frame completion (haptic timing) is anchored to a real
+            // animation for every result, including ones without a payoff row.
             Text(outcome.target ?? lever.successMeasure)
                 .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 7)
-                .background(tint.opacity(0.10), in: Capsule())
+                .background(tint.opacity(payoffLanded ? 0.10 : 0.04), in: Capsule())
 
             if let sourceSession {
+                let sourceSnippet = AIRewriteService.originalSnippet(
+                    transcript: sourceSession.transcript,
+                    weakness: lever.weakness
+                )
+                let retrySnippet = AIRewriteService.originalSnippet(
+                    transcript: retrySession.transcript,
+                    weakness: lever.weakness
+                )
                 comparisonRung(
                     label: rungLabel("FIRST TRY", session: sourceSession),
-                    text: Text(AIRewriteService.originalSnippet(
-                        transcript: sourceSession.transcript,
-                        weakness: lever.weakness
-                    ))
-                    .foregroundColor(AppColor.neutralReceded),
+                    text: Text(sourceSnippet)
+                        .foregroundColor(AppColor.neutralReceded),
                     dominant: false
                 )
                 comparisonRung(
                     label: rungLabel("RETRY", session: retrySession),
                     text: TranscriptChangeHighlighter.highlightedText(
-                        original: AIRewriteService.originalSnippet(
-                            transcript: sourceSession.transcript,
-                            weakness: lever.weakness
-                        ),
-                        revision: AIRewriteService.originalSnippet(
-                            transcript: retrySession.transcript,
-                            weakness: lever.weakness
-                        )
+                        original: sourceSnippet,
+                        revision: retrySnippet
                     ),
-                    dominant: true
+                    dominant: true,
+                    wave: (original: sourceSnippet, revision: retrySnippet)
                 )
             }
 
@@ -630,13 +647,67 @@ struct TranscriptRetryComparisonCard: View {
             RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .stroke(tint.opacity(0.22), lineWidth: 1)
         )
+        // Entrance pre-state stays visible (0.85/0.98) so existence and
+        // hittability are never delayed past first layout — the comparison
+        // identifier and "The target moved" are UI-test pinned.
+        .opacity(cardSettled ? 1 : 0.85)
+        .scaleEffect(cardSettled ? 1 : 0.98)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("transcriptRetry.comparison")
+        .onAppear(perform: runEntrance)
+        .onChange(of: outcome.id) { _, _ in runEntrance() }
+    }
+
+    /// Entrance choreography, keyed on the outcome identity: the card
+    /// settles in, then the payoff beat lands one `payoffRevealDuration`
+    /// after it. The result haptic fires on the beat's settle frame —
+    /// `improved` gets the positive-shift pulse, `held` a gentle ack, and
+    /// `regressed`/`needsMoreEvidence` stay silent (never punish). Under
+    /// Reduce Motion the whole card resolves in a single fade and the
+    /// haptic still fires — haptics are the RM user's feedback channel.
+    private func runEntrance() {
+        guard enteredOutcomeID != outcome.id else { return }
+        enteredOutcomeID = outcome.id
+        if reduceMotion {
+            withAnimation(.v46ReduceMotionFade) {
+                cardSettled = true
+                payoffLanded = true
+            }
+            fireResultHaptic()
+            return
+        }
+        withAnimation(.settle) { cardSettled = true }
+        withAnimation(
+            Animation.payoffReveal.delay(Animation.payoffRevealDuration),
+            completionCriteria: .logicallyComplete
+        ) {
+            payoffLanded = true
+        } completion: {
+            fireResultHaptic()
+            if result == .improved || result == .held {
+                waveTrigger.toggle()
+            }
+        }
+    }
+
+    private func fireResultHaptic() {
+        switch result {
+        case .improved: CoachHaptic.trendBreakthrough()
+        case .held: CoachHaptic.drillIncomplete()
+        case .regressed, .needsMoreEvidence: break
+        }
     }
 
     /// Frozen design: the first try recedes, the retry leads. Dominance is
     /// carried by fill + border + text colour, never by hiding the original.
-    private func comparisonRung(label: String, text: Text, dominant: Bool) -> some View {
+    /// `wave` (retry rung only) supplies the snippet pair for the one-shot
+    /// changed-word brighten wave layered over the static highlight.
+    private func comparisonRung(
+        label: String,
+        text: Text,
+        dominant: Bool,
+        wave: (original: String, revision: String)? = nil
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(Typography.micro.weight(.heavy))
@@ -645,6 +716,11 @@ struct TranscriptRetryComparisonCard: View {
                 .font(dominant ? Typography.body.weight(.semibold) : Typography.caption.weight(.medium))
                 .foregroundStyle(dominant ? AppColor.textPrimary : AppColor.neutralReceded)
                 .fixedSize(horizontal: false, vertical: true)
+                .overlay(alignment: .topLeading) {
+                    if let wave {
+                        changedWordWave(original: wave.original, revision: wave.revision)
+                    }
+                }
         }
         .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -656,6 +732,92 @@ struct TranscriptRetryComparisonCard: View {
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(dominant ? AppColor.pro.opacity(0.45) : Color.clear, lineWidth: 1)
         )
+    }
+
+    /// Decorative one-shot brighten wave over the retry rung: each changed
+    /// word briefly brightens in reading order on the `coachLineStagger`
+    /// cadence, then recedes to the static highlight. Purely additive — the
+    /// base `highlightedText` underneath stays the authoritative (and RM)
+    /// presentation, and the layers are hidden from accessibility. The
+    /// trigger only ever toggles outside Reduce Motion, so the phase
+    /// animator rests at opacity 0 (no motion, no loop) for RM users.
+    private func changedWordWave(original: String, revision: String) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(
+                Array(Self.waveLayers(original: original, revision: revision).enumerated()),
+                id: \.offset
+            ) { index, layer in
+                layer
+                    // Mirrors the dominant rung's text styling exactly so the
+                    // overlay lays out glyph-identical to the base highlight.
+                    .font(Typography.body.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .brightness(0.25)
+                    .phaseAnimator([0.0, 1.0], trigger: waveTrigger) { view, phase in
+                        view.opacity(phase)
+                    } animation: { _ in
+                        .coachLineStagger(index)
+                    }
+            }
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    /// Salience cap for the brighten wave — beyond this the wave stops
+    /// reading as emphasis and starts reading as decoration.
+    private static let waveWordCap = 6
+
+    /// Mirrors `TranscriptChangeHighlighter`'s word tokenisation (same
+    /// pattern) so wave layers land on the same words the static highlight
+    /// marks. Drift would only mute the decorative wave — the highlight
+    /// underneath remains authoritative.
+    private static let waveWordRegex = try! NSRegularExpression(
+        pattern: #"[\p{L}\p{N}'’-]+"#
+    )
+
+    /// One overlay layer per changed word (capped): the full revision string
+    /// rendered with every glyph clear except that word, styled exactly like
+    /// the base highlight's changed words so each layer wraps identically
+    /// and the visible word sits pixel-aligned over its static counterpart.
+    private static func waveLayers(original: String, revision: String) -> [Text] {
+        let nsRevision = revision as NSString
+        let matches = waveWordRegex.matches(
+            in: revision,
+            range: NSRange(location: 0, length: nsRevision.length)
+        )
+        let changed = TranscriptChangeHighlighter.changedWordIndexes(
+            original: original,
+            revision: revision
+        )
+        let emphasized = matches.indices.filter(changed.contains).prefix(waveWordCap)
+        return emphasized.map { emphasisIndex in
+            var rendered = Text("")
+            var cursor = 0
+            for (index, match) in matches.enumerated() {
+                if match.range.location > cursor {
+                    rendered = rendered + Text(nsRevision.substring(
+                        with: NSRange(location: cursor, length: match.range.location - cursor)
+                    )).foregroundColor(.clear)
+                }
+                let token = Text(nsRevision.substring(with: match.range))
+                if changed.contains(index) {
+                    // Keep the base's bold on every changed word (clear or
+                    // not) — metrics must match the highlight underneath.
+                    rendered = rendered + token
+                        .foregroundColor(index == emphasisIndex ? AppColor.proText : .clear)
+                        .bold()
+                } else {
+                    rendered = rendered + token.foregroundColor(.clear)
+                }
+                cursor = match.range.location + match.range.length
+            }
+            if cursor < nsRevision.length {
+                rendered = rendered + Text(nsRevision.substring(from: cursor))
+                    .foregroundColor(.clear)
+            }
+            return rendered
+        }
     }
 }
 #endif

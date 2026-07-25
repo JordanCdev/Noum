@@ -319,6 +319,22 @@ struct TrainRecommendationProjection {
 }
 
 #if canImport(SwiftUI)
+/// Start frame for the hero's morph-back entrance. The V4.6.1
+/// perceptibility budget requires the prescription to be readable within
+/// 150ms of any entrance (the exposure task below counts it as shown),
+/// so the hero settles in from 97% scale / 85% opacity — never from
+/// invisible the way a plain `.opacity` insertion would.
+@available(iOS 17.0, macOS 12.0, *)
+private struct TrainHeroEntranceModifier: ViewModifier {
+    let entering: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(entering ? 0.97 : 1, anchor: .top)
+            .opacity(entering ? 0.85 : 1)
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
@@ -503,12 +519,14 @@ struct PracticeModeSelectionView: View {
             // change all restore the hero (see `resetBrowseState`).
             if showOtherWays {
                 compactRecommendedRow(recommendation, option: recommendationOption)
+                    .transition(compactMorphTransition)
             } else {
                 recommendedRepHero(
                     recommendation,
                     option: recommendationOption,
                     showsFloatingStartCTA: showsFloatingStartCTA
                 )
+                .transition(heroMorphTransition)
             }
             freeSelectSection
         }
@@ -521,6 +539,7 @@ struct PracticeModeSelectionView: View {
             if showsFloatingStartCTA {
                 startCTA
                     .padding(.bottom, isAppTabRoot ? Spacing.floatingTabBarClearance : 0)
+                    .transition(startCTATransition)
             }
         }
         .task {
@@ -594,6 +613,70 @@ struct PracticeModeSelectionView: View {
         ).mode
     }
 
+    /// Mirrors `showsFloatingStartCTA` (a body-local) for row builders: a
+    /// non-recommended selection exists, so the library dims everything
+    /// except the selected row. Focus, not disablement — opacity only,
+    /// labels, traits, and hit targets untouched.
+    private var selectionFocusActive: Bool {
+        crutchSelected || paceSelected || selectedMode != currentRecommendedMode
+    }
+
+    // MARK: - V4.6.1 morph transitions
+
+    /// Asymmetric hero↔compact morph: browsing dismisses the hero on the
+    /// quick `listChange` register while restoring it re-enters on
+    /// `settle`, from the perceptible start frame above (97%/85%, never
+    /// invisible). The animations are attached to the transition so each
+    /// direction keeps its own clock regardless of the transaction.
+    /// RM: token cross-fade — attached because the RM path mutates state
+    /// without a transaction (see `animateMode`).
+    private var heroMorphTransition: AnyTransition {
+        reduceMotion
+            ? .opacity.animation(.v46ReduceMotionFade)
+            : .asymmetric(
+                insertion: AnyTransition.modifier(
+                    active: TrainHeroEntranceModifier(entering: true),
+                    identity: TrainHeroEntranceModifier(entering: false)
+                ).animation(.settle),
+                removal: .opacity.animation(.listChange)
+            )
+    }
+
+    /// Counterpart to `heroMorphTransition`: the compact row arrives with
+    /// the catalogue (`listChange`) and leaves on the hero's `settle`
+    /// clock so both sides of the restore swap move together. RM: token
+    /// cross-fade.
+    private var compactMorphTransition: AnyTransition {
+        reduceMotion
+            ? .opacity.animation(.v46ReduceMotionFade)
+            : .asymmetric(
+                insertion: .opacity.combined(with: .move(edge: .top)).animation(.listChange),
+                removal: .opacity.animation(.settle)
+            )
+    }
+
+    /// The floating CTA "arrives" (move+fade on `settle`) rather than
+    /// popping in with the safe-area inset. RM: cross-fade only.
+    private var startCTATransition: AnyTransition {
+        reduceMotion
+            ? .opacity.animation(.v46ReduceMotionFade)
+            : .move(edge: .bottom).combined(with: .opacity).animation(.settle)
+    }
+
+    /// Staggered catalogue-group entrance for the browse reveal — each
+    /// group settles one `Animation.stagger` beat behind the previous.
+    /// Removal collapses in one motion (no reverse stagger, it inherits
+    /// the transaction's `listChange`). RM: instant — bare `.opacity`
+    /// swaps with the un-animated state change.
+    private func libraryGroupTransition(_ index: Int) -> AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(
+                insertion: .opacity.combined(with: .move(edge: .top)).animation(.stagger(index)),
+                removal: .opacity
+            )
+    }
+
     /// Collapsed prescription while the user browses manually — still one
     /// tap to bring the full recommendation back.
     private func compactRecommendedRow(
@@ -605,7 +688,7 @@ struct PracticeModeSelectionView: View {
         // difficulty can never surface under a non-timed prescription.
         let demandLabel = recommendation.prescribedDemand?.timedDifficulty?.compactDemandLabel
         return Button {
-            animateMode { showOtherWays = false }
+            animateMode(.settle) { showOtherWays = false }
         } label: {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: option.systemImage)
@@ -719,6 +802,10 @@ struct PracticeModeSelectionView: View {
 
             if !showsFloatingStartCTA {
                 PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: AppColor.brandBlue) {
+                    // Commitment haptic (A2 register map) — the hero Begin
+                    // commits to a rep exactly like the floating Start CTA,
+                    // so it shares the drillStart beat.
+                    CoachHaptic.drillStart()
                     selectedMode = recommendation.mode
                     crutchSelected = false
                     paceSelected = false
@@ -813,7 +900,12 @@ struct PracticeModeSelectionView: View {
     private var freeSelectSection: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Button {
-                animateMode { showOtherWays.toggle() }
+                // Direction-aware morph timing: expanding hands the screen
+                // to the catalogue on `listChange`; collapsing restores the
+                // hero on its `settle` entrance curve.
+                animateMode(showOtherWays ? .settle : .listChange) {
+                    showOtherWays.toggle()
+                }
             } label: {
                 HStack(spacing: Spacing.md) {
                     Image(systemName: "slider.horizontal.3")
@@ -866,7 +958,11 @@ struct PracticeModeSelectionView: View {
     }
 
     private var practiceLibrary: some View {
-        LazyVStack(alignment: .leading, spacing: Spacing.lg) {
+        // Eager VStack, deliberately: the staggered group entrances carry
+        // their own attached animations, and a LazyVStack would replay
+        // them whenever scrolling re-materialised a group. The catalogue
+        // is three small fixed groups — eager layout is free.
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             GroupedDestinationList(
                 title: "Exercises",
                 subtitle: "Choose a specific kind of rep.",
@@ -874,8 +970,12 @@ struct PracticeModeSelectionView: View {
             ) {
                 exerciseLibraryRows
             }
+            .transition(libraryGroupTransition(0))
 
-            ForEach(TrainLibraryGroup.allCases.filter { $0 != .speakingDrills }) { group in
+            ForEach(
+                Array(TrainLibraryGroup.allCases.filter { $0 != .speakingDrills }.enumerated()),
+                id: \.element.id
+            ) { groupIndex, group in
                 let items = TrainLibraryItem.items.filter { $0.group == group }
                 GroupedDestinationList(
                     title: group.title,
@@ -890,6 +990,7 @@ struct PracticeModeSelectionView: View {
                         trainLibraryRow(item)
                     }
                 }
+                .transition(libraryGroupTransition(groupIndex + 1))
             }
         }
     }
@@ -898,7 +999,9 @@ struct PracticeModeSelectionView: View {
         Button {
             switch item.action {
             case .expandExercises:
-                animateMode { showOtherWays.toggle() }
+                animateMode(showOtherWays ? .settle : .listChange) {
+                    showOtherWays.toggle()
+                }
             case .destination(let destination):
                 navigationPath.append(destination)
             }
@@ -939,6 +1042,11 @@ struct PracticeModeSelectionView: View {
         .accessibilityIdentifier(item.action == .expandExercises
             ? "practiceModes.otherWays"
             : "train.library.\(item.id)")
+        // V4.6.1 selection focus: destination rows recede while a
+        // non-recommended selection is active. Opacity only — the
+        // combined label, hint, and hit target are untouched.
+        .opacity(selectionFocusActive ? 0.55 : 1)
+        .animation(reduceMotion ? nil : .listChange, value: selectionFocusActive)
     }
 
     private func libraryChevron(for item: TrainLibraryItem) -> String {
@@ -1004,6 +1112,7 @@ struct PracticeModeSelectionView: View {
         let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
         let isExpanded = expandedModes.contains(option.mode)
         let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
+        let isDimmed = selectionFocusActive && !isSelected
 
         return VStack(spacing: 0) {
             Button {
@@ -1053,6 +1162,13 @@ struct PracticeModeSelectionView: View {
             .overlay(alignment: .topTrailing) {
                 expandToggleButton(for: option, isExpanded: isExpanded)
             }
+            // V4.6.1 selection focus: with a non-recommended selection
+            // active, unselected rows recede and the selected row keeps
+            // full contrast. Opacity only — labels, traits, and hit
+            // targets untouched; the expanded "What this trains" body
+            // below stays readable at full contrast.
+            .opacity(isDimmed ? 0.55 : 1)
+            .animation(reduceMotion ? nil : .listChange, value: isDimmed)
 
             if isExpanded {
                 modeExpandedSection(option)
@@ -1110,6 +1226,14 @@ struct PracticeModeSelectionView: View {
         .accessibilityLabel(title)
         .accessibilityHint(subtitle)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        // V4.6.1 selection focus — same receded/full-contrast treatment
+        // as the mode rows above; opacity only.
+        .opacity(selectionFocusActive && !isSelected ? 0.55 : 1)
+        .animation(reduceMotion ? nil : .listChange, value: selectionFocusActive && !isSelected)
+        // Selection-ack parity with the mode rows — same
+        // `.sensoryFeedback(.selection)` idiom, gated the same way
+        // through HapticsSettings.
+        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
     }
 
     /// Transparent tap target overlaying the visible chevron icon.
@@ -1214,7 +1338,10 @@ struct PracticeModeSelectionView: View {
     private func quickStartButton(for option: ModeOption) -> some View {
         let title = quickStartLabel(for: option.mode)
         return Button {
-            CoachHaptic.selectionTap()
+            // Commitment haptic (A2 register map) — Quick Start arms and
+            // launches a rep, so it shares the Start CTA's drillStart
+            // beat rather than a selection tick.
+            CoachHaptic.drillStart()
             launchMode(
                 option.mode,
                 quickStart: true,
@@ -1267,16 +1394,14 @@ struct PracticeModeSelectionView: View {
         "Start \(mode.displayLabel)"
     }
 
-    /// Reduce-motion opts out of the picker spring entirely. The state
-    /// change still lands immediately; haptics remain owned by callers.
-    private func animateMode(_ changes: () -> Void) {
-        if reduceMotion {
-            changes()
-        } else {
-            withAnimation(.snappySpring) {
-                changes()
-            }
-        }
+    /// Reduce-motion opts out of the picker springs entirely (via the
+    /// blessed `withMotion` helper — the state change still lands
+    /// immediately); haptics remain owned by callers. Defaults to
+    /// `.listChange`, the browse/selection register; hero-restoring
+    /// flips pass `.settle` so the prescription re-enters on the
+    /// entrance curve (see `heroMorphTransition`).
+    private func animateMode(_ animation: Animation = .listChange, _ changes: () -> Void) {
+        withMotion(reduceMotion, animation, changes)
     }
 
     /// Mode-card chrome. Two registers:
@@ -1378,6 +1503,12 @@ struct PracticeModeSelectionView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
                 .background(tint, in: Capsule())
+                // Crossfade only between RESOLVED `activeStartTint` values
+                // — the darkened *Action registers — so the animated blend
+                // never routes the white label through a raw decorative
+                // tint (AA contract on `activeStartTint`). RM keeps the
+                // fade: a colour blend, no movement.
+                .animation(reduceMotion ? .v46ReduceMotionFade : .listChange, value: tint)
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.vertical, Spacing.sm)
         }

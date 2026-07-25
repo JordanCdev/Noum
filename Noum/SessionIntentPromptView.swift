@@ -95,7 +95,7 @@ struct SessionIntentPromptView: View {
     @ViewBuilder
     private func chipButton(for option: SessionIntent) -> some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            CoachHaptic.selectionTap()
             onSelect(option)
             dismiss()
         } label: {

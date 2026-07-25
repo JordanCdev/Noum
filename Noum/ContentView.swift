@@ -533,13 +533,15 @@ struct ContentView: View {
         } else {
             // V4.6 hero — full-bleed gradient section with the quiet Adjust
             // row on the canvas beneath it (one tertiary row per screen).
+            // No cardEntrance here: the V4.6.1 hero owns its entrance
+            // choreography internally (blocks settle from 0.97/0.85 —
+            // content is never invisible, unlike the 0-opacity card fade).
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 showsPlanArc: false,
                 recordsRecommendationExposure: !showFirstWeekRecommendationAction,
                 heroTopInset: topInset
             )
-            .cardEntrance(0)
 
             adjustPracticeRow
                 .padding(.horizontal, Spacing.xl)
@@ -549,6 +551,14 @@ struct ContentView: View {
         homeProgressReceipt
             .padding(.horizontal, Spacing.screenH)
             .padding(.top, Spacing.cardGap)
+            // V4.6.1 — receipt rows settle in and fade out (Reduce Motion:
+            // fade both ways). Value-scoped so the initial mount renders
+            // without motion; deliberately no haptic — the hero's earned
+            // announcement had it, the 10-min-floor receipt stays quiet.
+            .animation(
+                reduceMotion ? .v46ReduceMotionFade : .settle,
+                value: progressReceiptIdentity
+            )
 
         // Days 0–6 show exactly one unfinished first-week step. Day 7 keeps
         // the same durable read entry and direct Home navigation behavior.
@@ -726,6 +736,18 @@ struct ContentView: View {
         )
     }
 
+    /// Identity of the receipt currently rendered by `homeProgressReceipt`
+    /// — mirrors its precedence exactly (V4.6.1) so insertion, replacement
+    /// and dismissal all animate as one settled list change. Nil when no
+    /// receipt is pending.
+    private var progressReceiptIdentity: String? {
+        if let earned = earnedEvidenceReceipt { return "earned-\(earned.id.uuidString)" }
+        if let promotion = league.pendingPromotion { return "league-\(promotion.newTier)" }
+        if let node = pendingPathNode { return "path-\(node.id)" }
+        if dailyGoal.pendingGoalCelebration { return "dailyGoal" }
+        return nil
+    }
+
     private func progressReceipt(
         title: String,
         body: String,
@@ -763,6 +785,16 @@ struct ContentView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.progressReceipt")
+        // Settle in, fade out; Reduce Motion collapses both to a fade.
+        // The driving animation is value-scoped at the call site.
+        .transition(
+            reduceMotion
+                ? .opacity
+                : .asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.97)),
+                    removal: .opacity
+                )
+        )
     }
 
     private var homeGoalReviewRow: some View {
