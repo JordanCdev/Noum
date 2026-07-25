@@ -25,6 +25,15 @@
 - `Noum/SpeechRecognizerViewModel.swift` — `UITestScriptedTranscriptionProvider` (DEBUG-only, `UI_TESTING_TRANSCRIPTION_SCRIPTED`): deterministic full-loop capture without live STT.
 - `NoumTests/V46CoachingLoopSurfaceTests.swift` (NEW) — trace geometry + scripted-seam gate contracts.
 
+## Slice 3 (Updated Today 258:1078 + Progress 258:1131)
+
+- `Noum/V46ProgressPresentation.swift` — pure resolvers: `V46ProgressPresentation.make` (comparable-ledger-only Progress head: bounded headline classes Becoming reliable./Not yet steady./Early read., honest tally subtitle, ≤4 trajectory days with amber lapse, ≤3 evidence rows, real review row from `CoachIntervention.reviewDueAt`), `V46EarnedTodayPresentation.make` (once-per-event Updated Today; "shorter clock" only when the clock genuinely tightened), `V46EarnedEvidenceLedger` (per-account ack + receipt-dismiss keys, registered in AccountDataRegistry as "v46-earned-evidence").
+- `HomeCoachCard` — earned chip (mini trace + "New evidence · from your retry"), headline/meta/CTA overrides, earnedHero trace, body line suppressed in the earned state, acknowledged on first render.
+- `ContentView` — collapsed compact receipt on later visits (10-min floor prevents co-presentation), dismissible once, positive tint.
+- `SessionHistoryView` — `v46ProgressHead` replaces the story card whenever comparable evidence exists (legacy story remains the no-evidence fallback); plan-review row routes to the existing weekly check-in.
+- `DevSeedData.seedV46ComparableEvidenceIfRequested` (`UI_TESTING_V46_EVIDENCE`) — 4 comparable outcomes (3 holds incl. under-pressure today, 1 pressure lapse) through the store's own persistence.
+- Verified on sim: Updated Today hero (chip/headline/meta/earned trace — `.screenshots/v46-slice3/01-updated-today.png`) and Progress head with the exact frozen subtitle derived from real ledger data (`02-progress-head.png`). Deviation: with an active BigMoment ≤14 days, prep keeps the CTA slot (contextual-moment precedence) — the earned CTA override applies only to the ordinary branch.
+
 ## Known deviations / notes
 
 - Status bar renders dark over the violet hero (app pins `.preferredColorScheme(.light)`); resolved with the Slice 4 theme work.

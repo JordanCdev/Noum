@@ -418,6 +418,7 @@ struct ContentView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
     // M15 Phase 4 — Home discipline. Off by default; developer accounts
@@ -434,6 +435,7 @@ struct ContentView: View {
     @State private var showDeferredCoachingSetup = false
     @State private var showFirstWeekRecommendationAction = false
     @State private var showAdjustPractice = false
+    @State private var earnedReceiptRefresh = UUID()
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     @Binding private var externalRoute: URL?
@@ -1039,7 +1041,20 @@ struct ContentView: View {
     /// managers; Home only acknowledges one pending event at a time.
     @ViewBuilder
     private var homeProgressReceipt: some View {
-        if let promotion = league.pendingPromotion {
+        if let earned = earnedEvidenceReceipt {
+            progressReceipt(
+                title: "New evidence banked",
+                body: earned.body,
+                tint: AppColor.positive,
+                onDismiss: {
+                    V46EarnedEvidenceLedger.dismissReceipt(
+                        earned.id,
+                        accountID: authManager.currentAccountID
+                    )
+                    earnedReceiptRefresh = UUID()
+                }
+            )
+        } else if let promotion = league.pendingPromotion {
             progressReceipt(
                 title: "Peer group reached",
                 body: "You're now in the \(promotion.newTier.title) peer group.",
@@ -1061,6 +1076,35 @@ struct ContentView: View {
                 onDismiss: dailyGoal.consumeGoalCelebration
             )
         }
+    }
+
+    /// V4.6 collapsed earned signal (258:1078 follow-up): after the hero's
+    /// one-time announcement, later Home visits show one dismissible line.
+    /// Backed by the same ledger the hero acknowledges into; the 10-minute
+    /// floor keeps the announcement and the receipt from co-presenting.
+    private var earnedEvidenceReceipt: (id: UUID, body: String)? {
+        _ = earnedReceiptRefresh
+        let accountID = authManager.currentAccountID
+        let ackDates = V46EarnedEvidenceLedger.ackDates(accountID: accountID)
+        let dismissed = V46EarnedEvidenceLedger.receiptDismissedIDs(accountID: accountID)
+        let now = Date()
+        guard let latest = recommendationLearningStore.outcomes
+            .filter({ outcome in
+                guard let result = outcome.transcriptRetryComparison?.result,
+                      result == .improved || result == .held,
+                      let ackedAt = ackDates[outcome.id] else { return false }
+                return !dismissed.contains(outcome.id)
+                    && now.timeIntervalSince(ackedAt) > 600
+                    && now.timeIntervalSince(outcome.completedAt) < 36 * 3600
+            })
+            .max(by: { $0.completedAt < $1.completedAt }) else { return nil }
+
+        let pressure = latest.executedDemand?.timedDifficulty.map { $0 == .medium || $0 == .hard } ?? false
+        let lever = latest.transcriptRetryTarget?.lever.focusLabel ?? "your target"
+        return (
+            latest.id,
+            "Held\(pressure ? " under pressure" : "") \u{2014} \(lever), on the retry."
+        )
     }
 
     private func progressReceipt(

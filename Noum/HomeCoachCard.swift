@@ -358,6 +358,10 @@ struct HomeCoachCard: View {
     @State private var lastSeenRecommendationKey: String = ""
     @State private var lastRenderedRecommendationExposure: HomeCoachRecommendationExposure?
     @State private var plannedPhraseError: String?
+    /// The earned evidence event this visit is announcing (258:1078).
+    /// Resolved once on appear, acknowledged immediately so the next Home
+    /// visit collapses it into the compact receipt instead.
+    @State private var activeEarned: V46EarnedTodayPresentation?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isSelectedAppTab) private var isSelectedAppTab
@@ -380,14 +384,22 @@ struct HomeCoachCard: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .accessibilityAddTraits(.isHeader)
 
-            Text(coachTitle(for: renderedBlueprint))
+            // V4.6 Updated Today (258:1078) — the earned chip announces one
+            // un-acknowledged retry-comparison win; the hero's structure
+            // tightens to chip → headline → meta → earned trace → CTA.
+            if let earned = activeEarned {
+                earnedChip(earned.chipText)
+                    .padding(.top, Spacing.sm)
+            }
+
+            Text(activeEarned?.headlineOverride ?? coachTitle(for: renderedBlueprint))
                 .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Spacing.xxl)
+                .padding(.top, activeEarned == nil ? Spacing.xxl : Spacing.md)
                 .accessibilityIdentifier("home.coachCard.title")
 
-            if let subtitle = coachSubtitle(for: renderedBlueprint) {
+            if activeEarned == nil, let subtitle = coachSubtitle(for: renderedBlueprint) {
                 Text(subtitle)
                     .font(Typography.manrope(size: 15.5, weight: .regular, relativeTo: .subheadline))
                     .foregroundStyle(.white.opacity(0.85))
@@ -396,13 +408,13 @@ struct HomeCoachCard: View {
                     .accessibilityIdentifier("home.coachCard.subtitle")
             }
 
-            Text(heroMetaText(for: renderedBlueprint))
+            Text(activeEarned?.metaOverride ?? heroMetaText(for: renderedBlueprint))
                 .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
                 .foregroundStyle(.white.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Spacing.xl)
 
-            VoiceTrace(variant: .idleHero)
+            VoiceTrace(variant: activeEarned == nil ? .idleHero : .earnedHero)
                 .frame(maxWidth: .infinity)
                 .padding(.top, Spacing.xxl)
 
@@ -442,6 +454,7 @@ struct HomeCoachCard: View {
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
             syncMoodForFreshRecommendation()
+            resolveEarnedState(for: renderedBlueprint)
         }
         .onChange(of: renderedExposure.fingerprint) { _, _ in
             lastRenderedRecommendationExposure = renderedExposure
@@ -609,11 +622,55 @@ struct HomeCoachCard: View {
                 .accessibilityIdentifier("home.coachCard.begin")
             }
         } else {
-            ImmersiveCTA(title: beginCTAText(for: renderedExposure.mode)) {
+            ImmersiveCTA(
+                title: activeEarned?.ctaOverride ?? beginCTAText(for: renderedExposure.mode)
+            ) {
                 beginRecommendedRep(renderedExposure: renderedExposure)
             }
             .accessibilityIdentifier("home.coachCard.begin")
         }
+    }
+
+    /// White translucent capsule with the four-bar mini trace — the earned
+    /// signal chip. Announced as one element per the accessibility sheet.
+    private func earnedChip(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(Array([4.0, 7.0, 11.0, 6.0].enumerated()), id: \.offset) { _, height in
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(Color.white.opacity(0.95))
+                        .frame(width: 2.5, height: height)
+                }
+            }
+            .accessibilityHidden(true)
+
+            Text(text)
+                .font(Typography.figtree(size: 10.5, weight: .heavy, relativeTo: .caption2))
+                .tracking(0.6)
+                .foregroundStyle(.white)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, Spacing.sm)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.16), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("New evidence, from your retry"))
+        .accessibilityIdentifier("home.coachCard.earnedChip")
+    }
+
+    /// Resolve the once-per-event earned announcement. Acknowledging on
+    /// first render is what enforces "shown once, then collapsed" — the
+    /// @State copy keeps this visit stable while the ledger moves on.
+    private func resolveEarnedState(for blueprint: RecommendationBiasBlueprint) {
+        guard activeEarned == nil else { return }
+        let accountID = AuthManager.shared.currentAccountID
+        guard let earned = V46EarnedTodayPresentation.make(
+            outcomes: recommendationLearningStore.outcomes,
+            suggestedNextDifficulty: blueprint.suggestedTimedDifficulty,
+            acknowledgedOutcomeIDs: V46EarnedEvidenceLedger.acknowledgedIDs(accountID: accountID)
+        ) else { return }
+        activeEarned = earned
+        V46EarnedEvidenceLedger.acknowledge(earned.outcomeID, accountID: accountID)
     }
 
     // MARK: - Hero meta line

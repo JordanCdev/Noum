@@ -192,6 +192,71 @@ enum DevSeedData {
         // has established the normal account/profile shell. The fixture is
         // launch-argument gated and remains absent from Release builds.
         ReviewProgressEligibilityUITestFixture.installIfRequested()
+
+        seedV46ComparableEvidenceIfRequested(sessions: sessions)
+    }
+
+    /// V4.6 Slice 3 fixture (`UI_TESTING_V46_EVIDENCE`) — four comparable
+    /// retry-comparison outcomes over the last four days (holds on Mon/Tue,
+    /// a lapse under time pressure on Wed, a fresh hold under pressure
+    /// today) written through the store's own persistence, so the Progress
+    /// evidence head and the Updated-Today earned state render
+    /// deterministically on a seeded simulator. Sessions come from the
+    /// persona seed above — no orphaned identities.
+    @MainActor
+    static func seedV46ComparableEvidenceIfRequested(sessions: [PracticeSession]) {
+        guard ProcessInfo.processInfo.arguments.contains("UI_TESTING_V46_EVIDENCE"),
+              sessions.count >= 2 else { return }
+        let now = Date()
+        let sourceID = sessions[sessions.count - 2].id
+        let retryID = sessions[sessions.count - 1].id
+
+        func fixture(
+            result: TranscriptRetryResult,
+            daysAgo: Double,
+            difficulty: TimedPracticeDifficulty
+        ) -> RecommendationOutcome {
+            RecommendationOutcome(
+                id: UUID(),
+                fingerprint: "v46-evidence-fixture",
+                title: "Answer first",
+                focus: "Answer first",
+                target: "Answer first",
+                mode: .timed,
+                sessionID: retryID,
+                followed: true,
+                executedDemand: .timed(difficulty: difficulty, speechProjectID: nil),
+                completedAt: now.addingTimeInterval(-daysAgo * 24 * 3600),
+                scoreDelta: 0,
+                hasComparableScore: true,
+                fillerDelta: 0,
+                durationDelta: 0,
+                transcriptRetryTarget: TranscriptRetryTarget(lever: .opening),
+                transcriptRetryComparison: TranscriptRetryComparison(
+                    schemaVersion: TranscriptRetryComparison.schemaVersion,
+                    lever: .opening,
+                    sourceSessionID: sourceID,
+                    retrySessionID: retryID,
+                    sourceSignal: 40,
+                    retrySignal: result == .regressed ? 22 : 72,
+                    meaningOverlapPercent: 82,
+                    result: result
+                )
+            )
+        }
+
+        let outcomes = [
+            fixture(result: .improved, daysAgo: 0.02, difficulty: .medium),
+            fixture(result: .regressed, daysAgo: 1, difficulty: .hard),
+            fixture(result: .held, daysAgo: 2, difficulty: .easy),
+            fixture(result: .improved, daysAgo: 3, difficulty: .easy)
+        ]
+        let accountID = AuthManager.shared.currentAccountID
+        let key = "recommendation.outcomes.\(accountID?.isEmpty == false ? accountID! : "guest")"
+        if let data = try? JSONEncoder().encode(outcomes) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+        RecommendationLearningStore.shared.reloadForCurrentAccount()
     }
 
     /// Populate the real Phrase Bank and Forward Plan owners with one current-

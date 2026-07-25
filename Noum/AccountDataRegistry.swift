@@ -636,6 +636,9 @@ extension AccountDataRegistry {
             // but never instantiate the old reactive manager during account
             // hydration or teardown.
             participant("daily-challenges", [.accountKey(prefix: "noum.dailyChallenges.")], reload: {}, end: {}),
+            // V4.6 Updated-Today acknowledgement ledger — read on demand, no
+            // reactive store to reload.
+            participant("v46-earned-evidence", [.accountKey(prefix: "v46.earnedAck."), .accountKey(prefix: "v46.earnedReceiptDismissed.")], reload: {}, end: {}),
             participant("word-of-day", [.accountKey(prefix: "noum.wordOfTheDay.usedDays.")], reload: { WordOfTheDayManager.shared.reloadForCurrentAccount() }, end: { WordOfTheDayManager.shared.reloadForCurrentAccount() }),
             participant("practice-locale", [.accountKey(prefix: "noum.practiceLocale.")], reload: { LocaleSettingsManager.shared.reloadForCurrentAccount() }, end: { LocaleSettingsManager.shared.reloadForCurrentAccount() }),
             participant("roleplay", [.accountKey(prefix: "roleplayTurns.")], reload: { RoleplayStore.shared.reloadForCurrentAccount() }, end: { RoleplayStore.shared.endSession() }),
