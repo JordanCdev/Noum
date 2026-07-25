@@ -418,6 +418,7 @@ struct ContentView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
     // M15 Phase 4 — Home discipline. Off by default; developer accounts
@@ -433,6 +434,8 @@ struct ContentView: View {
     @State private var showGoalReview: Bool = false
     @State private var showDeferredCoachingSetup = false
     @State private var showFirstWeekRecommendationAction = false
+    @State private var showAdjustPractice = false
+    @State private var earnedReceiptRefresh = UUID()
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     @Binding private var externalRoute: URL?
@@ -523,11 +526,29 @@ struct ContentView: View {
 
     private var homeNavigationContent: some View {
         NavigationStack(path: $navigationPath) {
+            GeometryReader { screenProxy in
             ZStack {
-                // Home now shares Noum's neutral reading canvas. Coaching
-                // emphasis belongs to the compact card, not the whole screen.
-                AppColor.screenBackground
+                // V4.6 Today — warm editorial canvas with the violet wash
+                // rising softly from the bottom (Figma 258:944). The hero
+                // itself bleeds behind the status bar, so the scroll view
+                // ignores the top safe area and the hero pads its content.
+                AppColor.warmCanvas
                     .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    LinearGradient(
+                        colors: [
+                            AppColor.coachAccent.opacity(0),
+                            AppColor.coachAccent.opacity(0.08)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 200)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
 
                 ScrollView(showsIndicators: false) {
                     GeometryReader { proxy in
@@ -537,10 +558,12 @@ struct ContentView: View {
                     .frame(height: 0)
 
                     VStack(spacing: 0) {
-                        cohesiveHomeCards
+                        cohesiveHomeCards(topInset: screenProxy.safeAreaInsets.top)
                     }
-                    .padding(.bottom, isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding)
+                    .padding(.bottom, isEmbeddedInTabShell ? Spacing.tabRootNavigationClearance : HomeShortcutDockLayout.scrollBottomPadding)
                 }
+                .ignoresSafeArea(edges: .top)
+            }
             }
             .coordinateSpace(name: "homeScroll")
             .toolbar(.hidden, for: .navigationBar)
@@ -879,7 +902,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private var cohesiveHomeCards: some View {
+    private func cohesiveHomeCards(topInset: CGFloat) -> some View {
         let presentation = homePrimaryAction
 
         if presentation.kind == .pendingOutcomeCheckIn,
@@ -887,16 +910,21 @@ struct ContentView: View {
             BigMomentOutcomeInlineCard(moment: moment)
                 .cardEntrance(0)
                 .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.lg)
+                .padding(.top, topInset + Spacing.lg)
         } else {
+            // V4.6 hero — full-bleed gradient section with the quiet Adjust
+            // row on the canvas beneath it (one tertiary row per screen).
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 showsPlanArc: false,
-                recordsRecommendationExposure: !showFirstWeekRecommendationAction
+                recordsRecommendationExposure: !showFirstWeekRecommendationAction,
+                heroTopInset: topInset
             )
             .cardEntrance(0)
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.top, Spacing.lg)
+
+            adjustPracticeRow
+                .padding(.horizontal, Spacing.xl)
+                .padding(.top, Spacing.xs)
         }
 
         homeProgressReceipt
@@ -960,12 +988,73 @@ struct ContentView: View {
         }
     }
 
+    /// V4.6 quiet adjustment (258:945) — the screen's one tertiary row.
+    /// Every option launches exactly what it names: a per-rep answer clock
+    /// (never rewriting saved settings — `AppDestination.timedPractice`'s
+    /// documented semantics) or the manual practice catalogue.
+    private var adjustPracticeRow: some View {
+        Button {
+            showAdjustPractice = true
+        } label: {
+            Text("Adjust practice \u{203A}")
+                .font(Typography.manrope(size: 12, weight: .semibold, relativeTo: .caption))
+                .foregroundStyle(AppColor.neutralReceded.opacity(0.75))
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text("Adjust practice"))
+        .accessibilityHint(Text("Choose a different answer clock for this rep, or pick practice manually."))
+        .accessibilityIdentifier("home.adjustPractice")
+        .confirmationDialog(
+            "Adjust practice",
+            isPresented: $showAdjustPractice,
+            titleVisibility: .visible
+        ) {
+            ForEach([TimedPracticeDifficulty.easy, .medium, .hard]) { difficulty in
+                if let seconds = difficulty.duration {
+                    Button("\(seconds)s answer clock") {
+                        CoachHaptic.drillStart()
+                        PracticeModeQuickStart.arm(for: .timed)
+                        navigationPath.append(
+                            AppDestination.timedPractice(difficulty: difficulty)
+                        )
+                    }
+                }
+            }
+            Button("Free — no countdown") {
+                CoachHaptic.drillStart()
+                PracticeModeQuickStart.arm(for: .timed)
+                navigationPath.append(AppDestination.timedPractice(difficulty: .free))
+            }
+            Button("Choose practice manually") {
+                navigationPath.append(AppDestination.practiceSelection)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This shapes today's rep only — your plan and saved settings don't change.")
+        }
+    }
+
     /// One calm receipt replaces the former tier, daily-goal and path
     /// celebration overlays. Persistence remains owned by the existing
     /// managers; Home only acknowledges one pending event at a time.
     @ViewBuilder
     private var homeProgressReceipt: some View {
-        if let promotion = league.pendingPromotion {
+        if let earned = earnedEvidenceReceipt {
+            progressReceipt(
+                title: "New evidence banked",
+                body: earned.body,
+                tint: AppColor.positive,
+                onDismiss: {
+                    V46EarnedEvidenceLedger.dismissReceipt(
+                        earned.id,
+                        accountID: authManager.currentAccountID
+                    )
+                    earnedReceiptRefresh = UUID()
+                }
+            )
+        } else if let promotion = league.pendingPromotion {
             progressReceipt(
                 title: "Peer group reached",
                 body: "You're now in the \(promotion.newTier.title) peer group.",
@@ -987,6 +1076,35 @@ struct ContentView: View {
                 onDismiss: dailyGoal.consumeGoalCelebration
             )
         }
+    }
+
+    /// V4.6 collapsed earned signal (258:1078 follow-up): after the hero's
+    /// one-time announcement, later Home visits show one dismissible line.
+    /// Backed by the same ledger the hero acknowledges into; the 10-minute
+    /// floor keeps the announcement and the receipt from co-presenting.
+    private var earnedEvidenceReceipt: (id: UUID, body: String)? {
+        _ = earnedReceiptRefresh
+        let accountID = authManager.currentAccountID
+        let ackDates = V46EarnedEvidenceLedger.ackDates(accountID: accountID)
+        let dismissed = V46EarnedEvidenceLedger.receiptDismissedIDs(accountID: accountID)
+        let now = Date()
+        guard let latest = recommendationLearningStore.outcomes
+            .filter({ outcome in
+                guard let result = outcome.transcriptRetryComparison?.result,
+                      result == .improved || result == .held,
+                      let ackedAt = ackDates[outcome.id] else { return false }
+                return !dismissed.contains(outcome.id)
+                    && now.timeIntervalSince(ackedAt) > 600
+                    && now.timeIntervalSince(outcome.completedAt) < 36 * 3600
+            })
+            .max(by: { $0.completedAt < $1.completedAt }) else { return nil }
+
+        let pressure = latest.executedDemand?.timedDifficulty.map { $0 == .medium || $0 == .hard } ?? false
+        let lever = latest.transcriptRetryTarget?.lever.focusLabel ?? "your target"
+        return (
+            latest.id,
+            "Held\(pressure ? " under pressure" : "") \u{2014} \(lever), on the retry."
+        )
     }
 
     private func progressReceipt(

@@ -20,6 +20,10 @@ enum CornerRadius {
     static let large: CGFloat = 24
     /// Extra-large: hero cards, full-width panels, sheets (28pt)
     static let xl: CGFloat = 28
+    /// V4.6 immersive pill CTA (30pt — capsule of the 58pt pill).
+    static let pill: CGFloat = 30
+    /// V4.6 Today hero bottom bleed (36pt).
+    static let hero: CGFloat = 36
 }
 
 // MARK: - Spacing
@@ -40,6 +44,12 @@ enum Spacing {
     static let screenH: CGFloat = 20
     /// Inter-card spacing (14pt)
     static let cardGap: CGFloat = 14
+    /// V4.6 hero interior padding / section rhythm (24pt)
+    static let xl: CGFloat = 24
+    /// V4.6 large section air (32pt)
+    static let xxl: CGFloat = 32
+    /// V4.6 hero bottom air / generous section break (40pt)
+    static let xxxl: CGFloat = 40
 
     /// Reserved scroll clearance for an immersive screen's safe-area action.
     static let focusedActionClearance: CGFloat = 112
@@ -51,22 +61,58 @@ enum Spacing {
 
 // MARK: - App Colors
 
+/// Trait-resolving colour for the V4.6 semantic theme. Light and dark
+/// values come from the frozen token contract (SwiftUI board 258:1865):
+/// dark frames are semantic recolours of the same roles, never new hues.
+private func dynamicColor(
+    light: (Double, Double, Double),
+    dark: (Double, Double, Double)
+) -> Color {
+    Color(UIColor { traits in
+        let value = traits.userInterfaceStyle == .dark ? dark : light
+        return UIColor(red: value.0, green: value.1, blue: value.2, alpha: 1)
+    })
+}
+
+private func dynamicOpacity(
+    lightWhiteAmount: Double,
+    darkWhiteAmount: Double,
+    lightAlpha: Double,
+    darkAlpha: Double
+) -> Color {
+    Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: darkWhiteAmount, alpha: darkAlpha)
+            : UIColor(white: lightWhiteAmount, alpha: lightAlpha)
+    })
+}
+
 /// Centralized color definitions — the single source of truth.
 enum AppColor {
 
     // MARK: Backgrounds
 
-    /// Standard screen background
-    static let screenBackground = Color(UIColor.systemGroupedBackground)
+    /// Standard screen background — the V4.6 warm canvas in both modes
+    /// (#FAF9F7 → #17151C per the frozen token contract).
+    static let screenBackground = dynamicColor(
+        light: (0.980, 0.976, 0.969),
+        dark: (0.090, 0.082, 0.110)
+    )
 
     /// Light gradient used by setup/selection screens
     static let lightGradientStart = Color(red: 0.97, green: 0.97, blue: 1.0)
     static let lightGradientEnd = Color(red: 0.93, green: 0.95, blue: 1.0)
 
-    /// Card surface
-    static let cardBackground = Color.white
+    /// Card surface — white on the warm canvas, warm dark surface in dark.
+    static let cardBackground = dynamicColor(
+        light: (1.0, 1.0, 1.0),
+        dark: (0.129, 0.114, 0.169)
+    )
     /// Subtle inner surface (transcript backgrounds, secondary containers)
-    static let innerSurface = Color(red: 0.97, green: 0.97, blue: 0.98)
+    static let innerSurface = dynamicColor(
+        light: (0.97, 0.97, 0.98),
+        dark: (0.165, 0.149, 0.208)
+    )
 
     // MARK: Brand & Accent
 
@@ -91,11 +137,18 @@ enum AppColor {
     static let coachHeroQuietSurface = Color(red: 0.78, green: 0.92, blue: 0.98)
     /// High-contrast foreground for the blue-to-green progress hero.
     static let progressHeroInk = Color.black
-    /// Semantic purple for copy and icons on light coaching surfaces. Keep the
+    /// Semantic purple for copy and icons on coaching surfaces. Keep the
     /// brighter `pro` token for filled accents and decorative identity.
-    static let proText = Color(red: 0.34, green: 0.12, blue: 0.64)
-    /// Opaque pale-purple surface for readable secondary Pro actions/cards.
-    static let proQuietSurface = Color(red: 0.95, green: 0.93, blue: 0.99)
+    static let proText = dynamicColor(
+        light: (0.34, 0.12, 0.64),
+        dark: (0.718, 0.612, 0.988)
+    )
+    /// Opaque quiet violet surface for secondary Pro actions/cards
+    /// (light pale lavender → dark #2B2440 from the frozen primitives).
+    static let proQuietSurface = dynamicColor(
+        light: (0.95, 0.93, 0.99),
+        dark: (0.169, 0.141, 0.251)
+    )
 
     // MARK: Mode Tints
 
@@ -150,12 +203,22 @@ enum AppColor {
 
     // MARK: Semantic Feedback
 
-    /// Positive / good score (#199966)
-    static let positive = Color(red: 0.10, green: 0.60, blue: 0.40)
-    /// Caution / okay score
-    static let caution = Color(red: 0.83, green: 0.52, blue: 0.10)
+    /// Positive / good score (#199966; dark value explicitly mapped —
+    /// never grey-bucketed, per the token contract).
+    static let positive = dynamicColor(
+        light: (0.10, 0.60, 0.40),
+        dark: (0.263, 0.792, 0.561)
+    )
+    /// Caution / okay score — lapse rows, ALWAYS paired with a text cue.
+    static let caution = dynamicColor(
+        light: (0.83, 0.52, 0.10),
+        dark: (0.914, 0.659, 0.302)
+    )
     /// Warning / needs improvement
-    static let warning = Color(red: 0.74, green: 0.22, blue: 0.20)
+    static let warning = dynamicColor(
+        light: (0.74, 0.22, 0.20),
+        dark: (0.910, 0.412, 0.384)
+    )
 
     // MARK: Review Transformation (V4.6 founder-approved tokens)
 
@@ -163,30 +226,81 @@ enum AppColor {
     /// (#9E70FA). Never used as text on light surfaces — decorative trace
     /// colour only, so it is exempt from the light-surface AA gate.
     static let voiceLive = Color(red: 0.62, green: 0.44, blue: 0.98)
-    /// Receded wording in the transcript transformation (#5A6474): the words
-    /// the one-step upgrade lets go of. Recede, never strikethrough — this is
-    /// a text colour on light cards and clears AA (~6.0:1 on white).
-    static let neutralReceded = Color(red: 0.353, green: 0.392, blue: 0.455)
-    /// Pressed fill for the violet editorial CTA (#3F2499). White label on
-    /// this fill clears AA with wide margin.
-    static let actionPressed = Color(red: 0.247, green: 0.141, blue: 0.60)
+    /// Receded wording in the transcript transformation (#5A6474 → dark
+    /// #8A93A4): the words the one-step upgrade lets go of. Recede, never
+    /// strikethrough — a text colour that clears AA on both surfaces.
+    static let neutralReceded = dynamicColor(
+        light: (0.353, 0.392, 0.455),
+        dark: (0.541, 0.576, 0.643)
+    )
+    /// Pressed fill for the violet editorial CTA (#3F2499 → dark #7A4FF0).
+    /// White label clears AA on both fills.
+    static let actionPressed = dynamicColor(
+        light: (0.247, 0.141, 0.60),
+        dark: (0.478, 0.310, 0.941)
+    )
+
+    // MARK: V4.6 Coaching Loop (frozen page-17 token contract)
+
+    /// Coaching ink (#4C2BB8 → dark #9061F9) — editorial CTA fill,
+    /// improved-phrase tint, selected tab label, ink labels on the white
+    /// immersive pill. Labels on these fills clear AA in both modes.
+    static let coachingInk = dynamicColor(
+        light: (0.298, 0.169, 0.722),
+        dark: (0.565, 0.380, 0.976)
+    )
+    /// Coach accent (#7C3AED → dark #9061F9) — trace bars and evidence
+    /// marks on editorial surfaces. Decorative/graphic colour, never body.
+    static let coachAccent = dynamicColor(
+        light: (0.486, 0.227, 0.929),
+        dark: (0.565, 0.380, 0.976)
+    )
+    /// Today hero gradient stops (#4D3CC7 → #7A45E0 at ~141°). The hero is
+    /// the app's single marquee gradient; nothing else may use these stops.
+    static let heroGradientStart = Color(red: 0.302, green: 0.235, blue: 0.780)
+    static let heroGradientEnd = Color(red: 0.478, green: 0.271, blue: 0.878)
+    /// Warm editorial canvas behind the V4.6 loop's screens
+    /// (#FAF9F7 → #17151C, same mapping as `screenBackground`).
+    static let warmCanvas = dynamicColor(
+        light: (0.980, 0.976, 0.969),
+        dark: (0.090, 0.082, 0.110)
+    )
+    /// Natively-dark immersive surface stops for Recording/Processing
+    /// (#1B1625 → #100D19). These screens are dark in both appearances.
+    static let immersiveTop = Color(red: 0.106, green: 0.086, blue: 0.145)
+    static let immersiveBottom = Color(red: 0.063, green: 0.051, blue: 0.098)
 
     // MARK: Text
 
     /// Primary text (use .primary for most cases)
-    static let textPrimary = Color(red: 0.13, green: 0.15, blue: 0.20)
+    static let textPrimary = dynamicColor(
+        light: (0.13, 0.15, 0.20),
+        dark: (0.949, 0.945, 0.965)
+    )
     /// Secondary / muted text. Deliberately stronger than the system
     /// secondary label so coaching evidence remains readable at small roles.
-    static let textSecondary = Color(red: 0.29, green: 0.33, blue: 0.40)
-    /// Quiet metadata that still clears AA on Noum's light surfaces.
-    static let textTertiary = Color(red: 0.36, green: 0.40, blue: 0.47)
+    static let textSecondary = dynamicColor(
+        light: (0.29, 0.33, 0.40),
+        dark: (0.725, 0.706, 0.780)
+    )
+    /// Quiet metadata that still clears AA on Noum's surfaces.
+    static let textTertiary = dynamicColor(
+        light: (0.36, 0.40, 0.47),
+        dark: (0.604, 0.580, 0.675)
+    )
 
     // MARK: Surfaces & Borders
 
     /// Subtle background for tags, chips
-    static let tagBackground = Color.black.opacity(0.04)
+    static let tagBackground = dynamicOpacity(
+        lightWhiteAmount: 0, darkWhiteAmount: 1,
+        lightAlpha: 0.04, darkAlpha: 0.08
+    )
     /// Subtle border/stroke
-    static let subtleBorder = Color.black.opacity(0.05)
+    static let subtleBorder = dynamicOpacity(
+        lightWhiteAmount: 0, darkWhiteAmount: 1,
+        lightAlpha: 0.05, darkAlpha: 0.10
+    )
 
     /// Returns the tint color for a given practice mode.
     static func tint(for mode: PracticeMode) -> Color {
@@ -242,6 +356,23 @@ extension Animation {
     static func coachLineStagger(_ index: Int) -> Animation {
         .easeOut(duration: 0.3).delay(0.15 + Double(index) * 0.15)
     }
+
+    // MARK: V4.6 Motion Contract (page-17 transition names)
+    //
+    // Standard timings from the frozen motion sheet. Every use MUST branch
+    // on `accessibilityReduceMotion`, replacing the smart-animate value with
+    // the paired RM fade — `Animation.v46ReduceMotionFade` (200 ms) unless
+    // the sheet names a different fallback. Never hardcode these durations
+    // at call sites.
+
+    /// pushRecording · closeLoop · tabToProgress — 340 ms settle.
+    static let v46Settle = Animation.easeInOut(duration: 0.34)
+    /// settleToProcessing · retrySamePrompt — 260 ms.
+    static let v46Quick = Animation.easeInOut(duration: 0.26)
+    /// revealReview dissolve — 600 ms (same under RM, no drift).
+    static let v46Dissolve = Animation.easeInOut(duration: 0.6)
+    /// Reduce Motion pair for the smart-animate steps — 200 ms fade.
+    static let v46ReduceMotionFade = Animation.easeInOut(duration: 0.2)
 }
 
 // MARK: - Shared View Components
@@ -435,6 +566,82 @@ struct PrimaryCTA: View {
             }
         }
         .buttonStyle(.pressable)
+    }
+}
+
+/// V4.6 immersive primary action — the white pill on gradient/dark surfaces
+/// ("Start rep", "I'm done"). One geometry: full-width capsule, ≥58 pt, ink
+/// label. Pressed dims the fill to 84 % (a state cue, not motion — safe under
+/// Reduce Motion by construction); disabled drops fill/label opacity; loading
+/// swaps the label for three ink dots and announces "Starting". The capsule
+/// grows with wrapped labels at accessibility sizes, radius following height.
+struct ImmersiveCTA: View {
+    let title: String
+    var isLoading: Bool = false
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var loadingPhase: Int = 0
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Text(title)
+                    .font(Typography.figtree(size: 17, weight: .bold, relativeTo: .headline))
+                    .foregroundStyle(AppColor.coachingInk.opacity(isEnabled ? 1 : 0.45))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(isLoading ? 0 : 1)
+                if isLoading {
+                    loadingDots
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(ImmersiveCTAButtonStyle(isEnabled: isEnabled))
+        .accessibilityLabel(Text(isLoading ? "Starting" : title))
+        .disabled(isLoading)
+    }
+
+    private var loadingDots: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(AppColor.coachingInk)
+                    .frame(width: 7, height: 7)
+                    .opacity(reduceMotion ? 0.8 : (loadingPhase == index ? 1 : 0.35))
+            }
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            loadingPhase = 0
+        }
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(280))
+                loadingPhase = (loadingPhase + 1) % 3
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ImmersiveCTAButtonStyle: ButtonStyle {
+    let isEnabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Color.white.opacity(
+                    isEnabled ? (configuration.isPressed ? 0.84 : 1) : 0.40
+                ),
+                in: Capsule(style: .continuous)
+            )
+            .shadow(color: Color.black.opacity(0.06), radius: 24, y: 8)
     }
 }
 

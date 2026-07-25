@@ -47,9 +47,14 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(historyApp.descendants(matching: .any)["history.screen"].waitForExistence(timeout: 5))
 
         historyApp.terminate()
+        // V4.6 four-tab IA: Settings lives under You — open it through the
+        // gear on the Profile root rather than a fifth tab button.
         let settingsApp = launchApp()
-        XCTAssertTrue(settingsApp.buttons["nav.settings"].waitForExistence(timeout: 5))
-        settingsApp.buttons["nav.settings"].tap()
+        XCTAssertTrue(settingsApp.buttons["nav.social"].waitForExistence(timeout: 5))
+        settingsApp.buttons["nav.social"].tap()
+        let openSettings = settingsApp.buttons["profile.openSettings"]
+        XCTAssertTrue(openSettings.waitForExistence(timeout: 5))
+        openSettings.tap()
         XCTAssertTrue(settingsApp.descendants(matching: .any)["settings.screen"].waitForExistence(timeout: 5))
 
         settingsApp.terminate()
@@ -65,9 +70,12 @@ final class NoumUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 10))
-        let settingsTab = app.buttons["nav.settings"]
-        XCTAssertTrue(settingsTab.waitForExistence(timeout: 5))
-        settingsTab.tap()
+        let youTab = app.buttons["nav.social"]
+        XCTAssertTrue(youTab.waitForExistence(timeout: 5))
+        youTab.tap()
+        let openSettings = app.buttons["profile.openSettings"]
+        XCTAssertTrue(openSettings.waitForExistence(timeout: 5))
+        openSettings.tap()
         XCTAssertTrue(app.descendants(matching: .any)["settings.screen"].waitForExistence(timeout: 5))
 
         let openLogin = app.buttons["settings.account.openLogin"]

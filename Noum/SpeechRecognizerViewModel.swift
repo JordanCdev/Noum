@@ -384,6 +384,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_START_FAILURE") {
             return UITestUnavailableTranscriptionProvider()
         }
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_SCRIPTED") {
+            return UITestScriptedTranscriptionProvider()
+        }
         let selected = UserDefaults.standard.string(forKey: "transcriptionProvider")
         return makeProvider(for: TranscriptionProviderID.resolved(fromStoredValue: selected))
         #else
@@ -1537,6 +1540,86 @@ private struct UITestUnavailableTranscriptionProvider: TranscriptionProvider {
     func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
         _ = config
         throw TranscriptionSessionError.transport("UI test provider start failure")
+    }
+}
+
+/// Deterministic UI-test seam for full-loop capture: streams a fixed
+/// transcript on a speaking cadence and finalizes with usable speech, so the
+/// recording → processing → review → retry → comparison journey can be
+/// exercised and screenshotted without live STT (no network, no credentials).
+/// Selected only by `UI_TESTING_TRANSCRIPTION_SCRIPTED`; cannot enter Release.
+struct UITestScriptedTranscriptionProvider: TranscriptionProvider {
+    let name = "Scripted UI test provider"
+    let identifier = "ui-test-scripted"
+
+    static let script = "I think the release should start next week because the support team has time to prepare. The customer message needs one clear decision, and the rollback path stays ready."
+
+    func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
+        _ = config
+        return UITestScriptedTranscriptionSession(script: Self.script)
+    }
+}
+
+private final class UITestScriptedTranscriptionSession: TranscriptionSession, @unchecked Sendable {
+    private let scriptWords: [String]
+    private let startedAt = Date()
+    private var audioByteCount = 0
+    private var finished = false
+    private let lock = NSLock()
+
+    let transcriptUpdates: AsyncThrowingStream<TranscriptUpdate, Error>
+    private let continuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation
+    private var emitTask: Task<Void, Never>?
+    var resolvedProviderIdentifier: String? { "ui-test-scripted" }
+
+    init(script: String) {
+        scriptWords = script.split(separator: " ").map(String.init)
+        var storedContinuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation!
+        transcriptUpdates = AsyncThrowingStream { storedContinuation = $0 }
+        continuation = storedContinuation
+        let words = scriptWords
+        let cont = continuation
+        // Emit cumulative partials at ~2.2 words/second — a natural pace, so
+        // the live surface and filler pipeline behave as they would on a
+        // real rep. Ends quietly once the script runs out.
+        emitTask = Task {
+            for count in stride(from: 2, through: words.count, by: 2) {
+                try? await Task.sleep(for: .milliseconds(900))
+                guard !Task.isCancelled else { return }
+                cont.yield(TranscriptUpdate(
+                    text: words.prefix(count).joined(separator: " "),
+                    isFinal: false,
+                    confidence: 0.94,
+                    words: nil,
+                    providerFillerWords: nil,
+                    latencyMs: 40
+                ))
+            }
+        }
+    }
+
+    func sendAudio(_ data: Data) async throws {
+        lock.lock()
+        audioByteCount += data.count
+        lock.unlock()
+    }
+
+    func finish() async throws -> FinalizedTranscript {
+        emitTask?.cancel()
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { throw TranscriptionSessionError.alreadyFinished }
+        finished = true
+        continuation.finish()
+        // Words actually "spoken" by stop time, so short reps stay honest
+        // (the evaluator sees a transcript matching the elapsed duration).
+        let elapsed = Date().timeIntervalSince(startedAt)
+        let spokenCount = max(8, min(scriptWords.count, Int(elapsed * 2.2)))
+        return FinalizedTranscript(
+            text: scriptWords.prefix(spokenCount).joined(separator: " "),
+            receivedFinalResult: true,
+            audioByteCount: audioByteCount
+        )
     }
 }
 #endif

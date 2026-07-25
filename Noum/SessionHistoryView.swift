@@ -174,6 +174,8 @@ struct SessionHistoryView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var isProgressExpanded = ReviewProgressDisclosure.defaultExpanded
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
@@ -247,7 +249,7 @@ struct SessionHistoryView: View {
             } else {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        storySection
+                        v46ProgressHead
 
                         highlightsSection
 
@@ -281,6 +283,134 @@ struct SessionHistoryView: View {
                 }
             }
         }
+    }
+
+    // MARK: - V4.6 Progress head (258:1131)
+
+    private var v46Progress: V46ProgressPresentation? {
+        V46ProgressPresentation.make(
+            outcomes: recommendationLearningStore.outcomes,
+            intervention: coachMemoryStore.currentMemory?.activeIntervention
+        )
+    }
+
+    /// The evidence-led trajectory: eyebrow (active target) → one bounded
+    /// reliability statement → honest tally → weekly trajectory clusters →
+    /// up to three evidence rows (lapse kept, amber + text cue) → one
+    /// plan-review action. Renders only on real comparable evidence; the
+    /// legacy story card remains the fallback.
+    @ViewBuilder
+    private var v46ProgressHead: some View {
+        if let presentation = v46Progress {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(presentation.eyebrow)
+                    .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(AppColor.coachingInk)
+                    .accessibilityAddTraits(.isHeader)
+
+                Text(presentation.headline)
+                    .font(Typography.figtree(size: 28, weight: .heavy, relativeTo: .title))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Spacing.sm)
+                    .accessibilityIdentifier("progress.v46.headline")
+
+                Text(presentation.subtitle)
+                    .font(Typography.manrope(size: 15, weight: .regular, relativeTo: .subheadline))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Spacing.xs)
+                    .accessibilityIdentifier("progress.v46.subtitle")
+
+                HStack(alignment: .bottom, spacing: 0) {
+                    ForEach(Array(presentation.trajectory.enumerated()), id: \.offset) { index, day in
+                        if index > 0 { Spacer(minLength: Spacing.md) }
+                        VoiceTraceDayCluster(
+                            heights: trajectoryHeights(for: day),
+                            label: day.label,
+                            isLapse: day.isLapse
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, Spacing.xxl)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(presentation.chartAccessibilitySummary))
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(presentation.rows) { row in
+                        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                            Text(row.dayLabel)
+                                .font(Typography.figtree(size: 9.5, weight: .heavy, relativeTo: .caption2))
+                                .tracking(0.8)
+                                .foregroundStyle(row.tone == .lapse ? AppColor.caution : AppColor.coachingInk)
+                                .frame(width: 56, alignment: .leading)
+                            Text(row.copy)
+                                .font(Typography.manrope(
+                                    size: 14,
+                                    weight: row.tone == .lapse ? .regular : .semibold,
+                                    relativeTo: .footnote
+                                ))
+                                .foregroundStyle(row.tone == .lapse ? AppColor.textSecondary : AppColor.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.vertical, 7)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .padding(.top, Spacing.md)
+                .accessibilityIdentifier("progress.v46.rows")
+
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(AppColor.coachAccent)
+                    .frame(width: 40, height: 3)
+                    .padding(.top, Spacing.lg)
+                    .accessibilityHidden(true)
+
+                if let reviewTitle = presentation.reviewRowTitle {
+                    Button {
+                        navigationPath.append(AppDestination.weeklyCheckIn)
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            Text(reviewTitle)
+                                .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
+                                .foregroundStyle(AppColor.coachingInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: Spacing.xs)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(AppColor.coachingInk)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.cardGap)
+                        .frame(minHeight: 48)
+                        .background(AppColor.proQuietSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
+                    .padding(.top, Spacing.xxl)
+                    .accessibilityIdentifier("progress.v46.reviewTarget")
+                }
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.top, Spacing.md)
+            .padding(.bottom, Spacing.xl)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("progress.v46.head")
+        } else {
+            storySection
+        }
+    }
+
+    /// Cluster silhouette scaled by the day's honest intensity; today's
+    /// winning cluster reads tallest, a lapse day sits visibly lower.
+    private func trajectoryHeights(for day: V46TrajectoryDay) -> [CGFloat] {
+        let base: [CGFloat] = day.label == "TODAY"
+            ? [10, 35, 52, 35, 10]
+            : [8, 26, 33, 26, 8]
+        return base.map { $0 * day.intensity }
     }
 
     // MARK: - Development
