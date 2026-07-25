@@ -51,6 +51,16 @@ VoiceTrace breath now stops the moment the scene leaves `.active` (transaction-s
 
 ## Physical-device checklist (cannot be closed on simulator)
 
+> **Staged 2026-07-26:** a haptics-QA build (personal-team signing,
+> Sign-In-with-Apple/App-Attest entitlements stripped — inert for auth,
+> correct for haptics; data container preserved) is ALREADY INSTALLED on
+> Jordan's iPhone 17. To run it: unlock the phone, trust the developer
+> profile if prompted (Settings → General → VPN & Device Management →
+> "Apple Development: jordancoaten98@gmail.com"), open Noum. The
+> shippable build remains the ux-overhaul merge — run it once from Xcode
+> (⌘R) to mint the proper UF8H25D98V profile; setting DEVELOPMENT_TEAM
+> on the main Noum target makes headless device builds work thereafter.
+
 - [ ] CTA press: scale+dim+shadow read as one depth change; `actionStart` at commit feels causal, not buzzy
 - [ ] 180ms commit handoff visible before the push slide
 - [ ] Recording start/stop haptics; envelope floor 0.06 vs quiet real speech
