@@ -30,6 +30,9 @@ struct RewriteSuggestionCard: View {
     let weakness: AIRewriteService.Weakness
     var sourceSessionID: UUID? = nil
     var sourcePrompt: String? = nil
+    /// Duration of the verified source rep; renders in the provenance eyebrow
+    /// ("WHAT NOUM HEARD · VERIFIED 0:48"). Nil keeps the eyebrow duration-free.
+    var sourceDuration: TimeInterval? = nil
     var targetDimension: String? = nil
     var targetDimensionID: String? = nil
     var goal: SpeakingStyleGoal? = nil
@@ -47,6 +50,11 @@ struct RewriteSuggestionCard: View {
     @State private var didSave = false
     @State private var showPhraseBank = false
     @State private var ladderCorrelationID = UUID()
+    /// Drives the standard transformation: the original renders at full
+    /// strength first, then the let-go words recede while TRY THIS rises.
+    /// Reduce Motion arrives in the settled state instantly — same
+    /// information, no motion (frozen RM contract).
+    @State private var revealReceded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -132,26 +140,43 @@ struct RewriteSuggestionCard: View {
         .padding(.vertical, 6)
     }
 
+    private var provenanceEyebrow: String {
+        if let sourceDuration, sourceDuration > 0 {
+            return "WHAT NOUM HEARD · VERIFIED \(RepDurationLabel.mss(sourceDuration))"
+        }
+        return "WHAT NOUM HEARD · VERIFIED"
+    }
+
     private func ladderState(_ oneStep: Rewrite) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            // The transformation: exact words first, then the let-go words
+            // recede (crossfade between two pixel-aligned renderings — the
+            // stable words never move; decision #5, recede never strikethrough).
             ReviewTranscriptStep(
-                eyebrow: "WHAT I HEARD",
-                text: Text(originalSnippet),
+                eyebrow: provenanceEyebrow,
+                text: TranscriptChangeHighlighter.recededText(
+                    original: originalSnippet,
+                    revision: oneStep.text,
+                    receded: revealReceded
+                ),
                 detail: "Verified from this rep",
                 tint: .secondary,
                 identifier: "rewrite.original"
             )
 
             ReviewTranscriptStep(
-                eyebrow: "ONE-STEP UPGRADE",
+                eyebrow: "TRY THIS",
                 text: TranscriptChangeHighlighter.highlightedText(
                     original: originalSnippet,
                     revision: oneStep.text
                 ),
                 detail: "Changed words are highlighted · meaning and voice preserved",
                 tint: AppColor.proText,
-                identifier: "rewrite.oneStep"
+                identifier: "rewrite.oneStep",
+                hero: true
             )
+            .opacity(revealReceded ? 1 : 0)
+            .offset(y: revealReceded ? 0 : 8)
 
             targetRung
 
@@ -181,15 +206,13 @@ struct RewriteSuggestionCard: View {
                 Button {
                     practise(oneStep)
                 } label: {
-                    Label("Practise this version", systemImage: "arrow.counterclockwise.circle.fill")
+                    Text("Try again with the same prompt")
                         .font(Typography.body.weight(.semibold))
-                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 46)
-                        .background(AppColor.pro, in: Capsule())
                 }
-                .buttonStyle(.pressable)
+                .buttonStyle(EditorialCTAButtonStyle())
                 .accessibilityIdentifier("rewrite.practiceOneStep")
-                .accessibilityHint("Saves the one-step version and starts targeted timed practice.")
+                .accessibilityHint("Saves the one-step version and starts a targeted retry of the same prompt.")
             }
 
             HStack(spacing: 8) {
@@ -214,6 +237,17 @@ struct RewriteSuggestionCard: View {
                 .accessibilityHint("Saves this rewrite to your on-device phrase bank.")
 
                 Spacer()
+            }
+        }
+        .task {
+            guard !revealReceded else { return }
+            if reduceMotion {
+                revealReceded = true
+            } else {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                withAnimation(.easeOut(duration: 0.6)) {
+                    revealReceded = true
+                }
             }
         }
     }
@@ -482,6 +516,10 @@ struct ReviewTranscriptStep: View {
     let detail: String
     let tint: Color
     let identifier: String
+    /// The frozen design gives the improved phrase unmistakable hero weight
+    /// (decision: the transformation IS the teaching). Only the TRY THIS rung
+    /// sets this.
+    var hero: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -490,9 +528,10 @@ struct ReviewTranscriptStep: View {
                 .tracking(0.5)
                 .foregroundStyle(tint)
             text
-                .font(Typography.body.weight(.medium))
+                .font(hero ? Typography.cardTitle.weight(.semibold) : Typography.body.weight(.medium))
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
             Text(detail)
                 .font(Typography.micro)
                 .foregroundStyle(AppColor.textSecondary)
@@ -516,6 +555,21 @@ struct ReviewTranscriptStep: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// Violet editorial CTA per the frozen V4.6 system: one geometry, pressed
+/// state darkens the fill to `actionPressed` (a state cue, not motion — safe
+/// under Reduce Motion by construction). White label clears AA on both fills.
+struct EditorialCTAButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(
+                configuration.isPressed ? AppColor.actionPressed : AppColor.pro,
+                in: Capsule()
+            )
+            .opacity(configuration.isPressed ? 0.96 : 1)
     }
 }
 
@@ -583,6 +637,81 @@ enum TranscriptChangeHighlighter {
             previousTarget = pair.target
         }
         return changed
+    }
+
+    /// Source-side counterpart of `changedWordIndexes`: the words of the
+    /// ORIGINAL that do not survive into the revision. Same LCS, backtracked
+    /// on the source axis, so a moved connective is not marked as removed.
+    nonisolated static func removedWordIndexes(original: String, revision: String) -> Set<Int> {
+        let source = words(in: original)
+        let target = words(in: revision)
+        guard !source.isEmpty else { return [] }
+        guard !target.isEmpty else { return Set(source.indices) }
+
+        var lengths = Array(
+            repeating: Array(repeating: 0, count: target.count + 1),
+            count: source.count + 1
+        )
+        for sourceIndex in 1...source.count {
+            for targetIndex in 1...target.count {
+                if source[sourceIndex - 1] == target[targetIndex - 1] {
+                    lengths[sourceIndex][targetIndex] = lengths[sourceIndex - 1][targetIndex - 1] + 1
+                } else {
+                    lengths[sourceIndex][targetIndex] = max(
+                        lengths[sourceIndex - 1][targetIndex],
+                        lengths[sourceIndex][targetIndex - 1]
+                    )
+                }
+            }
+        }
+        var matchedSource = Set<Int>()
+        var sourceIndex = source.count
+        var targetIndex = target.count
+        while sourceIndex > 0, targetIndex > 0 {
+            if source[sourceIndex - 1] == target[targetIndex - 1] {
+                matchedSource.insert(sourceIndex - 1)
+                sourceIndex -= 1
+                targetIndex -= 1
+            } else if lengths[sourceIndex - 1][targetIndex] >= lengths[sourceIndex][targetIndex - 1] {
+                sourceIndex -= 1
+            } else {
+                targetIndex -= 1
+            }
+        }
+        return Set(source.indices).subtracting(matchedSource)
+    }
+
+    /// The verified original with let-go words receded — quieter colour, never
+    /// strikethrough (design decision #5: nothing added, nothing lost). When
+    /// `receded` is false the exact original renders in full strength, which
+    /// is the pre-reveal state of the standard transformation.
+    static func recededText(original: String, revision: String, receded: Bool = true) -> Text {
+        let nsOriginal = original as NSString
+        let matches = wordRegex.matches(
+            in: original,
+            range: NSRange(location: 0, length: nsOriginal.length)
+        )
+        let removed = receded
+            ? removedWordIndexes(original: original, revision: revision)
+            : []
+        var rendered = Text("")
+        var cursor = 0
+        for (index, match) in matches.enumerated() {
+            if match.range.location > cursor {
+                rendered = rendered + Text(nsOriginal.substring(
+                    with: NSRange(location: cursor, length: match.range.location - cursor)
+                ))
+            }
+            let token = Text(nsOriginal.substring(with: match.range))
+            rendered = rendered + (removed.contains(index)
+                ? token.foregroundColor(AppColor.neutralReceded.opacity(0.75))
+                : token)
+            cursor = match.range.location + match.range.length
+        }
+        if cursor < nsOriginal.length {
+            rendered = rendered + Text(nsOriginal.substring(from: cursor))
+        }
+        return rendered
     }
 
     static func highlightedText(original: String, revision: String) -> Text {

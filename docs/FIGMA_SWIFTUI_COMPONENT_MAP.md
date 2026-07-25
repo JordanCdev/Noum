@@ -14,8 +14,8 @@
 | Row / Provenance | 112:511 | `ProvenanceRow` | feedback/positive, text/secondary | default | ✓ is decorative; text carries meaning | to build |
 | Label / Eyebrow | 112:497 | `SectionEyebrow` | coaching/ink | section intent, ≤2/screen | header trait where sectioning | to build |
 | Label / Micro | 112:499 | `DataMicroLabel` | text/secondary | data annotation | caption2 minimum | to build |
-| Evidence / Verified quote | 113:497 | `ReviewQuoteCard` (extract from SessionHistoryView) | coach/accent (bar), text/primary | with/without observation | One VO group: "What Noum heard, verified at 0:48: …" | extract |
-| Evidence / One-step diff | 113:503 | `transcriptUpgradeCard` (existing) | background/inner, evidence/highlight | reveal / absence / failed / pro (see State comps) | VO speaks the changed lever explicitly | retoken |
+| Evidence / Verified quote | 113:497 | `ReviewTranscriptStep` (shared rung; provenance eyebrow "WHAT NOUM HEARD · VERIFIED m:ss" + `TranscriptChangeHighlighter.recededText`) | neutralReceded (let-go words), text/primary | receded/full via reveal state | One VO group via `.combine`; recede is visual-only, never announced as removal | **done (Slice 1)** |
+| Evidence / One-step diff | 113:503 | `ReviewTranscriptStep(hero:)` "TRY THIS" + `EditorialCTAButtonStyle` CTA "Try again with the same prompt" | pro family, actionPressed (pressed fill) | reveal (std 0.6s recede+rise / RM instant) / failed / pro | VO speaks the changed lever explicitly | **done (Slice 1)** |
 | Trend / Bars | 113:506 | Swift Charts (existing usage) | coach/accent w/ opacity ramp | 8-rep default; text summary at AX3+ | AXChartDescriptor audio graph | retoken |
 | State / Coached absence | 114:497 | new view in Review flow | background/inner | — | renders when `primaryWeakness == nil` (SPEC_rewrite_ladder_reliability fix 2) | to build |
 | State / Generation failed | 114:500 | existing failure state, restyle | background/inner, coaching/* | retry pill | announces failure honestly | restyle |

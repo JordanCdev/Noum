@@ -45,6 +45,40 @@ struct ProductJourneyContractTests {
         #expect(insertion == [2])
     }
 
+    @Test("Recede treatment marks only the let-go words of the original")
+    func recededWordsAreTheSourceSideOfTheSameLCS() {
+        // "I think" recedes; every surviving word keeps full strength.
+        let removed = TranscriptChangeHighlighter.removedWordIndexes(
+            original: "I think we should ship it this week",
+            revision: "We should ship it this week"
+        )
+        #expect(removed == [0, 1])
+
+        // Pure insertion: nothing in the original recedes.
+        let insertion = TranscriptChangeHighlighter.removedWordIndexes(
+            original: "The data supports this",
+            revision: "The data clearly supports this"
+        )
+        #expect(insertion.isEmpty)
+
+        // A hedge in the middle recedes without touching its neighbours —
+        // the design's "What I'd say is that we should probably…" case.
+        let hedge = TranscriptChangeHighlighter.removedWordIndexes(
+            original: "we should probably keep the release narrow",
+            revision: "we should keep the release narrow"
+        )
+        #expect(hedge == [2])
+    }
+
+    @Test("Rep clock renders honest-ledger m:ss everywhere")
+    func repDurationLabelMatchesTheLedgerFormat() {
+        #expect(RepDurationLabel.mss(48) == "0:48")
+        #expect(RepDurationLabel.mss(39.4) == "0:39")
+        #expect(RepDurationLabel.mss(60) == "1:00")
+        #expect(RepDurationLabel.mss(125) == "2:05")
+        #expect(RepDurationLabel.mss(-3) == "0:00")
+    }
+
     @MainActor
     @Test("Voice goal changes preserve evidence and invalidate only plan projection")
     func voiceGoalChangePreservesTheObservedCase() {

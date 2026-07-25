@@ -796,22 +796,26 @@ struct SessionHistoryDetailView: View {
             }
 
             ReviewTranscriptStep(
-                eyebrow: "ORIGINAL TRANSCRIPT",
-                text: Text(snapshot.originalSnippet),
+                eyebrow: "WHAT NOUM HEARD · VERIFIED \(RepDurationLabel.mss(session.duration))",
+                text: TranscriptChangeHighlighter.recededText(
+                    original: snapshot.originalSnippet,
+                    revision: snapshot.oneStepText
+                ),
                 detail: "Verified excerpt from this rep",
                 tint: AppColor.textSecondary,
                 identifier: "history.detail.rewrite.original"
             )
 
             ReviewTranscriptStep(
-                eyebrow: "ONE-STEP UPGRADE",
+                eyebrow: "TRY THIS",
                 text: TranscriptChangeHighlighter.highlightedText(
                     original: snapshot.originalSnippet,
                     revision: snapshot.oneStepText
                 ),
                 detail: "Noum's minimal edit · changed words are highlighted",
                 tint: AppColor.proText,
-                identifier: "history.detail.rewrite.oneStep"
+                identifier: "history.detail.rewrite.oneStep",
+                hero: true
             )
 
             if let aspiration = snapshot.aspirationalRewrite {
@@ -830,15 +834,13 @@ struct SessionHistoryDetailView: View {
             Button {
                 startTargetedRetry(snapshot)
             } label: {
-                Label("Practise the one-step upgrade", systemImage: "arrow.counterclockwise")
+                Text("Try again with the same prompt")
                     .font(Typography.body.weight(.semibold))
-                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(AppColor.pro, in: Capsule())
             }
-            .buttonStyle(.pressable)
+            .buttonStyle(EditorialCTAButtonStyle())
             .accessibilityIdentifier("history.detail.rewrite.retry")
-            .accessibilityHint("Starts Timed Practice with the saved edit and the same improvement target.")
+            .accessibilityHint("Starts Timed Practice with the exact same prompt and the same improvement target.")
 
             if snapshot.origin == .onDevice {
                 Label("Private on-device edit", systemImage: "lock.fill")
@@ -868,10 +870,16 @@ struct SessionHistoryDetailView: View {
         let correlationID = UUID()
         let lever = TranscriptPracticeLever(weakness: snapshot.weakness)
         let retryTarget = TranscriptRetryTarget(lever: lever)
+        // Retry contract: when the source rep had a prompt, Timed Practice
+        // must present that exact prompt again (TranscriptRetryPrompt.resolve)
+        // — the rewrite text is only the fallback for promptless reps.
         let prescription = TranscriptPracticePrescription(
             correlationID: correlationID,
             sourceSessionID: session.id,
-            suggestedPrompt: snapshot.oneStepText,
+            suggestedPrompt: TranscriptRetryPrompt.resolve(
+                sourcePrompt: session.prompt,
+                fallbackRewritePrompt: snapshot.oneStepText
+            ),
             title: "One-step \(lever.focusLabel) upgrade",
             focus: lever.focusLabel,
             target: lever.successMeasure,

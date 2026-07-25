@@ -356,6 +356,7 @@ struct SummaryView: View {
                     weakness: weakness,
                     sourceSessionID: currentStoredSession?.id,
                     sourcePrompt: sessionPrompt ?? currentStoredSession?.prompt,
+                    sourceDuration: effectiveDuration,
                     targetDimension: goalOutcomeRead?.nextDimension?.label,
                     targetDimensionID: goalOutcomeRead?.nextDimension?.dimensionID,
                     goal: goalOutcomeRead?.style,
@@ -415,9 +416,30 @@ struct SummaryView: View {
                 outcome: outcome,
                 sourceSession: currentTranscriptRetrySource,
                 retrySession: retrySession,
-                intervention: coachMemoryStore.currentMemory?.activeIntervention
+                intervention: coachMemoryStore.currentMemory?.activeIntervention,
+                priorHolds: leverTally(excluding: outcome).holds,
+                priorTries: leverTally(excluding: outcome).tries,
+                nextClockSeconds: summaryRecommendation.suggestedTimedDifficulty?.duration
+                    .map { Int($0) }
             )
         }
+    }
+
+    /// Ledger tally for the current retry's lever, from the recommendation
+    /// outcome history (this outcome excluded — the card adds itself). Real
+    /// counts only; the card hides the sentence when nothing is countable.
+    private func leverTally(excluding current: RecommendationOutcome) -> (holds: Int, tries: Int) {
+        let lever = current.transcriptRetryTarget?.lever
+            ?? current.transcriptRetryComparison?.lever
+        guard let lever else { return (0, 0) }
+        let priors = recommendationLearningStore.outcomes.filter {
+            $0.id != current.id && $0.transcriptRetryComparison?.lever == lever
+        }
+        let holds = priors.filter {
+            let result = $0.transcriptRetryComparison?.result
+            return result == .improved || result == .held
+        }.count
+        return (holds, priors.count)
     }
 
     private var drillRecommendationV2: DrillRecommendationV2 {

@@ -41,6 +41,10 @@
 
   /* Brand */
   --brand-blue: #3378F5;             /* 0.20, 0.47, 0.96 */
+  /* V4.6 slice-1 founder-approved tokens */
+  --voice-live: #9E70FA;             /* trace bars on dark surfaces only — never text on light */
+  --neutral-receded: #5A6474;        /* let-go transcript words; AA ~6.0:1 on white */
+  --action-pressed: #3F2499;         /* pressed fill of the violet editorial CTA */
   --brand-blue-light: #42A1FF;       /* 0.26, 0.63, 1.00 */
   --brand-blue-gradient: linear-gradient(180deg, var(--brand-blue-light) 0%, var(--brand-blue) 100%);
 

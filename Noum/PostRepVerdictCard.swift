@@ -6,7 +6,7 @@ import SwiftUI
 
 enum CohesiveSummaryCopy {
     static let askNoum = "Ask Noum"
-    static let seeDetails = "See details"
+    static let seeDetails = "Explore this review"
     static let done = "Done"
 }
 

@@ -1262,13 +1262,15 @@ struct TimedPracticeView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
+                    // V4.6 colour law: retry is a coaching action — one
+                    // indigo/violet action family, never the legacy blue.
                     Text(TargetedRetryPresentation.badge)
                         .font(Typography.caption)
-                        .foregroundStyle(AppColor.brandBlue)
+                        .foregroundStyle(AppColor.proText)
                         .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, Spacing.xs)
                         .background(
-                            AppColor.coachHeroQuietSurface,
+                            AppColor.proQuietSurface,
                             in: Capsule()
                         )
                         .accessibilityLabel("Same prompt, same target")
@@ -2986,7 +2988,7 @@ struct TimedPracticeView: View {
             .padding(.horizontal, Spacing.md)
         }
         .background(
-            isTargetedRetry ? AppColor.brandBlue : Color.white,
+            isTargetedRetry ? AppColor.pro : Color.white,
             in: Capsule()
         )
         .foregroundStyle(isTargetedRetry ? Color.white : AppColor.modeTimed)

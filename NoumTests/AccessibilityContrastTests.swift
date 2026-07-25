@@ -21,6 +21,11 @@ struct AccessibilityContrastTests {
             ("secondary", resolved(AppColor.textSecondary), .white),
             ("tertiary", resolved(AppColor.textTertiary), .white),
             ("pro text", resolved(AppColor.proText), resolved(AppColor.proQuietSurface)),
+            // V4.6 slice-1 tokens. voiceLive is exempt: decorative trace bars
+            // on natively dark surfaces, never text on light.
+            ("receded transcript words", resolved(AppColor.neutralReceded), .white),
+            ("receded words on quiet tag surface", resolved(AppColor.neutralReceded), resolved(AppColor.cardBackground)),
+            ("white label on pressed CTA", .white, resolved(AppColor.actionPressed)),
         ]
 
         for (name, foreground, background) in cases {

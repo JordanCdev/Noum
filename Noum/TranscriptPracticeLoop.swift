@@ -1,5 +1,15 @@
 import Foundation
 
+/// Renders rep durations in the honest-ledger `m:ss` format the design system
+/// uses everywhere ("VERIFIED 0:48", "FIRST TRY · 0:48"). One owner so the
+/// clock reads identically across Review, History and Comparison.
+enum RepDurationLabel {
+    nonisolated static func mss(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return "\(total / 60):" + String(format: "%02d", total % 60)
+    }
+}
+
 /// The single delivery lever a transcript-ladder retry is intended to move.
 /// This is content-free and safe to persist/sync; the user's source and retry
 /// transcripts remain in their existing `PracticeSession` evidence rows.
@@ -417,6 +427,13 @@ struct TranscriptRetryComparisonCard: View {
     let sourceSession: PracticeSession?
     let retrySession: PracticeSession
     let intervention: CoachIntervention?
+    /// Holds and tries for this lever BEFORE this retry (from the
+    /// recommendation ledger). Nil hides the tally sentence — never fabricate.
+    var priorHolds: Int? = nil
+    var priorTries: Int? = nil
+    /// The next prescribed answer clock in seconds, when a recommendation
+    /// exists. Nil hides the "Next:" sentence.
+    var nextClockSeconds: Int? = nil
 
     private var comparison: TranscriptRetryComparison? {
         outcome.transcriptRetryComparison
@@ -462,13 +479,70 @@ struct TranscriptRetryComparisonCard: View {
         }
     }
 
+    /// Seconds the retry landed earlier than the verified source rep,
+    /// computed directly on the pair (never the rolling-average delta).
+    /// Nil below a 3s floor — small differences are noise, not a claim.
+    private var secondsEarlier: Int? {
+        guard let sourceSession else { return nil }
+        let delta = sourceSession.duration - retrySession.duration
+        guard delta >= 3 else { return nil }
+        return Int(delta.rounded())
+    }
+
+    /// True when the retry ran on a compressed answer clock — the design's
+    /// own ledger meaning of "under pressure" (medium/hard = 30s/15s).
+    private var retryWasUnderPressure: Bool {
+        switch retrySession.practiceDemand?.timedDifficulty {
+        case .medium, .hard: return true
+        default: return false
+        }
+    }
+
+    /// The earned-progress line, first and green (frozen design: the win
+    /// lands before any explanation). Founder template, real data only —
+    /// each clause renders only when its evidence exists.
+    private var payoffLine: String? {
+        guard result == .improved else { return nil }
+        var line = (priorHolds ?? 0) == 0 ? "First hold" : "Held again"
+        if retryWasUnderPressure { line += " under pressure" }
+        if let secondsEarlier { line += " — answer landed \(secondsEarlier)s earlier" }
+        return line + "."
+    }
+
+    /// "Three holds in four tries. Next: a 45-second answer clock."
+    /// Tally counts this attempt; both sentences self-suppress without data.
+    private var planLine: String? {
+        var sentences: [String] = []
+        if let priorHolds, let priorTries {
+            let holds = priorHolds + (result == .improved || result == .held ? 1 : 0)
+            let tries = priorTries + 1
+            sentences.append("\(Self.spelled(holds).capitalized) hold\(holds == 1 ? "" : "s") in \(Self.spelled(tries)) tr\(tries == 1 ? "y" : "ies").")
+        }
+        if let nextClockSeconds {
+            sentences.append("Next: a \(nextClockSeconds)-second answer clock.")
+        }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
+    }
+
+    private static func spelled(_ n: Int) -> String {
+        let words = ["zero", "one", "two", "three", "four", "five", "six",
+                     "seven", "eight", "nine", "ten", "eleven", "twelve"]
+        return n >= 0 && n < words.count ? words[n] : String(n)
+    }
+
+    private func rungLabel(_ prefix: String, session: PracticeSession?) -> String {
+        guard let session else { return prefix }
+        return "\(prefix) · \(RepDurationLabel.mss(session.duration))"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
                     .foregroundStyle(tint)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("TARGETED RETRY")
+                    Text("SAME TARGET · TWO TRIES")
                         .font(Typography.micro.weight(.heavy))
                         .tracking(0.5)
                         .foregroundStyle(.secondary)
@@ -476,6 +550,20 @@ struct TranscriptRetryComparisonCard: View {
                         .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
                 }
+            }
+
+            if let payoffLine {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .heavy))
+                        .accessibilityHidden(true)
+                    Text(payoffLine)
+                        .font(Typography.headline.weight(.bold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(AppColor.positive)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("transcriptRetry.payoff")
             }
 
             Text(outcome.target ?? lever.successMeasure)
@@ -487,14 +575,16 @@ struct TranscriptRetryComparisonCard: View {
 
             if let sourceSession {
                 comparisonRung(
-                    label: "VERIFIED SOURCE REP",
+                    label: rungLabel("FIRST TRY", session: sourceSession),
                     text: Text(AIRewriteService.originalSnippet(
                         transcript: sourceSession.transcript,
                         weakness: lever.weakness
                     ))
+                    .foregroundColor(AppColor.neutralReceded),
+                    dominant: false
                 )
                 comparisonRung(
-                    label: "YOUR RETRY",
+                    label: rungLabel("RETRY", session: retrySession),
                     text: TranscriptChangeHighlighter.highlightedText(
                         original: AIRewriteService.originalSnippet(
                             transcript: sourceSession.transcript,
@@ -504,13 +594,21 @@ struct TranscriptRetryComparisonCard: View {
                             transcript: retrySession.transcript,
                             weakness: lever.weakness
                         )
-                    )
+                    ),
+                    dominant: true
                 )
             }
 
             Text(resultDetail)
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
+
+            if let planLine {
+                Text(planLine)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .accessibilityIdentifier("transcriptRetry.plan")
+            }
 
             if let intervention,
                intervention.mode == outcome.mode,
@@ -536,19 +634,28 @@ struct TranscriptRetryComparisonCard: View {
         .accessibilityIdentifier("transcriptRetry.comparison")
     }
 
-    private func comparisonRung(label: String, text: Text) -> some View {
+    /// Frozen design: the first try recedes, the retry leads. Dominance is
+    /// carried by fill + border + text colour, never by hiding the original.
+    private func comparisonRung(label: String, text: Text, dominant: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(Typography.micro.weight(.heavy))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(dominant ? AppColor.proText : AppColor.neutralReceded)
             text
-                .font(Typography.caption.weight(.medium))
-                .foregroundStyle(.primary)
+                .font(dominant ? Typography.body.weight(.semibold) : Typography.caption.weight(.medium))
+                .foregroundStyle(dominant ? AppColor.textPrimary : AppColor.neutralReceded)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(
+            dominant ? AppColor.proQuietSurface : AppColor.tagBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(dominant ? AppColor.pro.opacity(0.45) : Color.clear, lineWidth: 1)
+        )
     }
 }
 #endif

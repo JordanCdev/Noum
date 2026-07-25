@@ -157,6 +157,20 @@ enum AppColor {
     /// Warning / needs improvement
     static let warning = Color(red: 0.74, green: 0.22, blue: 0.20)
 
+    // MARK: Review Transformation (V4.6 founder-approved tokens)
+
+    /// Live/settling voice-trace bars on natively dark practice surfaces
+    /// (#9E70FA). Never used as text on light surfaces — decorative trace
+    /// colour only, so it is exempt from the light-surface AA gate.
+    static let voiceLive = Color(red: 0.62, green: 0.44, blue: 0.98)
+    /// Receded wording in the transcript transformation (#5A6474): the words
+    /// the one-step upgrade lets go of. Recede, never strikethrough — this is
+    /// a text colour on light cards and clears AA (~6.0:1 on white).
+    static let neutralReceded = Color(red: 0.353, green: 0.392, blue: 0.455)
+    /// Pressed fill for the violet editorial CTA (#3F2499). White label on
+    /// this fill clears AA with wide margin.
+    static let actionPressed = Color(red: 0.247, green: 0.141, blue: 0.60)
+
     // MARK: Text
 
     /// Primary text (use .primary for most cases)

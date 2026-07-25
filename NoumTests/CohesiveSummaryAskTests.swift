@@ -108,7 +108,7 @@ struct CohesiveSummaryAskCopyTests {
 
         #expect(labels[0] == "Start Land the pause")
         #expect(labels[1] == "Start Conversation Practice")
-        #expect(Array(labels.dropFirst(2)) == ["Ask Noum", "See details", "Done"])
+        #expect(Array(labels.dropFirst(2)) == ["Ask Noum", "Explore this review", "Done"])
 
         for label in labels {
             let lower = label.lowercased()
