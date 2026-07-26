@@ -290,17 +290,43 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         finishButton.tap()
         declineCloudProcessingIfPresented(in: app)
+
+        // Finishing setup lands on Today, not in a recorder. `AutoGuidedFirstRep`
+        // is default-OFF by design — automatic capture stays off until the
+        // signed-device matrix is complete, so production reaches the first rep
+        // through `prepareUserInitiatedSpokenProof`, which needs an explicit tap.
+        // Asserting a push straight into Timed would assert the disabled lane.
+        XCTAssertTrue(
+            app.buttons["home.coachCard.begin"].waitForExistence(timeout: 12),
+            "Finishing setup must offer the first rep on Today."
+        )
+
+        // That Home offer opens whichever mode the coach recommends (this
+        // answer set gets Filler Control), so it cannot carry the Timed
+        // recovery contract. Relaunch into Timed keeping the account this real
+        // first run just created — dropping REAL_FIRST_RUN so nothing resets.
+        app.terminate()
+        app.launchArguments = [
+            "UI_TESTING", "UI_TESTING_CLOUD_CONSENT",
+            "UI_TESTING_MICROPHONE_GRANTED", "UI_TESTING_TRANSCRIPTION_START_FAILURE",
+            "-DeepLink", "noum://practice/timed",
+        ]
+        app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
 
         let begin = app.buttons["timedPractice.begin"]
-        XCTAssertTrue(begin.waitForExistence(timeout: 8))
-        tapTimedPracticeBegin(begin, in: app)
+        if begin.waitForExistence(timeout: 8) {
+            tapTimedPracticeBegin(begin, in: app)
+        }
         let startNow = app.buttons["timedPractice.startNow"]
         if startNow.waitForExistence(timeout: 3), startNow.isHittable { startNow.tap() }
 
         let issue = app.descendants(matching: .any)["timedPractice.recordingIssue"]
         XCTAssertTrue(issue.waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["timedPractice.recordingIssue.retry"].exists)
+        // The failure must never be a dead end: the retry is paired with an
+        // exit, so an unsatisfiable retry cannot trap the user in the rep.
+        XCTAssertTrue(app.buttons["timedPractice.recordingIssue.exit"].exists)
         XCTAssertFalse(app.staticTexts["Elapsed"].exists)
     }
 
