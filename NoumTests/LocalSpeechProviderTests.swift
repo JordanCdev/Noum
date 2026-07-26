@@ -69,6 +69,42 @@ struct LocalSpeechProviderTests {
         )
     }
 
+    /// One owner for what a failure means. A surface may render it in its own
+    /// register, but none may offer a retry for a cause a retry cannot clear —
+    /// that is the loop this mapping exists to prevent.
+    @Test func recoveryIsOnlyOfferedWhenTheCauseCanChange() {
+        #expect(
+            SpeechRecordingIssuePresentation.make(
+                issue: .unsupportedOnDeviceLocale("es-ES"),
+                message: "On-device transcription isn't available for es-ES on this device."
+            ).recovery == .leaveRep
+        )
+        #expect(
+            SpeechRecordingIssuePresentation.make(
+                issue: .cloudProcessingDisabled,
+                message: "Cloud processing is off."
+            ).recovery == .grantCloudConsent
+        )
+        #expect(
+            SpeechRecordingIssuePresentation.make(
+                issue: nil,
+                message: "Live transcription is temporarily unavailable."
+            ).recovery == .retry
+        )
+    }
+
+    /// The locale copy must carry the failing locale and the way out, because
+    /// every surface renders this same statement.
+    @Test func unsupportedLocaleCopyNamesTheLocaleAndTheWayOut() {
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: .unsupportedOnDeviceLocale("es-ES"),
+            message: "On-device transcription isn't available for es-ES on this device."
+        )
+        #expect(presentation.title == "This language isn't available offline")
+        #expect(presentation.detail.contains("es-ES"))
+        #expect(presentation.detail.contains("Choose another Practice language in Settings"))
+    }
+
     @Test func automaticRouteFallsBackWhenCloudCannotStart() async throws {
         let fallbackSession = StubTranscriptionSession()
         let provider = ResilientTranscriptionProvider(

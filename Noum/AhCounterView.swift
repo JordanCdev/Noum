@@ -56,6 +56,10 @@ struct AhCounterView: View {
     @State private var fillerFlash: Bool = false
     @State private var showExitConfirmation = false
     @State private var showSetupAdjustments = false
+    /// Consent is reversible without leaving the mode: the recognizer
+    /// re-resolves its provider on every start, so allowing here and pressing
+    /// Start again picks up the cloud route.
+    @State private var showCloudProcessingConsent = false
 
     // MARK: - Milestone Toast
 
@@ -411,6 +415,21 @@ struct AhCounterView: View {
         .sheet(isPresented: $showSetupAdjustments) {
             setupAdjustmentsSheet
         }
+        .sheet(isPresented: $showCloudProcessingConsent) {
+            CloudProcessingConsentDisclosure(
+                isCurrentlyAllowed: AISettingsManager.shared.isCloudProcessingAllowed,
+                onAllow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.allowed)
+                    showCloudProcessingConsent = false
+                    speechVM.connectionError = nil
+                    beginLaunchCountdown()
+                },
+                onNotNow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.declined)
+                    showCloudProcessingConsent = false
+                }
+            )
+        }
         .onDisappear {
             speechVM.cancelRecording()
             stopElapsedTimer()
@@ -515,25 +534,102 @@ struct AhCounterView: View {
                 .accessibilityLabel("Speaking prompt: \(currentPrompt)")
 
                 if let error = speechVM.connectionError {
-                    FocusedPracticeErrorStatus(message: error)
+                    recordingIssueStatus(error)
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button("Start Filler Control") {
-                beginLaunchCountdown()
+            // Start is the retry here, so it must only be offered when a
+            // second attempt could actually succeed. For a cause this screen
+            // cannot change, the issue card owns the action instead — an
+            // always-present Start would loop the user on the same failure.
+            if recordingIssueRecovery != .leaveRep {
+                Button("Start Filler Control") {
+                    beginLaunchCountdown()
+                }
+                .font(.headline.weight(.bold))
+                .foregroundStyle(AppColor.modeAhCounter)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.md)
+                .background(.white, in: Capsule())
+                .buttonStyle(.pressable)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.black.opacity(0.10).ignoresSafeArea())
+                .accessibilityIdentifier("ahCounter.start")
             }
-            .font(.headline.weight(.bold))
-            .foregroundStyle(AppColor.modeAhCounter)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.md)
-            .background(.white, in: Capsule())
-            .buttonStyle(.pressable)
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.black.opacity(0.10).ignoresSafeArea())
-            .accessibilityIdentifier("ahCounter.start")
         }
+    }
+
+    /// Nil until capture fails. Mirrors Timed's contract through the shared
+    /// `SpeechRecordingIssuePresentation` so the two modes cannot drift on what
+    /// a given failure means or what the user can do about it.
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private var recordingIssueRecovery: SpeechRecordingIssue.Recovery? {
+        recordingIssuePresentation?.recovery
+    }
+
+    /// Filler Control keeps its inline register — the navigation bar stays
+    /// visible and Start remains the retry — so this names the cause and only
+    /// adds an action for the failures Start cannot clear.
+    @ViewBuilder
+    private func recordingIssueStatus(_ message: String) -> some View {
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: message
+        )
+
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            FocusedPracticeErrorStatus(
+                message: presentation.recovery == .retry
+                    ? presentation.detail
+                    : "\(presentation.title). \(presentation.detail)"
+            )
+
+            switch presentation.recovery {
+            case .retry:
+                EmptyView()
+            case .grantCloudConsent:
+                recordingIssueAction(
+                    title: "Turn on cloud processing",
+                    icon: "cloud.fill",
+                    identifier: "ahCounter.recordingIssue.cloudConsent"
+                ) { showCloudProcessingConsent = true }
+            case .leaveRep:
+                recordingIssueAction(
+                    title: "Back to practice",
+                    icon: "arrow.backward",
+                    identifier: "ahCounter.recordingIssue.backToSetup"
+                ) { dismiss() }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("ahCounter.recordingIssue")
+    }
+
+    private func recordingIssueAction(
+        title: String,
+        icon: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(Typography.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(.white, in: Capsule())
+                .foregroundStyle(AppColor.modeAhCounter)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
     }
 
     private var setupAdjustmentsSheet: some View {

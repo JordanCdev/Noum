@@ -1666,31 +1666,15 @@ struct TimedPracticeView: View {
     /// screen when capture fails. Every branch therefore has to leave the user
     /// a way out: a primary action the environment can actually satisfy, and —
     /// when that primary is a retry — a secondary exit, so a failure the retry
-    /// can never clear is not a trap.
-    private enum RecordingIssueRecovery {
-        case retry
-        case openSettings
-        case backToSetup
-    }
-
+    /// can never clear is not a trap. Copy and action come from the shared
+    /// `SpeechRecordingIssuePresentation`; only the chrome is Timed's own.
     private func recordingIssueCard(_ message: String) -> some View {
-        let title: String
-        let detail: String
-        let recovery: RecordingIssueRecovery
-        switch speechVM.recordingIssue {
-        case .unsupportedOnDeviceLocale:
-            title = "This language isn't available offline"
-            detail = "\(message) Choose another Practice language in Settings or continue on a device that supports it."
-            recovery = .backToSetup
-        case .cloudProcessingDisabled:
-            title = "Live transcription needs cloud processing"
-            detail = message
-            recovery = .openSettings
-        case nil:
-            title = "We could not hear the rep"
-            detail = message
-            recovery = .retry
-        }
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: message
+        )
+        let title = presentation.title
+        let detail = presentation.detail
 
         return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .center, spacing: 10) {
@@ -1713,15 +1697,15 @@ struct TimedPracticeView: View {
                 }
             }
 
-            switch recovery {
-            case .backToSetup:
+            switch presentation.recovery {
+            case .leaveRep:
                 recordingIssuePrimaryAction(
                     title: "Back to setup",
                     icon: "arrow.backward",
                     identifier: "timedPractice.recordingIssue.backToSetup",
                     action: returnToSetupAfterRecordingIssue
                 )
-            case .openSettings:
+            case .grantCloudConsent:
                 recordingIssuePrimaryAction(
                     title: "Turn on cloud processing",
                     icon: "cloud.fill",

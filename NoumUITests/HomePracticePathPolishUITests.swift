@@ -49,6 +49,52 @@ final class HomePracticePathPolishUITests: XCTestCase {
         attachScreenshot(named: "filler-provider-unavailable", app: app)
     }
 
+    /// Filler Control is the mode the Home hero recommends for a filler-words
+    /// profile, so a first-run user is likely to meet its failure surface
+    /// before Timed's. A transport failure there is legitimately retryable, but
+    /// an unsupported on-device locale never resolves by pressing Start again:
+    /// the mode must name that cause rather than offer an unsatisfiable retry.
+    @MainActor
+    func testFillerControlUnsupportedLocaleNamesTheCauseInsteadOfLoopingOnStart() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_MICROPHONE_GRANTED",
+            "UI_TESTING_TRANSCRIPTION_UNSUPPORTED_LOCALE",
+            "UI_TESTING_PRACTICE_LOCALE",
+            "en-US",
+            "-DeepLink",
+            "noum://practice/ah-counter",
+        ]
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ahCounter.screen"].waitForExistence(timeout: 10)
+        )
+
+        let start = app.buttons["Start Filler Control"]
+        XCTAssertTrue(start.waitForExistence(timeout: 3))
+        start.tap()
+
+        let issue = app.descendants(matching: .any)["ahCounter.recordingIssue"]
+        XCTAssertTrue(
+            issue.waitForExistence(timeout: 15),
+            "The typed unsupported-locale failure should reach a named issue surface."
+        )
+        XCTAssertTrue(issue.label.contains("This language isn't available offline"))
+        XCTAssertTrue(issue.label.contains("en-US"))
+
+        // Start can never succeed for this cause, so it must not be the
+        // offered recovery. Leaving the rep is the only honest action.
+        XCTAssertFalse(app.buttons["Start Filler Control"].exists)
+        let back = app.buttons["ahCounter.recordingIssue.backToSetup"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertTrue(back.isHittable)
+        attachScreenshot(named: "filler-unsupported-locale", app: app)
+    }
+
     @MainActor
     func testUnsupportedOnDeviceLocaleRendersSpecificActionableIssueAtAccessibilityXXXL() {
         let app = XCUIApplication()

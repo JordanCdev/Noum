@@ -90,6 +90,62 @@ enum SpeechRecordingIssue: Equatable, Sendable {
     /// Consent is off and no on-device route could stand in. A retry cannot
     /// change this, so surfaces must offer the consent decision instead.
     case cloudProcessingDisabled
+
+    /// What the surface should offer the user. Retrying is only honest when the
+    /// cause can actually change between attempts; the other cases would loop
+    /// forever on the same failure, so they name a different action.
+    enum Recovery: Equatable, Sendable {
+        /// Transient — the same action may succeed on a second attempt.
+        case retry
+        /// Consent is reversible in place; offer the decision, then retry.
+        case grantCloudConsent
+        /// Nothing on this screen can change the cause. Leave the rep.
+        case leaveRep
+    }
+}
+
+/// One owner for "what does this failure mean, and what can the user do about
+/// it". Every speech surface renders in its own register — Timed's immersive
+/// card, Filler Control's inline card — so the shared piece is deliberately the
+/// decision, not the chrome. Forking this mapping per screen is how surfaces
+/// drift into offering retries that can never succeed.
+struct SpeechRecordingIssuePresentation: Equatable, Sendable {
+    let title: String
+    let detail: String
+    let recovery: SpeechRecordingIssue.Recovery
+
+    /// - Parameters:
+    ///   - issue: the typed failure, or nil for an untyped provider error.
+    ///   - message: the recognizer's user-facing string for the underlying error.
+    ///
+    /// A denied microphone is deliberately not modelled here: it stays a
+    /// retry, because the surfaces that can route to iOS Settings resolve it
+    /// through their own retry action rather than by leaving the rep.
+    static func make(
+        issue: SpeechRecordingIssue?,
+        message: String
+    ) -> SpeechRecordingIssuePresentation {
+        switch issue {
+        case .unsupportedOnDeviceLocale:
+            return SpeechRecordingIssuePresentation(
+                title: "This language isn't available offline",
+                detail: "\(message) Choose another Practice language in Settings or continue on a device that supports it.",
+                recovery: .leaveRep
+            )
+        case .cloudProcessingDisabled:
+            return SpeechRecordingIssuePresentation(
+                title: "Live transcription needs cloud processing",
+                detail: message,
+                recovery: .grantCloudConsent
+            )
+        case nil:
+            return SpeechRecordingIssuePresentation(
+                title: "We could not hear the rep",
+                detail: message,
+                recovery: .retry
+            )
+        }
+    }
 }
 
 /// Monotonic timing receipt for one microphone capture. Provider drain and
