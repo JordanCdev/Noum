@@ -60,6 +60,12 @@ VoiceTrace breath now stops the moment the scene leaves `.active` (transaction-s
 > shippable build remains the ux-overhaul merge — run it once from Xcode
 > (⌘R) to mint the proper UF8H25D98V profile; setting DEVELOPMENT_TEAM
 > on the main Noum target makes headless device builds work thereafter.
+>
+> **Haptic event trail (DEBUG builds):** every fired pattern now logs
+> name + timestamp — capture during the checklist run with
+> `log stream --device --predicate 'subsystem == "com.jordancoaten.noum" AND category == "haptics"'`
+> (or Console.app filtered the same way). The trail proves WHICH pattern
+> fired WHEN; the felt quality remains the human column.
 
 - [ ] CTA press: scale+dim+shadow read as one depth change; `actionStart` at commit feels causal, not buzzy
 - [ ] 180ms commit handoff visible before the push slide

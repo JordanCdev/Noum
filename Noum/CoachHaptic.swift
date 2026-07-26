@@ -1,4 +1,5 @@
 import Foundation
+import os
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -29,9 +30,29 @@ enum CoachHaptic {
     /// silences every haptic pathway in the app.
     private static var isEnabled: Bool { HapticsSettings.isEnabledSync }
 
+    /// Gate + evidence in one call: every pattern that actually fires is
+    /// logged (DEBUG builds) with its name and timestamp, so a device QA
+    /// run produces a machine-readable haptic event trail
+    /// (`log stream --predicate 'category == "haptics"'` or the Console
+    /// app filtered to subsystem com.jordancoaten.noum).
+    private static func fires(_ name: StaticString) -> Bool {
+        guard isEnabled else { return false }
+        #if DEBUG
+        hapticsLog.info("haptic \(name, privacy: .public)")
+        #endif
+        return true
+    }
+
+    #if DEBUG
+    private static let hapticsLog = os.Logger(
+        subsystem: "com.jordancoaten.noum",
+        category: "haptics"
+    )
+    #endif
+
     /// Single firm tap — marks the start of a drill.
     static func drillStart() {
-        guard isEnabled else { return }
+        guard fires("drillStart") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
@@ -39,7 +60,7 @@ enum CoachHaptic {
 
     /// Satisfying success notification — drill completed successfully.
     static func drillSuccess() {
-        guard isEnabled else { return }
+        guard fires("drillSuccess") else { return }
         #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         #endif
@@ -48,7 +69,7 @@ enum CoachHaptic {
     /// Soft single tap — drill completed but criteria not fully met.
     /// Not punishing — just a gentle acknowledgment.
     static func drillIncomplete() {
-        guard isEnabled else { return }
+        guard fires("drillIncomplete") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
@@ -56,7 +77,7 @@ enum CoachHaptic {
 
     /// Three ascending taps — skill leveled up.
     static func skillLevelUp() {
-        guard isEnabled else { return }
+        guard fires("skillLevelUp") else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred(intensity: 0.6)
@@ -71,7 +92,7 @@ enum CoachHaptic {
 
     /// Gentle pulse — trend breakthrough or positive shift.
     static func trendBreakthrough() {
-        guard isEnabled else { return }
+        guard fires("trendBreakthrough") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         #endif
@@ -83,7 +104,7 @@ enum CoachHaptic {
     /// a felt "that changed something", calmer than the milestone
     /// patterns, never fired for held/regressed/insufficient evidence.
     static func earnedEvidence() {
-        guard isEnabled else { return }
+        guard fires("earnedEvidence") else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .soft)
         generator.impactOccurred(intensity: 0.55)
@@ -95,7 +116,7 @@ enum CoachHaptic {
 
     /// Light selection tap — UI interaction feedback.
     static func selectionTap() {
-        guard isEnabled else { return }
+        guard fires("selectionTap") else { return }
         #if canImport(UIKit)
         UISelectionFeedbackGenerator().selectionChanged()
         #endif
@@ -103,7 +124,7 @@ enum CoachHaptic {
 
     /// Medium impact — countdown moment or transition.
     static func countdownBeat() {
-        guard isEnabled else { return }
+        guard fires("countdownBeat") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.7)
         #endif
@@ -111,7 +132,7 @@ enum CoachHaptic {
 
     /// Double tap for streak achievement.
     static func streakAchievement() {
-        guard isEnabled else { return }
+        guard fires("streakAchievement") else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
@@ -123,7 +144,7 @@ enum CoachHaptic {
 
     /// Light punctuation when score number lands after count-up animation.
     static func scoreReveal() {
-        guard isEnabled else { return }
+        guard fires("scoreReveal") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.6)
         #endif
@@ -131,7 +152,7 @@ enum CoachHaptic {
 
     /// Full level-up sequence — heavy escalating triple-tap plus success notification.
     static func levelUp() {
-        guard isEnabled else { return }
+        guard fires("levelUp") else { return }
         #if canImport(UIKit)
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.impactOccurred(intensity: 0.6)
@@ -149,7 +170,7 @@ enum CoachHaptic {
 
     /// Personal best — success notification followed by delayed heavy impact.
     static func personalBest() {
-        guard isEnabled else { return }
+        guard fires("personalBest") else { return }
         #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -160,7 +181,7 @@ enum CoachHaptic {
 
     /// Subtle XP accumulation — very light tap.
     static func xpEarned() {
-        guard isEnabled else { return }
+        guard fires("xpEarned") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.4)
         #endif
@@ -169,7 +190,7 @@ enum CoachHaptic {
     /// Session complete — a definitive "done" feel. Medium impact followed by a soft success.
     /// Used when any practice session ends (all modes).
     static func sessionComplete() {
-        guard isEnabled else { return }
+        guard fires("sessionComplete") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.7)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -180,7 +201,7 @@ enum CoachHaptic {
 
     /// Game over in Sudden Death — heavy, decisive impact.
     static func gameOver() {
-        guard isEnabled else { return }
+        guard fires("gameOver") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         #endif
@@ -188,7 +209,7 @@ enum CoachHaptic {
 
     /// Filler detected alert — light rigid tap paired with audio cue.
     static func fillerAlert() {
-        guard isEnabled else { return }
+        guard fires("fillerAlert") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.5)
         #endif
@@ -196,7 +217,7 @@ enum CoachHaptic {
 
     /// Pace warning — double soft tap when leaving WPM zone (Beat the Brake).
     static func paceWarning() {
-        guard isEnabled else { return }
+        guard fires("paceWarning") else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .soft)
         generator.impactOccurred(intensity: 0.6)
@@ -208,7 +229,7 @@ enum CoachHaptic {
 
     /// Checkpoint locked — medium impact (Land the Pause lock-in).
     static func checkpointLock() {
-        guard isEnabled else { return }
+        guard fires("checkpointLock") else { return }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.8)
         #endif
@@ -216,7 +237,7 @@ enum CoachHaptic {
 
     /// Timer urgency — rapid double-tap when time is running critically low.
     static func timerUrgency() {
-        guard isEnabled else { return }
+        guard fires("timerUrgency") else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .rigid)
         generator.impactOccurred(intensity: 0.8)
@@ -228,7 +249,7 @@ enum CoachHaptic {
 
     /// Round survived — quick success pulse between rounds.
     static func roundSurvived() {
-        guard isEnabled else { return }
+        guard fires("roundSurvived") else { return }
         #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         #endif
@@ -239,7 +260,7 @@ enum CoachHaptic {
     /// dead mic), never for mere `.checking`, and never as a fail-buzzer
     /// on user performance. Always paired with a visible banner or notice.
     static func unavailableNotice() {
-        guard isEnabled else { return }
+        guard fires("unavailableNotice") else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .soft)
         generator.impactOccurred(intensity: 0.5)
@@ -273,7 +294,7 @@ enum CoachHaptic {
 
     /// Pressure session complete — definitive ending with ascending taps.
     static func pressureSessionComplete() {
-        guard isEnabled else { return }
+        guard fires("pressureSessionComplete") else { return }
         #if canImport(UIKit)
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.impactOccurred(intensity: 0.7)
