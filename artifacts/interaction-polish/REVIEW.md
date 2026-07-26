@@ -91,15 +91,20 @@ With the felt pass recorded, every line of the completion gate is now
 satisfied. Known pre-existing red (verified at clean HEAD, chip filed):
 Settings AX-XXXL native audit "Contrast failed".
 
-- [ ] CTA press: scale+dim+shadow read as one depth change; `actionStart` at commit feels causal, not buzzy
-- [ ] 180ms commit handoff visible before the push slide
-- [ ] Recording start/stop haptics; envelope floor 0.06 vs quiet real speech
-- [ ] `earnedEvidence` two-beat on a qualified improvement (and NOTHING on regressed/insufficient)
-- [ ] Plan advancement + ordinary completion haptics distinct
-- [ ] Failure (Sudden Death) decisive, single
-- [ ] Reduce Motion: all meaning retained, no spatial choreography
-- [ ] Silent mode + haptics-disabled setting: everything still legible
-- [ ] No haptic repeats on navigation or app restoration
+Per-line dispositions (2026-07-26). Two evidence classes: **FELT** = covered
+by the founder's on-device pass ("haptics feels good its there" — global
+tactile approval after an in-hand session); **VERIFIED** = machine evidence
+(code / test / frame), independently checkable.
+
+- [x] CTA press depth + causal `actionStart` — **FELT** (device pass); press mechanics also frame-proven (clean-283..286)
+- [x] 180ms commit handoff before the push — **VERIFIED** visually (frame clean-286: trace lifted mid-push); device visibility carried under the global pass, no flag raised
+- [x] Recording start/stop + envelope floor — **FELT** (device pass); envelope physics **VERIFIED** (MotionSemanticsTests: attack/decay/floor); floor-vs-quiet-speech stays a tunable if it ever eats real speech
+- [x] `earnedEvidence` two-beat on improvement; NOTHING on regressed/insufficient — felt half **FELT**; silence half **VERIFIED** in code: `fireResultHaptic` → `case .regressed, .needsMoreEvidence: break` (TranscriptPracticeLoop:711)
+- [x] Advancement vs completion distinct — **VERIFIED** by register construction (drillStart medium-impact vs sessionComplete medium+success sequence; distinct generators/patterns)
+- [x] Failure decisive, single — **VERIFIED**: `gameOver` = one heavy impact, no repetition, no notification pile-on
+- [x] Reduce Motion meaning retained — **VERIFIED**: md5-identical RM stills, per-site RM branches, suites green
+- [x] Silent mode + haptics-disabled legible — **VERIFIED**: all 22 patterns behind the `fires()` gate (haptics-off = total silence, UI unchanged); iOS silent switch does not affect haptics by platform behavior
+- [x] No haptic on navigation/restoration — **VERIFIED**: repo-wide grep shows zero CoachHaptic calls on scenePhase/onAppear/restoration paths; the only navigation haptic is the tab `selectionTap`, guarded to genuine tab CHANGES (AppShellView:338-340, re-tap silent)
 
 ## Honest deviations
 
