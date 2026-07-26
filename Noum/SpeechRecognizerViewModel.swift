@@ -87,6 +87,9 @@ enum RecordingLifecycleState: Equatable, Sendable {
 /// actions without parsing provider strings or retaining provider errors.
 enum SpeechRecordingIssue: Equatable, Sendable {
     case unsupportedOnDeviceLocale(String)
+    /// Consent is off and no on-device route could stand in. A retry cannot
+    /// change this, so surfaces must offer the consent decision instead.
+    case cloudProcessingDisabled
 }
 
 /// Monotonic timing receipt for one microphone capture. Provider drain and
@@ -389,7 +392,10 @@ class SpeechRecognizerViewModel: ObservableObject {
             return UITestScriptedTranscriptionProvider()
         }
         let selected = UserDefaults.standard.string(forKey: "transcriptionProvider")
-        return makeProvider(for: TranscriptionProviderID.resolved(fromStoredValue: selected))
+        return developmentProvider(
+            id: TranscriptionProviderID.resolved(fromStoredValue: selected),
+            cloudProcessingAllowed: AISettingsManager.shared.isCloudProcessingAllowed
+        )
         #else
         // Production prefers the authenticated Deepgram route when consent is
         // present, then falls back to Apple's strictly on-device recognizer if
@@ -407,6 +413,24 @@ class SpeechRecognizerViewModel: ObservableObject {
         guard cloudProcessingAllowed else { return LocalSpeechProvider() }
         return ResilientTranscriptionProvider(
             primary: DeepgramProvider(),
+            fallback: LocalSpeechProvider()
+        )
+    }
+
+    /// Development selection seam. Debug builds let a developer pin a specific
+    /// cloud provider, but they must not diverge from production on the two
+    /// decisions that determine whether a rep can happen at all: consent-off
+    /// never constructs a cloud provider, and a cloud route that cannot start
+    /// falls back to Apple on-device rather than dead-ending the rep. A bare
+    /// cloud provider here turned every debug rep on device into an
+    /// unrecoverable "we could not hear the rep".
+    static func developmentProvider(
+        id: TranscriptionProviderID,
+        cloudProcessingAllowed: Bool
+    ) -> any TranscriptionProvider {
+        guard id != .local, cloudProcessingAllowed else { return LocalSpeechProvider() }
+        return ResilientTranscriptionProvider(
+            primary: makeProvider(for: id),
             fallback: LocalSpeechProvider()
         )
     }
@@ -1087,6 +1111,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     func recordingIssue(for error: Error) -> SpeechRecordingIssue? {
+        if let sessionError = error as? TranscriptionSessionError,
+           sessionError == .cloudProcessingConsentRequired {
+            return .cloudProcessingDisabled
+        }
         guard let localError = error as? LocalSpeechError,
               case .onDeviceRecognitionUnavailable(let locale) = localError else {
             return nil

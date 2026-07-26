@@ -26,6 +26,49 @@ struct LocalSpeechProviderTests {
         #expect(provider.identifier == "automatic")
     }
 
+    /// Debug builds may pin a provider, but they must not be able to pin the
+    /// app into a rep that cannot start. Consent-off resolves local, and a
+    /// pinned cloud provider is always wrapped with the on-device fallback.
+    @MainActor
+    @Test func developmentSelectionNeverDeadEndsTheRep() {
+        for id in TranscriptionProviderID.allCases {
+            #expect(
+                SpeechRecognizerViewModel.developmentProvider(
+                    id: id,
+                    cloudProcessingAllowed: false
+                ).identifier == "local"
+            )
+        }
+
+        #expect(
+            SpeechRecognizerViewModel.developmentProvider(
+                id: .local,
+                cloudProcessingAllowed: true
+            ).identifier == "local"
+        )
+        for id in TranscriptionProviderID.allCases where id != .local {
+            #expect(
+                SpeechRecognizerViewModel.developmentProvider(
+                    id: id,
+                    cloudProcessingAllowed: true
+                ).identifier == "automatic"
+            )
+        }
+    }
+
+    /// Consent-off is not a generic "we could not hear you" — it is a decision
+    /// the user can reverse, so it must reach the UI as its own typed issue.
+    @MainActor
+    @Test func consentRequiredReachesTheRecordingUIMapper() {
+        let recognizer = SpeechRecognizerViewModel(preloadOnInit: false)
+        let error = TranscriptionSessionError.cloudProcessingConsentRequired
+        #expect(recognizer.recordingIssue(for: error) == .cloudProcessingDisabled)
+        #expect(
+            recognizer.userFacingRecordingError(for: error, started: false)
+                == "Cloud processing is off. Turn it on in Settings to use live transcription."
+        )
+    }
+
     @Test func automaticRouteFallsBackWhenCloudCannotStart() async throws {
         let fallbackSession = StubTranscriptionSession()
         let provider = ResilientTranscriptionProvider(

@@ -794,6 +794,10 @@ struct TimedPracticeView: View {
     /// may change between reps, but never retroactively change an active rep.
     @State private var activeTimedDifficulty: TimedPracticeDifficulty?
     @State private var showExitConfirmation = false
+    /// Consent can be granted without abandoning the rep: the recognizer
+    /// re-resolves its provider on every start, so allowing here and retrying
+    /// picks up the cloud route immediately.
+    @State private var showCloudProcessingConsent = false
     @State private var activeDrill: DrillRecommendation?
 
     // Tasks
@@ -982,12 +986,34 @@ struct TimedPracticeView: View {
                 }
             }
         }
-        .toolbar(phase == .setup ? .visible : .hidden, for: .navigationBar)
+        // The rep is deliberately immersive — no navigation chrome while capture
+        // is healthy. A capture failure is the exception: without this the Back
+        // item above never renders, and the failure card was the only control on
+        // screen, so an unsatisfiable retry left no way out of the rep.
+        .toolbar(
+            phase == .setup || speechVM.connectionError != nil ? .visible : .hidden,
+            for: .navigationBar
+        )
         .alert("End session?", isPresented: $showExitConfirmation) {
             Button("Keep Practicing", role: .cancel) { }
             Button("Discard", role: .destructive) { dismiss() }
         } message: {
             Text("Your current session will be lost.")
+        }
+        .sheet(isPresented: $showCloudProcessingConsent) {
+            CloudProcessingConsentDisclosure(
+                isCurrentlyAllowed: AISettingsManager.shared.isCloudProcessingAllowed,
+                onAllow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.allowed)
+                    showCloudProcessingConsent = false
+                    retryRecordingAfterIssue()
+                },
+                onNotNow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.declined)
+                    showCloudProcessingConsent = false
+                    returnToSetupAfterRecordingIssue()
+                }
+            )
         }
         .task {
             // Quick Start handshake FIRST — before the yield and the awaited
@@ -1636,19 +1662,34 @@ struct TimedPracticeView: View {
         .accessibilityIdentifier("timedPractice.microphoneReadiness")
     }
 
+    /// The rep hides the navigation bar, so this card is the only chrome on
+    /// screen when capture fails. Every branch therefore has to leave the user
+    /// a way out: a primary action the environment can actually satisfy, and —
+    /// when that primary is a retry — a secondary exit, so a failure the retry
+    /// can never clear is not a trap.
+    private enum RecordingIssueRecovery {
+        case retry
+        case openSettings
+        case backToSetup
+    }
+
     private func recordingIssueCard(_ message: String) -> some View {
         let title: String
         let detail: String
-        let requiresLocaleChange: Bool
+        let recovery: RecordingIssueRecovery
         switch speechVM.recordingIssue {
         case .unsupportedOnDeviceLocale:
             title = "This language isn't available offline"
             detail = "\(message) Choose another Practice language in Settings or continue on a device that supports it."
-            requiresLocaleChange = true
+            recovery = .backToSetup
+        case .cloudProcessingDisabled:
+            title = "Live transcription needs cloud processing"
+            detail = message
+            recovery = .openSettings
         case nil:
             title = "We could not hear the rep"
             detail = message
-            requiresLocaleChange = false
+            recovery = .retry
         }
 
         return VStack(alignment: .leading, spacing: Spacing.md) {
@@ -1672,28 +1713,30 @@ struct TimedPracticeView: View {
                 }
             }
 
-            if requiresLocaleChange {
-                Button(action: returnToSetupAfterRecordingIssue) {
-                    Label("Back to setup", systemImage: "arrow.backward")
-                        .font(Typography.caption.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(.white, in: Capsule())
-                        .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("timedPractice.recordingIssue.backToSetup")
-            } else {
-                Button(action: retryRecordingAfterIssue) {
-                    Label(speechVM.microphonePermissionState == .denied ? "Open Settings" : "Try again", systemImage: "arrow.clockwise")
-                        .font(Typography.caption.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(.white, in: Capsule())
-                        .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("timedPractice.recordingIssue.retry")
+            switch recovery {
+            case .backToSetup:
+                recordingIssuePrimaryAction(
+                    title: "Back to setup",
+                    icon: "arrow.backward",
+                    identifier: "timedPractice.recordingIssue.backToSetup",
+                    action: returnToSetupAfterRecordingIssue
+                )
+            case .openSettings:
+                recordingIssuePrimaryAction(
+                    title: "Turn on cloud processing",
+                    icon: "cloud.fill",
+                    identifier: "timedPractice.recordingIssue.cloudConsent",
+                    action: { showCloudProcessingConsent = true }
+                )
+                recordingIssueExitAction
+            case .retry:
+                recordingIssuePrimaryAction(
+                    title: speechVM.microphonePermissionState == .denied ? "Open Settings" : "Try again",
+                    icon: "arrow.clockwise",
+                    identifier: "timedPractice.recordingIssue.retry",
+                    action: retryRecordingAfterIssue
+                )
+                recordingIssueExitAction
             }
         }
         .padding(20)
@@ -1711,8 +1754,46 @@ struct TimedPracticeView: View {
                 .stroke(Color.white.opacity(0.14), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.22), radius: 30, y: 15)
+        // `.combine` is load-bearing: the card's assertions read the whole
+        // failure statement off this one element's label, and its buttons stay
+        // individually addressable underneath.
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("timedPractice.recordingIssue")
+    }
+
+    private func recordingIssuePrimaryAction(
+        title: String,
+        icon: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(Typography.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(.white, in: Capsule())
+                .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    /// Quiet secondary exit. Present whenever the primary action is a recovery
+    /// attempt that the environment may never satisfy, so the rep is always
+    /// escapable without the navigation bar the immersive surface hides.
+    private var recordingIssueExitAction: some View {
+        Button(action: returnToSetupAfterRecordingIssue) {
+            Text("Back to setup")
+                .font(Typography.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .foregroundStyle(.white.opacity(0.72))
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("timedPractice.recordingIssue.exit")
+        .accessibilityHint("Returns to setup. This rep is not saved.")
     }
 
     private var compactImpromptuLaunchCard: some View {
