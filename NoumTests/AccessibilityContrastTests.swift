@@ -48,9 +48,41 @@ struct AccessibilityContrastTests {
         }
     }
 
+    /// The floating navigation capsule is the one surface the user sees on
+    /// every tab root, and the rendered audit only runs in light. These
+    /// cases hold both registers to AA so a dark-mode regression cannot
+    /// ship unseen: the selected pair resolved to #9061F9 on the quiet
+    /// violet pill (3.68:1) until `…OnQuiet` lifted the dark register, and
+    /// receding the unselected glyph to 0.75 alpha put it at 3.41:1.
+    @Test @MainActor
+    func navigationCapsuleTokensClearAAInBothAppearances() {
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let capsule = resolved(AppColor.cardBackground, in: style)
+            let pill = resolved(AppColor.proQuietSurface, in: style)
+            let cases: [(String, UIColor, UIColor)] = [
+                ("unselected label", resolved(AppColor.neutralReceded, in: style), capsule),
+                ("unselected glyph", resolved(AppColor.neutralReceded, in: style), capsule),
+                ("selected label", resolved(AppColor.coachingInkOnQuiet, in: style), pill),
+                ("selected glyph", resolved(AppColor.coachAccentOnQuiet, in: style), pill),
+            ]
+
+            for (name, foreground, background) in cases {
+                #expect(
+                    contrastRatio(foreground: foreground, background: background) >= 4.5,
+                    "\(name) must clear AA on the navigation capsule in \(style == .dark ? "dark" : "light")"
+                )
+            }
+        }
+    }
+
     @MainActor
     private func resolved(_ color: Color) -> UIColor {
-        UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        resolved(color, in: .light)
+    }
+
+    @MainActor
+    private func resolved(_ color: Color, in style: UIUserInterfaceStyle) -> UIColor {
+        UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
     }
 
     private func contrastRatio(foreground: UIColor, background: UIColor) -> Double {

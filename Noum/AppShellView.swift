@@ -310,12 +310,19 @@ struct AppShellView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, Spacing.xs)
         .background {
+            // Opaque, not translucent: the capsule floats over live list
+            // content, and at accessibility sizes a section header can sit
+            // directly beneath it. Any alpha here bleeds that copy through
+            // as ~1.05:1 ghost text (Settings' "Appearance" header read as
+            // "Appe|arance"), which the native contrast audit fails.
+            //
+            // No hairline stroke: at 0.05 black / 0.10 white it computed
+            // ~1.05:1 against its own fill, so it delineated nothing and
+            // the audit read the curve as failing content inside the tab
+            // items. The shadow carries the floating edge. A visible
+            // boundary here would need to clear 3:1 (WCAG 1.4.11).
             Capsule(style: .continuous)
-                .fill(AppColor.cardBackground.opacity(0.94))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(AppColor.subtleBorder, lineWidth: 1)
-                )
+                .fill(AppColor.cardBackground)
                 .shadow(color: Color.black.opacity(0.08), radius: 24, y: 8)
         }
         .padding(.bottom, Spacing.xs)
@@ -343,13 +350,18 @@ struct AppShellView: View {
             VStack(spacing: 3) {
                 Image(systemName: glyph)
                     .font(.system(size: 17, weight: .semibold))
+                    // Full-strength token in both states. Receding the
+                    // unselected glyph to 0.75 computed 3.41:1 on the
+                    // capsule — under AA for a navigation glyph, and the
+                    // native audit flags it. Selection stays legible
+                    // without it: pill + accent tint + label weight.
                     .foregroundStyle(
-                        isSelected ? AppColor.coachAccent : AppColor.neutralReceded.opacity(0.75)
+                        isSelected ? AppColor.coachAccentOnQuiet : AppColor.neutralReceded
                     )
                     .accessibilityHidden(true)
                 Text(title)
                     .font(Typography.figtree(size: 10.5, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))
-                    .foregroundStyle(isSelected ? AppColor.coachingInk : AppColor.neutralReceded)
+                    .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 6)

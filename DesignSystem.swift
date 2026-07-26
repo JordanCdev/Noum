@@ -287,6 +287,20 @@ enum AppColor {
         light: (0.486, 0.227, 0.929),
         dark: (0.565, 0.380, 0.976)
     )
+    /// Selected navigation-capsule label + glyph, read against the quiet
+    /// violet pill they sit on. Both roles resolve to #9061F9 in dark,
+    /// which computes 3.68:1 on `proQuietSurface` — under AA for the
+    /// 10.5pt nav label. These registers keep each V4.6 light value
+    /// untouched and lift dark to the `proText` violet (6.42:1), the same
+    /// keep-light-lift-dark shape as `brandBlueOnWash`.
+    static let coachingInkOnQuiet = dynamicColor(
+        light: (0.298, 0.169, 0.722),
+        dark: (0.718, 0.612, 0.988)
+    )
+    static let coachAccentOnQuiet = dynamicColor(
+        light: (0.486, 0.227, 0.929),
+        dark: (0.718, 0.612, 0.988)
+    )
     /// Today hero gradient stops (#4D3CC7 → #7A45E0 at ~141°). The hero is
     /// the app's single marquee gradient; nothing else may use these stops.
     static let heroGradientStart = Color(red: 0.302, green: 0.235, blue: 0.780)
