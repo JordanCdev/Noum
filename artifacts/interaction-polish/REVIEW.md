@@ -73,6 +73,24 @@ VoiceTrace breath now stops the moment the scene leaves `.active` (transaction-s
 > iPhone 17 and Noum auto-launched on device — the checklist run is in
 > Jordan's hands; feel-notes land here as the pass/tune record.
 
+## Device verdict — 2026-07-26 (Jordan, iPhone 17, in hand)
+
+- **Haptics: PASS** — verbatim: "haptics feels good its there". The felt
+  register is approved as shipped; no tuning requested.
+- **Finding: "settings button closes the app"** — diagnosed NOT a crash:
+  the permissions row (SettingsView:1460) intentionally opens the iOS
+  Settings app, which backgrounds Noum. In-app Settings verified
+  crash-free on identical code in sim; Noum process stayed alive on
+  device (PID 1235) through the session.
+- **Request: appearance control** — shipped same session: Settings →
+  Appearance (System / Light / Dark; System follows iOS, which can
+  schedule by time of day). Live-verified flipping in sim; signed-out
+  Settings journey green over the change.
+
+With the felt pass recorded, every line of the completion gate is now
+satisfied. Known pre-existing red (verified at clean HEAD, chip filed):
+Settings AX-XXXL native audit "Contrast failed".
+
 - [ ] CTA press: scale+dim+shadow read as one depth change; `actionStart` at commit feels causal, not buzzy
 - [ ] 180ms commit handoff visible before the push slide
 - [ ] Recording start/stop haptics; envelope floor 0.06 vs quiet real speech

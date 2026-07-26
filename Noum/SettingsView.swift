@@ -99,6 +99,9 @@ struct SettingsView: View {
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
     // Persisted so an advanced user who opens the section doesn't have to
     // re-open it every launch. Default collapsed so first-open is calm.
+    @AppStorage(AppearanceMode.storageKey)
+    private var appearanceMode = AppearanceMode.system.rawValue
+
     @AppStorage("settings.advancedExpanded") private var advancedExpanded: Bool = false
 
     @State private var isBackendConfigured = false
@@ -157,6 +160,12 @@ struct SettingsView: View {
                     soundscapeRow
                 } header: {
                     SettingsSectionLabel(title: "Language & sound")
+                }
+
+                Section {
+                    appearanceRow
+                } header: {
+                    SettingsSectionLabel(title: "Appearance")
                 }
 
                 Section {
@@ -725,6 +734,32 @@ struct SettingsView: View {
         ) {
             showLocalePicker = true
         }
+    }
+
+    private var appearanceRow: some View {
+        let mode = AppearanceMode(rawValue: appearanceMode) ?? .system
+        return Menu {
+            ForEach(AppearanceMode.allCases) { candidate in
+                Button {
+                    appearanceMode = candidate.rawValue
+                } label: {
+                    Label(candidate.displayName, systemImage: candidate.symbolName)
+                }
+            }
+        } label: {
+            SettingsNavRow(
+                title: "Appearance",
+                value: mode.displayName,
+                icon: mode.symbolName,
+                accessibilityHint: "Follow the system look, or pin Noum light or dark."
+            ) { }
+            .allowsHitTesting(false)
+        }
+        // Menu tints its label with the accent by default — keep the row
+        // in the standard Settings register (and above the AX contrast
+        // floor) by restoring primary ink.
+        .tint(AppColor.textPrimary)
+        .accessibilityIdentifier("settings.appearance")
     }
 
     private var soundscapeRow: some View {

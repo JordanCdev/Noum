@@ -239,6 +239,9 @@ struct NoumApp: App {
         }
     }
 
+    @AppStorage(AppearanceMode.storageKey)
+    private var appearanceMode = AppearanceMode.system.rawValue
+
     @ViewBuilder
     private var rootView: some View {
         rootContent
@@ -255,6 +258,12 @@ struct NoumApp: App {
         // when the user picks a different locale in Settings — without it,
         // already-rendered Text views keep their original locale.
         .environment(\.locale, Locale(identifier: localeSettings.current.code))
+        // Appearance override (Settings -> Appearance): nil follows the
+        // system - including iOS's own time-of-day schedule; light/dark
+        // pin the app regardless.
+        .preferredColorScheme(
+            AppearanceMode(rawValue: appearanceMode)?.colorScheme
+        )
         .id(localeSettings.current.code)
         .sheet(isPresented: $showFirstRepCloudProcessingConsent) {
             CloudProcessingConsentDisclosure(
