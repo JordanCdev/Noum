@@ -392,12 +392,16 @@ struct SessionHistoryView: View {
                         HStack(spacing: Spacing.sm) {
                             Text(reviewTitle)
                                 .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
-                                .foregroundStyle(AppColor.coachingInk)
+                                // `-OnQuiet` is the register for this surface.
+                                // The general `coachingInk` is a fill role and
+                                // measures 3.68:1 on proQuietSurface in Dark —
+                                // under AA for 14pt text. This token is 5.56:1.
+                                .foregroundStyle(AppColor.coachingInkOnQuiet)
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: Spacing.xs)
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AppColor.coachingInk)
+                                .foregroundStyle(AppColor.coachingInkOnQuiet)
                                 .accessibilityHidden(true)
                         }
                         .padding(.horizontal, Spacing.md)
