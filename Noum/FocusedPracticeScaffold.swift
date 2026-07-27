@@ -58,6 +58,8 @@ struct FocusedPracticeBackground: View {
 /// Shared full-screen pre-rep cue. It replaces mode-specific dimmed boxes so
 /// setup never remains visibly stacked behind the countdown.
 struct FocusedPracticeCountdownOverlay: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let style: FocusedPracticeStyle
     let value: String
     let subtitle: String
@@ -80,6 +82,14 @@ struct FocusedPracticeCountdownOverlay: View {
                         .font(Typography.figtreeNumeric(size: 82, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
                         .contentTransition(.numericText())
+                        // Owned here rather than at each writer. Ah Counter
+                        // wrapped its countdown writes in an animation and
+                        // sprang; Pressure Drill, Cut the Crutch and Pace
+                        // Training wrote the value plainly and hard-cut through
+                        // the same 82pt numeral. Driving it from the shared
+                        // overlay means every mode gets the same hand-off ritual
+                        // and no future writer can silently opt out.
+                        .animation(reduceMotion ? nil : NoumMotion.interactionSelection, value: value)
                 }
 
                 Text(subtitle)

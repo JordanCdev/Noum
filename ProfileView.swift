@@ -1598,24 +1598,36 @@ struct ProfileView: View {
             LazyVStack(spacing: Spacing.cardGap) {
                 let surfacePlan = defaultSurfacePlan
 
+                // Same staggered entrance Home uses (ContentView 530/569/593).
+                // Profile is a persistent tab that rendered as one instant slab,
+                // so switching Home → Profile was a visible drop in production
+                // value inside the same app. Indices follow reading order;
+                // `cardEntrance` already caps the total stagger and collapses
+                // to an instant appearance under Reduce Motion.
                 identityHeader
+                    .cardEntrance(0)
 
                 if surfacePlan.surfaces.contains(.progressHero) {
                     compactSpeakingRatingHero
+                        .cardEntrance(1)
                 }
 
                 profileCoachReadCard
+                    .cardEntrance(2)
 
                 // A due real-world check-in is part of the active coaching
                 // loop, not evidence-library content. The row self-hides when
                 // cadence says it is not due.
                 weeklyCheckInCard
+                    .cardEntrance(3)
 
                 if shouldAskTransformationQuestion {
                     transformationQuestionCard
+                        .cardEntrance(4)
                 }
 
                 profileEvidenceHub
+                    .cardEntrance(5)
             }
             .padding(.horizontal, Spacing.screenH)
             .padding(.top, Spacing.sm)

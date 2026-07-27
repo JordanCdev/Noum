@@ -1046,6 +1046,13 @@ struct SummaryView: View {
                             // `PostRepVerdictContent` is still fed by the exact
                             // persisted session and remains honest below the
                             // evidence floor.
+                            // The coaching payoff arrives in reading order
+                            // rather than as one fully-rendered wall. This is
+                            // the most-repeated screen in the product, and a
+                            // coach delivers the evidence, then the read, then
+                            // the next move — the stagger carries that sequence.
+                            // `cardEntrance` caps the total and collapses to an
+                            // instant appearance under Reduce Motion.
                             PostRepDebriefCard(
                                 content: postRepVerdictContent,
                                 revisedChange: freshRevisedReadChange,
@@ -1056,11 +1063,15 @@ struct SummaryView: View {
                                 suppressesNextMove: transcriptUpgradeOwnsNextAction,
                                 observationOverride: transcriptUpgradeObservation
                             )
+                            .cardEntrance(0)
                             transcriptRetryComparisonSection
+                                .cardEntrance(1)
                             rewriteSection
+                                .cardEntrance(2)
                             if !transcriptUpgradeOwnsNextAction {
                                 reviewExperimentActionCard
                                     .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+                                    .cardEntrance(3)
                             }
                             // Pressure Drill keeps its mode receipt visible for
                             // the existing run-completion contract, but only
@@ -1068,8 +1079,10 @@ struct SummaryView: View {
                             // and metrics move behind Details.
                             if isSuddenDeathSummary {
                                 resultOverviewCard
+                                    .cardEntrance(4)
                             }
                             postRepProgressReceipt
+                                .cardEntrance(5)
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
@@ -1080,8 +1093,11 @@ struct SummaryView: View {
                                     showPaywall = true
                                 }
                             )
+                            .cardEntrance(6)
                             expandableDetailsSection
+                                .cardEntrance(6)
                             SummaryExitPanel(onDone: completeSummaryReview)
+                                .cardEntrance(6)
                         }
                     }
                     .padding(.horizontal, 16)
