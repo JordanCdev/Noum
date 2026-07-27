@@ -583,6 +583,10 @@ struct CoachingOnboardingView: View {
                 let voiceGoal = option as? SpeakingStyleGoal
 
                 Button {
+                    // Input acknowledgment register: onboarding is the first
+                    // thing the product does, and every choice here shaped the
+                    // coaching plan while feeling like nothing happened.
+                    CoachHaptic.selectionTap()
                     animate(.snappySpring) {
                         onSelect(option)
                     }
@@ -658,6 +662,7 @@ struct CoachingOnboardingView: View {
             ForEach(SpeakingChallenge.allCases, id: \.id) { challenge in
                 let isSelected = !usesCustomChallenge && challenge.id == biggestChallenge.id
                 Button {
+                    CoachHaptic.selectionTap()
                     focusedField = nil
                     animate(.snappySpring) {
                         usesCustomChallenge = false
@@ -684,6 +689,7 @@ struct CoachingOnboardingView: View {
         let trimmed = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
         return VStack(alignment: .leading, spacing: usesCustomChallenge ? 10 : 0) {
             Button {
+                CoachHaptic.selectionTap()
                 animate(.snappySpring) {
                     usesCustomChallenge = true
                     biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: customChallengeText)
@@ -1064,6 +1070,9 @@ struct CoachingOnboardingView: View {
 
     private func advance(from stage: OnboardingStage) {
         guard canAdvance(from: stage) else { return }
+        // After the guard, so a blocked tap stays silent rather than
+        // confirming progress that did not happen.
+        CoachHaptic.selectionTap()
         focusedField = nil
 
         if let next = OnboardingStage(rawValue: stage.rawValue + 1) {
@@ -1122,6 +1131,11 @@ struct CoachingOnboardingView: View {
         }
 
         isSaving = false
+        // Commitment register: finishing setup is the user committing to the
+        // practice, and it is the single biggest moment in the first run.
+        // Fires only after persistence succeeded — the early return above
+        // keeps a failed save silent rather than celebrating nothing.
+        CoachHaptic.drillStart()
         if let onComplete {
             onComplete()
         } else {

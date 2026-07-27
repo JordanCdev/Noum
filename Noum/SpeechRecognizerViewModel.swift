@@ -1492,10 +1492,29 @@ class SpeechRecognizerViewModel: ObservableObject {
         // the captured per-word timings (otherwise discarded after PauseMetrics)
         // via the pure TranscriptTimeline. Nil when no credible positional
         // signal, so we never persist a fabricated "you rushed at the close".
+        // The filler set here must be the semantically ADJUSTED one, not the raw
+        // lexicon. `effectiveWordSet()` matches every "like"/"so"/"right" in the
+        // transcript regardless of use, so a rep that used them as genuine
+        // connectives produced a positional cluster claim — "you clustered
+        // fillers at the close" — about speech that was never filler. That
+        // breaks the semantic-vs-filler invariant at the point where the coach
+        // makes a claim about the user.
+        //
+        // Word-level is still coarser than the detector: if one "like" in a rep
+        // is a true disfluency, every "like" in that rep counts positionally.
+        // `TranscriptTimeline` matches on tokens, so occurrence-level accuracy
+        // would need a timeline API change; this removes the false-positive
+        // class that reaches the user without inventing a second filler owner.
+        let adjustedFillerWords = Set(
+            FillerWordDetector
+                .analysis(in: transcribedText, prompt: sessionPrompt ?? "")
+                .adjustedDetections
+                .map(\.word)
+        )
         let repEventLocations = RepEventLocationsEngine.derive(
             timeline: TranscriptTimeline(
                 words: sessionWordTimings,
-                fillerWords: FillerWordDetector.effectiveWordSet()
+                fillerWords: adjustedFillerWords
             )
         )
         let finalizedSession = PracticeSessionFinalizer.finalize(

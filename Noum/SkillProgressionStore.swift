@@ -39,7 +39,16 @@ final class SkillProgressionStore: ObservableObject {
         var snapshot = loadSnapshot()
         var newEvents: [SkillLevelUpEvent] = []
 
+        // Defense in depth for the celebration invariant. The snapshot is
+        // mutated inside this loop, so a second trend for an area already seen
+        // in THIS batch would compare against its sibling rather than against
+        // history and manufacture an upward crossing out of two unrelated
+        // measurements. `TrendAnalyzer.analyze` no longer emits duplicates;
+        // this makes the guarantee hold for any caller.
+        var areasRecordedThisBatch: Set<SkillArea> = []
+
         for trend in trends {
+            guard areasRecordedThisBatch.insert(trend.skillArea).inserted else { continue }
             let previous = snapshot[trend.skillArea]
             // Always update the snapshot to the new level so we don't
             // re-fire on the same level next session.

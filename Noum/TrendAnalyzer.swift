@@ -335,7 +335,20 @@ enum TrendAnalyzer {
             trends.append(pitchTrend)
         }
 
-        return trends
+        // One trend per skill area. `analyzeDuration` reports into
+        // `.conciseSpeaking` or `.answerDevelopment` depending on rep length,
+        // and both of those areas already have a category trend above, so an
+        // undeduplicated result handed consumers two different measurements of
+        // the same skill. `SkillProgressionStore.record` then compared the
+        // second against the first instead of against history and celebrated
+        // "Conciseness improved · Developing → Strong" on a user's very first
+        // rep — a crossing that never happened.
+        //
+        // First-wins keeps the evaluator's category rating, which is a direct
+        // coaching read, over the duration bucket, which is a proxy inferred
+        // from how long the user spoke.
+        var seenAreas: Set<SkillArea> = []
+        return trends.filter { seenAreas.insert($0.skillArea).inserted }
     }
 
     /// Pitch monotone trend across snapshots that captured a reliable

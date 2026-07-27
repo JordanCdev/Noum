@@ -481,7 +481,10 @@ struct GoalRefreshInlineCard: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        // Token, not near-white: this panel shows the user's own goal in
+        // `.primary` ink, which resolves to white in Dark appearance. A fixed
+        // white fill made their goal unreadable on their own screen.
+        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
@@ -542,7 +545,10 @@ struct GoalRefreshInlineCard: View {
                     .frame(minHeight: 104)
                     .accessibilityIdentifier("goalRefresh.editor")
             }
-            .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            // Matches the identical composite at line 237. A fixed white fill
+            // here meant a Dark-appearance user could not read what they were
+            // typing into their own goal-refresh box.
+            .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     .stroke(focused ? AppColor.brandBlue.opacity(0.40) : AppColor.brandBlue.opacity(0.16), lineWidth: 1)

@@ -1039,6 +1039,10 @@ struct SuddenDeathPracticeView: View {
     #endif
 
     private func beginSession() {
+        // Commitment register, matching Timed and Filler Control. Fires before
+        // the prompt hop so the tap feels immediate even when topic selection
+        // takes a beat.
+        CoachHaptic.drillStart()
         Task { @MainActor in
             let openingPrompt = await PracticeTopics.next(
                 profile: coachingProfileStore.profile,
@@ -1055,6 +1059,7 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func retrySession() {
+        CoachHaptic.drillStart()
         Task { @MainActor in
             let openingPrompt = await PracticeTopics.next(
                 profile: coachingProfileStore.profile,
@@ -1415,6 +1420,13 @@ struct SuddenDeathPracticeView: View {
 
         if result.roundsSurvived >= 4 {
             CoachHaptic.pressureSessionComplete()
+        } else {
+            // A shorter run still finished a rep. Leaving it silent made the
+            // weaker outcome feel ignored while the strong one was celebrated —
+            // the inverse of the never-punish-shame rule. `drillIncomplete` is
+            // the acknowledgment register for exactly this: a soft single tap,
+            // never a fail-buzzer.
+            CoachHaptic.drillIncomplete()
         }
         print("[PressureDrill] Session finalized: \(result.resultLabel), score \(result.score), rounds \(result.roundsSurvived)")
     }

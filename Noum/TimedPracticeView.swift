@@ -393,6 +393,10 @@ private struct SpotlightOrbView: View {
                 .font(.system(size: 48, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
+                // The stack's animation below is bound to `timingState`, so it
+                // never drove this clock. Without a binding to the value that
+                // actually changes, the numeric roll cannot fire.
+                .animation(reduceMotion ? nil : NoumMotion.interactionSelection, value: elapsedSeconds)
 
             Text(timingState == .neutral ? "Keep going" : timingState.spotlightLabel)
                 .font(.caption.weight(.semibold))
@@ -803,6 +807,10 @@ struct TimedPracticeView: View {
     // Tasks
     @State private var thinkingTask: Task<Void, Never>?
     @State private var speakingTask: Task<Void, Never>?
+    /// The brief-reveal auto-start. Held so teardown can cancel it: without a
+    /// handle it outlived the view and reopened the microphone behind whatever
+    /// screen the user had navigated to.
+    @State private var briefRevealTask: Task<Void, Never>?
 
     // Settings (persisted via @AppStorage)
     @AppStorage("timedPractice.keepPromptVisible") private var keepPromptVisible: Bool = false
@@ -2440,6 +2448,12 @@ struct TimedPracticeView: View {
                     .font(.system(size: 56, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
+                    // `contentTransition` is inert without an enclosing
+                    // animation bound to the value, so this 56pt clock — the
+                    // thing the user looks at for the whole rep — hard-cut once
+                    // a second while the ring behind it glided. The roll was
+                    // written and never shipped.
+                    .animation(reduceMotion ? nil : NoumMotion.interactionSelection, value: elapsedSeconds)
 
                 // Timing state label
                 if timingState != .neutral {
@@ -3533,11 +3547,15 @@ struct TimedPracticeView: View {
                 startThinkingCountdown(thinkingDuration: thinkingDuration)
             } else if !effectiveKeepPromptVisible {
                 updateWithMotion(.easeInOut(duration: 0.3)) { phase = .briefReveal }
-                Task {
+                briefRevealTask?.cancel()
+                briefRevealTask = Task {
                     try? await Task.sleep(for: .seconds(3))
-                    if phase == .briefReveal {
-                        await MainActor.run { startSpeaking() }
-                    }
+                    // `try?` swallows the cancellation error, so the sleep alone
+                    // does not stop this task — check explicitly. `phase` is not
+                    // sufficient on its own: teardown never resets it, so a
+                    // departed view still reads `.briefReveal` here.
+                    guard !Task.isCancelled, phase == .briefReveal else { return }
+                    await MainActor.run { startSpeaking() }
                 }
             } else {
                 startSpeaking()
@@ -4010,9 +4028,11 @@ struct TimedPracticeView: View {
         speakingTask?.cancel()
         thinkingTask?.cancel()
         finalizationTask?.cancel()
+        briefRevealTask?.cancel()
         speakingTask = nil
         thinkingTask = nil
         finalizationTask = nil
+        briefRevealTask = nil
         ttsEngine.stopSpeaking(at: .immediate)
         if videoManager.isRecording { videoManager.stopRecording() }
         // If the user backs out mid-thinking-window, stop ambience so

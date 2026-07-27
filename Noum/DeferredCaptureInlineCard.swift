@@ -132,7 +132,9 @@ struct DeferredCaptureInlineCard: View {
                     .padding(.vertical, 8)
                     .frame(minHeight: 96)
             }
-            .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            // Adaptive token — a fixed white fill left the user's own typed
+            // text unreadable in Dark appearance.
+            .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     .stroke(isFocused ? AppColor.brandBlue.opacity(0.40) : AppColor.brandBlue.opacity(0.18), lineWidth: 1)
