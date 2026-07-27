@@ -160,3 +160,62 @@ When implementation evidence challenges a decision:
 4. update both affected specifications;
 5. add a validation method;
 6. never silently contradict the product contract.
+
+---
+
+## Decision entry — 2026-07-27 · The motion contract needs a coverage rule
+
+**Status:** LOCKED (implemented and verified)
+
+**1. Evidence.** The founder's read is that the app "feels quite static". A
+multi-dimension code review, each finding adversarially verified, located four
+surfaces responsible — and three of them had already been given motion that
+could never run:
+
+- Both rep clocks (56pt cinematic, 48pt spotlight orb) declared
+  `contentTransition(.numericText())` with no animation bound to
+  `elapsedSeconds`; the orb's animation was bound to `timingState` instead. A
+  `contentTransition` without an enclosing animation is a no-op, so the app's
+  longest-dwell element — 30–120s of direct attention every rep — hard-cut once
+  a second.
+- The shared 3-2-1-GO overlay sprang in Filler Control and hard-cut in Pressure
+  Drill, Cut the Crutch and Pace Training. One overlay, two behaviours, because
+  the register was decided by each writer.
+- Post-rep Summary, the most-repeated screen, rendered as a fully-formed wall.
+- Profile rendered as an instant slab while Home staggered — two persistent tabs
+  of the same app, visibly different production values.
+
+Cross-referencing the Figma Motion Contract (page 18, `280:497`) explains all
+four: sections A–D specify the V4.6 hero loop, and **every one of these moments
+sits outside it**. This is not a missing motion system. `NoumMotion` and the
+`Noum / Motion` variable collection are coherent, carry Reduce Motion zeros, and
+already agree with each other. The failure is coverage: an unspecified moment
+has no owner, so it drifts — and drifts silently, because nothing fails.
+
+**2. Proposal.** Motion coverage is a contract obligation, not a per-screen
+choice. Any moment the user waits through, is handed over by, or reads a result
+from must have a named register in the contract before it ships. Where several
+surfaces share one component, the register is owned by the component, not by its
+callers.
+
+**3. Classification.** Extends the existing LOCKED restraint rules rather than
+replacing them; no new tokens were introduced. "Exact motion values on device"
+remains open in `FIGMA_GATE_DECISIONS.md` — this entry does not close it.
+
+**4. Specification updates.** `FIGMA_GATE_DECISIONS.md` is frozen for approved
+frames and untouched. The contract page gains section E · "Moments the contract
+never covered" (`302:497`), recording each moment as WAS / NOW / token / Reduce
+Motion, using the tokens the code now uses.
+
+**5. Validation.** Full `NoumTests` suite, 4743 passed / 0 failed, read from the
+xcresult bundle. Device check still owed: the four moments should be felt on
+hardware before the next TestFlight designs review, since motion values on
+device remain explicitly untested per the gate.
+
+**6. Contract check.** Restraint holds — no new decorative motion was added.
+Every change either makes declared motion run or applies an existing register to
+a surface that had none. Reduce Motion is preserved on all four paths. One
+deliberate limit: Profile's entrance is applied only to the cards present at
+first render, because that stack is a `LazyVStack` and tagging lower cards would
+make them fade in mid-scroll — a noisier effect than the one Home has, and not
+the parity this entry is claiming.

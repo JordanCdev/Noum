@@ -1601,9 +1601,17 @@ struct ProfileView: View {
                 // Same staggered entrance Home uses (ContentView 530/569/593).
                 // Profile is a persistent tab that rendered as one instant slab,
                 // so switching Home → Profile was a visible drop in production
-                // value inside the same app. Indices follow reading order;
-                // `cardEntrance` already caps the total stagger and collapses
-                // to an instant appearance under Reduce Motion.
+                // value inside the same app.
+                //
+                // Deliberately only the cards that are on screen at first
+                // render. Home's stack is a plain VStack, so every card appears
+                // together and the stagger reads as one entrance; this stack is
+                // a LazyVStack, where `.onAppear` fires as a card is scrolled
+                // into view. Tagging the lower cards would make them fade in
+                // under the user's thumb mid-scroll — a different effect from
+                // the one Home has, and a noisier one. `cardEntrance` caps the
+                // stagger and collapses to an instant appearance under Reduce
+                // Motion.
                 identityHeader
                     .cardEntrance(0)
 
@@ -1619,15 +1627,12 @@ struct ProfileView: View {
                 // loop, not evidence-library content. The row self-hides when
                 // cadence says it is not due.
                 weeklyCheckInCard
-                    .cardEntrance(3)
 
                 if shouldAskTransformationQuestion {
                     transformationQuestionCard
-                        .cardEntrance(4)
                 }
 
                 profileEvidenceHub
-                    .cardEntrance(5)
             }
             .padding(.horizontal, Spacing.screenH)
             .padding(.top, Spacing.sm)
