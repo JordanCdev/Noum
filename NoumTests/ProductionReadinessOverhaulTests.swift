@@ -2451,7 +2451,18 @@ struct TypedCoachEvidencePipelineWireTests {
         }
     }
 
+    // Resets the process-global `FlowEventLog.shared`, which a concurrently
+    // running suite also asserts on. `.serialized` does not order across suites,
+    // so exclusive access has to be held for the whole body. See
+    // `FlowEventLogTestGate`. The body is extracted verbatim so the gate can wrap
+    // it without re-indenting the assertions.
     @Test func detailedThreeThousandCharacterTurnReachesProviderAndCommitsOneTerminalReply() async throws {
+        try await FlowEventLogTestGate.shared.withExclusiveAccess {
+            try await detailedThreeThousandCharacterTurnBody()
+        }
+    }
+
+    private func detailedThreeThousandCharacterTurnBody() async throws {
         let suiteName = "CoachLongPromptPipelineTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)

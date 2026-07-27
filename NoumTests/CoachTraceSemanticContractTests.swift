@@ -6,66 +6,76 @@ import Testing
 @Suite("Ask Noum trace semantic contract", .serialized)
 struct CoachTraceSemanticContractTests {
 
+    // Both tests drive the real pipeline against the process-global
+    // `FlowEventLog.shared`. `.serialized` orders this suite internally, but a
+    // concurrently-running suite that also resets that global would wipe the
+    // trace mid-run, so the gate holds exclusive access across the await points.
+    // See `FlowEventLogTestGate`.
+
     @Test("Pipeline records classification, goal, memory, and evidence in causal order")
     func semanticStagesFollowCausalOrder() async throws {
-        let context = makeContext(label: "semantic-order")
-        defer { context.cleanup() }
+        try await FlowEventLogTestGate.shared.withExclusiveAccess {
+            let context = makeContext(label: "semantic-order")
+            defer { context.cleanup() }
 
-        _ = await CoachReplyPipeline.generate(
-            coachID: context.coachID,
-            store: context.store,
-            coachService: context.service,
-            judgementPassEnabled: false,
-            realtimeCoachModeEnabled: false,
-            sessionsOverride: [],
-            coachMemoryOverride: { nil }
-        )
+            _ = await CoachReplyPipeline.generate(
+                coachID: context.coachID,
+                store: context.store,
+                coachService: context.service,
+                judgementPassEnabled: false,
+                realtimeCoachModeEnabled: false,
+                sessionsOverride: [],
+                coachMemoryOverride: { nil }
+            )
 
-        let trace = try #require(FlowEventLog.shared.recentCoachTraces(limit: 20)
-            .first(where: { $0.correlationId == context.coachID }))
-        let stages = trace.events.map(\.stage)
-        let semanticPath = [
-            CoachTraceStage.classified,
-            CoachTraceStage.goalResolved,
-            CoachTraceStage.memoryLoaded,
-            CoachTraceStage.evidenceLoaded,
-            CoachTraceStage.rubricSelected,
-            CoachTraceStage.promptAssembled,
-        ]
-        let indexes = try semanticPath.map { stage in
-            try #require(stages.firstIndex(of: stage), "Missing trace stage \(stage)")
+            let trace = try #require(FlowEventLog.shared.recentCoachTraces(limit: 20)
+                .first(where: { $0.correlationId == context.coachID }))
+            let stages = trace.events.map(\.stage)
+            let semanticPath = [
+                CoachTraceStage.classified,
+                CoachTraceStage.goalResolved,
+                CoachTraceStage.memoryLoaded,
+                CoachTraceStage.evidenceLoaded,
+                CoachTraceStage.rubricSelected,
+                CoachTraceStage.promptAssembled,
+            ]
+            let indexes = try semanticPath.map { stage in
+                try #require(stages.firstIndex(of: stage), "Missing trace stage \(stage)")
+            }
+
+            #expect(indexes == indexes.sorted())
+            #expect(Set(indexes).count == semanticPath.count)
+            let memory = try #require(trace.events.first(where: {
+                $0.stage == CoachTraceStage.memoryLoaded
+            }))
+            #expect(memory.numerics["hasMemory"] == 0)
+            #expect(memory.numerics["memoryEvidence"] == 0)
         }
-
-        #expect(indexes == indexes.sorted())
-        #expect(Set(indexes).count == semanticPath.count)
-        let memory = try #require(trace.events.first(where: {
-            $0.stage == CoachTraceStage.memoryLoaded
-        }))
-        #expect(memory.numerics["hasMemory"] == 0)
-        #expect(memory.numerics["memoryEvidence"] == 0)
     }
 
     @Test("Gated provider partial records buffering without claiming UI visibility")
     func gatedPartialDoesNotClaimVisibility() async throws {
-        #expect(!CoachBrainFlags.streamRawPartialsToUI)
-        let context = makeContext(label: "stream-buffered")
-        defer { context.cleanup() }
+        try await FlowEventLogTestGate.shared.withExclusiveAccess {
+            #expect(!CoachBrainFlags.streamRawPartialsToUI)
+            let context = makeContext(label: "stream-buffered")
+            defer { context.cleanup() }
 
-        _ = await CoachReplyPipeline.generate(
-            coachID: context.coachID,
-            store: context.store,
-            coachService: context.service,
-            judgementPassEnabled: false,
-            realtimeCoachModeEnabled: false,
-            sessionsOverride: [],
-            coachMemoryOverride: { nil }
-        )
+            _ = await CoachReplyPipeline.generate(
+                coachID: context.coachID,
+                store: context.store,
+                coachService: context.service,
+                judgementPassEnabled: false,
+                realtimeCoachModeEnabled: false,
+                sessionsOverride: [],
+                coachMemoryOverride: { nil }
+            )
 
-        let trace = try #require(FlowEventLog.shared.recentCoachTraces(limit: 20)
-            .first(where: { $0.correlationId == context.coachID }))
-        let stages = trace.events.map(\.stage)
-        #expect(stages.filter { $0 == CoachTraceStage.streamFirstBuffered }.count == 1)
-        #expect(!stages.contains(CoachTraceStage.streamFirstVisible))
+            let trace = try #require(FlowEventLog.shared.recentCoachTraces(limit: 20)
+                .first(where: { $0.correlationId == context.coachID }))
+            let stages = trace.events.map(\.stage)
+            #expect(stages.filter { $0 == CoachTraceStage.streamFirstBuffered }.count == 1)
+            #expect(!stages.contains(CoachTraceStage.streamFirstVisible))
+        }
     }
 
     private func makeContext(label: String) -> TraceTestContext {
