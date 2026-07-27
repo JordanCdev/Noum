@@ -267,6 +267,12 @@ struct ProgressionChartsCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             }
             .frame(height: 132)
+            // Both axes are hidden, so the plot IS the information — a screen
+            // reader previously got nothing from this card at all. Collapse the
+            // chart to one spoken sentence, the same treatment
+            // `RatingHistoryChart` already uses.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(chartAccessibilityLabel(for: series, model: model))
 
             HStack {
                 Text("First rep")
@@ -274,10 +280,45 @@ struct ProgressionChartsCard: View {
                 Text("Latest")
             }
             .font(Typography.micro)
-            .foregroundStyle(.tertiary)
+            // `.tertiary` resolves to roughly 2.1:1 here; the adaptive token is
+            // the readable equivalent for micro-labels.
+            .foregroundStyle(AppColor.textTertiary)
             .padding(.horizontal, 8)
+            // The chart's label already states the range, so these two words
+            // are visual scaffolding rather than new information.
+            .accessibilityHidden(true)
         }
         .frame(height: 144)
+    }
+
+    /// One sentence carrying what the plot shows. Deliberately states only what
+    /// the samples support — direction and endpoints, no trend claim the data
+    /// does not carry, matching the coaching honesty rules elsewhere.
+    private func chartAccessibilityLabel(
+        for series: ChartSeries,
+        model: ChartPresentationModel
+    ) -> String {
+        let samples = model.rawSamples
+        guard let first = samples.first, let last = samples.last, samples.count > 1 else {
+            return "\(series.shortLabel) chart. Not enough reps yet to show a trend."
+        }
+        let unit = series.shortLabel.lowercased()
+        let direction: String
+        if last.value > first.value {
+            direction = "rising"
+        } else if last.value < first.value {
+            direction = "falling"
+        } else {
+            direction = "flat"
+        }
+        return "\(series.shortLabel) chart across \(samples.count) reps, \(direction). "
+            + "From \(formattedAXValue(first.value)) to \(formattedAXValue(last.value)) \(unit)."
+    }
+
+    private func formattedAXValue(_ value: Double) -> String {
+        value == value.rounded()
+            ? String(Int(value.rounded()))
+            : String(format: "%.1f", value)
     }
 
     // MARK: - Stats row

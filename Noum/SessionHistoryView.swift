@@ -984,7 +984,11 @@ struct SessionHistoryDetailView: View {
                 ),
                 detail: "Verified excerpt from this rep",
                 tint: AppColor.textSecondary,
-                identifier: "history.detail.rewrite.original"
+                identifier: "history.detail.rewrite.original",
+                plainText: snapshot.originalSnippet,
+                spokenDiff: TranscriptChangeHighlighter
+                    .spokenRemovals(original: snapshot.originalSnippet, revision: snapshot.oneStepText)
+                    .map { "Your original. Words being let go: \($0)." }
             )
 
             ReviewTranscriptStep(
@@ -996,6 +1000,10 @@ struct SessionHistoryDetailView: View {
                 detail: "Noum's minimal edit · changed words are highlighted",
                 tint: AppColor.proText,
                 identifier: "history.detail.rewrite.oneStep",
+                plainText: snapshot.oneStepText,
+                spokenDiff: TranscriptChangeHighlighter
+                    .spokenAdditions(original: snapshot.originalSnippet, revision: snapshot.oneStepText)
+                    .map { "Upgrade — adds \($0). Meaning and voice preserved." },
                 hero: true
             )
 

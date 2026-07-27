@@ -235,15 +235,28 @@ enum AppColor {
 
     // MARK: Semantic Feedback
 
-    /// Positive / good score (#199966; dark value explicitly mapped —
-    /// never grey-bucketed, per the token contract).
+    /// Positive / qualified improvement delta (#0E7A3B; dark value explicitly
+    /// mapped — never grey-bucketed, per the token contract).
+    ///
+    /// The light value is the one the accessibility gate prescribed
+    /// ("green → #0E7A3B"). It was previously #199966, which measures 3.44:1 on
+    /// the warm canvas and 3.63:1 on a white card — under AA's 4.5:1 for normal
+    /// text, and this token is used on `.caption`/`.caption2`/`.subheadline`
+    /// deltas at ~28 sites, nowhere near the 18.66pt bold threshold that would
+    /// allow 3:1. #0E7A3B measures 5.16:1 / 5.43:1. The dark value already
+    /// measured 8.69:1 on the dark canvas and is unchanged.
     static let positive = dynamicColor(
-        light: (0.10, 0.60, 0.40),
+        light: (0.055, 0.478, 0.231),
         dark: (0.263, 0.792, 0.561)
     )
     /// Caution / okay score — lapse rows, ALWAYS paired with a text cue.
+    ///
+    /// Light value darkened from #D48519 (2.79:1 on canvas — the worst
+    /// contrast in the semantic set) to #A65E08 at 4.72:1, keeping the hue.
+    /// The text-cue pairing rule stands: this is a second signal, not a
+    /// replacement for one. Dark value was already 8.78:1 and is unchanged.
     static let caution = dynamicColor(
-        light: (0.83, 0.52, 0.10),
+        light: (0.651, 0.369, 0.031),
         dark: (0.914, 0.659, 0.302)
     )
     /// Warning / needs improvement

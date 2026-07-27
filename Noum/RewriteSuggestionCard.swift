@@ -166,7 +166,11 @@ struct RewriteSuggestionCard: View {
                 ),
                 detail: "Verified from this rep",
                 tint: .secondary,
-                identifier: "rewrite.original"
+                identifier: "rewrite.original",
+                plainText: originalSnippet,
+                spokenDiff: TranscriptChangeHighlighter
+                    .spokenRemovals(original: originalSnippet, revision: oneStep.text)
+                    .map { "Your original. Words being let go: \($0)." }
             )
 
             ReviewTranscriptStep(
@@ -178,6 +182,10 @@ struct RewriteSuggestionCard: View {
                 detail: "Changed words are highlighted · meaning and voice preserved",
                 tint: AppColor.proText,
                 identifier: "rewrite.oneStep",
+                plainText: oneStep.text,
+                spokenDiff: TranscriptChangeHighlighter
+                    .spokenAdditions(original: originalSnippet, revision: oneStep.text)
+                    .map { "Upgrade — adds \($0). Meaning and voice preserved." },
                 hero: true,
                 detailVisible: explainRevealed
             )
@@ -582,6 +590,13 @@ struct ReviewTranscriptStep: View {
     let detail: String
     let tint: Color
     let identifier: String
+    /// The rung's phrase as a plain string. `text` is a styled `Text` whose
+    /// characters cannot be read back, so the spoken label needs this.
+    var plainText: String = ""
+    /// A clause naming what changed, e.g. `Adds “decide today”.` — supplied by
+    /// the caller from `TranscriptChangeHighlighter`. When nil the label falls
+    /// back to the previous concatenation, so nothing regresses.
+    var spokenDiff: String?
     /// The frozen design gives the improved phrase unmistakable hero weight
     /// (decision: the transformation IS the teaching). Only the TRY THIS rung
     /// sets this.
@@ -624,7 +639,35 @@ struct ReviewTranscriptStep: View {
             .stroke(tint.opacity(0.22), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
+        // `.combine` concatenates the eyebrow, the phrase and the caption, which
+        // left a screen-reader user with two near-identical paragraphs and a
+        // caption pointing at a colour highlight. When the caller supplies the
+        // diff, state it instead — the changed words are the teaching.
+        .accessibilityLabel(spokenLabel ?? combinedFallbackLabel)
         .accessibilityIdentifier(identifier)
+    }
+
+    /// Nil unless the caller passed a diff clause, in which case `.combine`'s
+    /// concatenation still applies and nothing regresses.
+    private var spokenLabel: String? {
+        guard let spokenDiff, !spokenDiff.isEmpty else { return nil }
+        return "\(eyebrow.capitalizedSentence). \(spokenDiff) Full line: \(plainText)"
+    }
+
+    private var combinedFallbackLabel: String {
+        [eyebrow.capitalizedSentence, plainText, detail]
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
+    }
+}
+
+private extension String {
+    /// Eyebrows are heavy all-caps for the eye ("TRY THIS"); spoken verbatim
+    /// VoiceOver may spell them out, so soften to sentence case for the label.
+    var capitalizedSentence: String {
+        guard !isEmpty else { return self }
+        let lower = lowercased()
+        return lower.prefix(1).uppercased() + lower.dropFirst()
     }
 }
 
@@ -809,6 +852,37 @@ enum TranscriptChangeHighlighter {
             rendered = rendered + Text(nsRevision.substring(from: cursor))
         }
         return rendered
+    }
+
+    /// Spoken form of the diff. The changed/removed word sets already exist for
+    /// the visual highlight, but nothing voiced them, so the transformation —
+    /// the product's actual teaching moment — reached VoiceOver as two
+    /// near-identical paragraphs plus a caption telling the user that "changed
+    /// words are highlighted", i.e. pointing at a cue they cannot perceive.
+    ///
+    /// `original` names what is being let go; `upgrade` names what now leads.
+    /// Both return nil when the diff is empty so a caller can fall back rather
+    /// than announce an empty clause.
+    nonisolated static func spokenRemovals(original: String, revision: String) -> String? {
+        let source = words(in: original)
+        let indexes = removedWordIndexes(original: original, revision: revision).sorted()
+        let dropped = indexes.compactMap { $0 < source.count ? source[$0] : nil }
+        guard !dropped.isEmpty else { return nil }
+        return quotedList(dropped)
+    }
+
+    nonisolated static func spokenAdditions(original: String, revision: String) -> String? {
+        let target = words(in: revision)
+        let indexes = changedWordIndexes(original: original, revision: revision).sorted()
+        let added = indexes.compactMap { $0 < target.count ? target[$0] : nil }
+        guard !added.isEmpty else { return nil }
+        return quotedList(added)
+    }
+
+    /// Groups runs of consecutive indexes into phrases so VoiceOver reads
+    /// "adds 'decide today'" rather than "adds 'decide', 'today'".
+    private nonisolated static func quotedList(_ tokens: [String]) -> String {
+        tokens.map { "\u{201C}\($0)\u{201D}" }.joined(separator: ", ")
     }
 
     private nonisolated static func words(in text: String) -> [String] {

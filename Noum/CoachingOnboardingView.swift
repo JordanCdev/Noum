@@ -385,8 +385,8 @@ struct CoachingOnboardingView: View {
                                     AppColor.brandBlueLight
                                 ]
                                 : [
-                                    Color(red: 0.70, green: 0.73, blue: 0.78),
-                                    Color(red: 0.65, green: 0.68, blue: 0.73)
+                                    AppColor.textTertiary.opacity(0.55),
+                                    AppColor.textTertiary.opacity(0.45)
                                 ],
                             startPoint: .leading,
                             endPoint: .trailing
@@ -604,14 +604,14 @@ struct CoachingOnboardingView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(option.description)
                                 .font(.headline.weight(.semibold))
-                                .foregroundStyle(Color(red: 0.14, green: 0.16, blue: 0.21))
+                                .foregroundStyle(AppColor.textPrimary)
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if isSelected, !detail.isEmpty {
                                 Text(detail)
                                     .font(.caption)
-                                    .foregroundStyle(Color(red: 0.43, green: 0.46, blue: 0.52))
+                                    .foregroundStyle(AppColor.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .transition(.opacity)
                             }
@@ -624,7 +624,7 @@ struct CoachingOnboardingView: View {
                                 .fill(isSelected ? AppColor.brandBlue : Color.clear)
                                 .frame(width: 28, height: 28)
                             Circle()
-                                .stroke(isSelected ? AppColor.brandBlue : Color(red: 0.80, green: 0.83, blue: 0.88), lineWidth: 2)
+                                .stroke(isSelected ? AppColor.brandBlue : AppColor.subtleBorder, lineWidth: 2)
                                 .frame(width: 28, height: 28)
                             if isSelected {
                                 Image(systemName: "checkmark")
@@ -731,7 +731,7 @@ struct CoachingOnboardingView: View {
 
                     Text("Noum will keep this wording and choose the closest first drill.")
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.43, green: 0.46, blue: 0.52))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 14)
@@ -741,12 +741,12 @@ struct CoachingOnboardingView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(usesCustomChallenge ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00))
+                .fill(usesCustomChallenge ? AppColor.brandBlue.opacity(0.08) : AppColor.innerSurface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(
-                    usesCustomChallenge ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96),
+                    usesCustomChallenge ? AppColor.brandBlue.opacity(0.40) : AppColor.subtleBorder,
                     lineWidth: usesCustomChallenge ? 2 : 1
                 )
         )
@@ -764,14 +764,14 @@ struct CoachingOnboardingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.14, green: 0.16, blue: 0.21))
+                    .foregroundStyle(AppColor.textPrimary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if showsDetail, !detail.isEmpty {
                     Text(detail)
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.43, green: 0.46, blue: 0.52))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
@@ -784,7 +784,7 @@ struct CoachingOnboardingView: View {
                     .fill(isSelected ? AppColor.brandBlue : Color.clear)
                     .frame(width: 28, height: 28)
                 Circle()
-                    .stroke(isSelected ? AppColor.brandBlue : Color(red: 0.80, green: 0.83, blue: 0.88), lineWidth: 2)
+                    .stroke(isSelected ? AppColor.brandBlue : AppColor.subtleBorder, lineWidth: 2)
                     .frame(width: 28, height: 28)
                 if isSelected {
                     Image(systemName: "checkmark")
@@ -799,12 +799,12 @@ struct CoachingOnboardingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(drawsContainer ? (isSelected ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00)) : Color.clear)
+                .fill(drawsContainer ? (isSelected ? AppColor.brandBlue.opacity(0.08) : AppColor.innerSurface) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(
-                    drawsContainer ? (isSelected ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96)) : Color.clear,
+                    drawsContainer ? (isSelected ? AppColor.brandBlue.opacity(0.40) : AppColor.subtleBorder) : Color.clear,
                     lineWidth: drawsContainer ? (isSelected ? 2 : 1) : 0
                 )
         )
@@ -821,14 +821,14 @@ struct CoachingOnboardingView: View {
             HStack {
                 Text("Your answer")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(Color(red: 0.38, green: 0.41, blue: 0.48))
+                    .foregroundStyle(AppColor.textTertiary)
                     .textCase(.uppercase)
 
                 Spacer()
 
                 Text("\(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).count)/200")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.64))
+                    .foregroundStyle(AppColor.textTertiary)
             }
 
             Button {
@@ -841,7 +841,7 @@ struct CoachingOnboardingView: View {
                     if text.wrappedValue.isEmpty {
                         Text(prompt)
                             .font(.subheadline)
-                            .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.65))
+                            .foregroundStyle(AppColor.textTertiary)
                     } else {
                         Text(text.wrappedValue)
                             .font(.body)
@@ -936,7 +936,7 @@ struct CoachingOnboardingView: View {
                     Spacer()
                     Text("\(editorOverlayText.trimmingCharacters(in: .whitespacesAndNewlines).count)/200")
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.64))
+                        .foregroundStyle(AppColor.textTertiary)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
@@ -946,7 +946,7 @@ struct CoachingOnboardingView: View {
                     if editorOverlayText.isEmpty {
                         Text(prompt)
                             .font(.body)
-                            .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.65))
+                            .foregroundStyle(AppColor.textTertiary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 16)
                     }
