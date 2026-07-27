@@ -302,6 +302,12 @@ struct SuddenDeathPracticeView: View {
             stopPromptReadout()
             speechVM.cancelRecording()
             engine.reset()
+            // Pre-rep ambience is started on `.countdown` and only stopped by
+            // `.userTurnWaiting` / completion. Backing out during `.npcTurn` —
+            // the TTS readout plus, from round 2, an async follow-up generation
+            // — reached none of those, so the soundscape kept playing over
+            // whatever screen the user landed on. `stop()` is idempotent.
+            SoundscapeEngine.shared.stop()
             // Drop any pending intent that wasn't consumed by a finalize.
             SessionIntentStore.shared.clearPending()
         }

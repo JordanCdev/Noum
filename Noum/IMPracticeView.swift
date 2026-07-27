@@ -823,6 +823,16 @@ struct IMPracticeView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isAwaitingNPC || (speechVM.recordingLifecycle.isBusy && !speechVM.isRecording))
+                // The label is carried entirely by an SF Symbol, so VoiceOver
+                // announced it as "mic" / "stop" with no indication of what the
+                // control does in this conversation.
+                .accessibilityLabel(speechVM.isRecording ? "Finish your reply" : "Record your reply")
+                .accessibilityHint(
+                    speechVM.isRecording
+                        ? "Stops recording and puts your words in the composer."
+                        : "Starts recording your spoken reply."
+                )
+                .accessibilityIdentifier("imPractice.record")
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
@@ -849,11 +859,14 @@ struct IMPracticeView: View {
                     Image(systemName: "arrow.up")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
-                        .frame(width: 42, height: 42)
+                        // 44pt is the minimum comfortable target; this was 42.
+                        .frame(width: 44, height: 44)
                         .background(Color.blue, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSendReply || isAwaitingNPC)
+                .accessibilityLabel("Send reply")
+                .accessibilityIdentifier("imPractice.send")
                 .opacity((!canSendReply || isAwaitingNPC) ? 0.4 : 1.0)
             }
 

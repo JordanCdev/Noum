@@ -107,7 +107,6 @@ struct FeedbackRequestComposer: View {
     @State private var requestNote = ""
     @State private var includeTranscript = true
     @State private var includeAIFeedback = true
-    @State private var includeRecording = true
     @State private var isGeneratingLink = false
     @State private var generatedShareText: String?
     @Environment(\.dismiss) private var dismiss
@@ -250,15 +249,15 @@ struct FeedbackRequestComposer: View {
                     )
                 }
 
-                if recordingURL != nil {
-                    Divider().padding(.leading, 52)
-                    inclusionRow(
-                        icon: "video.fill",
-                        title: "Recording",
-                        subtitle: "Audio/video of your session",
-                        isOn: $includeRecording
-                    )
-                }
+                // No "Recording" row. It rendered a default-ON switch reading
+                // "Audio/video of your session", but `includeRecording` was
+                // never read and `FeedbackRequestManager.createRequest` takes no
+                // recording — so the request could not carry one either way.
+                // The switch told the user their audio and video were being
+                // shared when nothing was attached. Shipping an honest sheet
+                // means removing the control until the request model can
+                // actually carry a recording; the toggle can come back with the
+                // feature behind it.
             }
             .padding(.vertical, 4)
             .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))

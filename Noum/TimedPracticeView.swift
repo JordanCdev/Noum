@@ -811,6 +811,10 @@ struct TimedPracticeView: View {
     /// handle it outlived the view and reopened the microphone behind whatever
     /// screen the user had navigated to.
     @State private var briefRevealTask: Task<Void, Never>?
+    /// Session launch — awaits the microphone permission alert and up to ~3s of
+    /// prompt resolution before touching the mic and the ambience, so it is
+    /// exactly the window in which a user can tap Start and immediately leave.
+    @State private var launchTask: Task<Void, Never>?
 
     // Settings (persisted via @AppStorage)
     @AppStorage("timedPractice.keepPromptVisible") private var keepPromptVisible: Bool = false
@@ -2412,10 +2416,12 @@ struct TimedPracticeView: View {
                     Image(systemName: "camera.rotate")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial.opacity(0.3), in: Circle())
                 }
                 .buttonStyle(.pressable)
+                .accessibilityLabel("Flip camera")
+                .accessibilityIdentifier("timedPractice.flipCamera")
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
@@ -3523,8 +3529,15 @@ struct TimedPracticeView: View {
         // Resolve the prompt asynchronously — gives PracticeTopics.next() a
         // budget to attempt an AI-generated prompt without blocking. Falls
         // back to the curated pool on timeout/failure (≤ 3s).
-        Task { @MainActor in
-            guard await prepareMicrophoneForLaunch() else { return }
+        //
+        // Held and cancelled by `cleanup()`: this task awaits the microphone
+        // permission alert and then up to ~3s of prompt resolution, so a user
+        // who taps Start and immediately backs out left it suspended. It would
+        // then resume on a departed view and start the ambience and the mic
+        // behind whatever screen they had moved to.
+        launchTask?.cancel()
+        launchTask = Task { @MainActor in
+            guard await prepareMicrophoneForLaunch(), !Task.isCancelled else { return }
 
             // Pre-rep ambience starts only after microphone readiness is
             // known; otherwise a denied permission can feel like a rep began.
@@ -3958,8 +3971,13 @@ struct TimedPracticeView: View {
         cleanup()
         discardSeededChallengeAuthority()
         resetState(keepPrompt: false)
-        Task { @MainActor in
+        // Held for the same reason as `launchTask` in `beginSession`: this
+        // awaits prompt resolution and then launches the mic and ambience, so
+        // an unheld task could do that after the user has already left.
+        launchTask?.cancel()
+        launchTask = Task { @MainActor in
             question = await nextPrompt()
+            guard !Task.isCancelled else { return }
             launchSessionFlow()
         }
     }
@@ -4029,10 +4047,12 @@ struct TimedPracticeView: View {
         thinkingTask?.cancel()
         finalizationTask?.cancel()
         briefRevealTask?.cancel()
+        launchTask?.cancel()
         speakingTask = nil
         thinkingTask = nil
         finalizationTask = nil
         briefRevealTask = nil
+        launchTask = nil
         ttsEngine.stopSpeaking(at: .immediate)
         if videoManager.isRecording { videoManager.stopRecording() }
         // If the user backs out mid-thinking-window, stop ambience so

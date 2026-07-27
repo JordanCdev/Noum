@@ -222,10 +222,16 @@ struct MiniDrillView: View {
                         Image(systemName: "xmark")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.5))
-                            .frame(width: 36, height: 36)
+                            // 44pt minimum — this is the only way out of the
+                            // drill, so it should not be the hardest thing on
+                            // screen to hit.
+                            .frame(width: 44, height: 44)
                             .background(.white.opacity(0.1), in: Circle())
                     }
                     .buttonStyle(.pressable)
+                    .accessibilityLabel("Close drill")
+                    .accessibilityHint("Leaves the drill. Progress in this drill is not saved.")
+                    .accessibilityIdentifier("miniDrill.close")
                     Spacer()
                 }
                 .padding(.horizontal, 16)

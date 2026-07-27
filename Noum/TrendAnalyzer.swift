@@ -630,7 +630,12 @@ enum TrendAnalyzer {
 
         let current = rates.first ?? 0
         let recentAvg = rates.prefix(3).average
-        let olderAvg = rates.dropFirst(3).average
+        let olderWindow = Array(rates.dropFirst(3))
+        // `average` returns 0 for an empty collection, so at exactly 3 reps
+        // "no older window" is indistinguishable from "an older window that was
+        // clean" unless the emptiness is checked directly.
+        let hasOlderWindow = !olderWindow.isEmpty
+        let olderAvg = olderWindow.average
 
         let level: SkillLevel
         if recentAvg <= 1 { level = .strong }
@@ -651,7 +656,13 @@ enum TrendAnalyzer {
         } else if olderAvg > 0 && recentAvg > olderAvg * 1.3 {
             direction = .declining
             delta = nil
-        } else if olderAvg <= 2 && recentAvg >= 4 {
+        } else if hasOlderWindow && olderAvg <= 2 && recentAvg >= 4 {
+            // `hasOlderWindow` is load-bearing. At exactly 3 reps the older
+            // window is empty and averaged to 0, so this branch fired and told
+            // a user who had simply always spoken at ~5 fillers/min that their
+            // fillers had "just spiked" — a regression claim with no earlier
+            // window to regress from. The two branches above already guard on
+            // `olderAvg > 0`; this one did not.
             direction = .newIssue
             delta = nil
         } else {
