@@ -489,6 +489,9 @@ struct CaseReviewCard: View {
                                     .foregroundStyle(AppColor.pro)
                                     .padding(.horizontal, Spacing.sm)
                                     .padding(.vertical, 6)
+                                    // 44pt minimum: these chips are the only way to tell Noum a read is
+                                    // wrong, and they were ~29pt. Correcting a coach is not a minor action.
+                                    .frame(minHeight: 44)
                                     .background(AppColor.pro.opacity(0.10), in: Capsule())
                                     .overlay(
                                         Capsule().stroke(AppColor.pro.opacity(0.32), lineWidth: 1)

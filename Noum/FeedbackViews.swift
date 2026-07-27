@@ -92,6 +92,7 @@ struct ReviewerResponse: Codable, Identifiable {
 
 /// Sheet view for composing a feedback request before sharing.
 struct FeedbackRequestComposer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let transcript: String
     let fillerCount: Int
     let duration: TimeInterval
@@ -348,7 +349,8 @@ struct FeedbackRequestComposer: View {
         .overlay {
             if requestSent {
                 requestSentConfirmation
-                    .transition(.scale.combined(with: .opacity))
+                    // Reduce Motion: the confirmation still arrives, without scale.
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
     }

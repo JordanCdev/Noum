@@ -795,7 +795,8 @@ struct SuddenDeathPracticeView: View {
             HStack(spacing: 4) {
                 Image(systemName: isSpeakingPrompt ? "speaker.wave.2.fill" : "speaker.wave.2")
                     .font(.caption2.weight(.semibold))
-                    .symbolEffect(.variableColor.iterative, isActive: isSpeakingPrompt)
+                    // Reduce Motion: a repeating colour pulse is ambient motion.
+                    .symbolEffect(.variableColor.iterative, isActive: isSpeakingPrompt && !reduceMotion)
             }
             .foregroundStyle(accentColor.opacity(0.7))
             .padding(.horizontal, 8)

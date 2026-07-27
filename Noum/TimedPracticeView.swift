@@ -2150,7 +2150,8 @@ struct TimedPracticeView: View {
                             Image(systemName: isSpeakingPrompt ? "speaker.wave.2.fill" : "speaker.wave.2")
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.5))
-                                .symbolEffect(.variableColor.iterative, isActive: isSpeakingPrompt)
+                                // Reduce Motion: a repeating colour pulse is ambient motion.
+                                .symbolEffect(.variableColor.iterative, isActive: isSpeakingPrompt && !reduceMotion)
                             Text("Tap to hear")
                                 .font(.caption2)
                                 .foregroundStyle(.white.opacity(0.35))
@@ -2415,9 +2416,15 @@ struct TimedPracticeView: View {
                 Button { videoManager.flipCamera() } label: {
                     Image(systemName: "camera.rotate")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        // Full strength on a camera preview — 0.7 white over
+                        // arbitrary video is not a contrast anyone can predict.
+                        .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial.opacity(0.3), in: Circle())
+                        // The material undiluted. `.opacity(0.3)` on a Material
+                        // defeats the automatic Reduce Transparency and Increase
+                        // Contrast adaptations — the system can only substitute
+                        // an opaque fill if it still owns the material.
+                        .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.pressable)
                 // Layout-neutral, so it keeps the real accessibility win: the

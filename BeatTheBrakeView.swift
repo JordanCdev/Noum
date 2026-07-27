@@ -210,12 +210,18 @@ struct BeatTheBrakeView: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .frame(width: 36, height: 36)
-                            .background(.white.opacity(0.1), in: Circle())
+                            // Full strength, not 0.5 — this is the only way out
+                            // of a full-screen drill, not decoration.
+                            .foregroundStyle(.white.opacity(0.85))
+                            // 44pt minimum. It was 36pt, making the sole exit
+                            // from an immersive surface the hardest thing on it
+                            // to hit.
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.12), in: Circle())
                     }
                     .buttonStyle(.pressable)
                     .accessibilityLabel("Close drill")
+                    .accessibilityHint("Leaves the drill. Progress in this drill is not saved.")
                     Spacer()
                 }
                 .padding(.horizontal, 16)

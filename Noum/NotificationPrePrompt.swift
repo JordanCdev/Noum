@@ -118,6 +118,7 @@ final class NotificationPrePromptManager: ObservableObject {
 
 @available(iOS 17.0, macOS 12.0, *)
 struct NotificationPrePromptSheet: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @State private var hasAppeared: Bool = false
     @State private var isSubmitting: Bool = false
@@ -186,8 +187,9 @@ struct NotificationPrePromptSheet: View {
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
         .opacity(hasAppeared ? 1 : 0)
-        .offset(y: hasAppeared ? 0 : 12)
-        .animation(.standardSpring, value: hasAppeared)
+        // Reduce Motion: fade only, no travel — same shape as CardEntranceModifier.
+        .offset(y: reduceMotion || hasAppeared ? 0 : 12)
+        .animation(reduceMotion ? nil : .standardSpring, value: hasAppeared)
         .onAppear {
             hasAppeared = true
         }
