@@ -2416,15 +2416,7 @@ struct TimedPracticeView: View {
                     Image(systemName: "camera.rotate")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.7))
-                        // Stays 36pt. Growing this to a 44pt target overflowed
-                        // the camera overlay's control row at Accessibility
-                        // XXXL badly enough that the screen stopped resolving
-                        // for the accessibility snapshot — bisected to this
-                        // exact hunk. The undersized target is real and still
-                        // wants fixing, but it needs a layout-aware change to
-                        // this row (wrapping, or a hit area that does not grow
-                        // the row), not a bigger frame.
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial.opacity(0.3), in: Circle())
                 }
                 .buttonStyle(.pressable)
@@ -2520,11 +2512,17 @@ struct TimedPracticeView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 10)
+                    // Subheadline text plus 10pt padding landed around 40pt,
+                    // under the comfortable minimum — and in camera mode this
+                    // is the only control that ends the rep.
+                    .frame(minHeight: 44)
                     .background(Color.red.opacity(0.8), in: Capsule())
                 }
                 .buttonStyle(.pressable)
                 .disabled(isStopping)
                 .opacity(isStopping ? 0.5 : 1)
+                .accessibilityLabel("End session")
+                .accessibilityIdentifier("timedPractice.camera.end")
             }
             .padding(.top, 14)
             .padding(.bottom, 20)
