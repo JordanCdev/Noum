@@ -379,6 +379,17 @@ struct AppShellView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The bar clamps Dynamic Type to `.large` to protect the capsule
+        // geometry, and the comment there claims native tab bars do the same.
+        // They do — but they pair the clamp with the large-content viewer, the
+        // long-press HUD that shows the label at full size. Without it a
+        // Larger-Text user at AX1–AX5 simply gets 10.5pt labels everywhere with
+        // no way to enlarge them, and the native audits do not flag it because
+        // 10.5pt is neither clipped nor low-contrast. This restores the other
+        // half of the parity the clamp assumes.
+        .accessibilityShowsLargeContentViewer {
+            Label(title, systemImage: glyph)
+        }
         .accessibilityLabel(Text(title))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier(tab.accessibilityIdentifier)
