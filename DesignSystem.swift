@@ -314,10 +314,17 @@ enum AppColor {
         light: (0.486, 0.227, 0.929),
         dark: (0.718, 0.612, 0.988)
     )
-    /// Today hero gradient stops (#4D3CC7 → #7A45E0 at ~141°). The hero is
+    /// Today hero gradient stops (#4D3CC7 → #6D46D6 at ~141°). The hero is
     /// the app's single marquee gradient; nothing else may use these stops.
+    ///
+    /// The end stop is the value the accessibility gate prescribed ("darken the
+    /// gradient's light stop to >= #6D46D6 behind body copy"), which had not
+    /// been adopted. It shipped as #7A45E0, where white text measured 3.57:1 at
+    /// 0.7 alpha and 4.18:1 at 0.8 — the Home XXXL native audit failed on
+    /// exactly this. On #6D46D6 white clears AA from 0.85 alpha upward
+    /// (4.82:1) and reaches 6.00:1 at full strength.
     static let heroGradientStart = Color(red: 0.302, green: 0.235, blue: 0.780)
-    static let heroGradientEnd = Color(red: 0.478, green: 0.271, blue: 0.878)
+    static let heroGradientEnd = Color(red: 0.427, green: 0.275, blue: 0.839)
     /// Warm editorial canvas behind the V4.6 loop's screens
     /// (#FAF9F7 → #17151C, same mapping as `screenBackground`).
     static let warmCanvas = dynamicColor(

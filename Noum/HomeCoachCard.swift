@@ -401,7 +401,8 @@ struct HomeCoachCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Today")
                     .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline))
-                    .foregroundStyle(.white.opacity(0.8))
+                    // 0.8 measured 4.18:1 on the hero's end stop — under AA.
+                    .foregroundStyle(.white.opacity(0.9))
                     .accessibilityAddTraits(.isHeader)
 
                 // V4.6 Updated Today (258:1078) — the earned chip announces one
@@ -435,7 +436,10 @@ struct HomeCoachCard: View {
 
                 Text(activeEarned?.metaOverride ?? heroMetaText(for: renderedBlueprint))
                     .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
-                    .foregroundStyle(.white.opacity(0.7))
+                    // 0.7 measured 3.57:1 on the hero's end stop — the worst
+                    // text contrast in the app and the Home XXXL audit's
+                    // contrast failure. Hierarchy stays in size and weight.
+                    .foregroundStyle(.white.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Spacing.lg)
                     .contentTransition(.opacity)
@@ -671,7 +675,9 @@ struct HomeCoachCard: View {
                 } label: {
                     Text("Start \(renderedExposure.mode.displayLabel) instead")
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.85))
+                        // captionSmall on the gradient — the smallest text on
+                        // the hero gets the most headroom, not the least.
+                        .foregroundStyle(.white.opacity(0.95))
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(Rectangle())
                 }
