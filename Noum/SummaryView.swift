@@ -629,14 +629,25 @@ struct SummaryView: View {
         guard currentRepIsProgressEligible,
               let session = currentStoredSession else { return nil }
         let baseline = baselineStore.baseline
+        // Both engines take optionals precisely so an absent channel can be
+        // skipped, and both enforce a minimum number of contributing channels.
+        // Passing `.value` unconditionally defeated that: a brand-new user's
+        // baseline is `BaselineStat.empty` (value 0, sampleCount 0, confidence
+        // .insufficient), and 0 hedges/min maps to a perfect composure score
+        // that then counts as real evidence. The floor was being met by a
+        // channel that had measured nothing.
+        let hedgingPerMinute: Double? = baseline.hedgingRate.isReliable
+            ? baseline.hedgingRate.value
+            : nil
+        let paceWPM: Double? = baseline.pace.isReliable ? baseline.pace.value : nil
         let composure = ComposureReadEngine.derive(
             session: session,
-            hedgingPerMinute: baseline.hedgingRate.value
+            hedgingPerMinute: hedgingPerMinute
         )
         let confidence = ConfidenceMarkerEngine.derive(
             session: session,
-            hedgingPerMinute: baseline.hedgingRate.value,
-            paceWPM: baseline.pace.value,
+            hedgingPerMinute: hedgingPerMinute,
+            paceWPM: paceWPM,
             composure: composure
         )
         return PostRepDeliveryReadLine.make(

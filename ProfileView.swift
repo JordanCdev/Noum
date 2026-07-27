@@ -438,7 +438,9 @@ struct BaselineMapCard: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-        .background(Color.white.opacity(0.74), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+        // Adaptive token — a fixed white chip inside an adaptive card leaves
+        // its `.primary` ink unreadable in Dark appearance.
+        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
     private func motivationSection(_ text: String) -> some View {

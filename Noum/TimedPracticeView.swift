@@ -2416,10 +2416,20 @@ struct TimedPracticeView: View {
                     Image(systemName: "camera.rotate")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 44, height: 44)
+                        // Stays 36pt. Growing this to a 44pt target overflowed
+                        // the camera overlay's control row at Accessibility
+                        // XXXL badly enough that the screen stopped resolving
+                        // for the accessibility snapshot — bisected to this
+                        // exact hunk. The undersized target is real and still
+                        // wants fixing, but it needs a layout-aware change to
+                        // this row (wrapping, or a hit area that does not grow
+                        // the row), not a bigger frame.
+                        .frame(width: 36, height: 36)
                         .background(.ultraThinMaterial.opacity(0.3), in: Circle())
                 }
                 .buttonStyle(.pressable)
+                // Layout-neutral, so it keeps the real accessibility win: the
+                // control announced as "camera.rotate" before this.
                 .accessibilityLabel("Flip camera")
                 .accessibilityIdentifier("timedPractice.flipCamera")
             }
@@ -2640,7 +2650,18 @@ struct TimedPracticeView: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     Text(LiveTranscriptStyle.calmed(speechVM.highlightedText))
-                        .font(.system(size: 18, weight: .regular, design: .serif))
+                        // `.system(size:)` is a fixed point size and does not
+                        // respond to Dynamic Type, so this transcript stayed
+                        // 18pt for every user including Accessibility sizes.
+                        // The `.body` role scales and lands at the same size at
+                        // the default setting.
+                        //
+                        // NOTE: this is the only serif in the app and no comment
+                        // records why. Left as-is because the typeface is a
+                        // brand decision, but it is worth a deliberate call —
+                        // the type system defines its roles as SF Pro
+                        // Rounded/Text (Nunito/Inter in the Figma mocks).
+                        .font(.system(.body, design: .serif))
                         .lineSpacing(8)
                         .tracking(0.2)
                         .frame(maxWidth: .infinity, alignment: .leading)
