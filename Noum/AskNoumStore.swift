@@ -553,7 +553,7 @@ struct AskNoumAuxiliaryProviderLease: Equatable, Sendable {
 final class AskNoumStore: ObservableObject {
 
     static let shared = AskNoumStore()
-    private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumStore")
+    private static let log = Logger(subsystem: "uk.co.otherpath.noum", category: "AskNoumStore")
 
     // MARK: - Conversation evidence gate
     //

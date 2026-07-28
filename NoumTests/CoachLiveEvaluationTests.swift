@@ -3044,7 +3044,7 @@ struct CoachLiveEvaluationTests {
             .path
         #else
         if let shared = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.jordancoaten.noum"
+            forSecurityApplicationGroupIdentifier: "group.uk.co.otherpath.noum"
         ) {
             return shared.appendingPathComponent("noum-live-coach-eval.md").path
         }

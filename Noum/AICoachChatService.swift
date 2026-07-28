@@ -1263,7 +1263,7 @@ actor AICoachChatService {
 
     static let shared = AICoachChatService()
 
-    private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachChat")
+    private static let log = Logger(subsystem: "uk.co.otherpath.noum", category: "CoachChat")
     private static let chatSurface = "Ask Noum chat"
     private static let healthSurface = "Ask Noum provider check"
     private static let healthSentinel = "NOUM_AI_OK"

@@ -45,7 +45,7 @@ struct SharedNoumState: Codable, Equatable {
 
     /// Stable suite name. Must match the iOS app + widget extension
     /// exactly, otherwise the watch will only ever see `.empty`.
-    static let appGroupID = "group.com.jordancoaten.noum"
+    static let appGroupID = "group.uk.co.otherpath.noum"
 
     private static let storageKey = "noum.sharedState.v1"
 

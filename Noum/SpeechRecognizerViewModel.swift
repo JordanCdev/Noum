@@ -1701,28 +1701,29 @@ private final class UITestScriptedTranscriptionSession: TranscriptionSession, @u
         }
     }
 
+    // Scoped `withLock` rather than manual lock/unlock: the latter is
+    // unavailable from async contexts and is a hard error under Swift 6.
+    // Matches `TranscriptionTerminalState`, which already locks this way.
     func sendAudio(_ data: Data) async throws {
-        lock.lock()
-        audioByteCount += data.count
-        lock.unlock()
+        lock.withLock { audioByteCount += data.count }
     }
 
     func finish() async throws -> FinalizedTranscript {
         emitTask?.cancel()
-        lock.lock()
-        defer { lock.unlock() }
-        guard !finished else { throw TranscriptionSessionError.alreadyFinished }
-        finished = true
-        continuation.finish()
-        // Words actually "spoken" by stop time, so short reps stay honest
-        // (the evaluator sees a transcript matching the elapsed duration).
-        let elapsed = Date().timeIntervalSince(startedAt)
-        let spokenCount = max(8, min(scriptWords.count, Int(elapsed * 2.2)))
-        return FinalizedTranscript(
-            text: scriptWords.prefix(spokenCount).joined(separator: " "),
-            receivedFinalResult: true,
-            audioByteCount: audioByteCount
-        )
+        return try lock.withLock {
+            guard !finished else { throw TranscriptionSessionError.alreadyFinished }
+            finished = true
+            continuation.finish()
+            // Words actually "spoken" by stop time, so short reps stay honest
+            // (the evaluator sees a transcript matching the elapsed duration).
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let spokenCount = max(8, min(scriptWords.count, Int(elapsed * 2.2)))
+            return FinalizedTranscript(
+                text: scriptWords.prefix(spokenCount).joined(separator: " "),
+                receivedFinalResult: true,
+                audioByteCount: audioByteCount
+            )
+        }
     }
 }
 #endif

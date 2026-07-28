@@ -38,7 +38,7 @@ struct SharedNoumState: Codable, Equatable {
 
     // MARK: - App Group plumbing
 
-    static let appGroupID = "group.com.jordancoaten.noum"
+    static let appGroupID = "group.uk.co.otherpath.noum"
 
     private static let storageKey = "noum.sharedState.v1"
 

@@ -6,7 +6,7 @@ import SwiftUI
 //
 // Renders the user's daily-rhythm state outside the app — streak count,
 // today's goal progress, freezes available. Reads from the App Group
-// `group.com.jordancoaten.noum` via `SharedNoumState`.
+// `group.uk.co.otherpath.noum` via `SharedNoumState`.
 //
 // Sizes shipped:
 //  - **systemSmall** (home + lock-screen iOS 16+): 2×2 — streak ring + reps today

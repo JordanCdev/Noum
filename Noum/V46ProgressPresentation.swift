@@ -64,7 +64,9 @@ struct V46ProgressPresentation: Equatable {
 
         let results = comparable.compactMap { $0.transcriptRetryComparison?.result }
         let holds = results.filter { $0 == .improved || $0 == .held }.count
-        let lapses = results.filter { $0 == .regressed }.count
+        // No `lapses` count here: the lapse read is derived per-row further
+        // down from `group.allRegressed`, so a second tally was dead weight
+        // rather than a dropped signal.
         let tally = results.count
 
         let lever = comparable.last?.transcriptRetryTarget?.lever

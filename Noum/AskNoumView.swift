@@ -660,7 +660,7 @@ enum AskNoumDayZeroGreeting {
 
 @available(iOS 17.0, macOS 12.0, *)
 struct AskNoumView: View {
-    private static let speechLog = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumSpeech")
+    private static let speechLog = Logger(subsystem: "uk.co.otherpath.noum", category: "AskNoumSpeech")
 
     @StateObject private var store = AskNoumStore.shared
     @StateObject private var authManager = AuthManager.shared

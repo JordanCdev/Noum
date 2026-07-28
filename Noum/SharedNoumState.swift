@@ -15,7 +15,7 @@ import Foundation
 // snapshot at once, atomically, whenever an authoritative source updates
 // (StreakFreezeManager, DailyGoalManager, PracticeSessionStore).
 //
-// **App Group setup**: the entitlement key is `group.com.jordancoaten.noum`.
+// **App Group setup**: the entitlement key is `group.uk.co.otherpath.noum`.
 // The main app needs `com.apple.security.application-groups` set to that
 // value, and so does the widget extension. Until both are in place, the
 // `SharedNoumState` writes fall back to the app's standard UserDefaults
@@ -53,7 +53,7 @@ struct SharedNoumState: Codable, Equatable {
     /// If the App Group entitlement isn't present (e.g. simulator with
     /// no entitlements yet), `UserDefaults(suiteName:)` returns nil; we
     /// fall through to `.standard` so the app stays functional.
-    static let appGroupID = "group.com.jordancoaten.noum"
+    static let appGroupID = "group.uk.co.otherpath.noum"
 
     private static let storageKey = "noum.sharedState.v1"
 

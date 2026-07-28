@@ -16,7 +16,7 @@ import UIKit
 // fresh practice rep.
 //
 // The extension is read-only with respect to user state. It reads the
-// shared snapshot from the App Group `group.com.jordancoaten.noum` and
+// shared snapshot from the App Group `group.uk.co.otherpath.noum` and
 // renders it; it never writes back. State authority remains in the
 // main app.
 

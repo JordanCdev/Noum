@@ -34,7 +34,7 @@ enum CoachHaptic {
     /// logged (DEBUG builds) with its name and timestamp, so a device QA
     /// run produces a machine-readable haptic event trail
     /// (`log stream --predicate 'category == "haptics"'` or the Console
-    /// app filtered to subsystem com.jordancoaten.noum).
+    /// app filtered to subsystem uk.co.otherpath.noum).
     private static func fires(_ name: StaticString) -> Bool {
         guard isEnabled else { return false }
         #if DEBUG
@@ -45,7 +45,7 @@ enum CoachHaptic {
 
     #if DEBUG
     private static let hapticsLog = os.Logger(
-        subsystem: "com.jordancoaten.noum",
+        subsystem: "uk.co.otherpath.noum",
         category: "haptics"
     )
     #endif

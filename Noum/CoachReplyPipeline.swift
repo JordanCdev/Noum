@@ -36,7 +36,7 @@ private actor CoachOutcomeRace {
 @available(iOS 17.0, macOS 12.0, *)
 enum CoachReplyPipeline {
 
-    private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachReplyPipeline")
+    private static let log = Logger(subsystem: "uk.co.otherpath.noum", category: "CoachReplyPipeline")
 
     nonisolated static func judgementPassSkipReason(
         judgementPassEnabled: Bool,

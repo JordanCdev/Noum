@@ -58,7 +58,7 @@ enum LiveCallMicWatchdog {
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LiveCoachCallView: View {
-    private static let speechLog = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumSpeech")
+    private static let speechLog = Logger(subsystem: "uk.co.otherpath.noum", category: "AskNoumSpeech")
 
     /// Defensive copy of the shared Ask Noum evidence gate. The container does
     /// not construct this view before rep one, but the live surface also checks
