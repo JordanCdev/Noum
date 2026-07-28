@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Debug-configuration entitlements for running on a device signed by a FREE
+	  (Personal) Apple team.
+
+	  Personal teams cannot be issued profiles containing
+	  `com.apple.developer.applesignin` or
+	  `com.apple.developer.devicecheck.appattest-environment` — both are paid
+	  Apple Developer Program capabilities. Xcode fails with "Personal
+	  development teams … do not support the Sign In with Apple and App Attest
+	  capabilities" before it can build to a phone.
+
+	  What this costs, precisely:
+
+	  • App Attest — NOTHING in Debug. `FirebaseBootstrap` already installs
+	    `AppCheckDebugProviderFactory()` under `#if DEBUG || targetEnvironment(simulator)`,
+	    so App Attest is never exercised in a Debug build. The entitlement was
+	    inert here.
+
+	  • Sign In with Apple — the Apple button stops working in this build only.
+	    Google and Guest sign-in are unaffected, and `AuthManager` keeps its
+	    full guest path. Release builds are untouched and keep both.
+
+	  The app group is retained: the widget, Messages and Watch extensions all
+	  share `group.com.jordancoaten.noum` and break without it.
+
+	  DELETE THIS FILE and revert the Debug `CODE_SIGN_ENTITLEMENTS` back to
+	  `Noum.entitlements` once the paid programme is active, so Debug and
+	  Release test the same capability set again.
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.jordancoaten.noum</string>
+	</array>
+</dict>
+</plist>
