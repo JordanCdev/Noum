@@ -313,6 +313,19 @@ public final class AINPCChatService: ObservableObject {
     #if canImport(FirebaseAuth)
     private func currentIDToken() async throws -> String {
         try await withCheckedThrowingContinuation { cont in
+            guard AuthManager.firebaseSDKSessionAccessAllowed(
+                arguments: ProcessInfo.processInfo.arguments
+            ) else {
+                cont.resume(throwing: NSError(
+                    domain: "AINPCChatService",
+                    code: 401,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Firebase session access is disabled for this test run"
+                    ]
+                ))
+                return
+            }
             #if canImport(FirebaseCore)
             guard FirebaseApp.app() != nil else {
                 cont.resume(throwing: NSError(domain: "AINPCChatService", code: 503, userInfo: [NSLocalizedDescriptionKey: "Firebase is not configured"]))

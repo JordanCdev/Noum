@@ -283,24 +283,40 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "The Day-0 paywall must stay absent until after spoken proof is visible."
         )
 
+        let winCard = app.descendants(matching: .any)["summary.win.card"]
         XCTAssertTrue(
-            app.descendants(matching: .any)["summary.win.card"].waitForExistence(timeout: 5),
+            winCard.waitForExistence(timeout: 5),
             "Day 0 must show one restrained observation backed by the spoken rep."
         )
         XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "I would start by naming the decision clearly")
-            ).firstMatch.waitForExistence(timeout: 5),
+            app.staticTexts
+                .matching(identifier: "summary.win.quote")
+                .matching(
+                    NSPredicate(
+                        format: "label CONTAINS %@",
+                        "I would start by naming the decision clearly"
+                    )
+                )
+                .firstMatch
+                .waitForExistence(timeout: 5),
             "Day 0 must quote the user's own verified words."
         )
         XCTAssertTrue(
-            app.staticTexts["Your words from this rep"].waitForExistence(timeout: 5),
+            app.staticTexts
+                .matching(identifier: "summary.win.provenance")
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "Source: original transcript"))
+                .firstMatch
+                .waitForExistence(timeout: 5),
             "The quote must carry explicit source provenance."
         )
+        let coachRead = app.descendants(matching: .any)["summary.coachRead"]
+        XCTAssertTrue(coachRead.waitForExistence(timeout: 5))
         XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "solid baseline move")
-            ).firstMatch.waitForExistence(timeout: 5),
+            app.staticTexts
+                .matching(identifier: "summary.coachRead.observation")
+                .matching(NSPredicate(format: "label == %@", "No fillers across the full duration."))
+                .firstMatch
+                .waitForExistence(timeout: 5),
             "The observation should stay bounded to what this one rep proves."
         )
         XCTAssertTrue(
@@ -330,7 +346,7 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "UI_TESTING",
             "UI_TESTING_REAL_FIRST_RUN",
             "UI_TESTING_FAST_LANE",
-            "UI_TESTING_CLOUD_CONSENT"
+            "UI_TESTING_NO_CLOUD_CONSENT"
         ]
         app.launch()
 
@@ -387,14 +403,24 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         let startPractice = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(startPractice.waitForExistence(timeout: 25))
         startPractice.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["cloudProcessing.disclosure"].waitForExistence(timeout: 8),
+            "The structured-upgrade contract must exercise the real cloud-processing disclosure."
+        )
         let declineCloud = app.buttons["cloudProcessing.notNow"]
-        if declineCloud.waitForExistence(timeout: 5) {
-            declineCloud.tap()
-        }
+        scrollUntilHittable(declineCloud, in: app)
+        XCTAssertTrue(declineCloud.waitForExistence(timeout: 3) && declineCloud.isHittable)
+        declineCloud.tap()
 
+        let beginRecommendedRep = app.buttons["home.coachCard.begin"]
+        XCTAssertTrue(
+            beginRecommendedRep.waitForExistence(timeout: 12),
+            "Completing setup should offer the prefilled profile's recommended rep on Today."
+        )
+        beginRecommendedRep.tap()
         XCTAssertTrue(
             app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
-            "An explicit structured-to-live upgrade should reach the existing local-capable spoken practice route."
+            "The rambling-focused recommendation should reach the existing local-capable Timed route after an explicit tap."
         )
     }
 

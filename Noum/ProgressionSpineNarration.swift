@@ -191,18 +191,18 @@ enum LedgerRoleLines {
     /// Lesson crowns / practice passes (LessonsHomeView header, Passes pill).
     static func crownsRole(hasRatedEvidence: Bool) -> String {
         if hasRatedEvidence {
-            return "Each pass drills one technique — passes unlock landmarks on your path, and landmarks build the skills your rating measures."
+            return "Each pass drills one technique — passes unlock steps on your path, and those steps build the skills your rating measures."
         }
-        return "Each pass drills one technique — passes unlock landmarks on your path, and landmarks build the skills your rating will measure once it's earned."
+        return "Each pass drills one technique — passes unlock steps on your path, and those steps build the skills your rating will measure once it's earned."
     }
 
     /// Path landmarks (PathJourneyView "What this means" card). Landmarks
     /// are the coach's sequence — position, not a parallel score.
     static func landmarkRole(hasRatedEvidence: Bool) -> String {
         if hasRatedEvidence {
-            return "Landmarks are your coach's sequence toward the skills your rating measures — a position on the path, not a second score."
+            return "Path steps are your coach's sequence toward the skills your rating measures — a position on the path, not a second score."
         }
-        return "Landmarks are your coach's sequence toward the skills your rating will measure once it's earned — a position on the path, not a second score."
+        return "Path steps are your coach's sequence toward the skills your rating will measure once it's earned — a position on the path, not a second score."
     }
 
     /// Proof archive (Growth Library header, Profile insights chip).

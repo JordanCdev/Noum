@@ -240,6 +240,13 @@ final class PathProgressManager: ObservableObject {
         pendingCelebration = nil
     }
 
+    /// Once another microphone capture is genuinely live, any unseen event
+    /// from an older rep is no longer current context. The durable unlock
+    /// remains; only its transient Home receipt is retired.
+    func notePracticeAttemptStarted() {
+        pendingCelebration = nil
+    }
+
     func reloadForCurrentAccount() {
         pendingCelebration = nil
         loadUnlocked()

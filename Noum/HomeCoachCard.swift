@@ -402,7 +402,7 @@ struct HomeCoachCard: View {
                 Text("Today")
                     .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline))
                     // 0.8 measured 4.18:1 on the hero's end stop — under AA.
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(AppColor.homeHeroMetaText)
                     .accessibilityAddTraits(.isHeader)
 
                 // V4.6 Updated Today (258:1078) — the earned chip announces one
@@ -418,7 +418,7 @@ struct HomeCoachCard: View {
 
                 Text(activeEarned?.headlineOverride ?? coachTitle(for: renderedBlueprint))
                     .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.homeHeroTitleText)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, activeEarned == nil ? Spacing.lg : Spacing.sm)
                     .contentTransition(.opacity)
@@ -427,7 +427,7 @@ struct HomeCoachCard: View {
                 if activeEarned == nil, let subtitle = coachSubtitle(for: renderedBlueprint) {
                     Text(subtitle)
                         .font(Typography.manrope(size: 15.5, weight: .regular, relativeTo: .subheadline))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(AppColor.homeHeroSubtitleText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, Spacing.md)
                         .transition(.opacity)
@@ -439,7 +439,7 @@ struct HomeCoachCard: View {
                     // 0.7 measured 3.57:1 on the hero's end stop — the worst
                     // text contrast in the app and the Home XXXL audit's
                     // contrast failure. Hierarchy stays in size and weight.
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(AppColor.homeHeroMetaText)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Spacing.lg)
                     .contentTransition(.opacity)
@@ -677,7 +677,9 @@ struct HomeCoachCard: View {
                         .font(Typography.captionSmall.weight(.semibold))
                         // captionSmall on the gradient — the smallest text on
                         // the hero gets the most headroom, not the least.
-                        .foregroundStyle(.white.opacity(0.95))
+                        .foregroundStyle(
+                            AppColor.homeHeroSecondaryActionText
+                        )
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(Rectangle())
                 }

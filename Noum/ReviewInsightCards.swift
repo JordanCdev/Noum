@@ -301,7 +301,7 @@ struct ReviewStoryCard: View {
                     .accessibilityHidden(true)
                 Text("Your recent movement")
                     .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.textSecondary)
+                    .foregroundStyle(AppColor.reviewStoryLabelText)
             }
 
             Text(presentation.movement)
@@ -344,7 +344,7 @@ struct ReviewStoryCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
-                colors: [AppColor.brandBlue.opacity(0.10), AppColor.cardBackground],
+                colors: [AppColor.reviewStoryWash, AppColor.cardBackground],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),

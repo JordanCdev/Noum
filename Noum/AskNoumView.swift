@@ -1279,9 +1279,9 @@ struct AskNoumView: View {
             Group {
                 if dynamicTypeSize.isAccessibilitySize {
                     // AX sizes: one capsule line truncates — stack the
-                    // summary above Manage and let it wrap to two lines.
+                    // summary above Manage and let it wrap without a cap.
                     VStack(alignment: .leading, spacing: Spacing.xs) {
-                        attachedContextSummaryLine(presentation, lineLimit: 2)
+                        attachedContextSummaryLine(presentation, lineLimit: nil)
                         attachedContextManagementMenu
                     }
                     .padding(.horizontal, Spacing.md)
@@ -1315,7 +1315,7 @@ struct AskNoumView: View {
 
     private func attachedContextSummaryLine(
         _ presentation: AskNoumAttachedContextPresentation,
-        lineLimit: Int
+        lineLimit: Int?
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
             Image(systemName: "paperclip")
@@ -1327,6 +1327,7 @@ struct AskNoumView: View {
                 .font(Typography.captionSmall.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
                 .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("askNoum.attachedContext.summary")
         }
     }
@@ -1701,10 +1702,10 @@ struct AskNoumView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(AskNoumVisibleCopy.currentFocus)
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.textPrimary)
+                        .foregroundStyle(AppColor.coachPlanText)
                     Text(line)
                         .font(Typography.caption)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.coachPlanText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -3400,20 +3401,30 @@ struct AskNoumView: View {
         HStack(alignment: .bottom, spacing: Spacing.sm) {
             ZStack(alignment: .leading) {
                 if draft.isEmpty {
+                    // The native multiline placeholder is exposed as an
+                    // anonymous, fixed-height text node and fails Dynamic
+                    // Type clipping audits. Render the visible prompt with
+                    // Noum's readable token; the field below owns its spoken
+                    // label, so VoiceOver never hears this twice.
                     Text(textFieldPlaceholder)
                         .font(Typography.body)
                         .foregroundStyle(AppColor.textPrimary)
                         .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, Spacing.xs)
+                        .fixedSize(horizontal: false, vertical: true)
                         .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
+
                 TextField("", text: $draft, axis: .vertical)
                     .font(Typography.body)
                     .foregroundStyle(.primary)
                     .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, Spacing.xs)
                     .focused($inputFocused)
-                    .lineLimit(1...4)
+                    // Keep long drafts editable without allowing the composer
+                    // to consume the entire screen at accessibility sizes.
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 6 : 4)
                     .submitLabel(.send)
                     .onSubmit { trySend() }
                     .accessibilityLabel("Message Noum")

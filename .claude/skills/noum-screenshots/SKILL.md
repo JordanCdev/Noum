@@ -23,7 +23,7 @@ This skill requires the macOS iOS Simulator. **If running on Linux (cloud routin
 
 2. **Verify capability**:
    - `xcrun simctl list devices booted` — confirm iPhone 17 (iOS 26.4) is booted. If nothing booted, run `xcrun simctl boot "iPhone 17"` then `open -a Simulator`.
-   - The Noum bundle ID is `com.jordancoaten.noum`.
+   - The Noum bundle ID is `uk.co.otherpath.noum`.
 
 3. **Build + install fresh** (only if source changed since the installed copy — check `git status` / `DerivedData` mtime; skip if not needed):
    ```
@@ -40,7 +40,7 @@ This skill requires the macOS iOS Simulator. **If running on Linux (cloud routin
    **light** — 5 tab tops via launch arg:
    ```
    for tab in home train review profile settings; do
-     xcrun simctl launch --terminate-running-process booted com.jordancoaten.noum -DeepLink "noum://${tab}" > /dev/null
+     xcrun simctl launch --terminate-running-process booted uk.co.otherpath.noum -DeepLink "noum://${tab}" > /dev/null
      sleep 3   # splash + render
      xcrun simctl io booted screenshot "<folder>/01_${tab}_top.png"
    done

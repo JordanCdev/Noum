@@ -47,7 +47,7 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
 
         scrollToTop(in: app)
         let latest = app.buttons["review.latestRep"]
-        scrollUntilHittable(latest, in: app, direction: .down)
+        scrollUntilHittable(latest, in: app)
         XCTAssertTrue(latest.isHittable)
         XCTAssertGreaterThanOrEqual(latest.frame.height, 48)
         latest.tap()
@@ -128,6 +128,79 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
     }
 
     @MainActor
+    func testSessionHistoryControlsStayOperableAtAccessibilityXXXL() throws {
+        let app = launch(at: "noum://review")
+        defer { app.terminate() }
+
+        let historyEntry = app.descendants(matching: .any)["history.sessionListEntry"]
+        scrollUntilHittable(historyEntry, in: app)
+        XCTAssertTrue(historyEntry.isHittable)
+        historyEntry.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["history.list.screen"].waitForExistence(timeout: 8)
+        )
+
+        let allFilter = app.buttons["history.list.modeFilter.all"]
+        let timedFilter = app.buttons["history.list.modeFilter.timed"]
+        XCTAssertTrue(allFilter.waitForExistence(timeout: 6))
+        XCTAssertTrue(timedFilter.waitForExistence(timeout: 6))
+        assertMinimumTapTarget(allFilter)
+        assertMinimumTapTarget(timedFilter)
+        XCTAssertTrue(allFilter.isSelected)
+        XCTAssertFalse(timedFilter.isSelected)
+
+        timedFilter.tap()
+        let timedBreakdown = app.descendants(matching: .any)["history.timed.breakdown"]
+        XCTAssertTrue(
+            timedBreakdown.waitForExistence(timeout: 6),
+            "Selecting the Timed Practice filter must replace the cross-mode summary."
+        )
+        XCTAssertTrue(timedFilter.isSelected)
+        XCTAssertFalse(allFilter.isSelected)
+
+        let search = app.textFields["history.list.search"]
+        scrollUntilHittable(search, in: app)
+        XCTAssertTrue(search.waitForExistence(timeout: 6))
+        assertMinimumTapTarget(search)
+
+        let sort = app.buttons["history.list.sort"]
+        scrollUntilHittable(sort, in: app)
+        XCTAssertTrue(sort.waitForExistence(timeout: 6))
+        assertMinimumTapTarget(sort)
+        XCTAssertEqual(sort.value as? String, "Newest")
+
+        scrollUntilHittable(search, in: app, direction: .down)
+        XCTAssertTrue(search.isHittable)
+        search.tap()
+        search.typeText("Two-word capture")
+
+        let matchingRow = app.descendants(matching: .any)[
+            "history.row.\(tooFewWordsID.uppercased())"
+        ]
+        scrollUntilHittable(matchingRow, in: app)
+        XCTAssertTrue(
+            matchingRow.isHittable,
+            "Typing in the accessible search field must still filter raw history."
+        )
+
+        let clearSearch = app.buttons["history.list.clearSearch"]
+        scrollUntilHittable(clearSearch, in: app, direction: .down)
+        XCTAssertTrue(clearSearch.waitForExistence(timeout: 6))
+        assertMinimumTapTarget(clearSearch)
+        clearSearch.tap()
+
+        let clearSearchGone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: clearSearch
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [clearSearchGone], timeout: 4),
+            .completed,
+            "Clearing the query must remove the conditional clear control."
+        )
+    }
+
+    @MainActor
     func testProfileUsesTwoMeasuredRepsWhileLinkingToFiveRawRows() throws {
         let app = launch(at: "noum://profile")
 
@@ -135,10 +208,15 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
         let coachRead = app.descendants(matching: .any)["profile.coachRead"]
         scrollUntilVisible(coachRead, in: app)
         XCTAssertTrue(coachRead.exists)
-        let evidenceCaption = app.staticTexts["Based on your latest two reps."].firstMatch
-        scrollUntilVisible(evidenceCaption, in: app)
+        let evidenceCaption = coachRead.descendants(matching: .staticText)[
+            "Based on your latest two reps."
+        ]
         XCTAssertTrue(evidenceCaption.waitForExistence(timeout: 6))
-        XCTAssertTrue(app.staticTexts["Your latest two reps are setting a starting point."].exists)
+        XCTAssertTrue(
+            coachRead.descendants(matching: .staticText)[
+                "Your latest two reps are setting a starting point."
+            ].exists
+        )
         XCTAssertFalse(
             app.descendants(matching: .any)["profile.transformationQuestion"].waitForExistence(timeout: 1),
             "Five raw rows must not unlock the three-measured-rep transformation question."
@@ -157,15 +235,31 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
         attachScreenshot(app, name: "Profile - two measured reps and five saved rows")
 
         let coachingEvidence = app.descendants(matching: .any)["profile.evidence.baselineMap.row"]
-        scrollUntilHittable(coachingEvidence, in: app)
+        scrollUntilHittable(coachingEvidence, in: app, direction: .down)
         XCTAssertTrue(coachingEvidence.isHittable)
         coachingEvidence.tap()
 
         XCTAssertTrue(
             app.descendants(matching: .any)["profile.evidenceDetails"].waitForExistence(timeout: 8)
         )
+        let whyPlanDisclosure = app.buttons["profile.evidence.whyPlan.toggle"]
+        scrollUntilHittable(whyPlanDisclosure, in: app)
+        XCTAssertTrue(whyPlanDisclosure.waitForExistence(timeout: 5) && whyPlanDisclosure.isHittable)
+        whyPlanDisclosure.tap()
+        XCTAssertEqual(whyPlanDisclosure.label, "Hide Why this focus")
+        // Keep only one evidence disclosure open at a time. At AX XXXL the
+        // complete Why-this-focus evidence is many viewports tall; stacking
+        // both disclosures tests scroll distance rather than either control.
+        whyPlanDisclosure.tap()
+        XCTAssertEqual(whyPlanDisclosure.label, "Show Why this focus")
+
+        let progressDisclosure = app.buttons["profile.evidence.progress.toggle"]
+        scrollUntilHittable(progressDisclosure, in: app)
+        XCTAssertTrue(progressDisclosure.waitForExistence(timeout: 5) && progressDisclosure.isHittable)
+        progressDisclosure.tap()
+
         let rankProgress = app.descendants(matching: .any)["profile.evidence.rankProgress"]
-        scrollUntilVisible(rankProgress, in: app)
+        scrollUntilVisible(rankProgress, in: app, attempts: 20)
         XCTAssertTrue(rankProgress.label.contains("0 XP banked"))
         XCTAssertFalse(rankProgress.label.contains("1280 XP"))
         XCTAssertEqual(
@@ -214,7 +308,7 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
             "UI_TESTING_SEED_FORCE",
             fixtureArgument,
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            "UICTContentSizeCategoryAccessibilityXXXL",
             "-DeepLink",
             deepLink,
         ]
@@ -251,11 +345,36 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
             if element.exists && element.isHittable { return }
             switch direction {
             case .up:
-                scrollView.swipeUp(velocity: .slow)
+                app.swipeUp()
             case .down:
-                scrollView.swipeDown(velocity: .slow)
+                app.swipeDown()
             }
         }
+    }
+
+    @MainActor
+    private func assertMinimumTapTarget(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        // XCUI can report an exact 44pt SwiftUI frame as
+        // 43.99999999999996 after Core Graphics conversion. Permit only
+        // floating-point noise, not a materially undersized target.
+        let subpixelTolerance = 0.001
+        XCTAssertTrue(element.isHittable, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width + subpixelTolerance,
+            44,
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height + subpixelTolerance,
+            44,
+            file: file,
+            line: line
+        )
     }
 
     @MainActor
@@ -270,7 +389,7 @@ final class ReviewProgressEligibilityUITests: XCTestCase {
 
         for _ in 0..<attempts {
             if element.exists && visibleFrame.intersects(element.frame) { return }
-            scrollView.swipeUp(velocity: .slow)
+            app.swipeUp()
         }
     }
 

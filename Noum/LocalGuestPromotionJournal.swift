@@ -67,13 +67,19 @@ protocol LocalGuestPromotionJournalStorage {
 }
 
 struct KeychainLocalGuestPromotionJournalStorage: LocalGuestPromotionJournalStorage {
-    private static let service = "Noum"
+    static func storageService(arguments: [String]) -> String {
+        KeychainHelper.storageService(arguments: arguments)
+    }
+
+    private var service: String {
+        Self.storageService(arguments: ProcessInfo.processInfo.arguments)
+    }
 
     func read(key: String) -> LocalGuestPromotionJournalStorageRead {
         #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
@@ -108,7 +114,7 @@ struct KeychainLocalGuestPromotionJournalStorage: LocalGuestPromotionJournalStor
         #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
         let status = SecItemDelete(query as CFDictionary)

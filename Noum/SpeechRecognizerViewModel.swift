@@ -90,6 +90,10 @@ enum SpeechRecordingIssue: Equatable, Sendable {
     /// Consent is off and no on-device route could stand in. A retry cannot
     /// change this, so surfaces must offer the consent decision instead.
     case cloudProcessingDisabled
+    /// Capture or its transcription transport failed. Keep this distinct from
+    /// a successful terminal receipt with too little speech: provider/API
+    /// failure is not evidence that the user was silent.
+    case captureUnavailable(started: Bool)
 
     /// What the surface should offer the user. Retrying is only honest when the
     /// cause can actually change between attempts; the other cases would loop
@@ -138,9 +142,17 @@ struct SpeechRecordingIssuePresentation: Equatable, Sendable {
                 detail: message,
                 recovery: .grantCloudConsent
             )
+        case .captureUnavailable(let started):
+            return SpeechRecordingIssuePresentation(
+                title: started
+                    ? "Live transcription stopped"
+                    : "Recording couldn’t start",
+                detail: message,
+                recovery: .retry
+            )
         case nil:
             return SpeechRecordingIssuePresentation(
-                title: "We could not hear the rep",
+                title: "Not enough speech captured",
                 detail: message,
                 recovery: .retry
             )
@@ -789,6 +801,10 @@ class SpeechRecognizerViewModel: ObservableObject {
             sessionStart = Date()
             captureClock.start(at: ProcessInfo.processInfo.systemUptime)
             transition(to: .recording)
+            // A newly started capture supersedes an unseen receipt from an
+            // older rep. Otherwise a later failed attempt can return Home and
+            // appear to have earned that old path event.
+            PathProgressManager.shared.notePracticeAttemptStarted()
             return true
         } catch {
             guard Self.shouldFinalize(captured: generation, current: sessionGeneration),
@@ -1101,7 +1117,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private func failStartRecording(with error: Error) {
         let message = userFacingRecordingError(for: error, started: false)
-        recordingIssue = recordingIssue(for: error)
+        recordingIssue = recordingIssue(for: error, started: false)
         connectionError = message
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
@@ -1123,7 +1139,7 @@ class SpeechRecognizerViewModel: ObservableObject {
               recordingLifecycle.isBusy else { return }
 
         let message = userFacingRecordingError(for: error, started: true)
-        recordingIssue = recordingIssue(for: error)
+        recordingIssue = recordingIssue(for: error, started: true)
         connectionError = message
         let session = activeSession
         sessionGeneration &+= 1
@@ -1166,16 +1182,19 @@ class SpeechRecognizerViewModel: ObservableObject {
             : "Live transcription is temporarily unavailable. Your rep hasn’t started."
     }
 
-    func recordingIssue(for error: Error) -> SpeechRecordingIssue? {
+    func recordingIssue(
+        for error: Error,
+        started: Bool = false
+    ) -> SpeechRecordingIssue? {
         if let sessionError = error as? TranscriptionSessionError,
            sessionError == .cloudProcessingConsentRequired {
             return .cloudProcessingDisabled
         }
-        guard let localError = error as? LocalSpeechError,
-              case .onDeviceRecognitionUnavailable(let locale) = localError else {
-            return nil
+        if let localError = error as? LocalSpeechError,
+           case .onDeviceRecognitionUnavailable(let locale) = localError {
+            return .unsupportedOnDeviceLocale(locale)
         }
-        return .unsupportedOnDeviceLocale(locale)
+        return .captureUnavailable(started: started)
     }
 
     private func transition(to state: RecordingLifecycleState) {

@@ -12,7 +12,7 @@ final class RoleplayTerminalGuidanceUITests: XCTestCase {
             .terminalFeedback,
             extraArguments: [
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+                "UICTContentSizeCategoryAccessibilityXXXL"
             ]
         )
         defer { app.terminate() }
@@ -21,8 +21,8 @@ final class RoleplayTerminalGuidanceUITests: XCTestCase {
         XCTAssertTrue(guidance.label.contains("Practice focus"))
         XCTAssertFalse(guidance.label.contains("Next attempt"))
 
-        let next = app.buttons["roleplay.continue"]
-        XCTAssertTrue(next.waitForExistence(timeout: 3))
+        let next = scrollToButton("roleplay.continue", in: app)
+        XCTAssertTrue(next.isHittable)
         XCTAssertEqual(next.label, "See results")
         attach(app, name: "roleplay-terminal-feedback-axxxl")
         next.tap()

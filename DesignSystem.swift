@@ -232,6 +232,11 @@ enum AppColor {
     static let focusedGlassFill = Color.white.opacity(0.13)
     static let focusedGlassBorder = Color.white.opacity(0.18)
     static let focusedTextSecondary = Color.white.opacity(0.90)
+    /// Mini-drill actions stay legible for every skill tint. Skill colour
+    /// remains present in the orb, progress ring, and banner; the action itself
+    /// uses one stable high-contrast foreground/surface contract.
+    static let focusedPrimaryActionFill = Color.white
+    static let focusedPrimaryActionText = Color.black
 
     // MARK: Semantic Feedback
 
@@ -325,6 +330,13 @@ enum AppColor {
     /// (4.82:1) and reaches 6.00:1 at full strength.
     static let heroGradientStart = Color(red: 0.302, green: 0.235, blue: 0.780)
     static let heroGradientEnd = Color(red: 0.427, green: 0.275, blue: 0.839)
+    /// Text roles for the continuously varying Home hero. Native contrast
+    /// audits sample one backdrop point for the gradient, so these named roles
+    /// are shared with the deterministic two-stop contrast gate.
+    static let homeHeroTitleText = Color.white
+    static let homeHeroSubtitleText = Color.white.opacity(0.85)
+    static let homeHeroMetaText = Color.white.opacity(0.90)
+    static let homeHeroSecondaryActionText = Color.white.opacity(0.95)
     /// Warm editorial canvas behind the V4.6 loop's screens
     /// (#FAF9F7 → #17151C, same mapping as `screenBackground`).
     static let warmCanvas = dynamicColor(
@@ -353,6 +365,53 @@ enum AppColor {
     static let textTertiary = dynamicColor(
         light: (0.36, 0.40, 0.47),
         dark: (0.604, 0.580, 0.675)
+    )
+
+    // MARK: Rendered accessibility roles
+
+    /// Exact semantic roles consumed by views whose continuously varying or
+    /// simulator-sampled surfaces require a narrowly scoped native-audit
+    /// exception. The contrast suite resolves these same values against their
+    /// production surfaces, keeping the exception tied to rendered styling.
+    static let recommendationActionFill = brandBlue
+    static let recommendationActionText = Color.white
+    static let recommendationDisclosureText = brandBlueOnWash
+    /// Exact top stop behind the Review story eyebrow. Keep this shared with
+    /// the deterministic contrast guard so the native-audit exception cannot
+    /// drift away from the rendered gradient.
+    static let reviewStoryWash = brandBlue.opacity(0.10)
+    static let reviewStoryLabelText = textSecondary
+    static let profileMetricLabelText = textSecondary
+    static let coachPlanText = textPrimary
+    static let reviewTranscriptAccentText = proText
+    static let reviewTranscriptBodyText = textPrimary
+    static let reviewTranscriptDetailText = textSecondary
+
+    // MARK: Progress chart marks
+
+    /// Opaque, appearance-aware registers for information-bearing chart marks.
+    /// The identity tints remain available for decorative washes and picker
+    /// fills; these stronger variants are reserved for lines and points that
+    /// must remain distinguishable over every layer of the chart plot.
+    static let progressScoreMark = brandBlue
+    static let progressFillerMark = caution
+    static let progressPaceMark = dynamicColor(
+        light: (0.07, 0.48, 0.34),
+        dark: (0.28, 0.72, 0.56)
+    )
+    static let progressPauseMark = dynamicColor(
+        light: (0.25, 0.34, 0.80),
+        dark: (0.45, 0.56, 1.00)
+    )
+    static let progressPitchMark = dynamicColor(
+        light: (0.75, 0.10, 0.25),
+        dark: (1.00, 0.40, 0.52)
+    )
+    /// Quiet neutral for the average rule. Its hierarchy comes from the thin,
+    /// dashed stroke rather than contrast-reducing opacity.
+    static let progressReferenceLine = dynamicColor(
+        light: (0.43, 0.45, 0.50),
+        dark: (0.58, 0.56, 0.64)
     )
 
     // MARK: Surfaces & Borders

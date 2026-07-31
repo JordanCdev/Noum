@@ -5,7 +5,7 @@ repo_root="${0:A:h:h}"
 config="${NOUM_AI_CONFIG:-$repo_root/Noum/AIConfig.plist}"
 transcription_config="${NOUM_TRANSCRIPTION_CONFIG:-$repo_root/Noum/TranscriptionProviders.plist}"
 device="${NOUM_SIMULATOR_DEVICE:-booted}"
-bundle_id="com.jordancoaten.noum"
+bundle_id="uk.co.otherpath.noum"
 
 if [[ ! -f "$config" ]]; then
   echo "Missing gitignored AI config at $config" >&2

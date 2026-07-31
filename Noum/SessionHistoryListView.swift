@@ -190,6 +190,7 @@ struct SessionHistoryListView: View {
     @State private var expandedGroupIDs: Set<String> = []
     @Binding var navigationPath: NavigationPath
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -277,61 +278,104 @@ struct SessionHistoryListView: View {
 
     // MARK: - Search + sort
 
+    @ViewBuilder
     private var searchAndSortRow: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                TextField("Search prompts, transcripts, reads", text: $query)
-                    .font(.subheadline)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("history.list.search")
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                }
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                searchField
+                sortMenu
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-
-            Menu {
-                ForEach(SessionHistorySort.allCases) { option in
-                    Button {
-                        sort = option
-                    } label: {
-                        if sort == option {
-                            Label(option.label, systemImage: "checkmark")
-                        } else {
-                            Text(option.label)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.caption.weight(.bold))
-                    Text(sort.label)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        } else {
+            HStack(spacing: Spacing.xs) {
+                searchField
+                sortMenu
             }
-            .accessibilityIdentifier("history.list.sort")
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "magnifyingglass")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            TextField(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "Search"
+                    : "Search prompts, transcripts, reads",
+                text: $query
+            )
+            .font(Typography.body)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .accessibilityLabel("Search prompts, transcripts, and coaching reads")
+            .accessibilityIdentifier("history.list.search")
+
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("history.list.clearSearch")
+            }
+        }
+        .padding(.leading, Spacing.sm)
+        .padding(.trailing, query.isEmpty ? Spacing.sm : 0)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(
+            Color(.systemGray6),
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        )
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(SessionHistorySort.allCases) { option in
+                Button {
+                    sort = option
+                } label: {
+                    if sort == option {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: Spacing.xxs) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(Typography.caption.weight(.bold))
+                    .accessibilityHidden(true)
+                Text(sort.label)
+                    .font(Typography.caption.weight(.semibold))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, Spacing.sm)
+            .frame(
+                maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil,
+                minHeight: 44,
+                alignment: .leading
+            )
+            .background(
+                Color(.systemGray6),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Sort sessions")
+        .accessibilityValue(sort.label)
+        .accessibilityIdentifier("history.list.sort")
     }
 
     // MARK: - Mode filter chips
@@ -350,24 +394,36 @@ struct SessionHistoryListView: View {
     }
 
     private func filterChip(label: String, mode: PracticeMode?) -> some View {
-        Button {
+        let isSelected = selectedModeFilter == mode
+
+        return Button {
             if reduceMotion {
                 selectedModeFilter = mode
             } else {
                 withAnimation(.easeInOut(duration: 0.2)) { selectedModeFilter = mode }
             }
         } label: {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(
-                    selectedModeFilter == mode ? AppColor.brandBlue : Color(.systemGray6),
-                    in: Capsule(style: .continuous)
-                )
-                .foregroundStyle(selectedModeFilter == mode ? .white : .primary)
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(Typography.caption.weight(.bold))
+                    .accessibilityHidden(true)
+
+                Text(label)
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .padding(.horizontal, Spacing.sm)
+            .frame(minHeight: 44)
+            .fixedSize(horizontal: true, vertical: true)
+            .background(
+                isSelected ? AppColor.brandBlue : Color(.systemGray6),
+                in: Capsule(style: .continuous)
+            )
+            .foregroundStyle(isSelected ? .white : .primary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("history.list.modeFilter.\(mode?.rawValue ?? "all")")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Mode breakdown cards

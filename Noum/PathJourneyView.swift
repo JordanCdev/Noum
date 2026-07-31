@@ -28,7 +28,7 @@ struct ProgressLandmarkPresentation: Identifiable, Equatable {
     let detail: String
 
     var accessibilityLabel: String {
-        "\(state.label) landmark, \(title). \(detail)"
+        "\(state.label) path step, \(title). \(detail)"
     }
 }
 
@@ -740,7 +740,7 @@ struct PathJourneyView: View {
                         Text(
                             isUnlocked
                                 ? "Reached through repeated practice."
-                                : "Keep practicing — this landmark unlocks once the habit is holding."
+                                : "Keep practicing — this step unlocks once the habit is holding."
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1385,9 +1385,9 @@ struct PathJourneyPresentation: Equatable {
                 currentStreak: max(0, currentStreak),
                 progressLabel: "Path pending",
                 previewLine: "One short rep gives Noum a real signal to build from.",
-                summaryLine: "Landmarks come from completed practice, not days on a calendar.",
+                summaryLine: "Path steps come from completed practice, not days on a calendar.",
                 explanationLine: "Start with one rep.",
-                nextMilestoneLabel: "Complete one rep to reveal the first landmark.",
+                nextMilestoneLabel: "Complete one rep to reveal the first step.",
                 consequenceLine: "The path begins with your first completed rep.",
                 homeGoalLine: "Start the path with one rep today.",
                 homeGoalShortLabel: "Start"
@@ -1400,11 +1400,11 @@ struct PathJourneyPresentation: Equatable {
                 currentStreak: max(0, currentStreak),
                 progressLabel: "100% complete",
                 previewLine: "The current path is clear. Keep training to make the gains durable.",
-                summaryLine: "All \(totalCount) landmarks reached from real practice signals.",
+                summaryLine: "All \(totalCount) path steps reached from real practice signals.",
                 explanationLine: "Current path complete.",
                 nextMilestoneLabel: "Keep training to strengthen the habits behind the unlocks.",
                 consequenceLine: "The coach will keep looking for the next clear pattern.",
-                homeGoalLine: "All \(totalCount) landmarks reached. Keep the route strong.",
+                homeGoalLine: "All \(totalCount) path steps reached. Keep the route strong.",
                 homeGoalShortLabel: "Cleared"
             )
         }
@@ -1413,21 +1413,21 @@ struct PathJourneyPresentation: Equatable {
         let title = currentTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let detail = currentDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
         let gating = currentGatingPhrase?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let readableTitle = title?.isEmpty == false ? title! : "Next landmark"
+        let readableTitle = title?.isEmpty == false ? title! : "Next step"
         let readableDetail = detail?.isEmpty == false
             ? detail!
             : "Complete a rep to give this node a stronger signal."
         let readableGate = gating?.isEmpty == false
             ? gating!
-            : "Keep training to move toward this landmark."
+            : "Keep training to move toward this step."
 
         let previewLine: String
         if sessionCount <= 0 {
-            previewLine = "The path starts after one real rep. No landmark is claimed before you speak."
+            previewLine = "The path starts after one real rep. No step is claimed before you speak."
         } else if completedCount == 0 {
-            previewLine = "Your first landmark is ahead. Noum is reading real reps now."
+            previewLine = "Your first path step is ahead. Noum is reading real reps now."
         } else {
-            previewLine = "\(completedCount) landmark\(completedCount == 1 ? "" : "s") reached. The next one is based on your latest signals."
+            previewLine = "\(completedCount) path step\(completedCount == 1 ? "" : "s") reached. The next one is based on your latest signals."
         }
 
         return PathJourneyPresentation(
@@ -1435,11 +1435,11 @@ struct PathJourneyPresentation: Equatable {
             currentStreak: max(0, currentStreak),
             progressLabel: "\(pct)% complete",
             previewLine: previewLine,
-            summaryLine: "\(completedCount) of \(totalCount) landmarks reached from real practice signals.",
-            explanationLine: "Landmark \(landmarkNumber): \(readableTitle)",
+            summaryLine: "\(completedCount) of \(totalCount) path steps reached from real practice signals.",
+            explanationLine: "Step \(landmarkNumber): \(readableTitle)",
             nextMilestoneLabel: readableGate,
             consequenceLine: readableDetail,
-            homeGoalLine: "Landmark \(landmarkNumber) of \(totalCount): \(readableTitle). \(readableGate)",
+            homeGoalLine: "Step \(landmarkNumber) of \(totalCount): \(readableTitle). \(readableGate)",
             homeGoalShortLabel: "\(pct)%"
         )
     }

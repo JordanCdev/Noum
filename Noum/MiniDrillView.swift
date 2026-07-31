@@ -16,6 +16,7 @@ struct MiniDrillView: View {
 
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var phase: DrillPhase = .ready
     @State private var elapsedSeconds: Int = 0
@@ -55,12 +56,12 @@ struct MiniDrillView: View {
                 ZStack {
                     // Progress ring
                     Circle()
-                        .stroke(drill.tint.opacity(0.15), lineWidth: 6)
+                        .stroke(focusedAccent.opacity(0.15), lineWidth: 6)
                         .frame(width: 180, height: 180)
 
                     Circle()
                         .trim(from: 0, to: progressRingFill)
-                        .stroke(drill.tint, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                        .stroke(focusedAccent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                         .frame(width: 180, height: 180)
                         .rotationEffect(.degrees(-90))
                         .animation(reduceMotion ? nil : .linear(duration: 1), value: progressRingFill)
@@ -69,7 +70,7 @@ struct MiniDrillView: View {
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: [drill.tint.opacity(0.3), drill.tint.opacity(0.08)],
+                                colors: [focusedAccent.opacity(0.3), focusedAccent.opacity(0.08)],
                                 center: .center,
                                 startRadius: 20,
                                 endRadius: 70
@@ -84,7 +85,7 @@ struct MiniDrillView: View {
                         VStack(spacing: 8) {
                             Image(systemName: drill.icon)
                                 .font(.system(size: 28, weight: .bold))
-                                .foregroundStyle(drill.tint)
+                                .foregroundStyle(focusedAccent)
                             Text("Ready")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.white.opacity(0.6))
@@ -93,12 +94,12 @@ struct MiniDrillView: View {
                     case .countdown:
                         Text("\(countdownValue)")
                             .font(.system(size: 56, weight: .bold, design: .rounded))
-                            .foregroundStyle(drill.tint)
+                            .foregroundStyle(focusedAccent)
                             .transition(.scale.combined(with: .opacity))
                     case .connecting:
                         VStack(spacing: 8) {
                             ProgressView()
-                                .tint(drill.tint)
+                                .tint(focusedAccent)
                             Text("Connecting")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.white.opacity(0.6))
@@ -111,12 +112,12 @@ struct MiniDrillView: View {
                                 .foregroundStyle(.white)
                             Text("of \(drillDuration)s")
                                 .font(.caption2.weight(.medium))
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(AppColor.focusedTextSecondary)
                         }
                     case .finishing:
                         Image(systemName: "checkmark")
                             .font(.system(size: 36, weight: .bold))
-                            .foregroundStyle(drill.tint)
+                            .foregroundStyle(focusedAccent)
                     }
                 }
 
@@ -132,7 +133,7 @@ struct MiniDrillView: View {
                                 .frame(width: 6, height: 6)
                             Text("\(speechVM.fillerWordCount) filler\(speechVM.fillerWordCount == 1 ? "" : "s")")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.red.opacity(0.8))
+                                .foregroundStyle(.red)
                         }
                         .transition(.opacity)
                     }
@@ -142,7 +143,11 @@ struct MiniDrillView: View {
                         Text("\"\(prompt)\"")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white.opacity(0.6))
-                            .lineLimit(3)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
+                            .fixedSize(
+                                horizontal: false,
+                                vertical: dynamicTypeSize.isAccessibilitySize
+                            )
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 24)
                     }
@@ -151,7 +156,7 @@ struct MiniDrillView: View {
                     if phase == .ready {
                         Text("Goal: \(drill.variation.successDescription)")
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(drill.tint.opacity(0.7))
+                            .foregroundStyle(AppColor.focusedTextSecondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 32)
                     }
@@ -168,50 +173,36 @@ struct MiniDrillView: View {
                             .accessibilityIdentifier("miniDrill.completionIssue")
                     }
 
-                    // Action button
-                    switch phase {
-                    case .ready:
-                        Button {
-                            startCountdown()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "play.fill")
-                                    .font(.subheadline.weight(.bold))
-                                Text("Start drill")
-                                    .font(.subheadline.weight(.bold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 14)
-                            .background(drill.tint, in: Capsule())
-                        }
-                        .buttonStyle(.pressable)
-                        .accessibilityIdentifier("miniDrill.start")
-                    case .countdown, .connecting:
-                        EmptyView()
-                    case .speaking:
-                        Button {
-                            finishDrill()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "stop.fill")
-                                    .font(.caption.weight(.bold))
-                                Text("Stop")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .foregroundStyle(.white.opacity(0.8))
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 10)
-                            .background(.white.opacity(0.15), in: Capsule())
-                        }
-                        .buttonStyle(.pressable)
-                    case .finishing:
-                        EmptyView()
+                    // Keep the action in the established composition at
+                    // standard sizes. Accessibility sizes pin the same action
+                    // below the scrollable content, so recovery never depends
+                    // on reaching the end of a very tall error state.
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        phaseAction
                     }
                 }
                 .padding(.bottom, 40)
             }
             .padding(.horizontal, Spacing.screenH)
+            .padding(.top, dynamicTypeSize.isAccessibilitySize ? 56 : 0)
+            .modifier(
+                MiniDrillAccessibilityScrollModifier(
+                    isEnabled: dynamicTypeSize.isAccessibilitySize
+                )
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if dynamicTypeSize.isAccessibilitySize,
+                   phase == .ready || phase == .speaking {
+                    HStack {
+                        Spacer(minLength: 0)
+                        phaseAction
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.black.opacity(0.94))
+                }
+            }
 
             // Close button (top-left)
             VStack {
@@ -257,12 +248,16 @@ struct MiniDrillView: View {
 
     // MARK: - Constraint Banner
 
+    private var focusedAccent: Color {
+        drill.skillArea.miniDrillFocusedAccent
+    }
+
     private var constraintBanner: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: drill.icon)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(drill.tint)
+                    .foregroundStyle(focusedAccent)
                 Text(drill.title)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white)
@@ -279,10 +274,54 @@ struct MiniDrillView: View {
         }
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity)
-        .background(drill.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(focusedAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     // MARK: - Actions
+
+    @ViewBuilder
+    private var phaseAction: some View {
+        switch phase {
+        case .ready:
+            Button {
+                startCountdown()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                        .font(.subheadline.weight(.bold))
+                    Text("Start drill")
+                        .font(.subheadline.weight(.bold))
+                }
+                .foregroundStyle(drill.skillArea.miniDrillActionForeground)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 14)
+                .background(drill.skillArea.miniDrillActionFill, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("miniDrill.start")
+        case .countdown, .connecting:
+            EmptyView()
+        case .speaking:
+            Button {
+                finishDrill()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "stop.fill")
+                        .font(.caption.weight(.bold))
+                    Text("Stop")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.white.opacity(0.8))
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .frame(minHeight: 44)
+                .background(.white.opacity(0.15), in: Capsule())
+            }
+            .buttonStyle(.pressable)
+        case .finishing:
+            EmptyView()
+        }
+    }
 
     private func startCountdown() {
         completionIssue = nil
@@ -606,6 +645,22 @@ enum FrameworkDrillVerdict: Equatable {
             return FrameworkDrillChecks.bridgeReframe(transcript: transcript).map(FrameworkDrillVerdict.bridgeReframe)
         case .areaAnswer:
             return FrameworkDrillChecks.areaAnswer(transcript: transcript).map(FrameworkDrillVerdict.areaAnswer)
+        }
+    }
+}
+
+private struct MiniDrillAccessibilityScrollModifier: ViewModifier {
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            ScrollView {
+                content
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        } else {
+            content
         }
     }
 }

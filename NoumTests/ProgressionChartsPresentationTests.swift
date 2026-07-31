@@ -17,6 +17,7 @@ import SwiftUI
 struct ProgressionChartsPresentationTests {
     typealias Series = ProgressionChartsCard.ChartSeries
     typealias Model = ProgressionChartsCard.ChartPresentationModel
+    typealias VisualPolicy = ProgressionChartsCard.ChartVisualPolicy
     private let now = Date(timeIntervalSince1970: 2_100_000_000)
 
     @Test func reviewOnlyRowsCannotUnlockChartGate() {
@@ -112,6 +113,45 @@ struct ProgressionChartsPresentationTests {
         for series in Series.allCases {
             #expect(series.shortLabel.count <= 7)
         }
+    }
+
+    @Test func meaningfulMarksKeepHierarchyWithoutLowContrastOpacity() {
+        #expect(VisualPolicy.latestPointSize > VisualPolicy.historicalPointSize)
+        #expect(VisualPolicy.trendLineWidth > VisualPolicy.averageLineWidth)
+        #expect(!VisualPolicy.averageLineDash.isEmpty)
+        #expect(VisualPolicy.practicalContrastTarget >= 3.5)
+    }
+
+    @Test func reduceTransparencyRemovesTheDecorativeAreaWash() {
+        #expect(VisualPolicy.showsAreaWash(reduceTransparency: false))
+        #expect(!VisualPolicy.showsAreaWash(reduceTransparency: true))
+        #expect(
+            VisualPolicy.plotSurface(reduceTransparency: false)
+                == .layeredWash
+        )
+        #expect(
+            VisualPolicy.plotSurface(reduceTransparency: true)
+                == .opaqueInnerSurface
+        )
+    }
+
+    @Test func differentiateWithoutColorAddsOnlyTheSelectedStateGlyph() {
+        #expect(!VisualPolicy.showsSelectionCheckmark(
+            isSelected: false,
+            differentiateWithoutColor: false
+        ))
+        #expect(!VisualPolicy.showsSelectionCheckmark(
+            isSelected: true,
+            differentiateWithoutColor: false
+        ))
+        #expect(!VisualPolicy.showsSelectionCheckmark(
+            isSelected: false,
+            differentiateWithoutColor: true
+        ))
+        #expect(VisualPolicy.showsSelectionCheckmark(
+            isSelected: true,
+            differentiateWithoutColor: true
+        ))
     }
 
     @Test func lowEvidenceTrendUsesSofterCoachingCopy() {

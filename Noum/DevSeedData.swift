@@ -50,7 +50,11 @@ enum DevSeedData {
     nonisolated static func requestedProfileForUITesting(
         arguments: [String]
     ) -> SeedProfile? {
-        guard arguments.contains("UI_TESTING_SEED")
+        let launchMode = KeychainHelper.uiAutomationLaunchMode(
+            arguments: arguments
+        )
+        guard launchMode == .seeded || launchMode == .authenticatedCoach,
+              arguments.contains("UI_TESTING_SEED")
                 || arguments.contains("UI_TESTING_SEED_FORCE") else {
             return nil
         }

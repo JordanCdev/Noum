@@ -106,7 +106,7 @@ final class HomePracticePathPolishUITests: XCTestCase {
             "UI_TESTING_PRACTICE_LOCALE",
             "en-US",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            "UICTContentSizeCategoryAccessibilityXXXL",
             "-DeepLink",
             "noum://practice/timed",
         ]
@@ -126,7 +126,14 @@ final class HomePracticePathPolishUITests: XCTestCase {
 
         let startNow = app.buttons["timedPractice.startNow"]
         XCTAssertTrue(startNow.waitForExistence(timeout: 5))
-        XCTAssertTrue(startNow.isHittable)
+        let startNowHittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"),
+            object: startNow
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [startNowHittable], timeout: 5),
+            .completed
+        )
         startNow.tap()
 
         let issue = app.descendants(matching: .any)["timedPractice.recordingIssue"]
@@ -158,7 +165,7 @@ final class HomePracticePathPolishUITests: XCTestCase {
             "insufficient",
             extraArguments: [
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+                "UICTContentSizeCategoryAccessibilityXXXL"
             ]
         )
         defer { app.terminate() }
@@ -203,7 +210,7 @@ final class HomePracticePathPolishUITests: XCTestCase {
             "insufficient",
             extraArguments: [
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+                "UICTContentSizeCategoryAccessibilityXXXL"
             ]
         )
         defer { app.terminate() }

@@ -87,6 +87,15 @@ struct NoumApp: App {
     // are ready before the UIApplicationDelegateAdaptor or any @StateObject
     // singleton can cause a Firebase framework to inspect the default app.
     private let firebaseReady: Void = FirebaseBootstrap.configure()
+    #if DEBUG
+    // Keep this ahead of every singleton-backed property. Rendered UI-test
+    // fixtures need their isolated durable identity in place before any store
+    // resolves its account-scoped defaults.
+    private let uiAutomationStorageReady: Bool =
+        KeychainHelper.prepareUIAutomationStorage(
+            arguments: ProcessInfo.processInfo.arguments
+        )
+    #endif
     #if canImport(UIKit)
     // Configures Firebase at `didFinishLaunchingWithOptions` time — early
     // enough for UIKit lifecycle integrations (see NoumAppDelegate). Core is
@@ -105,7 +114,14 @@ struct NoumApp: App {
     @State private var reviewExperimentResolvedAccountID: String?
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
-    private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
+    #if DEBUG
+    private let isRealFirstRunUITesting =
+        KeychainHelper.uiAutomationLaunchMode(
+            arguments: ProcessInfo.processInfo.arguments
+        ) == .realFirstRun
+    #else
+    private let isRealFirstRunUITesting = false
+    #endif
     private let isFastLaneUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_FAST_LANE")
 
     init() {
@@ -115,18 +131,25 @@ struct NoumApp: App {
         TypographyDebug.logRegisteredFamiliesOnce()
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
-        AuthManager.shared.useProcessLocalAuthenticatedCoachStateForUITesting(
-            arguments: args
-        )
+        if uiAutomationStorageReady {
+            AuthManager.shared.useProcessLocalSeededAccountStateForUITesting(
+                arguments: args
+            )
+            AuthManager.shared.useProcessLocalAuthenticatedCoachStateForUITesting(
+                arguments: args
+            )
+        }
         AuthManager.shared.useProcessLocalSignedOutStateForUITesting(arguments: args)
         // `UI_TESTING_SEED_FORCE` always reseeds — used by ScreenshotTour
         // so the test starts from a deterministic populated state every
         // run. Plain `UI_TESTING_SEED` only seeds when the store is empty
         // (preserves hand-test data across launches).
         let forceSeed = args.contains("UI_TESTING_SEED_FORCE")
-        if let seededProfile = DevSeedData.requestedProfileForUITesting(
-            arguments: args
-        ) {
+        if uiAutomationStorageReady,
+           KeychainHelper.hasPreparedUIAutomationIdentity(arguments: args),
+           let seededProfile = DevSeedData.requestedProfileForUITesting(
+               arguments: args
+           ) {
             // Inject the "improving intermediate" dev profile before any view
             // binds to PracticeSessionStore so screenshot-tour UI tests open on
             // a populated state instead of the first-run empty card.
@@ -186,7 +209,7 @@ struct NoumApp: App {
         }
         // Lets UI tests exercise the real app-level first-run cover while
         // preserving the normal `UI_TESTING` bypass used by seeded tours.
-        if args.contains("UI_TESTING_REAL_FIRST_RUN") {
+        if isRealFirstRunUITesting {
             PracticeSessionStore.shared.endSession()
             ProfileManager.shared.replaceFromRemote(0)
             CoachingProfileStore.shared.replaceForDebug(nil)
@@ -194,6 +217,13 @@ struct NoumApp: App {
             AchievementStore.shared.resetForDebug()
             SkillProgressionStore.shared.reset()
             FirstRepCelebrationManager.shared.resetForDebug()
+            AutoGuidedFirstRep.resetForDebug()
+        }
+        // Focused destination tests share one simulator and can otherwise
+        // inherit a pending first-rep Summary from an earlier process. Clear
+        // that state through its existing owner without disturbing the seeded
+        // profile or the destination under test.
+        if args.contains("UI_TESTING_CLEAR_FIRST_REP_STATE") {
             AutoGuidedFirstRep.resetForDebug()
         }
         // Keep chat-flow UI tests deterministic. The seeded profile is
@@ -291,6 +321,10 @@ struct NoumApp: App {
                 // replace a successfully hydrated fixture or production data.
                 if authManager.initialAccountHydrationState == .ready,
                    coachingProfileStore.profile == nil,
+                   uiAutomationStorageReady,
+                   KeychainHelper.hasPreparedUIAutomationIdentity(
+                       arguments: ProcessInfo.processInfo.arguments
+                   ),
                    let seededProfile = DevSeedData.requestedProfileForUITesting(
                        arguments: ProcessInfo.processInfo.arguments
                    ) {
@@ -429,7 +463,13 @@ struct NoumApp: App {
                 }
             }
         case .ready:
-            if coachingProfileStore.profile == nil && !activationExperimentResolvedForCurrentAccount {
+            // Sign-out is an explicit, usable state. It has no account-scoped
+            // profile or experiment assignment to hydrate, so waiting for
+            // either would leave Settings recovery behind an endless spinner.
+            if authManager.currentAccountID == nil {
+                AppShellView()
+            } else if coachingProfileStore.profile == nil
+                        && !activationExperimentResolvedForCurrentAccount {
                 InitialAccountBootstrapView()
             } else {
                 switch firstRunRootRoute {
@@ -836,7 +876,11 @@ struct NoumApp: App {
     private func handleIncomingURL(_ url: URL) {
 #if canImport(GoogleSignIn)
         // GoogleSignIn handles its own URL scheme — let it consume first.
-        if GIDSignIn.sharedInstance.handle(url) { return }
+        if AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ), GIDSignIn.sharedInstance.handle(url) {
+            return
+        }
 #endif
         guard url.scheme == "noum" else { return }
         // The full deep-link router lives on the home screen, which holds

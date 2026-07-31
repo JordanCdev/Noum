@@ -296,6 +296,8 @@ struct AppShellView: View {
         case .train: return !trainPath.isEmpty
         case .review: return !reviewPath.isEmpty
         case .profile: return !profilePath.isEmpty
+        // The compatibility-only Settings tab still needs the capsule as its
+        // escape route. The real You → Settings push hides it via profilePath.
         case .settings: return !settingsPath.isEmpty
         }
     }

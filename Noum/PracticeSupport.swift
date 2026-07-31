@@ -6077,6 +6077,71 @@ enum IMVoiceEngine: String, Codable, Identifiable {
 }
 
 #if canImport(AVFAudio)
+/// Shared utterance-bound delegate for practice-surface on-device readout.
+///
+/// AVSpeechSynthesizer may deliver a delayed finish/cancel callback after a
+/// replacement utterance has already started. Tracking the exact object keeps
+/// that stale callback from clearing or advancing the successor request.
+final class TTSDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    private weak var trackedUtterance: AVSpeechUtterance?
+    private var onFinish: (() -> Void)?
+    private var onCancel: (() -> Void)?
+
+    func track(
+        _ utterance: AVSpeechUtterance,
+        onFinish: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        trackedUtterance = utterance
+        self.onFinish = onFinish
+        self.onCancel = onCancel
+    }
+
+    func clearTracking() {
+        trackedUtterance = nil
+        onFinish = nil
+        onCancel = nil
+    }
+
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+        guard utterance === trackedUtterance else { return }
+        let callback = onFinish
+        clearTracking()
+        DispatchQueue.main.async {
+            callback?()
+        }
+    }
+
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didCancel utterance: AVSpeechUtterance
+    ) {
+        guard utterance === trackedUtterance else { return }
+        let callback = onCancel
+        clearTracking()
+        DispatchQueue.main.async {
+            callback?()
+        }
+    }
+}
+
+enum IMMessagePromptPlaybackOutcome: Equatable, Sendable {
+    case started
+    case unavailable
+    case superseded
+
+    var startedCloudPlayback: Bool {
+        self == .started
+    }
+
+    var shouldUseLocalFallback: Bool {
+        self == .unavailable
+    }
+}
+
 @MainActor
 final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
     static let shared = IMMessageSpeaker()
@@ -6413,36 +6478,58 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     // MARK: - Prompt Readout (Timed Practice Mode)
 
     /// Speak a practice prompt using the best available cloud TTS provider.
-    /// Returns true if cloud audio was successfully played, false if caller should fall back to on-device TTS.
-    func speakPrompt(_ text: String) async -> Bool {
+    /// Distinguishes ordinary provider unavailability from supersession so a
+    /// cancelled cloud request can never resurrect itself through a local
+    /// fallback owned by an older prompt.
+    func speakPrompt(_ text: String) async -> IMMessagePromptPlaybackOutcome {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        guard AISettingsManager.shared.isCloudProcessingAllowed else { return false }
+        guard !trimmed.isEmpty else { return .unavailable }
+        guard AISettingsManager.shared.isCloudProcessingAllowed else {
+            return .unavailable
+        }
         stop()
+        let generation = currentGeneration
 
         // Build a minimal setup for voice selection — use a calm, coaching-like persona
         let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .confident)
         let engines = candidateEngines(for: setup)
-        guard !engines.isEmpty else { return false }
+        guard !engines.isEmpty else { return .unavailable }
 
         for engine in engines {
-            if await playPrompt(trimmed, using: engine, setup: setup) {
-                return true
+            guard !Task.isCancelled,
+                  generation == currentGeneration else {
+                return .superseded
+            }
+            if await playPrompt(
+                trimmed,
+                using: engine,
+                setup: setup,
+                generation: generation
+            ) {
+                return .started
+            }
+            guard !Task.isCancelled,
+                  generation == currentGeneration else {
+                return .superseded
             }
         }
-        return false
+        return .unavailable
     }
 
-    private func playPrompt(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+    private func playPrompt(
+        _ text: String,
+        using engine: IMVoiceEngine,
+        setup: IMConversationSetup,
+        generation: UInt64
+    ) async -> Bool {
         // Prompt readout shares the M25 generation token so a new speak()
         // arriving mid-readout invalidates the in-flight prompt fetch the
-        // same way it invalidates a stale message fetch. The prompt path
-        // doesn't increment the token itself; it threads the current
-        // value through so the same `playAudioData` guard applies.
-        let generation = currentGeneration
+        // same way it invalidates a stale message fetch. One token is captured
+        // for the complete provider chain; a fallback provider must never
+        // recapture a generation advanced by a newer request.
         switch engine {
         case .openAI:
-            return await playPromptWithOpenAI(text)
+            return await playPromptWithOpenAI(text, generation: generation)
         case .googleCloud:
             return await playWithGoogleCloud(text, setup: setup, generation: generation)
         case .backend:
@@ -6453,7 +6540,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     }
 
     /// OpenAI TTS specifically tuned for prompt readout — calm, clear coaching voice
-    private func playPromptWithOpenAI(_ text: String) async -> Bool {
+    private func playPromptWithOpenAI(_ text: String, generation: UInt64) async -> Bool {
         guard let apiKey = openAIAPIKey(),
               let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
             return false
@@ -6482,6 +6569,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
                   (200..<300).contains(http.statusCode) else {
                 return false
             }
+            guard generation == currentGeneration else { return false }
             return playAudioData(data)
         } catch {
             return false

@@ -63,12 +63,12 @@ VoiceTrace breath now stops the moment the scene leaves `.active` (transaction-s
 >
 > **Haptic event trail (DEBUG builds):** every fired pattern now logs
 > name + timestamp — capture during the checklist run with
-> `log stream --device --predicate 'subsystem == "com.jordancoaten.noum" AND category == "haptics"'`
+> `log stream --device --predicate 'subsystem == "uk.co.otherpath.noum" AND category == "haptics"'`
 > (or Console.app filtered the same way). The trail proves WHICH pattern
 > fired WHEN; the felt quality remains the human column.
 > Host-side note: `log collect --device-udid` requires root and
 > libimobiledevice isn't installed — capture the trail in Console.app
-> (device selected, filter subsystem `com.jordancoaten.noum`) or from an
+> (device selected, filter subsystem `uk.co.otherpath.noum`) or from an
 > Xcode run. 2026-07-26 10:18: the developer profile was TRUSTED on the
 > iPhone 17 and Noum auto-launched on device — the checklist run is in
 > Jordan's hands; feel-notes land here as the pass/tune record.

@@ -74,7 +74,14 @@ struct CoachingOnboardingView: View {
     @FocusState private var focusedField: InputField?
     @FocusState private var overlayEditorFocused: Bool
     @Namespace private var headerNamespace
-    private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
+    #if DEBUG
+    private let isRealFirstRunUITesting =
+        KeychainHelper.uiAutomationLaunchMode(
+            arguments: ProcessInfo.processInfo.arguments
+        ) == .realFirstRun
+    #else
+    private let isRealFirstRunUITesting = false
+    #endif
 
     init(
         prefill: CoachingProfileDraft? = nil,

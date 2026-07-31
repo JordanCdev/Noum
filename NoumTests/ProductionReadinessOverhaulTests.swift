@@ -5,6 +5,93 @@ import Testing
 import FirebaseFunctions
 #endif
 
+@Suite("Otherpath release identity contract")
+struct OtherpathReleaseIdentityContractTests {
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    @Test func sourceOwnedReleaseAndLaunchContractsUseTheMigratedIdentity() throws {
+        let activeIdentityPaths = [
+            "Noum.xcodeproj/project.pbxproj",
+            "functions/src/appStoreServerNotifications.ts",
+            "scripts/release_cloud_operations_validator.py",
+            "scripts/release_testflight_preflight.py",
+            "scripts/release-materialize-ci-config.sh",
+            "scripts/run-noum-with-ai.sh",
+            "scripts/tests/test_release_testflight_preflight.py",
+            "maestro/chat_reject_smoke.yaml",
+            "maestro/chat_smoke.yaml",
+            "maestro/run_chat_demo_smoke.sh",
+            ".agents/skills/noum-screenshots/SKILL.md",
+            ".agents/skills/noum-screenshots/capture.sh",
+            ".claude/skills/noum-screenshots/SKILL.md",
+            ".claude/skills/noum-screenshots/capture.sh",
+            "docs/MANUAL_LAUNCH_ACTIONS.md",
+            "artifacts/interaction-polish/REVIEW.md",
+            "Noum-Debug.entitlements",
+            "Noum/SharedNoumState.swift",
+            "NoumMessages/NoumMessages.swift",
+            "NoumMessages/SharedNoumState.swift",
+            "NoumWatch/SharedNoumState.swift",
+            "NoumWidget/NoumWidget.swift",
+            "NoumWidget/SharedNoumState.swift",
+        ]
+        let legacyIdentityFragments = [
+            "com.jordancoaten.noum",
+            "group.com.jordancoaten.noum",
+            #"com\.jordancoaten\.noum"#,
+            #"group\.com\.jordancoaten\.noum"#,
+        ]
+
+        for relativePath in activeIdentityPaths {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            for legacyIdentity in legacyIdentityFragments {
+                #expect(!source.contains(legacyIdentity))
+            }
+        }
+
+        let project = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum.xcodeproj/project.pbxproj"),
+            encoding: .utf8
+        )
+        let requiredProjectContracts = [
+            "PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum;",
+            "PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.NoumTests;",
+            "PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.NoumUITests;",
+            "PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.widget;",
+            "PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.NoumMessages;",
+            "PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.watchkitapp;",
+            "INFOPLIST_KEY_WKCompanionAppBundleIdentifier = uk.co.otherpath.noum;",
+        ]
+        for contract in requiredProjectContracts {
+            #expect(project.contains(contract))
+        }
+
+        let entitlementPaths = [
+            "Noum.entitlements",
+            "NoumMessages/NoumMessages.entitlements",
+            "NoumWatch/NoumWatch.entitlements",
+            "NoumWidget/NoumWidget.entitlements",
+        ]
+        for relativePath in entitlementPaths {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            #expect(source.contains("group.uk.co.otherpath.noum"))
+            for legacyIdentity in legacyIdentityFragments {
+                #expect(!source.contains(legacyIdentity))
+            }
+        }
+    }
+}
+
 @Suite("Production app shell routing")
 struct ProductionAppShellRoutingTests {
     @Test func deepLinksSelectTheirOwningTab() throws {
@@ -356,13 +443,394 @@ struct FirestoreProductionContractTests {
 #if DEBUG
 @Suite("UI automation account isolation")
 struct UIAutomationAccountIsolationTests {
+    @Test func automationUsesADurableKeychainNamespaceSeparateFromProduction() {
+        #expect(KeychainHelper.storageService(arguments: ["Noum"]) == "Noum")
+        #expect(KeychainHelper.storageService(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        ) == "Noum.UITesting")
+        #expect(KeychainHelper.storageService(
+            arguments: [
+                "Noum",
+                "UI_TESTING",
+                "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            ]
+        ) == "Noum.UITesting")
+    }
+
+    @Test func safetyJournalsUseTheSameIsolatedKeychainService() {
+        let seeded = ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        let restore = [
+            "Noum",
+            "UI_TESTING",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+        ]
+        for arguments in [seeded, restore] {
+            let expected = KeychainHelper.storageService(arguments: arguments)
+            #expect(KeychainAccountDeletionFenceStorage.storageService(
+                arguments: arguments
+            ) == expected)
+            #expect(KeychainLocalGuestPromotionJournalStorage.storageService(
+                arguments: arguments
+            ) == expected)
+        }
+        #expect(KeychainAccountDeletionFenceStorage.storageService(
+            arguments: ["Noum"]
+        ) == "Noum")
+        #expect(KeychainLocalGuestPromotionJournalStorage.storageService(
+            arguments: ["Noum"]
+        ) == "Noum")
+    }
+
+    @Test func testBootstrapNeverConsumesTheProductionInstallCleanup() {
+        #expect(!AuthManager.shouldInitializeProductionInstallState(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        ))
+        #expect(!AuthManager.shouldInitializeProductionInstallState(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
+        ))
+        #expect(AuthManager.shouldInitializeProductionInstallState(
+            arguments: ["Noum"]
+        ))
+    }
+
+    @Test func automationForbidsFirebaseSDKSessionAccess() {
+        #expect(!AuthManager.shouldRestoreFirebaseSDKSession(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        ))
+        #expect(!AuthManager.shouldRestoreFirebaseSDKSession(
+            arguments: [
+                "Noum",
+                "UI_TESTING",
+                "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            ]
+        ))
+        #expect(!AuthManager.shouldRestoreFirebaseSDKSession(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
+        ))
+        #expect(AuthManager.shouldRestoreFirebaseSDKSession(
+            arguments: ["Noum"]
+        ))
+        #expect(!AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SIGNED_OUT"]
+        ))
+        #expect(AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ["Noum"]
+        ))
+    }
+
+    @Test func renderedFixturePreparationRoundTripsTheIsolatedSecurityService() {
+        let resetArguments = [
+            "Noum",
+            "UI_TESTING",
+            "UI_TESTING_SIGNED_OUT",
+        ]
+        let seededArguments = [
+            "Noum",
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+        ]
+        defer {
+            _ = KeychainHelper.prepareUIAutomationStorage(
+                arguments: resetArguments
+            )
+        }
+
+        #expect(KeychainHelper.prepareUIAutomationStorage(
+            arguments: resetArguments
+        ))
+        #expect(!KeychainHelper.hasPreparedUIAutomationIdentity(
+            arguments: seededArguments
+        ))
+        #expect(KeychainHelper.prepareUIAutomationStorage(
+            arguments: seededArguments
+        ))
+        #expect(KeychainHelper.hasPreparedUIAutomationIdentity(
+            arguments: seededArguments
+        ))
+    }
+
+    @Test func criticalFirebaseSDKEntryPointsFailClosedBeforeGlobalSessionAccess() throws {
+        let source = try authManagerSource()
+
+        let initializer = try sourceSlice(
+            in: source,
+            from: "    private init() {",
+            to: "    #if DEBUG\n    /// Seeded UI tests skip credential hydration"
+        )
+        let initPolicy = try #require(initializer.range(
+            of: "guard allowsFirebaseSDKSessionAccess else"
+        ))
+        let initRestore = try #require(initializer.range(
+            of: "restoreFirebaseSessionIfAvailable()"
+        ))
+        #expect(initPolicy.lowerBound < initRestore.lowerBound)
+
+        let bootstrapCaller = try sourceSlice(
+            in: source,
+            from: "    func bootstrapInitialAccountIfNeeded() async {",
+            to: "    /// Returns true when the provider either established"
+        )
+        #expect(bootstrapCaller.contains(
+            "remoteGuestBootstrapOwnsOutcomeIfAllowed()"
+        ))
+        #expect(!bootstrapCaller.contains("Auth.auth()"))
+        #expect(!bootstrapCaller.contains("GIDSignIn.sharedInstance"))
+
+        let bootstrapLeaf = try sourceSlice(
+            in: source,
+            from: "    private func remoteGuestBootstrapOwnsOutcomeIfAllowed() async -> Bool {",
+            to: "    func retryInitialAccountBootstrap() async {"
+        )
+        try expectNoGlobalSessionAccess(
+            before: "guard allowsFirebaseSDKSessionAccess else",
+            in: bootstrapLeaf
+        )
+
+        let signOutCaller = try sourceSlice(
+            in: source,
+            from: "    private func performSignOut(allowAnonymousGuest: Bool) {",
+            to: "    private func signOutProviderSessionsIfAllowed() {"
+        )
+        #expect(signOutCaller.contains("signOutProviderSessionsIfAllowed()"))
+        #expect(!signOutCaller.contains("Auth.auth()"))
+        #expect(!signOutCaller.contains("GIDSignIn.sharedInstance"))
+
+        let tokenFunctionStart = try #require(source.range(
+            of: "    private static func currentFirebaseIDToken() async -> String? {"
+        ))
+        let guardedSlices: [(String, String)] = [
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    func connectLocalGuestToCloud(force: Bool = false) async {",
+                    to: "    /// Establishes the initial durable guest identity"
+                ),
+                "guard allowsFirebaseSDKSessionAccess else"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    private func signOutAttemptedFirebaseIdentity(accountID: String) {",
+                    to: "    private func presentUnreadablePendingDeletion()"
+                ),
+                "guard allowsFirebaseSDKSessionAccess,"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    private func signInWithGoogle(presenting controller: UIViewController) {",
+                    to: "#else\n#if canImport(GoogleSignIn)"
+                ),
+                "guard allowsFirebaseSDKSessionAccess else"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    private func authenticateWithFirebase(",
+                    to: "    private func signInWithFirebase("
+                ),
+                "guard allowsFirebaseSDKSessionAccess else"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    private func signOutProviderSessionsIfAllowed() {",
+                    to: "#if DEBUG\n    /// Activates the AuthManager state"
+                ),
+                "guard allowsFirebaseSDKSessionAccess else"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    private func deleteFirebaseUserIfNeeded(expectedAccountID: String) async throws {",
+                    to: "    var accountDeletionSupportURL: URL {"
+                ),
+                "guard allowsFirebaseSDKSessionAccess else"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    private func beginLocalGuestPromotionFinalizationIfReady(",
+                    to: "    /// Called by the existing account-scoped consent owner"
+                ),
+                "guard allowsFirebaseSDKSessionAccess else"
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    static func identityBound(",
+                    to: "    /// Builds deletion headers"
+                ),
+                "guard AuthManager.firebaseSDKSessionAccessAllowed("
+            ),
+            (
+                try sourceSlice(
+                    in: source,
+                    from: "    static func deletionBound(",
+                    to: "    nonisolated static func deletionIdentityMatches("
+                ),
+                "guard AuthManager.firebaseSDKSessionAccessAllowed("
+            ),
+            (
+                String(source[tokenFunctionStart.lowerBound...]),
+                "guard AuthManager.firebaseSDKSessionAccessAllowed("
+            ),
+        ]
+        for (slice, guardNeedle) in guardedSlices {
+            try expectNoGlobalSessionAccess(
+                before: guardNeedle,
+                in: slice
+            )
+        }
+
+        let apple = try sourceSlice(
+            in: source,
+            from: "    func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {",
+            to: "    private func signIn() {"
+        )
+        let appleGuard = try #require(apple.range(
+            of: "guard allowsFirebaseSDKSessionAccess else"
+        ))
+        let appleAuthentication = try #require(apple.range(
+            of: "authenticateWithFirebase("
+        ))
+        #expect(appleGuard.lowerBound < appleAuthentication.lowerBound)
+    }
+
+    @Test func deepgramCallableFailsClosedBeforeGlobalFirebaseAccess() throws {
+        let source = try repositorySource(at: "DeepgramProvider.swift")
+        let callableLeaf = try sourceSlice(
+            in: source,
+            from: "    private func fetchCallableToken() async throws -> DeepgramAccessToken {",
+            to: "private struct TranscriptionTokenRequest"
+        )
+        let guardNeedle =
+            "guard AuthManager.firebaseSDKSessionAccessAllowed("
+        let guardRange = try #require(callableLeaf.range(of: guardNeedle))
+        let prefix = callableLeaf[..<guardRange.lowerBound]
+        #expect(!prefix.contains("Auth.auth()"))
+        #expect(!prefix.contains("Functions.functions("))
+
+        let guardedLeaf = callableLeaf[guardRange.upperBound...]
+        #expect(guardedLeaf.contains("Auth.auth()"))
+        #expect(guardedLeaf.contains("Functions.functions("))
+    }
+
+    @Test func renderedFixturesResolveOneIdentityBeforeSingletonInitialization() {
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        ) == KeychainHelper.UIAutomationIdentity(
+            accountID: "local-guest-ui-test-seeded-account",
+            providerRawValue: "guest"
+        ))
+
+        let coachArguments = [
+            "Noum",
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_AUTHENTICATED_COACH",
+        ]
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: coachArguments
+        ) == KeychainHelper.UIAutomationIdentity(
+            accountID: "ui-test-coach-account",
+            providerRawValue: "guest"
+        ))
+    }
+
+    @Test func persistedFirstRunIdentityIsOnlyReadByExplicitRestoreJourneys() {
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: ["Noum", "UI_TESTING"]
+        ) == nil)
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SIGNED_OUT"]
+        ) == nil)
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
+        ) == nil)
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: [
+                "Noum",
+                "UI_TESTING",
+                "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            ]
+        ) == nil)
+        #expect(KeychainHelper.shouldResetUIAutomationStorage(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
+        ))
+        #expect(!KeychainHelper.shouldResetUIAutomationStorage(
+            arguments: [
+                "Noum",
+                "UI_TESTING",
+                "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            ]
+        ))
+    }
+
     @Test func automationDoesNotRaceSeededStoresWithCredentialRestore() {
         #expect(!AuthManager.shouldRestorePersistedSession(
             arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
         ))
         #expect(AuthManager.shouldRestorePersistedSession(
+            arguments: [
+                "Noum",
+                "UI_TESTING",
+                "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            ]
+        ))
+        #expect(AuthManager.shouldRestorePersistedSession(
             arguments: ["Noum"]
         ))
+    }
+
+    @Test func signedOutModeOverridesPersistedRestoreAcrossEveryOwner() throws {
+        let arguments = [
+            "Noum",
+            "UI_TESTING",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            "UI_TESTING_SIGNED_OUT",
+            // Conflicting fixture flags must not weaken the signed-out fence.
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_AUTHENTICATED_COACH",
+        ]
+
+        #expect(KeychainHelper.uiAutomationLaunchMode(
+            arguments: arguments
+        ) == .signedOut)
+        #expect(KeychainHelper.shouldResetUIAutomationStorage(
+            arguments: arguments
+        ))
+        #expect(KeychainHelper.uiAutomationIdentity(
+            arguments: arguments
+        ) == nil)
+        #expect(!AuthManager.shouldRestorePersistedSession(
+            arguments: arguments
+        ))
+        #expect(!AuthManager.shouldUseProcessLocalSeededAccount(
+            arguments: arguments
+        ))
+        #expect(!AuthManager.shouldUseCleanLocalGuestForFirstRunUITesting(
+            arguments: arguments
+        ))
+        #expect(DevSeedData.requestedProfileForUITesting(
+            arguments: arguments
+        ) == nil)
+
+        // Render owners must consume the resolved precedence contract instead
+        // of independently treating any accumulated raw flag as authoritative.
+        for relativePath in [
+            "Noum/NoumApp.swift",
+            "Noum/CoachingOnboardingView.swift",
+        ] {
+            let source = try repositorySource(at: relativePath)
+            #expect(source.contains(
+                "KeychainHelper.uiAutomationLaunchMode("
+            ))
+            #expect(!source.contains(
+                "contains(\"UI_TESTING_REAL_FIRST_RUN\")"
+            ))
+        }
     }
 
     @Test func preRenderAndPostHydrationSeedingResolveTheSamePersona() {
@@ -378,6 +846,89 @@ struct UIAutomationAccountIsolationTests {
                 "UI_TESTING_SEED_PROFILE", "plateauedAdvanced"
             ]
         ) == .plateauedAdvanced)
+        for exclusiveMode in [
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            "UI_TESTING_SIGNED_OUT",
+        ] {
+            #expect(DevSeedData.requestedProfileForUITesting(
+                arguments: [
+                    "Noum",
+                    "UI_TESTING",
+                    "UI_TESTING_SEED_FORCE",
+                    exclusiveMode,
+                ]
+            ) == nil)
+        }
+    }
+
+    @Test func seededJourneysUseAnIsolatedAccountScopeOnlyWhenAppropriate() {
+        #expect(AuthManager.shouldUseProcessLocalSeededAccount(
+            arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]
+        ))
+        #expect(!AuthManager.shouldUseProcessLocalSeededAccount(
+            arguments: ["Noum", "UI_TESTING"]
+        ))
+        #expect(!AuthManager.shouldUseProcessLocalSeededAccount(
+            arguments: [
+                "Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE",
+                "UI_TESTING_REAL_FIRST_RUN",
+            ]
+        ))
+        #expect(!AuthManager.shouldUseProcessLocalSeededAccount(
+            arguments: [
+                "Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE",
+                "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            ]
+        ))
+        #expect(!AuthManager.shouldUseProcessLocalSeededAccount(
+            arguments: [
+                "Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE",
+                "UI_TESTING_SIGNED_OUT",
+            ]
+        ))
+    }
+
+    private func authManagerSource() throws -> String {
+        try repositorySource(at: "Noum/AuthManager.swift")
+    }
+
+    private func repositorySource(at relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
+    }
+
+    private func sourceSlice(
+        in source: String,
+        from startNeedle: String,
+        to endNeedle: String
+    ) throws -> String {
+        let start = try #require(source.range(of: startNeedle))
+        let end = try #require(source.range(
+            of: endNeedle,
+            range: start.upperBound..<source.endIndex
+        ))
+        return String(source[start.lowerBound..<end.lowerBound])
+    }
+
+    private func expectNoGlobalSessionAccess(
+        before guardNeedle: String,
+        in source: String
+    ) throws {
+        let guardRange = try #require(source.range(of: guardNeedle))
+        let prefix = source[..<guardRange.lowerBound]
+        #expect(!prefix.contains("Auth.auth()"))
+        #expect(!prefix.contains("GIDSignIn.sharedInstance"))
+        let suffix = source[guardRange.upperBound...]
+        #expect(
+            suffix.contains("Auth.auth()")
+                || suffix.contains("GIDSignIn.sharedInstance")
+        )
     }
 }
 #endif

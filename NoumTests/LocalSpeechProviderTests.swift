@@ -88,9 +88,15 @@ struct LocalSpeechProviderTests {
         #expect(
             SpeechRecordingIssuePresentation.make(
                 issue: nil,
-                message: "Live transcription is temporarily unavailable."
+                message: "Noum didn’t hear enough speech to complete that rep."
             ).recovery == .retry
         )
+        let interrupted = SpeechRecordingIssuePresentation.make(
+            issue: .captureUnavailable(started: true),
+            message: "Live transcription was interrupted."
+        )
+        #expect(interrupted.title == "Live transcription stopped")
+        #expect(interrupted.recovery == .retry)
     }
 
     /// The locale copy must carry the failing locale and the way out, because
@@ -170,7 +176,12 @@ struct LocalSpeechProviderTests {
         #expect(afterStart == beforeStart)
         #expect(beforeStart.contains("on this device"))
         #expect(recognizer.recordingIssue(for: error) == .unsupportedOnDeviceLocale("es-ES"))
-        #expect(recognizer.recordingIssue(for: UnsafeProviderFailure()) == nil)
+        #expect(
+            recognizer.recordingIssue(
+                for: UnsafeProviderFailure(),
+                started: true
+            ) == .captureUnavailable(started: true)
+        )
         #expect(
             recognizer.userFacingRecordingError(
                 for: UnsafeProviderFailure(),

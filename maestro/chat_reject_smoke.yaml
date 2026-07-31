@@ -6,7 +6,7 @@
 #
 # Guaranteed-deterministic runner (bare launch flags, then run this flow):
 #
-#   xcrun simctl launch booted com.jordancoaten.noum \
+#   xcrun simctl launch booted uk.co.otherpath.noum \
 #       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CLEAR_ASK_NOUM
 #       UI_TESTING_CHAT_FORCE_NOTICE
 #   maestro test maestro/chat_reject_smoke.yaml
@@ -15,7 +15,7 @@
 #                              cannot affect the rejection assertion.
 # UI_TESTING_CHAT_FORCE_NOTICE -> the pipeline returns .failure(.network),
 #                                 which the store renders as a system notice.
-appId: com.jordancoaten.noum
+appId: uk.co.otherpath.noum
 ---
 - launchApp:
     stopApp: false

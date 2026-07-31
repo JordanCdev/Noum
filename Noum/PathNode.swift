@@ -223,9 +223,9 @@ enum PathNodeRegistry {
                 id: "first_rep",
                 order: 0,
                 tier: .bronze,
-                title: "First rep",
-                detail: "Complete a practice session.",
-                coachLine: "One rep is what proves the path can exist.",
+                title: "First spoken rep",
+                detail: "Save one spoken practice rep.",
+                coachLine: "One spoken rep gives your path its first real evidence.",
                 actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "figure.walk"

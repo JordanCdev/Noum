@@ -67,7 +67,7 @@ final class MiniDrillCompletionIntegrityUITests: XCTestCase {
             "UI_TESTING_SEED_FORCE",
             "UI_TESTING_MINI_DRILL_COMPLETION_FIXTURE", fixture,
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            "UICTContentSizeCategoryAccessibilityXXXL",
             "-DeepLink", "noum://summary",
         ]
         app.launch()

@@ -61,7 +61,14 @@ final class NoumUITests: XCTestCase {
     @MainActor
     func testSignedOutSettingsPresentsAccountOptions() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_SIGNED_OUT"]
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            "UI_TESTING_REAL_FIRST_RUN",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_AUTHENTICATED_COACH",
+            "UI_TESTING_SIGNED_OUT",
+        ]
         app.launch()
 
         XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 10))
@@ -133,6 +140,11 @@ final class NoumUITests: XCTestCase {
         scrollUntilHittable(evidenceRow, in: app, attempts: 4)
         XCTAssertTrue(evidenceRow.waitForExistence(timeout: 5))
         evidenceRow.tap()
+
+        let whyPlan = app.buttons["profile.evidence.whyPlan.toggle"]
+        scrollUntilHittable(whyPlan, in: app, attempts: 4)
+        XCTAssertTrue(whyPlan.waitForExistence(timeout: 5) && whyPlan.isHittable)
+        whyPlan.tap()
 
         let coachingDirection = app.descendants(matching: .any)["profile.evidence.coachingDirection"]
         let coachingDirectionTitle = app.staticTexts["Coaching Direction"]
@@ -242,10 +254,12 @@ final class NoumUITests: XCTestCase {
 
         // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
         // before the redesign). This test opts into the real app-level
-        // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
-        // so saving the profile must route directly into the first rep. The
-        // save itself proves the clean local guest supplied a durable account
-        // ID; the old implementation silently failed here with an empty Keychain.
+        // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness.
+        // Saving the profile must reach Today with an explicit first-rep
+        // offer; automatic capture remains disabled until signed-device QA
+        // closes. The save itself proves the clean local guest supplied a
+        // durable account ID; the old implementation silently failed here
+        // with an empty Keychain.
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)
@@ -253,26 +267,49 @@ final class NoumUITests: XCTestCase {
         allowCloudProcessingIfPresented(in: app)
 
         XCTAssertTrue(
-            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 10),
-            "First-run completion should land on Timed Practice, not a cold Home or another menu."
+            app.descendants(matching: .any)["home.screen"].waitForExistence(timeout: 12),
+            "First-run completion should reach Today after the profile is saved."
+        )
+        let begin = app.buttons["home.coachCard.begin"]
+        XCTAssertTrue(
+            begin.waitForExistence(timeout: 5) && begin.isHittable,
+            "Today should offer the first focused rep without opening capture automatically."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["timedPractice.screen"].exists,
+            "Finishing onboarding must not start microphone capture before the user taps Begin."
         )
     }
 
     @MainActor
     func testFirstRunCloudDeclineStillReachesLocalCapablePractice() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_CLOUD_CONSENT"]
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_NO_CLOUD_CONSENT"]
         app.launch()
 
         try completeCoachingOnboarding(in: app)
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         finishButton.tap()
-        declineCloudProcessingIfPresented(in: app)
-
+        let disclosure = app.descendants(matching: .any)["cloudProcessing.disclosure"]
         XCTAssertTrue(
-            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
-            "Declining cloud processing must still reach the local-capable Timed setup."
+            disclosure.waitForExistence(timeout: 8),
+            "The decline contract must exercise the real cloud-processing disclosure."
+        )
+        let notNow = app.buttons["cloudProcessing.notNow"]
+        scrollUntilHittable(notNow, in: app, attempts: 8)
+        XCTAssertTrue(notNow.waitForExistence(timeout: 3) && notNow.isHittable)
+        notNow.tap()
+
+        let begin = app.buttons["home.coachCard.begin"]
+        XCTAssertTrue(
+            begin.waitForExistence(timeout: 12),
+            "Declining cloud processing must still offer the profile's local-capable first rep."
+        )
+        begin.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ahCounter.screen"].waitForExistence(timeout: 12),
+            "The filler-focused profile should open its local-capable Filler Control route."
         )
     }
 
@@ -308,6 +345,7 @@ final class NoumUITests: XCTestCase {
         app.terminate()
         app.launchArguments = [
             "UI_TESTING", "UI_TESTING_CLOUD_CONSENT",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
             "UI_TESTING_MICROPHONE_GRANTED", "UI_TESTING_TRANSCRIPTION_START_FAILURE",
             "-DeepLink", "noum://practice/timed",
         ]
@@ -340,15 +378,36 @@ final class NoumUITests: XCTestCase {
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         finishButton.tap()
-        declineCloudProcessingIfPresented(in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
+        XCTAssertTrue(
+            app.buttons["home.coachCard.begin"].waitForExistence(timeout: 12),
+            "Completed onboarding should persist after reaching Today, without requiring automatic capture."
+        )
         app.terminate()
 
         let relaunched = XCUIApplication()
-        relaunched.launchArguments += ["UI_TESTING"]
+        relaunched.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+        ]
         relaunched.launch()
         XCTAssertTrue(relaunched.buttons["app.tab.home"].waitForExistence(timeout: 15))
         XCTAssertFalse(relaunched.buttons["coaching.start"].exists)
+        let restoredRecommendation = relaunched.buttons["home.coachCard.begin"]
+        XCTAssertTrue(
+            restoredRecommendation.waitForExistence(timeout: 8),
+            "The restored profile must rebuild its Today recommendation."
+        )
+        XCTAssertEqual(
+            restoredRecommendation.label,
+            "Start your first rep",
+            "A restored profile with no completed rep should keep the honest cold-start CTA."
+        )
+        restoredRecommendation.tap()
+        XCTAssertTrue(
+            relaunched.descendants(matching: .any)["ahCounter.screen"]
+                .waitForExistence(timeout: 12),
+            "The restored filler-focused profile must route its first recommendation to Filler Control; merely showing the generic UI-test shell is not persistence proof."
+        )
     }
 
     @MainActor
@@ -400,7 +459,7 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
-    func testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript() throws {
+    func testFirstRunCreatesAccountThenTimedHarnessReachesFirstVerdict() throws {
         let app = XCUIApplication()
         app.launchArguments += [
             "UI_TESTING",
@@ -417,6 +476,27 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         finishButton.tap()
 
+        let firstRepCTA = app.buttons["home.coachCard.begin"]
+        XCTAssertTrue(
+            firstRepCTA.waitForExistence(timeout: 12),
+            "Finishing setup must offer the first rep on Today."
+        )
+        XCTAssertTrue(firstRepCTA.isHittable, "The first-rep CTA must be actionable on Today.")
+
+        // This fixture exercises the Timed post-rep pipeline specifically.
+        // Preserve the account created above, then enter that route explicitly
+        // instead of asserting the disabled automatic first-rep lane.
+        app.terminate()
+        app.launchArguments = [
+            "UI_TESTING",
+            "UI_TESTING_RESTORE_PERSISTED_ACCOUNT",
+            "UI_TESTING_FIRST_VALUE_LOOP",
+            "UI_TESTING_CLOUD_CONSENT",
+            "UI_TESTING_CLEAR_DEFERRED_CAPTURE",
+            "-DeepLink",
+            "noum://practice/timed",
+        ]
+        app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 10))
         let begin = app.buttons["timedPractice.begin"]
         XCTAssertTrue(begin.waitForExistence(timeout: 10))
@@ -426,7 +506,7 @@ final class NoumUITests: XCTestCase {
 
         XCTAssertTrue(
             verdict.waitForExistence(timeout: 20),
-            "A first-run user should reach the post-rep coach verdict from onboarding without microphone audio in the UI test harness."
+            "The persisted first-run account should reach the Timed post-rep verdict through the explicit UI-test harness."
         )
         XCTAssertTrue(
             app.buttons["summary.postRepVerdict.startMiniDrill"].exists
@@ -446,7 +526,13 @@ final class NoumUITests: XCTestCase {
             "The existing deferred-profile owner should offer the first reflection after value, not during onboarding."
         )
         let dismiss = app.buttons["deferredCapture.dismiss"]
-        XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44)
+        // XCUI converts simulator pixels back to points and can report an
+        // exact 44pt target as 43.999999999999886. Round only that sub-pixel
+        // representation; a genuinely undersized 43pt target still fails.
+        XCTAssertGreaterThanOrEqual(
+            dismiss.frame.height.rounded(.toNearestOrAwayFromZero),
+            44
+        )
     }
 
     @MainActor
@@ -558,9 +644,10 @@ final class NoumUITests: XCTestCase {
         app.buttons["coaching.continue"].tap()
 
         // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
-        // before the redesign). This test opts into the real app-level
-        // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
-        // so dismissing the cover must route into the first focused rep.
+        // before the redesign). This helper opts into the real app-level
+        // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness.
+        // Callers decide whether to verify the Today handoff or explicitly
+        // start the recommended rep.
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)

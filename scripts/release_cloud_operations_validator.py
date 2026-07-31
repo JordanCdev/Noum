@@ -337,7 +337,7 @@ def validate_app_store_verifier_contract(
             "SignedDataVerifier must retain online checks and exact app identity inputs.",
         ),
         (
-            r'APP_STORE_NOTIFICATION_BUNDLE_ID\s*=\s*"com\.jordancoaten\.noum"',
+            r'APP_STORE_NOTIFICATION_BUNDLE_ID\s*=\s*"uk\.co\.otherpath\.noum"',
             "The verifier must retain Noum's exact production bundle ID.",
         ),
         (

@@ -87,7 +87,7 @@ for name, path, required_keys in targets:
     decoded[name] = {"value": value, "raw": raw, "path": path}
 
 google = decoded["NOUM_GOOGLE_SERVICE_INFO_PLIST_BASE64"]["value"]
-if google["BUNDLE_ID"] != "com.jordancoaten.noum":
+if google["BUNDLE_ID"] != "uk.co.otherpath.noum":
     print(
         "NOUM_GOOGLE_SERVICE_INFO_PLIST_BASE64 has the wrong BUNDLE_ID.",
         file=sys.stderr,

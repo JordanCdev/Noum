@@ -11,22 +11,32 @@ final class FocusedPracticeSetupUITests: XCTestCase {
 
     @MainActor
     func testFocusedSetupIdentifiersSelectionTraitsAndTabBarHiding() throws {
-        // Positive control: the Train root exposes the native TabView as an
-        // XCUI tab bar. This makes the destination-level absence checks below
-        // meaningful rather than passing because XCUI never saw a tab bar.
+        // Positive control: the Train root exposes the shipping V4.6 floating
+        // navigation capsule. SwiftUI's native TabView bar is intentionally
+        // hidden, so destination-level checks must target the visible owner.
         let trainApp = launchSeededAt("noum://train")
         XCTAssertTrue(
             trainApp.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 10)
         )
-        let rootTabBar = trainApp.tabBars.firstMatch
-        let visibleTabBar = XCTNSPredicateExpectation(
+        let rootNavigation = trainApp.descendants(matching: .any)["app.v46TabBar"]
+        XCTAssertTrue(
+            rootNavigation.waitForExistence(timeout: 5),
+            "Train root should expose the V4.6 navigation capsule to XCUI"
+        )
+        let rootPracticeTab = rootNavigation
+            .descendants(matching: .button)["nav.practice"]
+        let visibleNavigation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND isHittable == true"),
-            object: rootTabBar
+            object: rootPracticeTab
         )
         XCTAssertEqual(
-            XCTWaiter.wait(for: [visibleTabBar], timeout: 5),
+            XCTWaiter.wait(for: [visibleNavigation], timeout: 5),
             .completed,
-            "Train root should expose an interactive native tab bar to XCUI"
+            "Train root should expose interactive controls inside the V4.6 navigation capsule"
+        )
+        XCTAssertFalse(
+            trainApp.tabBars.firstMatch.exists && trainApp.tabBars.firstMatch.isHittable,
+            "The replaced native tab bar must stay hidden behind the V4.6 navigation capsule"
         )
         trainApp.terminate()
 
@@ -70,7 +80,7 @@ final class FocusedPracticeSetupUITests: XCTestCase {
         XCTAssertTrue(screen.waitForExistence(timeout: 10), "Missing setup screen: \(screenID)")
         XCTAssertTrue(app.buttons[adjustID].waitForExistence(timeout: 3), "Missing Adjust control: \(adjustID)")
         XCTAssertTrue(app.buttons[startID].waitForExistence(timeout: 3), "Missing Start control: \(startID)")
-        assertNativeTabBarHidden(in: app, destinationID: screenID)
+        assertAppNavigationHidden(in: app, destinationID: screenID)
     }
 
     @MainActor
@@ -86,7 +96,7 @@ final class FocusedPracticeSetupUITests: XCTestCase {
 
         let screen = app.descendants(matching: .any)["imPractice.screen"]
         XCTAssertTrue(screen.waitForExistence(timeout: 10), "Conversation setup did not open")
-        assertNativeTabBarHidden(in: app, destinationID: "imPractice.screen")
+        assertAppNavigationHidden(in: app, destinationID: "imPractice.screen")
 
         let scenario = app.buttons["imPractice.scenario.socialCatchUp"]
         XCTAssertTrue(scenario.waitForExistence(timeout: 5), "Scenario identifier is missing")
@@ -127,7 +137,7 @@ final class FocusedPracticeSetupUITests: XCTestCase {
 
         let screen = app.descendants(matching: .any)[screenID]
         XCTAssertTrue(screen.waitForExistence(timeout: 10), "Missing focused destination: \(screenID)")
-        assertNativeTabBarHidden(in: app, destinationID: screenID)
+        assertAppNavigationHidden(in: app, destinationID: screenID)
     }
 
     @MainActor
@@ -143,7 +153,7 @@ final class FocusedPracticeSetupUITests: XCTestCase {
             "Timed Practice did not retain the selected project identity"
         )
         XCTAssertTrue(app.buttons["timedPractice.begin"].waitForExistence(timeout: 3))
-        assertNativeTabBarHidden(in: app, destinationID: "timedPractice.screen")
+        assertAppNavigationHidden(in: app, destinationID: "timedPractice.screen")
     }
 
     @MainActor
@@ -160,20 +170,35 @@ final class FocusedPracticeSetupUITests: XCTestCase {
     }
 
     @MainActor
-    private func assertNativeTabBarHidden(in app: XCUIApplication, destinationID: String) {
-        let tabBar = app.tabBars.firstMatch
-        let hiddenTabBar = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false OR isHittable == false"),
-            object: tabBar
+    private func assertAppNavigationHidden(in app: XCUIApplication, destinationID: String) {
+        let navigation = app.descendants(matching: .any)["app.v46TabBar"]
+        let hiddenNavigation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: navigation
         )
         XCTAssertEqual(
-            XCTWaiter.wait(for: [hiddenTabBar], timeout: 5),
+            XCTWaiter.wait(for: [hiddenNavigation], timeout: 5),
             .completed,
-            "Native tab bar should not be interactive for focused destination \(destinationID)"
+            "App navigation should not be interactive for focused destination \(destinationID)"
         )
         XCTAssertFalse(
-            tabBar.exists && tabBar.isHittable,
-            "Native tab bar remained interactive for focused destination \(destinationID)"
+            navigation.exists,
+            "The V4.6 navigation capsule remained mounted for focused destination \(destinationID)"
+        )
+
+        let nativeTabBar = app.tabBars.firstMatch
+        let hiddenNativeTabBar = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false OR isHittable == false"),
+            object: nativeTabBar
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [hiddenNativeTabBar], timeout: 5),
+            .completed,
+            "A native tab bar should not remain interactive for focused destination \(destinationID)"
+        )
+        XCTAssertFalse(
+            nativeTabBar.exists && nativeTabBar.isHittable,
+            "A native tab bar remained interactive for focused destination \(destinationID)"
         )
     }
 
@@ -186,7 +211,8 @@ final class FocusedPracticeSetupUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += [
             "UI_TESTING",
-            "UI_TESTING_SEED_FORCE"
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CLEAR_FIRST_REP_STATE"
         ] + extraArguments + [
             "-DeepLink",
             deepLink

@@ -403,6 +403,14 @@ struct PathUnlockCelebrationIntegrityTests {
         #expect(summary.contains("guard currentRepIsProgressEligible else"))
         #expect(summary.contains("PracticeProgressEligibility.qualifies(session)"))
         #expect(summary.contains("sessionStore.progressEligibleSessionCount"))
+        #expect(summary.contains("private var currentRepUnlockedPathStep: Bool"))
+        #expect(summary.contains(
+            "PathProgressManager.shared.pendingCelebrationSessionID == sessionID"
+        ))
+        #expect(summary.contains("if currentRepUnlockedPathStep"))
+        #expect(!summary.contains(
+            "if PathProgressManager.shared.pendingCelebrationNodeID != nil"
+        ))
     }
 
     @Test("Home resolves the pending path node into the unified progress receipt")
@@ -416,8 +424,10 @@ struct PathUnlockCelebrationIntegrityTests {
         )
 
         #expect(content.contains("home.progressReceipt"))
-        #expect(content.contains("guard let nodeID = pathProgress.pendingCelebrationNodeID"))
-        #expect(content.contains("PathNodeRegistry.all.first(where: { $0.0.id == nodeID })?.0"))
+        #expect(content.contains("guard let celebration = pathProgress.pendingCelebration"))
+        #expect(content.contains("celebration.triggeringSessionID"))
+        #expect(content.contains("PracticeProgressEligibility.qualifies(source)"))
+        #expect(content.contains("$0.0.id == celebration.nodeID"))
         #expect(content.contains("onDismiss: pathProgress.consumeCelebration"))
         #expect(!content.contains("PathNodeCelebration("))
     }

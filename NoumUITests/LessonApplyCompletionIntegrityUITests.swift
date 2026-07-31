@@ -11,7 +11,7 @@ final class LessonApplyCompletionIntegrityUITests: XCTestCase {
             "keywordOnly",
             extraArguments: [
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+                "UICTContentSizeCategoryAccessibilityXXXL",
             ]
         )
         defer { app.terminate() }

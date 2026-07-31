@@ -92,7 +92,7 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
             additionalArguments: [
                 "UI_TESTING_RECOMMENDATION_TAP_CAPABILITY_LOSS", "pressure",
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+                "UICTContentSizeCategoryAccessibilityXXXL",
             ]
         )
 
@@ -131,8 +131,13 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
         )
 
         let timedBegin = app.buttons["timedPractice.begin"]
-        scrollUntilHittable(timedBegin, in: app, attempts: 3)
         XCTAssertTrue(timedBegin.waitForExistence(timeout: 5))
+        try assertNoClippedText(
+            in: setupCue,
+            above: timedBegin,
+            app: app
+        )
+        scrollUntilHittable(timedBegin, in: app, attempts: 3)
         XCTAssertTrue(timedBegin.isHittable)
         XCTAssertGreaterThanOrEqual(timedBegin.frame.height, 44)
         addScreenshot(named: "train-pressure-capability-loss-timed-setup")
@@ -150,7 +155,7 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
                 "UI_TESTING_RECOMMENDATION_TAP_CAPABILITY_LOSS", "pressure",
                 "UI_TESTING_RECOMMENDATION_INTERRUPTED_QUICK_START",
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+                "UICTContentSizeCategoryAccessibilityXXXL",
             ]
         )
 
@@ -191,8 +196,13 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
         )
 
         let timedBegin = app.buttons["timedPractice.begin"]
-        scrollUntilHittable(timedBegin, in: app, attempts: 3)
         XCTAssertTrue(timedBegin.waitForExistence(timeout: 5))
+        try assertNoClippedText(
+            in: setupCue,
+            above: timedBegin,
+            app: app
+        )
+        scrollUntilHittable(timedBegin, in: app, attempts: 3)
         XCTAssertTrue(timedBegin.isHittable)
         XCTAssertGreaterThanOrEqual(timedBegin.frame.height, 44)
         addScreenshot(named: "summary-pressure-capability-loss-timed-setup")
@@ -364,6 +374,120 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
                 }
             }
             if !tapped { Thread.sleep(forTimeInterval: 0.5) }
+        }
+    }
+
+    /// An accessibility label can remain complete while a line-limited SwiftUI
+    /// Text clips visually. Bring the complete setup cue into the unobscured
+    /// viewport above the pinned Start action, then scope the native clipping
+    /// audit to the rendered cue geometry.
+    @MainActor
+    private func assertNoClippedText(
+        in setupCue: XCUIElement,
+        above pinnedAction: XCUIElement,
+        app: XCUIApplication
+    ) throws {
+        let scrollView = app.scrollViews.firstMatch
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+        XCTAssertTrue(setupCue.waitForExistence(timeout: 5))
+        XCTAssertTrue(pinnedAction.waitForExistence(timeout: 5))
+
+        func visibleBounds() -> (top: CGFloat, bottom: CGFloat) {
+            let navigationBar = app.navigationBars.firstMatch
+            let statusBar = app.statusBars.firstMatch
+            let window = app.windows.firstMatch
+            let top: CGFloat
+            if navigationBar.exists {
+                top = navigationBar.frame.maxY + 8
+            } else if statusBar.exists {
+                top = statusBar.frame.maxY + 8
+            } else {
+                top = window.frame.minY + 8
+            }
+            return (top, pinnedAction.frame.minY - 16)
+        }
+
+        for _ in 0..<20 {
+            let cueFrame = setupCue.frame
+            let bounds = visibleBounds()
+            if !cueFrame.isEmpty,
+               cueFrame.minY >= bounds.top,
+               cueFrame.maxY <= bounds.bottom {
+                break
+            }
+
+            let verticalDrag: CGFloat
+            if cueFrame.isEmpty {
+                verticalDrag = -180
+            } else if cueFrame.maxY > bounds.bottom {
+                verticalDrag = -min(
+                    max(cueFrame.maxY - bounds.bottom + 24, 40),
+                    180
+                )
+            } else {
+                verticalDrag = min(
+                    max(bounds.top - cueFrame.minY + 24, 40),
+                    180
+                )
+            }
+            let start = scrollView.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            )
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: verticalDrag))
+            )
+        }
+
+        let cueFrame = setupCue.frame
+        let bounds = visibleBounds()
+        XCTContext.runActivity(
+            named: "Timed setup clipping viewport cue=\(cueFrame) "
+                + "top=\(bounds.top) bottom=\(bounds.bottom)"
+        ) { _ in }
+        XCTAssertFalse(cueFrame.isEmpty, "The Timed setup cue must have rendered geometry.")
+        XCTAssertGreaterThanOrEqual(
+            cueFrame.minY,
+            bounds.top,
+            "The Timed setup cue must clear the top system chrome before clipping is audited."
+        )
+        XCTAssertLessThanOrEqual(
+            cueFrame.maxY,
+            bounds.bottom,
+            "The Timed setup cue must be fully visible above the pinned Start action."
+        )
+
+        let issueHandler: (XCUIAccessibilityAuditIssue) -> Bool = { issue in
+            if let element = issue.element {
+                XCTContext.runActivity(
+                    named: "NOUM_RECOMMENDATION_CLIPPING_ISSUE "
+                        + "identifier=\(element.identifier) label=\(element.label) "
+                        + "frame=\(element.frame) detail=\(issue.detailedDescription)"
+                ) { _ in }
+                return !cueFrame.intersects(element.frame)
+            }
+            XCTContext.runActivity(
+                named: "NOUM_RECOMMENDATION_CLIPPING_ISSUE element=nil "
+                    + "detail=\(issue.detailedDescription)"
+            ) { _ in }
+            return false
+        }
+
+        var remainingTimeoutRetries = 2
+        while true {
+            do {
+                try app.performAccessibilityAudit(for: [.textClipped], issueHandler)
+                return
+            } catch let error as NSError
+                where error.domain == "com.apple.xcode.xctest.accessibilityAudit"
+                    && error.code == -56
+                    && remainingTimeoutRetries > 0 {
+                remainingTimeoutRetries -= 1
+                XCTContext.runActivity(
+                    named: "Retrying recommendation clipping audit timeout "
+                        + "(\(remainingTimeoutRetries) retries remain)"
+                ) { _ in }
+            }
         }
     }
 

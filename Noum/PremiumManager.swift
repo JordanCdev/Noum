@@ -62,6 +62,20 @@ enum PremiumPlanAvailability {
     }
 }
 
+enum PremiumProductLoadIssue: Equatable, Sendable {
+    case emptyCatalog
+    case storefrontRequestFailed
+
+    var userMessage: String {
+        switch self {
+        case .emptyCatalog:
+            return "The App Store didn’t return Noum’s monthly or annual plan. Reload after checking your App Store connection."
+        case .storefrontRequestFailed:
+            return "Noum couldn’t contact the App Store. Check your connection, then reload the plans."
+        }
+    }
+}
+
 enum SubscriptionBillingUnit: String, Codable, Equatable, Sendable {
     case day
     case week
@@ -518,6 +532,7 @@ final class PremiumManager: ObservableObject {
     @Published private(set) var isPremium: Bool
     @Published private(set) var products: [Product] = []
     @Published private(set) var productPresentations: [String: PremiumProductPresentation] = [:]
+    @Published private(set) var productLoadIssue: PremiumProductLoadIssue?
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var subscriptionLifecycle: SubscriptionLifecycleSnapshot = .unknown
     @Published private(set) var videoAnalysisCreditsRemaining: Int
@@ -581,8 +596,15 @@ final class PremiumManager: ObservableObject {
             }
             products = sortedProducts
             productPresentations = presentations
+            productLoadIssue = sortedProducts.isEmpty ? .emptyCatalog : nil
         } catch {
-            // Products may not be available in sandbox — fall back gracefully
+            // Preserve any previously loaded products during a transient
+            // storefront failure, but surface an honest retry state instead
+            // of making a transport/configuration error look like loading.
+            productLoadIssue = .storefrontRequestFailed
+            #if DEBUG
+            print("[StoreKit] Product request failed: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -1248,6 +1270,7 @@ struct PaywallView: View {
     @StateObject private var premium = PremiumManager.shared
     @State private var selectedPlan: PremiumPlanOption = .defaultSelection
     @State private var isPurchasing = false
+    @State private var isLoadingPlans = false
     @State private var showSuccess = false
     @State private var errorMessage: String?
     @State private var restoreMessage: String?
@@ -1369,7 +1392,7 @@ struct PaywallView: View {
                                     .font(Typography.headline.weight(.semibold))
                                     .foregroundStyle(AppColor.textPrimary)
 
-                                if availablePlans.isEmpty {
+                                if availablePlans.isEmpty, isLoadingPlans {
                                     HStack(spacing: Spacing.sm) {
                                         ProgressView()
                                         Text("Loading App Store plans…")
@@ -1377,6 +1400,15 @@ struct PaywallView: View {
                                             .foregroundStyle(AppColor.textSecondary)
                                     }
                                     .frame(maxWidth: .infinity, minHeight: 88)
+                                } else if availablePlans.isEmpty {
+                                    ContentUnavailableView(
+                                        "App Store plans unavailable",
+                                        systemImage: "wifi.exclamationmark",
+                                        description: Text(
+                                            "Reload to ask the App Store for the monthly and annual plans again."
+                                        )
+                                    )
+                                    .frame(maxWidth: .infinity, minHeight: 120)
                                 } else {
                                     ViewThatFits(in: .horizontal) {
                                         HStack(spacing: Spacing.sm) {
@@ -1460,7 +1492,7 @@ struct PaywallView: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            if isPurchasing {
+                            if isPurchasing || isLoadingPlans {
                                 ProgressView()
                                     .tint(.white)
                             } else {
@@ -1468,7 +1500,7 @@ struct PaywallView: View {
                                     .font(.headline)
                             }
                             Text(
-                                isPurchasing
+                                isPurchasing || isLoadingPlans
                                     ? "Loading\u{2026}"
                                     : selectedProduct == nil
                                         ? "Reload plans"
@@ -1490,8 +1522,14 @@ struct PaywallView: View {
                         .shadow(color: proColor.opacity(0.18), radius: 12, y: 6)
                     }
                     .buttonStyle(.pressable)
-                    .disabled(isPurchasing)
-                    .accessibilityLabel(isPurchasing ? "Loading plans" : selectedProduct == nil ? "Reload subscription plans" : "Subscribe to Noum Pro")
+                    .disabled(isPurchasing || isLoadingPlans)
+                    .accessibilityLabel(
+                        isPurchasing || isLoadingPlans
+                            ? "Loading plans"
+                            : selectedProduct == nil
+                                ? "Reload subscription plans"
+                                : "Subscribe to Noum Pro"
+                    )
 
                     if !plansAvailable, errorMessage == nil {
                         Text("Plans are temporarily unavailable. Reload to try again.")
@@ -1581,6 +1619,10 @@ struct PaywallView: View {
             resolveSelectedPlanIfNeeded()
             recordSelectionIfNeeded(selectedPlan)
             recordAvailableEligibility()
+        }
+        .task {
+            guard availablePlans.isEmpty else { return }
+            await loadPlans()
         }
         .onChange(of: availableProductIDs) { _, _ in
             resolveSelectedPlanIfNeeded()
@@ -1734,18 +1776,22 @@ struct PaywallView: View {
     }
 
     private func reloadPlans() {
-        isPurchasing = true
-        errorMessage = nil
-
         Task {
-            await premium.loadProducts()
-            await MainActor.run {
-                resolveSelectedPlanIfNeeded()
-                isPurchasing = false
-                if selectedProduct == nil {
-                    errorMessage = "Plans are still unavailable. Please try again later."
-                }
-            }
+            await loadPlans()
+        }
+    }
+
+    @MainActor
+    private func loadPlans() async {
+        guard !isLoadingPlans else { return }
+        isLoadingPlans = true
+        errorMessage = nil
+        await premium.loadProducts()
+        resolveSelectedPlanIfNeeded()
+        isLoadingPlans = false
+        if selectedProduct == nil {
+            errorMessage = premium.productLoadIssue?.userMessage
+                ?? "The App Store didn’t return Noum’s plans. Check your connection, then reload."
         }
     }
 

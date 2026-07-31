@@ -11,22 +11,35 @@ import UIKit
 
 #if canImport(SwiftUI)
 
-// MARK: - TTS Delegate (reliable speech completion tracking)
-
-private class TTSDelegate: NSObject, AVSpeechSynthesizerDelegate {
-    var onFinish: (() -> Void)?
-    var onCancel: (() -> Void)?
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { [weak self] in
-            self?.onFinish?()
-        }
+enum TimedPromptSpeechPresentation {
+    static func isActive(local: Bool, cloud: Bool) -> Bool {
+        local || cloud
     }
+}
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { [weak self] in
-            self?.onCancel?()
-        }
+enum TimedPromptSpeechRequestPolicy {
+    static func isCurrent(_ requestID: UUID, currentRequestID: UUID?) -> Bool {
+        requestID == currentRequestID
+    }
+}
+
+enum TimedPracticeLaunchContinuation {
+    static func resolvePrompt(
+        using load: () async -> String
+    ) async -> String? {
+        let prompt = await load()
+        guard !Task.isCancelled else { return nil }
+        return prompt
+    }
+}
+
+enum TimedPracticePromptLoadPolicy {
+    static func accepts(
+        completedGeneration: UUID,
+        currentGeneration: UUID,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled && completedGeneration == currentGeneration
     }
 }
 
@@ -415,6 +428,44 @@ private struct SpotlightOrbView: View {
 
 // MARK: - Impromptu Settings Panel (extracted for render isolation)
 
+private struct TimedCameraStatus: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "video.slash.fill")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.warning)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(Typography.subheadline)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.md)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(
+                cornerRadius: CornerRadius.medium,
+                style: .continuous
+            )
+        )
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: CornerRadius.medium,
+                style: .continuous
+            )
+            .stroke(AppColor.warning.opacity(0.42), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 private struct ImpromptuSettingsPanel: View {
     @Binding var keepPromptVisible: Bool
@@ -426,6 +477,7 @@ private struct ImpromptuSettingsPanel: View {
     @Binding var showPaywall: Bool
     @ObservedObject var premium: PremiumManager
     @ObservedObject var videoManager: VideoRecordingManager
+    @State private var cameraPreparationTask: Task<Void, Never>?
 
     private let accent = AppColor.modeTimed
 
@@ -514,6 +566,15 @@ private struct ImpromptuSettingsPanel: View {
                 disabled: showLiveTranscript,
                 accessibilityID: "timedPractice.settings.video"
             )
+
+            if let recordingError = videoManager.recordingError {
+                TimedCameraStatus(message: recordingError)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, Spacing.sm)
+                    .accessibilityIdentifier(
+                        "timedPractice.settings.videoError"
+                    )
+            }
         }
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .overlay(
@@ -522,6 +583,10 @@ private struct ImpromptuSettingsPanel: View {
         )
         .shadow(color: Color.black.opacity(0.06), radius: 18, y: 8)
         .transition(.opacity.combined(with: .move(edge: .top)))
+        .onDisappear {
+            cameraPreparationTask?.cancel()
+            cameraPreparationTask = nil
+        }
     }
 
     private var timerPicker: some View {
@@ -697,15 +762,28 @@ private struct ImpromptuSettingsPanel: View {
         enableVideoRecording = newValue
         if newValue {
             showLiveTranscript = false
-            Task {
+            cameraPreparationTask?.cancel()
+            cameraPreparationTask = Task { @MainActor in
                 let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                guard !Task.isCancelled else { return }
                 guard hasPermission else {
-                    await MainActor.run { enableVideoRecording = false }
+                    enableVideoRecording = false
+                    videoManager.reportPreparationFailure(
+                        "Camera access is off. Enable it in Settings to record video."
+                    )
+                    cameraPreparationTask = nil
                     return
                 }
-                _ = await videoManager.prepareSession()
+                let outcome = await videoManager.prepareSession()
+                guard !Task.isCancelled else { return }
+                if outcome.shouldDisableRequestedVideo {
+                    enableVideoRecording = false
+                }
+                cameraPreparationTask = nil
             }
         } else {
+            cameraPreparationTask?.cancel()
+            cameraPreparationTask = nil
             videoManager.cleanup()
         }
     }
@@ -779,6 +857,7 @@ struct TimedPracticeView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var premium = PremiumManager.shared
+    @StateObject private var promptSpeaker = IMMessageSpeaker.shared
     // Session intent can still be attached by future inline/chat-driven
     // declarations, but Timed never auto-interrupts setup with a focus sheet.
 
@@ -811,10 +890,18 @@ struct TimedPracticeView: View {
     /// handle it outlived the view and reopened the microphone behind whatever
     /// screen the user had navigated to.
     @State private var briefRevealTask: Task<Void, Never>?
+    /// Owns microphone readiness plus optional camera preparation for the
+    /// transition into speaking. Both permission APIs can resume after Swift
+    /// task cancellation, so teardown must retain and cancel this handle.
+    @State private var captureStartTask: Task<Void, Never>?
     /// Session launch — awaits the microphone permission alert and up to ~3s of
     /// prompt resolution before touching the mic and the ambience, so it is
     /// exactly the window in which a user can tap Start and immediately leave.
     @State private var launchTask: Task<Void, Never>?
+    /// A single generation owns prompt publication. The setup task, Start
+    /// action, retry, and teardown all advance this token so an older async
+    /// producer cannot replace the prompt of a rep that has already begun.
+    @State private var promptLoadGeneration = UUID()
 
     // Settings (persisted via @AppStorage)
     @AppStorage("timedPractice.keepPromptVisible") private var keepPromptVisible: Bool = false
@@ -877,8 +964,17 @@ struct TimedPracticeView: View {
         // Fall back to any en-US voice
         return AVSpeechSynthesisVoice(language: "en-US")
     }()
-    @State private var isSpeakingPrompt = false
+    @State private var isPromptRequestOrLocalPlaybackActive = false
     @State private var ttsReady = false
+    @State private var ttsPrewarmTask: Task<Void, Never>?
+    @State private var ttsPrewarmGeneration: UUID?
+
+    private var isPromptSpeechActive: Bool {
+        TimedPromptSpeechPresentation.isActive(
+            local: isPromptRequestOrLocalPlaybackActive,
+            cloud: promptSpeaker.isSpeaking
+        )
+    }
 
     // Premium gating
     @State private var showPaywall = false
@@ -887,6 +983,14 @@ struct TimedPracticeView: View {
     @StateObject private var videoManager = VideoRecordingManager.shared
     @AppStorage("timedPractice.enableVideoRecording") private var enableVideoRecording: Bool = false
     @State private var showVideoPlayback = false
+    /// Set only after SummaryDataStore has captured the finalized movie URL.
+    /// Departure then stops camera hardware without deleting that payload.
+    @State private var preservesFinalizedVideoForSummary = false
+    @State private var promptSpeechTask: Task<Void, Never>?
+    /// Identity of the request allowed to mutate local speech presentation.
+    /// Delayed provider continuations and synthesizer callbacks from a
+    /// superseded readout become no-ops when this changes.
+    @State private var promptSpeechRequestID: UUID?
 
     // Immersive state
     @State private var spotlightPulse: Bool = false
@@ -927,6 +1031,11 @@ struct TimedPracticeView: View {
 
     private var targetedRetryPresentation: TargetedRetryPresentation? {
         seededPromptPayload.flatMap(TargetedRetryPresentation.init(payload:))
+    }
+
+    private var activeCameraStatusMessage: String? {
+        guard !showSetupSettings else { return nil }
+        return videoManager.recordingError
     }
 
     var body: some View {
@@ -979,6 +1088,23 @@ struct TimedPracticeView: View {
                     )
             }
         }
+        .safeAreaInset(edge: .top, spacing: Spacing.xs) {
+            if let message = activeCameraStatusMessage {
+                TimedCameraStatus(message: message)
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.xs)
+                    .accessibilityIdentifier("timedPractice.videoStatus")
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .opacity.combined(with: .move(edge: .top))
+                    )
+            }
+        }
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.2),
+            value: activeCameraStatusMessage
+        )
         .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -1052,20 +1178,34 @@ struct TimedPracticeView: View {
                 prewarmTTS()
                 enforcePremiumFeatureAvailability()
                 if enableVideoRecording && videoManager.captureSession == nil {
-                    if await VideoRecordingManager.requestCameraPermission() {
-                        _ = await videoManager.prepareSession()
+                    let hasPermission =
+                        await VideoRecordingManager.requestCameraPermission()
+                    guard !Task.isCancelled else { return }
+                    if hasPermission {
+                        let outcome = await videoManager.prepareSession()
+                        guard !Task.isCancelled else { return }
+                        if outcome.shouldDisableRequestedVideo {
+                            enableVideoRecording = false
+                        }
                     } else {
                         enableVideoRecording = false
+                        videoManager.reportPreparationFailure(
+                            "Camera access is off. Enable it in Settings to record video."
+                        )
                     }
                 }
+                guard !Task.isCancelled else { return }
                 beginSession()
                 return
             }
+
+            let setupPromptGeneration = beginPromptResolution()
 
             // Batch initial setup into a single Task so SwiftUI
             // processes the state changes in one transaction.
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
+            guard acceptsPromptResolution(setupPromptGeneration) else { return }
             // A source-bound retry consumes any stale quick-start authority
             // above but deliberately remains on setup until its visible Start
             // action is tapped. Reuse its already-consumed payload here.
@@ -1076,9 +1216,17 @@ struct TimedPracticeView: View {
                 if let seeded = seededPrompt {
                     question = seeded
                 } else {
-                    question = await nextPrompt()
+                    guard let resolvedPrompt =
+                            await TimedPracticeLaunchContinuation.resolvePrompt(
+                                using: { await nextPrompt() }
+                            ),
+                          acceptsPromptResolution(setupPromptGeneration) else {
+                        return
+                    }
+                    question = resolvedPrompt
                 }
             }
+            guard acceptsPromptResolution(setupPromptGeneration) else { return }
             speechVM.prepareForInteractiveUse()
             prewarmTTS()
             enforcePremiumFeatureAvailability()
@@ -1087,10 +1235,18 @@ struct TimedPracticeView: View {
             // prepareSession() starts the session internally before publishing captureSession
             if enableVideoRecording && videoManager.captureSession == nil {
                 let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                guard acceptsPromptResolution(setupPromptGeneration) else { return }
                 if hasPermission {
-                    _ = await videoManager.prepareSession()
+                    let outcome = await videoManager.prepareSession()
+                    guard acceptsPromptResolution(setupPromptGeneration) else { return }
+                    if outcome.shouldDisableRequestedVideo {
+                        enableVideoRecording = false
+                    }
                 } else {
                     enableVideoRecording = false
+                    videoManager.reportPreparationFailure(
+                        "Camera access is off. Enable it in Settings to record video."
+                    )
                 }
             }
 
@@ -1105,6 +1261,8 @@ struct TimedPracticeView: View {
         }
         .onChange(of: speechVM.connectionError) { _, error in
             guard error != nil, phase == .speaking else { return }
+            captureStartTask?.cancel()
+            captureStartTask = nil
             speakingTask?.cancel()
             speakingTask = nil
             if videoManager.isRecording { videoManager.stopRecording() }
@@ -1229,6 +1387,24 @@ struct TimedPracticeView: View {
             baseline: baselineStore.baseline,
             theme: selectedTheme
         )
+    }
+
+    private func beginPromptResolution() -> UUID {
+        let generation = UUID()
+        promptLoadGeneration = generation
+        return generation
+    }
+
+    private func acceptsPromptResolution(_ generation: UUID) -> Bool {
+        TimedPracticePromptLoadPolicy.accepts(
+            completedGeneration: generation,
+            currentGeneration: promptLoadGeneration,
+            isCancelled: Task.isCancelled
+        )
+    }
+
+    private func invalidatePromptResolution() {
+        promptLoadGeneration = UUID()
     }
 
     private func formattedTime(_ seconds: Int) -> String {
@@ -1685,57 +1861,42 @@ struct TimedPracticeView: View {
             issue: speechVM.recordingIssue,
             message: message
         )
-        let title = presentation.title
-        let detail = presentation.detail
 
-        return VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "mic.slash.fill")
-                    .font(Typography.headline)
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                    .accessibilityHidden(true)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The failure statement can become taller than the screen at
+                // AX sizes. Keep the explanation scrollable while pinning the
+                // only viable recovery so a capture failure never becomes a
+                // navigation trap.
+                VStack(alignment: .leading, spacing: 0) {
+                    ScrollView {
+                        recordingIssueExplanation(
+                            presentation,
+                            stacksVertically: true
+                        )
+                        .padding(20)
+                        .padding(.top, 64)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(.white)
-
-                    Text(detail)
-                        .font(Typography.subheadline)
-                        .foregroundStyle(.white.opacity(0.76))
-                        .fixedSize(horizontal: false, vertical: true)
+                    recordingIssueActions(presentation)
+                        .padding(.horizontal, 20)
+                        .padding(.top, Spacing.sm)
+                        .padding(.bottom, 20)
+                        .background(Color(red: 0.10, green: 0.13, blue: 0.20).opacity(0.96))
                 }
-            }
-
-            switch presentation.recovery {
-            case .leaveRep:
-                recordingIssuePrimaryAction(
-                    title: "Back to setup",
-                    icon: "arrow.backward",
-                    identifier: "timedPractice.recordingIssue.backToSetup",
-                    action: returnToSetupAfterRecordingIssue
-                )
-            case .grantCloudConsent:
-                recordingIssuePrimaryAction(
-                    title: "Turn on cloud processing",
-                    icon: "cloud.fill",
-                    identifier: "timedPractice.recordingIssue.cloudConsent",
-                    action: { showCloudProcessingConsent = true }
-                )
-                recordingIssueExitAction
-            case .retry:
-                recordingIssuePrimaryAction(
-                    title: speechVM.microphonePermissionState == .denied ? "Open Settings" : "Try again",
-                    icon: "arrow.clockwise",
-                    identifier: "timedPractice.recordingIssue.retry",
-                    action: retryRecordingAfterIssue
-                )
-                recordingIssueExitAction
+                .frame(maxHeight: .infinity)
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    recordingIssueExplanation(
+                        presentation,
+                        stacksVertically: false
+                    )
+                    recordingIssueActions(presentation)
+                }
+                .padding(20)
             }
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
@@ -1754,7 +1915,92 @@ struct TimedPracticeView: View {
         // failure statement off this one element's label, and its buttons stay
         // individually addressable underneath.
         .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(presentation.title). \(presentation.detail)")
         .accessibilityIdentifier("timedPractice.recordingIssue")
+    }
+
+    @ViewBuilder
+    private func recordingIssueExplanation(
+        _ presentation: SpeechRecordingIssuePresentation,
+        stacksVertically: Bool
+    ) -> some View {
+        if stacksVertically {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                recordingIssueIcon
+                recordingIssueCopy(presentation)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .center, spacing: 10) {
+                recordingIssueIcon
+                recordingIssueCopy(presentation)
+            }
+        }
+    }
+
+    private var recordingIssueIcon: some View {
+        Image(systemName: "mic.slash.fill")
+            .font(Typography.headline)
+            .foregroundStyle(.white)
+            .frame(width: 42, height: 42)
+            .background(
+                Color.white.opacity(0.14),
+                in: RoundedRectangle(
+                    cornerRadius: CornerRadius.small,
+                    style: .continuous
+                )
+            )
+            .accessibilityHidden(true)
+    }
+
+    private func recordingIssueCopy(
+        _ presentation: SpeechRecordingIssuePresentation
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(presentation.title)
+                .font(Typography.cardTitle)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(presentation.detail)
+                .font(Typography.subheadline)
+                .foregroundStyle(.white.opacity(0.76))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func recordingIssueActions(
+        _ presentation: SpeechRecordingIssuePresentation
+    ) -> some View {
+        switch presentation.recovery {
+        case .leaveRep:
+            recordingIssuePrimaryAction(
+                title: "Back to setup",
+                icon: "arrow.backward",
+                identifier: "timedPractice.recordingIssue.backToSetup",
+                action: returnToSetupAfterRecordingIssue
+            )
+        case .grantCloudConsent:
+            recordingIssuePrimaryAction(
+                title: "Turn on cloud processing",
+                icon: "cloud.fill",
+                identifier: "timedPractice.recordingIssue.cloudConsent",
+                action: { showCloudProcessingConsent = true }
+            )
+            recordingIssueExitAction
+        case .retry:
+            recordingIssuePrimaryAction(
+                title: speechVM.microphonePermissionState == .denied
+                    ? "Open Settings"
+                    : "Try again",
+                icon: "arrow.clockwise",
+                identifier: "timedPractice.recordingIssue.retry",
+                action: retryRecordingAfterIssue
+            )
+            recordingIssueExitAction
+        }
     }
 
     private func recordingIssuePrimaryAction(
@@ -2099,6 +2345,7 @@ struct TimedPracticeView: View {
         CoachHaptic.selectionTap()
         animateSetupChange {
             selectedTheme = theme
+            invalidatePromptResolution()
             question = ""
             discardSeededChallengeAuthority()
         }
@@ -2129,99 +2376,106 @@ struct TimedPracticeView: View {
     // MARK: - Thinking Phase
 
     private var thinkingContent: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 40)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 40)
 
-            // Prompt card (tappable for TTS)
-            Button {
-                speakPromptAloud()
-            } label: {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("YOUR TOPIC")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.white.opacity(0.4))
-                            .tracking(1.2)
+                    // Prompt card (tappable for TTS)
+                    Button {
+                        speakPromptAloud()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text("YOUR TOPIC")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white.opacity(0.4))
+                                    .tracking(1.2)
 
-                        Spacer()
+                                Spacer()
 
-                        // Speaker affordance
-                        HStack(spacing: 4) {
-                            Image(systemName: isSpeakingPrompt ? "speaker.wave.2.fill" : "speaker.wave.2")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.5))
-                                // Reduce Motion: a repeating colour pulse is ambient motion.
-                                .symbolEffect(.variableColor.iterative, isActive: isSpeakingPrompt && !reduceMotion)
-                            Text("Tap to hear")
-                                .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.35))
+                                // Speaker affordance
+                                HStack(spacing: 4) {
+                                    Image(systemName: isPromptSpeechActive ? "speaker.wave.2.fill" : "speaker.wave.2")
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.5))
+                                        // Reduce Motion: a repeating colour pulse is ambient motion.
+                                        .symbolEffect(.variableColor.iterative, isActive: isPromptSpeechActive && !reduceMotion)
+                                    Text(isPromptSpeechActive ? "Tap to stop" : "Tap to hear")
+                                        .font(.caption2)
+                                        .foregroundStyle(.white.opacity(0.35))
+                                }
+                            }
+
+                            Text(question)
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                                .accessibilityIdentifier("timedPractice.prompt")
+
+                            if let wordOfTheDayTarget {
+                                wordOfTheDayDarkCue(wordOfTheDayTarget)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(24)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+
+                    Spacer(minLength: 40)
+
+                    // Countdown with breathing indicator
+                    ZStack {
+                        // Breathing circle — calming in normal mode, tighter pulse in
+                        // pressure mode. Reduce-motion: a still mid-size glow.
+                        Circle()
+                            .fill(practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.06) : Color.white.opacity(0.04))
+                            .frame(
+                                width: reduceMotion ? 160 : (breathePhase ? 180 : 140),
+                                height: reduceMotion ? 160 : (breathePhase ? 180 : 140)
+                            )
+                            .blur(radius: 30)
+                            .animation(
+                                reduceMotion ? nil : .easeInOut(duration: practiceSettings.pressureModeEnabled ? 2.0 : 3.5).repeatForever(autoreverses: true),
+                                value: breathePhase
+                            )
+
+                        VStack(spacing: 10) {
+                            Text("\(thinkingCountdown)")
+                                .font(.system(size: 80, weight: .bold, design: .rounded))
+                                .foregroundStyle(practiceSettings.pressureModeEnabled ? .orange : .white)
+                                .contentTransition(.numericText())
+
+                            Text(thinkingSubtitle)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white.opacity(0.4))
+                                .contentTransition(.interpolate)
+                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: thinkingCountdown)
                         }
                     }
 
-                    Text(question)
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                        .accessibilityIdentifier("timedPractice.prompt")
-
-                    if let wordOfTheDayTarget {
-                        wordOfTheDayDarkCue(wordOfTheDayTarget)
-                    }
+                    Spacer(minLength: 40)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
-                .background(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                .padding(.horizontal, 16)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-
-            Spacer(minLength: 40)
-
-            // Countdown with breathing indicator
-            ZStack {
-                // Breathing circle — calming in normal mode, tighter pulse in
-                // pressure mode. Reduce-motion: a still mid-size glow.
-                Circle()
-                    .fill(practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.06) : Color.white.opacity(0.04))
-                    .frame(
-                        width: reduceMotion ? 160 : (breathePhase ? 180 : 140),
-                        height: reduceMotion ? 160 : (breathePhase ? 180 : 140)
-                    )
-                    .blur(radius: 30)
-                    .animation(
-                        reduceMotion ? nil : .easeInOut(duration: practiceSettings.pressureModeEnabled ? 2.0 : 3.5).repeatForever(autoreverses: true),
-                        value: breathePhase
-                    )
-
-                VStack(spacing: 10) {
-                    Text("\(thinkingCountdown)")
-                        .font(.system(size: 80, weight: .bold, design: .rounded))
-                        .foregroundStyle(practiceSettings.pressureModeEnabled ? .orange : .white)
-                        .contentTransition(.numericText())
-
-                    Text(thinkingSubtitle)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .contentTransition(.interpolate)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: thinkingCountdown)
-                }
-            }
-
-            Spacer(minLength: 40)
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(.horizontal, 16)
         .onAppear { breathePhase = true }
     }
 
@@ -3099,12 +3353,29 @@ struct TimedPracticeView: View {
 
     private func configureTTSDelegate() {
         ttsEngine.delegate = ttsDelegate
-        ttsDelegate.onFinish = { [self] in
-            isSpeakingPrompt = false
+    }
+
+    private func trackPromptUtterance(
+        _ utterance: AVSpeechUtterance,
+        requestID: UUID
+    ) {
+        configureTTSDelegate()
+        let completion = { [self] in
+            guard TimedPromptSpeechRequestPolicy.isCurrent(
+                requestID,
+                currentRequestID: promptSpeechRequestID
+            ) else {
+                return
+            }
+            promptSpeechRequestID = nil
+            isPromptRequestOrLocalPlaybackActive = false
+            deactivateTTSAudioSession()
         }
-        ttsDelegate.onCancel = { [self] in
-            isSpeakingPrompt = false
-        }
+        ttsDelegate.track(
+            utterance,
+            onFinish: completion,
+            onCancel: completion
+        )
     }
 
     /// Activate audio session for TTS — must be called before speaking.
@@ -3130,76 +3401,152 @@ struct TimedPracticeView: View {
     }
 
     private func speakPromptAloud() {
+        // A silent warmup is implementation detail, never user-owned speech.
+        // Cancel it before inspecting `isSpeaking` so the first tap cannot be
+        // consumed merely stopping the warmup utterance.
+        let cancelledPrewarm = cancelTTSPrewarm()
+
         // Toggle off if already speaking
-        let speaker = IMMessageSpeaker.shared
-        if ttsEngine.isSpeaking || isSpeakingPrompt {
-            ttsEngine.stopSpeaking(at: .immediate)
-            speaker.stop()
-            isSpeakingPrompt = false
+        let speaker = promptSpeaker
+        if (!cancelledPrewarm && ttsEngine.isSpeaking)
+            || isPromptSpeechActive {
+            stopPromptSpeech()
             return
         }
 
-        isSpeakingPrompt = true
+        promptSpeechTask?.cancel()
+        promptSpeechTask = nil
+        speaker.stop()
+        let requestID = UUID()
+        promptSpeechRequestID = requestID
+        isPromptRequestOrLocalPlaybackActive = true
+        let prompt = question
 
         // Try cloud TTS first (natural, high quality voice) with on-device fallback
-        Task {
-            let didPlayCloud = await speaker.speakPrompt(question)
-            if didPlayCloud {
-                // Cloud audio played successfully — wait for it to finish
-                // The speaker's AVAudioPlayer will handle playback completion
-                await MainActor.run { isSpeakingPrompt = false }
+        promptSpeechTask = Task { @MainActor in
+            let outcome = await speaker.speakPrompt(prompt)
+            guard !Task.isCancelled,
+                  TimedPromptSpeechRequestPolicy.isCurrent(
+                    requestID,
+                    currentRequestID: promptSpeechRequestID
+                  ) else {
                 return
             }
 
-            // Fallback: on-device AVSpeechSynthesizer
-            await MainActor.run {
-                if ttsEngine.delegate == nil { configureTTSDelegate() }
-                activateTTSAudioSession()
-
-                let utterance = AVSpeechUtterance(string: question)
-                utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
-                utterance.pitchMultiplier = 0.98
-                utterance.preUtteranceDelay = 0.15
-                utterance.postUtteranceDelay = 0.3
-                utterance.prefersAssistiveTechnologySettings = false
-                utterance.voice = prewarmedVoice
-                ttsEngine.speak(utterance)
+            switch outcome {
+            case .started:
+                // Cloud audio has started. Drop the request-state flag while
+                // the shared speaker's published playback lifecycle keeps the
+                // affordance active until natural finish or an explicit stop.
+                promptSpeechRequestID = nil
+                isPromptRequestOrLocalPlaybackActive = false
+                promptSpeechTask = nil
+                return
+            case .superseded:
+                promptSpeechRequestID = nil
+                isPromptRequestOrLocalPlaybackActive = false
+                promptSpeechTask = nil
+                return
+            case .unavailable:
+                break
             }
+
+            // Fallback: on-device AVSpeechSynthesizer
+            guard !Task.isCancelled,
+                  TimedPromptSpeechRequestPolicy.isCurrent(
+                    requestID,
+                    currentRequestID: promptSpeechRequestID
+                  ) else {
+                return
+            }
+            activateTTSAudioSession()
+
+            let utterance = AVSpeechUtterance(string: prompt)
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
+            utterance.pitchMultiplier = 0.98
+            utterance.preUtteranceDelay = 0.15
+            utterance.postUtteranceDelay = 0.3
+            utterance.prefersAssistiveTechnologySettings = false
+            utterance.voice = prewarmedVoice
+            trackPromptUtterance(utterance, requestID: requestID)
+            guard !Task.isCancelled,
+                  TimedPromptSpeechRequestPolicy.isCurrent(
+                    requestID,
+                    currentRequestID: promptSpeechRequestID
+                  ) else {
+                return
+            }
+            ttsEngine.speak(utterance)
+            promptSpeechTask = nil
         }
     }
 
     /// Prewarm TTS engine with a silent utterance so the first real speak is instant.
     /// Also pre-configures the audio session so there's zero delay on first tap.
-    /// Deferred to a background-priority task so it doesn't block the initial render.
+    /// Deferred by one cooperative yield so it doesn't block the initial render.
     private func prewarmTTS() {
-        guard !ttsReady else { return }
+        guard !ttsReady, ttsPrewarmTask == nil else { return }
         configureTTSDelegate()
+        let generation = UUID()
+        ttsPrewarmGeneration = generation
 
-        // Defer the entire prewarm sequence so it doesn't block the first frame.
-        // Audio session setup runs off-main, then the silent utterance fires on main
-        // after a short yield so the view is already interactive.
-        Task.detached(priority: .utility) {
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, options: [.mixWithOthers, .duckOthers])
-            try? session.setActive(true)
-
-            // Yield back to main to issue the silent utterance (AVSpeechSynthesizer
-            // must be called from the thread that created it — typically main)
-            await MainActor.run {
-                let warmup = AVSpeechUtterance(string: " ")
-                warmup.volume = 0
-                warmup.voice = prewarmedVoice
-                ttsDelegate.onFinish = { [self] in
-                    ttsReady = true
-                    deactivateTTSAudioSession()
-                    ttsDelegate.onFinish = { [self] in
-                        isSpeakingPrompt = false
-                        deactivateTTSAudioSession()
-                    }
-                }
-                ttsEngine.speak(warmup)
+        ttsPrewarmTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled,
+                  ttsPrewarmGeneration == generation else {
+                return
             }
+
+            activateTTSAudioSession()
+            guard !Task.isCancelled,
+                  ttsPrewarmGeneration == generation else {
+                deactivateTTSAudioSession()
+                return
+            }
+
+            let warmup = AVSpeechUtterance(string: " ")
+            warmup.volume = 0
+            warmup.voice = prewarmedVoice
+            ttsDelegate.track(
+                warmup,
+                onFinish: { [self] in
+                    guard ttsPrewarmGeneration == generation else { return }
+                    ttsReady = true
+                    ttsPrewarmTask = nil
+                    ttsPrewarmGeneration = nil
+                    deactivateTTSAudioSession()
+                },
+                onCancel: { [self] in
+                    guard ttsPrewarmGeneration == generation else { return }
+                    ttsPrewarmTask = nil
+                    ttsPrewarmGeneration = nil
+                    deactivateTTSAudioSession()
+                }
+            )
+            guard !Task.isCancelled,
+                  ttsPrewarmGeneration == generation else {
+                deactivateTTSAudioSession()
+                return
+            }
+            ttsEngine.speak(warmup)
         }
+    }
+
+    @discardableResult
+    private func cancelTTSPrewarm() -> Bool {
+        let hadPendingPrewarm =
+            ttsPrewarmTask != nil || ttsPrewarmGeneration != nil
+        ttsPrewarmGeneration = nil
+        ttsPrewarmTask?.cancel()
+        ttsPrewarmTask = nil
+
+        guard hadPendingPrewarm else { return false }
+        if ttsEngine.isSpeaking {
+            ttsEngine.stopSpeaking(at: .immediate)
+        }
+        ttsDelegate.clearTracking()
+        deactivateTTSAudioSession()
+        return true
     }
 
     // MARK: - Shared Speaking Components
@@ -3539,6 +3886,7 @@ struct TimedPracticeView: View {
         // Haptic feedback for session start fires before the AI hop so the
         // tap feels immediate even if prompt selection takes a beat.
         CoachHaptic.drillStart()
+        let launchPromptGeneration = beginPromptResolution()
 
         if usesInjectedFirstValueLoop {
             if speechProject == nil {
@@ -3548,7 +3896,7 @@ struct TimedPracticeView: View {
             phase = .speaking
             elapsedSeconds = 0
             isStopping = false
-            completeInjectedFirstValueLoopRep()
+            scheduleInjectedFirstValueLoopCompletion()
             return
         }
 
@@ -3563,15 +3911,25 @@ struct TimedPracticeView: View {
         // behind whatever screen they had moved to.
         launchTask?.cancel()
         launchTask = Task { @MainActor in
-            guard await prepareMicrophoneForLaunch(), !Task.isCancelled else { return }
+            guard await prepareMicrophoneForLaunch(),
+                  acceptsPromptResolution(launchPromptGeneration) else {
+                return
+            }
 
             // Pre-rep ambience starts only after microphone readiness is
             // known; otherwise a denied permission can feel like a rep began.
             SoundscapeEngine.shared.startPreferredMode()
 
             if question.isEmpty {
-                question = await nextPrompt()
+                guard let resolvedPrompt = await TimedPracticeLaunchContinuation.resolvePrompt(
+                    using: { await nextPrompt() }
+                ),
+                acceptsPromptResolution(launchPromptGeneration) else {
+                    return
+                }
+                question = resolvedPrompt
             }
+            guard acceptsPromptResolution(launchPromptGeneration) else { return }
 
             // Ensure TTS is ready (may already be prewarmed from onAppear)
             if ttsEngine.delegate == nil { configureTTSDelegate() }
@@ -3622,19 +3980,25 @@ struct TimedPracticeView: View {
 
     private func skipThinkingAndSpeak() {
         CoachHaptic.selectionTap()
-        ttsEngine.stopSpeaking(at: .immediate)
-        isSpeakingPrompt = false
         thinkingTask?.cancel()
         thinkingTask = nil
         startSpeaking()
     }
 
     private func startSpeaking() {
+        // Prompt playback and microphone capture are mutually exclusive. Stop
+        // both cloud and local speech at the exact boundary regardless of
+        // whether this transition came from the timer or "Start now".
+        stopPromptSpeech()
         guard !speechVM.recordingLifecycle.isBusy else { return }
         speechVM.refreshRecordPermission()
         if speechVM.microphonePermissionState == .undetermined {
-            Task { @MainActor in
-                if await speechVM.requestMicrophoneAccessForPractice() {
+            captureStartTask?.cancel()
+            captureStartTask = Task { @MainActor in
+                let granted = await speechVM.requestMicrophoneAccessForPractice()
+                guard !Task.isCancelled else { return }
+                captureStartTask = nil
+                if granted {
                     startSpeaking()
                 } else {
                     SoundscapeEngine.shared.stop()
@@ -3667,11 +4031,7 @@ struct TimedPracticeView: View {
         milestoneScale = 1.0
 
         if usesInjectedFirstValueLoop {
-            speakingTask?.cancel()
-            speakingTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(650))
-                completeInjectedFirstValueLoopRep()
-            }
+            scheduleInjectedFirstValueLoopCompletion()
             return
         }
 
@@ -3688,28 +4048,45 @@ struct TimedPracticeView: View {
             ),
             competitiveObservationIntent: observationIntent
         )
-        Task { @MainActor in
-            guard await speechVM.startRecordingAwaitingReadiness() else {
+        captureStartTask?.cancel()
+        captureStartTask = Task { @MainActor in
+            let recordingReady =
+                await speechVM.startRecordingAwaitingReadiness()
+            guard !Task.isCancelled else { return }
+            guard recordingReady else {
                 speakingTask?.cancel()
                 speakingTask = nil
+                captureStartTask = nil
                 return
             }
 
             // Camera capture and the speaking clock begin only after the mic
             // and transcription provider are both live.
             if enableVideoRecording {
-                var cameraReady = videoManager.captureSession != nil
+                var preparationOutcome: VideoPreparationOutcome =
+                    videoManager.captureSession != nil ? .ready : .superseded
                 if videoManager.captureSession == nil {
                     let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                    guard !Task.isCancelled else { return }
                     if hasPermission {
-                        cameraReady = await videoManager.prepareSession()
+                        preparationOutcome = await videoManager.prepareSession()
+                        guard !Task.isCancelled else { return }
+                    } else {
+                        let message =
+                            "Camera access is off. Enable it in Settings to record video."
+                        videoManager.reportPreparationFailure(message)
+                        preparationOutcome = .failed(message)
                     }
                 }
-                if cameraReady {
+                guard !Task.isCancelled else { return }
+                if preparationOutcome.isReady, enableVideoRecording {
                     videoManager.startRecording()
+                } else if preparationOutcome.shouldDisableRequestedVideo {
+                    enableVideoRecording = false
                 }
             }
 
+            guard !Task.isCancelled else { return }
             speakingTask?.cancel()
             speakingTask = Task {
                 while !Task.isCancelled {
@@ -3725,6 +4102,24 @@ struct TimedPracticeView: View {
                     }
                 }
             }
+            captureStartTask = nil
+        }
+    }
+
+    /// Gives the UI-test fixture one visible speaking beat before completion,
+    /// while retaining the same cancellation contract as a real recording.
+    /// `cleanup()` owns `speakingTask`; leaving the screen must never persist
+    /// a synthetic rep or navigate to Summary after cancellation.
+    private func scheduleInjectedFirstValueLoopCompletion() {
+        speakingTask?.cancel()
+        speakingTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(650))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            completeInjectedFirstValueLoopRep()
         }
     }
 
@@ -3865,6 +4260,8 @@ struct TimedPracticeView: View {
     private func stopSession() {
         guard !isStopping else { return }
         isStopping = true
+        captureStartTask?.cancel()
+        captureStartTask = nil
         speakingTask?.cancel()
         speakingTask = nil
         if videoManager.isRecording { videoManager.stopRecording() }
@@ -4001,9 +4398,15 @@ struct TimedPracticeView: View {
         // awaits prompt resolution and then launches the mic and ambience, so
         // an unheld task could do that after the user has already left.
         launchTask?.cancel()
+        let launchPromptGeneration = beginPromptResolution()
         launchTask = Task { @MainActor in
-            question = await nextPrompt()
-            guard !Task.isCancelled else { return }
+            guard let resolvedPrompt = await TimedPracticeLaunchContinuation.resolvePrompt(
+                using: { await nextPrompt() }
+            ),
+            acceptsPromptResolution(launchPromptGeneration) else {
+                return
+            }
+            question = resolvedPrompt
             launchSessionFlow()
         }
     }
@@ -4028,6 +4431,7 @@ struct TimedPracticeView: View {
         showCelebration = false
         // Reset video recording state for the new session
         videoManager.cleanup()
+        preservesFinalizedVideoForSummary = false
         // The instant-start one-shot applies to the auto-guided FIRST rep only.
         // A retry / new-prompt rep in the same view must fall back to the user's
         // persistent prep-countdown / prompt prefs — never inherit fast-start.
@@ -4057,11 +4461,15 @@ struct TimedPracticeView: View {
         } else if !effectiveKeepPromptVisible {
             updateWithMotion(.easeInOut(duration: 0.3)) { phase = .briefReveal }
             SoundscapeEngine.shared.startPreferredMode()
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                if phase == .briefReveal {
-                    await MainActor.run { startSpeaking() }
+            briefRevealTask?.cancel()
+            briefRevealTask = Task { @MainActor in
+                do {
+                    try await Task.sleep(for: .seconds(3))
+                } catch {
+                    return
                 }
+                guard !Task.isCancelled, phase == .briefReveal else { return }
+                startSpeaking()
             }
         } else {
             startSpeaking()
@@ -4069,22 +4477,41 @@ struct TimedPracticeView: View {
     }
 
     private func cleanup() {
+        captureStartTask?.cancel()
         speakingTask?.cancel()
         thinkingTask?.cancel()
         finalizationTask?.cancel()
         briefRevealTask?.cancel()
         launchTask?.cancel()
+        invalidatePromptResolution()
+        captureStartTask = nil
         speakingTask = nil
         thinkingTask = nil
         finalizationTask = nil
         briefRevealTask = nil
         launchTask = nil
-        ttsEngine.stopSpeaking(at: .immediate)
-        if videoManager.isRecording { videoManager.stopRecording() }
+        stopPromptSpeech()
+        if preservesFinalizedVideoForSummary {
+            videoManager.stopCaptureSessionPreservingRecording()
+        } else {
+            videoManager.cleanup()
+        }
         // If the user backs out mid-thinking-window, stop ambience so
         // it doesn't leak into the next surface.
         SoundscapeEngine.shared.stop()
         speechVM.cancelRecording()
+    }
+
+    private func stopPromptSpeech() {
+        cancelTTSPrewarm()
+        promptSpeechRequestID = nil
+        promptSpeechTask?.cancel()
+        promptSpeechTask = nil
+        ttsEngine.stopSpeaking(at: .immediate)
+        ttsDelegate.clearTracking()
+        promptSpeaker.stop()
+        isPromptRequestOrLocalPlaybackActive = false
+        deactivateTTSAudioSession()
     }
 
     // MARK: - Navigation
@@ -4129,6 +4556,7 @@ struct TimedPracticeView: View {
             }
         )
         SummaryDataStore.shared.store(entry, for: payloadId)
+        preservesFinalizedVideoForSummary = videoManager.recordingURL != nil
         let payload = SummaryPayload(id: payloadId, mode: .timed)
         navigationPath.append(AppDestination.summary(payload))
     }

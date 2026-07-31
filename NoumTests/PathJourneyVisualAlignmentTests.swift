@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Path journey visual alignment")
 struct PathJourneyVisualAlignmentTests {
-    @Test func projectionShowsOneCompleteCurrentAndUpcomingLandmark() {
+    @Test func projectionShowsOneCompleteCurrentAndUpcomingStep() {
         let statuses = [
             status("baseline", title: "Establish a baseline", isComplete: true),
             status("repeat", title: "Make it repeatable", isCurrent: true),
@@ -25,7 +25,7 @@ struct PathJourneyVisualAlignmentTests {
         #expect(projection.current.detail == "Complete the prescribed retry.")
         #expect(projection.upcoming?.id == "transfer")
         #expect(projection.upcoming?.state == .upcoming)
-        #expect(projection.current.accessibilityLabel == "Current landmark, Make it repeatable. Complete the prescribed retry.")
+        #expect(projection.current.accessibilityLabel == "Current path step, Make it repeatable. Complete the prescribed retry.")
     }
 
     @Test func emptyPathOffersAnHonestFirstStepWithoutInventingProgress() {

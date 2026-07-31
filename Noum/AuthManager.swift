@@ -209,12 +209,6 @@ enum InitialRemoteProfileHydrationOutcome {
     case superseded
 }
 
-enum InitialRemoteProfileHydrationDisposition: Equatable {
-    case ready
-    case retry
-    case superseded
-}
-
 enum GuestIdentityHydrationOrigin {
     case freshlyCreated
     case restored
@@ -254,14 +248,19 @@ private struct CoachingContentSnapshotSyncHandle {
     let task: Task<Void, Never>
 }
 
+private struct InitialRemoteProfileFetchHandle {
+    let requestID: UUID
+    let accountID: String
+    let providerRawValue: String
+    let task: Task<BackendBootstrapFetchResult, Never>
+}
+
 @MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
     static let missingCredentialsMessage =
         "Live transcription isn't available in this build."
-    static let remoteProfileRecoveryMessage =
-        "Noum couldn't confirm your saved coaching profile. Check your connection and try again."
 
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
@@ -287,15 +286,11 @@ class AuthManager: ObservableObject {
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
     private var activeInitialRemoteProfileHydrationRace: InitialRemoteProfileHydrationRace?
+    private var activeInitialRemoteProfileFetch: InitialRemoteProfileFetchHandle?
     private var activeCoachingContentSnapshotSync:
         CoachingContentSnapshotSyncHandle?
     private var localGuestPromotionIsConnecting = false
     private var lastLocalGuestPromotionAttemptAt: Date?
-    #if DEBUG
-    /// Explicit DEBUG UI-test identity. It exists only for this process and
-    /// never mutates or shadows the user's Keychain in a later normal launch.
-    private var processLocalUITestAccountID: String?
-    #endif
     /// Monotonic process-local identity epoch. Async consumers that handle
     /// sensitive transient data capture this value and reject completions
     /// after teardown or hydration, including a rapid sign-out/sign-in to the
@@ -307,17 +302,25 @@ class AuthManager: ObservableObject {
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
     private nonisolated static let automaticGuestPromotionRetryInterval: TimeInterval = 30
     private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
+    /// UI automation owns an isolated Keychain identity but Firebase Auth is
+    /// SDK-global for the simulator. Bootstrap, recovery, and provider-work
+    /// entry points must leave the normal simulator session untouched.
+    private var allowsFirebaseSDKSessionAccess: Bool {
+        Self.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        )
+    }
+
     var currentAccountID: String? {
-        #if DEBUG
-        if let processLocalUITestAccountID {
-            return processLocalUITestAccountID
-        }
-        #endif
         return KeychainHelper.load(key: accountKey)
     }
-    var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
+    var currentAccountName: String? {
+        return KeychainHelper.load(key: accountNameKey)
+    }
     var currentAuthProviderTitle: String? { authProvider?.title }
-    var currentAuthProviderRawValue: String? { KeychainHelper.load(key: accountProviderKey) }
+    var currentAuthProviderRawValue: String? {
+        return KeychainHelper.load(key: accountProviderKey)
+    }
 
     nonisolated static func hasDurableIdentity(
         accountID: String?,
@@ -444,24 +447,21 @@ class AuthManager: ObservableObject {
         if Self.shouldUseCleanLocalGuestForFirstRunUITesting(arguments: arguments) {
             // The real-first-run UI path must prove the empty-Keychain contract,
             // not inherit a prior simulator account. It deliberately avoids
-            // Firebase so the test has no network dependency.
+            // Firebase so the test has no network dependency. Its isolated
+            // Keychain reset must not sign out the simulator's normal Firebase
+            // session, which belongs to the next non-test launch.
             clearStoredSession()
-            #if canImport(FirebaseAuth)
-            if isFirebaseAuthConfigured {
-                try? Auth.auth().signOut()
-            }
-            #endif
             isSignedIn = false
             authProvider = nil
             initialAccountHydrationState = .needsIdentity
             return
         }
-        // UI automation owns its process-local account and seeded stores. A
+        // UI automation owns an isolated Keychain service and seeded stores. A
         // normal credential restore schedules an account reload/reset on the
         // next actor turn; that can erase `DevSeedData` immediately after the
-        // app seeds it and make evidence-gated screens nondeterministic. Keep
-        // the real Keychain and Firebase session untouched for the next normal
-        // launch while the automation process starts signed out.
+        // app seeds it and make evidence-gated screens nondeterministic. The
+        // isolated identity is already available to every account-scoped store,
+        // while this manager starts from the explicit rendered fixture state.
         if !Self.shouldRestorePersistedSession(
             arguments: arguments
         ) {
@@ -473,26 +473,72 @@ class AuthManager: ObservableObject {
         #endif
         recoverLocalGuestPromotionBeforeCredentialHydration()
         loadCredentialsAndAccount()
+        #if DEBUG
+        guard allowsFirebaseSDKSessionAccess else {
+            return
+        }
+        #endif
         restoreFirebaseSessionIfAvailable()
     }
 
     #if DEBUG
+    /// Seeded UI tests skip credential hydration by default. Relaunch journeys
+    /// explicitly opt into durable Keychain and store hydration from the
+    /// separate UI-automation service.
     nonisolated static func shouldRestorePersistedSession(
         arguments: [String]
     ) -> Bool {
-        !arguments.contains("UI_TESTING")
+        switch KeychainHelper.uiAutomationLaunchMode(arguments: arguments) {
+        case .production, .restorePersistedAccount:
+            return true
+        case .signedOut, .realFirstRun, .authenticatedCoach, .seeded, .empty:
+            return false
+        }
+    }
+
+    nonisolated static func shouldUseProcessLocalSeededAccount(
+        arguments: [String]
+    ) -> Bool {
+        KeychainHelper.uiAutomationLaunchMode(arguments: arguments) == .seeded
     }
 
     nonisolated static func shouldUseCleanLocalGuestForFirstRunUITesting(
         arguments: [String]
     ) -> Bool {
-        arguments.contains("UI_TESTING")
-            && arguments.contains("UI_TESTING_REAL_FIRST_RUN")
+        KeychainHelper.uiAutomationLaunchMode(arguments: arguments)
+            == .realFirstRun
+    }
+
+    /// Firebase Auth owns SDK-global state outside Noum's Keychain service.
+    /// UI automation exercises only its isolated durable identity and store
+    /// hydration so it cannot adopt, replace, or sign out the normal simulator
+    /// Firebase user.
+    nonisolated static func shouldRestoreFirebaseSDKSession(
+        arguments: [String]
+    ) -> Bool {
+        !arguments.contains("UI_TESTING")
     }
     #endif
 
+    /// One process-wide policy for SDK-global Firebase Auth state. Release
+    /// builds always retain production behavior; DEBUG UI automation must use
+    /// only its isolated durable Keychain identity.
+    nonisolated static func firebaseSDKSessionAccessAllowed(
+        arguments: [String]
+    ) -> Bool {
+        #if DEBUG
+        shouldRestoreFirebaseSDKSession(arguments: arguments)
+        #else
+        true
+        #endif
+    }
+
 #if canImport(GoogleSignIn) && canImport(UIKit)
     func startGoogleSignIn() {
+        guard allowsFirebaseSDKSessionAccess else {
+            signInError = "Google sign-in is unavailable in this test run."
+            return
+        }
         guard allowPendingDeletionSignInIntent(provider: .google) else { return }
         guard let root = UIApplication.shared.connectedScenes
             .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
@@ -507,6 +553,10 @@ class AuthManager: ObservableObject {
         accountUpgradeConflict = nil
         resetDeletionStateForSignInIntent()
         signInError = nil
+        guard allowsFirebaseSDKSessionAccess else {
+            signInError = "Google sign-in is unavailable in this test run."
+            return
+        }
         guard let config = googleConfig else {
             signInError = "Google sign-in is temporarily unavailable for this build. Please try again later."
             return
@@ -574,6 +624,13 @@ class AuthManager: ObservableObject {
         accountUpgradeConflict = nil
         resetDeletionStateForSignInIntent()
         signInError = nil
+        guard allowsFirebaseSDKSessionAccess else {
+            signInError = "Apple sign-in is unavailable in this test run."
+            #if canImport(FirebaseAuth)
+            currentNonce = nil
+            #endif
+            return
+        }
         guard allowPendingDeletionSignInIntent(provider: .apple) else {
             #if canImport(FirebaseAuth)
             currentNonce = nil
@@ -627,6 +684,12 @@ class AuthManager: ObservableObject {
     /// bounded, and copy-first; any pre-commit failure keeps the original
     /// account authoritative and its practice data untouched.
     func connectLocalGuestToCloud(force: Bool = false) async {
+        guard allowsFirebaseSDKSessionAccess else {
+            localGuestCloudConnectionState = .failed(
+                message: "Live coaching stays disconnected in this test run. Your practice is unchanged."
+            )
+            return
+        }
         resumeCoachingContentSyncIfReady()
         guard !localGuestPromotionIsConnecting else { return }
 
@@ -829,45 +892,46 @@ class AuthManager: ObservableObject {
         signInError = nil
         initialAccountHydrationState = .establishingGuest
 
-        #if DEBUG
-        let useLocalOnly = Self.shouldUseCleanLocalGuestForFirstRunUITesting(
-            arguments: ProcessInfo.processInfo.arguments
-        )
-        #else
-        let useLocalOnly = false
-        #endif
-
-        if !useLocalOnly {
-            #if canImport(FirebaseAuth)
-            if isFirebaseAuthConfigured {
-                cancelActiveGuestBootstrap()
-                let generation = UUID()
-                activeGuestBootstrapGeneration = generation
-                let outcome = await boundedFirebaseAnonymousIdentity(generation: generation)
-                if case let .account(accountID, name) = outcome {
-                    if completeSignIn(
-                        accountID: accountID,
-                        name: name,
-                        provider: .guest,
-                        fetchRemote: Self.shouldFetchRemoteForGuestIdentity(
-                            accountID: accountID,
-                            origin: .freshlyCreated
-                        )
-                    ) {
-                        return
-                    }
-                    if Auth.auth().currentUser?.uid == accountID {
-                        try? Auth.auth().signOut()
-                    }
-                }
-                guard Self.shouldEstablishLocalGuest(after: outcome) else {
-                    return
-                }
-            }
-            #endif
-        }
-
+        // A missing/corrupt isolated restore must never fall through to
+        // Firebase anonymous auth and replace the simulator-global user.
+        if await remoteGuestBootstrapOwnsOutcomeIfAllowed() { return }
         establishDurableLocalGuest()
+    }
+
+    /// Returns true when the provider either established the guest or produced
+    /// a terminal/cancelled outcome. A false result explicitly hands ownership
+    /// to the durable local-guest fallback.
+    private func remoteGuestBootstrapOwnsOutcomeIfAllowed() async -> Bool {
+        guard allowsFirebaseSDKSessionAccess else { return false }
+        #if canImport(FirebaseAuth)
+        guard isFirebaseAuthConfigured else { return false }
+
+        cancelActiveGuestBootstrap()
+        let generation = UUID()
+        activeGuestBootstrapGeneration = generation
+        let outcome = await boundedFirebaseAnonymousIdentity(
+            generation: generation
+        )
+        if case let .account(accountID, name) = outcome {
+            if completeSignIn(
+                accountID: accountID,
+                name: name,
+                provider: .guest,
+                fetchRemote: Self.shouldFetchRemoteForGuestIdentity(
+                    accountID: accountID,
+                    origin: .freshlyCreated
+                )
+            ) {
+                return true
+            }
+            if Auth.auth().currentUser?.uid == accountID {
+                try? Auth.auth().signOut()
+            }
+        }
+        return !Self.shouldEstablishLocalGuest(after: outcome)
+        #else
+        return false
+        #endif
     }
 
     func retryInitialAccountBootstrap() async {
@@ -900,6 +964,13 @@ class AuthManager: ObservableObject {
 
 #if canImport(AuthenticationServices)
     func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {
+        guard allowsFirebaseSDKSessionAccess else {
+            signInError = "Apple sign-in is unavailable in this test run."
+            #if canImport(FirebaseAuth)
+            currentNonce = nil
+            #endif
+            return
+        }
         switch result {
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
@@ -1161,14 +1232,7 @@ class AuthManager: ObservableObject {
         AutoGuidedFirstRep.cancelPendingLaunch()
         credentialIdentity = nil
         accountDataExportService.cleanupAll()
-#if canImport(GoogleSignIn)
-        GIDSignIn.sharedInstance.signOut()
-#endif
-#if canImport(FirebaseAuth)
-        if isFirebaseAuthConfigured {
-            try? Auth.auth().signOut()
-        }
-#endif
+        signOutProviderSessionsIfAllowed()
         // Deliberately does not clear an account-deletion fence. A generic
         // sign-out cannot prove whether a remote deletion request committed.
         clearStoredSession()
@@ -1181,37 +1245,68 @@ class AuthManager: ObservableObject {
         deferStoreSessionReset()
     }
 
+    private func signOutProviderSessionsIfAllowed() {
+        guard allowsFirebaseSDKSessionAccess else { return }
+        #if canImport(GoogleSignIn)
+        GIDSignIn.sharedInstance.signOut()
+        #endif
+        #if canImport(FirebaseAuth)
+        if isFirebaseAuthConfigured {
+            try? Auth.auth().signOut()
+        }
+        #endif
+    }
+
 #if DEBUG
-    /// Gives rendered coach-flow tests an authenticated, account-scoped owner
-    /// without reading/writing Firebase auth or replacing the real Keychain
-    /// session. The explicit launch flag prevents ordinary UI suites from
-    /// acquiring provider-work authority accidentally.
-    func useProcessLocalAuthenticatedCoachStateForUITesting(
+    /// Activates the AuthManager state for the seeded identity that
+    /// `KeychainHelper` established before singleton initialization. The
+    /// local-guest prefix also keeps provider work disabled.
+    func useProcessLocalSeededAccountStateForUITesting(
         arguments: [String]
     ) {
-        guard arguments.contains("UI_TESTING"),
-              arguments.contains("UI_TESTING_AUTHENTICATED_COACH") else {
+        guard Self.shouldUseProcessLocalSeededAccount(arguments: arguments),
+              KeychainHelper.hasPreparedUIAutomationIdentity(
+                  arguments: arguments
+              ) else {
             return
         }
 
-        processLocalUITestAccountID = "ui-test-coach-account"
         signInError = nil
         isSignedIn = true
         authProvider = .guest
         initialAccountHydrationState = .ready
     }
 
-    /// Presents a deterministic signed-out UI state without changing the
-    /// Keychain, Firebase session, or any account-scoped stores. The next
-    /// normal launch restores the real session unchanged.
-    func useProcessLocalSignedOutStateForUITesting(arguments: [String]) {
-        guard arguments.contains("UI_TESTING"),
-              arguments.contains("UI_TESTING_SIGNED_OUT") else { return }
+    /// Activates the AuthManager state for the isolated rendered coach fixture.
+    /// The explicit launch flag prevents ordinary UI suites from acquiring
+    /// provider-work authority accidentally.
+    func useProcessLocalAuthenticatedCoachStateForUITesting(
+        arguments: [String]
+    ) {
+        guard KeychainHelper.uiAutomationLaunchMode(arguments: arguments)
+                == .authenticatedCoach,
+              KeychainHelper.hasPreparedUIAutomationIdentity(
+                  arguments: arguments
+              ) else {
+            return
+        }
 
-        processLocalUITestAccountID = nil
+        signInError = nil
+        isSignedIn = true
+        authProvider = .guest
+        initialAccountHydrationState = .ready
+    }
+
+    /// Presents a deterministic signed-out UI state in the isolated test
+    /// service. The next normal launch restores the real session unchanged.
+    func useProcessLocalSignedOutStateForUITesting(arguments: [String]) {
+        guard KeychainHelper.uiAutomationLaunchMode(arguments: arguments)
+                == .signedOut else { return }
+
         signInError = nil
         isSignedIn = false
         authProvider = nil
+        initialAccountHydrationState = .ready
     }
 #endif
 
@@ -1597,6 +1692,9 @@ class AuthManager: ObservableObject {
 
     private func deleteFirebaseUserIfNeeded(expectedAccountID: String) async throws {
         #if canImport(FirebaseAuth)
+        guard allowsFirebaseSDKSessionAccess else {
+            throw AccountDeletionError.serviceUnavailable
+        }
         guard isFirebaseAuthConfigured, let user = Auth.auth().currentUser else { return }
         guard user.uid == expectedAccountID else {
             throw AccountDeletionError.remoteRejected
@@ -1797,84 +1895,12 @@ class AuthManager: ObservableObject {
                 }
             }
 
-            // A locally saved profile is enough to route immediately. When a
-            // remote-backed account has no local profile (for example, first
-            // use on a second device), finish one authoritative backend read
-            // before deciding that onboarding is genuinely needed.
-            let shouldAwaitRemoteProfile = Self.shouldAwaitAuthoritativeRemoteProfile(
-                fetchRemote: fetchRemote,
-                hasLocalProfile: CoachingProfileStore.shared.profile != nil
-            )
-
-            if shouldAwaitRemoteProfile {
-                let outcome = await self.boundedInitialRemoteProfileHydration(
-                    accountID: accountID,
-                    providerRawValue: providerRawValue
-                )
-                switch Self.initialRemoteProfileHydrationDisposition(for: outcome) {
-                case .ready:
-                    guard self.isCurrentHydration(
-                        generation: generation,
-                        accountID: accountID,
-                        providerRawValue: providerRawValue
-                    ) else {
-                        await BackendSyncManager.shared.finishRecommendationHydration(
-                            accountID: accountID,
-                            hydrationToken: generation
-                        )
-                        return
-                    }
-                    guard case .fetched(.success(let bootstrap)) = outcome else {
-                        await self.finishRecommendationHydration(
-                            accountID: accountID,
-                            generation: generation
-                        )
-                        return
-                    }
-                    self.applyBackendBootstrap(
-                        bootstrap,
-                        accountID: accountID,
-                        providerRawValue: providerRawValue,
-                        generation: generation,
-                        expectedProfile: nil,
-                        coachingContentJournalStatus: coachingContentJournalStatus,
-                        expectedRecommendationRevision: expectedRecommendationRevision,
-                        recommendationHydrationIsSafe: recommendationHydrationIsSafe,
-                        recommendationHydrationRequiresMerge: recommendationHydrationRequiresMerge
-                    )
-                    await self.finishRecommendationHydration(
-                        accountID: accountID,
-                        generation: generation
-                    )
-                case .retry:
-                    guard self.isCurrentHydration(
-                        generation: generation,
-                        accountID: accountID,
-                        providerRawValue: providerRawValue
-                    ) else {
-                        await BackendSyncManager.shared.finishRecommendationHydration(
-                            accountID: accountID,
-                            hydrationToken: generation
-                        )
-                        return
-                    }
-                    await self.finishRecommendationHydration(
-                        accountID: accountID,
-                        generation: generation
-                    )
-                    self.signInError = Self.remoteProfileRecoveryMessage
-                    self.initialAccountHydrationState = .failed(
-                        message: Self.remoteProfileRecoveryMessage
-                    )
-                    return
-                case .superseded:
-                    await BackendSyncManager.shared.finishRecommendationHydration(
-                        accountID: accountID,
-                        hydrationToken: generation
-                    )
-                    return
-                }
-            } else if fetchRemote {
+            // Local account data is the launch authority. Cloud hydration is a
+            // background reconciliation even when this device has no cached
+            // profile: an unavailable Firestore callback must never replace a
+            // usable offline route with a blocking retry screen. A profile
+            // saved while this read is pending still wins via expectedProfile.
+            if fetchRemote {
                 let expectedProfile = CoachingProfileStore.shared.profile
                 Task { @MainActor in
                     await self.fetchAndApplyBackendBootstrap(
@@ -1992,6 +2018,11 @@ class AuthManager: ObservableObject {
     /// The source namespace remains intact through every journal phase, which
     /// makes a missing/mismatched Firebase session safely rollbackable.
     private func recoverLocalGuestPromotionBeforeCredentialHydration() {
+        // Promotion recovery reads and can sign out Firebase's SDK-global
+        // current user. UI automation may recover its isolated Keychain
+        // identity below, but must leave this journal untouched and fail
+        // closed for provider work until a normal app launch owns Firebase.
+        guard allowsFirebaseSDKSessionAccess else { return }
         guard accountDeletionFenceRepository.pendingLookup() == .missing else {
             return
         }
@@ -2100,7 +2131,8 @@ class AuthManager: ObservableObject {
         message: String
     ) {
         #if canImport(FirebaseAuth)
-        if isFirebaseAuthConfigured,
+        if allowsFirebaseSDKSessionAccess,
+           isFirebaseAuthConfigured,
            Auth.auth().currentUser?.uid == journal.targetAccountID {
             try? Auth.auth().signOut()
         }
@@ -2137,7 +2169,8 @@ class AuthManager: ObservableObject {
         message: String
     ) {
         #if canImport(FirebaseAuth)
-        if isFirebaseAuthConfigured,
+        if allowsFirebaseSDKSessionAccess,
+           isFirebaseAuthConfigured,
            Auth.auth().currentUser?.uid == targetAccountID {
             try? Auth.auth().signOut()
         }
@@ -2194,6 +2227,12 @@ class AuthManager: ObservableObject {
               journal.targetAccountID == accountID,
               currentAccountID == accountID,
               currentAuthProviderRawValue == AuthProvider.guest.rawValue else {
+            return
+        }
+        guard allowsFirebaseSDKSessionAccess else {
+            localGuestCloudConnectionState = .failed(
+                message: "Live coaching stays disconnected in this test run. Your practice is unchanged."
+            )
             return
         }
 
@@ -2513,17 +2552,13 @@ class AuthManager: ObservableObject {
         }
     }
 
-    nonisolated static func shouldAwaitAuthoritativeRemoteProfile(
-        fetchRemote: Bool,
-        hasLocalProfile: Bool
-    ) -> Bool {
-        fetchRemote && !hasLocalProfile
-    }
-
     #if canImport(FirebaseAuth)
     private func boundedFirebaseAnonymousIdentity(
         generation: UUID
     ) async -> AnonymousFirebaseBootstrapOutcome {
+        guard allowsFirebaseSDKSessionAccess else {
+            return .unavailable
+        }
         let race = AnonymousFirebaseBootstrapRace()
         activeGuestBootstrapRace = race
 
@@ -2684,7 +2719,8 @@ class AuthManager: ObservableObject {
         }
 
         #if canImport(FirebaseAuth)
-        if isFirebaseAuthConfigured,
+        if allowsFirebaseSDKSessionAccess,
+           isFirebaseAuthConfigured,
            let firebaseUID = Auth.auth().currentUser?.uid,
            firebaseUID != fence.accountID {
             // A stale or newly authenticated B session is not deletion
@@ -2720,7 +2756,8 @@ class AuthManager: ObservableObject {
 
     private func signOutAttemptedFirebaseIdentity(accountID: String) {
         #if canImport(FirebaseAuth)
-        guard isFirebaseAuthConfigured,
+        guard allowsFirebaseSDKSessionAccess,
+              isFirebaseAuthConfigured,
               Auth.auth().currentUser?.uid == accountID else { return }
         try? Auth.auth().signOut()
         #endif
@@ -2814,7 +2851,9 @@ class AuthManager: ObservableObject {
 
     private func restoreFirebaseSessionIfAvailable() {
 #if canImport(FirebaseAuth)
-        guard isFirebaseAuthConfigured, let user = Auth.auth().currentUser else { return }
+        guard allowsFirebaseSDKSessionAccess,
+              isFirebaseAuthConfigured,
+              let user = Auth.auth().currentUser else { return }
         let provider = firebaseProvider(for: user) ?? authProvider ?? .google
         let persistedAccountID = currentAccountID
         let persistedProviderRawValue = currentAuthProviderRawValue
@@ -2841,13 +2880,39 @@ class AuthManager: ObservableObject {
         let race = InitialRemoteProfileHydrationRace()
         activeInitialRemoteProfileHydrationRace = race
 
-        // Deliberately unstructured. A structured timeout race would still
-        // wait for a cancelled Firestore continuation that never resumes.
-        Task { @MainActor in
-            let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
+        let fetchHandle: InitialRemoteProfileFetchHandle
+        if let activeInitialRemoteProfileFetch,
+           activeInitialRemoteProfileFetch.accountID == accountID,
+           activeInitialRemoteProfileFetch.providerRawValue == providerRawValue {
+            fetchHandle = activeInitialRemoteProfileFetch
+        } else {
+            activeInitialRemoteProfileFetch?.task.cancel()
+            let requestID = UUID()
+            let task = Task {
+                await BackendSyncManager.shared.fetchBootstrap(
+                    accountID: accountID,
+                    providerRawValue: providerRawValue
+                )
+            }
+            fetchHandle = InitialRemoteProfileFetchHandle(
+                requestID: requestID,
                 accountID: accountID,
-                providerRawValue: providerRawValue
+                providerRawValue: providerRawValue,
+                task: task
             )
+            activeInitialRemoteProfileFetch = fetchHandle
+        }
+
+        // Firestore's callback bridge is not reliably cancellation-aware while
+        // offline. Reuse one request per identity, and keep this waiter weak so
+        // a deadline does not retain a closed race until the SDK responds.
+        Task { @MainActor [weak self, weak race] in
+            let bootstrap = await fetchHandle.task.value
+            guard let self, let race else { return }
+            if self.activeInitialRemoteProfileFetch?.requestID
+                == fetchHandle.requestID {
+                self.activeInitialRemoteProfileFetch = nil
+            }
             race.resolve(.fetched(bootstrap))
         }
 
@@ -2899,19 +2964,6 @@ class AuthManager: ObservableObject {
         return .pending(CoachingContentPendingSnapshot(
             documentIDs: documentIDs
         ))
-    }
-
-    static func initialRemoteProfileHydrationDisposition(
-        for outcome: InitialRemoteProfileHydrationOutcome
-    ) -> InitialRemoteProfileHydrationDisposition {
-        switch outcome {
-        case .fetched(.success):
-            return .ready
-        case .fetched(.unavailable), .timedOut:
-            return .retry
-        case .superseded:
-            return .superseded
-        }
     }
 
     private func fetchAndApplyBackendBootstrap(
@@ -3111,15 +3163,36 @@ class AuthManager: ObservableObject {
     }
 
     private func initializeInstallStateIfNeeded() {
+        #if DEBUG
+        // UI automation has its own Keychain namespace and resets it before
+        // this singleton initializes. Running the production install cleanup
+        // here would erase the fixture identity that account-scoped stores
+        // must resolve, and marking the production flag would weaken the next
+        // normal first-launch cleanup.
+        guard Self.shouldInitializeProductionInstallState(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            return
+        }
+        #endif
         guard !UserDefaults.standard.bool(forKey: installInitializedKey) else { return }
         clearStoredSession()
         #if canImport(FirebaseAuth)
-        if isFirebaseAuthConfigured {
+        if allowsFirebaseSDKSessionAccess,
+           isFirebaseAuthConfigured {
             try? Auth.auth().signOut()
         }
         #endif
         UserDefaults.standard.set(true, forKey: installInitializedKey)
     }
+
+    #if DEBUG
+    nonisolated static func shouldInitializeProductionInstallState(
+        arguments: [String]
+    ) -> Bool {
+        !arguments.contains("UI_TESTING")
+    }
+    #endif
 
 #if canImport(GoogleSignIn)
     private func configureGoogleSignInIfAvailable() {
@@ -3180,6 +3253,9 @@ class AuthManager: ObservableObject {
         credential: FirebaseAuth.AuthCredential,
         provider: AuthProvider
     ) async throws -> FirebaseAuth.AuthDataResult {
+        guard allowsFirebaseSDKSessionAccess else {
+            throw URLError(.userAuthenticationRequired)
+        }
         let firebaseUser = Auth.auth().currentUser
         switch Self.firebaseCredentialStrategy(
             persistedAccountID: currentAccountID,
@@ -3202,7 +3278,10 @@ class AuthManager: ObservableObject {
     private func signInWithFirebase(
         credential: FirebaseAuth.AuthCredential
     ) async throws -> FirebaseAuth.AuthDataResult {
-        try await withCheckedThrowingContinuation { continuation in
+        guard allowsFirebaseSDKSessionAccess else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
             Auth.auth().signIn(with: credential) { authResult, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -3227,7 +3306,10 @@ class AuthManager: ObservableObject {
         _ user: FirebaseAuth.User,
         with credential: FirebaseAuth.AuthCredential
     ) async throws -> FirebaseAuth.AuthDataResult {
-        try await withCheckedThrowingContinuation { continuation in
+        guard allowsFirebaseSDKSessionAccess else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
             user.link(with: credential) { authResult, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -3477,6 +3559,11 @@ struct BackendAuthHeaders: Equatable, Sendable {
               cleaned(providerRawValue) == providerRawValue else {
             return nil
         }
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            return nil
+        }
 
         #if canImport(FirebaseAuth) && canImport(FirebaseCore)
         if FirebaseApp.app() != nil {
@@ -3545,6 +3632,11 @@ struct BackendAuthHeaders: Equatable, Sendable {
         let normalizedProvider = cleaned(providerRawValue)
         guard normalizedAccountID == accountID,
               normalizedProvider == providerRawValue else {
+            return nil
+        }
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
             return nil
         }
 
@@ -3624,6 +3716,11 @@ struct BackendAuthHeaders: Equatable, Sendable {
     }
 
     private static func currentFirebaseIDToken() async -> String? {
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            return nil
+        }
         #if canImport(FirebaseAuth)
         #if canImport(FirebaseCore)
         guard FirebaseApp.app() != nil else { return nil }

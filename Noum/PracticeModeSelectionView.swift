@@ -801,7 +801,13 @@ struct PracticeModeSelectionView: View {
             )
 
             if !showsFloatingStartCTA {
-                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: recommendation.title), tint: AppColor.brandBlue) {
+                PrimaryCTA(
+                    PracticeModePrescriptionCopy.beginLabel(
+                        for: recommendation.title
+                    ),
+                    tint: AppColor.recommendationActionFill,
+                    labelTint: AppColor.recommendationActionText
+                ) {
                     // Commitment haptic (A2 register map) — the hero Begin
                     // commits to a rep exactly like the floating Start CTA,
                     // so it shares the drillStart beat.
@@ -864,7 +870,9 @@ struct PracticeModeSelectionView: View {
                 HStack(spacing: Spacing.xs) {
                     Text("Why this rep?")
                         .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlueOnWash)
+                        .foregroundStyle(
+                            AppColor.recommendationDisclosureText
+                        )
                     Spacer(minLength: 0)
                     Image(systemName: showRecommendationReason ? "chevron.up" : "chevron.down")
                         .font(Typography.captionSmall.weight(.bold))

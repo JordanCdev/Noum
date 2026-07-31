@@ -271,13 +271,11 @@ struct PostRepDebriefCard: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             if visibility.showsWhatHeld, let win = content.win {
                 whatHeld(win)
-                    .accessibilityIdentifier("summary.win.card")
 
                 Divider()
             }
 
             coachRead
-                .accessibilityIdentifier("summary.coachRead")
 
             if visibility.showsNextMove {
                 Divider()
@@ -303,6 +301,7 @@ struct PostRepDebriefCard: View {
     private var coachRead: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             debriefHeading("One observation", symbol: "text.magnifyingglass", tint: AppColor.brandBlue)
+                .accessibilityIdentifier("summary.coachRead")
 
             if let change = revisedChange {
                 HStack(alignment: .top, spacing: 6) {
@@ -324,6 +323,7 @@ struct PostRepDebriefCard: View {
                 .font(Typography.body)
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("summary.coachRead.observation")
 
             if let copy = content.thinEvidenceCopy {
                 Text(copy)
@@ -354,6 +354,7 @@ struct PostRepDebriefCard: View {
                 symbol: "quote.bubble.fill",
                 tint: AppColor.positive
             )
+            .accessibilityIdentifier("summary.win.card")
 
             if let quote = win.quote, !quote.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
@@ -361,10 +362,12 @@ struct PostRepDebriefCard: View {
                         .font(Typography.body.italic())
                         .foregroundStyle(AppColor.textPrimary.opacity(0.86))
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("summary.win.quote")
                     if win.quoteIsVerified {
                         Text(content.provenanceLabel ?? "Source: original transcript")
                             .font(Typography.captionSmall)
                             .foregroundStyle(AppColor.textSecondary)
+                            .accessibilityIdentifier("summary.win.provenance")
                     }
                 }
                 .padding(.leading, Spacing.sm)

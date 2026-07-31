@@ -60,7 +60,7 @@ enum ProgressOutcomeKind: String, CaseIterable {
         case .personalBest: return "Personal best"
         case .practiceLevel: return "Practice volume"
         case .achievement: return "Milestone recorded"
-        case .landmark: return "Path landmark"
+        case .landmark: return "Path step"
         }
     }
 
@@ -365,7 +365,7 @@ struct AchievementsTreeView: View {
                 Text("Current path complete")
                     .font(Typography.subheadline.weight(.semibold))
                     .foregroundStyle(AppColor.textPrimary)
-                Text("Your recorded evidence has reached every current landmark.")
+                Text("Your recorded evidence has reached every current path step.")
                     .font(Typography.caption)
                     .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -525,7 +525,7 @@ struct AchievementsTreeView: View {
 
             if showFullHistory {
                 VStack(alignment: .leading, spacing: Spacing.cardGap) {
-                    sectionHeading("Journey landmarks")
+                    sectionHeading("Journey steps")
                     pathLandmarkList
 
                     sectionHeading("Practice milestones")

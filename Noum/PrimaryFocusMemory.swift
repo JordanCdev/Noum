@@ -1610,6 +1610,14 @@ struct CoachCaseFile: Codable, Equatable {
         return String(trimmed.prefix(maximumLength))
     }
 
+    private static func sentence(_ fragment: String) -> String {
+        guard let last = fragment.last,
+              !".!?…".contains(last) else {
+            return fragment
+        }
+        return fragment + "."
+    }
+
     /// Window (in days) within which an upcoming moment is "preparing for"
     /// relevant to the durable case. Mirrors the per-turn `BIG MOMENT` gate in
     /// `CoachContextBuilder` (0...60 days) so the case file and the per-turn
@@ -1677,15 +1685,17 @@ struct CoachCaseFile: Codable, Equatable {
         case .reviewIntervention:
             // Enough followed reps have landed and the review window is due —
             // the anchor names a review, not a fresh start.
-            return target.map { "Time to review this: \(plan). Target was \($0)." }
-                ?? "Time to review this: \(plan)."
+            return target.map {
+                "Time to review this: \(sentence(plan)) Target was \(sentence($0))"
+            } ?? "Time to review this: \(sentence(plan))"
         case .adaptIntervention:
             // The last attempt needs adapting before repeating it unchanged.
-            return "Picking back up — last time this needed adapting: \(plan)."
+            return "Picking back up — last time this needed adapting: \(sentence(plan))"
         default:
             // A standing, still-active plan: the common continuity case.
-            return target.map { "Picking up where we left off: \(plan). Target: \($0)." }
-                ?? "Picking up where we left off: \(plan)."
+            return target.map {
+                "Picking up where we left off: \(sentence(plan)) Target: \(sentence($0))"
+            } ?? "Picking up where we left off: \(sentence(plan))"
         }
     }
 }

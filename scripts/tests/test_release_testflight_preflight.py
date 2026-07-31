@@ -236,10 +236,10 @@ _ = AppStore.sync()
         )
 
     def test_parse_build_settings_keeps_target_sections(self) -> None:
-        output = """Build settings for action build and target Noum:\n    PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum\nBuild settings for action build and target NoumWidget:\n    PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.NoumWidget\n"""
+        output = """Build settings for action build and target Noum:\n    PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum\nBuild settings for action build and target NoumWidget:\n    PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.widget\n"""
         parsed = release.parse_build_settings(output)
-        self.assertEqual(parsed["Noum"]["PRODUCT_BUNDLE_IDENTIFIER"], "com.jordancoaten.noum")
-        self.assertEqual(parsed["NoumWidget"]["PRODUCT_BUNDLE_IDENTIFIER"], "com.jordancoaten.noum.NoumWidget")
+        self.assertEqual(parsed["Noum"]["PRODUCT_BUNDLE_IDENTIFIER"], "uk.co.otherpath.noum")
+        self.assertEqual(parsed["NoumWidget"]["PRODUCT_BUNDLE_IDENTIFIER"], "uk.co.otherpath.noum.widget")
 
     def test_source_commit_binding_requires_a_clean_git_checkout(self) -> None:
         repository = self.root / "source-binding-repository"

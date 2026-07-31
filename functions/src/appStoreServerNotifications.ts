@@ -29,7 +29,7 @@ const BASE64_PATTERN = new RegExp(
   "u"
 );
 
-export const APP_STORE_NOTIFICATION_BUNDLE_ID = "com.jordancoaten.noum";
+export const APP_STORE_NOTIFICATION_BUNDLE_ID = "uk.co.otherpath.noum";
 export const APP_STORE_NOTIFICATION_PRODUCT_IDS = Object.freeze({
   monthly: "com.noum.pro.monthly",
   annual: "com.noum.pro.annual",

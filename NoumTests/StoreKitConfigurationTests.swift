@@ -32,6 +32,14 @@ struct StoreKitConfigurationTests {
             .appendingPathComponent("Noum-StoreKit.xcscheme", isDirectory: false)
     }
 
+    private static var standardSchemeURL: URL {
+        repositoryRoot
+            .appendingPathComponent("Noum.xcodeproj", isDirectory: true)
+            .appendingPathComponent("xcshareddata", isDirectory: true)
+            .appendingPathComponent("xcschemes", isDirectory: true)
+            .appendingPathComponent("Noum.xcscheme", isDirectory: false)
+    }
+
     private static var projectURL: URL {
         repositoryRoot
             .appendingPathComponent("Noum.xcodeproj", isDirectory: true)
@@ -67,19 +75,26 @@ struct StoreKitConfigurationTests {
         #expect(annual.introductoryOffer?.subscriptionPeriod == "P1W")
     }
 
-    @Test func sharedSchemeUsesTheCheckedInConfigurationForTestsAndRuns() throws {
-        let scheme = try String(contentsOf: Self.schemeURL, encoding: .utf8)
-        // Xcode resolves scheme service references from the .xcodeproj bundle.
-        let reference = "../Noum/Configuration/Noum.storekit"
-        let resolvedReference = Self.repositoryRoot
-            .appendingPathComponent("Noum.xcodeproj", isDirectory: true)
+    @Test func sharedSchemesUseTheCheckedInConfigurationForTestsAndRuns() throws {
+        // Xcode serializes shared scheme service references relative to the
+        // xcshareddata container, not the .xcodeproj bundle itself. A single
+        // ".." looks plausible in source but Xcode reports that path missing
+        // and silently launches with an empty StoreKit catalog.
+        let reference = "../../Noum/Configuration/Noum.storekit"
+        let resolvedReference = Self.schemeURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent(reference, isDirectory: false)
             .standardizedFileURL
 
-        #expect(scheme.components(separatedBy: reference).count - 1 == 2)
-        #expect(scheme.contains("<TestAction"))
-        #expect(scheme.contains("<LaunchAction"))
+        for url in [Self.standardSchemeURL, Self.schemeURL] {
+            let scheme = try String(contentsOf: url, encoding: .utf8)
+            #expect(scheme.components(separatedBy: reference).count - 1 == 2)
+            #expect(scheme.contains("<TestAction"))
+            #expect(scheme.contains("<LaunchAction"))
+        }
         #expect(resolvedReference == Self.configurationURL.standardizedFileURL)
+        #expect(FileManager.default.fileExists(atPath: resolvedReference.path))
     }
 
     @Test func sharedSchemesNeverCarryAppCheckDebugCredentials() throws {

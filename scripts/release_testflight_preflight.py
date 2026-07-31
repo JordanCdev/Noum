@@ -31,28 +31,28 @@ from typing import Any, Callable, Iterable
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_ROOT.parent
-EXPECTED_APP_GROUP = "group.com.jordancoaten.noum"
+EXPECTED_APP_GROUP = "group.uk.co.otherpath.noum"
 EXPECTED_TARGETS = {
     "Noum": {
-        "bundle": "com.jordancoaten.noum",
+        "bundle": "uk.co.otherpath.noum",
         "entitlements": "Noum.entitlements",
         "skip_install": "NO",
         "wrapper": "app",
     },
     "NoumWidget": {
-        "bundle": "com.jordancoaten.noum.NoumWidget",
+        "bundle": "uk.co.otherpath.noum.widget",
         "entitlements": "NoumWidget/NoumWidget.entitlements",
         "skip_install": "YES",
         "wrapper": "appex",
     },
     "NoumMessages": {
-        "bundle": "com.jordancoaten.noum.NoumMessages",
+        "bundle": "uk.co.otherpath.noum.NoumMessages",
         "entitlements": "NoumMessages/NoumMessages.entitlements",
         "skip_install": "YES",
         "wrapper": "appex",
     },
     "NoumWatch": {
-        "bundle": "com.jordancoaten.noum.watchkitapp",
+        "bundle": "uk.co.otherpath.noum.watchkitapp",
         "entitlements": "NoumWatch/NoumWatch.entitlements",
         "skip_install": "NO",
         "wrapper": "app",

@@ -913,7 +913,13 @@ actor BackendSyncManager {
             )
         }
         #if canImport(FirebaseAuth)
-        let firebaseUID = firebaseIsConfigured ? Auth.auth().currentUser?.uid : nil
+        let firebaseUID =
+            firebaseIsConfigured
+                && AuthManager.firebaseSDKSessionAccessAllowed(
+                    arguments: ProcessInfo.processInfo.arguments
+                )
+            ? Auth.auth().currentUser?.uid
+            : nil
         #else
         let firebaseUID: String? = nil
         #endif
@@ -1473,6 +1479,12 @@ actor BackendSyncManager {
         expectedAccountID: String,
         requestID: UUID
     ) async throws -> BackendAccountDeletionOutcome {
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            throw BackendAccountDeletionError
+                .verifiedPreflightRequiresRecentAuthentication
+        }
         guard FirebaseApp.app() != nil else {
             throw BackendAccountDeletionError.notConfigured
         }
@@ -1913,7 +1925,10 @@ actor BackendSyncManager {
 
     #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
     private func requireFirebaseAccount(_ expectedAccountID: String? = nil) throws {
-        guard FirebaseApp.app() != nil,
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+                  arguments: ProcessInfo.processInfo.arguments
+              ),
+              FirebaseApp.app() != nil,
               let firebaseUID = Auth.auth().currentUser?.uid else {
             throw SocialAuthorityError.unauthenticated
         }
@@ -2082,10 +2097,15 @@ private extension BackendSyncManager {
             // Server-only reads make a successful missing profile authoritative.
             // Cached absence while offline remains `.unavailable`, never a cue
             // to overwrite a delayed cloud profile through onboarding.
-            async let profileDocument = getDocument(
+            // Read the routing-critical profile first. If Firestore is offline,
+            // this leaves one pending SDK callback instead of fanning out four
+            // uncancellable reads that retries can multiply.
+            let profileSnapshot = try await getDocument(
                 userRef.collection("profile").document("main"),
                 source: .server
             )
+            guard let profileSnapshot else { return .unavailable }
+
             async let progressionDocument = getDocument(
                 userRef.collection("progress").document("main"),
                 source: .server
@@ -2099,13 +2119,11 @@ private extension BackendSyncManager {
                 source: .server
             )
 
-            let profileSnapshot = try await profileDocument
             let progressionSnapshot = try await progressionDocument
             let sessionSnapshots = try await sessionDocuments
             let recommendationStateSnapshot = try await recommendationStateDocument
 
-            guard let profileSnapshot,
-                  let recommendationStateSnapshot else { return .unavailable }
+            guard let recommendationStateSnapshot else { return .unavailable }
             let profile: CoachingProfile?
             if profileSnapshot.exists {
                 guard let decoded = try decodeDocument(CoachingProfile.self, from: profileSnapshot.data()) else {
@@ -2334,6 +2352,11 @@ private extension BackendSyncManager {
         forParticipant participantID: String
     ) async -> BackendAsyncChallengeFetchResult {
         #if canImport(FirebaseAuth)
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            return .unavailable
+        }
         // Firestore rules prove query safety from `request.auth.uid in
         // participantIDs`. Refuse a legacy local UUID here rather than issuing
         // a query that can never satisfy that authorization contract.

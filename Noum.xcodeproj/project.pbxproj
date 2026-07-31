@@ -983,7 +983,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Noum;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKApplication = YES;
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jordancoaten.noum;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = uk.co.otherpath.noum;
 				INFOPLIST_KEY_WKWatchOnly = NO;
 				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.watchkitapp;
@@ -1052,7 +1052,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Noum;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKApplication = YES;
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jordancoaten.noum;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = uk.co.otherpath.noum;
 				INFOPLIST_KEY_WKWatchOnly = NO;
 				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = uk.co.otherpath.noum.watchkitapp;

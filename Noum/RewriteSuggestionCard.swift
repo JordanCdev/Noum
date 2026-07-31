@@ -119,6 +119,7 @@ struct RewriteSuggestionCard: View {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(AppColor.pro)
+                .accessibilityHidden(true)
             Text("One-step \(weakness.humanLabel) upgrade")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
@@ -180,7 +181,7 @@ struct RewriteSuggestionCard: View {
                     revision: oneStep.text
                 ),
                 detail: "Changed words are highlighted · meaning and voice preserved",
-                tint: AppColor.proText,
+                tint: AppColor.reviewTranscriptAccentText,
                 identifier: "rewrite.oneStep",
                 plainText: oneStep.text,
                 spokenDiff: TranscriptChangeHighlighter
@@ -334,13 +335,13 @@ struct RewriteSuggestionCard: View {
             Text("TARGET FOR THE RETRY")
                 .font(Typography.micro.weight(.heavy))
                 .tracking(0.5)
-                .foregroundStyle(AppColor.proText)
+                .foregroundStyle(AppColor.reviewTranscriptAccentText)
             Text(target.lever.successMeasure)
                 .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(AppColor.textPrimary)
+                .foregroundStyle(AppColor.reviewTranscriptBodyText)
             Text("Noum will score your retry against the original rep; the target itself isn't scored.")
                 .font(Typography.micro)
-                .foregroundStyle(AppColor.textSecondary)
+                .foregroundStyle(AppColor.reviewTranscriptDetailText)
         }
         .padding(.horizontal, Spacing.xs)
         .accessibilityElement(children: .combine)
@@ -613,12 +614,12 @@ struct ReviewTranscriptStep: View {
                 .foregroundStyle(tint)
             text
                 .font(hero ? Typography.cardTitle.weight(.semibold) : Typography.body.weight(.medium))
-                .foregroundStyle(AppColor.textPrimary)
+                .foregroundStyle(AppColor.reviewTranscriptBodyText)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
             Text(detail)
                 .font(Typography.micro)
-                .foregroundStyle(AppColor.textSecondary)
+                .foregroundStyle(AppColor.reviewTranscriptDetailText)
                 .fixedSize(horizontal: false, vertical: true)
                 .opacity(detailVisible ? 1 : 0)
         }
@@ -928,6 +929,7 @@ struct LockedRewritePreviewCard: View {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(AppColor.pro)
+                    .accessibilityHidden(true)
                 Text("Try this \(weakness.humanLabel)")
                     .font(Typography.cardTitle)
                     .foregroundStyle(.primary)

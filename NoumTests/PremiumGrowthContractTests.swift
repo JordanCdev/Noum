@@ -57,6 +57,21 @@ struct PremiumGrowthContractTests {
         )
     }
 
+    @Test func productLoadFailuresStayHonestAndActionable() {
+        #expect(
+            PremiumProductLoadIssue.emptyCatalog.userMessage
+                .contains("monthly or annual plan")
+        )
+        #expect(
+            PremiumProductLoadIssue.storefrontRequestFailed.userMessage
+                .contains("couldn’t contact the App Store")
+        )
+        #expect(
+            PremiumProductLoadIssue.emptyCatalog
+                != .storefrontRequestFailed
+        )
+    }
+
     @Test func eligibleFreeTrialUsesStoreProjectedPeriodAndRenewalCopy() {
         let presentation = PremiumProductPresentation(
             id: PremiumManager.annualID,

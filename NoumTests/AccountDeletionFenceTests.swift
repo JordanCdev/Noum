@@ -461,14 +461,28 @@ struct AccountDeletionFenceTests {
         let bootstrap = try sourceSlice(
             in: source,
             from: "    func bootstrapInitialAccountIfNeeded() async {",
-            to: "    func retryInitialAccountBootstrap() async {"
+            to: "    /// Returns true when the provider either established"
         )
         try expectOrdered([
             "restorePendingDeletionIdentityIfNeeded()",
             "hasDurableIdentity(",
-            "boundedFirebaseAnonymousIdentity",
+            "remoteGuestBootstrapOwnsOutcomeIfAllowed()",
             "establishDurableLocalGuest()",
         ], in: bootstrap)
+        let remoteBootstrap = try sourceSlice(
+            in: source,
+            from: "    private func remoteGuestBootstrapOwnsOutcomeIfAllowed() async -> Bool {",
+            to: "    func retryInitialAccountBootstrap() async {"
+        )
+        try expectNoGlobalAuthAccess(
+            before: "guard allowsFirebaseSDKSessionAccess else",
+            in: remoteBootstrap
+        )
+        try expectOrdered([
+            "guard allowsFirebaseSDKSessionAccess else",
+            "boundedFirebaseAnonymousIdentity",
+            "Auth.auth().currentUser",
+        ], in: remoteBootstrap)
 
         let restore = try sourceSlice(
             in: source,
@@ -480,6 +494,35 @@ struct AccountDeletionFenceTests {
             "KeychainHelper.load(key: accountKey)",
             "hydrateStoresForCurrentAccount(",
         ], in: restore)
+
+        let promotionRecovery = try sourceSlice(
+            in: source,
+            from: "    private func recoverLocalGuestPromotionBeforeCredentialHydration() {",
+            to: "    private func rollbackLocalGuestPromotionBeforeHydration("
+        )
+        try expectNoGlobalAuthAccess(
+            before: "guard allowsFirebaseSDKSessionAccess else { return }",
+            in: promotionRecovery
+        )
+        try expectOrdered([
+            "guard allowsFirebaseSDKSessionAccess else { return }",
+            "Auth.auth().currentUser",
+        ], in: promotionRecovery)
+
+        let pendingDeletionRecovery = try sourceSlice(
+            in: source,
+            from: "    private func restorePendingDeletionIdentity(",
+            to: "    private func signOutAttemptedFirebaseIdentity("
+        )
+        try expectNoGlobalAuthAccess(
+            before: "if allowsFirebaseSDKSessionAccess,",
+            in: pendingDeletionRecovery
+        )
+        try expectOrdered([
+            "if allowsFirebaseSDKSessionAccess,",
+            "Auth.auth().currentUser",
+            "Auth.auth().signOut()",
+        ], in: pendingDeletionRecovery)
 
         let hydration = try sourceSlice(
             in: source,
@@ -596,6 +639,16 @@ struct AccountDeletionFenceTests {
             ))
             cursor = range.upperBound
         }
+    }
+
+    private func expectNoGlobalAuthAccess(
+        before guardNeedle: String,
+        in source: String
+    ) throws {
+        let guardRange = try #require(source.range(of: guardNeedle))
+        let prefix = source[..<guardRange.lowerBound]
+        #expect(!prefix.contains("Auth.auth()"))
+        #expect(!prefix.contains("GIDSignIn.sharedInstance"))
     }
 
     private final class MemoryFenceStorage: AccountDeletionFenceStorage {

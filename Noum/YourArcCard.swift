@@ -255,10 +255,10 @@ struct YourArcCard: View {
     ///      current node.
     private var landmarkClause: String {
         if landmarkWithinReach {
-            return "One landmark from your next chapter."
+            return "One step from your next chapter."
         }
         if let title = pathProgress.currentNode?.node.title, !title.isEmpty {
-            return "Next landmark: \(title)."
+            return "Next step: \(title)."
         }
         return "Stay on the run."
     }
@@ -446,7 +446,7 @@ struct YourArcCard: View {
                 diameter: 12,
                 style: .stroked,
                 color: AppColor.brandBlue,
-                positionLabel: "Next landmark",
+                positionLabel: "Next step",
                 detailLabel: landmarkLabel
             )
         )

@@ -64,6 +64,14 @@ final class DeepgramProvider: TranscriptionProvider, @unchecked Sendable {
     }
 
     private func fetchCallableToken() async throws -> DeepgramAccessToken {
+        // Firebase Auth is SDK-global, unlike Noum's isolated UI-automation
+        // Keychain service. Never let a rendered test borrow the simulator's
+        // normal user when Functions attaches ambient authentication.
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            throw DeepgramError.authenticationRequired
+        }
         #if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(FirebaseFunctions)
         guard FirebaseApp.app() != nil, Auth.auth().currentUser != nil else {
             throw DeepgramError.authenticationRequired

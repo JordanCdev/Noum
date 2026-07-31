@@ -1630,7 +1630,7 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("PATH")
             lines.append("- Chapter: \(status.node.tier.title).")
-            lines.append("- Current landmark: \(status.node.title).")
+            lines.append("- Current path step: \(status.node.title).")
             if let phrase = pathGatingPhrase {
                 lines.append("- Gating: \(phrase)")
             }

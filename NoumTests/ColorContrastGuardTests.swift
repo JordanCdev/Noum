@@ -90,6 +90,19 @@ struct ColorContrastGuardTests {
         )
     }
 
+    static func interpolate(
+        from start: (Double, Double, Double),
+        to end: (Double, Double, Double),
+        fraction: Double
+    ) -> (Double, Double, Double) {
+        let progress = min(1, max(0, fraction))
+        return (
+            start.0 + (end.0 - start.0) * progress,
+            start.1 + (end.1 - start.1) * progress,
+            start.2 + (end.2 - start.2) * progress
+        )
+    }
+
     /// Self-check on the harness. If `UIColor(Color)` lost the dynamic provider,
     /// every token would resolve to its light value and the whole suite would
     /// pass while proving nothing — the exact false-green this file exists to
@@ -177,6 +190,56 @@ struct ColorContrastGuardTests {
         // Small brand-blue copy has its own register precisely because the
         // standard one does not clear the small-text bar on washed cards.
         all.append(Pairing(label: "brandBlueOnWash on cardBackground", foreground: AppColor.brandBlueOnWash, background: AppColor.cardBackground, requirement: .normalText))
+        // Profile's Yes / Not yet feedback choices use standard brandBlue on
+        // an opaque cardBackground capsule, not on a translucent wash. Pin
+        // that exact small-text pairing in both appearances (7.28:1 light,
+        // 4.65:1 dark).
+        all.append(Pairing(label: "brandBlue on cardBackground", foreground: AppColor.brandBlue, background: AppColor.cardBackground, requirement: .normalText))
+        // Focused-practice result captions render over the black canvas. Keep
+        // their semantic secondary register above the small-text threshold.
+        all.append(Pairing(label: "focusedTextSecondary on focused black canvas", foreground: AppColor.focusedTextSecondary, background: .black, requirement: .normalText))
+        all.append(Pairing(label: "filler warning red on focused black canvas", foreground: .red, background: .black, requirement: .normalText))
+        // Every skill routes through this semantic CTA pair rather than
+        // assuming its decorative tint can carry white text.
+        for skill in SkillArea.allCases {
+            all.append(Pairing(
+                label: "\(skill.rawValue) mini-drill action",
+                foreground: skill.miniDrillActionForeground,
+                background: skill.miniDrillActionFill,
+                requirement: .normalText
+            ))
+            all.append(Pairing(
+                label: "\(skill.rawValue) mini-drill focused accent",
+                foreground: skill.miniDrillFocusedAccent,
+                background: .black,
+                requirement: .largeTextOrComponent
+            ))
+        }
+
+        all.append(Pairing(label: "recommendation action text on fill", foreground: AppColor.recommendationActionText, background: AppColor.recommendationActionFill, requirement: .largeTextOrComponent))
+        all.append(Pairing(label: "recommendation disclosure on card", foreground: AppColor.recommendationDisclosureText, background: AppColor.cardBackground, requirement: .normalText))
+        all.append(Pairing(label: "review story label on card", foreground: AppColor.reviewStoryLabelText, background: AppColor.cardBackground, requirement: .normalText))
+        all.append(Pairing(label: "profile metric label on card", foreground: AppColor.profileMetricLabelText, background: AppColor.cardBackground, requirement: .normalText))
+        all.append(Pairing(label: "coach plan text on canvas", foreground: AppColor.coachPlanText, background: AppColor.screenBackground, requirement: .normalText))
+        all.append(Pairing(label: "review transcript accent on card", foreground: AppColor.reviewTranscriptAccentText, background: AppColor.cardBackground, requirement: .normalText))
+        all.append(Pairing(label: "review transcript body on card", foreground: AppColor.reviewTranscriptBodyText, background: AppColor.cardBackground, requirement: .normalText))
+        all.append(Pairing(label: "review transcript detail on card", foreground: AppColor.reviewTranscriptDetailText, background: AppColor.cardBackground, requirement: .normalText))
+
+        // Home is the one marquee gradient. Its audit exceptions use these
+        // exact production roles; resolve each against both real stops so a
+        // style regression cannot hide behind the native gradient sampler.
+        for (roleLabel, foreground) in [
+            ("homeHeroTitleText", AppColor.homeHeroTitleText),
+            ("homeHeroSubtitleText", AppColor.homeHeroSubtitleText),
+            ("homeHeroMetaText", AppColor.homeHeroMetaText),
+            (
+                "homeHeroSecondaryActionText",
+                AppColor.homeHeroSecondaryActionText
+            ),
+        ] {
+            all.append(Pairing(label: "\(roleLabel) on heroGradientStart", foreground: foreground, background: AppColor.heroGradientStart, requirement: .normalText))
+            all.append(Pairing(label: "\(roleLabel) on heroGradientEnd", foreground: foreground, background: AppColor.heroGradientEnd, requirement: .normalText))
+        }
         return all
     }
 
@@ -201,6 +264,204 @@ struct ColorContrastGuardTests {
         #expect(
             failures.isEmpty,
             Comment(rawValue: "Contrast failures:\n" + failures.joined(separator: "\n"))
+        )
+    }
+
+    @MainActor
+    @Test("Progression chart marks clear every plot layer in both appearances")
+    func progressionChartMarksClearEveryPlotLayer() {
+        typealias Series = ProgressionChartsCard.ChartSeries
+        typealias VisualPolicy = ProgressionChartsCard.ChartVisualPolicy
+        typealias RGB = (Double, Double, Double)
+
+        let sampleCount = 20
+        let requiredPracticalTarget = 3.5
+        #expect(
+            VisualPolicy.practicalContrastTarget >= requiredPracticalTarget
+        )
+        let target = requiredPracticalTarget
+        var failures: [String] = []
+
+        for appearance in Appearance.allCases {
+            let card = Self.rgb(AppColor.cardBackground, appearance)
+            let opaquePlot = Self.rgb(AppColor.innerSurface, appearance)
+
+            for series in Series.allCases {
+                let plotStart = Self.rgb(
+                    series.tint.opacity(VisualPolicy.plotTintOpacity),
+                    appearance,
+                    over: card
+                )
+                let plotEnd = Self.rgb(
+                    AppColor.tagBackground.opacity(VisualPolicy.plotTagOpacity),
+                    appearance,
+                    over: card
+                )
+
+                var backdrops: [(label: String, rgb: RGB)] = [
+                    ("reduce-transparency opaque plot", opaquePlot),
+                ]
+                for plotStep in 0 ... sampleCount {
+                    let plotProgress = Double(plotStep) / Double(sampleCount)
+                    let plot = Self.interpolate(
+                        from: plotStart,
+                        to: plotEnd,
+                        fraction: plotProgress
+                    )
+                    backdrops.append((
+                        "plot \(plotStep)/\(sampleCount)",
+                        plot
+                    ))
+
+                    for areaStep in 0 ... sampleCount {
+                        let areaProgress = Double(areaStep) / Double(sampleCount)
+                        let areaOpacity = VisualPolicy.areaTopOpacity
+                            + (
+                                VisualPolicy.areaBottomOpacity
+                                    - VisualPolicy.areaTopOpacity
+                            ) * areaProgress
+                        let washedPlot = Self.rgb(
+                            series.tint.opacity(areaOpacity),
+                            appearance,
+                            over: plot
+                        )
+                        backdrops.append((
+                            "plot \(plotStep)/\(sampleCount), area \(areaStep)/\(sampleCount)",
+                            washedPlot
+                        ))
+                    }
+                }
+
+                let roles: [(label: String, color: Color)] = [
+                    ("trend line", series.markTint),
+                    ("historical point", series.markTint),
+                    ("latest point", series.markTint),
+                    ("average rule", AppColor.progressReferenceLine),
+                ]
+
+                for role in roles {
+                    var worstRatio = Double.greatestFiniteMagnitude
+                    var worstBackdrop = ""
+                    for backdrop in backdrops {
+                        let foreground = Self.rgb(
+                            role.color,
+                            appearance,
+                            over: backdrop.rgb
+                        )
+                        let ratio = Self.contrastRatio(
+                            foreground,
+                            backdrop.rgb
+                        )
+                        if ratio < worstRatio {
+                            worstRatio = ratio
+                            worstBackdrop = backdrop.label
+                        }
+                    }
+
+                    if worstRatio < target {
+                        failures.append(
+                            String(
+                                format: "%@ %@ [%@] = %.3f:1 on %@, needs %.1f:1",
+                                series.shortLabel,
+                                role.label,
+                                appearance.rawValue,
+                                worstRatio,
+                                worstBackdrop,
+                                target
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        #expect(
+            failures.isEmpty,
+            Comment(
+                rawValue: "Progression chart contrast failures:\n"
+                    + failures.joined(separator: "\n")
+            )
+        )
+    }
+
+    @Test("Recommendation disclosure clears every production mode wash")
+    func recommendationDisclosureClearsModeWashes() {
+        let modeTints: [(String, Color)] = [
+            ("timed", AppColor.modeTimed),
+            ("pressure", AppColor.modeSuddenDeath),
+            ("clarity", AppColor.modeAhCounter),
+            ("conversation", AppColor.modeIM),
+            ("crutch", AppColor.modeCrutch),
+            ("pace", AppColor.modePace),
+        ]
+        var failures: [String] = []
+        for appearance in Appearance.allCases {
+            let card = Self.rgb(AppColor.cardBackground, appearance)
+            for (name, tint) in modeTints {
+                let wash = Self.rgb(
+                    tint.opacity(0.16),
+                    appearance,
+                    over: card
+                )
+                let foreground = Self.rgb(
+                    AppColor.recommendationDisclosureText,
+                    appearance,
+                    over: wash
+                )
+                let ratio = Self.contrastRatio(foreground, wash)
+                if ratio < Requirement.normalText.rawValue {
+                    failures.append(
+                        String(
+                            format: "%@ [%@] = %.2f:1",
+                            name,
+                            appearance.rawValue,
+                            ratio
+                        )
+                    )
+                }
+            }
+        }
+        #expect(
+            failures.isEmpty,
+            Comment(
+                rawValue: "Recommendation wash failures:\n"
+                    + failures.joined(separator: "\n")
+            )
+        )
+    }
+
+    @Test("Review story label clears the exact production gradient wash")
+    func reviewStoryLabelClearsProductionWash() {
+        var failures: [String] = []
+        for appearance in Appearance.allCases {
+            let card = Self.rgb(AppColor.cardBackground, appearance)
+            let wash = Self.rgb(
+                AppColor.reviewStoryWash,
+                appearance,
+                over: card
+            )
+            let foreground = Self.rgb(
+                AppColor.reviewStoryLabelText,
+                appearance,
+                over: wash
+            )
+            let ratio = Self.contrastRatio(foreground, wash)
+            if ratio < Requirement.normalText.rawValue {
+                failures.append(
+                    String(
+                        format: "%@ = %.2f:1",
+                        appearance.rawValue,
+                        ratio
+                    )
+                )
+            }
+        }
+        #expect(
+            failures.isEmpty,
+            Comment(
+                rawValue: "Review story wash failures:\n"
+                    + failures.joined(separator: "\n")
+            )
         )
     }
 

@@ -692,7 +692,7 @@ struct ContentView: View {
             )
         } else if let node = pendingPathNode {
             progressReceipt(
-                title: "Landmark reached",
+                title: "Spoken progress saved",
                 body: node.title,
                 tint: node.tier.tint,
                 onDismiss: pathProgress.consumeCelebration
@@ -945,8 +945,8 @@ struct ContentView: View {
         return Button {
             openFirstWeekEntry(presentation)
         } label: {
-            // V4.6 density: one-line quiet row — the detail lives on the
-            // destination (and stays in the VoiceOver label below).
+            // Keep this a quiet row, but let localized and accessibility copy
+            // wrap instead of silently discarding the end of the title.
             HStack(alignment: .center, spacing: Spacing.sm) {
                 Image(systemName: presentation.systemImage)
                     .font(.subheadline.weight(.semibold))
@@ -958,7 +958,7 @@ struct ContentView: View {
                 Text(presentation.title)
                     .font(Typography.cardLabel)
                     .foregroundStyle(AppColor.textPrimary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
@@ -1294,8 +1294,16 @@ struct ContentView: View {
     /// The persisted path manager remains the event owner; Home only resolves
     /// its compact display title.
     private var pendingPathNode: PathNode? {
-        guard let nodeID = pathProgress.pendingCelebrationNodeID else { return nil }
-        return PathNodeRegistry.all.first(where: { $0.0.id == nodeID })?.0
+        guard let celebration = pathProgress.pendingCelebration,
+              let source = sessionStore.sessions.first(where: {
+                  $0.id == celebration.triggeringSessionID
+              }),
+              PracticeProgressEligibility.qualifies(source) else {
+            return nil
+        }
+        return PathNodeRegistry.all.first(where: {
+            $0.0.id == celebration.nodeID
+        })?.0
     }
 
 }

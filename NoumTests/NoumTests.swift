@@ -160,6 +160,9 @@ struct FirebaseBootstrapTests {
         let bootstrap = try #require(appSource.range(
             of: "private let firebaseReady: Void = FirebaseBootstrap.configure()"
         ))
+        let uiAutomationStorage = try #require(appSource.range(
+            of: "private let uiAutomationStorageReady: Bool ="
+        ))
         let delegateAdaptor = try #require(appSource.range(
             of: "@UIApplicationDelegateAdaptor(NoumAppDelegate.self)"
         ))
@@ -167,6 +170,9 @@ struct FirebaseBootstrapTests {
             of: "@StateObject private var authManager = AuthManager.shared"
         ))
 
+        #expect(bootstrap.lowerBound < uiAutomationStorage.lowerBound)
+        #expect(uiAutomationStorage.lowerBound < delegateAdaptor.lowerBound)
+        #expect(uiAutomationStorage.lowerBound < firstStateOwner.lowerBound)
         #expect(bootstrap.lowerBound < delegateAdaptor.lowerBound)
         #expect(bootstrap.lowerBound < firstStateOwner.lowerBound)
     }
@@ -15215,31 +15221,6 @@ struct FirstRunFrictionContractTests {
         #expect(!race.resolve(.timedOut))
     }
 
-    @MainActor
-    @Test func onlyConfirmedRemoteAbsenceCanAdvanceToOnboarding() {
-        let confirmedEmpty = BackendBootstrap(
-            xp: nil,
-            profile: nil,
-            sessions: nil,
-            recommendationPending: nil,
-            recommendationOutcomes: nil
-        )
-
-        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
-            for: .fetched(.success(confirmedEmpty))
-        ) == .ready)
-        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
-            for: .fetched(.unavailable)
-        ) == .retry)
-        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
-            for: .timedOut
-        ) == .retry)
-        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
-            for: .superseded
-        ) == .superseded)
-        #expect(!AuthManager.remoteProfileRecoveryMessage.contains("!"))
-    }
-
     @Test func retryRehydratesAStillDurableRestoredIdentity() {
         #expect(AuthManager.shouldRehydrateDurableIdentityOnRetry(
             accountID: "restored-account",
@@ -15252,7 +15233,7 @@ struct FirstRunFrictionContractTests {
     }
 
     @MainActor
-    @Test func freshAndRestoredFirebaseGuestsUseDifferentHydrationPolicies() {
+    @Test func freshAndRestoredFirebaseGuestsUseDifferentRemoteFetchPolicies() {
         #expect(!AuthManager.shouldFetchRemoteForGuestIdentity(
             accountID: "firebase-anonymous-uid",
             origin: .freshlyCreated
@@ -15266,18 +15247,6 @@ struct FirstRunFrictionContractTests {
         ))
         #expect(!AuthManager.shouldFetchRemoteForDurableIdentity(
             accountID: "local-guest-offline-id"
-        ))
-        #expect(AuthManager.shouldAwaitAuthoritativeRemoteProfile(
-            fetchRemote: true,
-            hasLocalProfile: false
-        ))
-        #expect(!AuthManager.shouldAwaitAuthoritativeRemoteProfile(
-            fetchRemote: false,
-            hasLocalProfile: false
-        ))
-        #expect(!AuthManager.shouldAwaitAuthoritativeRemoteProfile(
-            fetchRemote: true,
-            hasLocalProfile: true
         ))
     }
 
@@ -22711,6 +22680,16 @@ struct CallLandingAnchorTests {
             nextMove: .followIntervention
         )
         #expect(anchor == "Picking up where we left off: Timed for a decisive close.")
+    }
+
+    @Test func existingTerminalPunctuationIsNotDuplicated() {
+        let anchor = CoachCaseFile.callLandingAnchor(
+            activeIntervention: "Timed for concise stakeholder answers.",
+            observableTarget: "Open with the answer, then add one proof point.",
+            nextMove: .followIntervention
+        )
+        #expect(anchor == "Picking up where we left off: Timed for concise stakeholder answers. Target: Open with the answer, then add one proof point.")
+        #expect(anchor?.contains("..") == false)
     }
 
     @Test func reviewDueReadsAsReviewNotFreshStart() {

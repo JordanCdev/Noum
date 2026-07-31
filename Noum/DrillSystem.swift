@@ -66,6 +66,32 @@ enum SkillArea: String, Codable, CaseIterable, Identifiable {
         case .confidence: return AppColor.positive
         }
     }
+
+    /// Skill tint is expressive decoration, not an action surface. Keeping the
+    /// action pairing separate prevents a new/changed skill colour from
+    /// silently becoming an unreadable button background.
+    var miniDrillActionFill: Color {
+        AppColor.focusedPrimaryActionFill
+    }
+
+    var miniDrillActionForeground: Color {
+        AppColor.focusedPrimaryActionText
+    }
+
+    /// Decorative accent on MiniDrill's fixed black canvas. The general
+    /// `brandBlue` register is intentionally dark in Light appearance so it
+    /// can carry white button labels, but that same register falls below the
+    /// 3:1 component threshold on black. Only the affected skill identities
+    /// lift to the existing bright-blue token; every other skill keeps its
+    /// established colour.
+    var miniDrillFocusedAccent: Color {
+        switch self {
+        case .openingStrength, .structure:
+            return AppColor.brandBlueLight
+        default:
+            return tint
+        }
+    }
     #endif
 
     /// Sensitivity tier for feedback tone — some skills are anxiety-adjacent.

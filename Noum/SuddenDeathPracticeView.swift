@@ -6,30 +6,88 @@ import SwiftUI
 import AVFAudio
 #endif
 
-#if canImport(SwiftUI)
-
-// MARK: - TTS Delegate (mirrors TimedPracticeView's TTSDelegate)
-
 #if canImport(AVFAudio)
-/// Lightweight delegate that surfaces TTS finish/cancel callbacks back to
-/// the SwiftUI view so the speaker glyph can drop its "active" state.
-/// Kept private to this file — the surface area is identical to
-/// `TimedPracticeView`'s delegate but the two live in unrelated views so
-/// duplicating the few lines is cleaner than introducing a shared base
-/// class for a 20-line helper.
-private final class SuddenDeathTTSDelegate: NSObject, AVSpeechSynthesizerDelegate {
-    var onFinish: (() -> Void)?
-    var onCancel: (() -> Void)?
+struct SuddenDeathPromptSpeechRequest: Equatable, Sendable {
+    let id: UUID
+    let round: Int
+    let prompt: String
+}
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        onFinish?()
+enum SuddenDeathPromptPlaybackAction: Equatable {
+    case awaitCloudCompletion
+    case useLocalFallback
+    case completeWithoutFallback
+}
+
+enum SuddenDeathPromptReadoutPolicy {
+    static func isCurrent(
+        _ request: SuddenDeathPromptSpeechRequest,
+        currentRequest: SuddenDeathPromptSpeechRequest?,
+        activeRound: Int?,
+        currentPrompt: String,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled
+            && request == currentRequest
+            && request.round == activeRound
+            && request.prompt == currentPrompt
     }
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        onCancel?()
+    static func action(
+        for outcome: IMMessagePromptPlaybackOutcome
+    ) -> SuddenDeathPromptPlaybackAction {
+        switch outcome {
+        case .started:
+            return .awaitCloudCompletion
+        case .unavailable:
+            return .useLocalFallback
+        case .superseded:
+            return .completeWithoutFallback
+        }
+    }
+
+    static func shouldResumePendingRound(
+        requestRound: Int?,
+        pendingRound: Int?,
+        activeRound: Int?,
+        resumeRequested: Bool
+    ) -> Bool {
+        guard resumeRequested, let requestRound else { return false }
+        return authorizesRecorderHandoff(
+            expectedRound: requestRound,
+            pendingRound: pendingRound,
+            activeRound: activeRound
+        )
+    }
+
+    static func authorizesRecorderHandoff(
+        expectedRound: Int,
+        pendingRound: Int?,
+        activeRound: Int?
+    ) -> Bool {
+        expectedRound == pendingRound && expectedRound == activeRound
+    }
+
+    static func isCurrentRecorderHandoff(
+        generation: UUID,
+        currentGeneration: UUID?,
+        expectedRound: Int,
+        pendingRound: Int?,
+        activeRound: Int?,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled
+            && generation == currentGeneration
+            && authorizesRecorderHandoff(
+                expectedRound: expectedRound,
+                pendingRound: pendingRound,
+                activeRound: activeRound
+            )
     }
 }
 #endif
+
+#if canImport(SwiftUI)
 
 // MARK: - Sudden Death Practice View
 
@@ -65,7 +123,8 @@ struct SuddenDeathPracticeView: View {
     @State private var finalizedSessionID: UUID?
     @State private var didCommitCompletedRun = false
     @State private var runHadUsableCapture = false
-    @State private var isPreparingPressureRecorder = false
+    @State private var recorderPreparationTask: Task<Void, Never>?
+    @State private var recorderPreparationGeneration: UUID?
     #if DEBUG
     @State private var isPresentingResultFixture = false
     #endif
@@ -88,7 +147,7 @@ struct SuddenDeathPracticeView: View {
     // and parallels IMPracticeView's auto-speak on NPC turns.
     #if canImport(AVFAudio)
     private let ttsEngine = AVSpeechSynthesizer()
-    private let ttsDelegate = SuddenDeathTTSDelegate()
+    private let ttsDelegate = TTSDelegate()
     /// Best available English voice — prefer premium / enhanced quality
     /// for warmth. Selection logic matches `TimedPracticeView`.
     private let prewarmedVoice: AVSpeechSynthesisVoice? = {
@@ -102,9 +161,12 @@ struct SuddenDeathPracticeView: View {
         }
         return AVSpeechSynthesisVoice(language: "en-US")
     }()
+    @StateObject private var promptSpeaker = IMMessageSpeaker.shared
+    @State private var promptReadoutTask: Task<Void, Never>?
+    @State private var promptSpeechRequest: SuddenDeathPromptSpeechRequest?
+    @State private var ownsPromptTTSAudioSession = false
     #endif
     @State private var isSpeakingPrompt = false
-    @State private var ttsReady = false
     /// The prompt text already spoken aloud in this round, so a
     /// re-render of `npcCard` (transcript / filler updates) doesn't
     /// re-trigger the readout mid-utterance.
@@ -174,6 +236,7 @@ struct SuddenDeathPracticeView: View {
         .alert("End session?", isPresented: $showExitConfirmation) {
             Button("Keep Going", role: .cancel) { }
             Button("End", role: .destructive) {
+                cancelRecorderPreparation()
                 speechVM.cancelRecording()
                 engine.reset()
                 dismiss()
@@ -255,13 +318,13 @@ struct SuddenDeathPracticeView: View {
             handlePhaseChange(newPhase)
         }
         .onChange(of: engine.pendingUserWaitingRound) { _, pending in
-            guard pending != nil else { return }
+            guard let pending else { return }
             guard !speechVM.recordingLifecycle.isBusy else { return }
             // If TTS is still speaking, confirmBeginUserWaiting() will be called
             // from the ttsDelegate.onFinish callback instead. If TTS has already
             // finished (or was never started), unblock immediately.
             if !isSpeakingPrompt {
-                prepareRecorderThenBeginUserWaiting()
+                prepareRecorderThenBeginUserWaiting(expectedRound: pending)
             }
         }
         .onChange(of: engine.pendingCaptureEnd) { _, pending in
@@ -272,6 +335,7 @@ struct SuddenDeathPracticeView: View {
             guard case .failed = lifecycle, engine.phase != .setup else { return }
             SoundscapeEngine.shared.stop()
             stopPromptReadout()
+            cancelRecorderPreparation()
             engine.reset()
         }
         .onChange(of: engine.currentPromptText) { _, newText in
@@ -285,8 +349,8 @@ struct SuddenDeathPracticeView: View {
                   !speechVM.recordingLifecycle.isBusy else { return }
             if case .npcTurn(let round) = engine.phase {
                 speakCurrentPromptIfReady(round: round)
-                if engine.pendingUserWaitingRound != nil, !isSpeakingPrompt {
-                    prepareRecorderThenBeginUserWaiting()
+                if engine.pendingUserWaitingRound == round, !isSpeakingPrompt {
+                    prepareRecorderThenBeginUserWaiting(expectedRound: round)
                 }
             }
         }
@@ -300,6 +364,7 @@ struct SuddenDeathPracticeView: View {
             // Same guard for TTS — never leave the synthesizer
             // speaking after the screen is gone.
             stopPromptReadout()
+            cancelRecorderPreparation()
             speechVM.cancelRecording()
             engine.reset()
             // Pre-rep ambience is started on `.countdown` and only stopped by
@@ -1094,7 +1159,7 @@ struct SuddenDeathPracticeView: View {
         finalizedSessionID = nil
         didCommitCompletedRun = false
         runHadUsableCapture = false
-        isPreparingPressureRecorder = false
+        cancelRecorderPreparation()
     }
 
     // MARK: - Phase Change Handler
@@ -1129,6 +1194,10 @@ struct SuddenDeathPracticeView: View {
             startLiveActivityIfNeeded()
         }
         switch newPhase {
+        case .setup:
+            stopPromptReadout()
+            cancelRecorderPreparation()
+
         case .countdown:
             // Pre-rep ambience runs only through the countdown so it
             // never bleeds into the rep itself or the NPC's turn.
@@ -1185,6 +1254,7 @@ struct SuddenDeathPracticeView: View {
         case .sessionComplete(let result):
             SoundscapeEngine.shared.stop()
             stopPromptReadout()
+            cancelRecorderPreparation()
             #if DEBUG
             if isPresentingResultFixture {
                 enrichedResult = result
@@ -1237,8 +1307,8 @@ struct SuddenDeathPracticeView: View {
               !speechVM.recordingLifecycle.isBusy else { return }
         startTypingAnimation()
         speakCurrentPromptIfReady(round: round)
-        if engine.pendingUserWaitingRound != nil, !isSpeakingPrompt {
-            prepareRecorderThenBeginUserWaiting()
+        if engine.pendingUserWaitingRound == round, !isSpeakingPrompt {
+            prepareRecorderThenBeginUserWaiting(expectedRound: round)
         }
     }
 
@@ -1264,35 +1334,122 @@ struct SuddenDeathPracticeView: View {
     /// Connect the provider and microphone before opening the pressure start
     /// window. The engine keeps `pendingUserWaitingRound` armed until this
     /// succeeds, so network latency can never count as a slow start.
-    private func prepareRecorderThenBeginUserWaiting() {
-        guard engine.pendingUserWaitingRound != nil, !isPreparingPressureRecorder else { return }
-        isPreparingPressureRecorder = true
-        Task { @MainActor in
-            defer { isPreparingPressureRecorder = false }
+    private func prepareRecorderThenBeginUserWaiting(expectedRound: Int) {
+        guard recorderHandoffIsCurrent(expectedRound),
+              recorderPreparationGeneration == nil else {
+            return
+        }
+        let generation = UUID()
+        recorderPreparationGeneration = generation
+        recorderPreparationTask = Task { @MainActor in
+            defer {
+                if recorderPreparationGeneration == generation {
+                    recorderPreparationGeneration = nil
+                    recorderPreparationTask = nil
+                }
+            }
 
             // A prior round may still be returning its provider receipt while
             // the next prompt is being read. Give that bounded finalization
             // the same window as the provider contract before opening a new mic.
             let deadline = ContinuousClock.now + .seconds(6)
             while speechVM.recordingLifecycle.isBusy {
-                guard ContinuousClock.now < deadline else {
-                    engine.reset()
+                guard recorderPreparationIsCurrent(
+                    generation,
+                    expectedRound: expectedRound,
+                    isCancelled: Task.isCancelled
+                ) else {
                     return
                 }
-                try? await Task.sleep(for: .milliseconds(50))
+                guard ContinuousClock.now < deadline else {
+                    if recorderPreparationIsCurrent(
+                        generation,
+                        expectedRound: expectedRound,
+                        isCancelled: Task.isCancelled
+                    ) {
+                        engine.reset()
+                    }
+                    return
+                }
+                do {
+                    try await Task.sleep(for: .milliseconds(50))
+                } catch {
+                    return
+                }
             }
 
-            guard engine.pendingUserWaitingRound != nil else { return }
+            guard recorderPreparationIsCurrent(
+                generation,
+                expectedRound: expectedRound,
+                isCancelled: Task.isCancelled
+            ) else {
+                return
+            }
             speechVM.resetCurrentSession()
             speechVM.shouldRecordPracticeSession = false
             speechVM.prepareSession(mode: .suddenDeath)
             speechVM.pressureDrillPrompt = engine.currentPromptText
             guard await speechVM.startRecordingAwaitingReadiness() else {
-                engine.reset()
+                if recorderPreparationIsCurrent(
+                    generation,
+                    expectedRound: expectedRound,
+                    isCancelled: Task.isCancelled
+                ) {
+                    engine.reset()
+                }
+                return
+            }
+            guard recorderPreparationIsCurrent(
+                generation,
+                expectedRound: expectedRound,
+                isCancelled: Task.isCancelled
+            ) else {
+                speechVM.cancelRecording()
                 return
             }
             engine.confirmBeginUserWaiting(captureReady: true)
         }
+    }
+
+    private func recorderHandoffIsCurrent(_ expectedRound: Int) -> Bool {
+        let activeRound: Int?
+        if case .npcTurn(let round) = engine.phase {
+            activeRound = round
+        } else {
+            activeRound = nil
+        }
+        return SuddenDeathPromptReadoutPolicy.authorizesRecorderHandoff(
+            expectedRound: expectedRound,
+            pendingRound: engine.pendingUserWaitingRound,
+            activeRound: activeRound
+        )
+    }
+
+    private func recorderPreparationIsCurrent(
+        _ generation: UUID,
+        expectedRound: Int,
+        isCancelled: Bool
+    ) -> Bool {
+        let activeRound: Int?
+        if case .npcTurn(let round) = engine.phase {
+            activeRound = round
+        } else {
+            activeRound = nil
+        }
+        return SuddenDeathPromptReadoutPolicy.isCurrentRecorderHandoff(
+            generation: generation,
+            currentGeneration: recorderPreparationGeneration,
+            expectedRound: expectedRound,
+            pendingRound: engine.pendingUserWaitingRound,
+            activeRound: activeRound,
+            isCancelled: isCancelled
+        )
+    }
+
+    private func cancelRecorderPreparation() {
+        recorderPreparationGeneration = nil
+        recorderPreparationTask?.cancel()
+        recorderPreparationTask = nil
     }
 
     private var canPresentPressureResult: Bool {
@@ -1481,26 +1638,11 @@ struct SuddenDeathPracticeView: View {
     // MARK: - TTS (mirrors TimedPracticeView.speakPromptAloud pattern)
 
     #if canImport(AVFAudio)
-    /// Wire AVSpeechSynthesizer delegate callbacks. Idempotent — safe to
-    /// call multiple times; `ttsEngine.delegate == nil` check at the call
-    /// site avoids redundant rewires.
+    /// Wire the shared utterance-bound delegate. Completion behavior is
+    /// registered per request immediately before `speak`, so a delayed
+    /// callback from an older utterance cannot advance a successor round.
     private func configureTTSDelegate() {
         ttsEngine.delegate = ttsDelegate
-        ttsDelegate.onFinish = {
-            Task { @MainActor in
-                isSpeakingPrompt = false
-                deactivateTTSAudioSession()
-                // Unblock the user-waiting phase if the engine was holding for TTS.
-                prepareRecorderThenBeginUserWaiting()
-            }
-        }
-        ttsDelegate.onCancel = {
-            Task { @MainActor in
-                isSpeakingPrompt = false
-                deactivateTTSAudioSession()
-                prepareRecorderThenBeginUserWaiting()
-            }
-        }
     }
 
     /// `.playback` + `.mixWithOthers + .duckOthers` so speech plays in
@@ -1524,6 +1666,53 @@ struct SuddenDeathPracticeView: View {
         } catch {
             // Non-fatal
         }
+    }
+
+    private var activeNpcRound: Int? {
+        guard case .npcTurn(let round) = engine.phase else { return nil }
+        return round
+    }
+
+    private func promptRequestIsCurrent(
+        _ request: SuddenDeathPromptSpeechRequest,
+        isCancelled: Bool = false
+    ) -> Bool {
+        SuddenDeathPromptReadoutPolicy.isCurrent(
+            request,
+            currentRequest: promptSpeechRequest,
+            activeRound: activeNpcRound,
+            currentPrompt: engine.currentPromptText,
+            isCancelled: isCancelled
+        )
+    }
+
+    /// Finish only the exact request that still owns prompt playback. The
+    /// pending round is resumed only when it still matches that request and
+    /// the engine remains on the same NPC turn.
+    private func completePromptReadout(
+        _ request: SuddenDeathPromptSpeechRequest,
+        deactivateLocalAudio: Bool,
+        resumePendingRound: Bool
+    ) {
+        guard promptSpeechRequest == request else { return }
+        promptSpeechRequest = nil
+        promptReadoutTask = nil
+        isSpeakingPrompt = false
+        if deactivateLocalAudio, ownsPromptTTSAudioSession {
+            ownsPromptTTSAudioSession = false
+            deactivateTTSAudioSession()
+        }
+
+        let activeRound = activeNpcRound
+        guard SuddenDeathPromptReadoutPolicy.shouldResumePendingRound(
+            requestRound: request.round,
+            pendingRound: engine.pendingUserWaitingRound,
+            activeRound: activeRound,
+            resumeRequested: resumePendingRound
+        ) else {
+            return
+        }
+        prepareRecorderThenBeginUserWaiting(expectedRound: request.round)
     }
 
     /// Auto-speak guard. Fires from `.npcTurn` phase change and from the
@@ -1556,73 +1745,160 @@ struct SuddenDeathPracticeView: View {
     /// spoken; the replay button passes the current phase's round.
     private func speakCurrentPrompt(force: Bool, round: Int? = nil) {
         let prompt = engine.currentPromptText
-        guard !prompt.isEmpty else { return }
+        guard !prompt.isEmpty,
+              let activeRound = activeNpcRound,
+              round == nil || round == activeRound else {
+            return
+        }
 
-        if isSpeakingPrompt || ttsEngine.isSpeaking {
+        if let activeRequest = promptSpeechRequest,
+           activeRequest.round != activeRound || activeRequest.prompt != prompt {
+            // A newly published follow-up owns the surface now. Invalidate the
+            // previous request before starting it so no stale continuation can
+            // clear the successor.
+            stopPromptReadout()
+        } else if isSpeakingPrompt || ttsEngine.isSpeaking {
             if force {
-                stopPromptReadout()
+                stopPromptReadout(resumePendingRound: true)
             }
             return
         }
 
+        promptReadoutTask?.cancel()
+        promptSpeaker.stop()
+        let request = SuddenDeathPromptSpeechRequest(
+            id: UUID(),
+            round: activeRound,
+            prompt: prompt
+        )
+        promptSpeechRequest = request
         isSpeakingPrompt = true
         lastSpokenPromptText = prompt
-        // Track per-round so subsequent .npcTurn entries don't re-speak
-        // stale text. Inferred from the live phase when not supplied.
-        if let round {
-            lastSpokenForRound = round
-        } else if case .npcTurn(let r) = engine.phase {
-            lastSpokenForRound = r
-        } else if case .userTurnWaiting(let r, _) = engine.phase {
-            lastSpokenForRound = r
-        }
+        lastSpokenForRound = activeRound
 
-        let speaker = IMMessageSpeaker.shared
-        Task {
+        promptReadoutTask = Task { @MainActor in
             // Cloud TTS first (Google/OpenAI) for premium voice quality;
             // on-device AVSpeechSynthesizer as the offline fallback so
             // users without network still get spoken prompts.
-            let didPlayCloud = await speaker.speakPrompt(prompt)
-            if didPlayCloud {
-                // speakPrompt() returns true the moment AVAudioPlayer.play()
-                // is called — audio may still be playing for several seconds.
-                // Estimate the readout duration so the card stays expanded
-                // for the full audio, then confirm the waiting phase.
-                // ~130 words/min at 0.85 rate ≈ 110 wpm → ~0.55 s/word.
-                let wordCount = prompt.split(separator: " ").count
-                let estimatedSeconds = max(1.5, Double(wordCount) * 0.55 + 0.5)
-                try? await Task.sleep(for: .seconds(estimatedSeconds))
-                await MainActor.run {
-                    // Only clear and unblock if TTS wasn't stopped mid-flight.
-                    guard isSpeakingPrompt else { return }
-                    isSpeakingPrompt = false
-                    prepareRecorderThenBeginUserWaiting()
-                }
+            let outcome = await promptSpeaker.speakPrompt(prompt)
+            guard promptRequestIsCurrent(
+                request,
+                isCancelled: Task.isCancelled
+            ) else {
                 return
             }
-            await MainActor.run {
+
+            switch SuddenDeathPromptReadoutPolicy.action(for: outcome) {
+            case .awaitCloudCompletion:
+                // `speakPrompt` resolves when real playback starts. Observe the
+                // shared player's published lifecycle rather than guessing clip
+                // length from word count.
+                while promptSpeaker.isSpeaking {
+                    do {
+                        try await Task.sleep(for: .milliseconds(50))
+                    } catch {
+                        return
+                    }
+                    guard promptRequestIsCurrent(
+                        request,
+                        isCancelled: Task.isCancelled
+                    ) else {
+                        return
+                    }
+                }
+                guard promptRequestIsCurrent(
+                    request,
+                    isCancelled: Task.isCancelled
+                ) else {
+                    return
+                }
+                completePromptReadout(
+                    request,
+                    deactivateLocalAudio: false,
+                    resumePendingRound: true
+                )
+                return
+
+            case .completeWithoutFallback:
+                // Another shared-speaker request won authority before this one
+                // started. Do not replay stale text locally, but do terminate
+                // this exact request so the pressure round cannot stick.
+                completePromptReadout(
+                    request,
+                    deactivateLocalAudio: false,
+                    resumePendingRound: true
+                )
+                return
+
+            case .useLocalFallback:
                 if ttsEngine.delegate == nil { configureTTSDelegate() }
                 activateTTSAudioSession()
+                ownsPromptTTSAudioSession = true
                 let utterance = AVSpeechUtterance(string: prompt)
                 utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
                 utterance.pitchMultiplier = 0.98
                 utterance.preUtteranceDelay = 0.15
                 utterance.postUtteranceDelay = 0.3
                 utterance.voice = prewarmedVoice
+                let completion = { [self] in
+                    completePromptReadout(
+                        request,
+                        deactivateLocalAudio: true,
+                        resumePendingRound: true
+                    )
+                }
+                ttsDelegate.track(
+                    utterance,
+                    onFinish: completion,
+                    onCancel: completion
+                )
+                guard promptRequestIsCurrent(
+                    request,
+                    isCancelled: Task.isCancelled
+                ) else {
+                    ttsDelegate.clearTracking()
+                    if ownsPromptTTSAudioSession {
+                        ownsPromptTTSAudioSession = false
+                        deactivateTTSAudioSession()
+                    }
+                    return
+                }
                 ttsEngine.speak(utterance)
+                promptReadoutTask = nil
             }
         }
     }
 
     /// Stop any in-flight TTS + cloud audio. Called from
     /// `.userTurnWaiting` (so the mic doesn't fight the synthesizer),
-    /// `.sessionComplete`, and `.onDisappear`.
-    private func stopPromptReadout() {
+    /// `.sessionComplete`, and `.onDisappear`. Only the explicit replay-button
+    /// toggle requests pending-round resumption; teardown paths never do.
+    private func stopPromptReadout(resumePendingRound: Bool = false) {
+        let stoppedRequest = promptSpeechRequest
+        let shouldDeactivateLocalAudio = ownsPromptTTSAudioSession
+        promptSpeechRequest = nil
+        promptReadoutTask?.cancel()
+        promptReadoutTask = nil
+        ownsPromptTTSAudioSession = false
+        ttsDelegate.clearTracking()
         if ttsEngine.isSpeaking {
             ttsEngine.stopSpeaking(at: .immediate)
         }
-        IMMessageSpeaker.shared.stop()
+        promptSpeaker.stop()
         isSpeakingPrompt = false
+        if shouldDeactivateLocalAudio, !speechVM.isRecording {
+            deactivateTTSAudioSession()
+        }
+
+        guard SuddenDeathPromptReadoutPolicy.shouldResumePendingRound(
+            requestRound: stoppedRequest?.round,
+            pendingRound: engine.pendingUserWaitingRound,
+            activeRound: activeNpcRound,
+            resumeRequested: resumePendingRound
+        ), let stoppedRequest else {
+            return
+        }
+        prepareRecorderThenBeginUserWaiting(expectedRound: stoppedRequest.round)
     }
     #else
     // Stub-out the TTS surface when AVFAudio isn't available (preview /

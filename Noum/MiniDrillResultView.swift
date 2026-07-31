@@ -21,6 +21,7 @@ struct MiniDrillResultView: View {
     let onTryAnother: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var phase: Int = 0       // 0=hidden, 1=icon, 2=text, 3=badges, 4=stats, 5=buttons
 
     private var wpm: Double {
@@ -84,12 +85,12 @@ struct MiniDrillResultView: View {
                         VStack(spacing: 4) {
                             Text("+\(xpEarned) XP")
                                 .font(.headline.weight(.bold))
-                                .foregroundStyle(outcome.drill.tint)
+                                .foregroundStyle(AppColor.focusedTextSecondary)
                                 .accessibilityIdentifier("miniDrillResult.xp")
                             if let xpBreakdown {
                                 Text(xpBreakdown.label)
                                     .font(.caption2.weight(.medium))
-                                    .foregroundStyle(.white.opacity(0.42))
+                                    .foregroundStyle(AppColor.focusedTextSecondary)
                             }
                         }
                     }
@@ -98,14 +99,14 @@ struct MiniDrillResultView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "target")
                                 .font(.caption2.weight(.bold))
-                                .foregroundStyle(outcome.drill.tint.opacity(0.8))
+                                .foregroundStyle(AppColor.focusedTextSecondary)
                             Text(goalAlignmentLine)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.white.opacity(0.72))
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(outcome.drill.tint.opacity(0.12), in: Capsule())
+                        .background(focusedAccent.opacity(0.12), in: Capsule())
                         .accessibilityLabel(goalAlignmentLine)
                     }
                 }
@@ -119,39 +120,68 @@ struct MiniDrillResultView: View {
 
                 Spacer()
 
-                // Action buttons — phase 5
-                VStack(spacing: 12) {
-                    Button {
-                        onDone()
-                    } label: {
-                        Text("Done")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(outcome.drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                    }
-                    .buttonStyle(.pressable)
-                    .accessibilityIdentifier("miniDrillResult.done")
-
-                    if let onTryAnother {
-                        Button {
-                            onTryAnother()
-                        } label: {
-                            Text(DrillCompletionCopy.tryAnotherLabel(succeeded: outcome.succeeded))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                        }
-                        .buttonStyle(.pressable)
-                    }
+                // Action buttons — phase 5. At accessibility sizes the same
+                // controls are pinned below a scrollable result body.
+                if !dynamicTypeSize.isAccessibilitySize {
+                    resultActions(bottomPadding: 40)
                 }
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.bottom, 40)
-                .opacity(phase >= 5 ? 1 : 0)
-                .offset(y: phase >= 5 ? 0 : 20)
+            }
+            .padding(.top, dynamicTypeSize.isAccessibilitySize ? Spacing.lg : 0)
+            .modifier(
+                MiniDrillResultAccessibilityScrollModifier(
+                    isEnabled: dynamicTypeSize.isAccessibilitySize
+                )
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    resultActions(bottomPadding: Spacing.sm)
+                        .padding(.top, Spacing.sm)
+                        .background(Color.black.opacity(0.96))
+                }
             }
         }
         .onAppear { runEntrance() }
+    }
+
+    private func resultActions(bottomPadding: CGFloat) -> some View {
+        VStack(spacing: 12) {
+            Button {
+                onDone()
+            } label: {
+                Text("Done")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(
+                        outcome.drill.skillArea.miniDrillActionForeground
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        outcome.drill.skillArea.miniDrillActionFill,
+                        in: RoundedRectangle(
+                            cornerRadius: CornerRadius.medium,
+                            style: .continuous
+                        )
+                    )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("miniDrillResult.done")
+
+            if let onTryAnother {
+                Button {
+                    onTryAnother()
+                } label: {
+                    Text(DrillCompletionCopy.tryAnotherLabel(succeeded: outcome.succeeded))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.bottom, bottomPadding)
+        .opacity(phase >= 5 ? 1 : 0)
+        .offset(y: phase >= 5 ? 0 : 20)
     }
 
     // MARK: - Animation Sequence
@@ -222,7 +252,11 @@ struct MiniDrillResultView: View {
     // MARK: - Computed Properties
 
     private var resultTint: Color {
-        outcome.succeeded ? AppColor.positive : outcome.drill.tint
+        outcome.succeeded ? AppColor.positive : focusedAccent
+    }
+
+    private var focusedAccent: Color {
+        outcome.drill.skillArea.miniDrillFocusedAccent
     }
 
     private var feedbackText: String {
@@ -261,40 +295,64 @@ struct MiniDrillResultView: View {
         switch outcome.drillType {
         case .beatTheBrake:
             if let m = outcome.beatTheBrakeMetrics {
-                HStack(spacing: 24) {
-                    miniStat(label: "Pace Control", value: "\(Int(m.zonePercentage * 100))%")
-                    miniStat(label: "Fillers", value: "\(m.adjustedFillers)")
-                    miniStat(label: "Rushed", value: "\(m.rushedBursts)")
-                }
+                statGroup([
+                    ("Pace Control", "\(Int(m.zonePercentage * 100))%"),
+                    ("Fillers", "\(m.adjustedFillers)"),
+                    ("Rushed", "\(m.rushedBursts)"),
+                ])
             }
         case .landThePause:
             if let m = outcome.landThePauseMetrics {
-                HStack(spacing: 24) {
-                    miniStat(label: "Locked", value: "\(m.checkpointsLocked)/3")
-                    miniStat(label: "Transition Fillers", value: "\(m.transitionFillers)")
-                    miniStat(label: "Best Combo", value: "\(m.bestCombo)")
-                }
+                statGroup([
+                    ("Locked", "\(m.checkpointsLocked)/3"),
+                    ("Transition Fillers", "\(m.transitionFillers)"),
+                    ("Best Combo", "\(m.bestCombo)"),
+                ])
             }
         case .prepStack:
             if let m = outcome.prepStackMetrics {
-                HStack(spacing: 24) {
-                    miniStat(label: "PREP", value: "\(m.stepsCompleted)/4")
-                    miniStat(label: "Fillers", value: "\(m.fillerCount)")
-                    miniStat(label: "Close", value: "\(Int(m.closeStrength * 100))%")
-                }
+                statGroup([
+                    ("PREP", "\(m.stepsCompleted)/4"),
+                    ("Fillers", "\(m.fillerCount)"),
+                    ("Close", "\(Int(m.closeStrength * 100))%"),
+                ])
             }
         case .standard, .frameworkCheck:
             // Framework drills reuse the generic delivery stats; the structural
             // verdict lives in the feedback line, not as a numeric stat.
-            HStack(spacing: 24) {
-                miniStat(label: "Duration", value: "\(Int(outcome.duration))s")
-                miniStat(label: "Words", value: "\(outcome.wordCount)")
-                miniStat(label: "Fillers", value: "\(outcome.fillerCount)")
-            }
+            statGroup([
+                ("Duration", "\(Int(outcome.duration))s"),
+                ("Words", "\(outcome.wordCount)"),
+                ("Fillers", "\(outcome.fillerCount)"),
+            ])
         }
     }
 
     // MARK: - Components
+
+    @ViewBuilder
+    private func statGroup(_ stats: [(label: String, value: String)]) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: Spacing.md) {
+                ForEach(stats.indices, id: \.self) { index in
+                    miniStat(
+                        label: stats[index].label,
+                        value: stats[index].value
+                    )
+                }
+            }
+            .padding(.horizontal, Spacing.screenH)
+        } else {
+            HStack(spacing: 24) {
+                ForEach(stats.indices, id: \.self) { index in
+                    miniStat(
+                        label: stats[index].label,
+                        value: stats[index].value
+                    )
+                }
+            }
+        }
+    }
 
     private func miniStat(label: String, value: String) -> some View {
         VStack(spacing: 4) {
@@ -303,7 +361,27 @@ struct MiniDrillResultView: View {
                 .foregroundStyle(.white)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppColor.focusedTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(
+            maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil
+        )
+    }
+}
+
+private struct MiniDrillResultAccessibilityScrollModifier: ViewModifier {
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            ScrollView {
+                content
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        } else {
+            content
         }
     }
 }

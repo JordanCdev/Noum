@@ -47,6 +47,8 @@ struct ProgressionChartsCard: View {
     @State private var hasAppeared = false
     @State private var selectedSeries: ChartSeries = .score
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var shouldReduceMotion: Bool {
@@ -158,6 +160,14 @@ struct ProgressionChartsCard: View {
                     .font(Typography.caption.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
+                if ChartVisualPolicy.showsSelectionCheckmark(
+                    isSelected: selectedSeries == series,
+                    differentiateWithoutColor: differentiateWithoutColor
+                ) {
+                    Image(systemName: "checkmark")
+                        .font(Typography.captionSmall.weight(.black))
+                        .accessibilityHidden(true)
+                }
             }
             .foregroundStyle(selectedSeries == series ? .white : .primary.opacity(0.68))
             .padding(.horizontal, 10)
@@ -202,7 +212,10 @@ struct ProgressionChartsCard: View {
 
         return VStack(spacing: 4) {
             Chart {
-                if model.shouldShowTrendLine {
+                if model.shouldShowTrendLine,
+                   ChartVisualPolicy.showsAreaWash(
+                       reduceTransparency: reduceTransparency
+                   ) {
                     ForEach(model.trendSamples) { sample in
                         AreaMark(
                             x: .value("Rep", sample.index),
@@ -211,19 +224,41 @@ struct ProgressionChartsCard: View {
                         )
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [series.tint.opacity(0.10), series.tint.opacity(0.01)],
+                                colors: [
+                                    series.tint.opacity(ChartVisualPolicy.areaTopOpacity),
+                                    series.tint.opacity(ChartVisualPolicy.areaBottomOpacity),
+                                ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                         .interpolationMethod(.linear)
+                    }
+                }
 
+                RuleMark(y: .value("Average", model.average))
+                    .foregroundStyle(AppColor.progressReferenceLine)
+                    .lineStyle(
+                        StrokeStyle(
+                            lineWidth: ChartVisualPolicy.averageLineWidth,
+                            dash: ChartVisualPolicy.averageLineDash
+                        )
+                    )
+
+                if model.shouldShowTrendLine {
+                    ForEach(model.trendSamples) { sample in
                         LineMark(
                             x: .value("Rep", sample.index),
                             y: .value(series.shortLabel, sample.value)
                         )
-                        .foregroundStyle(series.tint.opacity(0.82))
-                        .lineStyle(StrokeStyle(lineWidth: 2.8, lineCap: .round, lineJoin: .round))
+                        .foregroundStyle(series.markTint)
+                        .lineStyle(
+                            StrokeStyle(
+                                lineWidth: ChartVisualPolicy.trendLineWidth,
+                                lineCap: .round,
+                                lineJoin: .round
+                            )
+                        )
                         .interpolationMethod(.linear)
                     }
                 }
@@ -233,19 +268,13 @@ struct ProgressionChartsCard: View {
                         x: .value("Rep", sample.index),
                         y: .value(series.shortLabel, sample.value)
                     )
-                    .foregroundStyle(
-                        series.tint.opacity(
-                            sample.index == latestRawIndex
-                                ? 0.92
-                                : (model.shouldShowTrendLine ? 0.22 : 0.48)
-                        )
+                    .foregroundStyle(series.markTint)
+                    .symbolSize(
+                        sample.index == latestRawIndex
+                            ? ChartVisualPolicy.latestPointSize
+                            : ChartVisualPolicy.historicalPointSize
                     )
-                    .symbolSize(sample.index == latestRawIndex ? 70 : (model.shouldShowTrendLine ? 16 : 42))
                 }
-
-                RuleMark(y: .value("Average", model.average))
-                    .foregroundStyle(series.tint.opacity(model.shouldShowTrendLine ? 0.14 : 0.18))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 6]))
             }
             .chartYScale(domain: model.yMin...model.yMax)
             .chartXScale(domain: model.xMin...model.xMax)
@@ -253,13 +282,22 @@ struct ProgressionChartsCard: View {
             .chartYAxis(.hidden)
             .chartPlotStyle { plotArea in
                 plotArea
-                    .background(
-                        LinearGradient(
-                            colors: [series.tint.opacity(0.045), AppColor.tagBackground.opacity(0.16)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .background {
+                        if ChartVisualPolicy.plotSurface(
+                            reduceTransparency: reduceTransparency
+                        ) == .opaqueInnerSurface {
+                            AppColor.innerSurface
+                        } else {
+                            LinearGradient(
+                                colors: [
+                                    series.tint.opacity(ChartVisualPolicy.plotTintOpacity),
+                                    AppColor.tagBackground.opacity(ChartVisualPolicy.plotTagOpacity),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        }
+                    }
                     .overlay(
                         RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                             .stroke(Color.white.opacity(0.56), lineWidth: 1)
@@ -553,6 +591,51 @@ struct ProgressionChartsCard: View {
     }
 }
 
+// MARK: - Visual accessibility policy
+
+@available(iOS 17.0, macOS 12.0, *)
+extension ProgressionChartsCard {
+    /// One source of truth for the chart's visual hierarchy and preference
+    /// behavior. Meaningful marks use opaque semantic colors; size, width, and
+    /// dash carry emphasis without relying on low-contrast alpha.
+    enum ChartVisualPolicy {
+        enum PlotSurface: Equatable {
+            case layeredWash
+            case opaqueInnerSurface
+        }
+
+        static let trendLineWidth: CGFloat = 2.8
+        static let historicalPointSize: CGFloat = 24
+        static let latestPointSize: CGFloat = 70
+        static let averageLineWidth: CGFloat = 1.5
+        static let averageLineDash: [CGFloat] = [5, 6]
+
+        static let areaTopOpacity = 0.10
+        static let areaBottomOpacity = 0.01
+        static let plotTintOpacity = 0.045
+        static let plotTagOpacity = 0.16
+
+        /// WCAG requires 3:1 for meaningful graphical objects. The higher
+        /// product target leaves practical margin for thin-mark antialiasing.
+        static let practicalContrastTarget = 3.5
+
+        static func showsAreaWash(reduceTransparency: Bool) -> Bool {
+            !reduceTransparency
+        }
+
+        static func plotSurface(reduceTransparency: Bool) -> PlotSurface {
+            reduceTransparency ? .opaqueInnerSurface : .layeredWash
+        }
+
+        static func showsSelectionCheckmark(
+            isSelected: Bool,
+            differentiateWithoutColor: Bool
+        ) -> Bool {
+            isSelected && differentiateWithoutColor
+        }
+    }
+}
+
 // MARK: - Series + point
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -587,6 +670,19 @@ extension ProgressionChartsCard {
             case .pace:       return AppColor.modeAhCounter
             case .pauseRate:  return AppColor.modeIM
             case .pitch:      return .pink
+            }
+        }
+
+        /// Opaque information-bearing register. `tint` remains the identity
+        /// color for decorative washes and picker fills; chart lines and points
+        /// use this role so every series clears the plot in both appearances.
+        var markTint: Color {
+            switch self {
+            case .score:      return AppColor.progressScoreMark
+            case .fillerRate: return AppColor.progressFillerMark
+            case .pace:       return AppColor.progressPaceMark
+            case .pauseRate:  return AppColor.progressPauseMark
+            case .pitch:      return AppColor.progressPitchMark
             }
         }
 

@@ -1,5 +1,58 @@
 # Noum — Current state
 
+## 2026-07-29 — Accessibility and UI-suite closure; external launch gates remain NO-GO
+
+The handover's app-side accessibility work now preserves the existing account,
+practice, speech, recording, and navigation owners rather than introducing
+parallel systems. UI automation uses isolated durable Keychain identities and
+fails closed around simulator-global Firebase state, while signed-out launch
+state takes precedence over routed content. Source-controlled Otherpath
+identity contracts are now coherent across the app and extension bundle IDs,
+Watch companion metadata, App Group declarations, App Store notification
+verification, release/CI preflight, and local launch automation. The remaining
+provider and entitlement cutovers still require operator confirmation.
+
+Progress charts now use opaque appearance-aware marks, non-colour hierarchy,
+and targeted Reduce Transparency and Differentiate Without Color behavior.
+Session History has stable semantics, selected-state cues, 44-point controls,
+and an Accessibility XXXL layout. Timed Practice keeps its primary action
+pinned while long prompts scroll within the available body. Timed and Sudden
+Death prompt playback and recorder handoff are request- and generation-bound,
+so stale callbacks cannot advance or reset a successor round.
+
+The complete serialized `NoumTests` target reports **4,785 passed, 0 failed,
+2 expected failures, and 0 skipped** in
+`/private/tmp/noum-codex-full-unit-final-72.xcresult`. The final app/UI
+implementation's serialized `NoumUITests` gate passes **95/95 device
+executions** with no failures or skips in
+`/private/tmp/noum-codex-full-ui-final-69.xcresult`; Xcode's top-level summary
+reports **90/90** because one parameterized test contributes six device runs.
+The source-owned identity regression contract passes **1/1** in
+`/private/tmp/noum-codex-identity-contract-71.xcresult`; Functions passes
+**191/191** tests plus **9/9** deployment locks, and the release-script suite
+passes **117/117**.
+Focused verification passes **16/16** prompt/media lifecycle tests in
+`/private/tmp/noum-codex-focused-speech-lifecycle-63.xcresult`, **1/1 twice**
+for the Timed Accessibility XXXL repair in
+`/private/tmp/noum-codex-timed-axxxl-layout-66.xcresult` and
+`/private/tmp/noum-codex-timed-axxxl-layout-67.xcresult`, **35/35** chart tests
+in `/private/tmp/noum-codex-focused-chart-53.xcresult`, **1/1** Session History
+UI coverage in `/private/tmp/noum-codex-history-axxxl-55.xcresult`, and **1/1
+twice** for the native transcript accessibility audit in
+`/private/tmp/noum-codex-transcript-audit-57.xcresult` and
+`/private/tmp/noum-codex-transcript-audit-58.xcresult`.
+
+The earlier full UI run in
+`/private/tmp/noum-codex-full-ui-final-65.xcresult` exposed one genuine Timed
+Practice Accessibility XXXL overflow that pushed **Start Now** below the
+viewport. That defect is fixed, and run 65 remains diagnostic evidence rather
+than the final green result.
+
+App Check registration, App Group confirmation, the gitignored Firebase
+configuration plist, API-key cutover, paid-team entitlement correction, old
+Firebase-app retirement, and physical-device accessibility validation remain
+external gates. Production therefore remains correctly **NO-GO**.
+
 ## 2026-07-22 — App Store success system adversarially closed; external launch gates remain NO-GO
 
 The locally implemented Day-0 and first-week journey has been tightened around
@@ -39,7 +92,8 @@ re-read from immutable commit `87041e9a` and confirmed to be ordinary prose in
 `docs/TESTFLIGHT_QA.md`; it is allowlisted by that commit only and the full
 1,189-commit scan now passes with no unreviewed findings.
 
-Source-current verification is green. The complete serialized unit target
+Source-current unit and selected focused UI verification is green; this is not
+a full shared-scheme claim. The complete serialized `NoumTests` target
 reports 4,680 results: 4,678 passed, two expected StoreKit runtime failures,
 and zero unexpected failures or skips. Within it, 183 focused launch-system
 tests and a separate 74-test adversarial audit pass; the signed fresh-install
@@ -166,7 +220,8 @@ secure wire capture, provider acceptance, final sanitization, persistence, UI
 commit, and exactly one terminal trace. Exported support bundles canonicalize
 event/provider reasons and omit arbitrary diagnostic strings.
 
-Verification is locally green: the complete serialized unit target passes
+Unit and selected focused UI verification is locally green: the complete
+serialized `NoumTests` target passes
 **4,550/4,550**, the focused screenshot tour passes **4/4**, Coach Arena passes
 **119/119 Node** plus **167/167 Python** tests, and all 52 fixtures validate with
 zero errors or warnings. Focused Accessibility XXXL native audits for Train,
@@ -197,8 +252,9 @@ bound to `56cfc2f0d` plus coach-source fingerprint
 `sha256:e1c6b655edaee8759e791ed6669a567117a17a283ef283680c3278c01e49cbad`.
 It passes 53 conversations / 109 turns, 50/50 scored fixtures at 81.16 average,
 50 complete traces, zero failures, zero placeholder leaks, and source
-freshness. The complete serialized iOS unit target passes **4,549/4,549** with
-zero failed or skipped tests in
+freshness. The complete serialized iOS `NoumTests` target passes
+**4,549/4,549** with zero failed or skipped tests; `NoumUITests` was excluded
+from this result in
 `/private/tmp/noum-merged-full-unit/Logs/Test/Test-Noum-2026.07.20_19-43-35-+0100.xcresult`.
 Functions passes **163/163** tests plus **9/9** release locks. Coach Arena passes
 **119/119 Node** and **167/167 Python** tests. A clean optimized Release
@@ -301,7 +357,8 @@ visually inspected. The app intentionally forces the light color scheme at its
 root, so the requested dark-appearance check proves a remaining light-only
 product boundary, not dark-mode compatibility.
 
-Post-fix verification is green: the serialized iOS unit target passes
+Post-fix unit and focused verification is green; this is not a full
+shared-scheme result. The serialized iOS `NoumTests` target passes
 **4,545/4,545 tests with 0 failed and 0 skipped** in
 `/private/tmp/noum-vision-gap-all-units-accessibility.xcresult`; the focused
 journey and account-isolation suites pass 26/26; Functions passes 163/163 plus
@@ -366,9 +423,9 @@ contamination bug in the DEBUG evidence harness; fixture baseline/rating state
 is now isolated and restored after each corpus run.
 
 The current simulator configuration builds successfully. A fresh serialized
-complete unit-target run reports **4,542/4,542 executions passed, 0 failed, 0
-skipped**: 4,514 Swift tests in 456 suites plus 28 XCTest cases. The result
-bundle is
+complete `NoumTests` target run reports **4,542/4,542 executions passed, 0
+failed, 0 skipped**: 4,514 Swift Testing cases in 456 suites plus 28 XCTest
+cases in `NoumTests`; `NoumUITests` was excluded. The result bundle is
 `/private/tmp/noum-all-units-post-launch-repair-20260719.xcresult`. Functions
 passes 163/163 tests plus 9/9 release-lock checks; Coach Arena passes 118 tests
 with one intentional skip; and the local readiness selection passes 86/86.
@@ -3675,7 +3732,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   coaching profile, and recommendation outcomes.
 - **Cross-process state:** `SharedNoumState` writes a JSON snapshot
   (streak, freezes, reps-today, next-node) into the
-  `group.com.jordancoaten.noum` App Group. `SharedNoumStateMirror` keeps
+  `group.uk.co.otherpath.noum` App Group. `SharedNoumStateMirror` keeps
   it fresh after every session finalize and on every scenePhase active.
   Widget extension + Live Activity read this snapshot — never the main
   app's UserDefaults.

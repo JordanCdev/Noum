@@ -209,6 +209,15 @@ struct SummaryView: View {
         return PracticeProgressEligibility.qualifies(currentStoredSession)
     }
 
+    /// A path receipt is transient post-rep context, so Summary must only use
+    /// it when it was produced by the exact session this screen represents.
+    /// A pending receipt from an older rep remains available for Home to
+    /// acknowledge, but cannot relabel a newer Summary.
+    private var currentRepUnlockedPathStep: Bool {
+        guard let sessionID = currentStoredSession?.id else { return false }
+        return PathProgressManager.shared.pendingCelebrationSessionID == sessionID
+    }
+
     private var progressEligibleRecentSessions: [PracticeSession] {
         PracticeProgressEligibility.eligibleSessions(in: recentSessions)
     }
@@ -676,14 +685,13 @@ struct SummaryView: View {
         if let headlineOverride { return headlineOverride }
         if transcriptWordCount == 0 { return "No response detected" }
         if isMinimalEffort { return "Just getting started" }
-        // If a Path landmark just unlocked on this rep, the headline
-        // reads "Landmark reached." to anchor the story/progression
-        // register the rest of the app uses. PathProgressManager queues
-        // an unlocked node via `pendingCelebrationNodeID` when a session
-        // causes a node to satisfy its criteria. We read it here without
-        // consuming; Home's unified progress receipt owns acknowledgement.
-        if PathProgressManager.shared.pendingCelebrationNodeID != nil {
-            return "Landmark reached"
+        // If a Path step just unlocked on this rep, the headline confirms
+        // that progress was saved without exposing internal journey jargon.
+        // PathProgressManager queues the exact triggering session when a path
+        // step unlocks. Read it without consuming; Home's unified progress
+        // receipt still owns acknowledgement.
+        if currentRepUnlockedPathStep {
+            return "Progress saved"
         }
         switch scoreValue {
         case 9...10: return "Strong delivery"

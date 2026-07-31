@@ -27,7 +27,8 @@ Noum/Noum/Transcribe.plist
 Noum/Noum/AIConfig.plist
 Noum/Noum/GoogleService-Info.plist
 Noum/Noum/BackendConfig.plist
-Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme
+# The standard shared scheme is source-owned so a normal Debug run uses the
+# checked-in StoreKit development catalog.
 Noum/test.swift
 Noum/Info.plist
 Noum/Noum/Info.plist

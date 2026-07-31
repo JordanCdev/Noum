@@ -475,50 +475,7 @@ struct SettingsView: View {
         Button {
             showCoachingProfile = true
         } label: {
-            HStack(spacing: Spacing.md) {
-                profileHeroMark
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(displayName)
-                            .font(Typography.cardTitle)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-
-                        if premium.isPremium {
-                            Text("PRO")
-                                .font(.caption2.weight(.heavy))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(AppColor.pro, in: Capsule())
-                                .accessibilityLabel("Pro subscriber")
-                        }
-                    }
-
-                    // Identity first. If the user chose a voice target,
-                    // Settings echoes that choice instead of making the hero
-                    // feel like an XP receipt. The level still lives in
-                    // accessibility and progression surfaces.
-                    HStack(spacing: 6) {
-                        Image(systemName: profileHeroSubtitleIcon)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(profileHeroSubtitleTint)
-                        Text(profileHeroSubtitle)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(profileHeroSubtitleTint)
-                    }
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, 5)
-                    .background(profileHeroSubtitleTint.opacity(0.12), in: Capsule())
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.tertiary)
-            }
+            profileHeroContent
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(profileHeroBackground)
@@ -533,6 +490,121 @@ struct SettingsView: View {
         .accessibilityLabel(profileHeroAccessibilityLabel)
         .accessibilityHint("Open coaching profile to edit")
         .accessibilityIdentifier("settings.profileHero")
+    }
+
+    @ViewBuilder
+    private var profileHeroContent: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            // At accessibility sizes the subtitle needs the card's full
+            // width. Keeping the compact row would leave it squeezed between
+            // the character and chevron, producing one-character lines.
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    profileHeroMark
+                    Spacer(minLength: Spacing.sm)
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(AppColor.textTertiary)
+                        .accessibilityHidden(true)
+                }
+
+                profileHeroExpandedIdentity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                profileHeroSubtitleChip(isExpanded: true)
+            }
+        } else {
+            HStack(spacing: Spacing.md) {
+                profileHeroMark
+
+                VStack(alignment: .leading, spacing: 6) {
+                    profileHeroCompactIdentity
+                    profileHeroSubtitleChip(isExpanded: false)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var profileHeroCompactIdentity: some View {
+        HStack(spacing: 8) {
+            Text(displayName)
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            profileHeroProBadge
+        }
+    }
+
+    private var profileHeroExpandedIdentity: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(displayName)
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            profileHeroProBadge
+        }
+    }
+
+    @ViewBuilder
+    private var profileHeroProBadge: some View {
+        if premium.isPremium {
+            Text("PRO")
+                .font(.caption2.weight(.heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(AppColor.pro, in: Capsule())
+                .accessibilityLabel("Pro subscriber")
+        }
+    }
+
+    @ViewBuilder
+    private func profileHeroSubtitleChip(isExpanded: Bool) -> some View {
+        // Identity first. If the user chose a voice target, Settings echoes
+        // that choice instead of making the hero feel like an XP receipt. The
+        // level still lives in accessibility and progression surfaces.
+        //
+        // The goal tint remains in the surface, while semantic primary text
+        // keeps every goal option at AA contrast (the warm tint was 3.2:1).
+        if isExpanded {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                profileHeroSubtitleContent
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                profileHeroSubtitleTint.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+        } else {
+            HStack(spacing: 6) {
+                profileHeroSubtitleContent
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, 5)
+            .background(profileHeroSubtitleTint.opacity(0.12), in: Capsule())
+        }
+    }
+
+    @ViewBuilder
+    private var profileHeroSubtitleContent: some View {
+        Image(systemName: profileHeroSubtitleIcon)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(profileHeroSubtitleTint)
+            .accessibilityHidden(true)
+        Text(profileHeroSubtitle)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(AppColor.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var profileHeroSubtitle: String {
@@ -611,9 +683,11 @@ struct SettingsView: View {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     practiceDifficultyLabel
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     practiceDifficultyPicker
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 HStack(alignment: .center, spacing: Spacing.md) {
                     practiceDifficultyLabel
@@ -627,15 +701,32 @@ struct SettingsView: View {
     }
 
     private var practiceDifficultyLabel: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Practice difficulty")
+        // The enclosing AX section is already titled "Practice". Avoid a
+        // redundant two-line phrase at the largest sizes while keeping the
+        // full label in compact layouts and on the Picker's spoken name.
+        let title: LocalizedStringKey = dynamicTypeSize.isAccessibilitySize
+            ? "Difficulty"
+            : "Practice difficulty"
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(title)
                 .font(.subheadline.weight(.semibold))
+                .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(
+                    maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil,
+                    alignment: .leading
+                )
+                .padding(.trailing, dynamicTypeSize.isAccessibilitySize ? Spacing.sm : 0)
+                .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 1 : 0)
             Text(practiceSettings.timedDifficulty.subtitle)
                 .font(.caption)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        // The adjacent Picker already exposes the full label and this detail
+        // as its hint. Keep one useful VoiceOver stop instead of announcing a
+        // duplicate static label immediately before the control.
+        .accessibilityHidden(true)
     }
 
     private var practiceDifficultyPicker: some View {
@@ -647,6 +738,7 @@ struct SettingsView: View {
         .pickerStyle(.menu)
         .labelsHidden()
         .accessibilityLabel("Practice difficulty")
+        .accessibilityHint(practiceSettings.timedDifficulty.subtitle)
         .tint(AppColor.brandBlue)
     }
 

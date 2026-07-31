@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE="${1:-booted}"
-APP_ID="${NOUM_APP_ID:-com.jordancoaten.noum}"
+APP_ID="${NOUM_APP_ID:-uk.co.otherpath.noum}"
 
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is not installed or not on PATH" >&2

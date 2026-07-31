@@ -1597,7 +1597,7 @@ struct ProfileView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: Spacing.cardGap) {
+            VStack(spacing: Spacing.cardGap) {
                 let surfacePlan = defaultSurfacePlan
 
                 // Same staggered entrance Home uses (ContentView 530/569/593).
@@ -1605,15 +1605,14 @@ struct ProfileView: View {
                 // so switching Home → Profile was a visible drop in production
                 // value inside the same app.
                 //
-                // Deliberately only the cards that are on screen at first
-                // render. Home's stack is a plain VStack, so every card appears
-                // together and the stagger reads as one entrance; this stack is
-                // a LazyVStack, where `.onAppear` fires as a card is scrolled
-                // into view. Tagging the lower cards would make them fade in
-                // under the user's thumb mid-scroll — a different effect from
-                // the one Home has, and a noisier one. `cardEntrance` caps the
-                // stagger and collapses to an instant appearance under Reduce
-                // Motion.
+                // The default composition is deliberately bounded to four
+                // surfaces, so eager layout is both cheap and predictable.
+                // A LazyVStack entered a repeated placement pass when AX XXXL
+                // made the Coach Read card taller than the viewport; the first
+                // scroll could keep the main thread in layout indefinitely.
+                // Match Home's eager stack and animate only its three opening
+                // cards. `cardEntrance` caps the stagger and collapses to an
+                // instant appearance under Reduce Motion.
                 identityHeader
                     .cardEntrance(0)
 
@@ -1793,7 +1792,6 @@ struct ProfileView: View {
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
-                .lineLimit(3)
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "scope")
@@ -1809,7 +1807,6 @@ struct ProfileView: View {
                         .font(Typography.caption)
                         .foregroundStyle(AppColor.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(2)
                 }
             }
 
@@ -2644,7 +2641,7 @@ struct ProfileView: View {
                     .accessibilityHidden(true)
                 Text("Speaking rating")
                     .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.textSecondary)
+                    .foregroundStyle(AppColor.profileMetricLabelText)
                 }
 
                 Text(presentation.directionLine)

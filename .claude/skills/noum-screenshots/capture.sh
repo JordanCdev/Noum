@@ -27,7 +27,7 @@ BOOTED_LINE=$(xcrun simctl list devices booted 2>/dev/null | grep -E "Booted" | 
 [[ -z "$BOOTED_LINE" ]] && exit 0
 
 # Verify the Noum app is installed on the booted sim
-xcrun simctl listapps booted 2>/dev/null | grep -q "com.jordancoaten.noum" || exit 0
+xcrun simctl listapps booted 2>/dev/null | grep -q "uk.co.otherpath.noum" || exit 0
 
 # --- Capture ---
 DATE=$(date +%Y-%m-%d)
@@ -38,7 +38,7 @@ FOLDER="$REPO_ROOT/.screenshots/${DATE}_autostop-${SHORT_SHA}-${TIME}"
 mkdir -p "$FOLDER"
 
 for tab in home train review profile settings; do
-  xcrun simctl launch --terminate-running-process booted com.jordancoaten.noum \
+  xcrun simctl launch --terminate-running-process booted uk.co.otherpath.noum \
     UI_TESTING -DeepLink "noum://${tab}" > /dev/null 2>&1 || true
   sleep 3
   xcrun simctl io booted screenshot "$FOLDER/01_${tab}_top.png" > /dev/null 2>&1 || true

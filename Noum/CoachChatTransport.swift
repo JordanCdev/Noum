@@ -1047,6 +1047,11 @@ struct FirebaseCoachChatTransport: CoachChatTransport {
 
     func availability() async -> CoachChatTransportAvailability {
         #if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(FirebaseFunctions)
+        guard AuthManager.firebaseSDKSessionAccessAllowed(
+            arguments: ProcessInfo.processInfo.arguments
+        ) else {
+            return .unavailable(.secureSessionMissing)
+        }
         // The former callable preflight only echoed Auth/App Check admission;
         // it did not probe Vertex and production logs showed it returning true
         // immediately before failed generations. Keep composer admission local
@@ -1153,6 +1158,11 @@ struct FirebaseCoachChatTransport: CoachChatTransport {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    guard AuthManager.firebaseSDKSessionAccessAllowed(
+                        arguments: ProcessInfo.processInfo.arguments
+                    ) else {
+                        throw CoachChatTransportError.unauthenticated
+                    }
                     // `AICoachChatService.secureReply` owns the one remote
                     // capability preflight for this turn. Repeating it here
                     // could race a successful preflight and collapse a typed
