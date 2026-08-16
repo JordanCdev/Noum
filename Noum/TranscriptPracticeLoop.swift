@@ -489,11 +489,12 @@ struct TranscriptRetryMilestonePresentation: Identifiable, Equatable {
 }
 
 /// Full-screen earned beat between a verified retry and its evidence card.
-/// This is the production translation of Figma V3 E3: an explicit reward stack
-/// (Voiceform reaction, real XP when present, source-bound evidence, next step,
-/// then continue) rather than an abstract report transition. Nothing shown here
-/// is inferred from chrome: the presentation has already passed the strict
-/// retry truth gate, and optional progress is supplied by Summary's exact rep.
+/// This is the production translation of Figma V2.1 F1: an explicit reward
+/// stack (licensed waveform reaction, real XP when present, source-bound
+/// evidence, next step, then continue) rather than an abstract report
+/// transition. Nothing shown here is inferred from chrome: the presentation
+/// has already passed the strict retry truth gate, and optional progress is
+/// supplied by Summary's exact rep.
 @available(iOS 17.0, *)
 struct TranscriptRetryMilestoneView: View {
     let presentation: TranscriptRetryMilestonePresentation
@@ -505,7 +506,7 @@ struct TranscriptRetryMilestoneView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var evidenceFocused: Bool
-    @State private var voiceformPhase = RetryRewardVoiceformPhase.anticipation
+    @State private var waveformPhase = RetryRewardWaveformPhase.anticipation
     @State private var headlineVisible = false
     @State private var haloVisible = false
     @State private var particleBurstActive = false
@@ -531,7 +532,7 @@ struct TranscriptRetryMilestoneView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
                     header
-                    voiceformStage
+                    waveformStage
                     rewardPill
                     evidenceCard
                     nextStepStrip
@@ -611,23 +612,31 @@ struct TranscriptRetryMilestoneView: View {
         .accessibilityHidden(!headlineVisible)
     }
 
-    private var voiceformStage: some View {
+    private var waveformStage: some View {
         ZStack {
-            Circle()
-                .fill(rewardPurple.opacity(0.08))
+            Ellipse()
+                .fill(rewardPurple.opacity(0.055))
                 .frame(width: 230, height: 205)
                 .scaleEffect(haloVisible ? 1 : 0.86)
                 .opacity(haloVisible ? 1 : 0)
 
-            Circle()
-                .fill(Color.white.opacity(0.64))
+            Ellipse()
+                .fill(Color.white.opacity(0.42))
                 .frame(width: 178, height: 158)
+                .offset(x: -8, y: 2)
                 .scaleEffect(haloVisible ? 1 : 0.90)
+                .opacity(haloVisible ? 1 : 0)
+
+            Ellipse()
+                .fill(AppColor.brandBlueLight.opacity(0.045))
+                .frame(width: 152, height: 138)
+                .offset(x: 24, y: -4)
+                .scaleEffect(haloVisible ? 1 : 0.88)
                 .opacity(haloVisible ? 1 : 0)
 
             RetryRewardParticleBurst(active: particleBurstActive)
 
-            RetryRewardVoiceform(phase: voiceformPhase)
+            RetryRewardWaveform(phase: waveformPhase)
         }
         .frame(height: 190)
         .accessibilityHidden(true)
@@ -867,16 +876,12 @@ struct TranscriptRetryMilestoneView: View {
         withAnimation(.easeOut(duration: RetryRewardBeat.headlineReveal)) {
             headlineVisible = true
         }
-        withAnimation(.easeInOut(duration: RetryRewardBeat.voiceformCompress)) {
-            voiceformPhase = .compressed
-        }
-
-        guard await wait(RetryRewardBeat.voiceformCompress) else { return }
+        guard await wait(RetryRewardBeat.waveformHold) else { return }
         withAnimation(.spring(response: 0.30, dampingFraction: 0.58)) {
-            voiceformPhase = .lifted
+            waveformPhase = .lifted
         }
 
-        guard await wait(RetryRewardBeat.voiceformLift) else { return }
+        guard await wait(RetryRewardBeat.waveformLift) else { return }
         withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
             haloVisible = true
         }
@@ -884,7 +889,7 @@ struct TranscriptRetryMilestoneView: View {
 
         guard await wait(RetryRewardBeat.burstToReward) else { return }
         withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
-            voiceformPhase = .settled
+            waveformPhase = .settled
             rewardVisible = true
         }
         fireEvidenceFeedbackIfNeeded()
@@ -943,7 +948,7 @@ struct TranscriptRetryMilestoneView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            voiceformPhase = .settled
+            waveformPhase = .settled
             headlineVisible = true
             haloVisible = true
             particleBurstActive = false
@@ -976,16 +981,14 @@ struct TranscriptRetryMilestoneView: View {
     }
 }
 
-private enum RetryRewardVoiceformPhase: Equatable {
+private enum RetryRewardWaveformPhase: Equatable {
     case anticipation
-    case compressed
     case lifted
     case settled
 
     var scale: CGFloat {
         switch self {
-        case .anticipation: return 1
-        case .compressed: return 0.96
+        case .anticipation: return 0.54
         case .lifted: return 1.08
         case .settled: return 1
         }
@@ -993,78 +996,66 @@ private enum RetryRewardVoiceformPhase: Equatable {
 
     var yOffset: CGFloat {
         switch self {
-        case .anticipation, .compressed: return 5
-        case .lifted: return -4
+        case .anticipation: return 20
+        case .lifted: return -3
         case .settled: return 0
         }
     }
 
-    var signalScale: CGFloat {
+    var rotation: Angle {
         switch self {
-        case .anticipation, .compressed: return 0.55
-        case .lifted: return 1.22
-        case .settled: return 1
+        case .anticipation: return .degrees(-9)
+        case .lifted: return .degrees(-1)
+        case .settled: return .degrees(-2)
+        }
+    }
+
+    var opacity: Double {
+        switch self {
+        case .anticipation: return 0
+        case .lifted, .settled: return 1
         }
     }
 }
 
-private struct RetryRewardVoiceform: View {
-    let phase: RetryRewardVoiceformPhase
+/// Phosphor's MIT-licensed waveform, rendered as a template asset so Noum can
+/// own the colour and motion without turning it into another mascot container.
+/// See Resources/ThirdPartyNotices.txt.
+private struct RetryRewardWaveform: View {
+    let phase: RetryRewardWaveformPhase
 
     var body: some View {
         ZStack {
-            Circle()
-                .stroke(rewardPurple.opacity(0.18), lineWidth: 2)
-                .frame(width: 160, height: 160)
+            waveformImage
+                .foregroundStyle(deepViolet.opacity(0.58))
+                .offset(y: 6)
 
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(deepViolet)
-                .frame(width: 22, height: 22)
-                .rotationEffect(.degrees(-45))
-                .offset(x: -48, y: 56)
-
-            RoundedRectangle(cornerRadius: 42, style: .continuous)
-                .fill(
+            waveformImage
+                .foregroundStyle(
                     LinearGradient(
                         colors: [
-                            Color(red: 36 / 255, green: 29 / 255, blue: 70 / 255),
-                            Color(red: 78 / 255, green: 47 / 255, blue: 167 / 255),
-                            Color(red: 116 / 255, green: 81 / 255, blue: 232 / 255)
+                            Color(red: 11 / 255, green: 133 / 255, blue: 1),
+                            rewardPurple,
+                            Color(red: 177 / 255, green: 59 / 255, blue: 1)
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 42, style: .continuous)
-                        .stroke(
-                            Color(red: 198 / 255, green: 183 / 255, blue: 1).opacity(0.32),
-                            lineWidth: 2
-                        )
-                }
-                .frame(width: 156, height: 127)
-                .shadow(
-                    color: Color(red: 69 / 255, green: 43 / 255, blue: 145 / 255).opacity(0.22),
-                    radius: 17,
-                    y: 14
-                )
-                .shadow(
-                    color: Color(red: 23 / 255, green: 24 / 255, blue: 43 / 255).opacity(0.12),
-                    radius: 3,
-                    y: 2
-                )
-
-            HStack(alignment: .center, spacing: 7) {
-                signalBar(height: 20, index: 0, color: .white)
-                signalBar(height: 34, index: 1, color: .white)
-                signalBar(height: 48, index: 2, color: AppColor.brandBlueLight)
-                signalBar(height: 34, index: 3, color: .white)
-                signalBar(height: 20, index: 4, color: .white)
-            }
+                .shadow(color: deepViolet.opacity(0.26), radius: 14, y: 8)
         }
-        .frame(width: 193, height: 170)
+        .frame(width: 230, height: 190)
         .scaleEffect(phase.scale)
+        .rotationEffect(phase.rotation)
         .offset(y: phase.yOffset)
+        .opacity(phase.opacity)
+    }
+
+    private var waveformImage: some View {
+        Image("PhosphorWaveform")
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: 180, height: 180)
     }
 
     private var rewardPurple: Color {
@@ -1072,19 +1063,7 @@ private struct RetryRewardVoiceform: View {
     }
 
     private var deepViolet: Color {
-        Color(red: 52 / 255, green: 30 / 255, blue: 122 / 255)
-    }
-
-    private func signalBar(height: CGFloat, index: Int, color: Color) -> some View {
-        Capsule()
-            .fill(color)
-            .frame(width: 7, height: height)
-            .scaleEffect(x: 1, y: phase.signalScale, anchor: .center)
-            .animation(
-                .spring(response: 0.22, dampingFraction: 0.62)
-                    .delay(Double(abs(index - 2)) * 0.025),
-                value: phase
-            )
+        Color(red: 55 / 255, green: 18 / 255, blue: 124 / 255)
     }
 }
 
@@ -1123,7 +1102,7 @@ private struct RetryRewardParticleBurst: View {
                 .font(.system(size: index == 0 ? 22 : 18, weight: .bold))
         } else {
             Capsule()
-                .frame(width: 7, height: index == 2 ? 24 : 20)
+                .frame(width: 6, height: index == 2 ? 22 : 18)
         }
     }
 

@@ -1,5 +1,6 @@
 import Testing
 import SwiftUI
+import UIKit
 @testable import Noum
 
 // V4.6 polish layer — deterministic contracts for the semantic motion
@@ -67,11 +68,11 @@ struct MotionSemanticsTests {
         #expect(PhraseTransformationBeat.settled >= 0.55 && PhraseTransformationBeat.settled <= 0.75)
     }
 
-    // MARK: Earned retry reward (page-19 V3 E3)
+    // MARK: Earned retry reward (page-19 V2.1 F1)
 
     @Test func retryRewardBeatsStayInsideOneFastReveal() {
-        let summedToAction = RetryRewardBeat.voiceformCompress
-            + RetryRewardBeat.voiceformLift
+        let summedToAction = RetryRewardBeat.waveformHold
+            + RetryRewardBeat.waveformLift
             + RetryRewardBeat.burstToReward
             + RetryRewardBeat.rewardToEvidence
             + RetryRewardBeat.evidenceToNextStep
@@ -89,5 +90,15 @@ struct MotionSemanticsTests {
         #expect(RetryRewardBeat.requiresExplicitContinue)
         #expect(RetryRewardBeat.reducedMotionReveal <= 0.20)
         #expect(RetryRewardBeat.celebrationParticles == 6)
+    }
+
+    @Test @MainActor func retryRewardVisualAndLicenseAssetsAreBundled() {
+        #expect(UIImage(named: "PhosphorWaveform") != nil)
+        #expect(
+            Bundle.main.url(
+                forResource: "ThirdPartyNotices",
+                withExtension: "txt"
+            ) != nil
+        )
     }
 }

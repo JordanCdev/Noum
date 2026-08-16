@@ -64,28 +64,28 @@ enum PhraseTransformationBeat {
     static let settled: TimeInterval = 0.62
 }
 
-/// The earned retry celebration authored on Figma page 19 (V3 E3).
+/// The earned retry celebration authored on Figma page 19 (V2.1 F1).
 /// Durations describe semantic gaps in one sequence. The button becomes
 /// available only after the verified evidence and next step have landed;
 /// unlike the retired report transition, this moment never auto-advances.
 enum RetryRewardBeat {
     static let startDelay: TimeInterval = 0.18
     static let headlineReveal: TimeInterval = 0.24
-    static let voiceformCompress: TimeInterval = 0.09
-    static let voiceformLift: TimeInterval = 0.21
+    static let waveformHold: TimeInterval = 0.09
+    static let waveformLift: TimeInterval = 0.21
     static let burstToReward: TimeInterval = 0.22
     static let rewardToEvidence: TimeInterval = 0.28
     static let evidenceToNextStep: TimeInterval = 0.28
     static let nextStepToAction: TimeInterval = 0.30
     static let actionReveal: TimeInterval = 0.20
     static let reducedMotionReveal: TimeInterval = 0.16
-    /// Six authored particles around the Voiceform — never a full-screen rain.
+    /// Six authored particles around the waveform — never full-screen rain.
     static let celebrationParticles = 6
     static let requiresExplicitContinue = true
 
     /// Relative offset from playback start to the CTA becoming actionable.
-    static let actionReadyOffset: TimeInterval = voiceformCompress
-        + voiceformLift
+    static let actionReadyOffset: TimeInterval = waveformHold
+        + waveformLift
         + burstToReward
         + rewardToEvidence
         + evidenceToNextStep
