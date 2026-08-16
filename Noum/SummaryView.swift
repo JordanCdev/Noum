@@ -149,6 +149,12 @@ struct SummaryView: View {
     @Environment(\.requestReview) private var requestReview
     @State private var reviewPromptExitGate = SummaryReviewPromptExitGate()
     @State private var transcriptUpgradeState: TranscriptUpgradePresentationState?
+    /// Page-19 C1 → C2 earned beat. Ephemeral by design: it appears once for
+    /// the just-finished Summary mount, then yields to the durable evidence
+    /// card and Updated-Today receipt.
+    @State private var dismissedRetryMilestoneOutcomeIDs: Set<UUID> = []
+    @State private var resolvedRetryMilestonePresentation: TranscriptRetryMilestonePresentation?
+    @State private var didResolveRetryMilestonePresentation = false
 
     private let aiCoachService: AICoachServicing = AICoachService()
 
@@ -195,6 +201,40 @@ struct SummaryView: View {
             return nil
         }
         return sessionStore.sessions.first { $0.id == sourceID }
+    }
+
+    private var currentTranscriptRetryMilestonePresentation: TranscriptRetryMilestonePresentation? {
+        guard let outcome = currentTranscriptRetryOutcome,
+              let retrySession = currentStoredSession else {
+            return nil
+        }
+        return TranscriptRetryMilestonePresentation.make(
+            outcome: outcome,
+            sourceSession: currentTranscriptRetrySource,
+            retrySession: retrySession,
+            priorHolds: leverTally(excluding: outcome).holds
+        )
+    }
+
+    private var effectiveTranscriptRetryMilestonePresentation: TranscriptRetryMilestonePresentation? {
+        didResolveRetryMilestonePresentation
+            ? resolvedRetryMilestonePresentation
+            : currentTranscriptRetryMilestonePresentation
+    }
+
+    private var displayedTranscriptRetryMilestone: TranscriptRetryMilestonePresentation? {
+        guard let presentation = effectiveTranscriptRetryMilestonePresentation,
+              !dismissedRetryMilestoneOutcomeIDs.contains(presentation.id),
+              !showPaywall,
+              !showVideoPlayback,
+              !showShareMenu,
+              !showFeedbackRequestSheet,
+              !showAIDisclosure,
+              activeMiniDrill == nil,
+              miniDrillOutcome == nil else {
+            return nil
+        }
+        return presentation
     }
 
     private var coachScoreEvidence: Int? {
@@ -424,7 +464,8 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var transcriptRetryComparisonSection: some View {
-        if let outcome = currentTranscriptRetryOutcome,
+        if displayedTranscriptRetryMilestone == nil,
+           let outcome = currentTranscriptRetryOutcome,
            let retrySession = currentStoredSession {
             TranscriptRetryComparisonCard(
                 outcome: outcome,
@@ -434,7 +475,8 @@ struct SummaryView: View {
                 priorHolds: leverTally(excluding: outcome).holds,
                 priorTries: leverTally(excluding: outcome).tries,
                 nextClockSeconds: summaryRecommendation.suggestedTimedDifficulty?.duration
-                    .map { Int($0) }
+                    .map { Int($0) },
+                playsPayoffFeedback: effectiveTranscriptRetryMilestonePresentation == nil
             )
         }
     }
@@ -447,7 +489,9 @@ struct SummaryView: View {
             ?? current.transcriptRetryComparison?.lever
         guard let lever else { return (0, 0) }
         let priors = recommendationLearningStore.outcomes.filter {
-            $0.id != current.id && $0.transcriptRetryComparison?.lever == lever
+            $0.id != current.id
+                && $0.transcriptRetryComparison?.lever == lever
+                && $0.transcriptRetryComparison?.isComparable == true
         }
         let holds = priors.filter {
             let result = $0.transcriptRetryComparison?.result
@@ -1181,33 +1225,51 @@ struct SummaryView: View {
                         }
                     )
                 }
-                // The native toolbar action is always visible. Preserve the
-                // named rotor action as an equivalent non-visual escape.
+                // Preserve the named rotor action as an equivalent non-visual
+                // escape whenever the Summary content is the active layer.
                 .accessibilityAction(named: Text("Done")) {
                     completeSummaryReview()
                 }
+                .allowsHitTesting(displayedTranscriptRetryMilestone == nil)
+                .accessibilityHidden(displayedTranscriptRetryMilestone != nil)
                 .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
 
+            if let presentation = displayedTranscriptRetryMilestone {
+                TranscriptRetryMilestoneView(
+                    presentation: presentation,
+                    earnedXP: earnedXPForPresentation,
+                    unlockedNextStep: currentRepUnlockedPathStep
+                ) {
+                    withAnimation(reduceMotion ? .v46ReduceMotionFade : .v46Dissolve) {
+                        dismissedRetryMilestoneOutcomeIDs.insert(presentation.id)
+                    }
+                }
+                .id(presentation.id)
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
         .overlay {
             // Summary intentionally hides navigation chrome. Keep a quiet,
             // persistent safe-area scrim so coaching never competes with the
             // status-bar clock and indicators.
-            GeometryReader { geometry in
-                VStack(spacing: 0) {
-                    AppColor.screenBackground
-                        .frame(maxWidth: .infinity)
-                        .frame(
-                            height: SummaryTopSafeAreaCoverLayout.height(
-                                for: geometry.safeAreaInsets.top
+            if displayedTranscriptRetryMilestone == nil {
+                GeometryReader { geometry in
+                    VStack(spacing: 0) {
+                        AppColor.screenBackground
+                            .frame(maxWidth: .infinity)
+                            .frame(
+                                height: SummaryTopSafeAreaCoverLayout.height(
+                                    for: geometry.safeAreaInsets.top
+                                )
                             )
-                        )
-                    Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                    }
+                    .ignoresSafeArea(edges: .top)
                 }
-                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -1223,6 +1285,10 @@ struct SummaryView: View {
                 .accessibilityHint("Finishes the review and returns to your journey.")
             }
         }
+        .toolbar(
+            displayedTranscriptRetryMilestone == nil ? .visible : .hidden,
+            for: .navigationBar
+        )
         .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .disableSwipeBack()
@@ -2699,6 +2765,9 @@ struct SummaryView: View {
     private func setup() {
         guard !didApplyXP else { return }
         didApplyXP = true
+        let retryMilestonePresentation = currentTranscriptRetryMilestonePresentation
+        resolvedRetryMilestonePresentation = retryMilestonePresentation
+        didResolveRetryMilestonePresentation = true
         lockedTranscriptText = String(transcript.characters)
         lockedFillerCount = fillerCount
         lockedDuration = duration
@@ -2752,7 +2821,10 @@ struct SummaryView: View {
         // setup()-time profile.xp snapshot would already include the rep.
         progressionPreviousXP = result.previousXP
 
-        animateXP(to: result.newXP)
+        animateXP(
+            to: result.newXP,
+            playsCompletionHaptic: retryMilestonePresentation == nil
+        )
         // Results now opens as one calm coaching receipt. Progress and score
         // remain visible immediately without a separate sound or fanfare beat.
 
@@ -2947,7 +3019,7 @@ struct SummaryView: View {
         }
     }
 
-    private func animateXP(to endXP: Int) {
+    private func animateXP(to endXP: Int, playsCompletionHaptic: Bool) {
         let shouldReduceMotion = reduceMotion
         Task {
             if shouldReduceMotion {
@@ -2958,7 +3030,7 @@ struct SummaryView: View {
                     currentLevel = ProfileManager.levelTitle(forXP: endXP)
                     nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                     xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
-                    if earned { CoachHaptic.xpEarned() }
+                    if earned && playsCompletionHaptic { CoachHaptic.xpEarned() }
                 }
                 return
             }
@@ -2975,7 +3047,7 @@ struct SummaryView: View {
                 currentLevel = ProfileManager.levelTitle(forXP: endXP)
                 nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                 xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
-                if endXP > startXP { CoachHaptic.xpEarned() }
+                if endXP > startXP && playsCompletionHaptic { CoachHaptic.xpEarned() }
             }
         }
     }

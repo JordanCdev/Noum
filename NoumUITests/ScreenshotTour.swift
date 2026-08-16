@@ -948,6 +948,20 @@ final class ScreenshotTour: XCTestCase {
             deepAttach(app, name: "V46-02-processing")
         }
 
+        let evidence = app.buttons["transcriptRetry.continueToEvidence"]
+        XCTAssertTrue(
+            evidence.waitForExistence(timeout: 25),
+            "The verified retry should present its earned evidence moment."
+        )
+        let evidenceDeadline = Date().addingTimeInterval(5)
+        while Date() < evidenceDeadline, (!evidence.isEnabled || !evidence.isHittable) {
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        deepAttach(app, name: "V46-03-earned-retry")
+        XCTAssertTrue(evidence.isEnabled)
+        XCTAssertTrue(evidence.isHittable)
+        evidence.tap()
+
         XCTAssertTrue(
             app.otherElements["summary.postRepVerdict"].waitForExistence(timeout: 25),
             "The scripted retry should finalize into the review."
@@ -960,7 +974,7 @@ final class ScreenshotTour: XCTestCase {
         )
         scrollUntilCentered(comparison, in: app, maxSwipes: 4)
         Thread.sleep(forTimeInterval: 1.0)
-        deepAttach(app, name: "V46-03-comparison-payoff")
+        deepAttach(app, name: "V46-04-comparison-payoff")
         app.terminate()
     }
 

@@ -421,6 +421,749 @@ private extension Comparable {
 #if canImport(SwiftUI)
 import SwiftUI
 
+/// Source-bound copy for the page-19 C1 → C2 result beat. The milestone is
+/// only available for a verified improved retry; it never invents a win from
+/// score, duration, or a generic completion event.
+struct TranscriptRetryMilestonePresentation: Identifiable, Equatable {
+    let id: UUID
+    let headline: String
+    let detail: String
+
+    static func make(
+        outcome: RecommendationOutcome,
+        sourceSession: PracticeSession?,
+        retrySession: PracticeSession,
+        priorHolds: Int
+    ) -> TranscriptRetryMilestonePresentation? {
+        guard outcome.isVerifiedFollowed,
+              outcome.mode == .timed,
+              retrySession.mode == .timed,
+              outcome.sessionID == retrySession.id,
+              let target = outcome.transcriptRetryTarget,
+              target.isSupported,
+              let sourceSession,
+              outcome.sourceSessionID == sourceSession.id,
+              let comparison = outcome.transcriptRetryComparison,
+              comparison.isComparable,
+              comparison.result == .improved,
+              (comparison.retrySignal - comparison.sourceSignal) >= TranscriptRetryComparator.meaningfulSignalMovement,
+              comparison.meaningOverlapPercent >= Int(
+                (TranscriptRetryComparator.minimumMeaningOverlap * 100).rounded()
+              ),
+              comparison.lever == target.lever,
+              comparison.sourceSessionID == sourceSession.id,
+              comparison.retrySessionID == retrySession.id else {
+            return nil
+        }
+
+        let lever = target.lever
+        let underPressure: Bool
+        switch retrySession.practiceDemand?.timedDifficulty {
+        case .medium, .hard:
+            underPressure = true
+        default:
+            underPressure = false
+        }
+
+        let isFirstHold = priorHolds == 0
+        let headline: String
+        switch (isFirstHold, underPressure) {
+        case (true, true): headline = String(localized: "First hold under pressure")
+        case (true, false): headline = String(localized: "First hold")
+        case (false, true): headline = String(localized: "Held again under pressure")
+        case (false, false): headline = String(localized: "The target moved")
+        }
+
+        // Transcript comparison verifies movement in the prescribed lever;
+        // whole-rep duration cannot prove when the answer itself landed.
+        let detail = String(
+            localized: "Your \(lever.focusLabel) was stronger on this retry."
+        )
+
+        return TranscriptRetryMilestonePresentation(
+            id: outcome.id,
+            headline: headline,
+            detail: detail
+        )
+    }
+}
+
+/// Full-screen earned beat between a verified retry and its evidence card.
+/// This is the production translation of Figma D3: an explicit reward stack
+/// (character reaction, real XP when present, source-bound evidence, receipt,
+/// then continue) rather than an abstract report transition. Nothing shown here
+/// is inferred from chrome: the presentation has already passed the strict
+/// retry truth gate, and optional progress is supplied by Summary's exact rep.
+@available(iOS 17.0, *)
+struct TranscriptRetryMilestoneView: View {
+    let presentation: TranscriptRetryMilestonePresentation
+    var earnedXP: Int = 0
+    var unlockedNextStep = false
+    let onContinue: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @AccessibilityFocusState private var evidenceFocused: Bool
+    @State private var characterPhase = RetryRewardCharacterPhase.anticipation
+    @State private var headlineVisible = false
+    @State private var haloVisible = false
+    @State private var confettiActive = false
+    @State private var rewardVisible = false
+    @State private var evidenceVisible = false
+    @State private var receiptsVisible = false
+    @State private var actionVisible = false
+    @State private var contentVisible = true
+    @State private var canContinue = false
+    @State private var hasStarted = false
+    @State private var hasFinished = false
+    @State private var didFireEvidenceFeedback = false
+    @State private var wasInterrupted = false
+    @State private var playbackTask: Task<Void, Never>?
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 244 / 255, green: 238 / 255, blue: 255 / 255),
+                    Color(red: 234 / 255, green: 244 / 255, blue: 255 / 255)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            decorativeBackdrop
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 16) {
+                    header
+                    characterStage
+                    rewardPill
+                    evidenceCard
+                    receiptRow
+                }
+                .frame(maxWidth: 430)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 104)
+            }
+            .opacity(contentVisible ? 1 : 0)
+            .accessibilityHidden(!contentVisible)
+
+            ConfettiLayer(
+                active: confettiActive,
+                pieceCount: RetryRewardBeat.confettiPieces,
+                duration: 1.35
+            )
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            continueButton
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+                .background(.ultraThinMaterial)
+        }
+        .onAppear(perform: play)
+        .onDisappear {
+            playbackTask?.cancel()
+            if !hasFinished { wasInterrupted = true }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhase(phase)
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            handleMotionPreferenceChange()
+        }
+        .preferredColorScheme(.light)
+        .accessibilityIdentifier("transcriptRetry.milestone")
+    }
+
+    private var decorativeBackdrop: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Circle()
+                    .fill(Color(red: 209 / 255, green: 133 / 255, blue: 255 / 255).opacity(0.18))
+                    .frame(width: 310, height: 310)
+                    .position(x: 78, y: 24)
+                Circle()
+                    .fill(AppColor.brandBlueLight.opacity(0.14))
+                    .frame(width: 240, height: 240)
+                    .position(x: geometry.size.width - 30, y: 128)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+
+    private var header: some View {
+        VStack(spacing: 6) {
+            Text("REP COMPLETE")
+                .font(Typography.figtree(size: 12, weight: .bold, relativeTo: .caption))
+                .foregroundStyle(rewardPurple)
+                .tracking(0.5)
+
+            Text("THAT LANDED.")
+                .font(Typography.figtree(size: 36, weight: .heavy, relativeTo: .largeTitle))
+                .foregroundStyle(rewardInk)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.78)
+                .opacity(headlineVisible ? 1 : 0)
+                .offset(y: headlineVisible ? 0 : 14)
+                .scaleEffect(headlineVisible ? 1 : 0.93)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityHidden(!headlineVisible)
+    }
+
+    private var characterStage: some View {
+        ZStack {
+            ZStack {
+                Circle()
+                    .fill(rewardGold.opacity(0.16))
+                    .frame(width: 230, height: 205)
+                Circle()
+                    .fill(Color(red: 209 / 255, green: 133 / 255, blue: 255 / 255).opacity(0.18))
+                    .frame(width: 178, height: 158)
+                Circle()
+                    .fill(Color.white.opacity(0.56))
+                    .frame(width: 124, height: 112)
+            }
+            .scaleEffect(haloVisible ? 1 : 0.35)
+            .opacity(haloVisible ? 1 : 0)
+
+            RetryRewardCompanion(phase: characterPhase)
+        }
+        .frame(height: 188)
+        .accessibilityHidden(true)
+    }
+
+    private var rewardPill: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(red: 199 / 255, green: 123 / 255, blue: 0))
+                .offset(y: 8)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 1, green: 232 / 255, blue: 115 / 255), rewardGold],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .shadow(color: Color.brown.opacity(0.18), radius: 14, y: 8)
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.76))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 19, weight: .black))
+                        .foregroundStyle(Color(red: 182 / 255, green: 107 / 255, blue: 0))
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(spacing: 0) {
+                    Text(rewardTitle)
+                        .font(Typography.figtree(size: 25, weight: .heavy, relativeTo: .title2))
+                        .foregroundStyle(Color(red: 109 / 255, green: 67 / 255, blue: 0))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    Text(
+                        earnedXP > 0
+                            ? String(localized: "EARNED")
+                            : String(localized: "EVIDENCE SAVED")
+                    )
+                        .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
+                        .foregroundStyle(Color(red: 109 / 255, green: 67 / 255, blue: 0))
+                        .tracking(0.4)
+                }
+                .frame(minWidth: 102)
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 193)
+        .frame(minHeight: 76)
+        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+        .opacity(rewardVisible ? 1 : 0)
+        .offset(y: rewardVisible ? 0 : 28)
+        .scaleEffect(rewardVisible ? 1 : 0.55)
+        .accessibilityElement(children: .combine)
+        .accessibilityHidden(!rewardVisible)
+    }
+
+    private var evidenceCard: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+                .fill(rewardLime)
+                .frame(width: 7)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        Circle().fill(rewardLime.opacity(0.2))
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 15, weight: .black))
+                            .foregroundStyle(AppColor.positive)
+                    }
+                    .frame(width: 42, height: 42)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(presentation.headline.uppercased())
+                            .font(Typography.figtree(size: 10, weight: .bold, relativeTo: .caption))
+                            .foregroundStyle(Color(red: 51 / 255, green: 116 / 255, blue: 25 / 255))
+                            .tracking(0.35)
+                        Text(presentation.detail)
+                            .font(Typography.figtree(size: 18, weight: .heavy, relativeTo: .headline))
+                            .foregroundStyle(rewardInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Text("SAME TARGET  →  STRONGER RETRY")
+                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
+                    .foregroundStyle(Color(red: 109 / 255, green: 90 / 255, blue: 145 / 255))
+                    .tracking(0.3)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule().fill(Color(red: 244 / 255, green: 241 / 255, blue: 250 / 255))
+                    )
+            }
+            .padding(16)
+        }
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: rewardPurple.opacity(0.10), radius: 18, y: 7)
+        .opacity(evidenceVisible ? 1 : 0)
+        .offset(y: evidenceVisible ? 0 : 30)
+        .accessibilityElement(children: .combine)
+        .accessibilityHidden(!evidenceVisible)
+        .accessibilityFocused($evidenceFocused)
+    }
+
+    private var receiptRow: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 12) { receiptTiles }
+            } else {
+                HStack(spacing: 12) { receiptTiles }
+            }
+        }
+        .opacity(receiptsVisible ? 1 : 0)
+        .offset(y: receiptsVisible ? 0 : 20)
+        .scaleEffect(receiptsVisible ? 1 : 0.88)
+        .accessibilityHidden(!receiptsVisible)
+    }
+
+    @ViewBuilder
+    private var receiptTiles: some View {
+        Group {
+            receiptTile(
+                icon: "checkmark.seal.fill",
+                iconColor: AppColor.positive,
+                colors: [
+                    Color(red: 1, green: 244 / 255, blue: 229 / 255),
+                    Color(red: 1, green: 229 / 255, blue: 195 / 255)
+                ],
+                value: "VERIFIED",
+                label: "SOURCE MATCH"
+            )
+
+            receiptTile(
+                icon: unlockedNextStep ? "lock.open.fill" : "brain.head.profile",
+                iconColor: AppColor.brandBlue,
+                colors: [
+                    Color(red: 233 / 255, green: 242 / 255, blue: 1),
+                    Color(red: 229 / 255, green: 228 / 255, blue: 1)
+                ],
+                value: unlockedNextStep ? "NEXT STEP" : "COACH MEMORY",
+                label: unlockedNextStep ? "UNLOCKED" : "SAVED"
+            )
+        }
+    }
+
+    private func receiptTile(
+        icon: String,
+        iconColor: Color,
+        colors: [Color],
+        value: LocalizedStringKey,
+        label: LocalizedStringKey
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(iconColor)
+            Text(value)
+                .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .headline))
+                .foregroundStyle(rewardInk)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
+            Text(label)
+                .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
+                .foregroundStyle(rewardInk.opacity(0.74))
+                .tracking(0.35)
+        }
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+        .padding(14)
+        .background(
+            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: iconColor.opacity(0.10), radius: 12, y: 5)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var continueButton: some View {
+        Button(action: continueToEvidence) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(red: 79 / 255, green: 34 / 255, blue: 158 / 255))
+                    .offset(y: 7)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [AppColor.brandBlue, rewardPurple],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(color: rewardPurple.opacity(0.20), radius: 12, y: 7)
+                Text("CONTINUE TO EVIDENCE")
+                    .font(Typography.figtree(size: 16, weight: .heavy, relativeTo: .headline))
+                    .foregroundStyle(Color.white)
+                    .tracking(0.2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+            }
+            .frame(height: 58)
+        }
+        .buttonStyle(.pressable)
+        .disabled(!canContinue)
+        .opacity(actionVisible ? 1 : 0.34)
+        .scaleEffect(actionVisible ? 1 : 0.98)
+        .accessibilityHint("Opens your verified retry evidence.")
+        .accessibilityHidden(!actionVisible || !contentVisible)
+        .accessibilityIdentifier("transcriptRetry.continueToEvidence")
+    }
+
+    private var rewardTitle: String {
+        earnedXP > 0
+            ? String(localized: "+\(earnedXP) XP")
+            : String(localized: "Coach win")
+    }
+
+    private var rewardPurple: Color {
+        Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
+    }
+
+    private var rewardGold: Color {
+        Color(red: 1, green: 200 / 255, blue: 74 / 255)
+    }
+
+    private var rewardLime: Color {
+        Color(red: 155 / 255, green: 227 / 255, blue: 90 / 255)
+    }
+
+    private var rewardInk: Color {
+        Color(red: 23 / 255, green: 32 / 255, blue: 51 / 255)
+    }
+
+    private func play() {
+        if hasStarted {
+            if wasInterrupted, scenePhase == .active { settleAfterInterruption() }
+            return
+        }
+        hasStarted = true
+        playbackTask = Task { @MainActor in
+            guard await wait(RetryRewardBeat.startDelay) else { return }
+            guard scenePhase == .active else {
+                wasInterrupted = true
+                return
+            }
+            if reduceMotion {
+                await playReducedMotion()
+            } else {
+                await playCelebration()
+            }
+        }
+    }
+
+    @MainActor
+    private func playReducedMotion() async {
+        settleToFinalFrame(contentVisible: false)
+        withAnimation(.easeInOut(duration: RetryRewardBeat.reducedMotionReveal)) {
+            contentVisible = true
+        }
+        guard await wait(RetryRewardBeat.reducedMotionReveal) else { return }
+        fireEvidenceFeedbackIfNeeded()
+        canContinue = true
+        evidenceFocused = true
+    }
+
+    @MainActor
+    private func playCelebration() async {
+        withAnimation(.easeOut(duration: RetryRewardBeat.headlineReveal)) {
+            headlineVisible = true
+        }
+        withAnimation(.easeInOut(duration: RetryRewardBeat.characterSquash)) {
+            characterPhase = .squash
+        }
+
+        guard await wait(RetryRewardBeat.characterSquash) else { return }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.58)) {
+            characterPhase = .jump
+        }
+
+        guard await wait(RetryRewardBeat.characterJump) else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
+            haloVisible = true
+        }
+        confettiActive = true
+
+        guard await wait(RetryRewardBeat.burstToReward) else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
+            characterPhase = .settled
+            rewardVisible = true
+        }
+        fireEvidenceFeedbackIfNeeded()
+
+        guard await wait(RetryRewardBeat.rewardToEvidence) else { return }
+        withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+            evidenceVisible = true
+        }
+        evidenceFocused = true
+
+        guard await wait(RetryRewardBeat.evidenceToReceipts) else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.70)) {
+            receiptsVisible = true
+        }
+
+        guard await wait(RetryRewardBeat.receiptsToAction) else { return }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            actionVisible = true
+        }
+        canContinue = true
+    }
+
+    private func fireEvidenceFeedbackIfNeeded() {
+        guard !didFireEvidenceFeedback else { return }
+        didFireEvidenceFeedback = true
+        CoachHaptic.earnedEvidence()
+        InteractionSoundEngine.cue(.verdictReveal)
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+        guard hasStarted, !hasFinished else { return }
+        if phase != .active {
+            playbackTask?.cancel()
+            playbackTask = nil
+            wasInterrupted = true
+        } else if wasInterrupted {
+            settleAfterInterruption()
+        }
+    }
+
+    private func handleMotionPreferenceChange() {
+        guard hasStarted, !hasFinished else { return }
+        playbackTask?.cancel()
+        settleAfterInterruption()
+    }
+
+    private func settleAfterInterruption() {
+        wasInterrupted = false
+        settleToFinalFrame(contentVisible: true)
+        fireEvidenceFeedbackIfNeeded()
+        canContinue = true
+        evidenceFocused = true
+    }
+
+    private func settleToFinalFrame(contentVisible: Bool) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            characterPhase = .settled
+            headlineVisible = true
+            haloVisible = true
+            confettiActive = false
+            rewardVisible = true
+            evidenceVisible = true
+            receiptsVisible = true
+            actionVisible = true
+            self.contentVisible = contentVisible
+        }
+    }
+
+    @MainActor
+    private func wait(_ duration: TimeInterval) async -> Bool {
+        do {
+            try await Task.sleep(
+                nanoseconds: UInt64(max(0, duration) * 1_000_000_000)
+            )
+            return !Task.isCancelled
+        } catch {
+            return false
+        }
+    }
+
+    private func continueToEvidence() {
+        guard canContinue, !hasFinished else { return }
+        hasFinished = true
+        playbackTask?.cancel()
+        CoachHaptic.selectionTap()
+        onContinue()
+    }
+}
+
+private enum RetryRewardCharacterPhase {
+    case anticipation
+    case squash
+    case jump
+    case settled
+
+    var xScale: CGFloat {
+        switch self {
+        case .anticipation: return 1.04
+        case .squash: return 1.08
+        case .jump: return 0.96
+        case .settled: return 1
+        }
+    }
+
+    var yScale: CGFloat {
+        switch self {
+        case .anticipation: return 0.92
+        case .squash: return 0.90
+        case .jump: return 1.10
+        case .settled: return 1
+        }
+    }
+
+    var yOffset: CGFloat {
+        switch self {
+        case .anticipation: return 4
+        case .squash: return 8
+        case .jump: return -24
+        case .settled: return 0
+        }
+    }
+}
+
+private struct RetryRewardCompanion: View {
+    let phase: RetryRewardCharacterPhase
+
+    var body: some View {
+        ZStack {
+            arm(rotation: 42)
+                .offset(x: -73, y: -32)
+            arm(rotation: -42)
+                .offset(x: 73, y: -32)
+
+            RetryRewardSpeechTail()
+                .fill(Color(red: 84 / 255, green: 33 / 255, blue: 162 / 255))
+                .frame(width: 38, height: 33)
+                .offset(x: -43, y: 52)
+
+            RoundedRectangle(cornerRadius: 46, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            AppColor.brandBlueLight,
+                            Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255),
+                            Color(red: 84 / 255, green: 33 / 255, blue: 162 / 255)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 46, style: .continuous)
+                        .stroke(Color.white.opacity(0.38), lineWidth: 2)
+                }
+                .frame(width: 169, height: 124)
+
+            crest
+                .offset(x: -32, y: -69)
+
+            HStack(spacing: 23) {
+                RetryRewardHappyEye()
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                RetryRewardHappyEye()
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
+            .frame(width: 104, height: 24)
+            .offset(y: -17)
+
+            ZStack(alignment: .bottom) {
+                Capsule()
+                    .fill(Color(red: 42 / 255, green: 23 / 255, blue: 79 / 255))
+                    .frame(width: 40, height: 33)
+                Capsule()
+                    .fill(Color(red: 1, green: 122 / 255, blue: 154 / 255))
+                    .frame(width: 23, height: 10)
+                    .offset(y: -3)
+            }
+            .offset(y: 28)
+
+            HStack(spacing: 24) {
+                Capsule().fill(Color(red: 78 / 255, green: 32 / 255, blue: 153 / 255))
+                Capsule().fill(Color(red: 78 / 255, green: 32 / 255, blue: 153 / 255))
+            }
+            .frame(width: 87, height: 16)
+            .offset(y: 68)
+        }
+        .frame(width: 190, height: 170)
+        .scaleEffect(x: phase.xScale, y: phase.yScale, anchor: .center)
+        .offset(y: phase.yOffset)
+    }
+
+    private var crest: some View {
+        HStack(alignment: .bottom, spacing: 5) {
+            Capsule()
+                .fill(Color(red: 209 / 255, green: 133 / 255, blue: 255 / 255))
+                .frame(width: 10, height: 23)
+            Capsule()
+                .fill(Color(red: 1, green: 200 / 255, blue: 74 / 255))
+                .frame(width: 10, height: 32)
+            Capsule()
+                .fill(AppColor.brandBlueLight)
+                .frame(width: 10, height: 21)
+        }
+    }
+
+    private func arm(rotation: Double) -> some View {
+        Capsule()
+            .fill(Color(red: 108 / 255, green: 85 / 255, blue: 219 / 255))
+            .frame(width: 42, height: 12)
+            .rotationEffect(.degrees(rotation))
+    }
+}
+
+private struct RetryRewardHappyEye: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.maxY),
+            control: CGPoint(x: rect.midX, y: rect.minY)
+        )
+        return path
+    }
+}
+
+private struct RetryRewardSpeechTail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.width * 0.28, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
 @available(iOS 17.0, *)
 struct TranscriptRetryComparisonCard: View {
     let outcome: RecommendationOutcome
@@ -434,6 +1177,9 @@ struct TranscriptRetryComparisonCard: View {
     /// The next prescribed answer clock in seconds, when a recommendation
     /// exists. Nil hides the "Next:" sentence.
     var nextClockSeconds: Int? = nil
+    /// The full-screen milestone owns the improved-result haptic when shown;
+    /// history/reopened cards keep the existing inline feedback by default.
+    var playsPayoffFeedback: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// One-shot entrance guard keyed on the outcome identity — Summary can
@@ -705,6 +1451,7 @@ struct TranscriptRetryComparisonCard: View {
     }
 
     private func fireResultHaptic() {
+        guard playsPayoffFeedback else { return }
         switch result {
         case .improved: CoachHaptic.earnedEvidence()
         case .held: CoachHaptic.drillIncomplete()

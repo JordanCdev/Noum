@@ -220,6 +220,12 @@ final class GoalOutcomeLoopUITests: XCTestCase {
     private func advanceInjectedTimedRepToSummary(in app: XCUIApplication) {
         let deadline = Date().addingTimeInterval(35)
         while Date() < deadline {
+            let evidence = app.buttons["transcriptRetry.continueToEvidence"]
+            if evidence.exists, evidence.isEnabled, evidence.isHittable {
+                evidence.tap()
+                Thread.sleep(forTimeInterval: 0.6)
+                continue
+            }
             if app.descendants(matching: .any)["summary.postRepVerdict"].exists { return }
             for identifier in ["timedPractice.begin", "timedPractice.startNow"] {
                 let button = app.buttons[identifier]

@@ -66,4 +66,29 @@ struct MotionSemanticsTests {
         // Brief: total sequence ≈ 550–750ms.
         #expect(PhraseTransformationBeat.settled >= 0.55 && PhraseTransformationBeat.settled <= 0.75)
     }
+
+    // MARK: Earned retry reward (page-19 D3)
+
+    @Test func retryRewardBeatsStayInsideOneFastReveal() {
+        let summedReveal = RetryRewardBeat.characterSquash
+            + RetryRewardBeat.characterJump
+            + RetryRewardBeat.burstToReward
+            + RetryRewardBeat.rewardToEvidence
+            + RetryRewardBeat.evidenceToReceipts
+            + RetryRewardBeat.receiptsToAction
+
+        #expect(RetryRewardBeat.revealComplete == summedReveal)
+        #expect(
+            RetryRewardBeat.actionReady
+                == RetryRewardBeat.startDelay + RetryRewardBeat.revealComplete
+        )
+        #expect(RetryRewardBeat.actionReady <= 1.80)
+    }
+
+    @Test func retryRewardRequiresContinueAndHasReducedMotionFallback() {
+        #expect(RetryRewardBeat.requiresExplicitContinue)
+        #expect(RetryRewardBeat.reducedMotionReveal <= 0.20)
+        #expect(RetryRewardBeat.confettiPieces >= 12)
+        #expect(RetryRewardBeat.confettiPieces <= 24)
+    }
 }

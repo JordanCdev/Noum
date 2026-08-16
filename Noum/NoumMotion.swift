@@ -64,6 +64,32 @@ enum PhraseTransformationBeat {
     static let settled: TimeInterval = 0.62
 }
 
+/// The earned retry celebration authored on Figma page 19 (D3).
+/// Durations describe semantic gaps in one sequence. The button becomes
+/// available only after the verified evidence and receipts have landed;
+/// unlike the retired report transition, this moment never auto-advances.
+enum RetryRewardBeat {
+    static let startDelay: TimeInterval = 0.18
+    static let headlineReveal: TimeInterval = 0.26
+    static let characterSquash: TimeInterval = 0.16
+    static let characterJump: TimeInterval = 0.26
+    static let burstToReward: TimeInterval = 0.18
+    static let rewardToEvidence: TimeInterval = 0.38
+    static let evidenceToReceipts: TimeInterval = 0.30
+    static let receiptsToAction: TimeInterval = 0.27
+    static let reducedMotionReveal: TimeInterval = 0.16
+    static let confettiPieces = 20
+    static let requiresExplicitContinue = true
+
+    static let revealComplete: TimeInterval = characterSquash
+        + characterJump
+        + burstToReward
+        + rewardToEvidence
+        + evidenceToReceipts
+        + receiptsToAction
+    static let actionReady: TimeInterval = startDelay + revealComplete
+}
+
 /// Microphone → trace envelope contract (Moment B). Attack is fast so
 /// speech onset reads immediately; decay is ~3× slower so the trace
 /// breathes out rather than flickering; the floor gates room noise so a

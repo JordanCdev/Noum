@@ -437,6 +437,160 @@ struct TranscriptPracticeLoopTests {
     }
 }
 
+@Suite("Transcript retry milestone presentation")
+struct TranscriptRetryMilestonePresentationTests {
+    @Test("Only an exact verified improved retry earns the milestone")
+    func qualificationFailsClosed() {
+        let fixture = makeFixture(result: .improved)
+        #expect(fixture.presentation() != nil)
+
+        let held = makeFixture(result: .held)
+        #expect(held.presentation() == nil)
+        #expect(makeFixture(followed: false).presentation() == nil)
+        #expect(makeFixture(comparisonSchemaVersion: 999).presentation() == nil)
+        #expect(makeFixture(improvedSignalMovement: 0).presentation() == nil)
+        #expect(makeFixture(meaningOverlapPercent: 20).presentation() == nil)
+        #expect(makeFixture(outcomeMode: .ahCounter).presentation() == nil)
+        #expect(makeFixture(retryMode: .ahCounter).presentation() == nil)
+
+        let wrongRetry = PracticeSession(
+            id: UUID(),
+            transcript: fixture.retry.transcript,
+            fillerWordCount: 0,
+            duration: fixture.retry.duration,
+            date: fixture.retry.date,
+            mode: .timed,
+            practiceDemand: .timed(difficulty: .easy)
+        )
+        #expect(TranscriptRetryMilestonePresentation.make(
+            outcome: fixture.outcome,
+            sourceSession: fixture.source,
+            retrySession: wrongRetry,
+            priorHolds: 0
+        ) == nil)
+        #expect(TranscriptRetryMilestonePresentation.make(
+            outcome: fixture.outcome,
+            sourceSession: nil,
+            retrySession: fixture.retry,
+            priorHolds: 0
+        ) == nil)
+    }
+
+    @Test("Difficulty and prior holds select the milestone headline")
+    func headlineSelection() {
+        #expect(makeFixture(difficulty: .easy).presentation()?.headline == "First hold")
+        #expect(
+            makeFixture(difficulty: .easy).presentation(priorHolds: 1)?.headline
+                == "The target moved"
+        )
+        #expect(
+            makeFixture(difficulty: .medium).presentation()?.headline
+                == "First hold under pressure"
+        )
+        #expect(
+            makeFixture(difficulty: .hard).presentation(priorHolds: 1)?.headline
+                == "Held again under pressure"
+        )
+    }
+
+    @Test("Evidence names the verified lever and ignores whole-rep duration")
+    func leverDetail() {
+        for lever in TranscriptPracticeLever.allCases {
+            let faster = makeFixture(
+                lever: lever,
+                sourceDuration: 46,
+                retryDuration: 40
+            ).presentation()?.detail
+            let nearlyEqual = makeFixture(
+                lever: lever,
+                sourceDuration: 42,
+                retryDuration: 40
+            ).presentation()?.detail
+            let expected = "Your \(lever.focusLabel) was stronger on this retry."
+
+            #expect(faster == expected)
+            #expect(nearlyEqual == expected)
+        }
+    }
+
+    private struct Fixture {
+        let source: PracticeSession
+        let retry: PracticeSession
+        let outcome: RecommendationOutcome
+
+        func presentation(priorHolds: Int = 0) -> TranscriptRetryMilestonePresentation? {
+            TranscriptRetryMilestonePresentation.make(
+                outcome: outcome,
+                sourceSession: source,
+                retrySession: retry,
+                priorHolds: priorHolds
+            )
+        }
+    }
+
+    private func makeFixture(
+        result: TranscriptRetryResult = .improved,
+        difficulty: TimedPracticeDifficulty = .easy,
+        lever: TranscriptPracticeLever = .opening,
+        sourceDuration: TimeInterval = 46,
+        retryDuration: TimeInterval = 40,
+        followed: Bool = true,
+        comparisonSchemaVersion: Int = TranscriptRetryComparison.schemaVersion,
+        improvedSignalMovement: Int = 30,
+        meaningOverlapPercent: Int = 80,
+        outcomeMode: PracticeMode = .timed,
+        retryMode: PracticeMode = .timed
+    ) -> Fixture {
+        let source = PracticeSession(
+            id: UUID(),
+            transcript: "Well maybe the release plan stays narrow because support needs a clear rollback.",
+            fillerWordCount: 0,
+            duration: sourceDuration,
+            date: Date(timeIntervalSince1970: 1_800_000_000),
+            mode: .timed,
+            practiceDemand: .timed(difficulty: difficulty)
+        )
+        let retry = PracticeSession(
+            id: UUID(),
+            transcript: "The release plan stays narrow because support needs a clear rollback.",
+            fillerWordCount: 0,
+            duration: retryDuration,
+            date: Date(timeIntervalSince1970: 1_800_000_001),
+            mode: retryMode,
+            practiceDemand: .timed(difficulty: difficulty)
+        )
+        let target = TranscriptRetryTarget(lever: lever)
+        let outcome = RecommendationOutcome(
+            id: UUID(),
+            fingerprint: "retry-milestone-test",
+            title: "Opening upgrade",
+            focus: target.lever.focusLabel,
+            target: target.lever.successMeasure,
+            mode: outcomeMode,
+            sessionID: retry.id,
+            followed: followed,
+            completedAt: retry.date,
+            scoreDelta: 0,
+            hasComparableScore: false,
+            fillerDelta: 0,
+            durationDelta: 0,
+            sourceSessionID: source.id,
+            transcriptRetryTarget: target,
+            transcriptRetryComparison: TranscriptRetryComparison(
+                schemaVersion: comparisonSchemaVersion,
+                lever: target.lever,
+                sourceSessionID: source.id,
+                retrySessionID: retry.id,
+                sourceSignal: 40,
+                retrySignal: result == .improved ? 40 + improvedSignalMovement : 40,
+                meaningOverlapPercent: meaningOverlapPercent,
+                result: result
+            )
+        )
+        return Fixture(source: source, retry: retry, outcome: outcome)
+    }
+}
+
 final class TranscriptPracticeArtifactDumpXCTest: XCTestCase {
     func testDumpTranscriptPracticeEvaluation() throws {
         let report = TranscriptPracticeEvaluationCorpus.report()
