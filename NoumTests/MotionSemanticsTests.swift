@@ -67,28 +67,27 @@ struct MotionSemanticsTests {
         #expect(PhraseTransformationBeat.settled >= 0.55 && PhraseTransformationBeat.settled <= 0.75)
     }
 
-    // MARK: Earned retry reward (page-19 D3)
+    // MARK: Earned retry reward (page-19 V3 E3)
 
     @Test func retryRewardBeatsStayInsideOneFastReveal() {
-        let summedReveal = RetryRewardBeat.characterSquash
-            + RetryRewardBeat.characterJump
+        let summedToAction = RetryRewardBeat.voiceformCompress
+            + RetryRewardBeat.voiceformLift
             + RetryRewardBeat.burstToReward
             + RetryRewardBeat.rewardToEvidence
-            + RetryRewardBeat.evidenceToReceipts
-            + RetryRewardBeat.receiptsToAction
+            + RetryRewardBeat.evidenceToNextStep
+            + RetryRewardBeat.nextStepToAction
 
-        #expect(RetryRewardBeat.revealComplete == summedReveal)
+        #expect(RetryRewardBeat.actionReadyOffset == summedToAction)
         #expect(
             RetryRewardBeat.actionReady
-                == RetryRewardBeat.startDelay + RetryRewardBeat.revealComplete
+                == RetryRewardBeat.startDelay + RetryRewardBeat.actionReadyOffset
         )
-        #expect(RetryRewardBeat.actionReady <= 1.80)
+        #expect(RetryRewardBeat.animationComplete <= 1.80)
     }
 
     @Test func retryRewardRequiresContinueAndHasReducedMotionFallback() {
         #expect(RetryRewardBeat.requiresExplicitContinue)
         #expect(RetryRewardBeat.reducedMotionReveal <= 0.20)
-        #expect(RetryRewardBeat.confettiPieces >= 12)
-        #expect(RetryRewardBeat.confettiPieces <= 24)
+        #expect(RetryRewardBeat.celebrationParticles == 6)
     }
 }

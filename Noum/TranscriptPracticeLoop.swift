@@ -489,8 +489,8 @@ struct TranscriptRetryMilestonePresentation: Identifiable, Equatable {
 }
 
 /// Full-screen earned beat between a verified retry and its evidence card.
-/// This is the production translation of Figma D3: an explicit reward stack
-/// (character reaction, real XP when present, source-bound evidence, receipt,
+/// This is the production translation of Figma V3 E3: an explicit reward stack
+/// (Voiceform reaction, real XP when present, source-bound evidence, next step,
 /// then continue) rather than an abstract report transition. Nothing shown here
 /// is inferred from chrome: the presentation has already passed the strict
 /// retry truth gate, and optional progress is supplied by Summary's exact rep.
@@ -505,13 +505,13 @@ struct TranscriptRetryMilestoneView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var evidenceFocused: Bool
-    @State private var characterPhase = RetryRewardCharacterPhase.anticipation
+    @State private var voiceformPhase = RetryRewardVoiceformPhase.anticipation
     @State private var headlineVisible = false
     @State private var haloVisible = false
-    @State private var confettiActive = false
+    @State private var particleBurstActive = false
     @State private var rewardVisible = false
     @State private var evidenceVisible = false
-    @State private var receiptsVisible = false
+    @State private var nextStepVisible = false
     @State private var actionVisible = false
     @State private var contentVisible = true
     @State private var canContinue = false
@@ -523,25 +523,18 @@ struct TranscriptRetryMilestoneView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 244 / 255, green: 238 / 255, blue: 255 / 255),
-                    Color(red: 234 / 255, green: 244 / 255, blue: 255 / 255)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            AppColor.screenBackground
+                .ignoresSafeArea()
 
             decorativeBackdrop
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
                     header
-                    characterStage
+                    voiceformStage
                     rewardPill
                     evidenceCard
-                    receiptRow
+                    nextStepStrip
                 }
                 .frame(maxWidth: 430)
                 .padding(.horizontal, 20)
@@ -550,21 +543,20 @@ struct TranscriptRetryMilestoneView: View {
             }
             .opacity(contentVisible ? 1 : 0)
             .accessibilityHidden(!contentVisible)
-
-            ConfettiLayer(
-                active: confettiActive,
-                pieceCount: RetryRewardBeat.confettiPieces,
-                duration: 1.35
-            )
-                .ignoresSafeArea()
-                .accessibilityHidden(true)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            continueButton
+            VStack(spacing: 8) {
+                continueButton
+                Text("Review the evidence, then continue.")
+                    .font(Typography.manrope(size: 11, weight: .semibold, relativeTo: .caption))
+                    .foregroundStyle(.secondary)
+                    .opacity(actionVisible ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
                 .padding(.bottom, 12)
-                .background(.ultraThinMaterial)
+                .background(AppColor.screenBackground.opacity(0.97))
         }
         .onAppear(perform: play)
         .onDisappear {
@@ -585,13 +577,13 @@ struct TranscriptRetryMilestoneView: View {
         GeometryReader { geometry in
             ZStack {
                 Circle()
-                    .fill(Color(red: 209 / 255, green: 133 / 255, blue: 255 / 255).opacity(0.18))
-                    .frame(width: 310, height: 310)
-                    .position(x: 78, y: 24)
+                    .fill(rewardPurple.opacity(0.055))
+                    .frame(width: 270, height: 270)
+                    .position(x: 52, y: -26)
                 Circle()
-                    .fill(AppColor.brandBlueLight.opacity(0.14))
-                    .frame(width: 240, height: 240)
-                    .position(x: geometry.size.width - 30, y: 128)
+                    .fill(AppColor.brandBlueLight.opacity(0.06))
+                    .frame(width: 210, height: 210)
+                    .position(x: geometry.size.width + 14, y: 92)
             }
         }
         .ignoresSafeArea()
@@ -619,56 +611,59 @@ struct TranscriptRetryMilestoneView: View {
         .accessibilityHidden(!headlineVisible)
     }
 
-    private var characterStage: some View {
+    private var voiceformStage: some View {
         ZStack {
-            ZStack {
-                Circle()
-                    .fill(rewardGold.opacity(0.16))
-                    .frame(width: 230, height: 205)
-                Circle()
-                    .fill(Color(red: 209 / 255, green: 133 / 255, blue: 255 / 255).opacity(0.18))
-                    .frame(width: 178, height: 158)
-                Circle()
-                    .fill(Color.white.opacity(0.56))
-                    .frame(width: 124, height: 112)
-            }
-            .scaleEffect(haloVisible ? 1 : 0.35)
-            .opacity(haloVisible ? 1 : 0)
+            Circle()
+                .fill(rewardPurple.opacity(0.08))
+                .frame(width: 230, height: 205)
+                .scaleEffect(haloVisible ? 1 : 0.86)
+                .opacity(haloVisible ? 1 : 0)
 
-            RetryRewardCompanion(phase: characterPhase)
+            Circle()
+                .fill(Color.white.opacity(0.64))
+                .frame(width: 178, height: 158)
+                .scaleEffect(haloVisible ? 1 : 0.90)
+                .opacity(haloVisible ? 1 : 0)
+
+            RetryRewardParticleBurst(active: particleBurstActive)
+
+            RetryRewardVoiceform(phase: voiceformPhase)
         }
-        .frame(height: 188)
+        .frame(height: 190)
         .accessibilityHidden(true)
     }
 
     private var rewardPill: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(red: 199 / 255, green: 123 / 255, blue: 0))
-                .offset(y: 8)
+                .fill(Color(red: 156 / 255, green: 99 / 255, blue: 21 / 255).opacity(0.88))
+                .offset(y: 5)
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color(red: 1, green: 232 / 255, blue: 115 / 255), rewardGold],
+                        colors: [
+                            Color(red: 1, green: 237 / 255, blue: 189 / 255),
+                            Color(red: 243 / 255, green: 190 / 255, blue: 68 / 255)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
-                .shadow(color: Color.brown.opacity(0.18), radius: 14, y: 8)
+                .shadow(color: Color(red: 107 / 255, green: 64 / 255, blue: 10 / 255).opacity(0.16), radius: 14, y: 6)
 
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(Color.white.opacity(0.76))
-                    Image(systemName: "sparkles")
+                    Image(systemName: "sparkle")
                         .font(.system(size: 19, weight: .black))
-                        .foregroundStyle(Color(red: 182 / 255, green: 107 / 255, blue: 0))
+                        .foregroundStyle(Color(red: 165 / 255, green: 104 / 255, blue: 19 / 255))
                 }
                 .frame(width: 42, height: 42)
 
                 VStack(spacing: 0) {
                     Text(rewardTitle)
                         .font(Typography.figtree(size: 25, weight: .heavy, relativeTo: .title2))
-                        .foregroundStyle(Color(red: 109 / 255, green: 67 / 255, blue: 0))
+                        .foregroundStyle(Color(red: 73 / 255, green: 49 / 255, blue: 18 / 255))
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
                     Text(
@@ -677,7 +672,7 @@ struct TranscriptRetryMilestoneView: View {
                             : String(localized: "EVIDENCE SAVED")
                     )
                         .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
-                        .foregroundStyle(Color(red: 109 / 255, green: 67 / 255, blue: 0))
+                        .foregroundStyle(Color(red: 115 / 255, green: 77 / 255, blue: 23 / 255).opacity(0.86))
                         .tracking(0.4)
                 }
                 .frame(minWidth: 102)
@@ -685,7 +680,7 @@ struct TranscriptRetryMilestoneView: View {
             .padding(.horizontal, 16)
         }
         .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 193)
-        .frame(minHeight: 76)
+        .frame(minHeight: 68)
         .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
         .opacity(rewardVisible ? 1 : 0)
         .offset(y: rewardVisible ? 0 : 28)
@@ -697,13 +692,13 @@ struct TranscriptRetryMilestoneView: View {
     private var evidenceCard: some View {
         HStack(spacing: 0) {
             Rectangle()
-                .fill(rewardLime)
-                .frame(width: 7)
+                .fill(AppColor.positive)
+                .frame(width: 4)
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     ZStack {
-                        Circle().fill(rewardLime.opacity(0.2))
+                        Circle().fill(AppColor.positive.opacity(0.12))
                         Image(systemName: "checkmark")
                             .font(.system(size: 15, weight: .black))
                             .foregroundStyle(AppColor.positive)
@@ -711,9 +706,9 @@ struct TranscriptRetryMilestoneView: View {
                     .frame(width: 42, height: 42)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(presentation.headline.uppercased())
+                        Text("VERIFIED IMPROVEMENT")
                             .font(Typography.figtree(size: 10, weight: .bold, relativeTo: .caption))
-                            .foregroundStyle(Color(red: 51 / 255, green: 116 / 255, blue: 25 / 255))
+                            .foregroundStyle(AppColor.positive)
                             .tracking(0.35)
                         Text(presentation.detail)
                             .font(Typography.figtree(size: 18, weight: .heavy, relativeTo: .headline))
@@ -722,14 +717,14 @@ struct TranscriptRetryMilestoneView: View {
                     }
                 }
 
-                Text("SAME TARGET  →  STRONGER RETRY")
+                Text(presentation.headline.uppercased())
                     .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
-                    .foregroundStyle(Color(red: 109 / 255, green: 90 / 255, blue: 145 / 255))
+                    .foregroundStyle(AppColor.proText)
                     .tracking(0.3)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
                     .background(
-                        Capsule().fill(Color(red: 244 / 255, green: 241 / 255, blue: 250 / 255))
+                        Capsule().fill(AppColor.proQuietSurface)
                     )
             }
             .padding(16)
@@ -744,76 +739,48 @@ struct TranscriptRetryMilestoneView: View {
         .accessibilityFocused($evidenceFocused)
     }
 
-    private var receiptRow: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 12) { receiptTiles }
-            } else {
-                HStack(spacing: 12) { receiptTiles }
+    private var nextStepStrip: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(rewardPurple)
+                Image(systemName: unlockedNextStep ? "lock.open.fill" : "checkmark.seal.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
             }
-        }
-        .opacity(receiptsVisible ? 1 : 0)
-        .offset(y: receiptsVisible ? 0 : 20)
-        .scaleEffect(receiptsVisible ? 1 : 0.88)
-        .accessibilityHidden(!receiptsVisible)
-    }
+            .frame(width: 38, height: 38)
+            .accessibilityHidden(true)
 
-    @ViewBuilder
-    private var receiptTiles: some View {
-        Group {
-            receiptTile(
-                icon: "checkmark.seal.fill",
-                iconColor: AppColor.positive,
-                colors: [
-                    Color(red: 1, green: 244 / 255, blue: 229 / 255),
-                    Color(red: 1, green: 229 / 255, blue: 195 / 255)
-                ],
-                value: "VERIFIED",
-                label: "SOURCE MATCH"
-            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(
+                    unlockedNextStep
+                        ? String(localized: "Next step unlocked")
+                        : String(localized: "Evidence ready")
+                )
+                    .font(Typography.figtree(size: 17, weight: .heavy, relativeTo: .headline))
+                    .foregroundStyle(rewardInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    unlockedNextStep
+                        ? String(localized: "Continue to see the next target.")
+                        : String(localized: "Review the source and retry side by side.")
+                )
+                    .font(Typography.manrope(size: 10, weight: .semibold, relativeTo: .caption2))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            receiptTile(
-                icon: unlockedNextStep ? "lock.open.fill" : "brain.head.profile",
-                iconColor: AppColor.brandBlue,
-                colors: [
-                    Color(red: 233 / 255, green: 242 / 255, blue: 1),
-                    Color(red: 229 / 255, green: 228 / 255, blue: 1)
-                ],
-                value: unlockedNextStep ? "NEXT STEP" : "COACH MEMORY",
-                label: unlockedNextStep ? "UNLOCKED" : "SAVED"
-            )
+            Spacer(minLength: 0)
         }
-    }
-
-    private func receiptTile(
-        icon: String,
-        iconColor: Color,
-        colors: [Color],
-        value: LocalizedStringKey,
-        label: LocalizedStringKey
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(iconColor)
-            Text(value)
-                .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .headline))
-                .foregroundStyle(rewardInk)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
-            Text(label)
-                .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
-                .foregroundStyle(rewardInk.opacity(0.74))
-                .tracking(0.35)
-        }
-        .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
         .padding(14)
-        .background(
-            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-        )
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+        .background(AppColor.proQuietSurface)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: iconColor.opacity(0.10), radius: 12, y: 5)
+        .shadow(color: rewardPurple.opacity(0.09), radius: 16, y: 6)
+        .opacity(nextStepVisible ? 1 : 0)
+        .offset(y: nextStepVisible ? 0 : 12)
+        .scaleEffect(nextStepVisible ? 1 : 0.98)
         .accessibilityElement(children: .combine)
+        .accessibilityHidden(!nextStepVisible)
     }
 
     private var continueButton: some View {
@@ -859,14 +826,6 @@ struct TranscriptRetryMilestoneView: View {
         Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
     }
 
-    private var rewardGold: Color {
-        Color(red: 1, green: 200 / 255, blue: 74 / 255)
-    }
-
-    private var rewardLime: Color {
-        Color(red: 155 / 255, green: 227 / 255, blue: 90 / 255)
-    }
-
     private var rewardInk: Color {
         Color(red: 23 / 255, green: 32 / 255, blue: 51 / 255)
     }
@@ -908,24 +867,24 @@ struct TranscriptRetryMilestoneView: View {
         withAnimation(.easeOut(duration: RetryRewardBeat.headlineReveal)) {
             headlineVisible = true
         }
-        withAnimation(.easeInOut(duration: RetryRewardBeat.characterSquash)) {
-            characterPhase = .squash
+        withAnimation(.easeInOut(duration: RetryRewardBeat.voiceformCompress)) {
+            voiceformPhase = .compressed
         }
 
-        guard await wait(RetryRewardBeat.characterSquash) else { return }
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.58)) {
-            characterPhase = .jump
+        guard await wait(RetryRewardBeat.voiceformCompress) else { return }
+        withAnimation(.spring(response: 0.30, dampingFraction: 0.58)) {
+            voiceformPhase = .lifted
         }
 
-        guard await wait(RetryRewardBeat.characterJump) else { return }
+        guard await wait(RetryRewardBeat.voiceformLift) else { return }
         withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
             haloVisible = true
         }
-        confettiActive = true
+        particleBurstActive = true
 
         guard await wait(RetryRewardBeat.burstToReward) else { return }
         withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
-            characterPhase = .settled
+            voiceformPhase = .settled
             rewardVisible = true
         }
         fireEvidenceFeedbackIfNeeded()
@@ -936,16 +895,16 @@ struct TranscriptRetryMilestoneView: View {
         }
         evidenceFocused = true
 
-        guard await wait(RetryRewardBeat.evidenceToReceipts) else { return }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.70)) {
-            receiptsVisible = true
+        guard await wait(RetryRewardBeat.evidenceToNextStep) else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+            nextStepVisible = true
         }
 
-        guard await wait(RetryRewardBeat.receiptsToAction) else { return }
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+        guard await wait(RetryRewardBeat.nextStepToAction) else { return }
+        withAnimation(.easeOut(duration: RetryRewardBeat.actionReveal)) {
             actionVisible = true
+            canContinue = true
         }
-        canContinue = true
     }
 
     private func fireEvidenceFeedbackIfNeeded() {
@@ -984,13 +943,13 @@ struct TranscriptRetryMilestoneView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            characterPhase = .settled
+            voiceformPhase = .settled
             headlineVisible = true
             haloVisible = true
-            confettiActive = false
+            particleBurstActive = false
             rewardVisible = true
             evidenceVisible = true
-            receiptsVisible = true
+            nextStepVisible = true
             actionVisible = true
             self.contentVisible = contentVisible
         }
@@ -1017,150 +976,182 @@ struct TranscriptRetryMilestoneView: View {
     }
 }
 
-private enum RetryRewardCharacterPhase {
+private enum RetryRewardVoiceformPhase: Equatable {
     case anticipation
-    case squash
-    case jump
+    case compressed
+    case lifted
     case settled
 
-    var xScale: CGFloat {
+    var scale: CGFloat {
         switch self {
-        case .anticipation: return 1.04
-        case .squash: return 1.08
-        case .jump: return 0.96
-        case .settled: return 1
-        }
-    }
-
-    var yScale: CGFloat {
-        switch self {
-        case .anticipation: return 0.92
-        case .squash: return 0.90
-        case .jump: return 1.10
+        case .anticipation: return 1
+        case .compressed: return 0.96
+        case .lifted: return 1.08
         case .settled: return 1
         }
     }
 
     var yOffset: CGFloat {
         switch self {
-        case .anticipation: return 4
-        case .squash: return 8
-        case .jump: return -24
+        case .anticipation, .compressed: return 5
+        case .lifted: return -4
         case .settled: return 0
+        }
+    }
+
+    var signalScale: CGFloat {
+        switch self {
+        case .anticipation, .compressed: return 0.55
+        case .lifted: return 1.22
+        case .settled: return 1
         }
     }
 }
 
-private struct RetryRewardCompanion: View {
-    let phase: RetryRewardCharacterPhase
+private struct RetryRewardVoiceform: View {
+    let phase: RetryRewardVoiceformPhase
 
     var body: some View {
         ZStack {
-            arm(rotation: 42)
-                .offset(x: -73, y: -32)
-            arm(rotation: -42)
-                .offset(x: 73, y: -32)
+            Circle()
+                .stroke(rewardPurple.opacity(0.18), lineWidth: 2)
+                .frame(width: 160, height: 160)
 
-            RetryRewardSpeechTail()
-                .fill(Color(red: 84 / 255, green: 33 / 255, blue: 162 / 255))
-                .frame(width: 38, height: 33)
-                .offset(x: -43, y: 52)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(deepViolet)
+                .frame(width: 22, height: 22)
+                .rotationEffect(.degrees(-45))
+                .offset(x: -48, y: 56)
 
-            RoundedRectangle(cornerRadius: 46, style: .continuous)
+            RoundedRectangle(cornerRadius: 42, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
-                            AppColor.brandBlueLight,
-                            Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255),
-                            Color(red: 84 / 255, green: 33 / 255, blue: 162 / 255)
+                            Color(red: 36 / 255, green: 29 / 255, blue: 70 / 255),
+                            Color(red: 78 / 255, green: 47 / 255, blue: 167 / 255),
+                            Color(red: 116 / 255, green: 81 / 255, blue: 232 / 255)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 46, style: .continuous)
-                        .stroke(Color.white.opacity(0.38), lineWidth: 2)
+                    RoundedRectangle(cornerRadius: 42, style: .continuous)
+                        .stroke(
+                            Color(red: 198 / 255, green: 183 / 255, blue: 1).opacity(0.32),
+                            lineWidth: 2
+                        )
                 }
-                .frame(width: 169, height: 124)
+                .frame(width: 156, height: 127)
+                .shadow(
+                    color: Color(red: 69 / 255, green: 43 / 255, blue: 145 / 255).opacity(0.22),
+                    radius: 17,
+                    y: 14
+                )
+                .shadow(
+                    color: Color(red: 23 / 255, green: 24 / 255, blue: 43 / 255).opacity(0.12),
+                    radius: 3,
+                    y: 2
+                )
 
-            crest
-                .offset(x: -32, y: -69)
-
-            HStack(spacing: 23) {
-                RetryRewardHappyEye()
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                RetryRewardHappyEye()
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            HStack(alignment: .center, spacing: 7) {
+                signalBar(height: 20, index: 0, color: .white)
+                signalBar(height: 34, index: 1, color: .white)
+                signalBar(height: 48, index: 2, color: AppColor.brandBlueLight)
+                signalBar(height: 34, index: 3, color: .white)
+                signalBar(height: 20, index: 4, color: .white)
             }
-            .frame(width: 104, height: 24)
-            .offset(y: -17)
-
-            ZStack(alignment: .bottom) {
-                Capsule()
-                    .fill(Color(red: 42 / 255, green: 23 / 255, blue: 79 / 255))
-                    .frame(width: 40, height: 33)
-                Capsule()
-                    .fill(Color(red: 1, green: 122 / 255, blue: 154 / 255))
-                    .frame(width: 23, height: 10)
-                    .offset(y: -3)
-            }
-            .offset(y: 28)
-
-            HStack(spacing: 24) {
-                Capsule().fill(Color(red: 78 / 255, green: 32 / 255, blue: 153 / 255))
-                Capsule().fill(Color(red: 78 / 255, green: 32 / 255, blue: 153 / 255))
-            }
-            .frame(width: 87, height: 16)
-            .offset(y: 68)
         }
-        .frame(width: 190, height: 170)
-        .scaleEffect(x: phase.xScale, y: phase.yScale, anchor: .center)
+        .frame(width: 193, height: 170)
+        .scaleEffect(phase.scale)
         .offset(y: phase.yOffset)
     }
 
-    private var crest: some View {
-        HStack(alignment: .bottom, spacing: 5) {
+    private var rewardPurple: Color {
+        Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
+    }
+
+    private var deepViolet: Color {
+        Color(red: 52 / 255, green: 30 / 255, blue: 122 / 255)
+    }
+
+    private func signalBar(height: CGFloat, index: Int, color: Color) -> some View {
+        Capsule()
+            .fill(color)
+            .frame(width: 7, height: height)
+            .scaleEffect(x: 1, y: phase.signalScale, anchor: .center)
+            .animation(
+                .spring(response: 0.22, dampingFraction: 0.62)
+                    .delay(Double(abs(index - 2)) * 0.025),
+                value: phase
+            )
+    }
+}
+
+private struct RetryRewardParticleBurst: View {
+    let active: Bool
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<RetryRewardBeat.celebrationParticles, id: \.self) { index in
+                let endpoint = endpoint(for: index)
+                particle(for: index)
+                    .foregroundStyle(color(for: index))
+                    .opacity(active ? opacity(for: index) : 0)
+                    .scaleEffect(active ? 1 : 0.35)
+                    .rotationEffect(.degrees(active ? angle(for: index) : angle(for: index) * 2.4))
+                    .offset(
+                        x: active ? endpoint.width : endpoint.width * 0.24,
+                        y: active ? endpoint.height : endpoint.height * 0.24
+                    )
+                    .animation(
+                        .spring(response: 0.40, dampingFraction: 0.62)
+                            .delay(Double(index) * 0.02),
+                        value: active
+                    )
+            }
+        }
+        .frame(width: 280, height: 190)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func particle(for index: Int) -> some View {
+        if index < 2 {
+            Image(systemName: "sparkle")
+                .font(.system(size: index == 0 ? 22 : 18, weight: .bold))
+        } else {
             Capsule()
-                .fill(Color(red: 209 / 255, green: 133 / 255, blue: 255 / 255))
-                .frame(width: 10, height: 23)
-            Capsule()
-                .fill(Color(red: 1, green: 200 / 255, blue: 74 / 255))
-                .frame(width: 10, height: 32)
-            Capsule()
-                .fill(AppColor.brandBlueLight)
-                .frame(width: 10, height: 21)
+                .frame(width: 7, height: index == 2 ? 24 : 20)
         }
     }
 
-    private func arm(rotation: Double) -> some View {
-        Capsule()
-            .fill(Color(red: 108 / 255, green: 85 / 255, blue: 219 / 255))
-            .frame(width: 42, height: 12)
-            .rotationEffect(.degrees(rotation))
+    private func endpoint(for index: Int) -> CGSize {
+        switch index {
+        case 0: return CGSize(width: -112, height: -40)
+        case 1: return CGSize(width: 112, height: -33)
+        case 2: return CGSize(width: 118, height: 22)
+        case 3: return CGSize(width: 88, height: -63)
+        case 4: return CGSize(width: -110, height: 33)
+        default: return CGSize(width: 105, height: 50)
+        }
     }
-}
 
-private struct RetryRewardHappyEye: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.maxY),
-            control: CGPoint(x: rect.midX, y: rect.minY)
-        )
-        return path
+    private func color(for index: Int) -> Color {
+        switch index {
+        case 0, 3: return Color(red: 248 / 255, green: 177 / 255, blue: 42 / 255)
+        case 1, 4: return Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
+        default: return AppColor.brandBlueLight
+        }
     }
-}
 
-private struct RetryRewardSpeechTail: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.width * 0.28, y: rect.minY))
-        path.closeSubpath()
-        return path
+    private func angle(for index: Int) -> Double {
+        [12, -8, 22, -24, 17, -12][index]
+    }
+
+    private func opacity(for index: Int) -> Double {
+        [1, 0.90, 0.85, 0.90, 0.80, 0.72][index]
     }
 }
 

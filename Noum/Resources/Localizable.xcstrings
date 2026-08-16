@@ -5236,6 +5236,9 @@
     "CONTINUE TO EVIDENCE" : {
 
     },
+    "Continue to see the next target." : {
+
+    },
     "Coach win" : {
 
     },
@@ -5248,13 +5251,25 @@
     "EVIDENCE SAVED" : {
 
     },
+    "Evidence ready" : {
+
+    },
     "NEXT STEP" : {
+
+    },
+    "Next step unlocked" : {
 
     },
     "Opens your verified retry evidence." : {
 
     },
     "REP COMPLETE" : {
+
+    },
+    "Review the evidence, then continue." : {
+
+    },
+    "Review the source and retry side by side." : {
 
     },
     "SAME TARGET  →  STRONGER RETRY" : {
@@ -5270,6 +5285,9 @@
 
     },
     "UNLOCKED" : {
+
+    },
+    "VERIFIED IMPROVEMENT" : {
 
     },
     "VERIFIED" : {
