@@ -102,12 +102,14 @@ TestFlight-build gate.
 - [ ] The GitHub `Release readiness` workflow is green for the exact commit:
       full-history secret scan, Functions lint/unit tests, Firebase emulator
       integration, static release boundaries, Release build/unit suite, focused
-      UI smoke, and the configured live public-page probe.
+      UI smoke. The live public-page job is intentionally skipped on pull
+      requests and ordinary branch pushes.
 - [ ] From a clean checkout at the exact candidate commit, create and push a
       new annotated tag named `rc-<version>-<build>`. An `rc-*` tag
-      automatically runs the source-controlled full UI gate as well as the
-      normal release workflow. Never move, delete, or reuse an RC tag; a changed
-      candidate requires a new build number and a new tag.
+      automatically runs the source-controlled full UI gate, the active-host
+      public-page probe, and the normal release workflow. Never move, delete, or
+      reuse an RC tag; a changed candidate requires a new build number and a new
+      tag.
 - [ ] After the workflow exists on the default branch, the equivalent manual
       release-candidate run may be dispatched against an immutable RC tag with
       the full UI gate and active-host public-page probe enabled:

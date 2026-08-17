@@ -21,6 +21,48 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         )
         return source[start:end]
 
+    def test_all_actions_use_reviewed_immutable_release_pins(self) -> None:
+        workflow = self.source(".github/workflows/release-readiness.yml")
+        expected_pins = {
+            "actions/checkout": (
+                "11d5960a326750d5838078e36cf38b85af677262",
+                "v4.4.0",
+            ),
+            "actions/setup-go": (
+                "40f1582b2485089dde7abd97c1529aa768e1baff",
+                "v5.6.0",
+            ),
+            "actions/setup-node": (
+                "49933ea5288caeca8642d1e84afbd3f7d6820020",
+                "v4.4.0",
+            ),
+            "actions/setup-java": (
+                "cf277c60eb25467037889841efdb72551f06f6c3",
+                "v4.9.1",
+            ),
+            "actions/upload-artifact": (
+                "ea165f8d65b6e75b540449e92b4886f43607fa02",
+                "v4.6.2",
+            ),
+        }
+        uses_lines = [
+            line.strip()
+            for line in workflow.splitlines()
+            if re.match(r"^-?\s*uses:", line.strip())
+        ]
+
+        self.assertGreater(len(uses_lines), 0)
+        for line in uses_lines:
+            match = re.fullmatch(
+                r"-?\s*uses:\s+([^@\s]+)@([0-9a-f]{40})\s+#\s+"
+                r"(v\d+\.\d+\.\d+)",
+                line,
+            )
+            self.assertIsNotNone(match, line)
+            action, commit, version = match.groups()
+            self.assertIn(action, expected_pins, action)
+            self.assertEqual((commit, version), expected_pins[action], action)
+
     def test_coach_regression_suites_are_mandatory(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")
 
@@ -145,7 +187,7 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         self.assertIn("./scripts/release-core-permission-ui-smoke.sh", xcode_job)
         self.assertNotIn("./scripts/release-full-ui-ci.sh", xcode_job)
 
-    def test_live_web_gate_is_mandatory_but_custom_cutover_is_manual(self) -> None:
+    def test_live_web_gate_is_rc_only_or_manual_opt_in(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")
         live_web_job = self.yaml_block(workflow, "  live-web:", indent=2)
         custom_input = self.yaml_block(
@@ -153,11 +195,18 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "      probe_custom_domain:",
             indent=6,
         )
+        live_web_if = self.yaml_block(live_web_job, "    if: >-", indent=4)
 
-        self.assertIn("github.event_name != 'workflow_dispatch'", live_web_job)
-        self.assertIn("inputs.run_live_web_probe", live_web_job)
+        self.assertEqual(
+            re.sub(r"\s+", " ", live_web_if).strip(),
+            "if: >- ${{ (github.event_name == 'push' && "
+            "startsWith(github.ref, 'refs/tags/rc-')) || "
+            "(github.event_name == 'workflow_dispatch' && "
+            "inputs.run_live_web_probe) }}",
+        )
+        self.assertNotIn("github.event_name != 'workflow_dispatch'", live_web_job)
+        self.assertNotIn("github.event_name == 'pull_request'", live_web_job)
         self.assertIn("./scripts/release-live-web-probe.sh active", live_web_job)
-        self.assertIn("github.event_name == 'workflow_dispatch'", live_web_job)
         self.assertIn("inputs.probe_custom_domain", live_web_job)
         self.assertIn("./scripts/release-live-web-probe.sh custom", live_web_job)
         self.assertIn("default: false", custom_input)
