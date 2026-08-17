@@ -948,7 +948,10 @@ final class ScreenshotTour: XCTestCase {
             deepAttach(app, name: "V46-02-processing")
         }
 
-        let evidence = app.buttons["transcriptRetry.continueToEvidence"]
+        // The rendered accessibility tree promotes the milestone container's
+        // identifier onto the CTA. Assert the exact user-facing milestone
+        // action so this tour follows the current contract.
+        let evidence = app.buttons["transcriptRetry.milestone"]
         XCTAssertTrue(
             evidence.waitForExistence(timeout: 25),
             "The verified retry should present its earned evidence moment."
@@ -960,6 +963,7 @@ final class ScreenshotTour: XCTestCase {
         deepAttach(app, name: "V46-03-earned-retry")
         XCTAssertTrue(evidence.isEnabled)
         XCTAssertTrue(evidence.isHittable)
+        XCTAssertEqual(evidence.label, "See the comparison")
         evidence.tap()
 
         XCTAssertTrue(
@@ -1162,6 +1166,7 @@ final class ScreenshotTour: XCTestCase {
             "UI_TESTING_SEED_FORCE",
             "UI_TESTING_SEED_PROFILE",
             "improvingIntermediate",
+            "UI_TESTING_FIRST_WEEK_READ",
             "-DeepLink",
             "noum://home/first-week-read"
         ]

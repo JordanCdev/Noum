@@ -171,6 +171,10 @@ final class GoalOutcomeLoopUITests: XCTestCase {
             "The active plan week should render its assigned Phrase Bank line on Home."
         )
         XCTAssertGreaterThanOrEqual(plannedPhrase.frame.height, 44)
+        XCTAssertTrue(
+            isHittableAboveFloatingDock(plannedPhrase, in: app),
+            "The phrase action must be visibly clear of the floating navigation dock before tapping."
+        )
         plannedPhrase.tap()
 
         XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
@@ -221,8 +225,12 @@ final class GoalOutcomeLoopUITests: XCTestCase {
     private func advanceInjectedTimedRepToSummary(in app: XCUIApplication) {
         let deadline = Date().addingTimeInterval(35)
         while Date() < deadline {
-            let evidence = app.buttons["transcriptRetry.continueToEvidence"]
+            // SwiftUI exposes the milestone container's identifier on this
+            // rendered button. Pin the selector and visible action copy that
+            // users receive instead of relying on the hidden child ID.
+            let evidence = app.buttons["transcriptRetry.milestone"]
             if evidence.exists, evidence.isEnabled, evidence.isHittable {
+                XCTAssertEqual(evidence.label, "See the comparison")
                 evidence.tap()
                 Thread.sleep(forTimeInterval: 0.6)
                 continue
@@ -278,12 +286,23 @@ final class GoalOutcomeLoopUITests: XCTestCase {
 
     @MainActor
     private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, attempts: Int) {
-        guard !element.isHittable else { return }
+        guard !isHittableAboveFloatingDock(element, in: app) else { return }
         let scroll = app.scrollViews.firstMatch
         guard scroll.exists else { return }
         for _ in 0..<attempts {
-            if element.exists && element.isHittable { return }
+            if isHittableAboveFloatingDock(element, in: app) { return }
             scroll.swipeUp(velocity: .slow)
         }
+    }
+
+    @MainActor
+    private func isHittableAboveFloatingDock(
+        _ element: XCUIElement,
+        in app: XCUIApplication
+    ) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let dock = app.descendants(matching: .any)["app.v46TabBar"].firstMatch
+        guard dock.exists else { return true }
+        return element.frame.maxY <= dock.frame.minY - 4
     }
 }

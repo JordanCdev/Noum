@@ -862,6 +862,97 @@ struct UIAutomationAccountIsolationTests {
         }
     }
 
+    @Test func firstWeekReadSeedRequiresTheExactSeededJourney() {
+        let exact = [
+            "Noum",
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_FIRST_WEEK_READ",
+        ]
+        #expect(DevSeedData.requestsFirstWeekReadForUITesting(arguments: exact))
+        #expect(!DevSeedData.requestsFirstWeekReadForUITesting(
+            arguments: Array(exact.dropLast())
+        ))
+        #expect(!DevSeedData.requestsFirstWeekReadForUITesting(
+            arguments: exact + ["UI_TESTING_SIGNED_OUT"]
+        ))
+        #expect(!DevSeedData.requestsFirstWeekReadForUITesting(
+            arguments: ["Noum", "UI_TESTING_FIRST_WEEK_READ"]
+        ))
+    }
+
+    @Test func firstWeekReadSeedUsesOnlyContractBoundedQualifiedSessions() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let sessions = DevSeedData.sessions(for: .improvingIntermediate)
+        let now = try #require(sessions.map(\.date).max()).addingTimeInterval(86_400)
+        let seededSessions = DevSeedData.firstWeekEvidenceSessionsForUITesting(
+            sessions: sessions,
+            now: now,
+            calendar: calendar
+        )
+        #expect(seededSessions.count >= 3)
+        #expect(seededSessions.count < sessions.count)
+        let snapshot = try #require(
+            DevSeedData.firstWeekReadFixtureSnapshotForUITesting(
+                accountID: "first-week-ui-test-account",
+                profile: .improvingIntermediate,
+                sessions: seededSessions,
+                now: now,
+                calendar: calendar
+            )
+        )
+        #expect(snapshot.nextAction == .reviewFirstWeekRead)
+        let read = try #require(snapshot.firstWeekRead)
+        let eligible = PracticeProgressEligibility
+            .eligibleSessions(in: sessions)
+            .sorted { $0.date < $1.date }
+        let earliest = try #require(eligible.first)
+        let end = try #require(calendar.date(
+            byAdding: .day,
+            value: FirstWeekCoachingContract.finalDay + 1,
+            to: calendar.startOfDay(for: earliest.date)
+        ))
+        let boundedIDs = Set(eligible.filter { $0.date < end }.map(\.id))
+        let laterIDs = Set(eligible.filter { $0.date >= end }.map(\.id))
+
+        switch read.whatChanged {
+        case .verifiedComparison(let trend):
+            let referencedIDs = Set(trend.comparableSessionIDs + [trend.sourceSessionID])
+            #expect(!referencedIDs.isEmpty)
+            #expect(referencedIDs.isSubset(of: boundedIDs))
+            #expect(referencedIDs.isDisjoint(with: laterIDs))
+        case .notYetProven:
+            Issue.record("The fixture must earn its read through a qualified bounded comparison.")
+        }
+    }
+
+    @Test func renderedJourneySelectorsAndCoachReadLayoutStayPinned() throws {
+        let goalLoop = try repositorySource(at: "NoumUITests/GoalOutcomeLoopUITests.swift")
+        let journeyAudit = try repositorySource(at: "NoumUITests/JourneyAccessibilityAuditUITests.swift")
+        let screenshotTour = try repositorySource(at: "NoumUITests/ScreenshotTour.swift")
+        let profile = try repositorySource(at: "ProfileView.swift")
+        let coachReadHeader = try sourceSlice(
+            in: profile,
+            from: "    private func profileCoachReadHeader(",
+            to: "    private func profileTransferStatusRow"
+        )
+
+        #expect(goalLoop.contains("app.buttons[\"transcriptRetry.milestone\"]"))
+        #expect(screenshotTour.contains("app.buttons[\"transcriptRetry.milestone\"]"))
+        #expect(!goalLoop.contains("app.buttons[\"transcriptRetry.continueToEvidence\"]"))
+        #expect(!screenshotTour.contains("app.buttons[\"transcriptRetry.continueToEvidence\"]"))
+        #expect(goalLoop.contains("isHittableAboveFloatingDock"))
+        #expect(goalLoop.contains("app.v46TabBar"))
+        #expect(journeyAudit.contains("Start with what you're working on."))
+        #expect(screenshotTour.contains("UI_TESTING_FIRST_WEEK_READ"))
+        #expect(coachReadHeader.contains("if dynamicTypeSize.isAccessibilitySize"))
+        #expect(coachReadHeader.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
+        #expect(coachReadHeader.contains(".padding(.vertical, 1)"))
+        #expect(coachReadHeader.contains(".lineLimit(nil)"))
+        #expect(coachReadHeader.contains(".fixedSize(horizontal: false, vertical: true)"))
+        #expect(coachReadHeader.contains(".foregroundStyle(readTint)"))
+    }
+
     @Test func seededJourneysUseAnIsolatedAccountScopeOnlyWhenAppropriate() {
         #expect(AuthManager.shouldUseProcessLocalSeededAccount(
             arguments: ["Noum", "UI_TESTING", "UI_TESTING_SEED_FORCE"]

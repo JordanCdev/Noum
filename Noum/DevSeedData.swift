@@ -66,6 +66,16 @@ enum DevSeedData {
         return .improvingIntermediate
     }
 
+    /// Exact opt-in for the rendered Day-7 destination. The broad seeded
+    /// persona intentionally remains unchanged; only this screenshot journey
+    /// asks the existing first-week contract to capture its bounded read.
+    nonisolated static func requestsFirstWeekReadForUITesting(
+        arguments: [String]
+    ) -> Bool {
+        requestedProfileForUITesting(arguments: arguments) != nil
+            && arguments.contains("UI_TESTING_FIRST_WEEK_READ")
+    }
+
     /// The trend evidence a seeded persona implies. `injectProfile` writes this
     /// into the live trend store, and `coachIntelligenceFixture` feeds the same
     /// roster to `BaselineEngine` so the constructed fixture and the seeded app
@@ -115,6 +125,7 @@ enum DevSeedData {
     @MainActor
     static func injectProfile(_ profile: SeedProfile) {
         var sessions = sessions(for: profile)
+        let seedNow = Date()
 
         // The normal improving-intermediate showcase ends with an already
         // polished answer. The conservative on-device rewrite correctly
@@ -140,6 +151,19 @@ enum DevSeedData {
             // UI-test-only prompt owner.
             ladderSession.prompt = "When should the release begin, and why?"
             sessions.append(ladderSession)
+        }
+
+        // The dedicated read journey installs the real first-week slice, not
+        // the persona's later week. The broad showcase remains unchanged for
+        // every other seeded launch, while this exact state lets the live
+        // trajectory resolver see only evidence the Day-7 contract may cite.
+        if requestsFirstWeekReadForUITesting(
+            arguments: ProcessInfo.processInfo.arguments
+        ) {
+            sessions = firstWeekEvidenceSessionsForUITesting(
+                sessions: sessions,
+                now: seedNow
+            )
         }
 
         // Practice-setup baseline. Seed personas never made a manual Timed
@@ -168,7 +192,10 @@ enum DevSeedData {
         // has something honest to display. The current-week peak is held
         // a few points above the live overall so the "you held N earlier
         // this week" line reads truthfully against the seed history.
-        RatingStore.shared.replaceForDebug(seedRating(for: profile))
+        RatingStore.shared.replaceForDebug(seedRating(
+            for: profile,
+            totalRatedSessions: sessions.count
+        ))
 
         // Seed XP so the level + progress + identity surfaces aren't stuck
         // on "Beginner I / 0 XP" for a profile that's logged 12+ sessions.
@@ -195,9 +222,19 @@ enum DevSeedData {
             for: profile,
             sessions: sessions,
             baseline: BaselineStore.shared.baseline,
-            now: Date()
+            now: seedNow
         )
         populateCoachIntelligenceFixture(fixture)
+
+        // The exact roster above is already bounded to the first-week window.
+        // Build its requested receipt through the production trajectory + pure
+        // contract, then let the existing account-scoped memory owner persist
+        // it write-once.
+        seedFirstWeekReadIfRequested(
+            profile: profile,
+            sessions: sessions,
+            now: seedNow
+        )
 
         // A dedicated rendered-integrity lane can replace the broad persona
         // with persistence-realistic mixed history after the canonical seed
@@ -206,6 +243,135 @@ enum DevSeedData {
         ReviewProgressEligibilityUITestFixture.installIfRequested()
 
         seedV46ComparableEvidenceIfRequested(sessions: sessions)
+    }
+
+    /// Pure-contract projection used by the DEBUG installer and focused tests.
+    /// It does not invent a trend: `UserTrajectoryCache` qualifies a comparison
+    /// from real seed sessions already inside the first-week window, and
+    /// `FirstWeekCoachingContract` independently revalidates every reference.
+    static func firstWeekReadFixtureSnapshotForUITesting(
+        accountID: String,
+        profile: SeedProfile,
+        sessions: [PracticeSession],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> FirstWeekCoachingContract.Snapshot? {
+        let eligibleSessions = PracticeProgressEligibility
+            .eligibleSessions(in: sessions)
+            .sorted { $0.date < $1.date }
+        guard let earliest = eligibleSessions.first,
+              let activation = FirstWeekCoachingContract.ActivationReceipt(
+                accountID: accountID,
+                earliestEligibleSession: earliest
+              ) else {
+            return nil
+        }
+
+        let firstWeekSessions = firstWeekEvidenceSessionsForUITesting(
+            sessions: eligibleSessions,
+            now: now,
+            calendar: calendar
+        )
+        guard !firstWeekSessions.isEmpty else { return nil }
+
+        let boundedBaseline = BaselineEngine.compute(
+            from: firstWeekSessions,
+            categorySnapshots: trendSnapshots(for: firstWeekSessions)
+        )
+        let trajectory = UserTrajectoryCache.shared.snapshot(
+            profile: seedCoachingProfile(for: profile),
+            baseline: boundedBaseline,
+            rating: seedRating(
+                for: profile,
+                totalRatedSessions: sessions.count
+            ),
+            sessions: firstWeekSessions,
+            coachMemory: nil
+        ).snapshot
+
+        guard let snapshot = FirstWeekCoachingContract.resolve(
+            input: FirstWeekCoachingContract.Input(
+                activeAccountID: accountID,
+                activation: activation,
+                sessionEvidence: FirstWeekCoachingContract.SessionEvidence(
+                    accountID: accountID,
+                    sessions: sessions
+                ),
+                coachingEvidence: FirstWeekCoachingContract.CoachingEvidence(
+                    accountID: accountID,
+                    memory: nil,
+                    latestCheckIn: nil,
+                    longitudinalTrend: trajectory.qualifiedLongitudinalTrend
+                )
+            ),
+            now: now,
+            calendar: calendar
+        ),
+              snapshot.nextAction == .reviewFirstWeekRead,
+              snapshot.firstWeekRead != nil else {
+            return nil
+        }
+        return snapshot
+    }
+
+    static func firstWeekEvidenceSessionsForUITesting(
+        sessions: [PracticeSession],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> [PracticeSession] {
+        let eligibleSessions = PracticeProgressEligibility
+            .eligibleSessions(in: sessions)
+            .sorted { $0.date < $1.date }
+        guard let earliest = eligibleSessions.first,
+              let firstWeekEnd = calendar.date(
+                byAdding: .day,
+                value: FirstWeekCoachingContract.finalDay + 1,
+                to: calendar.startOfDay(for: earliest.date)
+              ) else {
+            return []
+        }
+        let evidenceUpperBound = min(
+            now,
+            firstWeekEnd.addingTimeInterval(-0.001)
+        )
+        return eligibleSessions.filter {
+            earliest.date <= $0.date && $0.date <= evidenceUpperBound
+        }
+    }
+
+    @MainActor
+    private static func seedFirstWeekReadIfRequested(
+        profile: SeedProfile,
+        sessions: [PracticeSession],
+        now: Date
+    ) {
+        guard requestsFirstWeekReadForUITesting(
+            arguments: ProcessInfo.processInfo.arguments
+        ),
+              let rawAccountID = AuthManager.shared.currentAccountID,
+              !rawAccountID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        let accountID = rawAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstWeekSessions = firstWeekEvidenceSessionsForUITesting(
+            sessions: sessions,
+            now: now
+        )
+        guard PracticeSessionStore.shared.loadedAccountEpoch?.accountScope == accountID,
+              !firstWeekSessions.isEmpty,
+              let projection = firstWeekReadFixtureSnapshotForUITesting(
+                accountID: accountID,
+                profile: profile,
+                sessions: sessions,
+                now: now
+              )?.firstWeekRead else {
+            return
+        }
+        _ = CoachMemoryStore.shared.captureFirstWeekReadIfNeeded(
+            projection,
+            expectedAccountID: accountID,
+            capturedAt: now
+        )
     }
 
     /// V4.6 Slice 3 fixture (`UI_TESTING_V46_EVIDENCE`) — four comparable
@@ -407,7 +573,10 @@ enum DevSeedData {
         now: Date
     ) -> CoachIntelligenceFixture {
         let profile = seedCoachingProfile(for: seedProfile)
-        let rating = seedRating(for: seedProfile)
+        let rating = seedRating(
+            for: seedProfile,
+            totalRatedSessions: sessions.count
+        )
         let reflections = seedReflections(for: seedProfile, sessions: sessions)
         let checkIns = [seedCheckIn(for: seedProfile, now: now)]
         let bigMoment = seedBigMoment(for: seedProfile, now: now)
@@ -597,7 +766,10 @@ enum DevSeedData {
     /// Build a `SpeakingRating` aligned with the seed profile's narrative.
     /// `improvingIntermediate` is the showcase profile, so it gets a clear
     /// current-week peak that drives the Figma-spec premium hero.
-    private static func seedRating(for profile: SeedProfile) -> SpeakingRating {
+    private static func seedRating(
+        for profile: SeedProfile,
+        totalRatedSessions: Int? = nil
+    ) -> SpeakingRating {
         let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
         let week = comps.weekOfYear ?? 1
         let year = comps.yearForWeekOfYear ?? 2026
@@ -609,7 +781,7 @@ enum DevSeedData {
                 peakRating: 624,
                 ratingHistory: [],
                 personalBests: [],
-                totalRatedSessions: 12,
+                totalRatedSessions: totalRatedSessions ?? 12,
                 weekPeakRating: 624,
                 weekPeakISOWeek: week,
                 weekPeakISOYear: year
@@ -620,7 +792,7 @@ enum DevSeedData {
                 peakRating: 740,
                 ratingHistory: [],
                 personalBests: [],
-                totalRatedSessions: 20,
+                totalRatedSessions: totalRatedSessions ?? 20,
                 weekPeakRating: 728,
                 weekPeakISOWeek: week,
                 weekPeakISOYear: year
@@ -631,7 +803,7 @@ enum DevSeedData {
                 peakRating: 820,
                 ratingHistory: [],
                 personalBests: [],
-                totalRatedSessions: 18,
+                totalRatedSessions: totalRatedSessions ?? 18,
                 weekPeakRating: 820,
                 weekPeakISOWeek: week,
                 weekPeakISOYear: year
@@ -642,7 +814,7 @@ enum DevSeedData {
                 peakRating: 612,
                 ratingHistory: [],
                 personalBests: [],
-                totalRatedSessions: 15,
+                totalRatedSessions: totalRatedSessions ?? 15,
                 weekPeakRating: 568,
                 weekPeakISOWeek: week,
                 weekPeakISOYear: year

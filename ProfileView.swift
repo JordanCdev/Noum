@@ -1511,6 +1511,7 @@ struct ProfileView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isAppTabRoot) private var isAppTabRoot
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let metricColumns = [
         GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)
@@ -1904,17 +1905,10 @@ struct ProfileView: View {
 
         return NoumSurface(.standard) {
             VStack(alignment: .leading, spacing: Spacing.lg) {
-                HStack(alignment: .center, spacing: Spacing.sm) {
-                    Text(hasEvidence ? "CURRENT COACH READ" : "STARTING DIRECTION")
-                        .font(Typography.micro.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(readTint)
-
-                    Spacer(minLength: Spacing.sm)
-
-                    NoumSemanticGraphic(role: .coachRead, tint: readTint, size: 28)
-                        .accessibilityHidden(true)
-                }
+                profileCoachReadHeader(
+                    hasEvidence: hasEvidence,
+                    readTint: readTint
+                )
 
                 Text(presentation.observation)
                     .font(Typography.cardTitle)
@@ -1956,6 +1950,43 @@ struct ProfileView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.coachRead")
+    }
+
+    @ViewBuilder
+    private func profileCoachReadHeader(
+        hasEvidence: Bool,
+        readTint: Color
+    ) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            // Give the eyebrow the full card width at accessibility sizes.
+            // The adjacent graphic is decorative; keeping it out of this
+            // layout prevents a three-line squeeze and leaves a small vertical
+            // inset for the final glyph bounds at AX XXXL.
+            profileCoachReadEyebrow(hasEvidence: hasEvidence, readTint: readTint)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 1)
+        } else {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                profileCoachReadEyebrow(hasEvidence: hasEvidence, readTint: readTint)
+
+                Spacer(minLength: Spacing.sm)
+
+                NoumSemanticGraphic(role: .coachRead, tint: readTint, size: 28)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func profileCoachReadEyebrow(
+        hasEvidence: Bool,
+        readTint: Color
+    ) -> some View {
+        Text(hasEvidence ? "CURRENT COACH READ" : "STARTING DIRECTION")
+            .font(Typography.micro.weight(.bold))
+            .tracking(0.8)
+            .foregroundStyle(readTint)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func profileTransferStatusRow(_ status: ProfileTransferStatusContent) -> some View {

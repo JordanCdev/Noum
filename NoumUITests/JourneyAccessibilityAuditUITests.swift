@@ -214,14 +214,16 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
             app.descendants(matching: .any)["askNoum.messageField"].waitForExistence(timeout: 12),
             "The contextual typed coach must render before it is audited"
         )
-        // Direct element capture: black plan copy against the darkest sampled
-        // local backdrop is 19.11:1. Xcode reports the combined SwiftUI node
-        // despite that margin.
+        // Direct element capture: black plan/empty-state copy against the
+        // darkest sampled local backdrop is at least 19:1. Xcode reports the
+        // combined SwiftUI nodes despite that margin. Keep these exact labels
+        // pinned so unrelated contrast reports continue to fail closed.
         try performVisibleAccessibilityAudit(
             in: app,
             verifiedContrastLabels: [
                 "Current focus",
                 "Picking up where we left off: Timed Practice for concise stakeholder answers. Open with the answer, then add one proof point.",
+                "Start with what you're working on.",
             ],
             // At AX XXXL the fixed composer leaves the next ScrollView card
             // entering by only a few pixels. Audit that card when scrolled
