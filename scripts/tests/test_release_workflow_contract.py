@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,17 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 class ReleaseWorkflowContractTests(unittest.TestCase):
     def source(self, relative_path: str) -> str:
         return (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
+
+    def yaml_block(self, source: str, marker: str, indent: int) -> str:
+        start = source.index(marker)
+        remainder = source[start + len(marker):]
+        next_peer = re.search(rf"(?m)^ {{{indent}}}\S", remainder)
+        end = (
+            len(source)
+            if next_peer is None
+            else start + len(marker) + next_peer.start()
+        )
+        return source[start:end]
 
     def test_coach_regression_suites_are_mandatory(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")
@@ -59,10 +71,96 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "scripts/release-xcode-ci.sh",
             "scripts/release-beta-feedback-ui-smoke.sh",
             "scripts/release-core-permission-ui-smoke.sh",
+            "scripts/release-full-ui-ci.sh",
         ):
             script = self.source(relative_path)
             self.assertIn("-parallel-testing-enabled NO", script, relative_path)
             self.assertIn("-maximum-parallel-testing-workers 1", script, relative_path)
+
+    def test_full_ui_release_candidate_gate_is_explicit_and_complete(self) -> None:
+        workflow = self.source(".github/workflows/release-readiness.yml")
+        script = self.source("scripts/release-full-ui-ci.sh")
+        full_ui_input = self.yaml_block(
+            workflow,
+            "      run_full_ui_suite:",
+            indent=6,
+        )
+        full_ui_job = self.yaml_block(
+            workflow,
+            "  full-ui-release-candidate:",
+            indent=2,
+        )
+
+        self.assertIn("default: true", full_ui_input)
+        self.assertIn("github.event_name == 'workflow_dispatch'", full_ui_job)
+        self.assertIn("inputs.run_full_ui_suite", full_ui_job)
+        self.assertIn("startsWith(github.ref, 'refs/tags/rc-')", full_ui_job)
+        self.assertIn("needs: xcode-release", full_ui_job)
+        self.assertIn("./scripts/release-full-ui-ci.sh", full_ui_job)
+        self.assertIn("if-no-files-found: error", full_ui_job)
+        self.assertIn(
+            "./scripts/release-materialize-ci-config.sh --clean",
+            full_ui_job,
+        )
+        self.assertIn("if: always()", full_ui_job)
+
+        self.assertIn("-only-testing:NoumUITests", script)
+        self.assertNotIn("-only-testing:NoumUITests/", script)
+        self.assertIn('-resultBundlePath "$result_bundle"', script)
+        self.assertIn('if [[ -e "$result_bundle" ]]', script)
+        self.assertIn("xcresulttool get test-results summary", script)
+        self.assertIn("release_xcresult_gate.py", script)
+        self.assertIn("Noum/Info.plist", script)
+        self.assertIn("Noum/GoogleService-Info.plist", script)
+
+    def test_rc_tags_run_the_full_gate_without_narrowing_branch_pushes(self) -> None:
+        workflow = self.source(".github/workflows/release-readiness.yml")
+        push_trigger = self.yaml_block(workflow, "  push:", indent=2)
+
+        self.assertIn("branches:", push_trigger)
+        self.assertIn("- '**'", push_trigger)
+        self.assertIn("tags:", push_trigger)
+        self.assertIn("- 'rc-*'", push_trigger)
+
+    def test_full_ui_gate_reuses_only_existing_config_secrets(self) -> None:
+        workflow = self.source(".github/workflows/release-readiness.yml")
+        full_ui_job = self.yaml_block(
+            workflow,
+            "  full-ui-release-candidate:",
+            indent=2,
+        )
+
+        self.assertIn("secrets.NOUM_INFO_PLIST_BASE64", full_ui_job)
+        self.assertIn(
+            "secrets.NOUM_GOOGLE_SERVICE_INFO_PLIST_BASE64",
+            full_ui_job,
+        )
+        self.assertEqual(full_ui_job.count("secrets."), 2)
+
+    def test_focused_ui_shard_remains_in_the_default_xcode_job(self) -> None:
+        workflow = self.source(".github/workflows/release-readiness.yml")
+        xcode_job = self.yaml_block(workflow, "  xcode-release:", indent=2)
+
+        self.assertIn("./scripts/release-beta-feedback-ui-smoke.sh", xcode_job)
+        self.assertIn("./scripts/release-core-permission-ui-smoke.sh", xcode_job)
+        self.assertNotIn("./scripts/release-full-ui-ci.sh", xcode_job)
+
+    def test_live_web_gate_is_mandatory_but_custom_cutover_is_manual(self) -> None:
+        workflow = self.source(".github/workflows/release-readiness.yml")
+        live_web_job = self.yaml_block(workflow, "  live-web:", indent=2)
+        custom_input = self.yaml_block(
+            workflow,
+            "      probe_custom_domain:",
+            indent=6,
+        )
+
+        self.assertIn("github.event_name != 'workflow_dispatch'", live_web_job)
+        self.assertIn("inputs.run_live_web_probe", live_web_job)
+        self.assertIn("./scripts/release-live-web-probe.sh firebase", live_web_job)
+        self.assertIn("github.event_name == 'workflow_dispatch'", live_web_job)
+        self.assertIn("inputs.probe_custom_domain", live_web_job)
+        self.assertIn("./scripts/release-live-web-probe.sh custom", live_web_job)
+        self.assertIn("default: false", custom_input)
 
     def test_core_and_microphone_permission_ui_contracts_are_required(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")

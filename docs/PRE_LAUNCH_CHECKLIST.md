@@ -101,8 +101,32 @@ TestFlight-build gate.
 
 - [ ] The GitHub `Release readiness` workflow is green for the exact commit:
       full-history secret scan, Functions lint/unit tests, Firebase emulator
-      integration, static release boundaries, Release build/unit suite, and the
-      configured live privacy probe.
+      integration, static release boundaries, Release build/unit suite, focused
+      UI smoke, and the configured live public-page probe.
+- [ ] From a clean checkout at the exact candidate commit, create and push a
+      new annotated tag named `rc-<version>-<build>`. An `rc-*` tag
+      automatically runs the source-controlled full UI gate as well as the
+      normal release workflow. Never move, delete, or reuse an RC tag; a changed
+      candidate requires a new build number and a new tag.
+- [ ] After the workflow exists on the default branch, the equivalent manual
+      release-candidate run may be dispatched against an immutable RC tag with
+      the full UI gate and active-host public-page probe enabled:
+
+      ```bash
+      gh workflow run release-readiness.yml \
+        --ref '<immutable-candidate-tag>' \
+        -f run_full_ui_suite=true \
+        -f run_live_web_probe=true \
+        -f probe_custom_domain=false
+      ```
+
+      Switch `probe_custom_domain` to `true` for cutover approval only after
+      `noum.app` is configured and expected to serve the same launch pages.
+
+      The `Full serialized iOS UI release gate` job must pass all methods in the
+      `NoumUITests` target with one worker. Retain its `.xcresult` artifact and
+      verify the workflow run's head SHA matches the candidate record. A
+      skipped, cancelled, timed-out, or partially selected suite is `NO-GO`.
 - [ ] Run the static operational gate locally:
 
       ```bash
@@ -128,7 +152,8 @@ TestFlight-build gate.
       ```
 
 - [ ] Run the complete unit and UI targets on the pinned Xcode/simulator
-      configuration and attach the `.xcresult` summaries. Zero silently skipped
+      configuration and attach the `.xcresult` summaries. The focused PR smoke
+      does not replace the full release-candidate UI gate. Zero silently skipped
       tests are allowed unless the skip is reviewed and justified.
 - [ ] Run the relevant smoke journeys and a current-source screenshot sweep.
       Visually inspect the artifacts; nonblank images alone are not visual QA.
