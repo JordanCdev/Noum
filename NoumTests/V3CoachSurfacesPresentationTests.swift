@@ -109,6 +109,20 @@ struct V3CoachSurfacesPresentationTests {
         #expect(!liveCall.contains("repeatForever"))
     }
 
+    @Test("Coach mode wrappers preserve descendant accessibility identifiers")
+    func coachModeWrappersPreserveChildAccessibilityContracts() throws {
+        let session = try repositorySource("Noum/CoachSessionView.swift")
+        #expect(!session.contains("accessibilityIdentifier(\"coachSession.typed\")"))
+        #expect(!session.contains("accessibilityIdentifier(\"coachSession.live\")"))
+
+        let askNoum = try repositorySource("Noum/AskNoumView.swift")
+        #expect(askNoum.contains("accessibilityIdentifier(\"askNoum.messageField\")"))
+        #expect(askNoum.contains("accessibilityIdentifier(\"askNoum.inputControl\")"))
+
+        let liveCall = try repositorySource("Noum/LiveCoachCallView.swift")
+        #expect(liveCall.contains("accessibilityIdentifier(\"askNoum.live.caption\")"))
+    }
+
     @Test("Ask Noum keeps transport truth while disclosing move and evidence progressively")
     func askNoumPreservesBehaviorContracts() throws {
         let source = try repositorySource("Noum/AskNoumView.swift")

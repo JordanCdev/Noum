@@ -134,11 +134,9 @@ struct CoachSessionView: View {
                         onLeave: { if !navigationPath.isEmpty { navigationPath.removeLast() } }
                     )
                     .transition(modeSwapTransition)
-                    .accessibilityIdentifier("coachSession.live")
                 case .type:
                     typedSurface(onGoLive: enterLiveIfEligible)
                         .transition(modeSwapTransition)
-                        .accessibilityIdentifier("coachSession.typed")
                 }
             }
         }
