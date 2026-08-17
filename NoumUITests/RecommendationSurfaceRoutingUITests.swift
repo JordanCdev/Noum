@@ -352,7 +352,6 @@ final class RecommendationSurfaceRoutingUITests: XCTestCase {
         )
 
         let shownEvent = diagnostics.staticTexts["prescription.shown"]
-        scrollUntilHittable(shownEvent, in: diagnostics, attempts: 5)
         XCTAssertTrue(shownEvent.waitForExistence(timeout: 5))
         XCTAssertFalse(diagnostics.staticTexts["prescription.accepted"].waitForExistence(timeout: 1))
         addScreenshot(named: screenshotName)
