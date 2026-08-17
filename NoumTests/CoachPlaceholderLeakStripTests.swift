@@ -153,10 +153,34 @@ struct CoachPlaceholderLeakStripTests {
         )
         #expect(issue != nil,
                 "Cold-start product jargon / invented metric target must trip the app gate so the reply regenerates.")
-        if case .roboticPhrase(let phrase)? = issue {
-            #expect(phrase.contains("cold-start"),
-                    "Expected a cold-start rejection reason, got \(phrase)")
-        }
+        #expect(issue == .roboticPhrase("cold-start product mode"),
+                "The purpose-built cold-start repair must outrank generic numeric-cluster repair; got \(String(describing: issue))")
+    }
+
+    @Test("Cold-start intake still outranks product jargon plus a raw metric cluster")
+    func coldStartIntakePrecedesRawReportCollision() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so do one Ah-Counter round for 60 seconds aiming to stay under 4 fillers. What's the interview for?",
+            latestUserTurn: "How do I get better before my interview?",
+            systemContext: coldStartContext,
+            turnDepth: .groundedRead
+        )
+
+        #expect(issue == .menuInsteadOfDecision,
+                "The existing cold-start intake ordering must survive a raw-report collision; got \(String(describing: issue))")
+    }
+
+    @Test("Cold-start context alone does not override an always-blocked report label")
+    func coldStartContextDoesNotOverrideRawReportWithoutAContractViolation() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Results: 7/10, 3 fillers, 60s. Put the recommendation first.",
+            latestUserTurn: "What should I work on?",
+            systemContext: coldStartContext,
+            turnDepth: .groundedRead
+        )
+
+        #expect(issue == .roboticPhrase("unrequested report voice"),
+                "A cold-start context must not authorize or relabel a generic scorecard; got \(String(describing: issue))")
     }
 
     @Test("Invented cold-start metric target alone (no product mode) still trips the gate")

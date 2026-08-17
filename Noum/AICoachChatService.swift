@@ -4338,6 +4338,20 @@ actor AICoachChatService {
             Self.log.notice("quality rejection: overclaim language")
             return .overclaimsEvidence
         }
+        // A cold-start contract failure needs the purpose-built first-sample
+        // repair even when the same rejected draft also contains an unrequested
+        // numeric cluster. Preserve the established intake -> vague rep ->
+        // product/target ordering inside this collision only; ordinary report
+        // labels and readouts still take the generic raw-report path when no
+        // cold-start contract defect is present.
+        if hasPreFinalizerRawReportVoice,
+           let coldStartIssue = coldStartContractIssue(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+           ) {
+            return coldStartIssue
+        }
         // A cold-start target is the actionable contract failure even when the
         // same draft also resembles a numeric readout. Diagnose it before the
         // general report-voice style cap so repair can remove the invented
@@ -4433,26 +4447,12 @@ actor AICoachChatService {
         // questions. Check them before the lane-specific early returns below so
         // a new user cannot receive an invented filler target merely because
         // "Where do I start?" is classified as general coaching.
-        if replyAddsColdStartIntakeQuestion(
+        if let coldStartIssue = coldStartContractIssue(
             lower,
             latestUserTurn: latestUserTurn,
             systemContext: systemContext
         ) {
-            return .menuInsteadOfDecision
-        }
-        if replyUsesVagueColdStartBaselineRep(
-            lower,
-            latestUserTurn: latestUserTurn,
-            systemContext: systemContext
-        ) {
-            return .roboticPhrase("cold-start vague baseline rep")
-        }
-        if let coldStartPhrase = replyUsesColdStartProductOrMetricTarget(
-            lower,
-            latestUserTurn: latestUserTurn,
-            systemContext: systemContext
-        ) {
-            return .roboticPhrase(coldStartPhrase)
+            return coldStartIssue
         }
         // These response lanes deliberately do not use the personal coaching
         // rubric. A conversational acknowledgement can own Noum's wording miss
@@ -7637,6 +7637,35 @@ actor AICoachChatService {
             "what situation",
             "what kind of"
         ])
+    }
+
+    private nonisolated static func coldStartContractIssue(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> CoachChatReplyQualityIssue? {
+        if replyAddsColdStartIntakeQuestion(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .menuInsteadOfDecision
+        }
+        if replyUsesVagueColdStartBaselineRep(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .roboticPhrase("cold-start vague baseline rep")
+        }
+        if let coldStartPhrase = replyUsesColdStartProductOrMetricTarget(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .roboticPhrase(coldStartPhrase)
+        }
+        return nil
     }
 
     private nonisolated static func replyUsesColdStartProductOrMetricTarget(
