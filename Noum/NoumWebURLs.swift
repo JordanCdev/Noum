@@ -4,8 +4,8 @@ import Foundation
 //
 // Single source of truth for Noum's externally-hosted URLs. These are
 // served by Firebase Hosting from the `public/` directory at the repo
-// root. The hosting target is configured in `firebase.json`; deploy via
-// `firebase deploy --only hosting`.
+// root. The hosting target is configured in `firebase.json`; deploy only via
+// the checked-in source-bound `scripts/deploy-hosting.mjs` wrapper.
 //
 // `hostingOrigin` is deliberately the verified Firebase origin while the
 // custom domain is parked. App Store metadata is source-checked against this

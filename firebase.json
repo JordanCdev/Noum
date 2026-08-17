@@ -45,6 +45,9 @@
   },
   "hosting": {
     "public": "public",
+    "predeploy": [
+      "node \"$PROJECT_DIR/scripts/release-hosting-deploy.mjs\""
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",

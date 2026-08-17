@@ -3,7 +3,7 @@
   "scripts": {
     "lint": "eslint --ext .js,.ts .",
     "build": "tsc",
-    "test": "npm run build && node --test lib/appStoreServerNotifications.test.js lib/competitiveObservation.test.js lib/friendshipAuthority.test.js lib/growthAggregate.test.js lib/index.test.js lib/recommendationState.test.js lib/releaseSecurity.test.js lib/socialAuthority.test.js && node --test ../scripts/release-backend-deploy.test.mjs",
+    "test": "npm run build && node --test lib/appStoreServerNotifications.test.js lib/competitiveObservation.test.js lib/friendshipAuthority.test.js lib/growthAggregate.test.js lib/index.test.js lib/recommendationState.test.js lib/releaseSecurity.test.js lib/socialAuthority.test.js && node --test ../scripts/release-backend-deploy.test.mjs ../scripts/release-hosting-deploy.test.mjs",
     "test:emulator": "node --test lib/emulator.integration.test.js",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions,firestore",

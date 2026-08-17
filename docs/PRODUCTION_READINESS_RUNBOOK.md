@@ -261,6 +261,31 @@ review, DNS ownership, or release-bug triage. Before source cutover, run
 `./scripts/release-live-web-probe.sh both`; cross-origin redirects do not count
 as direct custom-domain proof.
 
+### Source-bound Firebase Hosting deployment
+
+Direct `firebase deploy --only hosting` is blocked by the checked-in Hosting
+predeploy hook. After the Firebase session closure is independently verified,
+run the only reviewed deployment path from the exact clean candidate:
+
+```bash
+node scripts/deploy-hosting.mjs --execute \
+  --confirm-project=noum-d0b6f \
+  --confirm-source="$(git rev-parse HEAD)"
+```
+
+The wrapper requires exactly four tracked files under `public/`, rejects dirty
+Hosting/config/verifier inputs, validates the exact three route rewrites, pins
+Firebase CLI 15.19.1, and binds the predeploy authorization for ten minutes to
+project `noum-d0b6f`, the full Git commit, and a path-delimited SHA-256 of the
+four public files. Its Firebase selector is exactly `hosting`; it cannot deploy
+Functions, Firestore rules, or indexes. A successful upload is not accepted
+until `release-live-web-probe.sh firebase` proves direct 200 HTML responses for
+`/`, `/privacy`, `/support`, and `/how-noum-coaches` match the reviewed bytes.
+If that mandatory readback fails, production remains NO-GO: preserve the failed
+output, restore the last independently verified Hosting version through the
+authorized operator workflow, and investigate before retrying. Do not bypass
+the hook with another Firebase config or Console upload.
+
 ## Apple signing and TestFlight preflight
 
 Run the deterministic fixture tests, then inspect or build an unsigned

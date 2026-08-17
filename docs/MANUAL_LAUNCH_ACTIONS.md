@@ -154,9 +154,11 @@ as Noum's production support or policy surface.
 - Provider/dashboard: Firebase Console → Hosting → Add custom domain; GoDaddy → Domain Portfolio → DNS for `noum.app`.
 - Values: use the exact TXT/A/AAAA records Firebase supplies. Do not copy records from another project. Preserve required email/MX records.
 - Required sequence: while the app and App Store metadata still use
-  `https://noum-d0b6f.web.app`, deploy only the reviewed Hosting source and run
-  `./scripts/release-live-web-probe.sh firebase`. Connect the custom domain and
-  wait for Firebase's connected status and public TLS. Then run
+  `https://noum-d0b6f.web.app`, use the source-bound
+  `node scripts/deploy-hosting.mjs --execute` command with the exact project and
+  current commit confirmations. It deploys Hosting only and must finish by
+  passing the four-page Firebase exact-body readback. Connect the custom domain
+  and wait for Firebase's connected status and public TLS. Then run
   `python3 scripts/validate-app-store-package.py --verify-custom-domain-cutover`.
   Only after all eight direct responses pass may a separate reviewed source
   change switch `NoumWebURLs.hostingOrigin` and both metadata locales to

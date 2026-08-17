@@ -238,6 +238,10 @@ test("functions deploy and CI test scripts route through the blocker", async () 
     packageJSON.scripts.test,
     /node --test \.\.\/scripts\/release-backend-deploy\.test\.mjs/
   );
+  assert.match(
+    packageJSON.scripts.test,
+    /\.\.\/scripts\/release-hosting-deploy\.test\.mjs/
+  );
   assert.doesNotMatch(packageJSON.scripts.deploy, /firebase|npx|--execute/);
 });
 

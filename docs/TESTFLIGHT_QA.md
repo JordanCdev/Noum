@@ -52,7 +52,9 @@ they do not override an unchecked release blocker or signed-device test.
       checked item proves the live hosting endpoint exists; it does not prove
       the manifest-v3 generated body was redeployed after the latest processor
       change. The URL is the live privacy URL currently used by the app. The
-      repeatable deployment command is `firebase deploy --only hosting`, but it
+      source-bound wrapper is `node scripts/deploy-hosting.mjs --execute`; it
+      is the only authorized route for the underlying
+      `firebase deploy --only hosting` operation, but it
       is not authorized from this workspace until the exposed-session closure
       above is complete. After authorized verification or deployment, compare
       the hosted body with the generated disclosure before release sign-off.
