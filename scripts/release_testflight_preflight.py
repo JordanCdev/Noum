@@ -680,20 +680,16 @@ def repository_checks(
                 (
                     "Noum/Info.plist",
                     "Noum/GoogleService-Info.plist",
-                    "Noum/AIConfig.plist",
-                    "Noum/BackendConfig.plist",
                 ),
             ),
-            "four gitignored build plists present" if _relative_nonempty_files(
+            "two shipping protected plists present" if _relative_nonempty_files(
                 repo_root,
                 (
                     "Noum/Info.plist",
                     "Noum/GoogleService-Info.plist",
-                    "Noum/AIConfig.plist",
-                    "Noum/BackendConfig.plist",
                 ),
             ) else "one or more build plists missing",
-            "Re-copy Info, GoogleService-Info, AIConfig, and BackendConfig from the protected primary workspace.",
+            "Re-copy Info and GoogleService-Info from the protected primary workspace.",
         ),
         check(
             "firebaseBundleIdentifierAligned",

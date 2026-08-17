@@ -41,7 +41,8 @@ jobs:
           go-version: '1.24.x'
           cache: false
       - name: Install pinned Gitleaks release
-        run: go install github.com/gitleaks/gitleaks/v8@v8.30.1
+        # The repository moved, but the Go module retains its original path.
+        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
       - name: Scan all reachable commits with redacted output
         run: ./scripts/release-secret-scan.sh
 
@@ -103,6 +104,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Run release and preflight unit tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - name: Test bundle scanner
         run: ./scripts/release-test-bundle-scan.sh
       - name: Enforce operational static readiness

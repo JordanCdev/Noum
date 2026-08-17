@@ -49,6 +49,19 @@ Reviewed historical findings, all verified inert on 2026-07-18.
       2026-07-22: the match is the ordinary prose phrase "API,
       revocation/replacement of the exposed credentials". No token or
       credential material is present.
+
+  f441dd01  docs/FIGMA_SWIFTUI_COMPONENT_MAP.json:5  generic-api-key
+      FALSE POSITIVE. Independently re-read from the immutable commit on
+      2026-08-17: the value is the 22-character Figma file key repeated as
+      the final segment of the adjacent public figma.com design URL. It is
+      public document routing metadata, not authentication material.
+
+  00eaa091  Noum/V46ProgressPresentation.swift:260-261  generic-api-key
+      FALSE POSITIVES. Independently re-read from the immutable commit on
+      2026-08-17: both 14- and 27-character values are static UserDefaults
+      key prefixes used for account-local acknowledgement/receipt storage.
+      Neither value is credential material.
+
 """
 commits = [
   "1e67b4dd09e22a87be9ce6d31e19e0aef3733706",
@@ -57,4 +70,6 @@ commits = [
   "15057607932b9d7d0b9444ecd762e2ef8bde3341",
   "277e2b388bb17d603011277a819b0bcaae517404",
   "87041e9a1be95dfbbf12e72c7d908a4e2032e464",
+  "f441dd0191eb08f79ea159583878c1558f900df7",
+  "00eaa09111d50b039a27481af74fffab5a1b5833",
 ]

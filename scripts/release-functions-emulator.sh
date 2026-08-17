@@ -35,12 +35,15 @@ printf '%s\n' \
   'COACH_MODEL=gemini-2.5-flash' \
   'COACH_ULTRA_MODEL=gemini-2.5-pro' \
   'VERTEX_LOCATION=europe-west1' \
+  'APP_STORE_APP_APPLE_ID=1234567890' \
+  'APP_STORE_PRODUCTION_NOTIFICATIONS_ENABLED=false' \
+  'APP_STORE_SANDBOX_NOTIFICATIONS_ENABLED=false' \
   'COACH_EMULATOR_STUB=1' > "$env_file"
 printf '%s\n' \
   'DEEPGRAM_MANAGEMENT_KEY=emulator-only-management-key' > "$secret_file"
 
 npm --prefix functions run build
-npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION:-15.19.1}" \
+npx --yes --package "firebase-tools@${FIREBASE_TOOLS_VERSION:-15.19.1}" firebase \
   emulators:exec \
   --project demo-noum \
   --only functions,auth,firestore \

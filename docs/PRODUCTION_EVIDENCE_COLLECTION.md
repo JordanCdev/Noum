@@ -30,8 +30,9 @@ workflow, not by the release-evidence tool:
 
 ```bash
 export NOUM_COACH_EVAL_DUMP_DIR=/private/tmp/noum-coach-eval
-NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
-  ./tools/coach-arena/run.sh evidence-refresh --no-fail
+export NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,id=<exact-disposable-simulator-UDID>'
+export NOUM_COACH_DISPOSABLE_SIMULATOR=1
+./tools/coach-arena/run.sh evidence-refresh --no-fail
 ```
 
 Confirm the dump contains:
@@ -132,7 +133,7 @@ independent reviews. Each reviewer must:
 
 The collection coordinator must be different from the reviewers and attach the
 blind-assignment record plus a signed collection attestation. The workflow
-checks complete packet coverage, two distinct reviewer IDs per conversation,
+checks complete packet coverage, three distinct reviewer IDs per conversation,
 the exact packet fingerprint, no unresolved revision notes, and every floor in
 the existing readiness validator. It does not calculate or improve ratings.
 
@@ -552,8 +553,9 @@ After promotion, rerun the existing Swift evidence refresh and the complete
 readiness gate, including the public operational probe:
 
 ```bash
-NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
-  ./tools/coach-arena/run.sh evidence-refresh
+export NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,id=<exact-disposable-simulator-UDID>'
+export NOUM_COACH_DISPOSABLE_SIMULATOR=1
+./tools/coach-arena/run.sh evidence-refresh
 
 ./tools/coach-arena/run.sh readiness \
   --dump-dir "$NOUM_COACH_EVAL_DUMP_DIR" \

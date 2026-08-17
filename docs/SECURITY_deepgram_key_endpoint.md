@@ -124,8 +124,9 @@ future leak of either key is not directly exploitable off-device.
 ### Full-history secret gate baselined — 2026-07-18
 
 The gate in [`scripts/release-secret-scan.sh`](../scripts/release-secret-scan.sh)
-now loads [`.gitleaks.toml`](../.gitleaks.toml), which allowlists **five historical
-commits by SHA**. All 11 findings were classified before baselining:
+now loads [`.gitleaks.toml`](../.gitleaks.toml), which allowlists **eight historical
+commits by SHA**. All 15 finding instances reported by the current pinned scanner
+were classified before baselining:
 
 | Commits | Finding | Disposition |
 | --- | --- | --- |
@@ -135,6 +136,8 @@ commits by SHA**. All 11 findings were classified before baselining:
 | `15057607` | AWS pair `AKIAWNEH4A…` | Invalid — STS returned `InvalidClientTokenId` |
 | `277e2b38` | Deepgram `025571b9…` | Revoked 2026-07-18 |
 | `87041e9a` | `generic-api-key` at `docs/TESTFLIGHT_QA.md:22` | False positive independently re-read 2026-07-22 — ordinary prose about the contained API incident; no token or credential material |
+| `f441dd01` | `generic-api-key` at `docs/FIGMA_SWIFTUI_COMPONENT_MAP.json:5` | False positive independently re-read 2026-08-17 — public Figma file routing key duplicated in the adjacent public design URL |
+| `00eaa091` | 2 × `generic-api-key` at `Noum/V46ProgressPresentation.swift:260-261` | False positives independently re-read 2026-08-17 — static UserDefaults key prefixes for account-local acknowledgement and receipt storage |
 
 Allowlisting is **by commit SHA only** — no rule, path, or regex is suppressed,
 so a secret in a new commit still fails. Verified both directions:

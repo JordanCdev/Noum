@@ -122,8 +122,9 @@ TestFlight-build gate.
 
       ```bash
       export NOUM_COACH_EVAL_DUMP_DIR=/private/tmp/noum-coach-eval
-      NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
-        ./tools/coach-arena/run.sh evidence-refresh --no-fail
+      export NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,id=<exact-disposable-simulator-UDID>'
+      export NOUM_COACH_DISPOSABLE_SIMULATOR=1
+      ./tools/coach-arena/run.sh evidence-refresh --no-fail
       ```
 
 - [ ] Run the complete unit and UI targets on the pinned Xcode/simulator

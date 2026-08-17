@@ -9,6 +9,7 @@ from pathlib import Path
 
 HELPER = Path(__file__).resolve().parents[1] / "simulator-evidence-environment.sh"
 COACH_ARENA_ROOT = HELPER.parent
+REPO_ROOT = COACH_ARENA_ROOT.parents[1]
 EXPLICIT_UDID = "BD2DE1AB-DAC7-4538-A5AD-BECC4D603C0E"
 LATEST_UDID = "LATEST-IOS-26-5-UDID"
 
@@ -65,6 +66,31 @@ raise SystemExit(64)
 
 
 class SimulatorEvidenceEnvironmentTests(unittest.TestCase):
+    def test_release_docs_use_the_disposable_exact_udid_contract(self):
+        documentation = [
+            REPO_ROOT / "docs/PRE_LAUNCH_CHECKLIST.md",
+            REPO_ROOT / "docs/PRODUCTION_EVIDENCE_COLLECTION.md",
+            REPO_ROOT / "docs/PRODUCTION_READINESS_RUNBOOK.md",
+            COACH_ARENA_ROOT / "README.md",
+        ]
+        for path in documentation:
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=",
+                source,
+                str(path),
+            )
+            self.assertIn(
+                "NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,id=",
+                source,
+                str(path),
+            )
+            self.assertIn(
+                "NOUM_COACH_DISPOSABLE_SIMULATOR=1",
+                source,
+                str(path),
+            )
+
     def test_app_path_runners_require_disposable_simulator_and_preserve_signing(self):
         for script_name in ["unblock-app-path.sh", "refresh-evidence.sh"]:
             source = (COACH_ARENA_ROOT / script_name).read_text(encoding="utf-8")

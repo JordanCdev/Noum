@@ -1,9 +1,9 @@
 /* eslint-disable valid-jsdoc, max-len */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, {after} from "node:test";
 import {createHash} from "node:crypto";
-import {initializeApp} from "firebase-admin/app";
+import {deleteApp, initializeApp} from "firebase-admin/app";
 import {getAuth as getAdminAuth} from "firebase-admin/auth";
 import {
   getFirestore as getAdminFirestore,
@@ -57,6 +57,10 @@ const removeFriendLinkURL =
 const adminApp = initializeApp({projectId: projectID}, "social-emulator-tests");
 const adminFirestore = getAdminFirestore(adminApp);
 const adminAuth = getAdminAuth(adminApp);
+
+after(async () => {
+  await deleteApp(adminApp);
+});
 
 interface EmulatorIdentity {
   idToken: string;

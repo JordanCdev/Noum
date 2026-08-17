@@ -376,7 +376,7 @@ before export.
 
 The current `coach-real-device-testflight-qa-v3` schema structurally validates
 the complete runtime portion of the M14 hardware sweep: exactly 14 surfaces and
-77 required checks covering Live Activity, prompt latency, audio sessions,
+84 required checks covering Live Activity, prompt latency, audio sessions,
 StoreKit purchase/restore/entitlements, production transcription and consent,
 capture-failure integrity, pitch, multilingual practice, mode smoke, account
 authentication/deletion, accessibility, notifications, and widgets. Every
@@ -661,8 +661,9 @@ and access policy until independent verification authorizes disposal.
 ## Local Evidence Path
 
 ```bash
-NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
-  ./tools/coach-arena/run.sh evidence-refresh --no-fail
+export NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,id=<exact-disposable-simulator-UDID>'
+export NOUM_COACH_DISPOSABLE_SIMULATOR=1
+./tools/coach-arena/run.sh evidence-refresh --no-fail
 ```
 
 This single command refreshes the source sidecars, text/live Swift app-path

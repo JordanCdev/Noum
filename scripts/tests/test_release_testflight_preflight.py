@@ -105,8 +105,7 @@ class PreflightTests(unittest.TestCase):
                 self.root / f"{target}/{target}.entitlements",
                 {"com.apple.security.application-groups": [release.EXPECTED_APP_GROUP]},
             )
-        for name in ("Info.plist", "AIConfig.plist", "BackendConfig.plist"):
-            write_plist(self.root / f"Noum/{name}", {"fixture": True})
+        write_plist(self.root / "Noum/Info.plist", {"fixture": True})
         write_plist(
             self.root / "Noum/GoogleService-Info.plist",
             {"BUNDLE_ID": release.EXPECTED_TARGETS["Noum"]["bundle"]},
@@ -269,6 +268,14 @@ _ = AppStore.sync()
     def test_repository_contract_accepts_complete_unsigned_archive(self) -> None:
         checks = self._repository_checks()
         self.assertTrue(all(item.passed for item in checks), [item for item in checks if not item.passed])
+
+    def test_release_requires_shipping_plists_not_excluded_local_configs(self) -> None:
+        checks = self._repository_checks()
+        self.assertTrue(next(item for item in checks if item.key == "buildPlistsPresent").passed)
+
+        (self.root / "Noum/GoogleService-Info.plist").unlink()
+        checks = self._repository_checks()
+        self.assertFalse(next(item for item in checks if item.key == "buildPlistsPresent").passed)
 
     def test_repository_contract_rejects_dirty_checkout_even_when_archive_commit_matches(self) -> None:
         (self.root / "untracked-release-source.txt").write_text(

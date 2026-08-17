@@ -157,8 +157,9 @@ Use one command for the production-path live sweep:
 
 ```bash
 export GEMINI_API_KEY='…' # or another explicitly configured production provider
-NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
-  ./tools/coach-arena/run.sh live-evidence --allow-live-network
+export NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,id=<exact-disposable-simulator-UDID>'
+export NOUM_COACH_DISPOSABLE_SIMULATOR=1
+./tools/coach-arena/run.sh live-evidence --allow-live-network
 ```
 
 `--allow-live-network` is an intentional quota boundary. Without an explicitly
