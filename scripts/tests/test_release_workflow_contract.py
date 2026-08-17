@@ -21,6 +21,15 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         )
         return source[start:end]
 
+    def shell_command(self, source: str, marker: str) -> str:
+        start = source.index(marker)
+        command_lines = []
+        for line in source[start:].splitlines():
+            command_lines.append(line)
+            if not line.rstrip().endswith("\\"):
+                break
+        return "\n".join(command_lines)
+
     def test_all_actions_use_reviewed_immutable_release_pins(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")
         expected_pins = {
@@ -118,6 +127,37 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             script = self.source(relative_path)
             self.assertIn("-parallel-testing-enabled NO", script, relative_path)
             self.assertIn("-maximum-parallel-testing-workers 1", script, relative_path)
+
+    def test_release_simulator_tests_preserve_keychain_entitlements(self) -> None:
+        unit_script = self.source("scripts/release-xcode-ci.sh")
+
+        # The Release bundle scan does not execute the app, so its build can
+        # remain unsigned. Executed simulator tests need Xcode's local ad-hoc
+        # signature: Security otherwise returns errSecMissingEntitlement and
+        # cannot exercise Noum's isolated UI-automation Keychain service.
+        release_build_command = self.shell_command(unit_script, "xcodebuild build")
+        self.assertIn("CODE_SIGNING_ALLOWED=NO", release_build_command)
+
+        for relative_path in (
+            "scripts/release-xcode-ci.sh",
+            "scripts/release-beta-feedback-ui-smoke.sh",
+            "scripts/release-core-permission-ui-smoke.sh",
+            "scripts/release-full-ui-ci.sh",
+        ):
+            script = self.source(relative_path)
+            test_command = self.shell_command(script, "xcodebuild test")
+            self.assertEqual(
+                test_command.count("CODE_SIGNING_ALLOWED=YES"),
+                1,
+                relative_path,
+            )
+            self.assertEqual(
+                test_command.count("CODE_SIGNING_REQUIRED=YES"),
+                1,
+                relative_path,
+            )
+            self.assertNotIn("CODE_SIGNING_ALLOWED=NO", test_command, relative_path)
+            self.assertNotIn("CODE_SIGNING_REQUIRED=NO", test_command, relative_path)
 
     def test_full_ui_release_candidate_gate_is_explicit_and_complete(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")

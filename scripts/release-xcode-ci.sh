@@ -47,5 +47,6 @@ xcodebuild test -quiet \
   -only-testing:NoumTests \
   -parallel-testing-enabled NO \
   -maximum-parallel-testing-workers 1 \
-  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_REQUIRED=YES \
   ONLY_ACTIVE_ARCH=YES
