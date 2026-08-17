@@ -21,6 +21,20 @@ export const COACH_V2_CLOUD_RUN_SERVICES = Object.freeze([
 export const COACH_V2_FUNCTION_SELECTOR = COACH_V2_FUNCTIONS
   .map((name) => `functions:${name}`)
   .join(",");
+export const ACCOUNT_DELETION_DEPLOY_SCOPE = "account-deletion-v3";
+export const ACCOUNT_DELETION_FUNCTIONS = Object.freeze([
+  "deleteAccount",
+  "reconcileAccountDeletionTombstones",
+]);
+export const ACCOUNT_DELETION_FUNCTION_SELECTOR = ACCOUNT_DELETION_FUNCTIONS
+  .map((name) => `functions:${name}`)
+  .join(",");
+export const ACCOUNT_DELETION_CALLABLE_CLOUD_RUN_SERVICE = "deleteaccount";
+export const ACCOUNT_DELETION_RECONCILER_CLOUD_RUN_SERVICE =
+  "reconcileaccountdeletiontombstones";
+export const ACCOUNT_RUNTIME_SERVICE_ACCOUNT =
+  "noum-account-runtime@noum-d0b6f.iam.gserviceaccount.com";
+export const FIREBASE_TOOLS_VERSION = "15.19.1";
 
 export const DEPLOYMENT_BLOCKERS = Object.freeze([
   "Eligible competitive evidence production is missing: the local " +
@@ -82,34 +96,39 @@ export function backendReleaseInputsAreClean() {
     "--",
     "functions",
     "firebase.json",
+    "firestore.indexes.json",
     "scripts/release-backend-deploy.mjs",
     "scripts/deploy-coach-v2.mjs",
+    "scripts/deploy-account-deletion.mjs",
     "scripts/release-backend-deploy.test.mjs",
+    "scripts/release_cloud_operations_validator.py",
   ]);
   return status.length === 0;
 }
 
-export function validateScopedCoachDeploymentAuthorization(
+function validateScopedDeploymentAuthorization(
   environment,
   {
-    now = Date.now(),
-    commit = currentSourceCommit(),
-    sourceDigest = trackedFunctionsSourceDigest(),
-    releaseInputsClean = backendReleaseInputsAreClean(),
-  } = {}
+    expectedScope,
+    expectedFunctions,
+    now,
+    commit,
+    sourceDigest,
+    releaseInputsClean,
+  }
 ) {
   const fail = (message) => {
     throw new BackendDeployUnavailableError(message);
   };
-  if (environment.NOUM_BACKEND_DEPLOY_SCOPE !== COACH_V2_DEPLOY_SCOPE) {
-    fail("The exact coach-v2 deployment scope is required.");
+  if (environment.NOUM_BACKEND_DEPLOY_SCOPE !== expectedScope) {
+    fail(`The exact ${expectedScope} deployment scope is required.`);
   }
   if (environment.NOUM_BACKEND_DEPLOY_PROJECT !== PRODUCTION_PROJECT ||
       environment.GCLOUD_PROJECT !== PRODUCTION_PROJECT) {
     fail(`The deployment must target ${PRODUCTION_PROJECT}.`);
   }
-  if (environment.NOUM_BACKEND_DEPLOY_FUNCTIONS !== COACH_V2_FUNCTION_SELECTOR) {
-    fail("The deployment must contain exactly the two reviewed coach-v2 functions.");
+  if (environment.NOUM_BACKEND_DEPLOY_FUNCTIONS !== expectedFunctions) {
+    fail("The deployment does not match the reviewed function selector.");
   }
   if (!releaseInputsClean) {
     fail("Backend release inputs must be committed and clean.");
@@ -127,11 +146,51 @@ export function validateScopedCoachDeploymentAuthorization(
   }
   return {
     project: PRODUCTION_PROJECT,
-    functions: [...COACH_V2_FUNCTIONS],
+    functions: expectedFunctions.split(",").map((item) =>
+      item.replace(/^functions:/, "")
+    ),
     commit,
     sourceDigest,
     expiresAt,
   };
+}
+
+export function validateScopedCoachDeploymentAuthorization(
+  environment,
+  {
+    now = Date.now(),
+    commit = currentSourceCommit(),
+    sourceDigest = trackedFunctionsSourceDigest(),
+    releaseInputsClean = backendReleaseInputsAreClean(),
+  } = {}
+) {
+  return validateScopedDeploymentAuthorization(environment, {
+    expectedScope: COACH_V2_DEPLOY_SCOPE,
+    expectedFunctions: COACH_V2_FUNCTION_SELECTOR,
+    now,
+    commit,
+    sourceDigest,
+    releaseInputsClean,
+  });
+}
+
+export function validateScopedAccountDeletionDeploymentAuthorization(
+  environment,
+  {
+    now = Date.now(),
+    commit = currentSourceCommit(),
+    sourceDigest = trackedFunctionsSourceDigest(),
+    releaseInputsClean = backendReleaseInputsAreClean(),
+  } = {}
+) {
+  return validateScopedDeploymentAuthorization(environment, {
+    expectedScope: ACCOUNT_DELETION_DEPLOY_SCOPE,
+    expectedFunctions: ACCOUNT_DELETION_FUNCTION_SELECTOR,
+    now,
+    commit,
+    sourceDigest,
+    releaseInputsClean,
+  });
 }
 
 export function parseBackendDeployArguments(args) {
@@ -149,6 +208,10 @@ export function backendDeployHelp() {
     "",
     "The additive coach-v2 functions have one source-bound scoped path:",
     "node scripts/deploy-coach-v2.mjs --execute " +
+      `--confirm-project=${PRODUCTION_PROJECT} --confirm-source=<git-commit>`,
+    "The account-deletion callable and its recovery schedule have one " +
+      "source-bound scoped path:",
+    "node scripts/deploy-account-deletion.mjs --execute " +
       `--confirm-project=${PRODUCTION_PROJECT} --confirm-source=<git-commit>`,
     `All other backend release work remains governed by ${PRODUCTION_RUNBOOK}.`,
     "",
@@ -170,10 +233,17 @@ if (isMain) {
     const options = parseBackendDeployArguments(process.argv.slice(2));
     if (options.help) {
       process.stdout.write(backendDeployHelp());
-    } else if (process.env.NOUM_BACKEND_DEPLOY_SCOPE === COACH_V2_DEPLOY_SCOPE) {
-      const authorization = validateScopedCoachDeploymentAuthorization(process.env);
+    } else if (
+      process.env.NOUM_BACKEND_DEPLOY_SCOPE === COACH_V2_DEPLOY_SCOPE ||
+      process.env.NOUM_BACKEND_DEPLOY_SCOPE === ACCOUNT_DELETION_DEPLOY_SCOPE
+    ) {
+      const authorization = process.env.NOUM_BACKEND_DEPLOY_SCOPE ===
+          COACH_V2_DEPLOY_SCOPE ?
+        validateScopedCoachDeploymentAuthorization(process.env) :
+        validateScopedAccountDeletionDeploymentAuthorization(process.env);
       process.stdout.write(
-        `Authorized scoped coach-v2 deployment for ${authorization.project} ` +
+        `Authorized scoped ${process.env.NOUM_BACKEND_DEPLOY_SCOPE} deployment ` +
+        `for ${authorization.project} ` +
         `at ${authorization.commit.slice(0, 12)}.\n`
       );
     } else {

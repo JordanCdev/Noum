@@ -431,20 +431,74 @@ The matching local deletion fence is schema 3 and durably carries that
 capability. A legacy schema-2 fence is deliberately ambiguous and routes to
 deletion support; it is never treated as proof that revocation already ran.
 
-Deploy and read back the updated `deleteAccount` callable before distributing
-this build. The compatibility matrix must be proven against the deployed
+Deploy and read back the updated `deleteAccount` callable **together with** its
+`reconcileAccountDeletionTombstones` recovery schedule before distributing this
+build. The callable is not a safe standalone slice: a failure after Auth removal
+can leave a durable pending fence that only the server-owned schedule can
+resume. The checked-in source-bound path is:
+
+```bash
+node scripts/deploy-account-deletion.mjs --execute \
+  --confirm-project=noum-d0b6f \
+  --confirm-source="$(git rev-parse HEAD)"
+```
+
+The wrapper refuses dirty backend release inputs; accepts exactly those two
+function selectors; runs Functions lint/tests and the static runtime-identity
+contract; pins Firebase CLI 15.19.1; binds a ten-minute predeploy authorization
+to the production project, Git commit, and tracked Functions digest; restores
+public Cloud Run transport only for the callable; and reads back both functions
+as ACTIVE generation-2 Node 22 services on the dedicated account runtime.
+Before any mutation it also fails closed unless the exact
+`_accountDeletionState(status ASC, updatedAt ASC)` composite index is READY and
+the `_accountDeletionState.expiresAt` TTL is ACTIVE. The current
+`firestore.indexes.json` also contains social and competitive resources, so
+this scoped path deliberately does **not** deploy that mixed index bundle and
+does not deploy Firestore rules. Provision and independently verify only the
+two account-deletion prerequisites through the authorized cloud-operations
+change before running the wrapper.
+
+Inspect first, retaining only redacted resource metadata:
+
+```bash
+gcloud firestore indexes composite list --project=noum-d0b6f \
+  --database='(default)' --format=json
+gcloud firestore fields ttls list --project=noum-d0b6f \
+  --database='(default)' --format=json
+```
+
+If and only if the exact resources are absent and the production change is
+approved, provision only those resources (never the mixed Firebase index
+bundle), wait for `READY` / `ACTIVE`, and rerun the read-only inventory:
+
+```bash
+gcloud firestore indexes composite create --project=noum-d0b6f \
+  --database='(default)' --collection-group=_accountDeletionState \
+  --query-scope=collection \
+  --field-config=field-path=status,order=ascending \
+  --field-config=field-path=updatedAt,order=ascending
+gcloud firestore fields ttls update expiresAt --project=noum-d0b6f \
+  --database='(default)' --collection-group=_accountDeletionState \
+  --enable-ttl
+```
+
+Deployment does not waive the schema-v4 social-reference cutover. The handler
+must continue to read `_socialReferenceCutover/current` and call
+`assertSocialReferenceCutoverComplete` before creating a pending deletion
+fence. The compatibility matrix must then be proven against the deployed
 callable: schema-2 non-Apple deletion remains accepted; schema-2 Apple deletion
 is rejected before server deletion state is created; schema-3 Apple deletion is
 accepted only with the revocation capability; and schema-3 false/missing or
 extra-field payloads fail closed. Retain authenticated/App Check enforcement,
-recent `auth_time`, exact UID binding, and social-cutover preflight in every
-case. Do not deploy from this runbook without the existing backend release
-authorization and source/readback evidence.
+recent `auth_time`, exact UID binding, recovery-schedule execution, and
+social-cutover preflight in every case.
 
 ### Additive coach-v2 scoped deployment
 
 The blanket backend lock remains authoritative for Firestore, social,
-competitive-observation, account, recommendation, and full Functions releases.
+competitive-observation, recommendation, and full Functions releases. Account
+deployment is limited to the exact deletion callable/reconciler path above;
+every expanded account selector remains blocked.
 It no longer forces the additive Ask Noum compatibility repair to wait on
 unrelated disabled social capabilities. An operator who has explicitly
 authorized the exact source commit may deploy only `coachChatV2` and the
@@ -469,9 +523,10 @@ platform edge because their Firebase ID token is not a Google IAM identity
 token.
 The ordinary `firebase deploy`, `npm --prefix functions run deploy`, all
 Firestore deployments, expanded function selectors, wrong projects, stale
-authorization, and modified source remain blocked. Successful deployment is
-only availability evidence; it does not close live coaching quality, mixed-
-client, rollback, App Check, IAM, or product-readiness gates.
+authorization, and modified source remain blocked. Both narrow wrappers pin the
+Firebase CLI and admit only their exact two-function selector. Successful
+deployment is only availability evidence; it does not close live coaching
+quality, mixed-client, rollback, App Check, IAM, or product-readiness gates.
 
 The command is pinned to Firebase project `noum-d0b6f`, Functions region
 `europe-west2`, and the documented production operations channel. Environment
@@ -541,9 +596,12 @@ The npm command performs no deployment. The exact blocker is also the first
 `predeploy` hook on every Functions codebase and Firestore database in
 `firebase.json`, so scoped or unscoped deployment through that checked-in
 configuration refuses before lint, build, target preparation, or network
-mutation unless it carries the source-bound, two-function Ask Noum authorization
-created by the wrapper above. It otherwise exits nonzero with four exact missing
-requirements. Eligible
+mutation unless it carries one of the two source-bound authorizations created
+by the exact checked-in wrappers above: the two Ask Noum functions or the
+account-deletion callable plus its reconciler. Neither authorization admits
+Firestore, another function, a lookalike project, dirty source, or a stale
+digest. Every other attempt exits nonzero with four exact missing requirements.
+Eligible
 competitive evidence production is missing because the
 local server-observation substrate remains disabled and ineligible, has no
 calibrated deterministic evaluator, and its bounded exact-audio replay and

@@ -107,6 +107,44 @@ ID, root-certificate secret, endpoint URLs, or deployed runtime identity.
 - Dependencies: action 1; reviewed source candidate; App Store app record/numeric ID from action 5; guarded Functions/rules deployment authorization.
 - Gate: blocks trustworthy server-side subscription lifecycle evidence and commercial launch reconciliation. It does not replace StoreKit entitlement checks or App Store Connect proceeds/conversion reports.
 
+## 3C. Deploy and verify the account-deletion v3 backend slice
+
+Why: the current client requires fresh Sign in with Apple authorization-code
+revocation before deletion and sends request schema 3. Production must receive
+the matching server gate before that client is distributed, and the callable
+must not ship without its pending-fence recovery schedule.
+
+- Provider/dashboard: Firebase Functions, Cloud Run IAM, Cloud Scheduler,
+  Firestore indexes/TTL, Authentication, App Check, and production logs.
+- Required sequence: close action 1; complete and verify the schema-v4 social
+  reference cutover from action 3; independently prove the exact
+  `_accountDeletionState(status ASC, updatedAt ASC)` composite index is READY
+  and `_accountDeletionState.expiresAt` TTL is ACTIVE; freeze one clean source
+  commit; then run the exact `deploy-account-deletion.mjs` command in
+  `docs/PRODUCTION_READINESS_RUNBOOK.md`. Do not deploy only `deleteAccount`,
+  do not deploy the mixed Firestore index bundle, and do not use a blanket or
+  Console Functions deployment.
+- Required proof: clean source/Functions digest, pinned-tool output, exact
+  two-function selector, pre/post function inventory, both functions ACTIVE on
+  `noum-account-runtime@noum-d0b6f.iam.gserviceaccount.com`, public invoker only
+  on the callable transport, active schedule, exact index/TTL readback,
+  unauthenticated/App-Check rejection, and independent review.
+- Compatibility proof: use disposable accounts on the deployed callable to
+  prove schema-2 non-Apple acceptance; schema-2 Apple rejection before a server
+  deletion fence exists; schema-3 Apple acceptance only after revocation;
+  schema-3 false/missing/extra-field rejection; recent-auth and UID mismatch
+  rejection; retry/idempotency; and scheduled recovery of a controlled pending
+  fence. Never use a real personal account for destructive verification.
+- Pass: the exact client/server matrix passes on one source-bound candidate,
+  recovery is live, and no broader Function/rules/index resource changed.
+- Fail: callable-only deploy, inactive scheduler/index/TTL, missing social
+  marker, broader selector, mismatched commit, or deletion reported successful
+  without Apple revocation and complete backend cleanup.
+- Dependencies: actions 1 and 3; a reviewed clean source candidate; independent
+  production change authorization; disposable Firebase/Apple test accounts.
+- Gate: blocks external TestFlight and App Store distribution of the schema-3
+  client.
+
 ## 4. Connect and verify `noum.app`
 
 Why: source pages exist for privacy, support, and coaching boundaries, but the

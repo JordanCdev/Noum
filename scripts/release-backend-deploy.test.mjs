@@ -3,17 +3,24 @@ import {readFile} from "node:fs/promises";
 import test from "node:test";
 
 import {
+  ACCOUNT_DELETION_CALLABLE_CLOUD_RUN_SERVICE,
+  ACCOUNT_DELETION_DEPLOY_SCOPE,
+  ACCOUNT_DELETION_FUNCTION_SELECTOR,
+  ACCOUNT_DELETION_FUNCTIONS,
+  ACCOUNT_DELETION_RECONCILER_CLOUD_RUN_SERVICE,
   BackendDeployUnavailableError,
   COACH_V2_CLOUD_RUN_SERVICES,
   COACH_V2_DEPLOY_SCOPE,
   COACH_V2_FUNCTION_SELECTOR,
   COACH_V2_REGION,
   DEPLOYMENT_BLOCKERS,
+  FIREBASE_TOOLS_VERSION,
   PRODUCTION_PROJECT,
   PRODUCTION_RUNBOOK,
   backendDeployHelp,
   backendDeployRefusal,
   parseBackendDeployArguments,
+  validateScopedAccountDeletionDeploymentAuthorization,
   validateScopedCoachDeploymentAuthorization,
 } from "./release-backend-deploy.mjs";
 
@@ -44,10 +51,14 @@ test("the exact actionable blocker roster is stable", () => {
   assert.match(refusal, new RegExp(PRODUCTION_RUNBOOK));
 });
 
-test("help keeps blanket deployment closed and names the scoped coach path", () => {
+test("help keeps blanket deployment closed and names only scoped paths", () => {
   assert.deepEqual(parseBackendDeployArguments(["--help"]), {help: true});
   assert.match(backendDeployHelp(), /Blanket backend deployment is intentionally unavailable/i);
   assert.match(backendDeployHelp(), /deploy-coach-v2\.mjs --execute/);
+  assert.match(
+    backendDeployHelp(),
+    /deploy-account-deletion\.mjs --execute/
+  );
   assert.match(backendDeployHelp(), /--confirm-source=<git-commit>/);
   assert.match(backendDeployHelp(), new RegExp(PRODUCTION_RUNBOOK));
 });
@@ -153,6 +164,59 @@ test("scoped authorization is exact, source-bound, clean, and short-lived", () =
   );
 });
 
+test("account-deletion authorization admits exactly the callable and recovery schedule", () => {
+  const now = 1_800_000_000_000;
+  const commit = "c".repeat(40);
+  const sourceDigest = "d".repeat(64);
+  const environment = {
+    NOUM_BACKEND_DEPLOY_SCOPE: ACCOUNT_DELETION_DEPLOY_SCOPE,
+    NOUM_BACKEND_DEPLOY_PROJECT: PRODUCTION_PROJECT,
+    NOUM_BACKEND_DEPLOY_FUNCTIONS: ACCOUNT_DELETION_FUNCTION_SELECTOR,
+    NOUM_BACKEND_DEPLOY_COMMIT: commit,
+    NOUM_BACKEND_DEPLOY_SOURCE_SHA256: sourceDigest,
+    NOUM_BACKEND_DEPLOY_EXPIRES_AT: String(now + 10 * 60 * 1000),
+    GCLOUD_PROJECT: PRODUCTION_PROJECT,
+  };
+  assert.deepEqual(
+    validateScopedAccountDeletionDeploymentAuthorization(environment, {
+      now,
+      commit,
+      sourceDigest,
+      releaseInputsClean: true,
+    }),
+    {
+      project: PRODUCTION_PROJECT,
+      functions: [...ACCOUNT_DELETION_FUNCTIONS],
+      commit,
+      sourceDigest,
+      expiresAt: now + 10 * 60 * 1000,
+    }
+  );
+  for (const selector of [
+    "functions:deleteAccount",
+    `${ACCOUNT_DELETION_FUNCTION_SELECTOR},functions:recordGrowthAggregate`,
+    "functions",
+  ]) {
+    assert.throws(
+      () => validateScopedAccountDeletionDeploymentAuthorization(
+        {...environment, NOUM_BACKEND_DEPLOY_FUNCTIONS: selector},
+        {now, commit, sourceDigest, releaseInputsClean: true}
+      ),
+      BackendDeployUnavailableError,
+      selector
+    );
+  }
+  assert.throws(
+    () => validateScopedCoachDeploymentAuthorization(environment, {
+      now,
+      commit,
+      sourceDigest,
+      releaseInputsClean: true,
+    }),
+    BackendDeployUnavailableError
+  );
+});
+
 test("functions deploy and CI test scripts route through the blocker", async () => {
   const packageJSON = JSON.parse(await readFile(
     new URL("../functions/package.json", import.meta.url),
@@ -165,6 +229,10 @@ test("functions deploy and CI test scripts route through the blocker", async () 
   assert.equal(
     packageJSON.scripts["deploy:coach-v2"],
     "node ../scripts/deploy-coach-v2.mjs"
+  );
+  assert.equal(
+    packageJSON.scripts["deploy:account-deletion"],
+    "node ../scripts/deploy-account-deletion.mjs"
   );
   assert.match(
     packageJSON.scripts.test,
@@ -186,7 +254,88 @@ test("scoped coach deployment restores only the callable transport bindings", as
   assert.match(source, /add-iam-policy-binding/);
   assert.match(source, /--member=allUsers/);
   assert.match(source, /--role=roles\/run\.invoker/);
+  assert.match(source, new RegExp(`firebase-tools@\\$\\{FIREBASE_TOOLS_VERSION\\}`));
+  assert.match(source, /--app-store-contract/);
+  assert.match(source, /--functions-lockfile/);
   assert.doesNotMatch(source, /roles\/(owner|editor)/i);
+  assert.doesNotMatch(source, /firebase-tools@latest/);
+});
+
+test("account-deletion deployment cannot expand beyond its exact backend slice", async () => {
+  assert.equal(FIREBASE_TOOLS_VERSION, "15.19.1");
+  assert.equal(
+    ACCOUNT_DELETION_CALLABLE_CLOUD_RUN_SERVICE,
+    "deleteaccount"
+  );
+  assert.equal(
+    ACCOUNT_DELETION_RECONCILER_CLOUD_RUN_SERVICE,
+    "reconcileaccountdeletiontombstones"
+  );
+  assert.deepEqual([...ACCOUNT_DELETION_FUNCTIONS], [
+    "deleteAccount",
+    "reconcileAccountDeletionTombstones",
+  ]);
+  const source = await readFile(
+    new URL("./deploy-account-deletion.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(source, /ACCOUNT_DELETION_FUNCTION_SELECTOR/);
+  assert.match(source, /firebase-tools@\$\{FIREBASE_TOOLS_VERSION\}/);
+  assert.match(source, /--non-interactive/);
+  assert.match(source, /requireActiveAccountDeletionInfrastructure\(\)/);
+  assert.match(source, /requireActiveFunctionReadback\(name\)/);
+  assert.match(source, /--app-store-contract/);
+  assert.match(source, /--functions-lockfile/);
+  assert.match(source, /ACCOUNT_DELETION_CALLABLE_CLOUD_RUN_SERVICE/);
+  assert.match(source, /ACCOUNT_DELETION_RECONCILER_CLOUD_RUN_SERVICE/);
+  assert.match(source, /--member=allUsers/);
+  assert.match(source, /--role=roles\/run\.invoker/);
+  assert.match(source, /requireExactTransportIAM\(\)/);
+  assert.match(source, /recovery schedule must not be publicly invokable/);
+  assert.doesNotMatch(source, /firebase-tools@latest/);
+  assert.doesNotMatch(source, /firestore:(?:rules|indexes)/);
+  assert.doesNotMatch(source, /--force/);
+  assert.doesNotMatch(source, /roles\/(?:owner|editor)/i);
+});
+
+test("account-deletion slice preserves the social cutover and recovery contracts", async () => {
+  const source = await readFile(
+    new URL("../functions/src/index.ts", import.meta.url),
+    "utf8"
+  );
+  const executorStart = source.indexOf("async function executeAccountDeletion(");
+  const callableStart = source.indexOf("export const deleteAccount", executorStart);
+  const executor = source.slice(executorStart, callableStart);
+  const markerRead = executor.indexOf("_socialReferenceCutover");
+  const cutoverGate = executor.indexOf(
+    "assertSocialReferenceCutoverComplete(cutoverSnapshot.data())"
+  );
+  const pendingFence = executor.indexOf('status: "pending"');
+  assert.equal(
+    markerRead >= 0 && cutoverGate > markerRead && pendingFence > cutoverGate,
+    true
+  );
+
+  const scheduler = source.slice(
+    source.indexOf("export const reconcileAccountDeletionTombstones")
+  );
+  assert.match(scheduler, /schedule: "every 15 minutes"/);
+  assert.match(scheduler, /executeAccountDeletion\(null, candidate\)/);
+
+  const indexes = JSON.parse(await readFile(
+    new URL("../firestore.indexes.json", import.meta.url),
+    "utf8"
+  ));
+  assert.equal(indexes.indexes.filter((item) =>
+    item.collectionGroup === "_accountDeletionState" &&
+    item.queryScope === "COLLECTION" &&
+    item.fields?.[0]?.fieldPath === "status" &&
+    item.fields?.[1]?.fieldPath === "updatedAt"
+  ).length, 1);
+  assert.equal(indexes.fieldOverrides.filter((item) =>
+    item.collectionGroup === "_accountDeletionState" &&
+    item.fieldPath === "expiresAt" && item.ttl === true
+  ).length, 1);
 });
 
 test("every checked-in Firebase Functions and Firestore deploy stops at the blocker", async () => {

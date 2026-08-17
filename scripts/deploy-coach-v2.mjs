@@ -7,6 +7,7 @@ import {
   COACH_V2_DEPLOY_SCOPE,
   COACH_V2_FUNCTION_SELECTOR,
   COACH_V2_REGION,
+  FIREBASE_TOOLS_VERSION,
   PRODUCTION_PROJECT,
   backendReleaseInputsAreClean,
   currentSourceCommit,
@@ -59,6 +60,10 @@ run("python3", [
   "scripts/release_cloud_operations_validator.py",
   "--source-contract",
   "functions/src/index.ts",
+  "--app-store-contract",
+  "functions/src/appStoreServerNotifications.ts",
+  "--functions-lockfile",
+  "functions/package-lock.json",
 ]);
 
 const authorizationEnvironment = {
@@ -72,8 +77,10 @@ const authorizationEnvironment = {
   NOUM_BACKEND_DEPLOY_EXPIRES_AT: String(Date.now() + 10 * 60 * 1000),
 };
 run("npx", [
-  "-y",
-  "firebase-tools@latest",
+  "--yes",
+  "--package",
+  `firebase-tools@${FIREBASE_TOOLS_VERSION}`,
+  "firebase",
   "deploy",
   "--only",
   COACH_V2_FUNCTION_SELECTOR,
