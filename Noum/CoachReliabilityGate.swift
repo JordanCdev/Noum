@@ -148,6 +148,21 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     /// A goal-change answer shames the user by treating a training preference as
     /// proof that their prior delivery was fake, inauthentic, or an act.
     case goalAuthenticityShaming
+    /// The reply answers a nearby coaching question but not the one the user
+    /// actually asked (for example, prescribing after a direct "why").
+    case wrongQuestion
+    /// The reply reads like a dashboard row or scorecard even though the user
+    /// did not explicitly request personal telemetry.
+    case rawReportVoice
+    /// The same intervention move has appeared across the active three-turn
+    /// window without a new constraint, stage, rationale, or transfer context.
+    case repeatedIntervention
+    /// The user explicitly asked what to say or for a model, but the reply gives
+    /// instructions without demonstrating any wording or delivery.
+    case missingDemonstration
+    /// The draft is a polite non-answer: acknowledgement or generic encouragement
+    /// with no direct read, explanation, evidence boundary, or useful model.
+    case nonAnswer
 
     /// Issues that are unambiguous user-facing defects and therefore trigger the
     /// truthful fallback substitution.
@@ -166,7 +181,8 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
                 .greetingWithDrill, .offTopicTestWithDrill, .coldStartJargon,
                 .evidenceOverclaimNoBaseline, .vulnerablePushbackQuestionBurden,
                 .goalStateDirectiveLeak, .goalStateReportVoiceLeak,
-                .goalAuthenticityShaming:
+                .goalAuthenticityShaming, .wrongQuestion, .rawReportVoice,
+                .repeatedIntervention, .missingDemonstration, .nonAnswer:
             return true
         case .nearDuplicateReply, .floorConfidenceWithEvidence:
             return false
@@ -271,6 +287,26 @@ enum CoachReliabilityGate {
         "assessmentconfidence",
         "point-reason-example-point",
         "pointreasonexamplepoint",
+        "coachdecisionplan",
+        "coach decision plan",
+        "coach response contract",
+        "replyposture",
+        "skillstage",
+        "chosenintervention",
+        "whentouse",
+        "whennottouse",
+        "passcondition",
+        "transferprompt",
+        "metric authorization:",
+        "skill stage:",
+        "chosen intervention:",
+        "use when:",
+        "when not to use:",
+        "exact evidence:",
+        "success test:",
+        "case summary:",
+        "active intervention:",
+        "demonstration seed:",
         "\"surfacetext\"",
         "\"verdict\":",
         "\"prooftest\":",
@@ -527,6 +563,59 @@ enum CoachReliabilityGate {
         ) {
             issues.append(.repetitiveDiscourseMove)
         }
+        if responseKind != .conversational,
+           !issues.contains(.repetitiveDiscourseMove),
+           repeatsInterventionMove(
+            reply: lowered,
+            recentCoachReplies: recentCoachReplies,
+            latestUserTurn: latestUserTurn
+           ) {
+            issues.append(.repeatedIntervention)
+        }
+        if !trimmed.isEmpty {
+            let personalMetrics = TurnDepthClassifier.requestedPersonalMetrics(
+                latestUserTurn ?? ""
+            )
+            let benchmark = CoachBenchmarkAuthorization.explicitRequest(
+                in: latestUserTurn ?? ""
+            )
+            if let benchmark {
+                if violatesGenericBenchmarkAuthorization(
+                    lowered,
+                    authorization: benchmark
+                ) {
+                    issues.append(.rawReportVoice)
+                }
+            } else if personalMetrics.isEmpty,
+                      leaksUnrequestedRawReportVoice(lowered) ||
+                        leaksUnrequestedGenericBenchmark(lowered) {
+                issues.append(.rawReportVoice)
+            }
+        }
+        if responseKind != .conversational,
+           !trimmed.isEmpty,
+           missesExplicitDemonstration(
+            reply: trimmed,
+            latestUserTurn: latestUserTurn
+           ) {
+            issues.append(.missingDemonstration)
+        }
+        if responseKind != .conversational,
+           !trimmed.isEmpty,
+           answersWrongQuestion(
+            reply: trimmed,
+            latestUserTurn: latestUserTurn
+           ) {
+            issues.append(.wrongQuestion)
+        }
+        if responseKind != .conversational,
+           !trimmed.isEmpty,
+           isPoliteNonAnswer(
+            reply: trimmed,
+            latestUserTurn: latestUserTurn
+           ) {
+            issues.append(.nonAnswer)
+        }
 
         // --- RECORDED ISSUES ---
         if let assessment,
@@ -584,6 +673,12 @@ enum CoachReliabilityGate {
         if turnDepth == .trustRepair,
            !trimmed.isEmpty,
            burdensVulnerablePushback(reply: trimmed, latestUserTurn: latestUserTurn) {
+            issues.append(.vulnerablePushbackQuestionBurden)
+        }
+        if !trimmed.isEmpty,
+           lowCapacityUserTurn(latestUserTurn),
+           burdensLowCapacityTurn(trimmed),
+           !issues.contains(.vulnerablePushbackQuestionBurden) {
             issues.append(.vulnerablePushbackQuestionBurden)
         }
         if responseKind != .conversational,
@@ -717,6 +812,19 @@ enum CoachReliabilityGate {
             fallback = greetingFallback(surface: surface, assessment: assessment)
         } else if issues.contains(.offTopicTestWithDrill) {
             fallback = offTopicTestFallback(surface: surface)
+        } else if issues.contains(.wrongQuestion) ||
+                    issues.contains(.rawReportVoice) ||
+                    issues.contains(.repeatedIntervention) ||
+                    issues.contains(.missingDemonstration) ||
+                    issues.contains(.nonAnswer) {
+            fallback = professionalContractFallback(
+                surface: surface,
+                assessment: assessment,
+                latestUserTurn: latestUserTurn,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies,
+                repeatedIntervention: issues.contains(.repeatedIntervention)
+            )
         } else if issues.contains(.genericRepairScaffolded) {
             fallback = genericRepairFallback(
                 surface: surface,
@@ -766,7 +874,18 @@ enum CoachReliabilityGate {
                 latestUserTurn: latestUserTurn
             )
         } else if issues.contains(.vulnerablePushbackQuestionBurden) {
-            fallback = vulnerablePushbackFallback(surface: surface, assessment: assessment)
+            if lowCapacityUserTurn(latestUserTurn) {
+                fallback = lowCapacityFallback(
+                    surface: surface,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                )
+            } else {
+                fallback = vulnerablePushbackFallback(
+                    surface: surface,
+                    assessment: assessment
+                )
+            }
         } else if issues.contains(.goalStateDirectiveLeak) ||
                     issues.contains(.goalStateReportVoiceLeak) ||
                     issues.contains(.goalAuthenticityShaming) {
@@ -847,6 +966,363 @@ enum CoachReliabilityGate {
         let overlap = expected.intersection(visible).count
         return overlap >= min(3, expected.count) &&
             Double(overlap) / Double(expected.count) >= 0.50
+    }
+
+    /// Generic report-voice cap. A time limit inside a proposed exercise (for
+    /// example "run one 60-second answer") is not telemetry and is intentionally
+    /// excluded. The detector catches labelled rows, user-owned score claims and
+    /// multi-metric clusters when no metric was requested.
+    static func leaksUnrequestedRawReportVoice(_ lowered: String) -> Bool {
+        let labelPatterns = [
+            #"\b(?:score|rating|wpm|pace|filler count|filler rate|duration)\s*:"#,
+            #"\bwhat the numbers show\b"#,
+            #"\bmetrics?\s+(?:show|say|indicate)\b"#
+        ]
+        if labelPatterns.contains(where: {
+            lowered.range(of: $0, options: .regularExpression) != nil
+        }) {
+            return true
+        }
+
+        let userOwnedMetricPatterns = [
+            #"\byour (?:score|rating|pace|wpm|filler count|filler rate|duration)\b"#,
+            #"\byou (?:scored|had)\s+\d+(?:\.\d+)?\s*(?:/\s*10|fillers?)"#,
+            #"\byou were at\s+\d{2,3}\s*wpm\b"#
+        ]
+        if userOwnedMetricPatterns.contains(where: {
+            lowered.range(of: $0, options: .regularExpression) != nil
+        }) {
+            return true
+        }
+
+        let categoryPatterns = [
+            #"\b\d+(?:\.\d+)?\s*/\s*10\b"#,
+            #"\b\d{2,3}\s*(?:wpm|words per minute)\b"#,
+            #"\b\d+(?:\.\d+)?\s*fillers?\s*(?:per minute|/min|in the rep)?\b"#,
+            #"\b(?:duration|lasted)\s+(?:was\s+)?\d+\s*(?:seconds?|secs?)\b"#
+        ]
+        let categoryCount = categoryPatterns.reduce(0) { count, pattern in
+            count + (lowered.range(of: pattern, options: .regularExpression) == nil ? 0 : 1)
+        }
+        return categoryCount >= 2
+    }
+
+    /// A generic benchmark is answerable without personal evidence, but only
+    /// for the requested craft dimension. Fail closed when the draft swaps in
+    /// another metric, gives a single magic number, or drops the context caveat.
+    static func violatesGenericBenchmarkAuthorization(
+        _ lowered: String,
+        authorization: CoachBenchmarkAuthorization
+    ) -> Bool {
+        let hasRange = lowered.range(
+            of: #"\b\d+(?:\.\d+)?\s*(?:–|—|-|to)\s*\d+(?:\.\d+)?\b"#,
+            options: .regularExpression
+        ) != nil
+        let hasCaveat = containsAny(lowered, [
+            "starting range", "rough range", "about ", "depends",
+            "adjust", "varies", "not a universal", "not universal",
+            "not a fixed", "context", "audience", "room", "idea density",
+            "listener", "purpose", "transition", "decision you want"
+        ])
+        let falseCertainty = containsAny(lowered, [
+            "exactly ", "always ", "must be", "the perfect ",
+            "the correct ", "guaranteed", "universal target"
+        ]) && !containsAny(lowered, ["not a universal", "not universal"])
+        guard hasRange, hasCaveat, !falseCertainty else { return true }
+
+        let unrelatedMetric = containsAny(lowered, [
+            "score", "rating", "filler count", "filler rate", "fillers per",
+            "/10", "%"
+        ])
+        guard !unrelatedMetric else { return true }
+
+        switch authorization.kind {
+        case .keynotePace:
+            return !containsAny(lowered, ["wpm", "words per minute"]) ||
+                containsAny(lowered, ["duration:", "seconds long"])
+        case .elevatorPitchLength:
+            return !containsAny(lowered, ["second", "minute"]) ||
+                containsAny(lowered, ["wpm", "words per minute"])
+        case .pauseDuration:
+            return !lowered.contains("second") ||
+                containsAny(lowered, ["wpm", "words per minute"])
+        }
+    }
+
+    static func leaksUnrequestedGenericBenchmark(_ lowered: String) -> Bool {
+        let range = #"\b\d+(?:\.\d+)?\s*(?:–|—|-|to)\s*\d+(?:\.\d+)?\b"#
+        guard lowered.range(of: range, options: .regularExpression) != nil else {
+            return false
+        }
+        if containsAny(lowered, ["wpm", "words per minute"]) {
+            return true
+        }
+        return lowered.contains("second") && containsAny(lowered, [
+            "ideal", "recommended", "benchmark", "starting range",
+            "good range", "typical range", "should be"
+        ])
+    }
+
+    /// The catalogue selector prevents most repetition before generation. This
+    /// boundary cap catches the remaining third use of the same intervention
+    /// and stage in a three-turn window, while allowing an explicit progression
+    /// or a user's narrow request to repeat one line.
+    static func repeatsInterventionMove(
+        reply: String,
+        recentCoachReplies: [String],
+        latestUserTurn: String?
+    ) -> Bool {
+        if isNarrowRepeatFollowUp(latestUserTurn) {
+            return false
+        }
+        guard !containsAny(reply, [
+            "this time", "now add", "now take", "advance", "next stage",
+            "in the real", "because that held", "since that held",
+            "keep the target but", "same target, new"
+        ]), let currentKey = CoachReasoningPass.interventionMoveKey(reply) else {
+            return false
+        }
+        let priorMatches = recentCoachReplies.prefix(3).filter {
+            CoachReasoningPass.interventionMoveKey($0) == currentKey
+        }.count
+        return priorMatches >= 2
+    }
+
+    static func missesExplicitDemonstration(
+        reply: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let turn = normalize(latestUserTurn ?? "")
+        let explicitlyAsked = containsAny(turn, [
+            "what should i say", "what do i say", "how should i say",
+            "how would you say", "how would you phrase", "give me wording",
+            "give me a line", "write the line", "model the line",
+            "show me what to say", "give me a script"
+        ])
+        guard explicitlyAsked else { return false }
+
+        let lower = normalize(reply)
+        let hasQuotedModel = reply.contains("\"") ||
+            reply.contains("“") ||
+            reply.contains("‘")
+        let hasIntroducedModel = containsAny(lower, [
+            "say it like this:", "say this:", "try this:",
+            "use this wording:", "for example:", "model:"
+        ])
+        let hasDeliveryModel = containsAny(lower, [
+            "[one beat]", "[pause]", "hold one beat, then say"
+        ])
+        return !(hasQuotedModel || hasIntroducedModel || hasDeliveryModel)
+    }
+
+    /// High-precision intent-fit checks only. Ambiguous semantic judgement stays
+    /// with the existing model evaluator; this cap blocks obvious prescription
+    /// in place of an explanation or a direct calibrated verdict.
+    static func answersWrongQuestion(
+        reply: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let turn = normalize(latestUserTurn ?? "")
+        let lower = normalize(reply)
+        guard !turn.isEmpty else { return false }
+
+        let asksWhyThisAnswer = turn.contains("why") &&
+            containsAny(turn, [
+                "that answer", "my answer", "it landed", "it fell flat",
+                "that happened", "i sounded"
+            ])
+        if asksWhyThisAnswer {
+            let explains = containsAny(lower, [
+                "because", "the reason", "what happened", "arrived",
+                "came before", "came after", "delayed", "softened",
+                "reopened", "trailed", "rushed", "the listener",
+                "i don't have enough", "i dont have enough", "would be guessing"
+            ])
+            if !explains { return true }
+        }
+
+        let asksForStraightVerdict = containsAny(turn, [
+            "give it to me straight", "tell me straight",
+            "straight answer", "yes or no"
+        ]) && !containsAny(turn, [
+            "why can't you", "why cant you", "why can you not"
+        ])
+        if asksForStraightVerdict,
+           !containsAny(lower, [
+            "yes", "no", "not enough evidence", "cannot tell", "can't tell",
+            "too early to", "not proven"
+           ]) {
+            return true
+        }
+        if CoachCraftKnowledgeRequest.isAnswerOnly(latestUserTurn ?? ""),
+           informationOnlyAddsForcedWork(reply) {
+            return true
+        }
+        return false
+    }
+
+    /// The prompt asks information-only turns to stop after the answer. This
+    /// deterministic cap catches the high-confidence failure mode where a
+    /// correct definition or requested benchmark is followed by compulsory
+    /// practice or a question. It intentionally avoids broad advice verbs such
+    /// as "use" or "adjust", which can be part of the answer itself.
+    static func informationOnlyAddsForcedWork(_ reply: String) -> Bool {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = normalize(trimmed)
+        let withoutTrailingQuotes = lower.trimmingCharacters(
+            in: CharacterSet(charactersIn: "\"'”’ ")
+        )
+        if withoutTrailingQuotes.hasSuffix("?") {
+            return true
+        }
+
+        let forcedWorkMarkers = [
+            "your turn", "try it now", "try this now", "now try ",
+            "then try ", "do one rep", "run one rep", "run this drill",
+            "do this drill", "record one", "record yourself",
+            "practice it", "practise it", "practice this", "practise this",
+            "practice once", "practise once", "repeat that", "say it once",
+            "try that once", "try this once", "try one rep",
+            "give it a try", "give that a try"
+        ]
+        if containsAny(lower, forcedWorkMarkers) {
+            return true
+        }
+
+        return lower.range(
+            of: #"(?:^|[.!;]\s+)(?:now\s+|then\s+)(?:try|practise|practice|record|repeat|say|run|do)\b"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    static func isPoliteNonAnswer(
+        reply: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let turn = normalize(latestUserTurn ?? "")
+        guard !turn.isEmpty,
+              !TurnDepthClassifier.isGreetingOrSmallTalk(turn),
+              !TurnDepthClassifier.isLowSignalOffTopicTest(turn) else {
+            return false
+        }
+        let lower = normalize(reply)
+        let genericOpeners = [
+            "great question", "good question", "it depends",
+            "communication takes time", "keep practicing",
+            "keep practising", "you've got this", "you have got this",
+            "there is always room to improve", "there's always room to improve"
+        ]
+        guard containsAny(lower, genericOpeners),
+              lower.split(separator: " ").count <= 28 else {
+            return false
+        }
+        return !containsAny(lower, [
+            "because", "the pattern", "the specific", "sentence",
+            "recommendation", "the point", "the ask", "the close",
+            "the opening", "the evidence", "not enough evidence",
+            "say ", "try ", "use ", "record ", "run "
+        ])
+    }
+
+    static func professionalContractFallback(
+        surface: CoachReplySurface,
+        assessment: CoachAssessment?,
+        latestUserTurn: String?,
+        previousCoachReply: String?,
+        recentCoachReplies: [String],
+        repeatedIntervention: Bool
+    ) -> String {
+        if lowCapacityUserTurn(latestUserTurn) {
+            return lowCapacityFallback(
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        }
+
+        if let benchmark = CoachBenchmarkAuthorization.explicitRequest(
+            in: latestUserTurn ?? ""
+        ) {
+            return benchmark.directAnswer
+        }
+        if CoachCraftKnowledgeRequest.isAnswerOnly(latestUserTurn ?? "") {
+            return craftKnowledgeFallback(for: latestUserTurn ?? "")
+        }
+
+        let turn = normalize(latestUserTurn ?? "")
+        if turn.contains("why"), assessment == nil {
+            return surface == .live
+                ? "I do not have the answer itself, so I would be guessing about why it missed. Give me the wording and I will point to the exact moment."
+                : "I do not have the answer itself, so I would be guessing about why it missed. Paste or record the wording, and I’ll point to the exact moment that changed how it landed."
+        }
+
+        if let assessment {
+            let plan = CoachReasoningPass.decisionPlan(for: assessment)
+            let intervention = CoachReasoningPass.interventionForAssessment(assessment)
+            if repeatedIntervention, let intervention {
+                let transfer = intervention.transferPrompt
+                let candidate = "We have used \(intervention.title.lowercased()) enough in drills. \(transfer)"
+                if isCleanCandidate(
+                    candidate,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                ) {
+                    return candidate
+                }
+            }
+
+            let acknowledgement = assessment.turnDepth == .trustRepair
+                ? "You’re right—I missed the question."
+                : "Let’s make that concrete."
+            let read = assessment.directVerdict
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let modelLine = plan.modelLine {
+                let invitation = surface == .live
+                    ? "Try that once in your words."
+                    : "Try that once in your own words; keep the structure, not the script."
+                return "\(acknowledgement) \(read) A cleaner version is “\(modelLine)” \(invitation)"
+            }
+            return "\(acknowledgement) \(read)"
+        }
+
+        let generalPlan = CoachReasoningPass.generalDecisionPlan(
+            userQuestion: latestUserTurn ?? "",
+            recentMoves: recentCoachReplies
+        )
+        if let modelLine = generalPlan.modelLine {
+            return "I do not have enough personal evidence for a personal read, but I can model the craft. Use this shape: “\(modelLine)” Try it once with your own content."
+        }
+        return personalEvidenceGapFallback(
+            surface: surface,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
+    }
+
+    static func craftKnowledgeFallback(for userTurn: String) -> String {
+        let turn = normalize(userTurn)
+        if containsAny(turn, ["active listening", "listening loop"]) {
+            return "Active listening means attending to the speaker’s meaning, reflecting it accurately, and checking your understanding before adding your own view."
+        }
+        if containsAny(turn, ["cadence", "speech rhythm"]) {
+            return "Cadence is the pattern of pace, rhythm, sentence length, and pauses that shapes how speech moves and where emphasis lands."
+        }
+        if containsAny(turn, ["clarity", "clear communication"]) {
+            return "Communication clarity means the listener can identify the main point, understand how the support connects, and know what response or decision is needed."
+        }
+        if containsAny(turn, ["prosody", "vocal delivery", "intonation"]) {
+            return "Prosody is the pattern of pitch, stress, rhythm, and pauses that carries meaning beyond the words themselves."
+        }
+        if containsAny(turn, ["storytelling", "narrative", "story beat"]) {
+            return "A useful communication story creates an expectation, shows the moment something changed, and makes the meaning of that change explicit."
+        }
+        if containsAny(turn, ["audience adaptation", "audience lens", "tailor"] ) {
+            return "Audience adaptation keeps the core point stable while changing the consequence, assumed knowledge, and level of detail for that listener."
+        }
+        if containsAny(turn, ["turn-taking", "turn taking"]) {
+            return "Conversational turn-taking is how speakers signal, yield, and take the floor so an exchange stays coordinated rather than becoming interruption or silence."
+        }
+        return "That is a craft question, so the useful answer is the principle itself—not a diagnosis or another exercise. I do not have a reliable definition in this bounded fallback."
     }
 
     static func discourseLoopFallback(
@@ -1046,6 +1522,17 @@ enum CoachReliabilityGate {
             "i'm overwhelmed", "im overwhelmed", "i am overwhelmed",
             "i feel defeated", "i'm defeated", "im defeated"
         ])
+    }
+
+    static func burdensLowCapacityTurn(_ reply: String) -> Bool {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = normalize(trimmed)
+        let prescribes = discourseMoveProfile(in: lower).contains(.prescribe)
+        let asksForMore = trimmed.hasSuffix("?") || containsAny(lower, [
+            "want to try", "ready to try", "tell me what", "what should",
+            "record one", "run one", "next rep", "practice this"
+        ])
+        return prescribes || asksForMore
     }
 
     /// Presence-first recovery for a user who has no capacity for another drill.

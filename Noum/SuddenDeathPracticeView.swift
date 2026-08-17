@@ -193,10 +193,6 @@ struct SuddenDeathPracticeView: View {
 
     private let accentColor = AppColor.modeSuddenDeath
 
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-    }
-
     var body: some View {
         ZStack {
             background
@@ -674,12 +670,11 @@ struct SuddenDeathPracticeView: View {
 
     private func topBar(round: Int) -> some View {
         HStack {
-            NoumCharacter(
-                mood: speechVM.isRecording ? .listening : .calm,
+            NoumWaveformMark(
+                state: speechVM.isRecording ? .listening : .idle,
+                level: speechVM.audioLevel,
                 tint: accentColor,
-                size: 32,
-                audioLevel: speechVM.audioLevel,
-                stage: characterStage
+                size: 32
             )
             .accessibilityHidden(true)
 

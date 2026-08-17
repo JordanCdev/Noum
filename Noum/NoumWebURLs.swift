@@ -17,6 +17,24 @@ enum NoumWebURLs {
     static let supportEmail = "noumsupport@gmail.com"
     static let supportMail = URL(string: "mailto:\(supportEmail)")!
 
+    /// User-initiated private-beta report. The caller owns the visible report
+    /// body; this helper only routes it to the existing monitored inbox.
+    /// Diagnostics must remain inspectable and content-free before arriving
+    /// here (see `BetaFeedbackDiagnostics`).
+    static func betaFeedbackMail(subject: String, body: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = supportEmail
+        components.queryItems = [
+            URLQueryItem(
+                name: "subject",
+                value: subject.replacingOccurrences(of: "\n", with: " ")
+            ),
+            URLQueryItem(name: "body", value: body)
+        ]
+        return components.url ?? supportMail
+    }
+
     /// Ask Noum unavailable-after-retries support draft. Privacy-safe
     /// diagnostics only — the typed unavailability reason code, the failed
     /// re-check count, and app/OS versions, so support can distinguish a

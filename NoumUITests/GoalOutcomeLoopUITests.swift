@@ -91,6 +91,7 @@ final class GoalOutcomeLoopUITests: XCTestCase {
         )
         advanceInjectedTimedRepToSummary(in: app)
         dismissProgressionIfNeeded(in: app)
+        openDetails(in: app)
         let comparison = app.descendants(matching: .any)["transcriptRetry.comparison"]
         XCTAssertTrue(
             comparison.waitForExistence(timeout: 15),
@@ -111,12 +112,11 @@ final class GoalOutcomeLoopUITests: XCTestCase {
         add(comparisonAttachment)
     }
 
-    /// The non-Pro half of the same surface. The rewrite is the clearest thing
-    /// a free user cannot see, so the locked card must actually render — and it
-    /// must render WITHOUT opening Details, which is the whole point of moving
-    /// it above the fold.
+    /// The non-Pro half of the same surface. The locked preview remains
+    /// reachable, but it is optional upgrade depth rather than a second action
+    /// competing with the finalized prescription on the collapsed Summary.
     @MainActor
-    func testLockedRewritePreviewRendersForFreeUsersWithoutOpeningDetails() throws {
+    func testLockedRewritePreviewRendersForFreeUsersInsideDetails() throws {
         let app = XCUIApplication()
         app.launchArguments += [
             "UI_TESTING",
@@ -127,12 +127,13 @@ final class GoalOutcomeLoopUITests: XCTestCase {
 
         dismissProgressionIfNeeded(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["summary.postRepVerdict"].waitForExistence(timeout: 15))
+        openDetails(in: app)
 
         let locked = app.descendants(matching: .any)["summary.rewrite.locked"]
         scrollUntilHittable(locked, in: app, attempts: 20)
         XCTAssertTrue(
             locked.waitForExistence(timeout: 12),
-            "A free user must reach the locked rewrite preview without expanding Details."
+            "A free user must retain the locked rewrite preview inside optional review depth."
         )
 
         let upgrade = app.buttons["summary.rewrite.upgrade"]

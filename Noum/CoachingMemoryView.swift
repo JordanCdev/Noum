@@ -170,66 +170,110 @@ struct CoachingMemoryView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: Spacing.cardGap) {
-                Text("Use, correct, or remove any coaching context.")
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                memoryIntroduction
 
-                evidenceBoundary
+                NoumSurface(.standard) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        evidenceBoundary
 
-                ForEach(presentation.items) { item in
-                    CoachingMemoryItemCard(item: item)
-                }
+                        Divider()
 
-                NavigationLink {
-                    YourDataView(isBackendConfigured: isBackendConfigured)
-                } label: {
-                    Text("Manage all memory")
-                        .font(Typography.headline)
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(AppColor.cardBackground, in: Capsule(style: .continuous))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(AppColor.brandBlue, lineWidth: 1)
+                        ForEach(Array(presentation.items.enumerated()), id: \.offset) { index, item in
+                            CoachingMemoryItemCard(item: item)
+
+                            if index < presentation.items.count - 1 {
+                                Divider()
+                            }
                         }
-                        .contentShape(Capsule(style: .continuous))
+
+                        Divider()
+
+                        NavigationLink {
+                            YourDataView(isBackendConfigured: isBackendConfigured)
+                        } label: {
+                            HStack(spacing: Spacing.sm) {
+                                Text("Manage coaching memory")
+                                    .font(Typography.cardLabel)
+                                Spacer(minLength: Spacing.sm)
+                                Image(systemName: "arrow.right")
+                                    .font(Typography.caption.weight(.bold))
+                                    .accessibilityHidden(true)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, Spacing.lg)
+                            .frame(maxWidth: .infinity, minHeight: 56)
+                            .background(AppColor.coachingInk, in: Capsule(style: .continuous))
+                            .contentShape(Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityHint("Opens the existing data controls where you can correct or remove coaching memory.")
+                        .accessibilityIdentifier("coachingMemory.manage")
+                    }
                 }
-                .buttonStyle(.pressable)
-                .accessibilityHint("Opens the existing data controls where you can correct or remove coaching memory.")
-                .accessibilityIdentifier("coachingMemory.manage")
             }
             .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.sm)
             .padding(.bottom, Spacing.lg)
         }
         .background(AppColor.screenBackground.ignoresSafeArea())
         .navigationTitle("Coaching memory")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("coachingMemory.screen")
         .task {
             isBackendConfigured = await BackendSyncManager.shared.isConfigured
         }
     }
 
-    private var evidenceBoundary: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("EVIDENCE BOUNDARY")
-                .font(Typography.captionSmall)
-                .foregroundStyle(AppColor.brandBlue)
-            Text("Noum separates what you said from what it is still testing.")
-                .font(Typography.caption)
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+    private var memoryIntroduction: some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: AppColor.coachingInk,
+                size: NoumControlMetric.waveformMark
+            )
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("CONTEXT YOU CONTROL")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.brandBlue)
+
+                Text("What Noum carries forward")
+                    .font(Typography.screenTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Use, correct, or remove any coaching context. Noum keeps your words separate from patterns it is still testing.")
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            AppColor.coachHeroQuietSurface,
-            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-        )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Evidence boundary. Noum separates what you said from what it is still testing.")
+    }
+
+    private var evidenceBoundary: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.positive)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text("Evidence boundary")
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(AppColor.textPrimary)
+                Text("Your choices are labelled separately from coach hypotheses.")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Evidence boundary. Your choices are labelled separately from coach hypotheses.")
     }
 }
 
@@ -245,31 +289,31 @@ private struct CoachingMemoryItemCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(item.kind.eyebrow)
-                .font(Typography.captionSmall)
-                .foregroundStyle(tint)
+        HStack(alignment: .top, spacing: Spacing.md) {
+            Capsule(style: .continuous)
+                .fill(tint)
+                .frame(width: 4, height: 44)
+                .accessibilityHidden(true)
 
-            Text(item.value)
-                .font(Typography.cardTitle)
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(item.kind.eyebrow)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(tint)
 
-            Text(item.provenance)
-                .font(Typography.caption)
-                .foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(item.value)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(item.provenance)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(Spacing.md)
+        .padding(.vertical, Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            AppColor.cardBackground,
-            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.subtleBorder, lineWidth: 1)
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.kind.eyebrow). \(item.value). \(item.provenance).")
         .accessibilityIdentifier("coachingMemory.item.\(item.kind.rawValue)")

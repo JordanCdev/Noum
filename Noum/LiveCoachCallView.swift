@@ -38,11 +38,10 @@ enum LiveCallMicWatchdog {
 
 // MARK: - Live Coach Call
 //
-// The DEFAULT coach surface: an immersive, face-to-face "call" with Noum rather
-// than a text thread. The `NoumCharacter` orb is the face — it shifts mood with
-// the conversation (listening while you speak, thinking while it composes,
-// coaching while it speaks back). Captions show the latest turn, not a scrolling
-// transcript.
+// The DEFAULT coach surface: an immersive, voice-first "call" with Noum rather
+// than a text thread. The shared waveform carries the same honest state as the
+// rest of V3 (ready, listening, or processing) without reintroducing a mascot or
+// decorative container. Captions show the latest turn, not a scrolling transcript.
 //
 // PUSH-TO-TALK: tap the mic to start a turn. You talk; a ~2.2s pause auto-sends
 // your turn; the coach replies and speaks aloud. The mic does NOT re-arm itself —
@@ -104,16 +103,11 @@ struct LiveCoachCallView: View {
     private let silenceThreshold: TimeInterval = 2.2
 
     private var voice: SpeakingStyleGoal? { coachingProfileStore.profile?.chosenStyleGoal }
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-    }
-
-    // Conversation state → the orb's mood (the "face" reacting to the call).
-    private var orbMood: NoumCharacter.Mood {
+    // Conversation state → the shared, non-character identity state.
+    private var waveformState: NoumWaveformState {
         if voiceInput.state == .recording { return .listening }
-        if speaker.isSpeaking { return .coaching }
-        if store.isAwaitingReply { return .thinking }
-        return .calm
+        if store.isAwaitingReply { return .processing }
+        return .idle
     }
 
     // V4 — the owner wants a clean landing with no instructional copy; the
@@ -349,56 +343,32 @@ struct LiveCoachCallView: View {
         .accessibilityLabel(loopActive ? "Live call with Noum" : "Coach call with Noum")
     }
 
-    /// V4.6.1 — the live-dot breathes while the call is engaged, so "Live"
-    /// reads as an ongoing state rather than a static label. Driven by a
-    /// `TimelineView` phase (NoumCharacter's idiom) instead of a
-    /// `repeatForever` animation, so backgrounding can never strand a
-    /// mid-breath frame and no scenePhase re-arm is needed. The 2.4s cycle
-    /// matches the VoiceTrace breath cadence. Reduce Motion and the idle
-    /// pre-call state keep the static dot. Decorative only — the combined
-    /// pill label above carries the accessible state.
-    @ViewBuilder
+    /// Shape, colour, and the combined label carry live state without a
+    /// perpetual decorative pulse. This keeps the call inside V3's bounded
+    /// motion policy and avoids a 30fps timeline for an eight-point indicator.
     private var liveDot: some View {
-        if loopActive && !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                let phase = context.date.timeIntervalSinceReferenceDate
-                let breath = (sin(phase * 2 * .pi / 2.4) + 1) / 2 // 0…1
-                Circle()
-                    .fill(Color.red.opacity(0.62 + 0.28 * breath))
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(0.92 + 0.16 * breath)
-            }
+        Circle()
+            .fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65))
             .frame(width: 8, height: 8)
-        } else {
-            Circle()
-                .fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65))
-                .frame(width: 8, height: 8)
-        }
     }
 
-    // MARK: - Presence (the face)
+    // MARK: - Presence
 
     private var presence: some View {
         VStack(spacing: Spacing.md) {
-            // V4 — the orb is the primary "press the circle to start talking"
-            // affordance the owner asked for. Tapping it mirrors the Talk
-            // button (micTapped) so a user can start hands-free without
-            // hunting the control bar; the Talk button stays as the explicit
-            // alternative. Disabled when speech input isn't available so it
-            // never offers a dead tap.
+            // The identity mark is also a large, labelled talk target. Tapping
+            // it mirrors the explicit Talk button; disabled means no dead tap.
             Button(action: micTapped) {
-                // NOTE (V4.6.1): `NoumCharacter(audioLevel:)` exists so the
-                // orb can track the speaker's voice, but `AskNoumVoiceInput`
-                // exposes no real level (its taps feed the recognizer only).
-                // Deliberately NOT synthesized here — a fake envelope would
-                // fabricate presence. Pipe a real smoothed level through the
-                // voice-input owner before claiming this parameter.
-                NoumCharacter(mood: orbMood, tint: AppColor.pro, size: 136, stage: characterStage)
+                NoumWaveformMark(
+                    state: waveformState,
+                    tint: AppColor.proLight,
+                    size: 136
+                )
                     .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
             .disabled(!voiceInput.isAvailable)
-            .accessibilityLabel(orbAccessibilityLabel)
+            .accessibilityLabel(presenceAccessibilityLabel)
             Text("Noum")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.white)
@@ -430,9 +400,9 @@ struct LiveCoachCallView: View {
         }
     }
 
-    /// V4 — VoiceOver affordance for the now-tappable orb. Names the action it
+    /// VoiceOver affordance for the tappable identity mark. Names the action it
     /// performs in the current state so it isn't a mystery target.
-    private var orbAccessibilityLabel: String {
+    private var presenceAccessibilityLabel: String {
         if !voiceInput.isAvailable { return "Noum. Voice unavailable — use Type instead." }
         if loopActive {
             if speaker.isSpeaking { return "Noum is speaking. Tap to interrupt and talk." }

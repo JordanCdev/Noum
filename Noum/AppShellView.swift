@@ -191,9 +191,6 @@ extension EnvironmentValues {
 struct AppShellView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @State private var selectedTab: AppTab = .home
-    /// Shared geometry space for the capsule's selection pill so it glides
-    /// between tabs instead of blinking (V4.6.1 micro-interaction).
-    @Namespace private var tabPillNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var homeRoute: URL?
@@ -252,11 +249,11 @@ struct AppShellView: View {
         }
         .tint(AppColor.brandBlue)
         .overlay(alignment: .bottom) {
-            // The capsule lives on the four tab ROOTS only — pushed
+            // The dock lives on the four tab ROOTS only — pushed
             // destinations (summary, recording, settings detail, …) own
             // their full height, matching the frozen screens.
-            if !v46TabBarHidden {
-                v46TabBar
+            if !experienceTabBarHidden {
+                experienceTabBar
                     .transition(.opacity)
             }
         }
@@ -283,36 +280,36 @@ struct AppShellView: View {
             .accessibilityIdentifier(tab.accessibilityIdentifier)
     }
 
-    // MARK: - V4.6 floating capsule navigation (258:947)
+    // MARK: - V3 quiet navigation dock
     //
     // Four areas — Today · Practice · Progress · You. Settings folds under
     // You (its tab remains routable for deep links; the bar highlights You
-    // while it is frontmost). Selection is never colour-alone: the pill,
-    // the glyph tint, and the label weight move together.
+    // while it is frontmost). The dock is intentionally quieter than a reward
+    // surface: selection uses shape, glyph, and label weight—not colour alone.
 
-    private var v46TabBarHidden: Bool {
+    private var experienceTabBarHidden: Bool {
         switch selectedTab {
         case .home: return !homePath.isEmpty
         case .train: return !trainPath.isEmpty
         case .review: return !reviewPath.isEmpty
         case .profile: return !profilePath.isEmpty
-        // The compatibility-only Settings tab still needs the capsule as its
+        // The compatibility-only Settings tab still needs the dock as its
         // escape route. The real You → Settings push hides it via profilePath.
         case .settings: return !settingsPath.isEmpty
         }
     }
 
-    private var v46TabBar: some View {
+    private var experienceTabBar: some View {
         HStack(spacing: 0) {
-            v46TabButton(.home, title: "Today", glyph: "sun.max")
-            v46TabButton(.train, title: "Practice", glyph: "waveform")
-            v46TabButton(.review, title: "Progress", glyph: "chart.line.uptrend.xyaxis")
-            v46TabButton(.profile, title: "You", glyph: "person.crop.circle")
+            experienceTabButton(.home, title: "Today", glyph: "sun.max")
+            experienceTabButton(.train, title: "Practice", glyph: "waveform")
+            experienceTabButton(.review, title: "Progress", glyph: "chart.line.uptrend.xyaxis")
+            experienceTabButton(.profile, title: "You", glyph: "person.crop.circle")
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, Spacing.xs)
         .background {
-            // Opaque, not translucent: the capsule floats over live list
+            // Opaque, not translucent: the dock floats over live list
             // content, and at accessibility sizes a section header can sit
             // directly beneath it. Any alpha here bleeds that copy through
             // as ~1.05:1 ghost text (Settings' "Appearance" header read as
@@ -323,22 +320,27 @@ struct AppShellView: View {
             // the audit read the curve as failing content inside the tab
             // items. The shadow carries the floating edge. A visible
             // boundary here would need to clear 3:1 (WCAG 1.4.11).
-            Capsule(style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .fill(AppColor.cardBackground)
-                .shadow(color: Color.black.opacity(0.08), radius: 24, y: 8)
+                .shadow(color: Color.black.opacity(0.07), radius: Spacing.lg, y: Spacing.xs)
         }
         .padding(.bottom, Spacing.xs)
-        // Pill glide is scoped to the BAR's subtree only — the TabView
-        // content switch stays instant. Reduce Motion: pill just appears.
-        .animation(reduceMotion ? nil : .listChange, value: selectedTab)
+        // Navigation state uses the calm tier; the TabView content itself
+        // remains instant and Reduce Motion removes the cross-fade.
+        .animation(
+            reduceMotion ? nil : NoumMotion.animation(for: .calm, reduceMotion: false),
+            value: selectedTab
+        )
         // Navigation chrome caps its own scaling (native tab bars do the
         // same); screen content carries the accessibility sizes.
         .dynamicTypeSize(...DynamicTypeSize.large)
         .accessibilityElement(children: .contain)
+        // Keep the established automation identifier while the visual system
+        // moves forward; UI-test identity is not product styling.
         .accessibilityIdentifier("app.v46TabBar")
     }
 
-    private func v46TabButton(_ tab: AppTab, title: String, glyph: String) -> some View {
+    private func experienceTabButton(_ tab: AppTab, title: String, glyph: String) -> some View {
         let isSelected = selectedTab == tab
             || (tab == .profile && selectedTab == .settings)
         return Button {
@@ -350,38 +352,39 @@ struct AppShellView: View {
             selectedTab = tab
         } label: {
             VStack(spacing: 3) {
-                Image(systemName: glyph)
-                    .font(.system(size: 17, weight: .semibold))
-                    // Full-strength token in both states. Receding the
-                    // unselected glyph to 0.75 computed 3.41:1 on the
-                    // capsule — under AA for a navigation glyph, and the
-                    // native audit flags it. Selection stays legible
-                    // without it: pill + accent tint + label weight.
-                    .foregroundStyle(
-                        isSelected ? AppColor.coachAccentOnQuiet : AppColor.neutralReceded
+                if tab == .train {
+                    NoumWaveformMark(
+                        state: .idle,
+                        tint: isSelected ? AppColor.coachAccentOnQuiet : AppColor.neutralReceded,
+                        size: 18
                     )
                     .accessibilityHidden(true)
+                } else {
+                    Image(systemName: glyph)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(
+                            isSelected ? AppColor.coachAccentOnQuiet : AppColor.neutralReceded
+                        )
+                        .accessibilityHidden(true)
+                }
                 Text(title)
                     .font(Typography.figtree(size: 10.5, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))
                     .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
             }
-            .padding(.horizontal, 15)
+            .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .frame(minHeight: 44)
             .background {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                         .fill(AppColor.proQuietSurface)
-                        // The pill glides to the newly selected tab; under
-                        // Reduce Motion the withMotion branch above mutates
-                        // without a transaction, so the pill just appears.
-                        .matchedGeometryEffect(id: "v46TabPill", in: tabPillNamespace)
+                        .transition(.opacity)
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // The bar clamps Dynamic Type to `.large` to protect the capsule
+        // The bar clamps Dynamic Type to `.large` to protect the dock
         // geometry, and the comment there claims native tab bars do the same.
         // They do — but they pair the clamp with the large-content viewer, the
         // long-press HUD that shows the label at full size. Without it a
@@ -708,11 +711,19 @@ struct AppDestinationView: View {
                 SpeechProjectsView(navigationPath: $navigationPath)
             }
         case .friendLeaderboard:
-            FriendLeaderboardView()
-                .toolbar(.hidden, for: .tabBar)
+            if SocialReleaseCapabilities.friendConnections.isAvailable {
+                FriendLeaderboardView()
+                    .toolbar(.hidden, for: .tabBar)
+            } else {
+                ProfileView()
+            }
         case .league:
-            LeagueView()
-                .toolbar(.hidden, for: .tabBar)
+            if SocialReleaseCapabilities.peerProgress.isAvailable {
+                LeagueView()
+                    .toolbar(.hidden, for: .tabBar)
+            } else {
+                ProfileView()
+            }
         case .speechProjects:
             SpeechProjectsView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)

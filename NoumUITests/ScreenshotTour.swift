@@ -966,6 +966,13 @@ final class ScreenshotTour: XCTestCase {
             app.otherElements["summary.postRepVerdict"].waitForExistence(timeout: 25),
             "The scripted retry should finalize into the review."
         )
+        let details = app.buttons["summary.details.toggle"].firstMatch
+        scrollUntilVisible(details, in: app, maxSwipes: 8)
+        XCTAssertTrue(
+            details.waitForExistence(timeout: 5),
+            "The comparison should remain reachable through review Details."
+        )
+        details.tap()
         let comparison = app.descendants(matching: .any)["transcriptRetry.comparison"].firstMatch
         scrollUntilVisible(comparison, in: app, maxSwipes: 12)
         XCTAssertTrue(

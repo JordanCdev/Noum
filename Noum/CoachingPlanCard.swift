@@ -147,7 +147,8 @@ struct CoachingPlanCard: View {
     /// whether to deep-link to Ask Noum or open the regeneration sheet.
     var onTap: () -> Void
 
-    @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showPlanDetails = false
 
     @ViewBuilder
     var body: some View {
@@ -166,28 +167,44 @@ struct CoachingPlanCard: View {
     // MARK: - Pre-prompt state (≥3 sessions, no plan yet)
 
     private var promptCard: some View {
-        Button {
-            onTap()
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                eyebrow("YOUR PROGRAM")
-                Text("A four-week coach plan, written for you.")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice))
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.pro)
+        NoumSurface(.standard) {
+            Button {
+                onTap()
+            } label: {
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    NoumWaveformMark(
+                        state: .idle,
+                        tint: AppColor.coachAccent,
+                        size: 36
+                    )
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        eyebrow("YOUR PROGRAM")
+                        Text("Build a four-week practice plan.")
+                            .font(Typography.headline)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Three real reps are enough for Noum to choose one focus and a manageable weekly rhythm.")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Label(
+                            CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice),
+                            systemImage: "arrow.right"
+                        )
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.proText)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.md)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
-            )
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile.coachingPlanCard.prompt")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("profile.coachingPlanCard.prompt")
     }
 
     // MARK: - Live state (plan exists)
@@ -197,43 +214,70 @@ struct CoachingPlanCard: View {
         if let week = plan.currentWeek() {
             let target = week.sessionTarget
             let fraction = target > 0 ? min(1.0, Double(completed) / Double(target)) : 0
-            Button {
-                onTap()
-            } label: {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        eyebrow("WEEK \(week.weekIndex) OF 4")
-                    }
-                    Text(week.focusSkillArea.displayName)
-                        .font(Typography.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(week.rationale)
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
 
-                    progressRow(completed: completed, target: target, fraction: fraction)
+            NoumSurface(.standard) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    Button {
+                        onTap()
+                    } label: {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            HStack(alignment: .center, spacing: Spacing.sm) {
+                                NoumWaveformMark(
+                                    state: isStale ? .processing : .idle,
+                                    tint: isStale ? AppColor.caution : AppColor.coachAccent,
+                                    size: 30
+                                )
+                                .accessibilityHidden(true)
 
-                    if let transferReceipt, !isStale {
-                        transferReceiptRow(transferReceipt)
-                    }
+                                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                    eyebrow(isStale ? "PLAN NEEDS A REFRESH" : "YOUR PROGRAM")
+                                    Text("Week \(week.weekIndex) of 4")
+                                        .font(Typography.captionSmall)
+                                        .foregroundStyle(AppColor.textSecondary)
+                                }
 
-                    if isStale {
-                        Text(CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice))
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.pro)
+                                Spacer(minLength: Spacing.sm)
+                                Image(systemName: "chevron.right")
+                                    .font(Typography.caption.weight(.semibold))
+                                    .foregroundStyle(AppColor.textTertiary)
+                                    .accessibilityHidden(true)
+                            }
+
+                            Text(week.focusSkillArea.displayName)
+                                .font(Typography.cardTitle)
+                                .foregroundStyle(AppColor.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(week.rationale)
+                                .font(Typography.body)
+                                .foregroundStyle(AppColor.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            NoumProgressTrack(
+                                value: fraction,
+                                label: "This week",
+                                valueLabel: "\(completed) of \(target) reps",
+                                tint: isStale ? AppColor.caution : AppColor.coachingInk
+                            )
+
+                            if isStale {
+                                Label(
+                                    CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice),
+                                    systemImage: "arrow.clockwise"
+                                )
+                                .font(Typography.caption.weight(.semibold))
+                                .foregroundStyle(AppColor.proText)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(isStale ? "profile.coachingPlanCard.stale" : "profile.coachingPlanCard.live")
+
+                    planDetailsSection(plan: plan, showsTransferReceipt: !isStale)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Spacing.md)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(AppColor.pro.opacity(isStale ? 0.35 : 0.18), lineWidth: 1)
-                )
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(isStale ? "profile.coachingPlanCard.stale" : "profile.coachingPlanCard.live")
         }
     }
 
@@ -241,63 +285,83 @@ struct CoachingPlanCard: View {
 
     private func eyebrow(_ text: String) -> some View {
         Text(text)
-            .font(Typography.micro.weight(.semibold))
-            .foregroundStyle(.tertiary)
+            .font(Typography.micro.weight(.bold))
+            .foregroundStyle(AppColor.textTertiary)
             .textCase(.uppercase)
             .tracking(0.8)
     }
 
-    private func tag(_ text: String) -> some View {
-        Text(text)
-            .font(Typography.micro.weight(.bold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.secondary.opacity(0.12), in: Capsule())
+    @ViewBuilder
+    private func planDetailsSection(plan: ForwardPlan, showsTransferReceipt: Bool) -> some View {
+        Divider()
+            .overlay(AppColor.subtleBorder)
+
+        Button {
+            withAnimation(
+                NoumMotion.animation(for: .calm, reduceMotion: reduceMotion)
+            ) {
+                showPlanDetails.toggle()
+            }
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "lock.shield")
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .accessibilityHidden(true)
+                Text(showPlanDetails ? "Hide plan evidence" : "Why this plan")
+                    .font(Typography.caption.weight(.semibold))
+                Spacer(minLength: Spacing.xs)
+                Image(systemName: showPlanDetails ? "chevron.up" : "chevron.down")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(AppColor.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: NoumControlMetric.minimumTouchTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profile.coachingPlanCard.details")
+
+        if showPlanDetails {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(Self.planSourceDescription(isAIBacked: plan.isAIBacked))
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let transferReceipt, showsTransferReceipt {
+                    transferReceiptRow(transferReceipt)
+                }
+            }
+            .padding(Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AppColor.innerSurface,
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .transition(.opacity)
+        }
     }
 
-    private func progressRow(completed: Int, target: Int, fraction: Double) -> some View {
-        HStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.secondary.opacity(0.12))
-                    .frame(height: 6)
-                GeometryReader { proxy in
-                    Capsule()
-                        .fill(AppColor.pro)
-                        .frame(width: proxy.size.width * CGFloat(fraction), height: 6)
-                }
-                .frame(height: 6)
-            }
-            Text("\(completed) / \(target)")
-                .font(Typography.caption.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+    static func planSourceDescription(isAIBacked: Bool) -> String {
+        if isAIBacked {
+            return "AI-written from your qualified practice history, selected voice, and active Big Moment when available."
         }
+        return "Rule-based from your qualified practice history, selected voice, and active Big Moment when available."
     }
 
     private func transferReceiptRow(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(Typography.captionSmall.weight(.bold))
-                .foregroundStyle(AppColor.pro)
+                .foregroundStyle(AppColor.proText)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
             Text(text)
                 .font(Typography.captionSmall)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            AppColor.pro.opacity(0.06),
-            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.14), lineWidth: 1)
-        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(text))
         .accessibilityIdentifier("profile.coachingPlanCard.transferReceipt")

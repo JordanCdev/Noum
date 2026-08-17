@@ -504,7 +504,6 @@ struct TranscriptRetryMilestoneView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var evidenceFocused: Bool
     @State private var waveformPhase = RetryRewardWaveformPhase.anticipation
     @State private var headlineVisible = false
@@ -570,19 +569,26 @@ struct TranscriptRetryMilestoneView: View {
         .onChange(of: reduceMotion) { _, _ in
             handleMotionPreferenceChange()
         }
-        .preferredColorScheme(.light)
         .accessibilityIdentifier("transcriptRetry.milestone")
     }
 
     private var decorativeBackdrop: some View {
         GeometryReader { geometry in
             ZStack {
-                Circle()
-                    .fill(rewardPurple.opacity(0.055))
+                RadialGradient(
+                    colors: [AppColor.coachAccent.opacity(0.10), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 135
+                )
                     .frame(width: 270, height: 270)
                     .position(x: 52, y: -26)
-                Circle()
-                    .fill(AppColor.brandBlueLight.opacity(0.06))
+                RadialGradient(
+                    colors: [AppColor.brandBlueLight.opacity(0.09), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 105
+                )
                     .frame(width: 210, height: 210)
                     .position(x: geometry.size.width + 14, y: 92)
             }
@@ -593,16 +599,15 @@ struct TranscriptRetryMilestoneView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Text("REP COMPLETE")
-                .font(Typography.figtree(size: 12, weight: .bold, relativeTo: .caption))
-                .foregroundStyle(rewardPurple)
-                .tracking(0.5)
+            Text("Rep complete")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.coachAccentOnQuiet)
 
-            Text("THAT LANDED.")
-                .font(Typography.figtree(size: 36, weight: .heavy, relativeTo: .largeTitle))
-                .foregroundStyle(rewardInk)
+            Text("That landed.")
+                .font(Typography.screenTitle)
+                .foregroundStyle(AppColor.textPrimary)
                 .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.78)
+                .fixedSize(horizontal: false, vertical: true)
                 .opacity(headlineVisible ? 1 : 0)
                 .offset(y: headlineVisible ? 0 : 14)
                 .scaleEffect(headlineVisible ? 1 : 0.93)
@@ -614,83 +619,33 @@ struct TranscriptRetryMilestoneView: View {
 
     private var waveformStage: some View {
         ZStack {
-            Ellipse()
-                .fill(rewardPurple.opacity(0.055))
-                .frame(width: 230, height: 205)
-                .scaleEffect(haloVisible ? 1 : 0.86)
-                .opacity(haloVisible ? 1 : 0)
-
-            Ellipse()
-                .fill(Color.white.opacity(0.42))
-                .frame(width: 178, height: 158)
-                .offset(x: -8, y: 2)
-                .scaleEffect(haloVisible ? 1 : 0.90)
-                .opacity(haloVisible ? 1 : 0)
-
-            Ellipse()
-                .fill(AppColor.brandBlueLight.opacity(0.045))
-                .frame(width: 152, height: 138)
-                .offset(x: 24, y: -4)
+            RadialGradient(
+                colors: [AppColor.coachAccent.opacity(0.16), .clear],
+                center: .center,
+                startRadius: 8,
+                endRadius: 112
+            )
+                .frame(width: 240, height: 190)
+                .blur(radius: 8)
                 .scaleEffect(haloVisible ? 1 : 0.88)
                 .opacity(haloVisible ? 1 : 0)
 
             RetryRewardParticleBurst(active: particleBurstActive)
 
-            RetryRewardWaveform(phase: waveformPhase)
+            NoumWaveformMark(state: .earned, size: 180)
+                .scaleEffect(waveformPhase.scale)
+                .rotationEffect(waveformPhase.rotation)
+                .offset(y: waveformPhase.yOffset)
+                .opacity(waveformPhase.opacity)
         }
         .frame(height: 190)
         .accessibilityHidden(true)
     }
 
     private var rewardPill: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(red: 156 / 255, green: 99 / 255, blue: 21 / 255).opacity(0.88))
-                .offset(y: 5)
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 1, green: 237 / 255, blue: 189 / 255),
-                            Color(red: 243 / 255, green: 190 / 255, blue: 68 / 255)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .shadow(color: Color(red: 107 / 255, green: 64 / 255, blue: 10 / 255).opacity(0.16), radius: 14, y: 6)
-
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(Color.white.opacity(0.76))
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 19, weight: .black))
-                        .foregroundStyle(Color(red: 165 / 255, green: 104 / 255, blue: 19 / 255))
-                }
-                .frame(width: 42, height: 42)
-
-                VStack(spacing: 0) {
-                    Text(rewardTitle)
-                        .font(Typography.figtree(size: 25, weight: .heavy, relativeTo: .title2))
-                        .foregroundStyle(Color(red: 73 / 255, green: 49 / 255, blue: 18 / 255))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                    Text(
-                        earnedXP > 0
-                            ? String(localized: "EARNED")
-                            : String(localized: "EVIDENCE SAVED")
-                    )
-                        .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
-                        .foregroundStyle(Color(red: 115 / 255, green: 77 / 255, blue: 23 / 255).opacity(0.86))
-                        .tracking(0.4)
-                }
-                .frame(minWidth: 102)
-            }
-            .padding(.horizontal, 16)
-        }
-        .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 193)
-        .frame(minHeight: 68)
-        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+        NoumRewardPill(
+            kind: earnedXP > 0 ? .xp(earnedXP) : .evidenceSaved
+        )
         .opacity(rewardVisible ? 1 : 0)
         .offset(y: rewardVisible ? 0 : 28)
         .scaleEffect(rewardVisible ? 1 : 0.55)
@@ -699,48 +654,12 @@ struct TranscriptRetryMilestoneView: View {
     }
 
     private var evidenceCard: some View {
-        HStack(spacing: 0) {
-            Rectangle()
-                .fill(AppColor.positive)
-                .frame(width: 4)
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 12) {
-                    ZStack {
-                        Circle().fill(AppColor.positive.opacity(0.12))
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 15, weight: .black))
-                            .foregroundStyle(AppColor.positive)
-                    }
-                    .frame(width: 42, height: 42)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("VERIFIED IMPROVEMENT")
-                            .font(Typography.figtree(size: 10, weight: .bold, relativeTo: .caption))
-                            .foregroundStyle(AppColor.positive)
-                            .tracking(0.35)
-                        Text(presentation.detail)
-                            .font(Typography.figtree(size: 18, weight: .heavy, relativeTo: .headline))
-                            .foregroundStyle(rewardInk)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Text(presentation.headline.uppercased())
-                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
-                    .foregroundStyle(AppColor.proText)
-                    .tracking(0.3)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule().fill(AppColor.proQuietSurface)
-                    )
-            }
-            .padding(16)
-        }
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: rewardPurple.opacity(0.10), radius: 18, y: 7)
+        NoumEvidenceCard(
+            status: .verified,
+            title: presentation.headline,
+            detail: presentation.detail,
+            source: "Compared with the verified source rep. One retry is promising, not proof."
+        )
         .opacity(evidenceVisible ? 1 : 0)
         .offset(y: evidenceVisible ? 0 : 30)
         .accessibilityElement(children: .combine)
@@ -749,42 +668,32 @@ struct TranscriptRetryMilestoneView: View {
     }
 
     private var nextStepStrip: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(rewardPurple)
+        NoumSurface(.standard) {
+            Label {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(
+                        unlockedNextStep
+                            ? String(localized: "Next step unlocked")
+                            : String(localized: "Evidence ready")
+                    )
+                        .font(Typography.headline)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        unlockedNextStep
+                            ? String(localized: "Continue to see the next target.")
+                            : String(localized: "Review the source and retry side by side.")
+                    )
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } icon: {
                 Image(systemName: unlockedNextStep ? "lock.open.fill" : "checkmark.seal.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(AppColor.coachAccent)
             }
-            .frame(width: 38, height: 38)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(
-                    unlockedNextStep
-                        ? String(localized: "Next step unlocked")
-                        : String(localized: "Evidence ready")
-                )
-                    .font(Typography.figtree(size: 17, weight: .heavy, relativeTo: .headline))
-                    .foregroundStyle(rewardInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(
-                    unlockedNextStep
-                        ? String(localized: "Continue to see the next target.")
-                        : String(localized: "Review the source and retry side by side.")
-                )
-                    .font(Typography.manrope(size: 10, weight: .semibold, relativeTo: .caption2))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-        .background(AppColor.proQuietSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: rewardPurple.opacity(0.09), radius: 16, y: 6)
         .opacity(nextStepVisible ? 1 : 0)
         .offset(y: nextStepVisible ? 0 : 12)
         .scaleEffect(nextStepVisible ? 1 : 0.98)
@@ -793,50 +702,18 @@ struct TranscriptRetryMilestoneView: View {
     }
 
     private var continueButton: some View {
-        Button(action: continueToEvidence) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(red: 79 / 255, green: 34 / 255, blue: 158 / 255))
-                    .offset(y: 7)
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [AppColor.brandBlue, rewardPurple],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .shadow(color: rewardPurple.opacity(0.20), radius: 12, y: 7)
-                Text("CONTINUE TO EVIDENCE")
-                    .font(Typography.figtree(size: 16, weight: .heavy, relativeTo: .headline))
-                    .foregroundStyle(Color.white)
-                    .tracking(0.2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.76)
-            }
-            .frame(height: 58)
-        }
-        .buttonStyle(.pressable)
+        PrimaryCTA(
+            "Continue to evidence",
+            icon: "arrow.right",
+            tint: AppColor.coachingInk,
+            action: continueToEvidence
+        )
         .disabled(!canContinue)
         .opacity(actionVisible ? 1 : 0.34)
         .scaleEffect(actionVisible ? 1 : 0.98)
         .accessibilityHint("Opens your verified retry evidence.")
         .accessibilityHidden(!actionVisible || !contentVisible)
         .accessibilityIdentifier("transcriptRetry.continueToEvidence")
-    }
-
-    private var rewardTitle: String {
-        earnedXP > 0
-            ? String(localized: "+\(earnedXP) XP")
-            : String(localized: "Coach win")
-    }
-
-    private var rewardPurple: Color {
-        Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
-    }
-
-    private var rewardInk: Color {
-        Color(red: 23 / 255, green: 32 / 255, blue: 51 / 255)
     }
 
     private func play() {
@@ -873,40 +750,40 @@ struct TranscriptRetryMilestoneView: View {
 
     @MainActor
     private func playCelebration() async {
-        withAnimation(.easeOut(duration: RetryRewardBeat.headlineReveal)) {
+        withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false)) {
             headlineVisible = true
         }
         guard await wait(RetryRewardBeat.waveformHold) else { return }
-        withAnimation(.spring(response: 0.30, dampingFraction: 0.58)) {
+        withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             waveformPhase = .lifted
         }
 
         guard await wait(RetryRewardBeat.waveformLift) else { return }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
+        withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             haloVisible = true
         }
         particleBurstActive = true
 
         guard await wait(RetryRewardBeat.burstToReward) else { return }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
+        withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             waveformPhase = .settled
             rewardVisible = true
         }
         fireEvidenceFeedbackIfNeeded()
 
         guard await wait(RetryRewardBeat.rewardToEvidence) else { return }
-        withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+        withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             evidenceVisible = true
         }
         evidenceFocused = true
 
         guard await wait(RetryRewardBeat.evidenceToNextStep) else { return }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+        withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             nextStepVisible = true
         }
 
         guard await wait(RetryRewardBeat.nextStepToAction) else { return }
-        withAnimation(.easeOut(duration: RetryRewardBeat.actionReveal)) {
+        withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false)) {
             actionVisible = true
             canContinue = true
         }
@@ -1015,55 +892,6 @@ private enum RetryRewardWaveformPhase: Equatable {
         case .anticipation: return 0
         case .lifted, .settled: return 1
         }
-    }
-}
-
-/// Phosphor's MIT-licensed waveform, rendered as a template asset so Noum can
-/// own the colour and motion without turning it into another mascot container.
-/// See Resources/ThirdPartyNotices.txt.
-private struct RetryRewardWaveform: View {
-    let phase: RetryRewardWaveformPhase
-
-    var body: some View {
-        ZStack {
-            waveformImage
-                .foregroundStyle(deepViolet.opacity(0.58))
-                .offset(y: 6)
-
-            waveformImage
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 11 / 255, green: 133 / 255, blue: 1),
-                            rewardPurple,
-                            Color(red: 177 / 255, green: 59 / 255, blue: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .shadow(color: deepViolet.opacity(0.26), radius: 14, y: 8)
-        }
-        .frame(width: 230, height: 190)
-        .scaleEffect(phase.scale)
-        .rotationEffect(phase.rotation)
-        .offset(y: phase.yOffset)
-        .opacity(phase.opacity)
-    }
-
-    private var waveformImage: some View {
-        Image("PhosphorWaveform")
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: 180, height: 180)
-    }
-
-    private var rewardPurple: Color {
-        Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
-    }
-
-    private var deepViolet: Color {
-        Color(red: 55 / 255, green: 18 / 255, blue: 124 / 255)
     }
 }
 
@@ -1550,5 +1378,34 @@ struct TranscriptRetryComparisonCard: View {
             return rendered
         }
     }
+}
+
+#Preview("Verified retry reward") {
+    TranscriptRetryMilestoneView(
+        presentation: TranscriptRetryMilestonePresentation(
+            id: UUID(),
+            headline: "First hold under pressure",
+            detail: "Your direct opening was stronger on this retry."
+        ),
+        earnedXP: 25,
+        unlockedNextStep: true,
+        onContinue: {}
+    )
+}
+
+#Preview("Verified retry reward · dark accessibility") {
+    TranscriptRetryMilestoneView(
+        presentation: TranscriptRetryMilestonePresentation(
+            id: UUID(),
+            headline: "The target moved",
+            detail: "Your concise delivery was stronger on this retry."
+        ),
+        earnedXP: 25,
+        unlockedNextStep: false,
+        onContinue: {}
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .environment(\.accessibilityReduceMotion, true)
+    .preferredColorScheme(.dark)
 }
 #endif

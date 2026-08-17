@@ -10,9 +10,8 @@ import os
 // by `CoachContextBuilder` at send-time.
 //
 // Layout (top to bottom):
-//   • Header: a crisp waveform badge on the quiet violet surface + the
-//     coach's name. The in-thread typing indicator (`pendingDots`, a small
-//     `.thinking` NoumCharacter) carries the coach's thinking state.
+//   • Header: Noum's unboxed waveform mark + the coach's name. The same
+//     mark carries the in-thread processing state without a mascot or orb.
 //     Existing threads open compact by default; first contact gets the
 //     fuller identity moment.
 //   • Current focus strip: visible only when the thread has messages and the
@@ -23,9 +22,8 @@ import os
 //     coach (left-aligned full-width card) rows. The coach card carries
 //     NO per-bubble glyph (S4 removed the repeated orb the user flagged
 //     as noise) — left-alignment + the brand-purple stroke read as the
-//     coach, and the header carries embodiment. The in-flight bubble
-//     keeps a `.thinking` orb as its typing indicator, the one place the
-//     orb earns its keep. A just-landed reply then REVEALS word by word
+//     coach, and the header carries identity. The in-flight bubble uses the
+//     shared processing waveform. A just-landed reply then REVEALS word by word
 //     (the coach reads as writing to you, not popping in fully formed) —
 //     view-only timing, the store still holds the full text, and
 //     reduce-motion lands it instantly.
@@ -37,8 +35,7 @@ import os
 //     back to send-only when voice can't be served.
 //
 // Brand alignment: white cards on light background, brand-purple accents
-// for the coach surface, the waveform badge as the coach's mark (the
-// NoumCharacter orb survives only as the in-thread typing indicator).
+// for the coach surface, with the waveform as the sole coach identity mark.
 
 /// Pure presentation contract for a typed transport limitation. Keeping the
 /// retry policy beside the copy prevents a permanent on-device identity from
@@ -331,6 +328,42 @@ enum AskNoumEvidenceMetadata {
         let boundedCount = min(recentRepCount, 12)
         let noun = boundedCount == 1 ? "rep" : "reps"
         return "Based on your current focus and \(boundedCount) recent \(noun)"
+    }
+}
+
+/// User-safe projection of the single intervention already selected by the
+/// coach reasoning pass. This exposes authored coaching material — model line,
+/// drill, and observable pass condition — without exposing private assessment
+/// scores, deliberation, provider diagnostics, or hidden prompt content.
+struct AskNoumPracticeMovePresentation: Equatable {
+    let title: String
+    let modelLine: String
+    let drill: String
+    let passCondition: String
+
+    static func make(metadata: CoachTurnMetadata?) -> AskNoumPracticeMovePresentation? {
+        guard let assessment = metadata?.assessment else { return nil }
+        let posture = CoachReplyPosture.resolve(
+            userText: assessment.questionRestatement,
+            requestedMetrics: assessment.requestedMetrics ?? []
+        )
+        guard posture == .coachedAttempt,
+              let intervention = CoachReasoningPass.interventionForAssessment(
+                  assessment,
+                  posture: posture
+              ),
+              intervention.id != "presence-before-practice" else {
+            return nil
+        }
+        let exactDrill = assessment.nextProofTest
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return AskNoumPracticeMovePresentation(
+            title: intervention.title,
+            modelLine: intervention.modelLine,
+            drill: exactDrill.isEmpty ? intervention.drill : exactDrill,
+            passCondition: intervention.passCondition
+        )
     }
 }
 
@@ -705,6 +738,9 @@ struct AskNoumView: View {
     // profile; only a tap on this card's chip commits.
     @State private var pendingGoalIntent: CoachContextBuilder.GoalIntent?
     @State private var goalSaveError: String?
+    /// The latest reply's authored move stays collapsed until requested so
+    /// normal conversation remains calm rather than becoming a report card.
+    @State private var expandedCoachDetailMessageID: UUID?
 
     // Transparent memory / trajectory — sheet presentation for "Your
     // trajectory", opened from the memory-usage pill under the latest coach
@@ -741,13 +777,6 @@ struct AskNoumView: View {
     @State private var replyTask: Task<Void, Never>? = nil
     @State private var pendingReplyCoachID: UUID? = nil
     @State private var pendingReplyLease: AskNoumReplyLease? = nil
-
-    // V4.6.1 — reply-landed presence beat. Incremented exactly once per
-    // revealed reply (at reveal completion), it drives a one-shot bounce on
-    // the header's waveform badge. Only the motion path increments it — the
-    // reveal never runs under Reduce Motion — so RM users are structurally
-    // exempt from the pulse (they keep the haptic ack instead).
-    @State private var replyLandedPulse = 0
 
     // V4.6.1 — availability episode tracking for the banner's feedback
     // beats. `coachUnavailableEpisodeActive` is true from the moment the
@@ -834,10 +863,6 @@ struct AskNoumView: View {
     /// enough to trip it, so the full header greets a first-time user.
     private var isHeaderCompact: Bool {
         (canDisplayPersistedThread && !store.messages.isEmpty) || scrollOffset < -24
-    }
-
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
     }
 
     /// Bounded, honest read of what's currently feeding personalization —
@@ -1203,30 +1228,16 @@ struct AskNoumView: View {
 
     private var header: some View {
         HStack(spacing: Spacing.sm) {
-            // Crisp brand badge — the waveform mark on the quiet violet
-            // surface. The rendered orb read as a fuzzy blob at header
-            // size; the typing indicator in-thread still carries the
-            // coach's "thinking" state, so nothing is lost.
-            ZStack {
-                Circle()
-                    .fill(AppColor.proQuietSurface)
-                Image(systemName: "waveform")
-                    .font(.system(size: isHeaderCompact ? 13 : 18, weight: .semibold))
-                    .foregroundStyle(AppColor.coachAccent)
-                    // V4.6.1 — one subtle bounce when a reply finishes
-                    // landing (the badge "speaks"). The crisp badge stays —
-                    // the full orb was deliberately dropped at header size —
-                    // so the mood-pulse semantic lands as a discrete symbol
-                    // bounce instead. RM-safe by construction: the trigger
-                    // only increments on the reveal path, which never runs
-                    // under Reduce Motion.
-                    .symbolEffect(.bounce, value: replyLandedPulse)
-            }
-            .frame(
-                width: isHeaderCompact ? 30 : 42,
-                height: isHeaderCompact ? 30 : 42
+            // The mark floats on the canvas: no badge circle, character,
+            // speech box, or ambient loop. Awaiting state changes once into
+            // processing; landed state settles back to idle.
+            NoumWaveformMark(
+                state: store.isAwaitingReply ? .processing : .idle,
+                tint: AppColor.coachAccent,
+                size: isHeaderCompact ? 30 : 42
             )
             .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Noum")
                     // Hardcoded 22pt swapped for the shared type scale:
@@ -1248,7 +1259,10 @@ struct AskNoumView: View {
             Spacer(minLength: Spacing.sm)
             threadOptionsMenu
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isHeaderCompact)
+        .animation(
+            NoumMotion.animation(for: .calm, reduceMotion: reduceMotion),
+            value: isHeaderCompact
+        )
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.xs)
         // T1 — the header no longer reads as a closed box. The old opaque
@@ -2749,6 +2763,13 @@ struct AskNoumView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
 
+                if let latest = store.messages.last,
+                   latest.role == .coach,
+                   !latest.isPending,
+                   !latest.isOffline {
+                    coachDetailDisclosure(message: latest, accent: AppColor.proText)
+                }
+
                 Button {
                     CoachHaptic.selectionTap()
                     if let launch {
@@ -2962,20 +2983,8 @@ struct AskNoumView: View {
 
                     if !message.isOffline,
                        message.id == latestLandedCoachID,
-                       let metadata = responseEvidenceMetadata(for: message) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "checkmark.circle")
-                                .font(Typography.captionSmall)
-                                .accessibilityHidden(true)
-                            Text(metadata)
-                                .font(Typography.captionSmall)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .foregroundStyle(AppColor.textSecondary)
-                        .padding(.top, 2)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(metadata)
-                        .accessibilityIdentifier("askNoum.responseEvidence")
+                       activeContinuationSurface == nil {
+                        coachDetailDisclosure(message: message, accent: accent)
                     }
                 }
             }
@@ -2987,24 +2996,143 @@ struct AskNoumView: View {
             message.isOffline ? AppColor.innerSurface : Color.clear,
             in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
         )
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             message.isOffline
                 ? "Noum, offline reply: \(AskNoumCoachVisibleText.displayText(for: message))"
+                : message.isPending && !showsProvisionalRead
+                    ? "Noum is thinking"
                 : showsProvisionalRead
                     ? "Noum is preparing the full reply. Immediate coach read: \(AskNoumCoachVisibleText.displayText(for: message))"
                 : "Noum: \(AskNoumCoachVisibleText.displayText(for: message))"
         )
     }
 
+    /// Keeps the conversational reply primary. The selected professional move
+    /// and bounded evidence receipt are available in one disclosure instead of
+    /// stacking a model line, drill, test, metrics, and source as report cards.
+    @ViewBuilder
+    private func coachDetailDisclosure(message: CoachMessage, accent: Color) -> some View {
+        let move = AskNoumPracticeMovePresentation.make(metadata: message.metadata)
+        let evidence = responseEvidenceMetadata(for: message)
+
+        if move != nil || evidence != nil {
+            let isExpanded = expandedCoachDetailMessageID == message.id
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Button {
+                    withAnimation(
+                        NoumMotion.animation(for: .calm, reduceMotion: reduceMotion)
+                    ) {
+                        expandedCoachDetailMessageID = isExpanded ? nil : message.id
+                    }
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: move == nil ? "checkmark.seal" : "waveform.path")
+                            .font(Typography.captionSmall.weight(.semibold))
+                            .accessibilityHidden(true)
+                        Text(move == nil ? "Why this read" : "Practice this move")
+                            .font(Typography.caption.weight(.semibold))
+                        Spacer(minLength: Spacing.xs)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(Typography.captionSmall.weight(.bold))
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity, minHeight: NoumControlMetric.minimumTouchTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    isExpanded
+                        ? "Hide coaching move details"
+                        : (move == nil ? "Show why this read" : "Show model line, drill, and pass test")
+                )
+                .accessibilityIdentifier("askNoum.coachMove.disclosure")
+
+                if isExpanded {
+                    if let move {
+                        Text(move.title)
+                            .font(Typography.headline)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        coachMoveDetail(
+                            label: "MODEL LINE · EXAMPLE SHAPE",
+                            text: "\u{201C}\(move.modelLine)\u{201D}",
+                            symbol: "quote.opening"
+                        )
+                        coachMoveDetail(
+                            label: "DRILL",
+                            text: move.drill,
+                            symbol: "mic"
+                        )
+                        coachMoveDetail(
+                            label: "PASS TEST",
+                            text: move.passCondition,
+                            symbol: "checkmark.seal"
+                        )
+                    }
+
+                    if let evidence {
+                        Label(evidence, systemImage: "lock.shield")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel(evidence)
+                            .accessibilityIdentifier("askNoum.responseEvidence")
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(
+                AppColor.innerSurface,
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(accent.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.top, Spacing.xs)
+        }
+    }
+
+    private func coachMoveDetail(
+        label: String,
+        text: String,
+        symbol: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: symbol)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.proText)
+                .frame(width: 20, alignment: .center)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(label)
+                    .font(Typography.micro.weight(.bold))
+                    .tracking(0.7)
+                    .foregroundStyle(AppColor.textTertiary)
+                Text(text)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label). \(text)")
+    }
+
     private func provisionalCoachRead(message: CoachMessage, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                NoumCharacter(
-                    mood: .thinking,
-                    tint: AppColor.pro,
-                    size: 20,
-                    stage: characterStage
+                NoumWaveformMark(
+                    state: .processing,
+                    tint: AppColor.coachAccent,
+                    size: 20
                 )
                 Text("Coach read")
                     .font(Typography.caption.weight(.semibold))
@@ -3072,23 +3200,22 @@ struct AskNoumView: View {
         .accessibilityLabel("Notice: \(message.text)")
     }
 
-    // MARK: - Pending typing indicator
+    // MARK: - Pending state
     //
-    // Replaces the legacy three-dot pulse with a small `.thinking`
-    // NoumCharacter orb at bubble-glyph register — the one place the orb
-    // survives now the header carries the crisp waveform badge. Reads as
-    // "Noum is thinking about what you said". Reduce-motion
-    // is handled inside `NoumCharacter` itself (the orb collapses to a
-    // static glow at small sizes), so no extra gate here.
+    // One static processing read, using the same unboxed waveform as the
+    // header. There is no ambient loop: the transition into this state is the
+    // motion, and Reduce Motion receives the foundation's short fade.
 
     private var pendingDots: some View {
-        HStack {
-            NoumCharacter(
-                mood: .thinking,
-                tint: AppColor.pro,
-                size: 24,
-                stage: characterStage
+        HStack(spacing: Spacing.sm) {
+            NoumWaveformMark(
+                state: .processing,
+                tint: AppColor.coachAccent,
+                size: 24
             )
+            Text("Thinking through one useful response…")
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
             Spacer(minLength: 0)
         }
         .accessibilityLabel("Noum is thinking")
@@ -3497,13 +3624,6 @@ struct AskNoumView: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(.white)
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-                    .symbolEffect(.pulse, options: .repeating, isActive: mode == .processing && !reduceMotion)
-                    // S5 — "coach is speaking" cue: the same variableColor
-                    // waveform register the live-transcript preview uses, so
-                    // the user reads "voice is active". Reduced-motion safe:
-                    // the symbol stays static when motion is disabled (the
-                    // glyph + Stop semantics still communicate the state).
-                    .symbolEffect(.variableColor.iterative, options: .repeating, isActive: mode == .speaking && !reduceMotion)
             }
         }
         .disabled(inputControlDisabled(for: mode))
@@ -3615,11 +3735,14 @@ struct AskNoumView: View {
         let trimmed = voiceInput.partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         if isRecording {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "waveform")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(AppColor.brandBlue.opacity(0.80))
+                NoumWaveformMark(
+                    state: .listening,
+                    level: trimmed.isEmpty ? 0.12 : 0.42,
+                    tint: AppColor.brandBlue,
+                    size: 20
+                )
                     .padding(.top, 2)
-                    .symbolEffect(.variableColor.iterative, options: .repeating, isActive: !reduceMotion)
+                    .accessibilityHidden(true)
                 Text(trimmed.isEmpty ? "Listening\u{2026}" : trimmed)
                     .font(Typography.body.italic())
                     .foregroundStyle(AppColor.brandBlue.opacity(trimmed.isEmpty ? 0.55 : 0.85))
@@ -3883,14 +4006,13 @@ struct AskNoumView: View {
             if Task.isCancelled { return }
             // V4.6.1 — the reply has fully landed: one soft ack (selection
             // register — an acknowledgment, not an earned-progress beat)
-            // plus the header badge's one-shot bounce. This is the motion
-            // users' half of the reply-landed pair; RM users get the same
+            // after the final word. This is the motion users' half of the
+            // reply-landed pair; RM users get the same
             // ack from the `isAwaitingReply` observer, since no reveal is
             // ever armed for them. Haptic suppressed while the mic records.
             if voiceInput.state != .recording {
                 CoachHaptic.selectionTap()
             }
-            replyLandedPulse += 1
             // Hand back to the store's full `message.text` (identical to the
             // assembled string) so the bubble's source of truth is the store.
             revealingMessageID = nil

@@ -131,10 +131,6 @@ struct IMPracticeView: View {
         targetTone ?? preferredTone ?? .confident
     }
 
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-    }
-
     var body: some View {
         ZStack {
             if isEndingConversation {
@@ -303,11 +299,10 @@ struct IMPracticeView: View {
                 title: "Conversation Practice",
                 subtitle: "Choose the situation, then decide how you want to sound."
             ) {
-                NoumCharacter(
-                    mood: .calm,
+                NoumWaveformMark(
+                    state: .idle,
                     tint: .white,
-                    size: 48,
-                    stage: characterStage
+                    size: 48
                 )
                 .accessibilityHidden(true)
             } content: {
@@ -424,12 +419,11 @@ struct IMPracticeView: View {
     private var activeHeaderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                NoumCharacter(
-                    mood: speechVM.isRecording ? .listening : .calm,
+                NoumWaveformMark(
+                    state: speechVM.isRecording ? .listening : .idle,
+                    level: speechVM.audioLevel,
                     tint: AppColor.modeIM,
-                    size: 32,
-                    audioLevel: speechVM.audioLevel,
-                    stage: characterStage
+                    size: 32
                 )
                 .accessibilityHidden(true)
 

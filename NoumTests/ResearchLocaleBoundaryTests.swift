@@ -24,6 +24,14 @@ struct ResearchLocaleBoundaryTests {
         #expect(rewrite.source == .onDevice)
     }
 
+    @Test func betaInterfaceStaysEnglishWithoutCollapsingPracticeLocales() {
+        #expect(BetaInterfaceLanguagePolicy.localeIdentifier == "en-GB")
+        #expect(PracticeLocale.esES.code == "es-ES")
+        #expect(PracticeLocale.frFR.code == "fr-FR")
+        #expect(!PracticeTopics.prompts(for: .all, locale: .esES).isEmpty)
+        #expect(!PracticeTopics.prompts(for: .all, locale: .frFR).isEmpty)
+    }
+
     @Test(arguments: [PracticeLocale.esES, .frFR])
     func unsupportedLocaleSuppressesProviderAndOnDeviceRewriteBeforeProviderResolution(
         locale: PracticeLocale

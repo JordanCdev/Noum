@@ -23,9 +23,13 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         let workContext = app.buttons["fastLane.context.work"]
         let ramblingChallenge = app.buttons["fastLane.challenge.rambling"]
         XCTAssertTrue(workContext.waitForExistence(timeout: 5))
-        XCTAssertTrue(ramblingChallenge.waitForExistence(timeout: 5))
         assertMinimumTapTarget(workContext)
         workContext.tap()
+        let contextContinue = app.buttons["fastLane.contextContinue"]
+        XCTAssertTrue(contextContinue.waitForExistence(timeout: 5))
+        assertMinimumTapTarget(contextContinue)
+        contextContinue.tap()
+        XCTAssertTrue(ramblingChallenge.waitForExistence(timeout: 5))
         scrollUntilHittable(ramblingChallenge, in: app)
         assertMinimumTapTarget(ramblingChallenge)
         XCTAssertTrue(ramblingChallenge.isHittable)
@@ -178,6 +182,10 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         let rambling = app.buttons["fastLane.challenge.rambling"]
         XCTAssertTrue(work.waitForExistence(timeout: 5))
         work.tap()
+        let contextContinue = app.buttons["fastLane.contextContinue"]
+        XCTAssertTrue(contextContinue.waitForExistence(timeout: 5))
+        contextContinue.tap()
+        XCTAssertTrue(rambling.waitForExistence(timeout: 5))
         scrollUntilHittable(rambling, in: app)
         XCTAssertTrue(rambling.isHittable)
         rambling.tap()
@@ -243,6 +251,10 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         let rambling = app.buttons["fastLane.challenge.rambling"]
         XCTAssertTrue(work.waitForExistence(timeout: 5))
         work.tap()
+        let contextContinue = app.buttons["fastLane.contextContinue"]
+        XCTAssertTrue(contextContinue.waitForExistence(timeout: 5))
+        contextContinue.tap()
+        XCTAssertTrue(rambling.waitForExistence(timeout: 5))
         scrollUntilHittable(rambling, in: app)
         XCTAssertTrue(rambling.isHittable)
         rambling.tap()
@@ -324,6 +336,14 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "Day 0 must prescribe one concrete next action."
         )
 
+        let details = app.buttons["summary.details.toggle"]
+        scrollUntilHittable(details, in: app, attempts: 12)
+        XCTAssertTrue(
+            details.waitForExistence(timeout: 8),
+            "Summary did not expose its optional depth disclosure."
+        )
+        details.tap()
+
         let proAction = app.buttons["summary.talkToNoum.gated"]
         scrollUntilHittable(proAction, in: app, attempts: 12)
         XCTAssertTrue(
@@ -355,6 +375,10 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         let rambling = app.buttons["fastLane.challenge.rambling"]
         XCTAssertTrue(work.waitForExistence(timeout: 5))
         work.tap()
+        let contextContinue = app.buttons["fastLane.contextContinue"]
+        XCTAssertTrue(contextContinue.waitForExistence(timeout: 5))
+        contextContinue.tap()
+        XCTAssertTrue(rambling.waitForExistence(timeout: 5))
         scrollUntilHittable(rambling, in: app)
         XCTAssertTrue(rambling.isHittable)
         rambling.tap()

@@ -132,7 +132,13 @@ struct SettingsView: View {
                 .ignoresSafeArea()
 
             List {
-                if !isAppTabRoot {
+                if isAppTabRoot {
+                    Section {
+                        settingsIntroduction
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
+                } else {
                     Section {
                         profileHero
                             .listRowInsets(EdgeInsets())
@@ -148,27 +154,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    practiceVoiceCuesRow
-                    fillerHighlightRow
-                    pressureModeRow
-                } header: {
-                    SettingsSectionLabel(title: "During reps")
-                }
-
-                Section {
-                    practiceLanguageRow
-                    soundscapeRow
-                } header: {
-                    SettingsSectionLabel(title: "Language & sound")
-                }
-
-                Section {
-                    appearanceRow
-                } header: {
-                    SettingsSectionLabel(title: "Appearance")
-                }
-
-                Section {
                     coachingProfileRow
                     upcomingMomentRow
                 } header: {
@@ -176,17 +161,81 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    dailyReminderRow
-                    if notificationManager.dailyReminderEnabled {
-                        dailyReminderTimePicker
+                    advancedDisclosure
+                }
+
+                if advancedExpanded {
+                    Section {
+                        practiceVoiceCuesRow
+                        fillerHighlightRow
+                        pressureModeRow
+                    } header: {
+                        SettingsSectionLabel(title: "During reps")
                     }
-                    eveningPracticeNudgeRow
-                    weeklyDigestRow
-                    notificationAccessRow
-                    hapticsRow
-                    interactionSoundsRow
-                } header: {
-                    SettingsSectionLabel(title: "Notifications")
+
+                    Section {
+                        practiceLanguageRow
+                        soundscapeRow
+                        appearanceRow
+                    } header: {
+                        SettingsSectionLabel(title: "Language, sound & appearance")
+                    }
+
+                    Section {
+                        dailyReminderRow
+                        if notificationManager.dailyReminderEnabled {
+                            dailyReminderTimePicker
+                        }
+                        eveningPracticeNudgeRow
+                        weeklyDigestRow
+                        notificationAccessRow
+                        hapticsRow
+                        interactionSoundsRow
+                    } header: {
+                        SettingsSectionLabel(title: "Notifications & feedback")
+                    }
+
+                    if aiUsageCardIsVisible {
+                        Section {
+                            aiUsageCard
+                        } header: {
+                            SettingsSectionLabel(title: "AI usage")
+                        }
+                    }
+
+                    if authManager.isDeveloper {
+                        Section {
+                            transcriptionProviderCard
+                        } header: {
+                            SettingsSectionLabel(title: "Developer tools")
+                        }
+                        Section {
+                            aiCallDiagnosticsCard
+                        } header: {
+                            SettingsSectionLabel(title: "AI calls")
+                        }
+                        Section {
+                            flowEventsCard
+                        } header: {
+                            SettingsSectionLabel(title: "Debug traces")
+                        }
+                        Section {
+                            recommendationDiagnosticsCard
+                        } header: {
+                            SettingsSectionLabel(title: "Diagnostics")
+                        }
+                        Section {
+                            developerSeedCard
+                        } header: {
+                            SettingsSectionLabel(title: "Seed data")
+                        }
+                    } else if exposesFlowLogForUITesting {
+                        Section {
+                            flowEventsCard
+                        } header: {
+                            SettingsSectionLabel(title: "Flow log")
+                        }
+                    }
                 }
 
                 Section {
@@ -201,10 +250,6 @@ struct SettingsView: View {
                     aboutCard
                 } header: {
                     SettingsSectionLabel(title: "About")
-                }
-
-                Section {
-                    advancedDisclosure
                 }
 
                 if isAppTabRoot {
@@ -355,57 +400,53 @@ struct SettingsView: View {
 
     // MARK: - Advanced Disclosure
 
-    /// Power-user knobs + (when `isDeveloper`) the dev tooling collapse
-    /// behind one tap. Default collapsed so first-open is calm; expansion
-    /// state persists via `advancedExpanded` so a power user who opened
-    /// it doesn't have to re-open it every launch. Disclosure animation
-    /// is gated on `reduceMotion` to match the rest of the app.
+    /// Secondary preferences and diagnostics collapse behind one explicit
+    /// disclosure. The first viewport stays focused on practice, coaching,
+    /// trust, and account control; no setting or state is removed.
     @ViewBuilder
     private var advancedDisclosure: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Button {
-                withAnimation(reduceMotion ? nil : .standardSpring) {
-                    advancedExpanded.toggle()
-                }
-                CoachHaptic.selectionTap()
-            } label: {
-                HStack(spacing: Spacing.sm) {
-                    Text("Advanced")
+        Button {
+            withAnimation(
+                reduceMotion
+                    ? nil
+                    : NoumMotion.animation(for: .calm, reduceMotion: false)
+            ) {
+                advancedExpanded.toggle()
+            }
+            CoachHaptic.selectionTap()
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("More controls")
                         .font(Typography.headline)
                         .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: advancedExpanded ? "chevron.up" : "chevron.down")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.secondary)
+                    Text("Rep cues, language, appearance and reminders")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 8)
-                .padding(.horizontal, 4)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityLabel("Advanced settings")
-            .accessibilityHint(advancedExpanded ? "Tap to hide advanced settings" : "Tap to show advanced settings")
-            .accessibilityValue(advancedExpanded ? "Expanded" : "Collapsed")
-            .accessibilityIdentifier("settings.advancedToggle")
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            if advancedExpanded {
-                if aiUsageCardIsVisible {
-                    section(label: "AI usage") { aiUsageCard }
-                }
-
-                if authManager.isDeveloper {
-                    section(label: "Developer tools") { transcriptionProviderCard }
-                    section(label: "AI calls") { aiCallDiagnosticsCard }
-                    section(label: "Debug traces") { flowEventsCard }
-                    section(label: "Diagnostics") { recommendationDiagnosticsCard }
-                    section(label: "Seed data") { developerSeedCard }
-                } else if exposesFlowLogForUITesting {
-                    section(label: "Flow log") { flowEventsCard }
-                }
+                Image(systemName: advancedExpanded ? "chevron.up" : "chevron.down")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel("Advanced settings")
+        .accessibilityHint(advancedExpanded ? "Tap to hide advanced settings" : "Tap to show advanced settings")
+        .accessibilityValue(advancedExpanded ? "Expanded" : "Collapsed")
+        .accessibilityIdentifier("settings.advancedToggle")
     }
 
     private var exposesFlowLogForUITesting: Bool {
@@ -465,7 +506,36 @@ struct SettingsView: View {
             || authManager.localGuestCloudConnectionState.blocksAccountMutation
     }
 
-    /// Premium-tier presence tint for the hero avatar + ambient register.
+    private var settingsIntroduction: some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: AppColor.coachingInk,
+                size: 48
+            )
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("YOUR EXPERIENCE")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("Keep practice working for you")
+                    .font(Typography.screenTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Core choices stay visible. Less-used controls are one tap away.")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, Spacing.sm)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("settings.introduction")
+    }
+
+    /// Premium-tier presence tint for the waveform and quiet identity wash.
     /// Pro users get the brand purple; everyone else gets brand blue.
     private var profileHeroTint: Color {
         premium.isPremium ? AppColor.pro : AppColor.brandBlue
@@ -479,12 +549,6 @@ struct SettingsView: View {
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(profileHeroBackground)
-            // Soft Pro-purple elevation — mirrors the HomeCoachCard hero
-            // pattern but at a lower intensity since the Settings hero is
-            // a compact row, not a full card. ~14pt radius + 6pt y-offset,
-            // tinted in the same purple as the radial wash so the hero
-            // reads as ambiently premium without a hard shadow rectangle.
-            .shadow(color: AppColor.pro.opacity(0.10), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(profileHeroAccessibilityLabel)
@@ -497,7 +561,7 @@ struct SettingsView: View {
         if dynamicTypeSize.isAccessibilitySize {
             // At accessibility sizes the subtitle needs the card's full
             // width. Keeping the compact row would leave it squeezed between
-            // the character and chevron, producing one-character lines.
+            // the waveform and chevron, producing one-character lines.
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack(alignment: .center, spacing: Spacing.md) {
                     profileHeroMark
@@ -629,11 +693,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var profileHeroMark: some View {
-        // One neutral brand presence. The voice-target identity already
-        // lives in the subtitle chip — repeating its glyph here read as a
-        // duplicate icon, not reinforcement.
-        NoumCharacter(
-            mood: .calm,
+        NoumWaveformMark(
+            state: .idle,
             tint: profileHeroTint,
             size: 56
         )
@@ -644,35 +705,22 @@ struct SettingsView: View {
         profileHeroPresentation.accessibilityLabel
     }
 
-    /// Hero card chrome — applies the M14 Pro-purple ambient register so
-    /// the Settings hero reads as a premium account surface instead of a
-    /// list-view top row. Mirrors `HomeCoachCard.coachCardBackground` and
-    /// `LeagueView.tierCardBackground`, with lower-intensity values
-    /// because this card is compact (a single row) rather than a full
-    /// hero. Two registers, same as the Coach Card: purple ambience for
-    /// "this is your account" + the rank pill keeps the per-user accent.
-    ///
-    /// Layers, bottom to top:
-    ///   1. White card surface (the canvas).
-    ///   2. Top-anchored Pro-purple radial wash (0.16 → 0). Smaller
-    ///      end-radius than the Coach Card since this card is shorter.
-    ///   3. Faint Pro hairline border (1pt) at low opacity so the wash
-    ///      reads as belonging to the card edge.
+    /// Editorial account surface: a quiet tint acknowledges identity without
+    /// competing with the practice and privacy controls beneath it.
     private var profileHeroBackground: some View {
         let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         return ZStack {
             shape.fill(AppColor.cardBackground)
 
             shape.fill(
-                RadialGradient(
-                    colors: [AppColor.pro.opacity(0.44), AppColor.proLight.opacity(0.18), AppColor.pro.opacity(0.0)],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 220
+                LinearGradient(
+                    colors: [profileHeroTint.opacity(0.09), Color.clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
             )
 
-            shape.strokeBorder(AppColor.pro.opacity(0.38), lineWidth: 1)
+            shape.strokeBorder(AppColor.subtleBorder, lineWidth: 1)
         }
     }
 
@@ -1749,6 +1797,34 @@ struct SettingsView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.howNoumCoaches")
             .accessibilityHint("Explains how Noum uses evidence and what it cannot infer.")
+
+            Divider()
+
+            NavigationLink {
+                BetaFeedbackView()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Send beta feedback")
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text("Share an issue with redacted diagnostics")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings.betaFeedback")
+            .accessibilityHint("Opens the private beta feedback form.")
 
             Divider()
 

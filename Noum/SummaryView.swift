@@ -20,6 +20,98 @@ private enum SummaryCloudProcessingAction {
     case videoAnalysis
 }
 
+/// Presentation gate for every gold/earned treatment on Summary. The visible
+/// reward must be attached to the same stored row as the screen, must clear the
+/// shared progress floor, and must contain positive credit. A score alone is
+/// deliberately insufficient.
+enum SummaryRewardQualification {
+    static func earnedXP(
+        finalizedSessionID: UUID?,
+        resolvedSessionID: UUID?,
+        isProgressEligible: Bool,
+        xpEarned: Int
+    ) -> Int {
+        guard let finalizedSessionID,
+              finalizedSessionID == resolvedSessionID,
+              isProgressEligible,
+              xpEarned > 0 else {
+            return 0
+        }
+        return xpEarned
+    }
+}
+
+/// The collapsed Summary has one slot after its coaching debrief. Pressure's
+/// required run receipt wins that slot; otherwise a source-bound transcript
+/// upgrade wins when its existing truth gate owns the next action; every other
+/// rep receives the finalized prescription. Keeping this decision pure makes
+/// it impossible for presentation code to stack all three at once.
+enum SummaryFocusedActionStage: Equatable {
+    case pressureReceipt
+    case transcriptUpgrade
+    case prescription
+
+    static func resolve(
+        isPressureRun: Bool,
+        transcriptUpgradeOwnsNextAction: Bool
+    ) -> SummaryFocusedActionStage {
+        if isPressureRun { return .pressureReceipt }
+        if transcriptUpgradeOwnsNextAction { return .transcriptUpgrade }
+        return .prescription
+    }
+}
+
+@available(iOS 17.0, *)
+struct SummaryCompletionHeader: View {
+    let practiceTitle: String
+    let isProgressEligible: Bool
+    let hasEarnedReward: Bool
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                mark
+                copy
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                mark
+                copy
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.completionHeader")
+    }
+
+    private var mark: some View {
+        NoumWaveformMark(
+            state: hasEarnedReward ? .earned : .idle,
+            tint: AppColor.coachAccent,
+            size: 58
+        )
+        .accessibilityHidden(true)
+    }
+
+    private var copy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(isProgressEligible ? "Rep complete" : "Capture saved")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.coachAccentOnQuiet)
+            Text(isProgressEligible ? "Here\u{2019}s the read." : "One fuller rep will sharpen the read.")
+                .font(Typography.screenTitle)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(isProgressEligible ? "One clear observation. One next move." : practiceTitle)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 // MARK: - SummaryView (Redesigned)
 
 struct SummaryView: View {
@@ -267,7 +359,12 @@ struct SummaryView: View {
     }
 
     private var earnedXPForPresentation: Int {
-        currentRepIsProgressEligible ? xpEarned : 0
+        SummaryRewardQualification.earnedXP(
+            finalizedSessionID: finalizedSessionID,
+            resolvedSessionID: currentStoredSession?.id,
+            isProgressEligible: currentRepIsProgressEligible,
+            xpEarned: xpEarned
+        )
     }
 
     private var currentMode: PracticeMode {
@@ -362,6 +459,13 @@ struct SummaryView: View {
         hasTranscriptUpgradeLane && transcriptUpgradeState != .unavailable
     }
 
+    private var focusedActionStage: SummaryFocusedActionStage {
+        SummaryFocusedActionStage.resolve(
+            isPressureRun: isSuddenDeathSummary,
+            transcriptUpgradeOwnsNextAction: transcriptUpgradeOwnsNextAction
+        )
+    }
+
     /// When Review owns the immediate action, keep the summary observation on
     /// that exact language lever. A generic duration or momentum claim beside
     /// an opening rewrite makes the coach appear to change its mind between
@@ -384,12 +488,10 @@ struct SummaryView: View {
 
     /// Transcript → a stronger version of the user's own words.
     ///
-    /// This used to mount inside `expandableDetailsSection`, which defaults
-    /// closed — the same failure the deep-read path already hit (see the
-    /// comment on `deepReadCard`): a Pro feature the pitch advertises but the
-    /// user never reaches. It renders directly beneath the debrief now, so the
-    /// screen reads as one arc: here is the read, here is a stronger version of
-    /// what you actually said, here is the drill.
+    /// When the existing eligible Pro lane owns the focused action slot, this
+    /// renders directly beneath the debrief. A locked preview or non-selected
+    /// rewrite remains reachable inside Details, avoiding a second simultaneous
+    /// action without deleting the upgrade path.
     ///
     /// Self-suppressing. `primaryWeakness` is nil for filler, pace, pauses,
     /// emphasis and confidence — those are trained by practice modes, not by
@@ -877,6 +979,22 @@ struct SummaryView: View {
         }
     }
 
+    /// Exactly one above-fold surface occupies the action/upgrade slot. Any
+    /// other applicable surface remains available as optional depth inside the
+    /// existing Details disclosure.
+    @ViewBuilder
+    private var focusedSummaryActionStage: some View {
+        switch focusedActionStage {
+        case .pressureReceipt:
+            resultOverviewCard
+        case .transcriptUpgrade:
+            rewriteSection
+        case .prescription:
+            reviewExperimentActionCard
+                .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+        }
+    }
+
     /// Closes the gap between "a rep finished" and "the coaching was read".
     /// Keyed on the stored session's id so it joins `rep.saved`, which uses the
     /// same id. Only fires for a rep that actually persisted — an interstitial
@@ -1060,113 +1178,70 @@ struct SummaryView: View {
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                    VStack(spacing: 16) {
-                        // MODE CONSISTENCY NOTE (M20):
-                        // IM, Sudden Death and Timed/other share TalkToNoumCTACard
-                        // as the single Ask Noum entry point. Every mode now opens
-                        // on the useful coaching read and prescribed next rep;
-                        // score/mode receipts are secondary. Remaining divergences:
-                        //   - IM lacks BaselineComparisonCard equivalents for
-                        //     WhatYouDidWell / WhatToImprove (uses IMReadCard instead)
-                        //   - Ah-Counter has no dedicated mode-specific verdict card
-                        //     (falls into the Timed/other path — acceptable for now)
-                        if isIMSummary {
-                            // IM has no verified ProofMoment surface, so the
-                            // exact-session debrief leads without inventing a
-                            // quote. The finalized prescription immediately
-                            // follows it; the numeric verdict is available in
-                            // Details with the rest of the analytical record.
-                            IMDebriefCard(
-                                coachNote: coachNote,
-                                effectiveDuration: effectiveDuration,
-                                imConversationDetails: imConversationDetails,
-                                revisedChange: freshRevisedReadChange,
-                                reviewIntervention: activeReviewDueIntervention,
-                                onReview: activeReviewDueIntervention.map { intervention in
-                                    { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
-                                }
-                            )
-                            reviewExperimentActionCard
-                                .onAppear(perform: recordReviewExperimentExposureIfNeeded)
-                            transcriptRetryComparisonSection
-                            rewriteSection
-                            postRepProgressReceipt
-                            TalkToNoumCTACard(
-                                isPremium: premium.isPremium,
-                                speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
-                                onAskNoum: {
-                                    onAskNoumAboutRep?(talkToNoumOpener)
-                                },
-                                onUpgradePrompt: {
-                                    showPaywall = true
-                                }
-                            )
-                            expandableDetailsSection
-                            SummaryExitPanel(onDone: completeSummaryReview)
-                        } else {
-                            // TIMED / AH-COUNTER / SUDDEN DEATH all spend the
-                            // first attention slot on source-bound evidence.
-                            // `PostRepVerdictContent` is still fed by the exact
-                            // persisted session and remains honest below the
-                            // evidence floor.
-                            // The coaching payoff arrives in reading order
-                            // rather than as one fully-rendered wall. This is
-                            // the most-repeated screen in the product, and a
-                            // coach delivers the evidence, then the read, then
-                            // the next move — the stagger carries that sequence.
-                            // `cardEntrance` caps the total and collapses to an
-                            // instant appearance under Reduce Motion.
-                            PostRepDebriefCard(
-                                content: postRepVerdictContent,
-                                revisedChange: freshRevisedReadChange,
-                                reviewIntervention: activeReviewDueIntervention,
-                                onReview: activeReviewDueIntervention.map { intervention in
-                                    { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
-                                },
-                                suppressesNextMove: transcriptUpgradeOwnsNextAction,
-                                observationOverride: transcriptUpgradeObservation
-                            )
-                            .cardEntrance(0)
-                            transcriptRetryComparisonSection
-                                .cardEntrance(1)
-                            rewriteSection
-                                .cardEntrance(2)
-                            if !transcriptUpgradeOwnsNextAction {
-                                reviewExperimentActionCard
-                                    .onAppear(perform: recordReviewExperimentExposureIfNeeded)
-                                    .cardEntrance(3)
-                            }
-                            // Pressure Drill keeps its mode receipt visible for
-                            // the existing run-completion contract, but only
-                            // after the evidence and next action. Standard score
-                            // and metrics move behind Details.
-                            if isSuddenDeathSummary {
-                                resultOverviewCard
-                                    .cardEntrance(4)
-                            }
-                            postRepProgressReceipt
-                                .cardEntrance(5)
-                            TalkToNoumCTACard(
-                                isPremium: premium.isPremium,
-                                speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
-                                onAskNoum: {
-                                    onAskNoumAboutRep?(talkToNoumOpener)
-                                },
-                                onUpgradePrompt: {
-                                    showPaywall = true
-                                }
-                            )
-                            .cardEntrance(6)
-                            expandableDetailsSection
-                                .cardEntrance(6)
-                            SummaryExitPanel(onDone: completeSummaryReview)
-                                .cardEntrance(6)
-                        }
+                VStack(spacing: 16) {
+                    SummaryCompletionHeader(
+                        practiceTitle: practiceTitle,
+                        isProgressEligible: currentRepIsProgressEligible,
+                        hasEarnedReward: earnedXPForPresentation > 0
+                    )
+                    .cardEntrance(0)
+
+                    // V3 ATTENTION BUDGET: the default result is deliberately
+                    // bounded to four perceptual stages: completion, one
+                    // evidence/debrief surface, one selected action/upgrade
+                    // surface, then the Details + exit controls. Comparison,
+                    // rewrite, experiment and progress surfaces never stack in
+                    // this collapsed reading path.
+                    if isIMSummary {
+                        // IM has no verified ProofMoment surface, so its exact-
+                        // session debrief leads without inventing a quote.
+                        IMDebriefCard(
+                            coachNote: coachNote,
+                            effectiveDuration: effectiveDuration,
+                            imConversationDetails: imConversationDetails,
+                            revisedChange: freshRevisedReadChange,
+                            reviewIntervention: activeReviewDueIntervention,
+                            onReview: activeReviewDueIntervention.map { intervention in
+                                { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
+                            },
+                            suppressesNextMove: focusedActionStage == .transcriptUpgrade
+                        )
+                        .cardEntrance(1)
+                    } else {
+                        // Timed, Ah-Counter and Pressure all use the exact
+                        // persisted evidence projection. A transcript upgrade
+                        // only suppresses the inline next move when it actually
+                        // owns the single focused slot below.
+                        PostRepDebriefCard(
+                            content: postRepVerdictContent,
+                            revisedChange: freshRevisedReadChange,
+                            reviewIntervention: activeReviewDueIntervention,
+                            onReview: activeReviewDueIntervention.map { intervention in
+                                { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
+                            },
+                            suppressesNextMove: focusedActionStage == .transcriptUpgrade,
+                            observationOverride: focusedActionStage == .transcriptUpgrade
+                                ? transcriptUpgradeObservation
+                                : nil
+                        )
+                        .cardEntrance(1)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
+
+                    focusedSummaryActionStage
+                        .cardEntrance(2)
+
+                    VStack(spacing: Spacing.xs) {
+                        expandableDetailsSection
+                        SummaryExitPanel(onDone: completeSummaryReview)
+                    }
+                    .accessibilityElement(children: .contain)
+                    .cardEntrance(3)
+                    // END V3 ATTENTION BUDGET
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
+            }
                 .confirmationDialog("Share Session", isPresented: $showShareMenu) {
                     ShareLink(
                         item: shareImage,
@@ -1407,83 +1482,100 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var postRepProgressReceipt: some View {
-        if let projection = postRepReceiptProjection {
+        if postRepReceiptProjection != nil || showsStandaloneRewardPill {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Progress from this rep")
-                            .font(Typography.cardLabel)
-                            .foregroundStyle(AppColor.textPrimary)
-                        Text("Recorded with this coaching read")
-                            .font(Typography.captionSmall)
-                            .foregroundStyle(AppColor.textSecondary)
-                    }
+                if showsStandaloneRewardPill {
+                    NoumRewardPill(kind: .xp(earnedXPForPresentation))
+                        .accessibilityIdentifier("summary.reward")
                 }
 
-                progressReceiptRow(projection.primary)
+                if let projection = postRepReceiptProjection {
+                    NoumSurface(.quiet) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(AppColor.brandBlue)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Progress from this rep")
+                                        .font(Typography.cardLabel)
+                                        .foregroundStyle(AppColor.textPrimary)
+                                    Text("Recorded with this coaching read")
+                                        .font(Typography.captionSmall)
+                                        .foregroundStyle(AppColor.textSecondary)
+                                }
+                            }
 
-                if let credit = projection.practiceCredit {
-                    Label(credit, systemImage: "waveform.path")
-                        .font(Typography.caption.monospacedDigit())
-                        .foregroundStyle(AppColor.textSecondary)
-                        .accessibilityLabel("Practice volume. \(credit)")
-                }
+                            progressReceiptRow(projection.primary)
 
-                if !projection.additional.isEmpty {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .standardSpring) {
-                            showAllProgressUpdates.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: Spacing.xs) {
-                            Text(
-                                showAllProgressUpdates
-                                    ? "Hide additional updates"
-                                    : "Show \(projection.additional.count) more update\(projection.additional.count == 1 ? "" : "s")"
-                            )
-                            .font(Typography.caption.weight(.semibold))
-                            Spacer(minLength: Spacing.xs)
-                            Image(systemName: showAllProgressUpdates ? "chevron.up" : "chevron.down")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.pressable)
-                    .accessibilityIdentifier("summary.progressReceipt.disclosure")
-                    .accessibilityLabel(
-                        showAllProgressUpdates
-                            ? "Hide additional progress updates"
-                            : "Show \(projection.additional.count) additional progress update\(projection.additional.count == 1 ? "" : "s")"
-                    )
-                    .accessibilityValue(showAllProgressUpdates ? "Expanded" : "Collapsed")
+                            if !showsStandaloneRewardPill,
+                               let credit = projection.practiceCredit {
+                                Label(credit, systemImage: "waveform.path")
+                                    .font(Typography.caption.monospacedDigit())
+                                    .foregroundStyle(AppColor.textSecondary)
+                                    .accessibilityLabel("Practice volume. \(credit)")
+                            }
 
-                    if showAllProgressUpdates {
-                        VStack(spacing: Spacing.sm) {
-                            ForEach(projection.additional) { update in
-                                progressReceiptRow(update)
+                            if !projection.additional.isEmpty {
+                                progressReceiptDisclosure(projection)
                             }
                         }
-                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
                 }
             }
-            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                AppColor.brandBlue.opacity(0.06),
-                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
-            )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("summary.progressReceipt")
+        }
+    }
+
+    /// The full-screen verified-retry beat already owns its gold reward. Keep
+    /// the durable progress receipt below it, but never pay the same visual
+    /// reward twice on one Summary mount.
+    private var showsStandaloneRewardPill: Bool {
+        earnedXPForPresentation > 0
+            && effectiveTranscriptRetryMilestonePresentation == nil
+    }
+
+    @ViewBuilder
+    private func progressReceiptDisclosure(_ projection: PostRepReceiptProjection) -> some View {
+        Button {
+            withAnimation(NoumMotion.animation(for: .calm, reduceMotion: reduceMotion)) {
+                showAllProgressUpdates.toggle()
+            }
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Text(
+                    showAllProgressUpdates
+                        ? "Hide additional updates"
+                        : "Show \(projection.additional.count) more update\(projection.additional.count == 1 ? "" : "s")"
+                )
+                .font(Typography.caption.weight(.semibold))
+                Spacer(minLength: Spacing.xs)
+                Image(systemName: showAllProgressUpdates ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(AppColor.brandBlue)
+            .frame(minHeight: NoumControlMetric.minimumTouchTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("summary.progressReceipt.disclosure")
+        .accessibilityLabel(
+            showAllProgressUpdates
+                ? "Hide additional progress updates"
+                : "Show \(projection.additional.count) additional progress update\(projection.additional.count == 1 ? "" : "s")"
+        )
+        .accessibilityValue(showAllProgressUpdates ? "Expanded" : "Collapsed")
+
+        if showAllProgressUpdates {
+            VStack(spacing: Spacing.sm) {
+                ForEach(projection.additional) { update in
+                    progressReceiptRow(update)
+                }
+            }
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
         }
     }
 
@@ -1620,6 +1712,32 @@ struct SummaryView: View {
                     }
 
                     fullCoachReadDetail
+
+                    // Optional source-bound and progression depth. The focused
+                    // action selected above is never repeated here; every other
+                    // applicable comparison, rewrite, experiment action, and
+                    // progress receipt remains reachable after an explicit
+                    // disclosure tap.
+                    transcriptRetryComparisonSection
+
+                    // When transcript recovery owns the one immediate action,
+                    // both debrief variants suppress their inline Next move.
+                    // A review whose evidence cadence is already due remains
+                    // reachable here as optional depth, never as a competing
+                    // root action and never through a no-op callback.
+                    deferredInterventionReviewCard
+
+                    if focusedActionStage != .transcriptUpgrade,
+                       transcriptUpgradeState != .unavailable {
+                        rewriteSection
+                    }
+
+                    if focusedActionStage != .prescription {
+                        reviewExperimentActionCard
+                            .onAppear(perform: recordReviewExperimentExposureIfNeeded)
+                    }
+
+                    postRepProgressReceipt
 
                     // Practice credit — visible-but-demoted (progression
                     // spine): the primary loop stays evidence + restrained
@@ -1764,11 +1882,6 @@ struct SummaryView: View {
                         // to cluster at transitions" coaching note now lives
                         // in CoachReadCard's voice-shaped read.
 
-                        // The rewrite card used to live here, behind a
-                        // disclosure that defaults closed. It now renders
-                        // above the fold as `rewriteSection` — see its
-                        // definition for why.
-
                         // Premium deep read — the rescued entry point for
                         // `requestDeeperFeedback`. The old standalone
                         // "Generate Coach Read" card was only mounted from
@@ -1831,6 +1944,20 @@ struct SummaryView: View {
 
                     // Session comparison
                     sessionComparisonCard
+
+                    // Conversation is useful depth, not a second primary CTA.
+                    // Keep it reachable after the user has read the one
+                    // prescribed next move above.
+                    TalkToNoumCTACard(
+                        isPremium: premium.isPremium,
+                        speakingStyleGoal: coachingProfileStore.profile?.chosenStyleGoal,
+                        onAskNoum: {
+                            onAskNoumAboutRep?(talkToNoumOpener)
+                        },
+                        onUpgradePrompt: {
+                            showPaywall = true
+                        }
+                    )
 
                     // Share / request feedback — re-homed from the cut
                     // pinned action bar. The confirmation dialog (share
@@ -2285,6 +2412,21 @@ struct SummaryView: View {
               let intervention = memory.activeIntervention,
               intervention.isReviewDue(at: Date()) else { return nil }
         return intervention
+    }
+
+    /// Transcript recovery is the Summary's single immediate action when the
+    /// source transcript is too weak to support a trustworthy read. If that
+    /// happens on the same rep that an intervention review becomes due, defer
+    /// the review to Details instead of dropping it or adding a second root CTA.
+    @ViewBuilder
+    private var deferredInterventionReviewCard: some View {
+        if focusedActionStage == .transcriptUpgrade,
+           let intervention = activeReviewDueIntervention,
+           let onAskNoumAboutRep {
+            InterventionReviewPromptCard(intervention: intervention) {
+                onAskNoumAboutRep(interventionReviewOpener(for: intervention))
+            }
+        }
     }
 
     // MARK: - Revised-read card (post-rep user-pushback surface)
@@ -3183,6 +3325,31 @@ extension SummaryView {
 #endif
 
 #if canImport(SwiftUI)
+#Preview("Summary completion header") {
+    VStack(spacing: Spacing.xl) {
+        SummaryCompletionHeader(
+            practiceTitle: PracticeMode.timed.displayLabel,
+            isProgressEligible: true,
+            hasEarnedReward: true
+        )
+        NoumRewardPill(kind: .xp(25))
+    }
+    .padding(Spacing.xl)
+    .background(AppColor.screenBackground)
+}
+
+#Preview("Summary completion header · dark accessibility") {
+    SummaryCompletionHeader(
+        practiceTitle: PracticeMode.timed.displayLabel,
+        isProgressEligible: false,
+        hasEarnedReward: false
+    )
+    .padding(Spacing.xl)
+    .background(AppColor.screenBackground)
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .preferredColorScheme(.dark)
+}
+
 #Preview {
     SummaryView(
         transcript: AttributedString("This was a concise practice answer with a strong opening, clear middle, and a tidy finish."),

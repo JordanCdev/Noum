@@ -8857,20 +8857,20 @@ struct ProfileCollapseContractTests {
         )
     }
 
-    @Test func zeroEvidenceProfileDoesNotRenderProgressHero() {
-        let plan = ProfileDefaultSurfacePlan.make(hasProgressEvidence: false)
+    @Test func profileKeepsMetricsBehindLibraryWithoutADuePrompt() {
+        let plan = ProfileDefaultSurfacePlan.make()
 
         #expect(plan.surfaces == [.identity, .coachRead, .evidenceHub])
         #expect(plan.defaultSectionCount == 3)
         #expect(plan.ratingSurfaceCount == 0)
     }
 
-    @Test func ratedProfileKeepsExactlyOneProgressSurface() {
-        let plan = ProfileDefaultSurfacePlan.make(hasProgressEvidence: true)
+    @Test func optionalPromptUsesTheOnlyFourthSurface() {
+        let plan = ProfileDefaultSurfacePlan.make(hasOptionalPrompt: true)
 
-        #expect(plan.surfaces == [.identity, .progressHero, .coachRead, .evidenceHub])
+        #expect(plan.surfaces == [.identity, .coachRead, .optionalPrompt, .evidenceHub])
         #expect(plan.defaultSectionCount == 4)
-        #expect(plan.ratingSurfaceCount == 1)
+        #expect(plan.ratingSurfaceCount == 0)
     }
 
     @Test func profileDisclosureStaysCoachEvidenceNotDashboard() {

@@ -66,6 +66,14 @@ enum PracticeLocale: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 }
 
+/// The private beta has one interface language while practice languages stay
+/// independent. This prevents a Spanish/French STT choice from partially
+/// translating navigation and settings before those surfaces are complete.
+enum BetaInterfaceLanguagePolicy {
+    static let localeIdentifier = "en-GB"
+    static var locale: Locale { Locale(identifier: localeIdentifier) }
+}
+
 // MARK: - Settings Manager
 
 #if canImport(SwiftUI)

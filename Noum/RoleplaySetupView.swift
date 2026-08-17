@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Scenario + starting-rung picker for the pressure-ladder roleplay.
-/// Uses the shared focused canvas. Scenario and pressure controls stay in an
-/// Adjust sheet so the launch screen has one directive and one primary CTA.
+/// Scenario + starting-rung picker for pressure-ladder roleplay.
+/// The launch view presents one conversation and one start action; optional
+/// configuration stays in a system sheet.
 struct RoleplaySetupView: View {
     @Binding var navigationPath: NavigationPath
 
@@ -15,88 +15,158 @@ struct RoleplaySetupView: View {
     }
 
     var body: some View {
-        FocusedPracticeScaffold(
-            style: .conversation,
-            status: "Ready at \(startingLevel.title.lowercased()) pressure",
-            title: "Roleplay",
-            subtitle: "Rehearse one difficult moment. Keep the response grounded."
-        ) {
-            Button {
-                CoachHaptic.selectionTap()
-                showAdjustments = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(.white.opacity(0.14), in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+        ZStack {
+            AppColor.screenBackground.ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
+                    header
+                    scenarioFocus
+                    repContract
+                }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.xl)
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("roleplay.adjust")
-            .accessibilityLabel("Adjust roleplay")
-        } content: {
-            selectedScenarioCue
         }
         .accessibilityIdentifier("roleplay.setup.screen")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    CoachHaptic.selectionTap()
+                    showAdjustments = true
+                } label: {
+                    Label("Adjust", systemImage: "slider.horizontal.3")
+                }
+                .accessibilityIdentifier("roleplay.adjust")
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             beginButton
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.vertical, Spacing.sm)
-                .background(Color.black.opacity(0.10).ignoresSafeArea())
+                .background(.regularMaterial)
         }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showAdjustments) {
             roleplayAdjustSheet
         }
     }
 
-    private var selectedScenarioCue: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Label(selectedScenario.title, systemImage: "person.2.wave.2.fill")
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                NoumWaveformMark(state: .idle, tint: AppColor.modeIM)
+                headerCopy
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                NoumWaveformMark(state: .idle, tint: AppColor.modeIM)
+                headerCopy
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var headerCopy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("ROLEPLAY")
                 .font(Typography.caption.weight(.bold))
-                .foregroundStyle(AppColor.focusedTextSecondary)
-
-            Text("\(selectedScenario.personaName), \(selectedScenario.personaRole)")
-                .font(Typography.figtree(size: 24, weight: .semibold, relativeTo: .title3))
-                .foregroundStyle(.white)
-
-            Text(selectedScenario.objective)
-                .font(Typography.body)
-                .foregroundStyle(AppColor.focusedTextSecondary)
+                .foregroundStyle(AppColor.modeIM)
+                .tracking(0.8)
+            Text("Rehearse the hard moment.")
+                .font(Typography.screenTitle)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("One objection at a time. Feedback arrives after your answer, not while you speak.")
+                .font(Typography.subheadline)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .focusedGlassSurface()
+    }
+
+    private var scenarioFocus: some View {
+        NoumSurface(.mission) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    NoumWaveformMark(state: .idle, tint: .white)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("YOUR CONVERSATION")
+                            .font(Typography.captionSmall.weight(.bold))
+                            .foregroundStyle(AppColor.homeHeroMetaText)
+                            .tracking(0.7)
+                        Text(selectedScenario.title)
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(selectedScenario.personaName), \(selectedScenario.personaRole)")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.homeHeroSubtitleText)
+                    }
+                }
+
+                Text(selectedScenario.objective)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.homeHeroSubtitleText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Label("Starts at \(startingLevel.title.lowercased()) pressure", systemImage: "gauge.with.dots.needle.33percent")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("roleplay.selectionSummary")
     }
 
+    private var repContract: some View {
+        NoumSurface(.quiet) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("How the rep works")
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.textPrimary)
+                Label("Respond naturally to the objection", systemImage: "1.circle.fill")
+                Label("Review one strength and one gap", systemImage: "2.circle.fill")
+                Label("Try the next pressure rung when available", systemImage: "3.circle.fill")
+            }
+            .font(Typography.body)
+            .foregroundStyle(AppColor.textSecondary)
+        }
+    }
+
     private var roleplayAdjustSheet: some View {
         NavigationStack {
-            ZStack {
-                AppColor.screenBackground.ignoresSafeArea()
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: Spacing.lg) {
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text("Choose a conversation")
-                                .font(Typography.cardTitle)
-                            Text("Eight situations, from discovery to difficult repair.")
-                                .font(Typography.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        scenarioList
-                        pressurePicker
+            List {
+                Section {
+                    ForEach(RoleplayCatalog.all) { scenario in
+                        scenarioRow(scenario)
                     }
-                    .padding(Spacing.screenH)
+                } header: {
+                    Text("Conversation")
+                } footer: {
+                    Text("Choose the situation closest to the conversation you want to handle better.")
+                }
+
+                Section("Starting pressure") {
+                    Picker("Starting pressure", selection: $startingLevel) {
+                        ForEach(RoleplayPressureLevel.allCases) { level in
+                            Text(level.title).tag(level)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(startingLevel.subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Adjust roleplay")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showAdjustments = false }
                 }
             }
@@ -105,46 +175,29 @@ struct RoleplaySetupView: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var scenarioList: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(RoleplayCatalog.all.enumerated()), id: \.element.id) { index, scenario in
-                scenarioCard(scenario)
-                if index < RoleplayCatalog.all.count - 1 {
-                    Divider()
-                        .padding(.leading, 68)
-                }
-            }
-        }
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
-        )
-    }
-
-    private func scenarioCard(_ scenario: RoleplayScenario) -> some View {
+    private func scenarioRow(_ scenario: RoleplayScenario) -> some View {
         let isSelected = scenario.scenarioId == selectedScenarioId
         return Button {
             selectedScenarioId = scenario.scenarioId
+            CoachHaptic.selectionTap()
         } label: {
             HStack(alignment: .top, spacing: Spacing.md) {
-                Image(systemName: "person.fill.questionmark")
-                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "person.2.fill")
+                    .font(.headline)
                     .foregroundStyle(AppColor.modeIM)
-                    .frame(width: 32, height: 32)
-                    .background(AppColor.modeIM.opacity(0.10), in: Circle())
+                    .frame(width: 28)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(scenario.title)
                         .font(Typography.headline)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.textPrimary)
                     Text(scenario.personaRole)
                         .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: Spacing.sm)
 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
@@ -152,9 +205,6 @@ struct RoleplaySetupView: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(Spacing.md)
-            .frame(minHeight: 64)
-            .background(isSelected ? AppColor.modeIM.opacity(0.06) : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -163,38 +213,27 @@ struct RoleplaySetupView: View {
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
-    private var pressurePicker: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Starting pressure")
-                .font(Typography.cardLabel)
-                .foregroundStyle(.primary)
-            Picker("Starting pressure", selection: $startingLevel) {
-                ForEach(RoleplayPressureLevel.allCases) { level in
-                    Text(level.title).tag(level)
-                }
-            }
-            .pickerStyle(.segmented)
-            Text(startingLevel.subtitle)
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .accessibilityIdentifier("roleplay.pressurePicker")
-    }
-
     private var beginButton: some View {
         Button {
             navigationPath.append(AppDestination.roleplayRun(scenario: selectedScenario, startingLevel: startingLevel))
         } label: {
             Text("Start roleplay")
                 .font(Typography.headline)
-                .foregroundStyle(AppColor.modeIM)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
+                .noumMinimumTouchTarget()
+                .padding(.vertical, Spacing.xs)
+                .background(AppColor.coachingInk, in: Capsule(style: .continuous))
         }
         .buttonStyle(.pressable)
-        .background(.white, in: Capsule())
         .accessibilityIdentifier("roleplay.begin")
     }
 }
+
+#if DEBUG
+#Preview("Roleplay — V3 setup") {
+    NavigationStack {
+        RoleplaySetupView(navigationPath: .constant(NavigationPath()))
+    }
+}
+#endif

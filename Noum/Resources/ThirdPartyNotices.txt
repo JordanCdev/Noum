@@ -2,7 +2,7 @@ THIRD-PARTY NOTICES
 
 Phosphor Icons
 
-Noum uses the Phosphor `waveform` icon in the earned-retry reward moment.
+Noum uses the Phosphor `waveform` icon across the V3 app identity and experience system.
 Source: https://github.com/phosphor-icons/core/blob/main/assets/regular/waveform.svg
 
 MIT License

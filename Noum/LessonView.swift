@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Lesson View
 //
@@ -18,6 +21,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct LessonView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var lessonStore = LessonStore.shared
     @StateObject private var profileManager = ProfileManager.shared
@@ -46,6 +50,7 @@ struct LessonView: View {
     @State private var didShowSummary: Bool = false
     @State private var progressUpdate: LessonProgressUpdate?
     @State private var didInstallApplyCompletionFixture = false
+    @State private var showCloudProcessingConsent = false
 
     init(lesson: Lesson, navigationPath: Binding<NavigationPath>) {
         self.lesson = lesson
@@ -67,7 +72,12 @@ struct LessonView: View {
                     .padding(.top, Spacing.sm)
 
                 if didShowSummary {
-                    lessonSummary
+                    ScrollView(showsIndicators: false) {
+                        lessonSummary
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.top, Spacing.lg)
+                            .padding(.bottom, Spacing.xl)
+                    }
                 } else {
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -83,6 +93,20 @@ struct LessonView: View {
             }
         }
         .transcriptionRouteNotice(speech.transcriptionRouteNotice)
+        .sheet(isPresented: $showCloudProcessingConsent) {
+            CloudProcessingConsentDisclosure(
+                isCurrentlyAllowed: AISettingsManager.shared.isCloudProcessingAllowed,
+                onAllow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.allowed)
+                    showCloudProcessingConsent = false
+                    speech.connectionError = nil
+                },
+                onNotNow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.declined)
+                    showCloudProcessingConsent = false
+                }
+            )
+        }
         .task {
             installApplyCompletionFixtureIfNeeded()
         }
@@ -123,59 +147,53 @@ struct LessonView: View {
     // MARK: - Progress
 
     private var progressBar: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<lesson.steps.count, id: \.self) { index in
-                Capsule()
-                    .fill(index <= currentStep ? lessonHeroTint : Color.secondary.opacity(0.2))
-                    .frame(height: 4)
-            }
-        }
+        let completedSteps = didShowSummary ? lesson.steps.count : currentStep
+        return NoumProgressTrack(
+            value: lesson.steps.isEmpty ? 0 : Double(completedSteps) / Double(lesson.steps.count),
+            label: didShowSummary ? "Lesson complete" : "Step \(currentStep + 1) of \(lesson.steps.count)",
+            valueLabel: "\(completedSteps) of \(lesson.steps.count) complete",
+            tint: lessonHeroTint
+        )
     }
 
     // MARK: - Header
 
-    /// Lesson hero — promoted from a plain HStack to a tinted hero card so
-    /// it matches the M14 hero treatment used on Profile / Settings /
-    /// League / Coach Card. Tint is derived from the lesson's category so
-    /// Delivery / Structure / Rhetoric each carry a distinct register. The
-    /// lesson's persistent tagline is inlined as the hero body — the hero
-    /// is "what is this lesson about", the step cards below are the
-    /// interactive surface.
     private var lessonHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .fill(lessonHeroTint.opacity(0.18))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: lesson.symbolName)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(lessonHeroTint)
-                }
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                NoumWaveformMark(
+                    state: lessonWaveformState,
+                    level: speech.audioLevel,
+                    tint: lessonHeroTint,
+                    size: 48
+                )
+
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(lesson.category.label)
-                        .font(Typography.micro)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
+                    Text(lesson.category.label.uppercased())
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(lessonHeroTint)
                         .tracking(0.8)
                     Text(lesson.title)
                         .font(Typography.cardTitle)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.textPrimary)
                 }
-                Spacer(minLength: 0)
-                Text("Step \(currentStep + 1) of \(lesson.steps.count)")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(lessonHeroTint)
             }
+
             Text(lesson.tagline)
                 .font(Typography.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(lessonHeaderBackground)
-        .shadow(color: lessonHeroTint.opacity(0.16), radius: 22, x: 0, y: 10)
+    }
+
+    private var lessonWaveformState: NoumWaveformState {
+        if didShowSummary { return .earned }
+        switch applyPhase {
+        case .recording: return .listening
+        case .connecting, .evaluating: return .processing
+        case .ready, .done: return .idle
+        }
     }
 
     /// Tint per lesson category. Delivery reads as the Ah-Counter green
@@ -189,37 +207,6 @@ struct LessonView: View {
         case .interaction: return AppColor.modeIM
         case .explanation: return AppColor.positive
         case .rhetoric:  return AppColor.pro
-        }
-    }
-
-    /// Hero chrome for the lesson header — same radial wash + tint border
-    /// shape used on Profile / Settings / League. Picks the canonical
-    /// `*Light` sibling for the mid gradient stop when one exists (pro,
-    /// brandBlue) and falls back to the same tint at 0.22 alpha for the
-    /// delivery register (no `modeAhCounterLight` is defined).
-    private var lessonHeaderBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        let tint = lessonHeroTint
-        let midColor: Color = {
-            switch lesson.category {
-            case .delivery:  return AppColor.modeAhCounter
-            case .structure: return AppColor.brandBlueLight
-            case .interaction: return AppColor.modeIM
-            case .explanation: return AppColor.positive
-            case .rhetoric:  return AppColor.proLight
-            }
-        }()
-        return ZStack {
-            shape.fill(AppColor.cardBackground)
-            shape.fill(
-                RadialGradient(
-                    colors: [tint.opacity(0.42), midColor.opacity(0.22), tint.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            shape.strokeBorder(tint.opacity(0.40), lineWidth: 1)
         }
     }
 
@@ -241,65 +228,63 @@ struct LessonView: View {
     // MARK: - Concept
 
     private func conceptCard(headline: String, body: String, example: String?) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(headline)
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
-            Text(body)
-                .font(Typography.body)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let example {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Example")
-                        .font(Typography.micro)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.8)
-                    Text("\u{201C}\(example)\u{201D}")
-                        .font(Typography.body)
-                        .foregroundStyle(AppColor.brandBlue)
-                        .fixedSize(horizontal: false, vertical: true)
+        NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("LEARN THE MOVE")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(lessonHeroTint)
+                    .tracking(0.7)
+                Text(headline)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                Text(body)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let example {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("EXAMPLE")
+                            .font(Typography.captionSmall.weight(.bold))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .tracking(0.7)
+                        Text("\u{201C}\(example)\u{201D}")
+                            .font(Typography.body)
+                            .foregroundStyle(lessonHeroTint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
-                .padding(Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
     }
 
     // MARK: - Spot-it
 
     private func spotItCard(question: String, options: [Lesson.Step.Option]) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text(question)
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
+        NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("SPOT THE MOVE")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(lessonHeroTint)
+                    .tracking(0.7)
 
-            VStack(spacing: 10) {
-                ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                    spotItRow(index: index, option: option)
+                Text(question)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+
+                VStack(spacing: Spacing.sm) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                        spotItRow(index: index, option: option)
+                    }
+                }
+
+                if spotItRevealed, let chosen = spotItSelection {
+                    explanation(for: options[chosen])
                 }
             }
-
-            if spotItRevealed, let chosen = spotItSelection {
-                explanation(for: options[chosen])
-            }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
     }
 
     private func spotItRow(index: Int, option: Lesson.Step.Option) -> some View {
@@ -359,7 +344,7 @@ struct LessonView: View {
     private func spotItRowIconTint(isSelected: Bool, isRevealedCorrect: Bool, isRevealedWrong: Bool) -> Color {
         if isRevealedCorrect { return AppColor.positive }
         if isRevealedWrong { return AppColor.warning }
-        if isSelected { return AppColor.brandBlue }
+        if isSelected { return lessonHeroTint }
         return Color.secondary.opacity(0.5)
     }
 
@@ -371,7 +356,7 @@ struct LessonView: View {
         } else if isRevealedWrong {
             shape.fill(AppColor.warning.opacity(0.10))
         } else if isSelected {
-            shape.fill(AppColor.brandBlue.opacity(0.06))
+            shape.fill(lessonHeroTint.opacity(0.06))
         } else {
             shape.fill(AppColor.cardBackground)
         }
@@ -380,15 +365,15 @@ struct LessonView: View {
     private func spotItRowBorder(isSelected: Bool, isRevealedCorrect: Bool, isRevealedWrong: Bool) -> Color {
         if isRevealedCorrect { return AppColor.positive.opacity(0.4) }
         if isRevealedWrong { return AppColor.warning.opacity(0.4) }
-        if isSelected { return AppColor.brandBlue.opacity(0.32) }
-        return Color.white.opacity(0.6)
+        if isSelected { return lessonHeroTint.opacity(0.32) }
+        return AppColor.subtleBorder
     }
 
     private func explanation(for option: Lesson.Step.Option) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: option.isCorrect ? "lightbulb.fill" : "info.circle.fill")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(option.isCorrect ? AppColor.positive : AppColor.brandBlue)
+                .foregroundStyle(option.isCorrect ? AppColor.positive : lessonHeroTint)
             Text(option.explanation)
                 .font(Typography.caption)
                 .foregroundStyle(.primary)
@@ -404,60 +389,57 @@ struct LessonView: View {
     enum ApplyPhase { case ready, connecting, recording, evaluating, done }
 
     private func applyCard(prompt: String, durationTarget: TimeInterval) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Speak the answer")
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
-            Text(prompt)
-                .font(Typography.body)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("PROVE THE MOVE")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(lessonHeroTint)
+                    .tracking(0.7)
 
-            HStack(spacing: 8) {
-                Image(systemName: "timer")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                Text(timerLabel(target: durationTarget))
-                    .font(Typography.caption.monospacedDigit())
-                    .foregroundStyle(applyPhase == .recording ? AppColor.brandBlue : .secondary)
-                Spacer()
-                phaseTrailingIndicator
-            }
+                Text("Speak the answer")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
 
-            if applyPhase == .recording {
-                liveMicBlock
-            }
-
-            if applyPhase == .ready, let error = speech.connectionError {
-                Label(error, systemImage: "exclamationmark.circle.fill")
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.warning)
+                Text(prompt)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("lesson.apply.captureError")
-            }
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 
-            if applyPhase == .ready, let applyRetryMessage {
-                Label(applyRetryMessage, systemImage: "arrow.counterclockwise.circle.fill")
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.caution)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("lesson.apply.insufficientSpeech")
-            }
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "timer")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.textSecondary)
+                    Text(timerLabel(target: durationTarget))
+                        .font(Typography.caption.monospacedDigit())
+                        .foregroundStyle(applyPhase == .recording ? lessonHeroTint : AppColor.textSecondary)
+                    Spacer()
+                    phaseTrailingIndicator
+                }
 
-            if applyPhase == .done {
-                applyResultBlock
+                if applyPhase == .recording {
+                    liveMicBlock
+                }
+
+                if applyPhase == .ready, let error = speech.connectionError {
+                    applyRecordingIssueCard(error)
+                }
+
+                if applyPhase == .ready, let applyRetryMessage {
+                    Label(applyRetryMessage, systemImage: "arrow.counterclockwise.circle.fill")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("lesson.apply.insufficientSpeech")
+                }
+
+                if applyPhase == .done {
+                    applyResultBlock
+                }
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
     }
 
     /// Live "Listening…" indicator with a partial transcript while the
@@ -466,14 +448,16 @@ struct LessonView: View {
     /// not.
     private var liveMicBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform.and.mic")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(AppColor.brandBlue)
-                    .symbolEffect(.pulse, options: .repeating.speed(0.9), isActive: !reduceMotion)
-                Text("Listening")
+            HStack(spacing: Spacing.sm) {
+                NoumWaveformMark(
+                    state: .listening,
+                    level: speech.audioLevel,
+                    tint: lessonHeroTint,
+                    size: 36
+                )
+                Text("Listening to your answer")
                     .font(Typography.caption.weight(.bold))
-                    .foregroundStyle(AppColor.brandBlue)
+                    .foregroundStyle(lessonHeroTint)
                 if let error = speech.connectionError {
                     Text(error)
                         .font(Typography.caption)
@@ -495,7 +479,7 @@ struct LessonView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     /// Trailing indicator on the timer row — shows the appropriate state
@@ -509,7 +493,7 @@ struct LessonView: View {
                 Text("Connecting")
                     .font(Typography.caption.weight(.semibold))
             }
-            .foregroundStyle(AppColor.brandBlue)
+            .foregroundStyle(lessonHeroTint)
         case .recording:
             HStack(spacing: 4) {
                 Circle()
@@ -613,6 +597,35 @@ struct LessonView: View {
         return device
     }
 
+    private var applyRecordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speech.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speech.recordingIssue,
+            message: error
+        )
+    }
+
+    private func applyRecordingIssueCard(_ message: String) -> some View {
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: speech.recordingIssue,
+            message: message
+        )
+
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            Label(presentation.title, systemImage: "exclamationmark.triangle.fill")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.caution)
+            Text(presentation.detail)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.caution.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityIdentifier("lesson.apply.captureError")
+    }
+
     // MARK: - Primary CTA (dispatches by step)
 
     @ViewBuilder
@@ -629,7 +642,22 @@ struct LessonView: View {
         case .apply:
             switch applyPhase {
             case .ready:
-                ctaButton(title: "Speak now", action: startApply)
+                if let recovery = applyRecordingIssuePresentation?.recovery {
+                    switch recovery {
+                    case .retry:
+                        ctaButton(title: "Try connection again", action: startApply)
+                    case .grantCloudConsent:
+                        ctaButton(title: "Turn on cloud processing") {
+                            showCloudProcessingConsent = true
+                        }
+                    case .openSettings:
+                        ctaButton(title: "Open Settings", action: openAppSettingsAfterApplyIssue)
+                    case .leaveRep:
+                        ctaButton(title: "Back to lessons", action: leaveLesson)
+                    }
+                } else {
+                    ctaButton(title: "Speak now", action: startApply)
+                }
             case .connecting:
                 ctaButton(title: "Connecting…", enabled: false, action: {})
             case .recording:
@@ -652,14 +680,32 @@ struct LessonView: View {
                 .font(Typography.headline)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .noumMinimumTouchTarget()
+                .padding(.vertical, Spacing.xs)
                 .background(
-                    enabled ? AppColor.brandBlue : Color.secondary.opacity(0.4),
-                    in: Capsule()
+                    enabled ? AppColor.coachingInk : Color.secondary.opacity(0.4),
+                    in: Capsule(style: .continuous)
                 )
         }
+        .buttonStyle(.pressable)
         .disabled(!enabled)
         .accessibilityIdentifier("lesson.cta")
+    }
+
+    private func openAppSettingsAfterApplyIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speech.connectionError = nil
+        openURL(url)
+        #endif
+    }
+
+    private func leaveLesson() {
+        if !navigationPath.isEmpty {
+            navigationPath.removeLast()
+        } else {
+            dismiss()
+        }
     }
 
     // MARK: - Step transitions
@@ -917,7 +963,7 @@ struct LessonView: View {
         }
         if reduceMotion { update() }
         else {
-            withAnimation(.snappySpring, update)
+            withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false), update)
         }
     }
 
@@ -944,7 +990,7 @@ struct LessonView: View {
 
         if reduceMotion { didShowSummary = true }
         else {
-            withAnimation(.bouncySpring) {
+            withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
                 didShowSummary = true
             }
         }
@@ -954,61 +1000,81 @@ struct LessonView: View {
 
     private var lessonSummary: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(passedHeadline)
-                    .font(Typography.screenTitle)
-                    .foregroundStyle(.primary)
-                Text(passedSubhead)
-                    .font(Typography.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .center, spacing: Spacing.md) {
+                NoumWaveformMark(state: .earned, tint: lessonHeroTint)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(passedHeadline)
+                        .font(Typography.screenTitle)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text(lesson.title)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+            NoumEvidenceCard(
+                status: summaryOutcome.passed ? .verified : .needsMore,
+                title: summaryOutcome.passed ? "Spoken evidence accepted" : "No practice pass added",
+                detail: passedSubhead,
+                source: summaryOutcome.passed
+                    ? "Based on the lesson checks and final spoken rep."
+                    : "Progress changes only after the lesson criteria are met."
+            )
+
+            practicePassProgress
+
+            if progressUpdate?.earnsXP == true {
+                NoumRewardPill(kind: .xp(summaryEarnedXP))
             }
 
-            practicePassRow
-
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Use it live", systemImage: "arrow.up.right")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.brandBlue)
-                Text(lesson.transferPrompt)
-                    .font(Typography.body)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+            NoumSurface(.quiet) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Label("Use it live", systemImage: "arrow.up.right")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(lessonHeroTint)
+                    Text(lesson.transferPrompt)
+                        .font(Typography.body)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-
-            Spacer()
 
             Button {
-                navigationPath.removeLast(navigationPath.count == 0 ? 0 : 1)
-                dismiss()
+                leaveLesson()
             } label: {
                 Text("Back to lessons")
                     .font(Typography.headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(AppColor.brandBlue, in: Capsule())
+                    .noumMinimumTouchTarget()
+                    .padding(.vertical, Spacing.xs)
+                    .background(AppColor.coachingInk, in: Capsule(style: .continuous))
             }
+            .buttonStyle(.pressable)
             .accessibilityIdentifier("lesson.summary.continue")
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.top, Spacing.lg)
-        .padding(.bottom, Spacing.lg)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("lesson.summary")
     }
 
-    private var passedHeadline: String {
-        let outcome = LessonOutcome(
+    private var summaryOutcome: LessonOutcome {
+        LessonOutcome(
             lessonID: lesson.id,
             stepResults: stepResults,
             xpEarned: 0,
             applyEvidence: applyEvidence
         )
-        if outcome.passed { return "Practice complete" }
+    }
+
+    private var summaryEarnedXP: Int {
+        guard progressUpdate?.earnsXP == true else { return 0 }
+        return LessonXP.xp(for: summaryOutcome)
+    }
+
+    private var passedHeadline: String {
+        if summaryOutcome.passed { return "Practice complete" }
         return "Keep working the move"
     }
 
@@ -1022,14 +1088,15 @@ struct LessonView: View {
             .lessonSummaryLine(title: lesson.title)
     }
 
-    private var practicePassRow: some View {
+    private var practicePassProgress: some View {
         let progress = LessonProgressPresentation(completedPasses: lessonStore.practicePassCount(for: lesson.id))
-        return HStack(spacing: 6) {
-            ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
-                Image(systemName: i < progress.completedPasses ? "checkmark.seal.fill" : "circle")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(i < progress.completedPasses ? AppColor.brandBlue : Color.secondary.opacity(0.35))
-            }
+        return NoumSurface(.quiet) {
+            NoumProgressTrack(
+                value: Double(progress.completedPasses) / Double(LessonStore.masteryPassCap),
+                label: "Spaced practice rounds",
+                valueLabel: progress.fractionText,
+                tint: lessonHeroTint
+            )
         }
         .accessibilityLabel(progress.accessibilityLabel)
     }

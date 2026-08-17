@@ -116,6 +116,8 @@ jobs:
         run: ./scripts/release-materialize-ci-config.sh
       - name: Build Release, inspect bundle, and run unit suite
         run: ./scripts/release-xcode-ci.sh
+      - name: Smoke private-beta feedback route
+        run: ./scripts/release-beta-feedback-ui-smoke.sh
       - name: Remove materialized plist secrets
         if: always()
         run: ./scripts/release-materialize-ci-config.sh --clean

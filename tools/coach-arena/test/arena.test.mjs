@@ -479,6 +479,50 @@ test('finalizer: requested metric answers keep their numbers', () => {
   assert.equal(result.changed, false);
 });
 
+test('production surface: information-only definition strips an appended drill and question', () => {
+  const fixture = JSON.parse(readFileSync(
+    join(rootDir, 'fixtures', 'gold', '53-cadence-definition.json'),
+    'utf8',
+  ));
+  const raw = 'Cadence is the pattern of pace, rhythm, sentence length, and pauses that shapes how speech moves. Now try one rep. What changed?';
+  const result = productionSurfaceReplyForFixture(raw, fixture);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['wrongQuestion']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.professionalContractFallback');
+  assert.equal(result.text, 'Cadence is the pattern of pace, rhythm, sentence length, and pauses that shapes how speech moves and where emphasis lands.');
+  assert.doesNotMatch(result.text, /try one rep|what changed|\?$/i);
+});
+
+test('production surface: direct information-only answer ships unchanged', () => {
+  const fx = baseFx({
+    category: 'craft-knowledge',
+    turnDepth: 'groundedRead',
+    userTurn: 'Tell me about communication clarity.',
+  });
+  const raw = 'Communication clarity means the listener can identify the main point, understand how the support connects, and know what response or decision is needed.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+});
+
+test('production surface: requested benchmark keeps the authorized direct answer and removes forced work', () => {
+  const fx = baseFx({
+    category: 'craft-benchmark',
+    turnDepth: 'groundedRead',
+    userTurn: 'What is a good pace for a keynote?',
+  });
+  const raw = 'For most keynotes, about 120–150 words per minute is a useful starting range, not a universal target; adjust for the audience. Now practise it once. What changed?';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['wrongQuestion']);
+  assert.match(result.text, /120–150 words per minute/);
+  assert.match(result.text, /not a universal target/);
+  assert.doesNotMatch(result.text, /practise|what changed|\?$/i);
+});
+
 test('production surface: cold-start product jargon falls back before user display', () => {
   const fx = baseFx({
     category: 'cold-start',

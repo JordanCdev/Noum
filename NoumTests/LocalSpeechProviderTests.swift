@@ -69,6 +69,22 @@ struct LocalSpeechProviderTests {
         )
     }
 
+    @MainActor
+    @Test func speechAuthorizationDenialRoutesToSettingsWithoutRetrying() {
+        let recognizer = SpeechRecognizerViewModel(preloadOnInit: false)
+        let error = LocalSpeechError.authorizationDenied
+
+        #expect(recognizer.recordingIssue(for: error) == .speechRecognitionDenied)
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: recognizer.recordingIssue(for: error),
+            message: recognizer.userFacingRecordingError(for: error, started: false)
+        )
+        #expect(presentation.title == "Speech Recognition is off")
+        #expect(presentation.detail.contains("Settings"))
+        #expect(presentation.recovery == .openSettings)
+        #expect(presentation.recovery != .retry)
+    }
+
     /// One owner for what a failure means. A surface may render it in its own
     /// register, but none may offer a retry for a cause a retry cannot clear —
     /// that is the loop this mapping exists to prevent.
@@ -84,6 +100,12 @@ struct LocalSpeechProviderTests {
                 issue: .cloudProcessingDisabled,
                 message: "Cloud processing is off."
             ).recovery == .grantCloudConsent
+        )
+        #expect(
+            SpeechRecordingIssuePresentation.make(
+                issue: .speechRecognitionDenied,
+                message: "Speech recognition access is off."
+            ).recovery == .openSettings
         )
         #expect(
             SpeechRecordingIssuePresentation.make(
@@ -191,6 +213,18 @@ struct LocalSpeechProviderTests {
     }
 
     #if DEBUG
+    @Test func speechAuthorizationDeniedFixtureKeepsTheTypedCause() async {
+        let provider = UITestSpeechAuthorizationDeniedTranscriptionProvider()
+        do {
+            _ = try await provider.startSession(config: config)
+            Issue.record("The authorization-denied fixture unexpectedly opened a session")
+        } catch let error as LocalSpeechError {
+            #expect(error == .authorizationDenied)
+        } catch {
+            Issue.record("Unexpected fixture error: \(error)")
+        }
+    }
+
     @Test func unsupportedLocaleUIFixtureUsesTheConfiguredLocaleAndLocalRoute() async {
         let provider = UITestUnsupportedLocaleTranscriptionProvider()
         let spanishConfig = TranscriptionConfig(

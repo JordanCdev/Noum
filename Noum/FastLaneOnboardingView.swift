@@ -1,15 +1,18 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// Permissionless first-value path. It captures two bounded choices, runs one
-/// offline written rehearsal, and returns a structure-only read. It never
-/// creates a PracticeSession or enters speech-derived progress systems.
+/// Permissionless first value. The two setup choices are deliberately split
+/// across separate screens; the resulting read remains structure-only and
+/// never creates a spoken `PracticeSession`.
 @available(iOS 17.0, macOS 12.0, *)
 struct FastLaneOnboardingView: View {
-    private enum Phase {
-        case choices
+    private enum Phase: Int {
+        case context
+        case challenge
         case exercise
         case result
+
+        var step: Int { rawValue + 1 }
     }
 
     @ObservedObject private var profileStore: CoachingProfileStore
@@ -40,7 +43,7 @@ struct FastLaneOnboardingView: View {
         let draft = profileStore.onboardingDraft
         _selectedContext = State(initialValue: draft?.speakingContext)
         _selectedChallenge = State(initialValue: draft?.speakingChallenge)
-        _phase = State(initialValue: draft == nil ? .choices : .exercise)
+        _phase = State(initialValue: draft == nil ? .context : .exercise)
     }
 
     var body: some View {
@@ -48,11 +51,14 @@ struct FastLaneOnboardingView: View {
             AppColor.screenBackground.ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
                     header
+
                     switch phase {
-                    case .choices:
-                        choicesContent
+                    case .context:
+                        contextContent
+                    case .challenge:
+                        challengeContent
                     case .exercise:
                         exerciseContent
                     case .result:
@@ -61,7 +67,7 @@ struct FastLaneOnboardingView: View {
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.lg)
-                .padding(.bottom, Spacing.lg)
+                .padding(.bottom, Spacing.xxl)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -69,11 +75,28 @@ struct FastLaneOnboardingView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(phase == .result ? "FIRST VALUE" : "START IN UNDER A MINUTE")
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                if phase != .context && phase != .result {
+                    NoumIconButton(
+                        systemName: "chevron.left",
+                        accessibilityLabel: "Back",
+                        action: goBack
+                    )
+                }
+
+                Spacer(minLength: 0)
+
+                NoumWaveformMark(
+                    state: .idle,
+                    size: phase == .result ? 64 : 48
+                )
+            }
+
+            Text(phase == .result ? "YOUR FIRST READ" : "A QUICK START")
                 .font(Typography.micro.weight(.bold))
                 .tracking(0.9)
-                .foregroundStyle(AppColor.brandBlue)
+                .foregroundStyle(AppColor.textSecondary)
                 .accessibilityIdentifier(phase == .result ? "fastLane.result" : "fastLane.stage")
 
             Text(headerTitle)
@@ -85,33 +108,43 @@ struct FastLaneOnboardingView: View {
                 .font(Typography.body)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if phase != .result {
+                NoumProgressTrack(
+                    value: Double(phase.step) / 3,
+                    label: "Quick start",
+                    valueLabel: "Step \(phase.step) of 3",
+                    tint: AppColor.coachingInk
+                )
+            }
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var headerTitle: String {
         switch phase {
-        case .choices: return "Choose one real communication goal."
-        case .exercise: return "Try one written rehearsal."
-        case .result: return "You have a useful first move."
+        case .context: return "Where should speaking feel easier?"
+        case .challenge: return "What gets in your way most?"
+        case .exercise: return "Try one written rep."
+        case .result: return "One useful move, honestly framed."
         }
     }
 
     private var headerSubtitle: String {
         switch phase {
-        case .choices:
-            return "No microphone or cloud processing yet. Pick where communication should feel easier and what to work on first."
+        case .context:
+            return "Choose the situation that matters now."
+        case .challenge:
+            return "Pick one pattern. You can change this later."
         case .exercise:
-            return "Write the response you would want to say. Noum will read its shape, not pretend to hear your delivery."
+            return "Write what you would say. Noum reads the answer's shape—not your delivery."
         case .result:
-            return "The communication coach that only tells you what it can prove. Your next proof is spoken and always starts with your tap."
+            return "This is an early structure signal. A spoken rep is needed before Noum can assess pace, fillers, pauses, or delivery."
         }
     }
 
-    private var choicesContent: some View {
+    private var contextContent: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             optionSection(
-                title: "Where should this help?",
                 options: SpeakingContext.allCases,
                 selectedID: selectedContext?.id,
                 titleFor: \SpeakingContext.title,
@@ -119,8 +152,15 @@ struct FastLaneOnboardingView: View {
                 accessibilityPrefix: "fastLane.context"
             ) { selectedContext = $0 }
 
+            primaryButton(title: "Continue", action: continueFromContext)
+                .disabled(selectedContext == nil)
+                .accessibilityIdentifier("fastLane.contextContinue")
+        }
+    }
+
+    private var challengeContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             optionSection(
-                title: "What should feel easier?",
                 options: SpeakingChallenge.allCases,
                 selectedID: selectedChallenge?.id,
                 titleFor: \SpeakingChallenge.title,
@@ -128,28 +168,16 @@ struct FastLaneOnboardingView: View {
                 accessibilityPrefix: "fastLane.challenge"
             ) { selectedChallenge = $0 }
 
-            if let saveError {
-                Text(saveError)
-                    .font(Typography.caption)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("fastLane.error")
-            }
+            errorMessage
 
-            Button(action: beginExercise) {
-                Text("Start written rehearsal")
-                    .font(Typography.headline)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AppColor.brandBlue)
-            .disabled(selectedContext == nil || selectedChallenge == nil)
-            .accessibilityIdentifier("fastLane.begin")
-            .accessibilityHint("Opens one permissionless written communication exercise.")
+            primaryButton(title: "Start written rep", action: beginExercise)
+                .disabled(selectedChallenge == nil)
+                .accessibilityIdentifier("fastLane.begin")
+                .accessibilityHint("Opens one permissionless written communication exercise.")
         }
     }
 
     private func optionSection<Option: Identifiable>(
-        title: String,
         options: [Option],
         selectedID: Option.ID?,
         titleFor: KeyPath<Option, String>,
@@ -157,34 +185,34 @@ struct FastLaneOnboardingView: View {
         accessibilityPrefix: String,
         select: @escaping (Option) -> Void
     ) -> some View where Option.ID: Equatable {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(title)
-                .font(Typography.cardLabel)
-                .foregroundStyle(AppColor.textPrimary)
-
+        VStack(spacing: Spacing.sm) {
             ForEach(options) { option in
                 let isSelected = selectedID == option.id
                 Button {
-                    select(option)
+                    CoachHaptic.selectionTap()
+                    withCalmMotion { select(option) }
                 } label: {
-                    HStack(spacing: Spacing.sm) {
+                    HStack(spacing: Spacing.md) {
                         Text(option[keyPath: titleFor])
                             .font(Typography.body.weight(.semibold))
                             .foregroundStyle(AppColor.textPrimary)
+                            .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
+
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(isSelected ? AppColor.brandBlue : AppColor.textSecondary)
+                            .font(.title3)
+                            .foregroundStyle(isSelected ? AppColor.coachingInk : AppColor.neutralReceded)
                             .accessibilityHidden(true)
                     }
                     .padding(.horizontal, Spacing.md)
-                    .frame(minHeight: 52)
+                    .frame(minHeight: 56)
                     .background(
-                        isSelected ? AppColor.brandBlue.opacity(0.08) : AppColor.cardBackground,
+                        isSelected ? AppColor.proQuietSurface : AppColor.cardBackground,
                         in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(isSelected ? AppColor.brandBlue.opacity(0.35) : AppColor.subtleBorder, lineWidth: 1)
+                            .stroke(isSelected ? AppColor.coachingInk : AppColor.subtleBorder, lineWidth: isSelected ? 2 : 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -198,178 +226,207 @@ struct FastLaneOnboardingView: View {
     private var exerciseContent: some View {
         if let context = selectedContext ?? profileStore.onboardingDraft?.speakingContext {
             let prompt = StructuredFirstValueCatalog.prompt(for: context)
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("YOUR MOMENT")
-                        .font(Typography.micro.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(AppColor.brandBlue)
-                    Text(prompt.prompt)
-                        .font(Typography.headline)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                NoumSurface(.standard) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("YOUR MOMENT")
+                            .font(Typography.micro.weight(.bold))
+                            .tracking(0.8)
+                            .foregroundStyle(AppColor.proText)
+                        Text(prompt.prompt)
+                            .font(Typography.headline)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("fastLane.prompt")
 
-                ZStack(alignment: .topLeading) {
-                    if response.isEmpty {
-                        Text("Write at least eight words. Keep it close to what you would actually say.")
-                            .font(Typography.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, 14)
-                            .allowsHitTesting(false)
-                    }
-                    TextEditor(text: $response)
-                        .font(Typography.body)
-                        .focused($responseFocused)
-                        .scrollContentBackground(.hidden)
-                        .padding(Spacing.sm)
-                        .frame(minHeight: 150)
-                        .onChange(of: response) { _, newValue in
-                            if newValue.count > 600 {
-                                response = String(newValue.prefix(600))
-                            }
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ZStack(alignment: .topLeading) {
+                        if response.isEmpty {
+                            Text("Write at least eight words. Keep it close to what you would actually say.")
+                                .font(Typography.body)
+                                .foregroundStyle(AppColor.textTertiary)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, 14)
+                                .allowsHitTesting(false)
                         }
-                        .accessibilityLabel("Your written rehearsal")
-                        .accessibilityHint("Write at least eight words. Your response is evaluated on this screen and is not saved.")
-                        .accessibilityIdentifier("fastLane.response")
-                }
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(AppColor.subtleBorder, lineWidth: 1)
-                )
 
-                HStack {
-                    Text("\(response.count)/600 characters")
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                    Spacer()
-                    Text("Structure only · not saved")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
+                        TextEditor(text: $response)
+                            .font(Typography.body)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .focused($responseFocused)
+                            .scrollContentBackground(.hidden)
+                            .padding(Spacing.sm)
+                            .frame(minHeight: 156)
+                            .onChange(of: response) { _, newValue in
+                                if newValue.count > 600 {
+                                    response = String(newValue.prefix(600))
+                                }
+                            }
+                            .accessibilityLabel("Your written rehearsal")
+                            .accessibilityHint("Write at least eight words. Your response is evaluated on this screen and is not saved.")
+                            .accessibilityIdentifier("fastLane.response")
+                    }
+                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                            .stroke(AppColor.subtleBorder, lineWidth: 1)
+                    )
+
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            characterCount
+                            Spacer()
+                            privacyBoundary
+                        }
+
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            characterCount
+                            privacyBoundary
+                        }
+                    }
                 }
 
-                if let saveError {
-                    Text(saveError)
-                        .font(Typography.caption)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("fastLane.error")
-                }
+                errorMessage
 
-                Button(action: deliverValue) {
-                    Text("Show my structure read")
-                        .font(Typography.headline)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppColor.brandBlue)
-                .disabled(structuredResult(for: prompt) == nil)
-                .accessibilityIdentifier("fastLane.submit")
+                primaryButton(title: "Show my structure read", action: deliverValue)
+                    .disabled(structuredResult(for: prompt) == nil)
+                    .accessibilityIdentifier("fastLane.submit")
             }
-            .onAppear { responseFocused = true }
         } else {
             Text("Choose a context to begin.")
                 .font(Typography.body)
                 .foregroundStyle(AppColor.textSecondary)
-                .onAppear { transition(to: .choices) }
+                .onAppear { transition(to: .context) }
         }
+    }
+
+    private var characterCount: some View {
+        Text("\(response.count)/600 characters")
+            .font(Typography.caption)
+            .foregroundStyle(AppColor.textSecondary)
+    }
+
+    private var privacyBoundary: some View {
+        Text("Structure only · not saved")
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(AppColor.textSecondary)
     }
 
     @ViewBuilder
     private var resultContent: some View {
         if let result {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                resultRow(
-                    label: "What is already working",
-                    text: result.strength,
-                    systemImage: "checkmark.circle.fill",
-                    tint: AppColor.modeAhCounter
-                )
-                resultRow(
-                    label: "One next move",
-                    text: result.nextMove,
-                    systemImage: "arrow.up.right.circle.fill",
-                    tint: AppColor.brandBlue
-                )
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                NoumSurface(.standard) {
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        Label("Early structure signal", systemImage: "text.line.first.and.arrowtriangle.forward")
+                            .font(Typography.caption.weight(.bold))
+                            .foregroundStyle(AppColor.caution)
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Label("Evidence boundary", systemImage: "text.page")
-                        .font(Typography.caption.weight(.bold))
-                        .foregroundStyle(AppColor.textSecondary)
-                    Text("A written rehearsal can show answer shape. A spoken rep later unlocks fillers, pace, pauses, and delivery feedback.")
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(Spacing.md)
-                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-
-                if let saveError {
-                    Text(saveError)
-                        .font(Typography.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("fastLane.error")
+                        resultSection(label: "What is already working", text: result.strength)
+                        Divider()
+                        resultSection(label: "One next move", text: result.nextMove)
+                    }
                 }
 
-                PrimaryCTA(
-                    "Try a 30-second spoken proof",
-                    icon: "waveform.and.mic",
-                    action: startSpokenProof
-                )
-                .disabled(profileStore.onboardingDraft?.canStartSpokenProof != true)
-                .accessibilityIdentifier("fastLane.spokenProof")
-                .accessibilityHint("Opens a short Timed Practice setup. Recording and microphone permission begin only after you choose to start.")
-
-                Button(action: completeSetup) {
-                    Text("Complete my coaching profile")
-                        .font(Typography.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 48)
+                NoumSurface(.quiet) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Label("Evidence boundary", systemImage: "checkmark.shield")
+                            .font(Typography.caption.weight(.bold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text("A written rehearsal can show answer shape. A spoken rep later unlocks fillers, pace, pauses, and delivery feedback.")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .tint(AppColor.brandBlue)
-                .accessibilityIdentifier("fastLane.completeSetup")
-                .accessibilityHint("Opens the full coaching profile setup. Your two choices are kept.")
+
+                errorMessage
+
+                primaryButton(title: "Try a 30-second spoken proof", action: startSpokenProof)
+                    .disabled(profileStore.onboardingDraft?.canStartSpokenProof != true)
+                    .accessibilityIdentifier("fastLane.spokenProof")
+                    .accessibilityHint("Opens a short Timed Practice setup. Recording and microphone permission begin only after you choose to start.")
+
+                secondaryButton(title: "Complete my coaching profile", action: completeSetup)
+                    .accessibilityIdentifier("fastLane.completeSetup")
+                    .accessibilityHint("Opens the full coaching profile setup. Your two choices are kept.")
 
                 Button(action: enterApp) {
                     Text("Explore Noum first")
                         .font(Typography.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .noumMinimumTouchTarget()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(AppColor.textSecondary)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .contentShape(Rectangle())
                 .accessibilityIdentifier("fastLane.enterApp")
                 .accessibilityHint("Opens Noum now. You can finish your coaching profile from Home later.")
             }
         }
     }
 
-    private func resultRow(label: String, text: String, systemImage: String, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            Image(systemName: systemImage)
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(label)
-                    .font(Typography.caption.weight(.bold))
-                    .foregroundStyle(AppColor.textSecondary)
-                Text(text)
-                    .font(Typography.body)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    private func resultSection(label: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(label)
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.textSecondary)
+            Text(text)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var errorMessage: some View {
+        if let saveError {
+            Text(saveError)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.warning)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("fastLane.error")
+        }
+    }
+
+    private func primaryButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.sm) {
+                Text(title)
+                    .font(Typography.headline)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.right")
+                    .font(.headline.weight(.bold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, Spacing.lg)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(AppColor.coachingInk, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private func secondaryButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.coachingInkOnQuiet)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(AppColor.proQuietSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.coachingInk.opacity(0.22), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private func continueFromContext() {
+        guard selectedContext != nil else { return }
+        transition(to: .challenge)
     }
 
     private func beginExercise() {
@@ -445,14 +502,31 @@ struct FastLaneOnboardingView: View {
         ))
     }
 
-    private func transition(to phase: Phase) {
-        if reduceMotion {
-            self.phase = phase
-        } else {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                self.phase = phase
-            }
+    private func goBack() {
+        saveError = nil
+        switch phase {
+        case .context:
+            break
+        case .challenge:
+            transition(to: .context)
+        case .exercise:
+            responseFocused = false
+            transition(to: .challenge)
+        case .result:
+            break
         }
+    }
+
+    private func withCalmMotion(_ updates: @escaping () -> Void) {
+        if reduceMotion {
+            updates()
+        } else {
+            withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false), updates)
+        }
+    }
+
+    private func transition(to phase: Phase) {
+        withCalmMotion { self.phase = phase }
     }
 }
 #endif

@@ -9,14 +9,20 @@ enum CoachPromptBundle {
         rubric: ActiveGoalRubric,
         surface: CoachReplySurface
     ) -> String {
+        let plan = CoachReasoningPass.decisionPlan(for: assessment)
         var lines: [String] = []
         lines.append("")
-        lines.append("COACH JUDGEMENT PASS (typed source of truth)")
-        lines.append("- Turn depth: \(assessment.turnDepth.rawValue).")
-        lines.append("- Surface: \(surface.rawValue).")
-        lines.append("- User ask: \(assessment.questionRestatement)")
-        lines.append("- Direct verdict to verbalise first: \(assessment.directVerdict)")
-        lines.append("- Confidence: \(String(format: "%.2f", assessment.confidence)) (scale claims to this; weak evidence means softer language).")
+        lines.append("COACH DECISION PLAN (PRIVATE; NEVER EXPOSE THESE LABELS)")
+        lines.append("- Situation: \(plan.situation)")
+        lines.append("- Stakes: \(plan.stakes)")
+        lines.append("- Emotion: \(plan.emotion)")
+        lines.append("- Observed behavior: \(plan.observedBehavior)")
+        lines.append("- Exact evidence: \(plan.exactEvidence)")
+        lines.append("- Skill stage: \(plan.skillStage.rawValue)")
+        lines.append("- Chosen intervention: \(plan.chosenIntervention)")
+        lines.append("- Success test: \(plan.successTest)")
+        lines.append("- Evidence confidence is \(confidenceBand(assessment.confidence)); scale certainty to it.")
+        lines.append("- Goal lens: \(rubric.rubric.displayName). This is a training emphasis, not a personality label.")
         if let toneMode = assessment.toneMode {
             lines.append("- Tone mode: \(toneMode.rawValue).")
         }
@@ -25,37 +31,144 @@ enum CoachPromptBundle {
             lines.append("- Repair focus: \(repairFocus). Acknowledge this before prescribing again.")
         }
         if !assessment.evidenceUsed.isEmpty {
-            lines.append("- Evidence to use (translate into spoken behavior; do not copy score/filler/duration clusters verbatim):")
-            for item in assessment.evidenceUsed.prefix(evidenceContextLimit(for: assessment.turnDepth)) {
+            lines.append("- Evidence to use (translate into spoken behavior; private evidence is not surface copy):")
+            for item in assessment.evidenceUsed.prefix(
+                evidenceContextLimit(for: assessment.turnDepth)
+            ) {
                 lines.append("  - \(item)")
             }
         }
-        if !assessment.rubricScores.isEmpty {
-            lines.append("- Rubric: \(rubric.rubric.displayName).")
-            for score in assessment.rubricScores.prefix(6) {
-                lines.append("  - \(score.label): \(String(format: "%.2f", score.score)) confidence \(String(format: "%.2f", score.confidence)).")
-            }
-        }
         if !assessment.missingEvidence.isEmpty {
-            lines.append("- Missing evidence to name when relevant:")
+            lines.append("- Missing evidence to name only when it answers the ask:")
             for item in assessment.missingEvidence.prefix(3) {
                 lines.append("  - \(item)")
             }
         }
         lines.append("- Final action to express as a normal sentence, not a label: \(assessment.nextProofTest)")
+        if let modelLine = plan.modelLine {
+            lines.append("- Demonstration seed: “\(modelLine)” Adapt the content to the user's situation; preserve the communication move.")
+        }
+        if let invitation = plan.invitation {
+            lines.append("- Invitation: \(invitation)")
+        }
+        lines.append(contentsOf: metricAuthorizationLines(for: assessment))
+        lines.append(contentsOf: responseContractLines(for: plan, surface: surface))
         lines.append(contentsOf: universalCoachLines(surface: surface))
         lines.append(contentsOf: instructionLines(for: assessment.turnDepth, surface: surface))
         return lines.joined(separator: "\n")
     }
 
+    static func generalContextBlock(
+        userQuestion: String,
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        recentMoves: [String] = []
+    ) -> String {
+        let plan = CoachReasoningPass.generalDecisionPlan(
+            userQuestion: userQuestion,
+            recentMoves: recentMoves
+        )
+        var lines = [
+            "",
+            "COACH DECISION PLAN (PRIVATE; NEVER EXPOSE THESE LABELS)",
+            "- Situation: \(plan.situation)",
+            "- Stakes: \(plan.stakes)",
+            "- Emotion: \(plan.emotion)",
+            "- Observed behavior: \(plan.observedBehavior)",
+            "- Exact evidence: \(plan.exactEvidence)",
+            "- Skill stage: \(plan.skillStage.rawValue)",
+            "- Chosen intervention: \(plan.chosenIntervention)",
+            "- Success test: \(plan.successTest)",
+            "- General-coaching boundary: make the read about the communication problem in the question, never about the user's unobserved performance."
+        ]
+        if let benchmark = plan.benchmarkAuthorization {
+            lines.append("- Generic benchmark authorization: \(benchmark.promptName) only; range \(benchmark.range).")
+            lines.append("- Benchmark caveat required: \(benchmark.contextCaveat). Never present the range as an exact rule or imply it measures this user.")
+            lines.append("- Personal metric authorization: NONE. Do not invent or recite the user's telemetry.")
+        } else {
+            lines.append("- Metric authorization: NONE. Do not invent or recite personal telemetry or unsolicited generic benchmarks.")
+        }
+        if let modelLine = plan.modelLine {
+            lines.append("- Demonstration seed: “\(modelLine)” Adapt its content; preserve its communication shape.")
+        }
+        lines.append(contentsOf: responseContractLines(for: plan, surface: surface))
+        lines.append(contentsOf: universalCoachLines(surface: surface))
+        lines.append(contentsOf: instructionLines(for: turnDepth, surface: surface))
+        return lines.joined(separator: "\n")
+    }
+
     private static func evidenceContextLimit(for depth: CoachTurnDepth) -> Int {
         switch depth {
-        case .quickMove:
-            return 2
-        case .groundedRead:
-            return 4
-        case .deepAssessment, .trustRepair:
-            return 6
+        case .quickMove: return 2
+        case .groundedRead: return 4
+        case .deepAssessment, .trustRepair: return 6
+        }
+    }
+
+    private static func confidenceBand(_ confidence: Double) -> String {
+        switch confidence {
+        case ..<0.35: return "thin"
+        case ..<0.70: return "forming"
+        default: return "well supported"
+        }
+    }
+
+    private static func metricAuthorizationLines(
+        for assessment: CoachAssessment
+    ) -> [String] {
+        guard let requested = assessment.requestedMetrics,
+              !requested.isEmpty else {
+            return [
+                "- Metric authorization: NONE. Do not mention scores, ratings, WPM, filler counts/rates, duration, percentages, or score trends.",
+                "- The private evidence may contain telemetry. Use it only to choose the behavioural read; never copy its numbers into the answer."
+            ]
+        }
+        let names = requested.map(\.rawValue).joined(separator: ", ")
+        return [
+            "- Metric authorization: \(names). Report only these requested metric kinds and no others.",
+            "- Answer the requested facts directly, then add at most one plain-language implication. Do not add a drill unless the user asks for one."
+        ]
+    }
+
+    private static func responseContractLines(
+        for plan: CoachDecisionPlan,
+        surface: CoachReplySurface
+    ) -> [String] {
+        switch plan.replyPosture {
+        case .presenceOnly:
+            return [
+                "COACH RESPONSE CONTRACT",
+                "- Presence is the complete response: acknowledge what this costs and remove pressure.",
+                "- Stop after one or two natural sentences. No diagnosis, drill, metric, demonstration, or closing question."
+            ]
+        case .requestedMetrics:
+            return [
+                "COACH RESPONSE CONTRACT",
+                "- Answer the exact metric question first in one sentence.",
+                "- Give one behavioural meaning only if it helps. Do not pivot into an exercise or report unrequested telemetry."
+            ]
+        case .informationOnly:
+            if plan.benchmarkAuthorization != nil {
+                return [
+                    "COACH RESPONSE CONTRACT",
+                    "- Answer the generic benchmark question directly with the authorized bounded range and its context caveat.",
+                    "- Use range language such as 'about' or 'starting range'. Never claim an exact, universal, or guaranteed target.",
+                    "- Stop after the answer. No personal diagnosis, demonstration, drill, invitation, or closing question."
+                ]
+            }
+            return [
+                "COACH RESPONSE CONTRACT",
+                "- Answer the legitimate craft-knowledge question directly and clearly.",
+                "- Stop when the explanation is complete. Do not force a diagnosis, demonstration, drill, invitation, or closing question."
+            ]
+        case .coachedAttempt:
+            return [
+                "COACH RESPONSE CONTRACT",
+                "- Write one natural coaching turn in this order: acknowledge briefly; give the specific read; model better wording or delivery; invite one attempt.",
+                "- The demonstration is mandatory: include one short quoted line OR one precise delivery model the user can imitate now.",
+                "- Invite exactly one attempt. Do not add a second exercise, option menu, score recap, or generic encouragement.",
+                "- Keep it \(surface == .live ? "speakable in one breath" : "compact enough to read without scrolling")."
+            ]
         }
     }
 
@@ -64,7 +177,7 @@ enum CoachPromptBundle {
         return [
             "- Spoken-coach rule: do not use report labels, section labels, raw scaffold names, or dashboard-style rows such as 'What the numbers show', 'Filler rate:', 'Next rep:', 'Read:', 'Move:', or 'Target:'.",
             "- Do not use colon-led coaching labels such as 'Real read:', 'The specific thing:', 'Try this next:', or 'Proof test:'. Make those ideas normal sentences.",
-            "- Translate metrics into behaviour. Use a number only when it changes the read; never dump pace, pause rate, score, and fillers as a list.",
+            "- Metrics are opt-in. Unless the private decision plan explicitly authorizes named personal metrics or one requested generic benchmark, do not surface any score, rating, WPM, filler count/rate, duration, percentage, or numeric trend.",
             "- Cold start rule: when there is no baseline or no rated sessions, do not open with 'No baseline yet', do not name internal practice modes, and do not set filler or score targets. Ask for one plain 60-second sample on something the user knows well.",
             "- On voice or goal-change turns, do not use raw score, filler, or duration readouts as proof. Translate progress into coach speech, such as 'your authoritative work is already landing,' then ask what changed.",
             "- Treat a voice or goal as a training emphasis, never an identity or personality. A change reweights future practice; it does not make the user's prior delivery fake, inauthentic, or wasted, and it does not erase observed evidence.",

@@ -295,7 +295,7 @@ so a report ties to an exact state of the coach.
 
 ## Fixtures
 
-52 gold fixtures in [`fixtures/gold/`](fixtures/gold) + 11 multi-turn
+53 gold fixtures in [`fixtures/gold/`](fixtures/gold) + 11 multi-turn
 conversations expanded from [`synthetic/conversations.data.mjs`](synthetic/conversations.data.mjs).
 Each carries `userTurn`, `priorChatTurns`, `goal`, `evidence`, `memoryState`,
 `emotionalSignal`, `expectedCoachMove`, `badAnswerExample`,

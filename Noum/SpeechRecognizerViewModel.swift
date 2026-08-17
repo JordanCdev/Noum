@@ -87,6 +87,9 @@ enum RecordingLifecycleState: Equatable, Sendable {
 /// actions without parsing provider strings or retaining provider errors.
 enum SpeechRecordingIssue: Equatable, Sendable {
     case unsupportedOnDeviceLocale(String)
+    /// Apple Speech authorization was declined. Retrying the provider cannot
+    /// change this system permission, so practice must route to Settings.
+    case speechRecognitionDenied
     /// Consent is off and no on-device route could stand in. A retry cannot
     /// change this, so surfaces must offer the consent decision instead.
     case cloudProcessingDisabled
@@ -103,6 +106,9 @@ enum SpeechRecordingIssue: Equatable, Sendable {
         case retry
         /// Consent is reversible in place; offer the decision, then retry.
         case grantCloudConsent
+        /// A system permission is off. Open the app's Settings page instead of
+        /// starting the same guaranteed-to-fail provider request again.
+        case openSettings
         /// Nothing on this screen can change the cause. Leave the rep.
         case leaveRep
     }
@@ -122,9 +128,6 @@ struct SpeechRecordingIssuePresentation: Equatable, Sendable {
     ///   - issue: the typed failure, or nil for an untyped provider error.
     ///   - message: the recognizer's user-facing string for the underlying error.
     ///
-    /// A denied microphone is deliberately not modelled here: it stays a
-    /// retry, because the surfaces that can route to iOS Settings resolve it
-    /// through their own retry action rather than by leaving the rep.
     static func make(
         issue: SpeechRecordingIssue?,
         message: String
@@ -135,6 +138,12 @@ struct SpeechRecordingIssuePresentation: Equatable, Sendable {
                 title: "This language isn't available offline",
                 detail: "\(message) Choose another Practice language in Settings or continue on a device that supports it.",
                 recovery: .leaveRep
+            )
+        case .speechRecognitionDenied:
+            return SpeechRecordingIssuePresentation(
+                title: "Speech Recognition is off",
+                detail: message,
+                recovery: .openSettings
             )
         case .cloudProcessingDisabled:
             return SpeechRecordingIssuePresentation(
@@ -258,10 +267,10 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Smoothed live audio amplitude envelope, 0.0–1.0, updated on the main
     /// actor at ~30Hz while recording. Driven by the input-tap RMS of the
-    /// mic buffer. Consumers (e.g. `NoumCharacter(audioLevel:)`) read this
-    /// to render real-time presence — the orb visibly tracking the user's
-    /// voice. Resets to 0 between sessions so a teardown doesn't leave the
-    /// orb stuck at the last live value.
+    /// mic buffer. Consumers (for example `NoumWaveformMark`'s `level` input)
+    /// read this to render real-time presence — the waveform visibly tracks
+    /// the user's voice. Resets to 0 between sessions so teardown cannot
+    /// leave the mark stuck at the last live value.
     @Published var audioLevel: Double = 0.0
 
     /// M26 — per-session vocal-energy accumulator. Captures raw RMS
@@ -452,6 +461,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_UNSUPPORTED_LOCALE") {
             return UITestUnsupportedLocaleTranscriptionProvider()
+        }
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_SPEECH_AUTHORIZATION_DENIED") {
+            return UITestSpeechAuthorizationDeniedTranscriptionProvider()
         }
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_TRANSCRIPTION_START_FAILURE") {
             return UITestUnavailableTranscriptionProvider()
@@ -1191,6 +1203,10 @@ class SpeechRecognizerViewModel: ObservableObject {
             return .cloudProcessingDisabled
         }
         if let localError = error as? LocalSpeechError,
+           localError == .authorizationDenied {
+            return .speechRecognitionDenied
+        }
+        if let localError = error as? LocalSpeechError,
            case .onDeviceRecognitionUnavailable(let locale) = localError {
             return .unsupportedOnDeviceLocale(locale)
         }
@@ -1650,6 +1666,18 @@ struct UITestUnsupportedLocaleTranscriptionProvider: TranscriptionProvider {
 
     func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
         throw LocalSpeechError.onDeviceRecognitionUnavailable(config.languageCode)
+    }
+}
+
+/// Deterministic UI-test seam for a user-declined Apple Speech permission.
+/// The production provider emits this exact typed error after authorization
+/// lookup; the fixture proves practice offers Settings rather than retrying.
+struct UITestSpeechAuthorizationDeniedTranscriptionProvider: TranscriptionProvider {
+    let name = "Speech-authorization UI test provider"
+    let identifier = TranscriptionProviderID.local.rawValue
+
+    func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
+        throw LocalSpeechError.authorizationDenied
     }
 }
 

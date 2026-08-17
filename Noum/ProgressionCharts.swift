@@ -64,55 +64,58 @@ struct ProgressionChartsCard: View {
         if dataPoints.count < ReviewDevelopmentChartEvidence.minimumVisibleSessionCount {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                seriesPicker
-                metricContent
-                if shouldShowStatsRow {
-                    statsRow
+            NoumSurface(.standard) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    header
+                    metricNarrative
+                    seriesPicker
+                    metricVisualisation
+                    if shouldShowStatsRow {
+                        Divider()
+                        statsRow
+                    }
                 }
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            )
-            .scaleEffect(hasAppeared ? 1 : 0.97)
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
-                // Respect Reduce Motion: appear instantly with no scale pop.
                 if shouldReduceMotion {
                     hasAppeared = true
                 } else {
-                    withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
+                    withAnimation(
+                        NoumMotion.animation(for: .calm, reduceMotion: false)
+                            .delay(0.05)
+                    ) {
+                        hasAppeared = true
+                    }
                 }
             }
+            .accessibilityIdentifier("progressionCharts.card")
         }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: AppColor.coachingInk,
+                size: 36
+            )
+            .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 3) {
                 Text("How you're improving")
                     .font(Typography.cardTitle)
                     .foregroundStyle(.primary)
 
-                Text("\(dataPoints.count) reps in the last 30 days")
+                Text("Based on \(dataPoints.count) measured reps in the last 30 days")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
-
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(Typography.caption.weight(.bold))
-                .foregroundStyle(AppColor.brandBlue)
-                .frame(width: 34, height: 34)
-                .background(AppColor.brandBlue.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            Spacer(minLength: 0)
         }
     }
 
@@ -188,7 +191,36 @@ struct ProgressionChartsCard: View {
     // MARK: - Chart
 
     @ViewBuilder
-    private var metricContent: some View {
+    private var metricNarrative: some View {
+        let series = selectedSeries
+        let points = dataPoints.filter { series.hasValue(in: $0) }
+
+        if points.count < 2 {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "ellipsis.circle")
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("More evidence needed")
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text("Run two measured reps before Noum interprets \(series.shortLabel.lowercased()).")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            let model = ChartPresentationModel(series: series, points: points)
+            chartRead(model: model)
+        }
+    }
+
+    @ViewBuilder
+    private var metricVisualisation: some View {
         let series = selectedSeries
         let points = dataPoints.filter { series.hasValue(in: $0) }
 
@@ -196,13 +228,10 @@ struct ProgressionChartsCard: View {
             insufficientMetricCard(for: series)
         } else {
             let model = ChartPresentationModel(series: series, points: points)
-            VStack(alignment: .leading, spacing: 12) {
-                chartRead(for: series, model: model)
-                if model.shouldShowTrendLine {
-                    chart(for: series, model: model)
-                } else {
-                    baselineProgressPanel(for: series, model: model)
-                }
+            if model.shouldShowTrendLine {
+                chart(for: series, model: model)
+            } else {
+                baselineProgressPanel(for: series, model: model)
             }
         }
     }
@@ -418,13 +447,12 @@ struct ProgressionChartsCard: View {
         .background(AppColor.tagBackground.opacity(0.54), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
-    private func chartRead(for series: ChartSeries, model: ChartPresentationModel) -> some View {
+    private func chartRead(model: ChartPresentationModel) -> some View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: model.readIcon)
                 .font(Typography.caption.weight(.bold))
                 .foregroundStyle(model.readTint)
-                .frame(width: 28, height: 28)
-                .background(model.readTint.opacity(0.11), in: Circle())
+                .frame(width: 28, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.readTitle)
@@ -439,9 +467,8 @@ struct ProgressionChartsCard: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(series.tint.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .padding(.vertical, Spacing.xxs)
+        .accessibilityElement(children: .combine)
     }
 
     private func baselineProgressPanel(for series: ChartSeries, model: ChartPresentationModel) -> some View {

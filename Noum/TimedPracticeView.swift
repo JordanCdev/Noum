@@ -835,6 +835,199 @@ struct TargetedRetryPresentation: Equatable {
     }
 }
 
+/// One observable instruction owns the live rep. Retry and drill provenance
+/// take precedence; a stated voice goal may shape the fallback, but never
+/// creates a second banner or a second target beside the active intervention.
+enum TimedLiveRepFocus {
+    static func target(
+        retryFocus: String?,
+        drillConstraint: String?,
+        styleGoal: SpeakingStyleGoal?,
+        pressureEnabled: Bool
+    ) -> String {
+        if let retryFocus = bounded(retryFocus) { return retryFocus }
+        if let drillConstraint = bounded(drillConstraint) { return drillConstraint }
+
+        if let styleGoal {
+            switch styleGoal {
+            case .authoritative:
+                return "State the answer first. Support it once."
+            case .warm:
+                return "Answer directly. Keep the pace conversational."
+            case .concise:
+                return "Answer first. Give one reason. Then stop."
+            case .persuasive:
+                return "Make one claim. Give one proof point."
+            case .executive:
+                return "Lead with the decision. Name the implication."
+            case .storytelling:
+                return "Set the scene. Turn once. Land the point."
+            }
+        }
+
+        if pressureEnabled {
+            return "Commit to your opening. One clear reason."
+        }
+        return "Answer first. Give one reason. Then stop."
+    }
+
+    private static func bounded(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(180))
+    }
+}
+
+/// Presentation-only live stage. The microphone envelope remains owned by
+/// `SpeechRecognizerViewModel`; this view only turns its 0...1 level into the
+/// responsive trace. A ScrollView is intentional so accessibility text sizes
+/// never push the end-session control off screen (the control stays in the
+/// parent's safe-area bar).
+@available(iOS 17.0, macOS 12.0, *)
+struct TimedLiveFocusStage: View {
+    let question: String
+    let target: String
+    let recordingLabel: String
+    let clockText: String?
+    let audioLevel: Double
+    let isQuiet: Bool
+    let isInFinalSeconds: Bool
+    let transientCue: String?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: Spacing.xl) {
+                statusRow
+
+                if !question.isEmpty {
+                    Text("\u{201C}\(question)\u{201D}")
+                        .font(Typography.figtree(size: 25, weight: .heavy, relativeTo: .title))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("timedPractice.prompt")
+                }
+
+                targetCard
+
+                GeometryReader { geometry in
+                    let scale = min(1, geometry.size.width / Self.liveTraceWidth)
+                    VoiceTrace(
+                        variant: .live,
+                        level: CGFloat(min(max(audioLevel, 0), 1)),
+                        isQuiet: isQuiet
+                    )
+                    .frame(width: Self.liveTraceWidth)
+                    .scaleEffect(scale)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityHidden(true)
+                }
+                .frame(height: 126)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Live microphone waveform")
+                .accessibilityValue(
+                    isQuiet
+                        ? "No voice detected recently. Recording continues."
+                        : "Responding to your voice."
+                )
+
+                if let transientCue {
+                    Text(transientCue)
+                        .font(Typography.caption)
+                        .foregroundStyle(.white.opacity(0.72))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("timedPractice.cue")
+                }
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.top, Spacing.xs)
+            .padding(.bottom, Spacing.xxl)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .animation(
+            NoumMotion.animation(for: .calm, reduceMotion: reduceMotion),
+            value: transientCue
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timedPractice.liveFocus")
+    }
+
+    static var liveTraceWidth: CGFloat {
+        let variant = VoiceTraceVariant.live
+        let count = CGFloat(variant.heights.count)
+        return count * variant.barWidth + max(0, count - 1) * variant.barSpacing
+    }
+
+    private var statusRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                recordingChip
+                Spacer(minLength: Spacing.sm)
+                clock
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                recordingChip
+                clock
+            }
+        }
+    }
+
+    private var recordingChip: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+            Text(recordingLabel)
+                .font(Typography.micro)
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.82))
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.08), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recording. \(recordingLabel.replacingOccurrences(of: "REC \u{00B7} ", with: "").capitalized).")
+    }
+
+    @ViewBuilder
+    private var clock: some View {
+        if let clockText {
+            Text(clockText)
+                .font(Typography.monoDigit(Typography.caption.weight(.bold)))
+                .foregroundStyle(isInFinalSeconds ? AppColor.caution : .white.opacity(0.85))
+                .accessibilityLabel(isInFinalSeconds ? "Final seconds. \(clockText)" : clockText)
+        }
+    }
+
+    private var targetCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("One target")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(AppColor.proLight)
+            Text(target)
+                .font(Typography.headline)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("timedPractice.target")
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
@@ -1010,7 +1203,6 @@ struct TimedPracticeView: View {
     @State private var milestoneScale: CGFloat = 1.0
     @State private var breathePhase: Bool = false
     @State private var recPulse: Bool = false
-    @State private var showCelebration: Bool = false
 
     private var timingPolicy: TimedPracticeTimingPolicy {
         speechProject.map(TimedPracticeTimingPolicy.project) ?? .standard
@@ -1023,10 +1215,6 @@ struct TimedPracticeView: View {
             return thinkingCountdown > 5 ? "Pressure mode — think fast" : thinkingCountdown > 2 ? "Commit to your opening" : "Go."
         }
         return thinkingCountdown > 10 ? "Breathe and think" : thinkingCountdown > 5 ? "Plan your opening" : "Almost ready..."
-    }
-
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
     }
 
     private var targetedRetryPresentation: TargetedRetryPresentation? {
@@ -1068,13 +1256,6 @@ struct TimedPracticeView: View {
                 if phase != .setup {
                     bottomBar
                 }
-            }
-        }
-        .overlay {
-            if showCelebration {
-                celebrationOverlay
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
             }
         }
         .overlay(alignment: .center) {
@@ -1990,6 +2171,14 @@ struct TimedPracticeView: View {
                 action: { showCloudProcessingConsent = true }
             )
             recordingIssueExitAction
+        case .openSettings:
+            recordingIssuePrimaryAction(
+                title: "Open Settings",
+                icon: "gearshape.fill",
+                identifier: "timedPractice.recordingIssue.openSettings",
+                action: openSettingsAfterRecordingIssue
+            )
+            recordingIssueExitAction
         case .retry:
             recordingIssuePrimaryAction(
                 title: speechVM.microphonePermissionState == .denied
@@ -2570,16 +2759,16 @@ struct TimedPracticeView: View {
             }
         }
         .overlay(alignment: .top) {
-            // Real-time positive feedback — pulses when the engine catches
-            // a rhetorical move. Self-contained: lifecycle is bound to the
-            // speech VM's recording flag, so it resets between sessions.
-            // styleGoal makes the chip's subtext goal-aware when the device
-            // aligns with the user's chosen voice (e.g. "toward your warm voice").
-            LiveEloquenceHUD(
-                speechVM: speechVM,
-                styleGoal: coachingProfileStore.profile?.chosenStyleGoal
-            )
+            // The default stage shows exactly one target. Users who explicitly
+            // enable transcript or camera coaching retain the advanced live
+            // detection chip; it never competes with the default speaking cue.
+            if isFullScreenCameraActive || showLiveTranscript {
+                LiveEloquenceHUD(
+                    speechVM: speechVM,
+                    styleGoal: coachingProfileStore.profile?.chosenStyleGoal
+                )
                 .padding(.top, 4)
+            }
         }
     }
 
@@ -2804,12 +2993,11 @@ struct TimedPracticeView: View {
         VStack(spacing: 0) {
             // Premium header with status
             HStack(alignment: .center, spacing: 12) {
-                NoumCharacter(
-                    mood: speechVM.isRecording ? .listening : .calm,
+                NoumWaveformMark(
+                    state: speechVM.isRecording ? .listening : .idle,
+                    level: speechVM.audioLevel,
                     tint: AppColor.brandBlue,
-                    size: 36,
-                    audioLevel: speechVM.audioLevel,
-                    stage: characterStage
+                    size: 36
                 )
                 .accessibilityHidden(true)
 
@@ -2981,72 +3169,16 @@ struct TimedPracticeView: View {
     // MARK: - Classic / Immersive Layout
 
     private var speakingImmersiveLayout: some View {
-        // V4.6 recording surface (258:981 / silence 258:1195 / final seconds
-        // 258:1252). The prompt stays dominant for the whole rep; the trace
-        // renders the microphone's live read; exactly one quiet cue speaks.
-        VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                recordingStatusChip
-                Spacer(minLength: Spacing.sm)
-                if let clock = recordingClockText {
-                    Text(clock)
-                        .font(Typography.monoDigit(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline)))
-                        .foregroundStyle(isInFinalSeconds ? AppColor.caution : .white.opacity(0.85))
-                        .accessibilityLabel(Text(isInFinalSeconds ? "\(remainingSeconds) seconds left" : clock))
-                }
-            }
-            .padding(.top, Spacing.xs)
-
-            // V4.6 — the prompt stays dominant for the whole rep (frozen
-            // frame 258:981). The legacy hide-prompt preference still
-            // governs the transcript/camera layouts, not this stage.
-            if !question.isEmpty {
-                Text("\u{201C}\(question)\u{201D}")
-                    .font(Typography.figtree(size: 25, weight: .heavy, relativeTo: .title))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, Spacing.xxxl)
-                    .accessibilityIdentifier("timedPractice.prompt")
-            }
-
-            Spacer(minLength: Spacing.lg)
-
-            VoiceTrace(
-                variant: .live,
-                level: CGFloat(speechVM.audioLevel),
-                isQuiet: isSilentStretch
-            )
-            .frame(maxWidth: .infinity)
-
-            Spacer(minLength: Spacing.lg)
-
-            VStack(spacing: Spacing.xs) {
-                Text(recordingCue)
-                    .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
-                    .foregroundStyle(.white.opacity(0.65))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: recordingCue)
-                    .accessibilityIdentifier("timedPractice.cue")
-
-                if showFillerWords && speechVM.fillerWordCount > 0 {
-                    spotlightFillerChip
-                }
-
-                if speechVM.connectionError != nil {
-                    Text("Transcription issue")
-                        .font(.caption2)
-                        .foregroundStyle(.red.opacity(0.6))
-                }
-            }
-            .padding(.horizontal, Spacing.md)
-
-            Spacer(minLength: Spacing.xxl)
-        }
-        .padding(.horizontal, Spacing.xl)
+        TimedLiveFocusStage(
+            question: question,
+            target: liveRepTarget,
+            recordingLabel: recordingModeLabel,
+            clockText: recordingClockText,
+            audioLevel: speechVM.audioLevel,
+            isQuiet: isSilentStretch,
+            isInFinalSeconds: isInFinalSeconds,
+            transientCue: recordingStateCue
+        )
         .onAppear {
             lastVoiceActivityAt = Date()
         }
@@ -3065,30 +3197,25 @@ struct TimedPracticeView: View {
         }
     }
 
-    /// "REC · <context>" — a fixed-format live-status readout (the one
-    /// register where uppercase is allowed). Folds retry/drill/pressure
-    /// context into the chip so no banner has to stack above the prompt.
-    private var recordingStatusChip: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 8, height: 8)
-                .opacity(reduceMotion ? 0.9 : (recPulse ? 1.0 : 0.45))
-                .animation(
-                    reduceMotion ? nil : .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
-                    value: recPulse
-                )
-            Text(recordingModeLabel)
-                .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(.white.opacity(0.8))
+    /// One stable target for the whole capture. Final-seconds and quiet-state
+    /// reassurance live in a separate transient status line; they never replace
+    /// the intervention the user is practising.
+    private var liveRepTarget: String {
+        TimedLiveRepFocus.target(
+            retryFocus: targetedRetryPresentation?.focus,
+            drillConstraint: activeDrill?.constraint,
+            styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
+            pressureEnabled: practiceSettings.pressureModeEnabled
+        )
+    }
+
+    private var recordingStateCue: String? {
+        if isInFinalSeconds { return "Land the close" }
+        if isSilentStretch {
+            return "Quiet is fine. The clock keeps running."
         }
-        .padding(.horizontal, Spacing.sm)
-        .padding(.vertical, 7)
-        .background(Color.white.opacity(0.08), in: Capsule())
-        .onAppear { recPulse = true }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Recording. \(recordingModeLabel.replacingOccurrences(of: "REC · ", with: "").capitalized)."))
+        if speechVM.connectionError != nil { return "Transcription interrupted" }
+        return nil
     }
 
     private var recordingModeLabel: String {
@@ -3122,25 +3249,6 @@ struct TimedPracticeView: View {
         speechVM.isRecording
             && lastVoiceActivityAt != .distantPast
             && Date().timeIntervalSince(lastVoiceActivityAt) > 2.5
-    }
-
-    /// Exactly one quiet cue below the trace. Precedence: final-seconds
-    /// close (act now) → silence reassurance → retry lever → drill
-    /// constraint → timing sublabel.
-    private var recordingCue: String {
-        if isInFinalSeconds {
-            return "Land the close"
-        }
-        if isSilentStretch {
-            return "Quiet is fine \u{2014} thinking counts. The clock keeps running."
-        }
-        if let retry = targetedRetryPresentation {
-            return retry.cues.prefix(2).joined(separator: " \u{2014} ")
-        }
-        if let drill = activeDrill {
-            return drill.constraint
-        }
-        return timingState.spotlightSublabel
     }
 
     // MARK: - V4.6 Processing (258:994)
@@ -3210,8 +3318,12 @@ struct TimedPracticeView: View {
                 }
                 .padding(.horizontal, Spacing.md)
             } else {
-                VoiceTrace(variant: .settling)
-                    .frame(maxWidth: .infinity)
+                NoumWaveformMark(
+                    state: .processing,
+                    tint: AppColor.voiceLive,
+                    size: 128
+                )
+                    .frame(maxWidth: .infinity, minHeight: 150)
                     .accessibilityIdentifier("timedPractice.processing.trace")
 
                 Spacer(minLength: Spacing.lg)
@@ -3294,25 +3406,6 @@ struct TimedPracticeView: View {
         .padding(.horizontal, 24)
     }
 
-    // MARK: Spotlight Filler Chip
-
-    private var spotlightFillerChip: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(Color.red.opacity(0.5))
-                .frame(width: 6, height: 6)
-            Text("Fillers")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.4))
-            Text("\(speechVM.fillerWordCount)")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.red)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.white.opacity(0.08), in: Capsule())
-    }
-
     // MARK: - Milestone Animation
 
     private func triggerMilestoneAnimation() {
@@ -3328,13 +3421,6 @@ struct TimedPracticeView: View {
                 milestoneScale = 1.0
             }
         }
-    }
-
-    // MARK: - Celebration Overlay
-
-    private var celebrationOverlay: some View {
-        ConfettiLayer(active: showCelebration)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Haptics
@@ -3851,6 +3937,14 @@ struct TimedPracticeView: View {
         #endif
     }
 
+    private func openSettingsAfterRecordingIssue() {
+        // Return to a clean setup before handing control to Settings. When the
+        // user comes back, the next explicit Start performs a fresh permission
+        // read instead of leaving them trapped on the same failure card.
+        returnToSetupAfterRecordingIssue()
+        openAppSettings()
+    }
+
     private func prepareMicrophoneForLaunch() async -> Bool {
         speechVM.refreshRecordPermission()
         if speechVM.microphonePermissionState == .undetermined {
@@ -4353,17 +4447,6 @@ struct TimedPracticeView: View {
                 )
             }
 
-            // Celebration haptic for good scores
-            if result.score >= 70 {
-                CoachHaptic.drillSuccess()
-                updateWithMotion(.bouncySpring) {
-                    showCelebration = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                    updateWithMotion(.easeOut(duration: 0.5)) { showCelebration = false }
-                }
-            }
-
             // Let the settling trace land before Review — the frozen
             // processing→review beat (1.4 s auto, prototype 258:994),
             // capped so a fast pipeline never fakes longer work than it did.
@@ -4428,7 +4511,6 @@ struct TimedPracticeView: View {
         lastMilestoneState = .neutral
         milestoneScale = 1.0
         recPulse = false
-        showCelebration = false
         // Reset video recording state for the new session
         videoManager.cleanup()
         preservesFinalizedVideoForSummary = false
@@ -4561,5 +4643,47 @@ struct TimedPracticeView: View {
         navigationPath.append(AppDestination.summary(payload))
     }
 
+}
+
+#Preview("Timed live focus") {
+    ZStack {
+        LinearGradient(
+            colors: [AppColor.immersiveTop, AppColor.immersiveBottom],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+
+        TimedLiveFocusStage(
+            question: "Should we delay the launch?",
+            target: "Answer first. Give one reason. Then stop.",
+            recordingLabel: "REC · TIMED PRACTICE",
+            clockText: "0:42 left",
+            audioLevel: 0.72,
+            isQuiet: false,
+            isInFinalSeconds: false,
+            transientCue: nil
+        )
+    }
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Timed live focus · accessibility") {
+    ZStack {
+        AppColor.immersiveTop.ignoresSafeArea()
+        TimedLiveFocusStage(
+            question: "What decision should the team make next?",
+            target: "Lead with the decision. Name the implication.",
+            recordingLabel: "REC · TARGETED RETRY",
+            clockText: "0:08 left",
+            audioLevel: 0.18,
+            isQuiet: true,
+            isInFinalSeconds: true,
+            transientCue: "Land the close"
+        )
+    }
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .environment(\.accessibilityReduceMotion, true)
+    .preferredColorScheme(.dark)
 }
 #endif

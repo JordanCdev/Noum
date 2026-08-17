@@ -80,7 +80,7 @@ enum RetryRewardBeat {
     static let actionReveal: TimeInterval = 0.20
     static let reducedMotionReveal: TimeInterval = 0.16
     /// Six authored particles around the waveform — never full-screen rain.
-    static let celebrationParticles = 6
+    static let celebrationParticles = NoumMotionMetric.maximumEarnedParticles
     static let requiresExplicitContinue = true
 
     /// Relative offset from playback start to the CTA becoming actionable.

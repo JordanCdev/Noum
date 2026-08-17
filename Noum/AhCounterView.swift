@@ -2,6 +2,9 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
@@ -15,18 +18,36 @@ enum AhCounterRecordingTransitionPolicy {
     }
 }
 
+/// Open-ended filler-word practice. Setup presents one prompt and one start
+/// action; the live room stays quiet; scoring and progress happen only after a
+/// usable recording passes `RecordingCompletionGate`.
 @available(iOS 17.0, macOS 12.0, *)
 struct AhCounterView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var navigationPath: NavigationPath
+
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+
     @State private var evaluation: PracticeEvaluation?
-    // Mini-drill navigation
-
-
-    // MARK: - Prompt Suggestions
+    @State private var currentPrompt: String = AhCounterView.prompts.randomElement() ?? "Describe your morning routine"
+    @State private var elapsedSeconds = 0
+    @State private var elapsedTimer: Timer?
+    @State private var lastFillerCount = 0
+    @State private var currentStreakSeconds = 0
+    @State private var bestStreakSeconds = 0
+    @State private var fillerFlash = false
+    @State private var showExitConfirmation = false
+    @State private var showSetupAdjustments = false
+    @State private var showCloudProcessingConsent = false
+    @State private var launchCountdown: Int?
+    @State private var showGoCue = false
+    @State private var launchTask: Task<Void, Never>?
+    @State private var fillerFeedbackTask: Task<Void, Never>?
+    @State private var isFinalizingSession = false
+    @State private var sessionNotice: String?
 
     private static let prompts: [String] = [
         "Describe your morning routine",
@@ -41,366 +62,51 @@ struct AhCounterView: View {
         "Talk about someone who inspires you"
     ]
 
-    @State private var currentPrompt: String = AhCounterView.prompts.randomElement() ?? "Describe your morning routine"
-
-    // MARK: - Elapsed Timer
-
-    @State private var elapsedSeconds: Int = 0
-    @State private var elapsedTimer: Timer?
-
-    // MARK: - Filler-Free Streak
-
-    @State private var lastFillerCount: Int = 0
-    @State private var currentStreakSeconds: Int = 0
-    @State private var bestStreakSeconds: Int = 0
-    @State private var fillerFlash: Bool = false
-    @State private var showExitConfirmation = false
-    @State private var showSetupAdjustments = false
-    /// Consent is reversible without leaving the mode: the recognizer
-    /// re-resolves its provider on every start, so allowing here and pressing
-    /// Start again picks up the cloud route.
-    @State private var showCloudProcessingConsent = false
-
-    // MARK: - Milestone Toast
-
-    @State private var toastMessage: String? = nil
-    @State private var toastIsCoaching: Bool = false
-    @State private var firedMilestones: Set<String> = []
-    @State private var recentFillerTimestamps: [Int] = []
-
-    // MARK: - Launch Countdown
-    @State private var launchCountdown: Int? = nil
-    @State private var showGoCue = false
-
-    // MARK: - Encouragement
-
-    private var encouragementMessage: String {
-        if !speechVM.isRecording {
-            return "Tap Start when you're ready"
-        }
-        // Brief filler flash takes priority
-        if fillerFlash {
-            return "Shake it off, keep going"
-        }
-        if currentStreakSeconds >= 60 {
-            return "Outstanding control"
-        }
-        if currentStreakSeconds >= 30 {
-            return "Impressive focus"
-        }
-        if currentStreakSeconds >= 15 {
-            return "Clean streak going"
-        }
-        if elapsedSeconds <= 10 {
-            return "You're rolling"
-        }
-        return "Keep going"
-    }
-
-    private var encouragementIcon: String {
-        if !speechVM.isRecording {
-            return "hand.tap"
-        }
-        if fillerFlash {
-            return "arrow.clockwise"
-        }
-        if currentStreakSeconds >= 60 {
-            return "star.fill"
-        }
-        if currentStreakSeconds >= 30 {
-            return "flame.fill"
-        }
-        if currentStreakSeconds >= 15 {
-            return "bolt.fill"
-        }
-        return "waveform"
-    }
-
-    // MARK: - Glow Color
-
-    private var glowColor: Color {
-        fillerFlash ? .orange : AppColor.modeAhCounter
-    }
-
-    // MARK: - Formatted Elapsed Time
-
-    private var formattedElapsed: String {
-        let m = elapsedSeconds / 60
-        let s = elapsedSeconds % 60
-        return String(format: "%02d:%02d", m, s)
-    }
-
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-    }
-
     var body: some View {
         ZStack {
-            if isPristineSetup {
-                focusedSetupScreen
-            } else {
-            if speechVM.isRecording || launchCountdown != nil || showGoCue {
-                FocusedPracticeBackground(style: .clarity)
-            } else {
-                AppColor.screenBackground.ignoresSafeArea()
-            }
+            AppColor.screenBackground.ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: Spacing.lg) {
-                    if speechVM.isRecording {
-                        // MARK: Focus state — the room shifts from
-                        // "configuring" to "performing". Setup cards
-                        // collapse; the rep itself (filler count + clean
-                        // streak) becomes the single focal object. The
-                        // dashboard returns when recording stops.
-                        focusedRepSurface
-                            .environment(\.colorScheme, .dark)
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+                Group {
+                    if isFinalizingSession {
+                        finalizingContent
+                    } else if speechVM.isRecording {
+                        liveRepContent
                     } else {
-                    // MARK: Header Card — mode hero treatment matching
-                    // Cut the Crutch / Sudden Death / Timed setup. Mode-
-                    // tinted waveform icon + rounded display headline so
-                    // every mode pre-rep screen shares one visual rhythm.
-                    HStack(alignment: .center, spacing: Spacing.md) {
-                        NoumCharacter(
-                            mood: speechVM.isRecording ? .listening : .calm,
-                            tint: AppColor.modeAhCounter,
-                            size: 44,
-                            audioLevel: speechVM.audioLevel,
-                            stage: characterStage
-                        )
-                        .accessibilityHidden(true)
-
-                        VStack(alignment: .leading, spacing: Spacing.xs) {
-                            Text("Filler Control")
-                                .font(Typography.bigStat)
-                            Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely and watch the count update as you go.")
-                                .font(Typography.subheadline)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        setupContent
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.lg)
-                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-                    .accessibilityElement(children: .combine)
-
-                    // Goal-aware intent reminder — fades in at the start of
-                    // a free-form Ah-Counter rep so the user sees what voice
-                    // they're working toward. One mount = one rep; default
-                    // reset behaviour is correct here.
-                    if let voice = coachingProfileStore.profile?.chosenStyleGoal {
-                        VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
-                    }
-
-                    // MARK: Prompt Suggestion (pre-recording only)
-                    if !speechVM.isRecording && elapsedSeconds == 0 && speechVM.fillerWordCount == 0 {
-                        VStack(spacing: Spacing.sm) {
-                            HStack {
-                                Image(systemName: "lightbulb.fill")
-                                    .foregroundStyle(.yellow)
-                                Text("Speaking Prompt")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button {
-                                    chooseAnotherPrompt()
-                                } label: {
-                                    Image(systemName: "shuffle")
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(AppColor.modeAhCounter)
-                                }
-                                .buttonStyle(.pressable)
-                            }
-                            Text(currentPrompt)
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(AppColor.textPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .multilineTextAlignment(.leading)
-                        }
-                        .padding(Spacing.lg)
-                        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    // MARK: Encouragement Banner
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: encouragementIcon)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(speechVM.isRecording ? (fillerFlash ? .orange : AppColor.modeAhCounter) : .secondary)
-                        Text(encouragementMessage)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(speechVM.isRecording ? (fillerFlash ? .orange : AppColor.textPrimary) : .secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .background(
-                        (fillerFlash ? Color.orange.opacity(0.08) : AppColor.modeAhCounter.opacity(speechVM.isRecording ? 0.08 : 0.04)),
-                        in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    )
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: encouragementMessage)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fillerFlash)
-
-                    // MARK: Stats Row
-                    HStack(spacing: Spacing.sm) {
-                        // Filler word counter with pulsing glow
-                        ZStack {
-                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                .fill(glowColor.opacity(0.15))
-                                .shadow(color: glowColor.opacity(speechVM.isRecording ? 0.35 : 0), radius: fillerFlash ? 12 : 6, x: 0, y: 0)
-                                .animation(
-                                    reduceMotion ? nil : .easeInOut(duration: fillerFlash ? 0.4 : 1.5).repeatForever(autoreverses: true),
-                                    value: speechVM.isRecording
-                                )
-
-                            VStack(spacing: Spacing.xxs) {
-                                Text("\(speechVM.fillerWordCount)")
-                                    .font(.title2.bold())
-                                    .foregroundStyle(speechVM.fillerWordCount > 0 ? .red : AppColor.modeAhCounter)
-                                    .contentTransition(.numericText())
-                                Text("Filler Words")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(Spacing.md)
-                        }
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fillerFlash)
-
-                        if speechVM.isRecording || elapsedSeconds > 0 {
-                            // Elapsed timer
-                            StatCard(title: "Elapsed", value: formattedElapsed, tint: AppColor.brandBlue)
-                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                        }
-                    }
-
-                    // MARK: Streak Stats (visible during or after recording)
-                    if speechVM.isRecording || bestStreakSeconds > 0 {
-                        HStack(spacing: Spacing.sm) {
-                            StatCard(
-                                title: "Current Streak",
-                                value: "\(currentStreakSeconds)s",
-                                tint: currentStreakSeconds >= 15 ? AppColor.positive : AppColor.modeAhCounter
-                            )
-                            StatCard(
-                                title: "Best Streak",
-                                value: "\(bestStreakSeconds)s",
-                                tint: bestStreakSeconds >= 30 ? AppColor.positive : AppColor.caution
-                            )
-                        }
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    }
-
-                    // MARK: Error Card
-                    if let error = speechVM.connectionError {
-                        ErrorCard(message: error)
-                    }
-
-                    if shouldShowTranscriptCard {
-                        transcriptCard
-                    } else {
-                        preRepListeningCard
-                    }
-                    } // end setup dashboard
                 }
                 .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.md)
-                .padding(.bottom, 90)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: speechVM.isRecording)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.xl)
+                .transition(.opacity)
             }
-            .safeAreaInset(edge: .bottom) {
-                Group {
-                    if speechVM.isRecording {
-                        Button("Stop") { stopSession() }
-                            .font(.headline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.md)
-                            .background(Color.red.gradient, in: Capsule(style: .continuous))
-                            .foregroundStyle(.white)
-                            .buttonStyle(.pressable)
-                    } else if launchCountdown == nil && !showGoCue {
-                        Button("Start") { beginLaunchCountdown() }
-                            .font(.headline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.md)
-                            .background(AppColor.modeAhCounter.gradient, in: Capsule(style: .continuous))
-                            .foregroundStyle(.white)
-                            .buttonStyle(.pressable)
-                    }
-                }
+
+            if let launchCountdown {
+                countdownOverlay(value: "\(launchCountdown)", subtitle: "Get ready")
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+            } else if showGoCue {
+                countdownOverlay(value: "GO", subtitle: "Start speaking")
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            bottomAction
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.vertical, Spacing.sm)
                 .background(.regularMaterial)
-            }
-
-            // MARK: Countdown Overlay
-            if let launchCountdown {
-                countdownOverlay(value: "\(launchCountdown)", subtitle: "Get ready")
-                    .transition(.opacity.combined(with: .scale))
-            } else if showGoCue {
-                countdownOverlay(value: "GO", subtitle: "Start speaking")
-                    .transition(.opacity.combined(with: .scale))
-            }
-            }
-
-            // MARK: Milestone Toast Overlay
-            if let message = toastMessage {
-                VStack {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: toastIsCoaching ? "wind" : "checkmark.seal.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(toastIsCoaching ? .orange : AppColor.positive)
-                        Text(message)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(AppColor.textPrimary)
-                    }
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.vertical, Spacing.sm)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .strokeBorder(
-                                (toastIsCoaching ? Color.orange : AppColor.positive).opacity(0.25),
-                                lineWidth: 1
-                            )
-                    )
-                    .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
-                    .padding(.horizontal, Spacing.screenH)
-                    .padding(.top, Spacing.lg)
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .allowsHitTesting(false)
-            }
-        }
-        .overlay(alignment: .top) {
-            // Real-time positive feedback — pulses when the engine catches
-            // a rhetorical move during free-form speaking. styleGoal makes
-            // the chip subtext goal-aware when the device aligns with the
-            // user's chosen voice. Self-contained lifecycle bound to the
-            // speech VM's recording flag.
-            LiveEloquenceHUD(
-                speechVM: speechVM,
-                styleGoal: coachingProfileStore.profile?.chosenStyleGoal
-            )
-            .padding(.top, 4)
         }
         .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(speechVM.isRecording)
+        .navigationBarBackButtonHidden(speechVM.isRecording || isFinalizingSession)
         .toolbar {
-            if speechVM.isRecording {
+            if speechVM.isRecording || isFinalizingSession {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         showExitConfirmation = true
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.body.weight(.semibold))
-                            Text("Back")
-                        }
+                        Label("Back", systemImage: "chevron.left")
                     }
                 }
             }
@@ -431,18 +137,14 @@ struct AhCounterView: View {
             )
         }
         .onDisappear {
+            launchTask?.cancel()
+            fillerFeedbackTask?.cancel()
             speechVM.cancelRecording()
             stopElapsedTimer()
             SoundscapeEngine.shared.stop()
         }
         .task {
             speechVM.prepareForInteractiveUse()
-
-            // Quick Start handshake — picker armed Ah-Counter for a
-            // one-tap launch. Ah-Counter has the lightest setup of any
-            // mode (just a prompt suggestion); Quick Start auto-fires
-            // the launch countdown so the user goes straight into the
-            // shared 3-2-1 → GO ramp without the manual Start tap.
             if !speechVM.isRecording,
                launchCountdown == nil,
                !showGoCue,
@@ -465,171 +167,110 @@ struct AhCounterView: View {
         }
         .onChange(of: speechVM.fillerWordCount) { _, newCount in
             handleFillerCountChange(newCount: newCount)
-            trackRapidFillers()
         }
-        .onChange(of: currentStreakSeconds) { _, newStreak in
-            checkStreakMilestones(streak: newStreak)
-        }
-        .onChange(of: elapsedSeconds) { _, newElapsed in
-            checkTimeMilestones(elapsed: newElapsed)
-        }
-        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
     }
 
-    private var isPristineSetup: Bool {
-        !speechVM.isRecording
-            && elapsedSeconds == 0
-            && speechVM.fillerWordCount == 0
-            && launchCountdown == nil
-            && !showGoCue
-    }
+    // MARK: - Setup
 
-    private var focusedSetupScreen: some View {
-        FocusedPracticeScaffold(
-            style: .clarity,
-            status: "Filler Control",
-            title: "Keep the thought. Lose the filler.",
-            subtitle: "Speak naturally — live feedback appears as you talk."
-        ) {
-            Button {
-                CoachHaptic.selectionTap()
-                showSetupAdjustments = true
-            } label: {
-                Label("Adjust", systemImage: "slider.horizontal.3")
-                    .font(Typography.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: 44)
-                    .background(.white.opacity(0.14), in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("ahCounter.adjust")
-            .accessibilityLabel("Adjust Filler Control")
-        } content: {
-            VStack(spacing: Spacing.lg) {
-                HStack(alignment: .top, spacing: Spacing.md) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(Typography.headline)
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                        .accessibilityHidden(true)
+    private var setupContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.xl) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    NoumWaveformMark(state: .idle, tint: AppColor.modeAhCounter)
+                    setupHeaderCopy
+                    adjustSetupButton
+                }
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Prompt ready")
-                            .font(Typography.caption)
-                            .foregroundStyle(AppColor.focusedTextSecondary)
-                        Text(currentPrompt)
-                            .font(Typography.body.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.90))
-                            .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack {
+                        NoumWaveformMark(state: .idle, tint: AppColor.modeAhCounter)
+                        Spacer()
+                        adjustSetupButton
                     }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(Spacing.md)
-                .focusedGlassSurface()
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Speaking prompt: \(currentPrompt)")
-
-                if let error = speechVM.connectionError {
-                    recordingIssueStatus(error)
+                    setupHeaderCopy
                 }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            // Start is the retry here, so it must only be offered when a
-            // second attempt could actually succeed. For a cause this screen
-            // cannot change, the issue card owns the action instead — an
-            // always-present Start would loop the user on the same failure.
-            if recordingIssueRecovery != .leaveRep {
-                Button("Start Filler Control") {
-                    beginLaunchCountdown()
+
+            NoumSurface(.mission) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    Text("YOUR SPEAKING PROMPT")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(AppColor.homeHeroMetaText)
+                        .tracking(0.7)
+                    Text(currentPrompt)
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Speak naturally. The rep is open-ended and stops when you choose.")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.homeHeroSubtitleText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.headline.weight(.bold))
-                .foregroundStyle(AppColor.modeAhCounter)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.md)
-                .background(.white, in: Capsule())
-                .buttonStyle(.pressable)
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.black.opacity(0.10).ignoresSafeArea())
-                .accessibilityIdentifier("ahCounter.start")
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Speaking prompt: \(currentPrompt)")
+
+            if let voice = coachingProfileStore.profile?.chosenStyleGoal {
+                VoiceAnchorBanner(styleGoal: voice, isRecording: false)
+            }
+
+            NoumSurface(.quiet) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("What Noum measures")
+                        .font(Typography.headline)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Label("Filler words heard in the transcript", systemImage: "waveform")
+                    Label("Your longest filler-free stretch", systemImage: "timer")
+                    Text("No score or XP is created until a usable recording finishes.")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textSecondary)
+            }
+
+            if let sessionNotice {
+                NoumEvidenceCard(
+                    status: .needsMore,
+                    title: "Rep not saved",
+                    detail: sessionNotice
+                )
+            }
+
+            if let error = speechVM.connectionError {
+                recordingIssueStatus(error)
             }
         }
     }
 
-    /// Nil until capture fails. Mirrors Timed's contract through the shared
-    /// `SpeechRecordingIssuePresentation` so the two modes cannot drift on what
-    /// a given failure means or what the user can do about it.
-    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
-        guard let error = speechVM.connectionError else { return nil }
-        return SpeechRecordingIssuePresentation.make(
-            issue: speechVM.recordingIssue,
-            message: error
-        )
-    }
-
-    private var recordingIssueRecovery: SpeechRecordingIssue.Recovery? {
-        recordingIssuePresentation?.recovery
-    }
-
-    /// Filler Control keeps its inline register — the navigation bar stays
-    /// visible and Start remains the retry — so this names the cause and only
-    /// adds an action for the failures Start cannot clear.
-    @ViewBuilder
-    private func recordingIssueStatus(_ message: String) -> some View {
-        let presentation = SpeechRecordingIssuePresentation.make(
-            issue: speechVM.recordingIssue,
-            message: message
-        )
-
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            FocusedPracticeErrorStatus(
-                message: presentation.recovery == .retry
-                    ? presentation.detail
-                    : "\(presentation.title). \(presentation.detail)"
-            )
-
-            switch presentation.recovery {
-            case .retry:
-                EmptyView()
-            case .grantCloudConsent:
-                recordingIssueAction(
-                    title: "Turn on cloud processing",
-                    icon: "cloud.fill",
-                    identifier: "ahCounter.recordingIssue.cloudConsent"
-                ) { showCloudProcessingConsent = true }
-            case .leaveRep:
-                recordingIssueAction(
-                    title: "Back to practice",
-                    icon: "arrow.backward",
-                    identifier: "ahCounter.recordingIssue.backToSetup"
-                ) { dismiss() }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("ahCounter.recordingIssue")
-    }
-
-    private func recordingIssueAction(
-        title: String,
-        icon: String,
-        identifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
+    private var setupHeaderCopy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("FILLER CONTROL")
                 .font(Typography.caption.weight(.bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .background(.white, in: Capsule())
                 .foregroundStyle(AppColor.modeAhCounter)
+                .tracking(0.8)
+            Text("Keep the thought. Lose the filler.")
+                .font(Typography.screenTitle)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Calm live counts while you speak. Evidence after you finish.")
+                .font(Typography.subheadline)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var adjustSetupButton: some View {
+        NoumIconButton(
+            systemName: "slider.horizontal.3",
+            accessibilityLabel: "Adjust Filler Control",
+            tint: AppColor.modeAhCounter
+        ) {
+            CoachHaptic.selectionTap()
+            showSetupAdjustments = true
+        }
+        .accessibilityIdentifier("ahCounter.adjust")
     }
 
     private var setupAdjustmentsSheet: some View {
@@ -650,20 +291,18 @@ struct AhCounterView: View {
 
                 Section("Live feedback") {
                     Label {
-                        Text("Fillers, clean time, and your transcript appear while you speak.")
-                            .font(Typography.subheadline)
+                        Text("Fillers, clean time, and a quiet transcript appear while you speak.")
                     } icon: {
                         Image(systemName: "ear.and.waveform")
                             .foregroundStyle(AppColor.modeAhCounter)
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(AppColor.screenBackground)
+            .listStyle(.insetGrouped)
             .navigationTitle("Adjust Filler Control")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showSetupAdjustments = false }
                 }
             }
@@ -672,188 +311,302 @@ struct AhCounterView: View {
         .presentationDragIndicator(.visible)
     }
 
+    // MARK: - Live rep
+
+    private var liveRepContent: some View {
+        VStack(spacing: Spacing.xl) {
+            HStack(spacing: Spacing.sm) {
+                NoumWaveformMark(
+                    state: .listening,
+                    level: speechVM.audioLevel,
+                    tint: AppColor.modeAhCounter,
+                    size: 44
+                )
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("LISTENING")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(AppColor.modeAhCounter)
+                        .tracking(0.8)
+                    Text("Keep going. Pauses are fine.")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+
+                Spacer()
+
+                Text(formattedElapsed)
+                    .font(Typography.figtreeNumeric(size: 20, weight: .semibold, relativeTo: .title3))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .contentTransition(.numericText())
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Recording, \(formattedElapsed) elapsed")
+
+            NoumSurface(.quiet) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.lg) {
+                        fillerCount
+                        Spacer(minLength: Spacing.sm)
+                        cleanStreak
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        fillerCount
+                        cleanStreak
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(speechVM.fillerWordCount) filler words, clean for \(currentStreakSeconds) seconds")
+            }
+
+            if !speechVM.highlightedText.characters.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("LIVE WORDS")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(AppColor.textTertiary)
+                        .tracking(0.7)
+
+                    ScrollViewReader { proxy in
+                        ScrollView(showsIndicators: false) {
+                            Text(LiveTranscriptStyle.calmed(speechVM.highlightedText))
+                                .font(Typography.body)
+                                .foregroundStyle(AppColor.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id("liveWordsEnd")
+                        }
+                        .frame(maxHeight: 120)
+                        .onChange(of: speechVM.highlightedText) {
+                            proxy.scrollTo("liveWordsEnd", anchor: .bottom)
+                        }
+                    }
+                }
+                .transition(.opacity)
+            }
+
+            if elapsedSeconds >= 540 {
+                Label("This rep will stop automatically at 10 minutes.", systemImage: "exclamationmark.circle.fill")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.caution)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var fillerCount: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("\(speechVM.fillerWordCount)")
+                .font(Typography.figtreeNumeric(size: 68, weight: .bold, relativeTo: .largeTitle))
+                .foregroundStyle(fillerFlash ? AppColor.caution : AppColor.textPrimary)
+                .contentTransition(.numericText())
+                .animation(
+                    NoumMotion.animation(for: .responsive, reduceMotion: reduceMotion),
+                    value: speechVM.fillerWordCount
+                )
+            Text("FILLER WORDS")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(AppColor.textSecondary)
+                .tracking(0.8)
+        }
+    }
+
+    private var cleanStreak: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("\(currentStreakSeconds)s clean")
+                .font(Typography.cardTitle.monospacedDigit())
+                .foregroundStyle(currentStreakSeconds >= 15 ? AppColor.positive : AppColor.textPrimary)
+                .contentTransition(.numericText())
+            Text(fillerFlash ? "Pause, then continue." : "Longest: \(bestStreakSeconds)s")
+                .font(Typography.caption)
+                .foregroundStyle(fillerFlash ? AppColor.caution : AppColor.textSecondary)
+        }
+    }
+
+    private var finalizingContent: some View {
+        VStack(alignment: .center, spacing: Spacing.lg) {
+            Spacer(minLength: Spacing.xl)
+            NoumWaveformMark(state: .processing, tint: AppColor.modeAhCounter, size: 72)
+            ProgressView()
+            Text("Reviewing your rep")
+                .font(Typography.cardTitle)
+                .foregroundStyle(AppColor.textPrimary)
+            Text("Noum is waiting for the final transcript before it calculates evidence or progress.")
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Reviewing your rep. Waiting for the final transcript.")
+    }
+
+    // MARK: - Issue recovery
+
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private var canOfferStart: Bool {
+        guard let recovery = recordingIssuePresentation?.recovery else { return true }
+        return recovery == .retry
+    }
+
+    private func recordingIssueStatus(_ message: String) -> some View {
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: message
+        )
+
+        return NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Label(presentation.title, systemImage: "exclamationmark.triangle.fill")
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.caution)
+                Text(presentation.detail)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                switch presentation.recovery {
+                case .retry:
+                    Text("Use Start Filler Control to try the connection again.")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                case .grantCloudConsent:
+                    recordingIssueAction(
+                        title: "Turn on cloud processing",
+                        icon: "cloud.fill",
+                        identifier: "ahCounter.recordingIssue.cloudConsent"
+                    ) { showCloudProcessingConsent = true }
+                case .openSettings:
+                    recordingIssueAction(
+                        title: "Open Settings",
+                        icon: "gearshape.fill",
+                        identifier: "ahCounter.recordingIssue.openSettings"
+                    ) { openSettingsAfterRecordingIssue() }
+                case .leaveRep:
+                    recordingIssueAction(
+                        title: "Back to practice",
+                        icon: "arrow.backward",
+                        identifier: "ahCounter.recordingIssue.backToSetup"
+                    ) { dismiss() }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ahCounter.recordingIssue")
+    }
+
+    private func recordingIssueAction(
+        title: String,
+        icon: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(Typography.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .noumMinimumTouchTarget()
+                .padding(.vertical, Spacing.xs)
+                .background(AppColor.coachingInk, in: Capsule(style: .continuous))
+                .foregroundStyle(.white)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func openSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
+    }
+
+    // MARK: - Primary action
+
+    @ViewBuilder
+    private var bottomAction: some View {
+        if isFinalizingSession || (speechVM.recordingLifecycle.isBusy && !speechVM.isRecording) {
+            HStack(spacing: Spacing.sm) {
+                ProgressView()
+                Text(isFinalizingSession ? "Reviewing rep…" : "Connecting…")
+                    .font(Typography.headline)
+            }
+            .foregroundStyle(AppColor.textSecondary)
+            .frame(maxWidth: .infinity)
+            .noumMinimumTouchTarget()
+        } else if speechVM.isRecording {
+            Button("Finish rep") { stopSession() }
+                .font(Typography.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .noumMinimumTouchTarget()
+                .padding(.vertical, Spacing.xs)
+                .background(Color.red, in: Capsule(style: .continuous))
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("ahCounter.stop")
+        } else if launchCountdown == nil, !showGoCue, canOfferStart {
+            Button("Start Filler Control") {
+                beginLaunchCountdown()
+            }
+            .font(Typography.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .noumMinimumTouchTarget()
+            .padding(.vertical, Spacing.xs)
+            .background(AppColor.coachingInk, in: Capsule(style: .continuous))
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("ahCounter.start")
+        }
+    }
+
+    private func countdownOverlay(value: String, subtitle: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.68).ignoresSafeArea()
+
+            VStack(spacing: Spacing.md) {
+                NoumWaveformMark(state: .listening, tint: .white, size: 72)
+                Text(value)
+                    .font(Typography.figtreeNumeric(size: 72, weight: .bold, relativeTo: .largeTitle))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(Typography.headline)
+                    .foregroundStyle(.white.opacity(0.82))
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(value). \(subtitle)")
+    }
+
+    // MARK: - State and timers
+
+    private var formattedElapsed: String {
+        let minutes = elapsedSeconds / 60
+        let seconds = elapsedSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
     private func chooseAnotherPrompt() {
         var next = currentPrompt
         while next == currentPrompt && Self.prompts.count > 1 {
             next = Self.prompts.randomElement() ?? currentPrompt
         }
 
-        updateWithMotion(.standardSpring) { currentPrompt = next }
-    }
-
-    private func updateWithMotion(_ animation: Animation, _ changes: () -> Void) {
-        withMotion(reduceMotion, animation, changes)
-    }
-
-    private var shouldShowTranscriptCard: Bool {
-        speechVM.isRecording
-            || elapsedSeconds > 0
-            || !speechVM.highlightedText.characters.isEmpty
-    }
-
-    private var preRepListeningCard: some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            Image(systemName: "ear.and.waveform")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(AppColor.modeAhCounter)
-                .frame(width: 34, height: 34)
-                .background(AppColor.modeAhCounter.opacity(0.11), in: Circle())
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Live feedback")
-                    .font(Typography.cardLabel)
-                Text("Start when ready. Fillers, clean time, and your transcript appear as you speak.")
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        if reduceMotion {
+            currentPrompt = next
+        } else {
+            withAnimation(NoumMotion.animation(for: .responsive, reduceMotion: false)) {
+                currentPrompt = next
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .accessibilityIdentifier("ahCounter.prepCard")
     }
-
-    private var transcriptCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Transcript")
-                .font(.headline)
-            ScrollView {
-                Text(speechVM.highlightedText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.md)
-                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-            }
-            .frame(minHeight: 220)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    // MARK: - Focused Rep Surface (recording)
-
-    /// While the mic is open the dashboard collapses and the rep becomes
-    /// the room: live status up top, filler count + clean streak as the
-    /// single focal object, a quiet live-words strip below. Every number
-    /// here is a metric the mode already showed — re-ranked, not added.
-    private var focusedRepSurface: some View {
-        VStack(spacing: Spacing.lg) {
-            // Live status row — the orb is audio-bound so the room
-            // visibly hears the user; elapsed time keeps quiet track.
-            HStack(spacing: Spacing.sm) {
-                NoumCharacter(
-                    mood: .listening,
-                    tint: AppColor.modeAhCounter,
-                    size: 36,
-                    audioLevel: speechVM.audioLevel,
-                    stage: characterStage
-                )
-                .accessibilityHidden(true)
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(AppColor.modeAhCounter)
-                        .frame(width: 8, height: 8)
-                    Text("LIVE")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
-                        .foregroundStyle(AppColor.modeAhCounter)
-                }
-
-                Spacer()
-
-                Text(formattedElapsed)
-                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .contentTransition(.numericText())
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xxs)
-                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Recording, \(formattedElapsed) elapsed")
-
-            // Goal-aware intent reminder — same self-fading banner as the
-            // dashboard; it owns its own lifecycle.
-            if let voice = coachingProfileStore.profile?.chosenStyleGoal {
-                VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
-            }
-
-            if let error = speechVM.connectionError {
-                ErrorCard(message: error)
-            }
-
-            // Focal object — the rep itself. The count stays neutral ink
-            // (judgment belongs to the summary); the brief orange flash +
-            // "shake it off" copy is the existing never-punish register.
-            VStack(spacing: Spacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(glowColor.opacity(fillerFlash ? 0.16 : 0.08))
-                        .frame(width: 220, height: 220)
-                        .blur(radius: 40)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fillerFlash)
-
-                    VStack(spacing: Spacing.xxs) {
-                        Text("\(speechVM.fillerWordCount)")
-                            .font(.system(size: 92, weight: .bold, design: .rounded))
-                            .foregroundStyle(fillerFlash ? Color.orange : AppColor.textPrimary)
-                            .contentTransition(.numericText())
-                            .animation(reduceMotion ? nil : .standardSpring, value: speechVM.fillerWordCount)
-                        Text("FILLER WORDS")
-                            .font(.caption.weight(.bold))
-                            .tracking(1.2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-
-                VStack(spacing: Spacing.xxs) {
-                    Text("\(currentStreakSeconds)s clean")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(currentStreakSeconds >= 15 ? AppColor.positive : AppColor.textPrimary)
-                        .contentTransition(.numericText())
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: currentStreakSeconds)
-
-                    HStack(spacing: 6) {
-                        Image(systemName: encouragementIcon)
-                            .font(.caption.weight(.semibold))
-                        Text(encouragementMessage)
-                            .font(.subheadline.weight(.medium))
-                    }
-                    .foregroundStyle(fillerFlash ? Color.orange : Color.secondary)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: encouragementMessage)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(speechVM.fillerWordCount) filler words, clean for \(currentStreakSeconds) seconds")
-
-            // Quiet live words — confirmation the mic hears you. Fillers
-            // are dim-marked, never red mid-rep; the red ledger belongs
-            // to the summary, reviewed after the performance.
-            if !speechVM.highlightedText.characters.isEmpty {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        Text(LiveTranscriptStyle.calmed(speechVM.highlightedText))
-                            .font(.subheadline)
-                            .foregroundStyle(AppColor.textPrimary.opacity(0.75))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id("liveWordsEnd")
-                    }
-                    .frame(height: 120)
-                    .onChange(of: speechVM.highlightedText) {
-                        proxy.scrollTo("liveWordsEnd", anchor: .bottom)
-                    }
-                }
-                .padding(Spacing.md)
-                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                .transition(.opacity)
-            }
-        }
-        .padding(.top, Spacing.md)
-    }
-
-    // MARK: - Timer Management
 
     private func startElapsedTimer() {
         elapsedSeconds = 0
@@ -861,21 +614,15 @@ struct AhCounterView: View {
         bestStreakSeconds = 0
         lastFillerCount = 0
         fillerFlash = false
-        toastMessage = nil
-        firedMilestones.removeAll()
-        recentFillerTimestamps.removeAll()
 
+        elapsedTimer?.invalidate()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             Task { @MainActor in
                 elapsedSeconds += 1
                 currentStreakSeconds += 1
-                if currentStreakSeconds > bestStreakSeconds {
-                    bestStreakSeconds = currentStreakSeconds
-                }
-                // Gentle session cap — nudge at 9 min, auto-stop at 10 min
-                if elapsedSeconds == 540 {
-                    toastMessage = "9 minutes recorded. This rep will stop in one minute."
-                } else if elapsedSeconds >= 600 {
+                bestStreakSeconds = max(bestStreakSeconds, currentStreakSeconds)
+
+                if elapsedSeconds >= 600 {
                     stopSession()
                 }
             }
@@ -887,128 +634,65 @@ struct AhCounterView: View {
         elapsedTimer = nil
     }
 
-    private func resetStreakState() {
-        elapsedSeconds = 0
-        currentStreakSeconds = 0
-        bestStreakSeconds = 0
-        lastFillerCount = 0
-        fillerFlash = false
-        toastMessage = nil
-        firedMilestones.removeAll()
-        recentFillerTimestamps.removeAll()
-    }
-
-    // MARK: - Filler Detection
-
     private func handleFillerCountChange(newCount: Int) {
         guard newCount > lastFillerCount else { return }
         lastFillerCount = newCount
-
-        // Reset current streak
         currentStreakSeconds = 0
 
-        // Flash the filler indicator
-        updateWithMotion(.easeInOut(duration: 0.2)) {
+        if reduceMotion {
             fillerFlash = true
-        }
-
-        // Clear the flash after a short duration
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            updateWithMotion(.easeInOut(duration: 0.3)) {
-                fillerFlash = false
+        } else {
+            withAnimation(NoumMotion.animation(for: .responsive, reduceMotion: false)) {
+                fillerFlash = true
             }
         }
-    }
 
-    // MARK: - Milestone Toast
-
-    private func showToast(_ message: String, isCoaching: Bool = false) {
-        updateWithMotion(.standardSpring) {
-            toastMessage = message
-            toastIsCoaching = isCoaching
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2.5))
-            updateWithMotion(.standardSpring) {
-                if toastMessage == message {
-                    toastMessage = nil
+        fillerFeedbackTask?.cancel()
+        fillerFeedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.25))
+            guard !Task.isCancelled else { return }
+            if reduceMotion {
+                fillerFlash = false
+            } else {
+                withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false)) {
+                    fillerFlash = false
                 }
             }
         }
     }
 
-    private func checkStreakMilestones(streak: Int) {
-        guard speechVM.isRecording else { return }
-        if streak == 30, !firedMilestones.contains("streak30") {
-            firedMilestones.insert("streak30")
-            showToast("30s clean — nice rhythm")
-        } else if streak == 60, !firedMilestones.contains("streak60") {
-            firedMilestones.insert("streak60")
-            showToast("1 minute clean — you're locked in")
-        }
-    }
-
-    private func checkTimeMilestones(elapsed: Int) {
-        guard speechVM.isRecording else { return }
-        if elapsed == 120, !firedMilestones.contains("elapsed120") {
-            firedMilestones.insert("elapsed120")
-            showToast("2 minutes recorded")
-        }
-    }
-
-    private func trackRapidFillers() {
-        guard speechVM.isRecording else { return }
-        recentFillerTimestamps.append(elapsedSeconds)
-        // Remove timestamps older than 15 seconds
-        recentFillerTimestamps.removeAll { $0 < elapsedSeconds - 15 }
-        if recentFillerTimestamps.count >= 3, !firedMilestones.contains("rapidFillers") {
-            firedMilestones.insert("rapidFillers")
-            showToast("Take a breath. Silence is power.", isCoaching: true)
-        }
-    }
-
-    // MARK: - Launch Countdown
+    // MARK: - Capture and scoring
 
     private func beginLaunchCountdown() {
+        guard launchCountdown == nil,
+              !showGoCue,
+              !speechVM.recordingLifecycle.isBusy else { return }
+
+        sessionNotice = nil
         launchCountdown = 3
-        // Start the user's preferred pre-rep ambience (no-op if Off).
-        // It runs through the 3-2-1 + GO cue, then stops the moment
-        // recording starts so it doesn't bleed into the rep itself.
         SoundscapeEngine.shared.startPreferredMode()
-        Task {
+        launchTask?.cancel()
+        launchTask = Task { @MainActor in
             for count in stride(from: 3, through: 1, by: -1) {
-                await MainActor.run {
-                    updateWithMotion(.snappy(duration: 0.25)) { launchCountdown = count }
-                    CoachHaptic.countdownBeat()
-                }
+                guard !Task.isCancelled else { return }
+                launchCountdown = count
+                CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
-            await MainActor.run {
-                updateWithMotion(.snappy(duration: 0.25)) { launchCountdown = nil }
-                showGoCue = true
-            }
+
+            guard !Task.isCancelled else { return }
+            launchCountdown = nil
+            showGoCue = true
             try? await Task.sleep(for: .milliseconds(700))
-            await MainActor.run {
-                showGoCue = false
-                SoundscapeEngine.shared.stop()
-                startRecording()
-            }
+            guard !Task.isCancelled else { return }
+            showGoCue = false
+            SoundscapeEngine.shared.stop()
+            startRecording()
         }
     }
-
-    private func countdownOverlay(value: String, subtitle: String) -> some View {
-        FocusedPracticeCountdownOverlay(style: .clarity, value: value, subtitle: subtitle)
-    }
-
-    // MARK: - Session Control
 
     private func startRecording() {
         guard !speechVM.recordingLifecycle.isBusy else { return }
-        // Ah Counter has no prompt or difficulty demand, so it is the one
-        // current route that can prepare observation provenance without
-        // guessing. The independent release capability remains false; private
-        // practice therefore constructs no capture or backend request today.
         speechVM.prepareSession(
             mode: .ahCounter,
             competitiveObservationIntent: .noPrompt
@@ -1019,10 +703,18 @@ struct AhCounterView: View {
     }
 
     private func stopSession() {
+        guard !isFinalizingSession else { return }
         stopElapsedTimer()
+        isFinalizingSession = true
+
         Task { @MainActor in
             let completion = await speechVM.stopRecordingAwaitingFinalization()
-            guard RecordingCompletionGate.allowsScoringAndProgress(completion) else { return }
+            guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                isFinalizingSession = false
+                sessionNotice = "Noum did not receive enough final transcript evidence to score or save this rep. You can try again."
+                return
+            }
+
             CoachHaptic.sessionComplete()
             let result = PracticeEvaluator.evaluateAhCounterPractice(
                 transcript: speechVM.transcribedText,
@@ -1040,11 +732,10 @@ struct AhCounterView: View {
                 coachSummary: result.feedback,
                 categoryRatings: result.categories.persistedCategoryRatings
             )
+            isFinalizingSession = false
             pushSummary(finalizedSessionID: finalizedSessionID)
         }
     }
-
-    // MARK: - Navigation
 
     private func pushSummary(finalizedSessionID: UUID?) {
         let payloadId = UUID()
@@ -1084,4 +775,13 @@ struct AhCounterView: View {
         navigationPath.append(AppDestination.summary(payload))
     }
 }
+
+
+#if DEBUG
+#Preview("Filler Control — V3 setup") {
+    NavigationStack {
+        AhCounterView(navigationPath: .constant(NavigationPath()))
+    }
+}
+#endif
 #endif

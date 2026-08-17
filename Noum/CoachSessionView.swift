@@ -134,12 +134,15 @@ struct CoachSessionView: View {
                         onLeave: { if !navigationPath.isEmpty { navigationPath.removeLast() } }
                     )
                     .transition(modeSwapTransition)
+                    .accessibilityIdentifier("coachSession.live")
                 case .type:
                     typedSurface(onGoLive: enterLiveIfEligible)
                         .transition(modeSwapTransition)
+                        .accessibilityIdentifier("coachSession.typed")
                 }
             }
         }
+        .tint(AppColor.coachAccent)
         .onAppear {
             guard mode == .type else { return }
             FlowEventLog.shared.logOnce(FlowEvent.make(
@@ -176,11 +179,9 @@ struct CoachSessionView: View {
         transition(to: .live)
     }
 
-    /// V4.6.1 — the live↔type swap is a mode change, not a navigation push,
-    /// so it settles rather than hard-cuts: cross-fade plus a slight scale
-    /// settle on both sides. Reduce Motion keeps the paired plain fade
-    /// (`v46ReduceMotionFade`) per the frozen motion contract — never an
-    /// instant jump-cut between two full-screen surfaces.
+    /// The live↔type swap is a mode change, not a navigation push. It uses
+    /// the shared calm tier: a small continuity scale normally and a short
+    /// fade under Reduce Motion, never a celebratory or ambient animation.
     private var modeSwapTransition: AnyTransition {
         reduceMotion
             ? .opacity
@@ -197,7 +198,9 @@ struct CoachSessionView: View {
                 reason: "user upgraded from typed coach to live coach"
             ))
         }
-        withAnimation(reduceMotion ? .v46ReduceMotionFade : .settle) {
+        withAnimation(
+            NoumMotion.animation(for: .calm, reduceMotion: reduceMotion)
+        ) {
             mode = nextMode
         }
     }

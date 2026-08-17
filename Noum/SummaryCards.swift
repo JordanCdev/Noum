@@ -1199,6 +1199,7 @@ struct IMDebriefCard: View {
     var revisedChange: CoachCourseChange? = nil
     var reviewIntervention: CoachIntervention? = nil
     var onReview: (() -> Void)? = nil
+    var suppressesNextMove: Bool = false
 
     private var isShortSession: Bool {
         let turns = imConversationDetails?.turns.filter { $0.speaker == .user }.count ?? 0
@@ -1229,27 +1230,29 @@ struct IMDebriefCard: View {
                 body: coachNote.momentum
             )
 
-            Divider()
+            if !suppressesNextMove {
+                Divider()
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                debriefSection(
-                    title: "Next move",
-                    symbol: "arrow.up.right",
-                    tint: AppColor.caution,
-                    body: reviewIntervention == nil ? coachNote.nextStep : coachNote.leverage
-                )
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    debriefSection(
+                        title: "Next move",
+                        symbol: "arrow.up.right",
+                        tint: AppColor.caution,
+                        body: reviewIntervention == nil ? coachNote.nextStep : coachNote.leverage
+                    )
 
-                if let reviewIntervention, let onReview {
-                    Text(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(CohesiveSummaryCopy.askNoum, action: onReview)
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.pro)
-                        .frame(minHeight: 44, alignment: .leading)
-                        .buttonStyle(.pressable)
-                        .accessibilityIdentifier("summary.interventionReview.cta")
+                    if let reviewIntervention, let onReview {
+                        Text(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(CohesiveSummaryCopy.askNoum, action: onReview)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.pro)
+                            .frame(minHeight: 44, alignment: .leading)
+                            .buttonStyle(.pressable)
+                            .accessibilityIdentifier("summary.interventionReview.cta")
+                    }
                 }
             }
 

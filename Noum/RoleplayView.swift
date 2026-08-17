@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum RoleplayPostTurnContinuation: Equatable {
     case nextTurnAvailable
@@ -93,6 +96,9 @@ enum RoleplayDebugFixtureKind: String {
 /// the user's main history (there is no `PracticeMode` case for this
 /// feature — see `RoleplayEngine`'s doc-comment for why).
 struct RoleplayView: View {
+    @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let scenario: RoleplayScenario
     let startingLevel: RoleplayPressureLevel
     @Binding var navigationPath: NavigationPath
@@ -114,6 +120,7 @@ struct RoleplayView: View {
     @State private var pendingNextTurn: RoleplayNextTurn?
     @State private var sessionID = UUID()
     @State private var submissionTask: Task<Void, Never>?
+    @State private var showCloudProcessingConsent = false
 
     private var isCompletePhase: Bool {
         if case .complete = phase { return true }
@@ -240,14 +247,11 @@ struct RoleplayView: View {
 
     var body: some View {
         ZStack {
-            if isCompletePhase {
-                AppColor.screenBackground.ignoresSafeArea()
-            } else {
-                FocusedPracticeBackground(style: .conversation)
-            }
+            AppColor.screenBackground.ignoresSafeArea()
+
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    personaHeader
+                VStack(alignment: .leading, spacing: Spacing.xl) {
+                    sessionHeader
                     switch phase {
                     case .turn:
                         turnSection
@@ -261,7 +265,6 @@ struct RoleplayView: View {
                 .padding(.top, Spacing.sm)
                 .padding(.bottom, Spacing.lg)
             }
-            .environment(\.colorScheme, isCompletePhase ? .light : .dark)
         }
         .navigationTitle(scenario.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -285,112 +288,215 @@ struct RoleplayView: View {
                     speechVM.cancelRecording()
                     if !navigationPath.isEmpty { navigationPath.removeLast() }
                 }
-                .foregroundStyle(isCompletePhase ? Color.secondary : Color.white)
+                .foregroundStyle(Color.secondary)
                 .accessibilityIdentifier("roleplay.end")
             }
         }
         .transcriptionRouteNotice(speechVM.transcriptionRouteNotice)
+        .sheet(isPresented: $showCloudProcessingConsent) {
+            CloudProcessingConsentDisclosure(
+                isCurrentlyAllowed: AISettingsManager.shared.isCloudProcessingAllowed,
+                onAllow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.allowed)
+                    showCloudProcessingConsent = false
+                    speechVM.connectionError = nil
+                },
+                onNotNow: {
+                    AISettingsManager.shared.recordCloudProcessingDecision(.declined)
+                    showCloudProcessingConsent = false
+                }
+            )
+        }
     }
 
-    // MARK: Persona header
+    // MARK: Session context
 
-    private var personaHeader: some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
-            HStack(spacing: Spacing.xs) {
-                Text(scenario.personaName)
-                    .font(Typography.headline)
-                    .foregroundStyle(.primary)
-                Text(scenario.personaRole)
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                pressureChip
+    private var sessionHeader: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Spacing.sm) {
+                    personaIdentity
+                    Spacer()
+                    pressureChip
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    personaIdentity
+                    pressureChip
+                }
             }
-            Text(scenario.objective)
-                .font(Typography.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+
+            NoumProgressTrack(
+                value: Double(turnResults.count) / Double(Self.maxTurns),
+                label: "Attempts in this roleplay",
+                valueLabel: "\(turnResults.count) of \(Self.maxTurns)",
+                tint: AppColor.modeIM
+            )
+        }
+    }
+
+    private var personaIdentity: some View {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            NoumWaveformMark(
+                state: waveformState,
+                level: speechVM.audioLevel,
+                tint: AppColor.modeIM,
+                size: 44
+            )
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text("WITH \(scenario.personaName.uppercased())")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(AppColor.modeIM)
+                    .tracking(0.7)
+                Text(scenario.personaRole)
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var waveformState: NoumWaveformState {
+        if isCompletePhase { return .earned }
+        switch speechVM.recordingLifecycle {
+        case .recording: return .listening
+        case .connecting, .finalizing: return .processing
+        case .idle, .completed, .failed: return .idle
         }
     }
 
     private var pressureChip: some View {
         Text(currentLevel.title)
             .font(Typography.captionSmall)
-            .foregroundStyle(isCompletePhase ? AppColor.modeIM : .white)
+            .foregroundStyle(AppColor.modeIM)
             .padding(.horizontal, Spacing.xs)
             .padding(.vertical, Spacing.xxs)
-            .background(isCompletePhase ? AppColor.modeIM.opacity(0.10) : AppColor.focusedGlassFill, in: Capsule())
+            .background(AppColor.modeIM.opacity(0.10), in: Capsule())
             .accessibilityIdentifier("roleplay.pressureChip")
     }
 
     // MARK: Turn phase
 
     private var turnSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            objectionBubble
-            micControl
-            if let message = speechVM.microphonePermissionState.userFacingRecoveryMessage {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            objectionFocus
+            responseControl
+
+            if let message = speechVM.connectionError {
+                recordingIssueCard(message)
+            } else if let message = speechVM.microphonePermissionState.userFacingRecoveryMessage {
                 Text(message)
                     .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if let message = speechVM.connectionError {
-                FocusedPracticeErrorStatus(message: message)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private var objectionBubble: some View {
+    private var objectionFocus: some View {
         Group {
             if let objection = currentObjection {
-                Text(objection.text)
-                    .font(Typography.body)
-                    .foregroundStyle(.primary)
-                    .padding(Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                    .focusedGlassSurface()
-                    .accessibilityIdentifier("roleplay.objection")
+                NoumSurface(.mission) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("RESPOND TO THIS")
+                            .font(Typography.captionSmall.weight(.bold))
+                            .foregroundStyle(AppColor.homeHeroMetaText)
+                            .tracking(0.7)
+                        Text(objection.text)
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(scenario.objective)
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.homeHeroSubtitleText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("roleplay.objection")
             } else {
-                Text("No objection available at this pressure level.")
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
+                NoumEvidenceCard(
+                    status: .needsMore,
+                    title: "No objection is available",
+                    detail: "This pressure rung has no unused prompt. End this run and choose another starting pressure."
+                )
             }
         }
     }
 
-    private var micControl: some View {
-        VStack(spacing: Spacing.xs) {
-            Button {
-                toggleRecording()
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(speechVM.isRecording ? Color.red.opacity(0.16) : AppColor.modeIM.opacity(0.14))
-                        .frame(width: 64, height: 64)
-                    Image(systemName: speechVM.isRecording ? "stop.fill" : "mic.fill")
-                        .font(.title2)
-                        .foregroundStyle(speechVM.isRecording ? .red : AppColor.modeIM)
+    private var responseControl: some View {
+        NoumSurface(speechVM.isRecording ? .standard : .quiet) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    NoumWaveformMark(
+                        state: waveformState,
+                        level: speechVM.audioLevel,
+                        tint: AppColor.modeIM,
+                        size: 48
+                    )
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(roleplayRecordingStatus)
+                            .font(Typography.headline)
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text(speechVM.isRecording
+                             ? "Finish when your answer has landed."
+                             : "Noum waits until you finish before showing feedback.")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if speechVM.isRecording, !speechVM.transcribedText.isEmpty {
+                    Text(speechVM.transcribedText)
+                        .font(Typography.body)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("roleplay.liveTranscript")
+                }
+
+                if speechVM.recordingLifecycle.isBusy && !speechVM.isRecording {
+                    HStack(spacing: Spacing.sm) {
+                        ProgressView()
+                        Text(roleplayRecordingStatus)
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .noumMinimumTouchTarget()
+                } else if canOfferCaptureAction {
+                    Button {
+                        toggleRecording()
+                    } label: {
+                        Label(
+                            speechVM.isRecording ? "Finish answer" : "Start response",
+                            systemImage: speechVM.isRecording ? "stop.fill" : "mic.fill"
+                        )
+                        .font(Typography.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .noumMinimumTouchTarget()
+                        .padding(.vertical, Spacing.xs)
+                        .background(
+                            speechVM.isRecording ? Color.red : AppColor.coachingInk,
+                            in: Capsule(style: .continuous)
+                        )
+                    }
+                    .buttonStyle(.pressable)
+                    .disabled(currentObjection == nil || (speechVM.recordingLifecycle.isBusy && !speechVM.isRecording))
+                    .accessibilityIdentifier("roleplay.micButton")
+                    .accessibilityLabel(speechVM.isRecording ? "Stop responding" : "Start responding")
                 }
             }
-            .buttonStyle(.plain)
-            .disabled(currentObjection == nil || (speechVM.recordingLifecycle.isBusy && !speechVM.isRecording))
-            .accessibilityIdentifier("roleplay.micButton")
-            .accessibilityLabel(speechVM.isRecording ? "Stop responding" : "Start responding")
-
-            Text(roleplayRecordingStatus)
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
-
-            if !speechVM.transcribedText.isEmpty {
-                Text(speechVM.transcribedText)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .accessibilityIdentifier("roleplay.liveTranscript")
-            }
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    private var canOfferCaptureAction: Bool {
+        guard let recovery = roleplayRecordingIssuePresentation?.recovery else { return true }
+        return recovery == .retry
     }
 
     private func toggleRecording() {
@@ -413,11 +519,74 @@ struct RoleplayView: View {
 
     private var roleplayRecordingStatus: String {
         switch speechVM.recordingLifecycle {
-        case .connecting: return "Connecting to live transcription"
-        case .recording: return "Listening — tap to finish"
-        case .finalizing: return "Finishing your response"
-        case .idle, .completed, .failed: return "Tap the mic and respond to the objection"
+        case .connecting: return "Connecting securely"
+        case .recording: return "Listening to your answer"
+        case .finalizing: return "Finishing your transcript"
+        case .idle, .completed, .failed: return "Answer when you are ready"
         }
+    }
+
+    private var roleplayRecordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private func recordingIssueCard(_ message: String) -> some View {
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: message
+        )
+
+        return NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Label(presentation.title, systemImage: "exclamationmark.triangle.fill")
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.caution)
+                Text(presentation.detail)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                switch presentation.recovery {
+                case .retry:
+                    Button("Try connection again") {
+                        speechVM.connectionError = nil
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("roleplay.recordingIssue.retry")
+                case .grantCloudConsent:
+                    Button("Turn on cloud processing") {
+                        showCloudProcessingConsent = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("roleplay.recordingIssue.cloudConsent")
+                case .openSettings:
+                    Button("Open Settings") {
+                        openAppSettingsAfterRecordingIssue()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("roleplay.recordingIssue.openSettings")
+                case .leaveRep:
+                    Button("Back to practice") {
+                        if !navigationPath.isEmpty { navigationPath.removeLast() }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("roleplay.recordingIssue.backToPractice")
+                }
+            }
+        }
+        .accessibilityIdentifier("roleplay.recordingIssue")
+    }
+
+    private func openAppSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
     }
 
     private func submitTurn() {
@@ -436,53 +605,60 @@ struct RoleplayView: View {
             maximumAttemptCount: Self.maxTurns,
             excluding: RoleplayStore.shared.usedObjectionIDs
         )
-        phase = .feedback
+        updatePhase(.feedback)
     }
 
     // MARK: Feedback phase
 
     private var feedbackSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            if let feedback = lastFeedback {
-                feedbackRow(label: "Strength", text: feedback.strength, systemImage: "checkmark.circle.fill", tint: AppColor.modeAhCounter)
-                feedbackRow(label: "Gap", text: feedback.gap, systemImage: "arrow.up.right.circle.fill", tint: AppColor.modeSuddenDeath)
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text("Answer reviewed")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                Text("Evidence from attempt \(turnResults.count)")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
             }
-            if let presentation = postTurnPresentation {
-                feedbackRow(label: presentation.guidanceLabel, text: presentation.guidanceBody, systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("roleplay.feedback.guidance")
+
+            NoumSurface(.evidence) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    if let feedback = lastFeedback {
+                        feedbackRow(label: "Strength", text: feedback.strength, systemImage: "checkmark.circle.fill", tint: AppColor.positive)
+                        Divider()
+                        feedbackRow(label: "Gap", text: feedback.gap, systemImage: "arrow.up.right.circle.fill", tint: AppColor.caution)
+                    }
+                    if let presentation = postTurnPresentation {
+                        Divider()
+                        feedbackRow(label: presentation.guidanceLabel, text: presentation.guidanceBody, systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("roleplay.feedback.guidance")
+                    }
+                }
             }
+
             continueButton
         }
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     private func feedbackRow(label: String, text: String, systemImage: String, tint: Color) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Image(systemName: systemImage)
+                .font(.headline)
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(label)
                     .font(Typography.captionSmall)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tint)
                 Text(text)
                     .font(Typography.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.md)
-        .background(
-            isCompletePhase ? AppColor.cardBackground : AppColor.focusedGlassFill,
-            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-        )
-        .overlay {
-            if !isCompletePhase {
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(AppColor.focusedGlassBorder, lineWidth: 1)
-            }
-        }
     }
 
     private var continueButton: some View {
@@ -491,48 +667,74 @@ struct RoleplayView: View {
         } label: {
             Text(postTurnPresentation?.continueTitle ?? "See results")
                 .font(Typography.headline)
-                .foregroundStyle(AppColor.modeIM)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
+                .noumMinimumTouchTarget()
+                .padding(.vertical, Spacing.xs)
+                .background(AppColor.coachingInk, in: Capsule(style: .continuous))
         }
         .buttonStyle(.pressable)
-        .background(.white, in: Capsule())
         .accessibilityIdentifier("roleplay.continue")
     }
 
     private func advanceAfterFeedback() {
         guard let nextTurn = pendingNextTurn else {
-            phase = .complete
+            updatePhase(.complete)
             return
         }
         pendingNextTurn = nil
         currentLevel = nextTurn.pressureLevel
         currentObjection = nextTurn.objection
         speechVM.transcribedText = ""
-        phase = .turn
+        updatePhase(.turn)
+    }
+
+    private func updatePhase(_ nextPhase: Phase) {
+        if reduceMotion {
+            phase = nextPhase
+        } else {
+            withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false)) {
+                phase = nextPhase
+            }
+        }
     }
 
     // MARK: Complete phase
 
     private var completeSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Roleplay complete")
-                .font(Typography.cardTitle)
-                .foregroundStyle(.primary)
-                .accessibilityIdentifier("roleplay.complete.screen")
-            Text("\(turnResults.count) response attempts with \(scenario.personaName). Final attempted pressure: \(turnResults.last?.pressureLevel.title ?? currentLevel.title).")
-                .font(Typography.body)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("roleplay.complete.summary")
-            if let feedback = lastFeedback {
-                feedbackRow(label: "Strength", text: feedback.strength, systemImage: "checkmark.circle.fill", tint: AppColor.modeAhCounter)
-                feedbackRow(label: "Gap", text: feedback.gap, systemImage: "arrow.up.right.circle.fill", tint: AppColor.modeSuddenDeath)
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Roleplay complete")
+                    .font(Typography.screenTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .accessibilityIdentifier("roleplay.complete.screen")
+                Text("\(turnResults.count) response attempts with \(scenario.personaName). Final attempted pressure: \(turnResults.last?.pressureLevel.title ?? currentLevel.title).")
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("roleplay.complete.summary")
             }
-            if let presentation = postTurnPresentation {
-                feedbackRow(label: presentation.guidanceLabel, text: presentation.guidanceBody, systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("roleplay.complete.guidance")
+
+            NoumSurface(.evidence) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    Label("Evidence from your final answer", systemImage: "checkmark.seal.fill")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.positive)
+
+                    if let feedback = lastFeedback {
+                        feedbackRow(label: "Strength", text: feedback.strength, systemImage: "checkmark.circle.fill", tint: AppColor.positive)
+                        Divider()
+                        feedbackRow(label: "Gap", text: feedback.gap, systemImage: "arrow.up.right.circle.fill", tint: AppColor.caution)
+                    }
+                    if let presentation = postTurnPresentation {
+                        Divider()
+                        feedbackRow(label: presentation.guidanceLabel, text: presentation.guidanceBody, systemImage: "arrow.forward.circle.fill", tint: AppColor.modeIM)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("roleplay.complete.guidance")
+                    }
+                }
             }
+
             Button {
                 if !navigationPath.isEmpty { navigationPath.removeLast() }
             } label: {
@@ -540,11 +742,21 @@ struct RoleplayView: View {
                     .font(Typography.headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.sm)
+                    .noumMinimumTouchTarget()
+                    .padding(.vertical, Spacing.xs)
+                    .background(AppColor.coachingInk, in: Capsule(style: .continuous))
             }
             .buttonStyle(.pressable)
-            .background(AppColor.modeIM, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .accessibilityIdentifier("roleplay.done")
         }
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 }
+
+#if DEBUG
+#Preview("Roleplay — V3 evidence") {
+    NavigationStack {
+        RoleplayView.debugFixture(.preterminalFeedback)
+    }
+}
+#endif

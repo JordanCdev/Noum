@@ -2,9 +2,8 @@
 import SwiftUI
 
 private enum OnboardingStage: Int, CaseIterable {
-    // Three load-bearing questions only. Free-text fields (goal text,
-    // why-now, success vision) are captured *after* the first rep via
-    // contextual prompts so the user speaks before doing reflective setup.
+    // Free-text goals remain deferred until after the first rep. These three
+    // choices are the minimum needed to prescribe an honest starting rep.
     case context
     case challenge
     case style
@@ -19,9 +18,9 @@ private enum OnboardingStage: Int, CaseIterable {
 
     var subtitle: String {
         switch self {
-        case .context: return "Choose the situation Noum should prepare you for."
-        case .challenge: return "Choose one speaking pattern to work on first."
-        case .style: return "Choose the quality you want your delivery to hold."
+        case .context: return "Choose the situation that matters most right now."
+        case .challenge: return "Pick the pattern Noum should target in your first rep."
+        case .style: return "Choose a delivery quality—not a personality label."
         }
     }
 }
@@ -49,19 +48,20 @@ struct CoachingOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+
     private let prefill: CoachingProfileDraft?
     private let onComplete: (() -> Void)?
     private let onDefer: (() -> Void)?
 
     @State private var screen: OnboardingScreen = .intro
-    @State private var speakingContext: SpeakingContext = .work
-    @State private var biggestChallenge: SpeakingChallenge = .fillerWords
+    // A clean first run has no phantom defaults. Each saved value reflects a
+    // tap, while editing and fast-lane handoff may truthfully prefill it.
+    @State private var speakingContext: SpeakingContext?
+    @State private var biggestChallenge: SpeakingChallenge?
     @State private var usesCustomChallenge = false
     @State private var customChallengeText = ""
-    // No pre-selection — the voice goal drives the entire tailored coaching
-    // persona, so the user must actively choose it rather than tap through a
-    // defaulted "authoritative." nil until they pick; the continue button on
-    // the style stage is gated on a selection.
+    // The voice goal changes prescriptions and language, so it is never
+    // silently defaulted. The user must choose it explicitly.
     @State private var speakingStyleGoal: SpeakingStyleGoal?
     @State private var coachingGoal = ""
     @State private var whyNow = ""
@@ -69,11 +69,8 @@ struct CoachingOnboardingView: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var isEditingExistingProfile = false
-    @State private var editorOverlayField: InputField? = nil
-    @State private var editorOverlayText = ""
-    @FocusState private var focusedField: InputField?
-    @FocusState private var overlayEditorFocused: Bool
-    @Namespace private var headerNamespace
+    @FocusState private var customChallengeFocused: Bool
+
     #if DEBUG
     private let isRealFirstRunUITesting =
         KeychainHelper.uiAutomationLaunchMode(
@@ -93,20 +90,6 @@ struct CoachingOnboardingView: View {
         self.onDefer = onDefer
     }
 
-    private enum InputField: Hashable {
-        case customChallenge
-        case goal
-        case whyNow
-        case successVision
-    }
-
-    private var currentStage: OnboardingStage? {
-        if case let .question(stage) = screen {
-            return stage
-        }
-        return nil
-    }
-
     private var progressStep: Int {
         switch screen {
         case .intro: return 0
@@ -115,577 +98,363 @@ struct CoachingOnboardingView: View {
         }
     }
 
-    private var progressValue: Double {
-        Double(progressStep) / Double(OnboardingStage.allCases.count)
-    }
-
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                let size = geometry.size
+            ZStack {
+                AppColor.screenBackground.ignoresSafeArea()
 
-                ZStack {
-                    backgroundLayer
+                VStack(spacing: 0) {
+                    topBar
+                        .padding(.horizontal, Spacing.screenH)
+                        .padding(.top, Spacing.xs)
 
-                    VStack(spacing: 0) {
-                        topBar
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-
-                        Spacer(minLength: 6)
-
+                    Group {
                         switch screen {
                         case .intro:
-                            introScreen(size: size)
-                                .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+                            introScreen
                         case let .question(stage):
-                            questionScreen(stage: stage, size: size)
-                                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
+                            questionScreen(stage: stage)
                         case .summary:
-                            summaryScreen(size: size)
-                                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                            summaryScreen
                         }
-
-                        Spacer(minLength: 8)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    // Full-screen text editor overlay
-                    if let field = editorOverlayField {
-                        editorOverlay(field: field)
-                            .transition(.opacity)
-                    }
+                    .transition(.opacity)
                 }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
         }
         .onAppear(perform: loadExistingProfile)
-    }
-
-    private var backgroundLayer: some View {
-        AppColor.screenBackground
-            .ignoresSafeArea()
+        .accessibilityIdentifier("coaching.screen")
     }
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: Spacing.sm) {
             if screen == .intro {
                 Text(isEditingExistingProfile ? "Settings" : "Noum")
-                    .font(.headline.weight(.semibold))
+                    .font(Typography.headline)
                     .foregroundStyle(AppColor.textPrimary)
-            } else if screen != .summary {
-                Button {
-                    goBack()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .background(AppColor.cardBackground, in: Circle())
+
+                Spacer()
+
+                if isEditingExistingProfile {
+                    NoumIconButton(
+                        systemName: "xmark",
+                        accessibilityLabel: "Close coaching profile",
+                        action: { dismiss() }
+                    )
                 }
-                .buttonStyle(.pressable)
+            } else {
+                NoumIconButton(
+                    systemName: "chevron.left",
+                    accessibilityLabel: "Back",
+                    action: goBack
+                )
+
+                Spacer()
+
+                Text(screen == .summary ? "Review" : "Choice \(progressStep) of 3")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
             }
-
-            Spacer()
         }
-        .frame(height: 44)
+        .frame(minHeight: NoumControlMetric.minimumTouchTarget)
     }
 
-    private func introScreen(size: CGSize) -> some View {
+    private var introScreen: some View {
         ScrollView(showsIndicators: false) {
-            introHeroCard
-                .padding(.horizontal, 20)
-                .padding(.vertical, Spacing.lg)
-                .frame(minHeight: max(0, size.height - 88), alignment: .center)
-        }
-    }
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                NoumWaveformMark(state: .idle, size: 80)
 
-    private var introHeroCard: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(isEditingExistingProfile ? "Coaching profile" : "Your coaching")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text(isEditingExistingProfile ? "YOUR COACHING PROFILE" : "YOUR FIRST TRAINING PLAN")
+                        .font(Typography.micro.weight(.bold))
+                        .tracking(0.9)
+                        .foregroundStyle(AppColor.textSecondary)
 
                     Text(isEditingExistingProfile
-                        ? "Refine how Noum guides your practice."
-                        : "Choose what Noum should listen for.")
-                        .font(Typography.figtree(size: 31, weight: .bold, relativeTo: .title))
+                        ? "Refine what Noum trains next."
+                        : "Three choices. Then one focused rep.")
+                        .font(Typography.figtree(size: 34, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(AppColor.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(isEditingExistingProfile
-                        ? "These choices shape drills, prompts, and coaching language."
-                        : "Three choices set the first rep. Noum will learn the rest from what you actually say.")
-                        .font(Typography.headline.weight(.medium))
+                        ? "Your saved evidence stays intact. These choices only change the training emphasis."
+                        : "Noum starts with a hypothesis, listens to what you actually say, and adapts from evidence.")
+                        .font(Typography.body)
                         .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Spacer(minLength: 12)
-
-                progressRing(step: 0, total: OnboardingStage.allCases.count, compact: false)
-                    .matchedGeometryEffect(id: "progressRing", in: headerNamespace)
-            }
-
-            Spacer(minLength: 0)
-
-            VStack(alignment: .leading, spacing: 24) {
-                progressPills(activeCount: 0)
-
-                Button {
-                    animate(.standardSpring) {
-                        screen = .question(.context)
+                NoumSurface(.quiet) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        onboardingPromise(
+                            title: "One decision at a time",
+                            detail: "Situation, challenge, then delivery goal."
+                        )
+                        onboardingPromise(
+                            title: "No microphone yet",
+                            detail: "Recording starts only after you choose to begin a rep."
+                        )
+                        onboardingPromise(
+                            title: "No invented diagnosis",
+                            detail: "The first rep sets the evidence boundary."
+                        )
                     }
-                } label: {
-                    HStack(spacing: 12) {
-                        Text(isEditingExistingProfile ? "Review profile" : "Start setup")
-                            .font(.headline.weight(.semibold))
+                }
 
-                        Spacer()
+                VStack(spacing: Spacing.sm) {
+                    primaryButton(
+                        title: isEditingExistingProfile ? "Review profile" : "Build my first plan",
+                        action: { transition(to: .question(.context)) }
+                    )
+                    .accessibilityIdentifier("coaching.start")
 
-                        ZStack {
-                            Circle()
-                                .fill(Color.white.opacity(0.16))
-                                .frame(width: 44, height: 44)
-
-                            advancingArrowImage(font: .headline.weight(.bold))
+                    if let onDefer, !isEditingExistingProfile {
+                        Button(action: onDefer) {
+                            Text("Explore first")
+                                .font(Typography.body.weight(.semibold))
+                                .foregroundStyle(AppColor.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .noumMinimumTouchTarget()
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("coaching.defer")
+                        .accessibilityHint("Returns to Noum. Your two earlier choices stay saved.")
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, Spacing.md)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                AppColor.brandBlue,
-                                AppColor.brandBlueLight
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule(style: .continuous)
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    )
                 }
-                .buttonStyle(.pressable)
-                .accessibilityIdentifier("coaching.start")
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.lg)
+            .padding(.bottom, Spacing.xxl)
+        }
+    }
 
-                if let onDefer, !isEditingExistingProfile {
-                    Button(action: onDefer) {
-                        Text("Explore first")
-                            .font(Typography.body.weight(.semibold))
+    private func onboardingPromise(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(title)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
+            Text(detail)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func questionScreen(stage: OnboardingStage) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    NoumWaveformMark(state: .idle, size: 48)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(stage.title)
+                            .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title2))
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(stage.subtitle)
+                            .font(Typography.caption)
                             .foregroundStyle(AppColor.textSecondary)
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("coaching.defer")
-                    .accessibilityHint("Returns to Noum. Your two earlier choices stay saved.")
                 }
+
+                NoumProgressTrack(
+                    value: Double(progressStep) / Double(OnboardingStage.allCases.count),
+                    label: "Coaching direction",
+                    valueLabel: "\(progressStep) of \(OnboardingStage.allCases.count)",
+                    tint: AppColor.coachingInk
+                )
             }
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.clear.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
-    }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.vertical, Spacing.sm)
 
-    private func questionScreen(stage: OnboardingStage, size: CGSize) -> some View {
-        VStack(spacing: 12) {
-            compactHeader
-                .padding(.horizontal, 20)
-
-            questionCard(stage: stage)
-                .padding(.horizontal, 20)
-        }
-    }
-
-    private var compactHeader: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Your coaching profile")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-
-                Text("Step \(progressStep) of \(OnboardingStage.allCases.count)")
-                    .font(.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-
-                progressPills(activeCount: progressStep)
-            }
-
-            Spacer(minLength: 12)
-
-            progressRing(step: progressStep, total: OnboardingStage.allCases.count, compact: true)
-                .matchedGeometryEffect(id: "progressRing", in: headerNamespace)
-        }
-        .frame(minHeight: 82)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.clear.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
-    }
-
-    private func questionCard(stage: OnboardingStage) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(stage.title)
-                    .font(Typography.bigStat)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(stage.subtitle)
-                    .font(.footnote)
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-
-            ScrollView {
-                VStack(spacing: 10) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: Spacing.sm) {
                     switch stage {
                     case .context:
-                        optionList(options: SpeakingContext.allCases, selectedID: speakingContext.id) { speakingContext = $0 }
+                        optionList(
+                            options: SpeakingContext.allCases,
+                            selectedID: speakingContext?.id,
+                            title: \SpeakingContext.title,
+                            id: \SpeakingContext.id
+                        ) { speakingContext = $0 }
                     case .challenge:
                         challengeOptionList
                     case .style:
-                        optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal?.id) { speakingStyleGoal = $0 }
+                        optionList(
+                            options: SpeakingStyleGoal.allCases,
+                            selectedID: speakingStyleGoal?.id,
+                            title: \SpeakingStyleGoal.title,
+                            id: \SpeakingStyleGoal.id
+                        ) { speakingStyleGoal = $0 }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.sm)
+                .padding(.bottom, Spacing.md)
             }
-            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
 
-            HStack {
-                if let helper = helperText(for: stage) {
-                    Text(helper)
-                        .font(.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 12)
-
-                Button {
-                    advance(from: stage)
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(stage == .style ? "Finish" : "Next")
-                            .font(.subheadline.weight(.semibold))
-
-                        ZStack {
-                            Circle()
-                                .fill(Color.white.opacity(0.16))
-                                .frame(width: 34, height: 34)
-
-                            advancingArrowImage(font: .subheadline.weight(.bold))
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
-                    .background(
-                        LinearGradient(
-                            colors: canAdvance(from: stage)
-                                ? [
-                                    AppColor.brandBlue,
-                                    AppColor.brandBlueLight
-                                ]
-                                : [
-                                    AppColor.textTertiary.opacity(0.55),
-                                    AppColor.textTertiary.opacity(0.45)
-                                ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule(style: .continuous)
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    )
-                    .shadow(color: Color(red: 0.18, green: 0.53, blue: 0.98).opacity(canAdvance(from: stage) ? 0.18 : 0), radius: 14, y: 8)
-                }
-                .buttonStyle(.pressable)
-                .disabled(!canAdvance(from: stage))
-                .accessibilityIdentifier("coaching.continue")
-            }
+            questionFooter(stage: stage)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.clear)
     }
 
-    private func summaryScreen(size: CGSize) -> some View {
-        profileSummaryCard(size: size)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func profileSummaryCard(size: CGSize) -> some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: Spacing.lg) {
-                    // Header
-                    VStack(spacing: Spacing.xs) {
-                        ZStack {
-                            Circle()
-                                .fill(AppColor.brandBlue.opacity(0.10))
-                                .frame(width: 56, height: 56)
-
-                            Image(systemName: "person.text.rectangle.fill")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(AppColor.brandBlue)
-                        }
-                        .padding(.bottom, Spacing.xxs)
-
-                        Text("Your coaching direction")
-                            .font(Typography.bigStat)
-                            .foregroundStyle(AppColor.textPrimary)
-
-                        Text("A starting point that adapts as you practice.")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(AppColor.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, Spacing.lg)
-
-                    // Profile detail rows
-                    VStack(spacing: Spacing.sm) {
-                        profileRow(
-                            icon: "mappin.and.ellipse",
-                            label: "Focus area",
-                            value: speakingContext.title
-                        )
-
-                        profileRow(
-                            icon: "flame.fill",
-                            label: "Biggest challenge",
-                            value: displayedChallengeTitle
-                        )
-
-                        profileRow(
-                            icon: speakingStyleGoal?.voiceIconSystemName ?? "wand.and.stars",
-                            label: "Style goal",
-                            value: speakingStyleGoal?.title ?? "Not chosen yet",
-                            tint: speakingStyleGoal?.voiceIconTint ?? AppColor.brandBlue
-                        )
-
-                    }
-                    .padding(.horizontal, Spacing.md)
-                }
-                .padding(.bottom, Spacing.lg)
-            }
-            .scrollIndicators(.hidden)
-
-            // CTA button pinned at bottom
-            VStack(spacing: 0) {
-                if let saveError {
-                    ErrorCard(message: saveError)
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.bottom, Spacing.sm)
-                        .accessibilityIdentifier("coaching.saveError")
-                }
-
-                Divider()
-                    .opacity(0.3)
-
-                Button {
-                    Task { await finishOnboarding() }
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        Text(isEditingExistingProfile ? "Save changes" : "Start first rep")
-                            .font(.headline.weight(.semibold))
-
-                        Spacer()
-
-                        ZStack {
-                            Circle()
-                                .fill(Color.white.opacity(0.16))
-                                .frame(width: 44, height: 44)
-
-                            Image(systemName: isEditingExistingProfile ? "checkmark" : "arrow.right")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.vertical, Spacing.md)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                AppColor.brandBlue,
-                                AppColor.brandBlueLight
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule(style: .continuous)
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    )
-                    .shadow(color: AppColor.brandBlue.opacity(0.22), radius: 16, y: 8)
-                }
-                .buttonStyle(.pressable)
-                .disabled(isSaving)
-                .accessibilityIdentifier("coaching.startPracticing")
-                .padding(.horizontal, Spacing.lg)
-                .padding(.top, Spacing.md)
-                .padding(.bottom, Spacing.xs)
-            }
-        }
-        .padding(.top, Spacing.xs)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func profileRow(icon: String, label: String, value: String, tint: Color = AppColor.brandBlue) -> some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                    .fill(tint.opacity(0.10))
-                    .frame(width: 36, height: 36)
-
-                Image(systemName: icon)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(tint)
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(label)
-                    .font(.caption.weight(.semibold))
+    private func questionFooter(stage: OnboardingStage) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            if usesCustomChallenge && stage == .challenge {
+                Text("Your wording is saved; Noum maps it to the closest first drill.")
+                    .font(Typography.captionSmall)
                     .foregroundStyle(AppColor.textSecondary)
-
-                Text(value)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 0)
+            primaryButton(title: "Continue", action: { advance(from: stage) })
+                .disabled(!canAdvance(from: stage))
+                .accessibilityIdentifier("coaching.continue")
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(AppColor.innerSurface)
-        )
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.top, Spacing.sm)
+        .padding(.bottom, Spacing.sm)
+        .background(AppColor.screenBackground)
     }
 
-    private func optionList<Option: Identifiable & CaseIterable & Hashable>(
-        options: Option.AllCases,
-        selectedID: Option.ID?,
-        onSelect: @escaping (Option) -> Void
-    ) -> some View where Option.AllCases.Element == Option, Option: CustomStringConvertible {
-        VStack(spacing: 8) {
-            ForEach(Array(options), id: \.id) { option in
-                // `selectedID` is optional so the voice stage can render with
-                // nothing pre-selected — no option highlights until the user
-                // taps (`option.id == nil` is always false).
-                let isSelected = selectedID != nil && option.id == selectedID
-                let detail = optionDetail(for: option)
-                let voiceGoal = option as? SpeakingStyleGoal
+    private var summaryScreen: some View {
+        VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
+                    HStack(alignment: .center, spacing: Spacing.md) {
+                        NoumWaveformMark(state: .idle, size: 64)
 
-                Button {
-                    // Input acknowledgment register: onboarding is the first
-                    // thing the product does, and every choice here shaped the
-                    // coaching plan while feeling like nothing happened.
-                    CoachHaptic.selectionTap()
-                    animate(.snappySpring) {
-                        onSelect(option)
-                    }
-                } label: {
-                    HStack(spacing: 14) {
-                        if let voiceGoal {
-                            VoiceGoalIcon(
-                                goal: voiceGoal,
-                                size: 16,
-                                containerSize: 36,
-                                cornerRadius: CornerRadius.small
-                            )
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(option.description)
-                                .font(.headline.weight(.semibold))
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            Text("YOUR STARTING DIRECTION")
+                                .font(Typography.micro.weight(.bold))
+                                .tracking(0.8)
+                                .foregroundStyle(AppColor.textSecondary)
+                            Text("One focus for the first rep.")
+                                .font(Typography.figtree(size: 30, weight: .bold, relativeTo: .title))
                                 .foregroundStyle(AppColor.textPrimary)
-                                .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
 
-                            if isSelected, !detail.isEmpty {
-                                Text(detail)
-                                    .font(.caption)
+                    NoumSurface(.standard) {
+                        VStack(spacing: Spacing.md) {
+                            profileRow(label: "Situation", value: speakingContext?.title ?? "Choose a situation")
+                            Divider()
+                            profileRow(label: "First focus", value: displayedChallengeTitle)
+                            Divider()
+                            profileRow(label: "Delivery goal", value: speakingStyleGoal?.title ?? "Choose a goal")
+                        }
+                    }
+
+                    NoumSurface(.quiet) {
+                        HStack(alignment: .top, spacing: Spacing.md) {
+                            NoumWaveformMark(state: .idle, size: 44)
+                                .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Starting hypothesis")
+                                    .font(Typography.caption.weight(.bold))
+                                    .foregroundStyle(AppColor.textPrimary)
+                                Text(coachCommitmentLine)
+                                    .font(Typography.body)
                                     .foregroundStyle(AppColor.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
-                                    .transition(.opacity)
                             }
                         }
-
-                        Spacer(minLength: 12)
-
-                        ZStack {
-                            Circle()
-                                .fill(isSelected ? AppColor.brandBlue : Color.clear)
-                                .frame(width: 28, height: 28)
-                            Circle()
-                                .stroke(isSelected ? AppColor.brandBlue : AppColor.subtleBorder, lineWidth: 2)
-                                .frame(width: 28, height: 28)
-                            if isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                            }
-                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("How Noum will coach you. \(coachCommitmentLine)")
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .frame(minHeight: 54)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .fill(isSelected ? AppColor.brandBlue.opacity(0.08) : AppColor.innerSurface)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(
-                                isSelected ? AppColor.brandBlue.opacity(0.28) : AppColor.subtleBorder,
-                                lineWidth: isSelected ? 2 : 1
-                            )
-                    )
-                    .shadow(color: isSelected ? AppColor.brandBlue.opacity(0.08) : .clear, radius: 10, y: 5)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("coaching.option.\(option.id)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.xl)
+            }
+
+            summaryFooter
+        }
+    }
+
+    private var summaryFooter: some View {
+        VStack(spacing: Spacing.sm) {
+            if let saveError {
+                ErrorCard(message: saveError)
+                    .accessibilityIdentifier("coaching.saveError")
+            }
+
+            primaryButton(
+                title: isSaving
+                    ? "Saving…"
+                    : (isEditingExistingProfile ? "Save changes" : "Start first rep"),
+                action: { Task { await finishOnboarding() } },
+                showsProgress: isSaving
+            )
+            .disabled(
+                isSaving
+                    || speakingContext == nil
+                    || biggestChallenge == nil
+                    || speakingStyleGoal == nil
+            )
+            .accessibilityIdentifier("coaching.startPracticing")
+        }
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.top, Spacing.sm)
+        .padding(.bottom, Spacing.sm)
+        .background(AppColor.screenBackground)
+    }
+
+    private func profileRow(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(label)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.textSecondary)
+            Text(value)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func optionList<Option: Identifiable>(
+        options: [Option],
+        selectedID: Option.ID?,
+        title: KeyPath<Option, String>,
+        id: KeyPath<Option, String>,
+        onSelect: @escaping (Option) -> Void
+    ) -> some View where Option.ID: Equatable {
+        VStack(spacing: Spacing.sm) {
+            ForEach(options) { option in
+                let isSelected = selectedID == option.id
+                optionButton(
+                    title: option[keyPath: title],
+                    detail: optionDetail(for: option),
+                    isSelected: isSelected,
+                    accessibilityID: "coaching.option.\(option[keyPath: id])"
+                ) {
+                    onSelect(option)
+                }
             }
         }
     }
 
     private var challengeOptionList: some View {
-        VStack(spacing: 8) {
-            ForEach(SpeakingChallenge.allCases, id: \.id) { challenge in
-                let isSelected = !usesCustomChallenge && challenge.id == biggestChallenge.id
-                Button {
-                    CoachHaptic.selectionTap()
-                    focusedField = nil
-                    animate(.snappySpring) {
-                        usesCustomChallenge = false
-                        biggestChallenge = challenge
-                    }
-                } label: {
-                    challengeOptionRow(
-                        title: challenge.title,
-                        detail: optionDetail(for: challenge),
-                        isSelected: isSelected,
-                        showsDetail: isSelected
-                    )
+        VStack(spacing: Spacing.sm) {
+            ForEach(SpeakingChallenge.allCases) { challenge in
+                let isSelected = !usesCustomChallenge && biggestChallenge == challenge
+                optionButton(
+                    title: challenge.title,
+                    detail: optionDetail(for: challenge),
+                    isSelected: isSelected,
+                    accessibilityID: "coaching.option.\(challenge.id)"
+                ) {
+                    customChallengeFocused = false
+                    usesCustomChallenge = false
+                    biggestChallenge = challenge
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("coaching.option.\(challenge.id)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
 
             customChallengeOption
@@ -693,432 +462,184 @@ struct CoachingOnboardingView: View {
     }
 
     private var customChallengeOption: some View {
-        let trimmed = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(alignment: .leading, spacing: usesCustomChallenge ? 10 : 0) {
-            Button {
-                CoachHaptic.selectionTap()
-                animate(.snappySpring) {
-                    usesCustomChallenge = true
-                    biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: customChallengeText)
-                    focusedField = .customChallenge
-                }
-            } label: {
-                challengeOptionRow(
-                    title: trimmed.isEmpty ? "Something else" : trimmed,
-                    detail: "Tell Noum in your own words.",
-                    isSelected: usesCustomChallenge,
-                    showsDetail: usesCustomChallenge && trimmed.isEmpty,
-                    drawsContainer: !usesCustomChallenge
-                )
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            optionButton(
+                title: "Something else",
+                detail: "Describe the pattern in your own words.",
+                isSelected: usesCustomChallenge,
+                accessibilityID: "coaching.option.customChallenge"
+            ) {
+                usesCustomChallenge = true
+                biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: customChallengeText)
+                customChallengeFocused = true
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("coaching.option.customChallenge")
 
             if usesCustomChallenge {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField(
-                        "Example: I sound defensive when challenged",
-                        text: limitedBinding($customChallengeText, maxLength: 90),
-                        axis: .vertical
-                    )
-                    .focused($focusedField, equals: .customChallenge)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .lineLimit(2...3)
-                    .submitLabel(.next)
-                    .onChange(of: customChallengeText) { _, newValue in
-                        biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: newValue)
-                    }
-                    .onSubmit {
-                        if canAdvance(from: .challenge) {
-                            advance(from: .challenge)
-                        }
-                    }
-                    .accessibilityIdentifier("coaching.customChallenge.input")
-
-                    Text("Noum will keep this wording and choose the closest first drill.")
-                        .font(.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                TextField(
+                    "Example: I sound defensive when challenged",
+                    text: limitedBinding($customChallengeText, maxLength: 90),
+                    axis: .vertical
+                )
+                .focused($customChallengeFocused)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textPrimary)
+                .lineLimit(2...3)
+                .padding(Spacing.md)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.coachingInk, lineWidth: 2)
+                )
+                .submitLabel(.next)
+                .onChange(of: customChallengeText) { _, newValue in
+                    biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: newValue)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .onSubmit {
+                    if canAdvance(from: .challenge) {
+                        advance(from: .challenge)
+                    }
+                }
+                .accessibilityIdentifier("coaching.customChallenge.input")
+                .transition(.opacity)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(usesCustomChallenge ? AppColor.brandBlue.opacity(0.08) : AppColor.innerSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(
-                    usesCustomChallenge ? AppColor.brandBlue.opacity(0.40) : AppColor.subtleBorder,
-                    lineWidth: usesCustomChallenge ? 2 : 1
-                )
-        )
-        .shadow(color: usesCustomChallenge ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
     }
 
-    private func challengeOptionRow(
+    private func optionButton(
         title: String,
         detail: String,
         isSelected: Bool,
-        showsDetail: Bool,
-        drawsContainer: Bool = true
+        accessibilityID: String,
+        action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if showsDetail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                }
-            }
-
-            Spacer(minLength: 12)
-
-            ZStack {
-                Circle()
-                    .fill(isSelected ? AppColor.brandBlue : Color.clear)
-                    .frame(width: 28, height: 28)
-                Circle()
-                    .stroke(isSelected ? AppColor.brandBlue : AppColor.subtleBorder, lineWidth: 2)
-                    .frame(width: 28, height: 28)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 54)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(drawsContainer ? (isSelected ? AppColor.brandBlue.opacity(0.08) : AppColor.innerSurface) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(
-                    drawsContainer ? (isSelected ? AppColor.brandBlue.opacity(0.40) : AppColor.subtleBorder) : Color.clear,
-                    lineWidth: drawsContainer ? (isSelected ? 2 : 1) : 0
-                )
-        )
-        .shadow(color: drawsContainer && isSelected ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
-    }
-
-    private func editorCard(
-        prompt: String,
-        text: Binding<String>,
-        field: InputField,
-        identifier: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Your answer")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.textTertiary)
-                    .textCase(.uppercase)
-
-                Spacer()
-
-                Text("\(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).count)/200")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(AppColor.textTertiary)
-            }
-
-            Button {
-                editorOverlayText = text.wrappedValue
-                animate(.standardSpring) {
-                    editorOverlayField = field
-                }
-            } label: {
-                ZStack(alignment: .topLeading) {
-                    if text.wrappedValue.isEmpty {
-                        Text(prompt)
-                            .font(.subheadline)
-                            .foregroundStyle(AppColor.textTertiary)
-                    } else {
-                        Text(text.wrappedValue)
-                            .font(.body)
-                            .foregroundStyle(AppColor.textPrimary)
-                    }
-                }
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .fill(AppColor.innerSurface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(AppColor.subtleBorder, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(identifier)
-        }
-    }
-
-    private func editorOverlay(field: InputField) -> some View {
-        let title: String
-        let prompt: String
-        let binding: Binding<String>
-
-        // Editor overlay is reused by `DeferredProfileCapture` (post-first-rep
-        // prompts). The titles match the questions the deferred prompts ask.
-        switch field {
-        case .customChallenge:
-            title = "What should Noum help with?"
-            prompt = "Example: I sound defensive when challenged."
-            binding = $customChallengeText
-        case .goal:
-            title = "What do you want to get better at?"
-            prompt = "Example: lead updates in meetings without second-guessing every sentence."
-            binding = $coachingGoal
-        case .whyNow:
-            title = "Why does this matter right now?"
-            prompt = "Example: I need to sound sharper in high-visibility conversations."
-            binding = $whyNow
-        case .successVision:
-            title = "If this improves, what changes?"
-            prompt = "Example: I will feel calmer, clearer, and more credible at work."
-            binding = $successVision
-        }
-
-        let limitedOverlay = limitedBinding($editorOverlayText, maxLength: 200)
-
-        return ZStack {
-            // Dimmed background
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    commitOverlayText(to: binding)
-                }
-
-            VStack(spacing: 0) {
-                // Top bar
-                HStack {
+        Button {
+            CoachHaptic.selectionTap()
+            withCalmMotion(action)
+        } label: {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
-                        .font(.headline.weight(.bold))
+                        .font(Typography.body.weight(.semibold))
                         .foregroundStyle(AppColor.textPrimary)
-                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    Spacer()
-
-                    Button {
-                        commitOverlayText(to: binding)
-                    } label: {
-                        Text("Done")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(AppColor.brandBlue)
-                            )
+                    if isSelected && !detail.isEmpty {
+                        Text(detail)
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
 
-                // Character count
-                HStack {
-                    Spacer()
-                    Text("\(editorOverlayText.trimmingCharacters(in: .whitespacesAndNewlines).count)/200")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(AppColor.textTertiary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
+                Spacer(minLength: Spacing.sm)
 
-                // Text editor
-                ZStack(alignment: .topLeading) {
-                    if editorOverlayText.isEmpty {
-                        Text(prompt)
-                            .font(.body)
-                            .foregroundStyle(AppColor.textTertiary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 16)
-                    }
-
-                    TextEditor(text: limitedOverlay)
-                        .focused($overlayEditorFocused)
-                        .font(.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? AppColor.coachingInk : AppColor.neutralReceded)
+                    .accessibilityHidden(true)
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(Color.white)
-                    .shadow(color: Color.black.opacity(0.15), radius: 30, y: 15)
+                isSelected ? AppColor.proQuietSurface : AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
             )
-            .padding(.horizontal, 12)
-            .padding(.top, 60)
-            .padding(.bottom, 8)
-        }
-        .onAppear {
-            overlayEditorFocused = true
-        }
-    }
-
-    private func commitOverlayText(to binding: Binding<String>) {
-        binding.wrappedValue = editorOverlayText
-        overlayEditorFocused = false
-        animate(.snappySpring) {
-            editorOverlayField = nil
-        }
-    }
-
-    private var heroCardBackground: some View {
-        RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-            .fill(AppColor.cardBackground)
             .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(isSelected ? AppColor.coachingInk : AppColor.subtleBorder, lineWidth: isSelected ? 2 : 1)
             )
-            .shadow(color: Color.black.opacity(0.04), radius: 12, y: 6)
-    }
-
-    private func progressRing(step: Int, total: Int, compact: Bool) -> some View {
-        let size: CGFloat = compact ? 48 : 72
-
-        return ZStack {
-            Circle()
-                .stroke(AppColor.subtleBorder, lineWidth: compact ? 6 : 7)
-            Circle()
-                .trim(from: 0, to: step == 0 ? 0 : Double(step) / Double(total))
-                .stroke(
-                    AngularGradient(
-                        colors: [
-                            AppColor.brandBlueLight,
-                            AppColor.brandBlue
-                        ],
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: compact ? 6 : 7, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-
-            Text("\(step)")
-                .font(Typography.figtreeNumeric(size: compact ? 16 : 20, weight: .bold, relativeTo: compact ? .headline : .title3))
-                .foregroundStyle(AppColor.textPrimary)
         }
-        .frame(width: size, height: size)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private func progressPills(activeCount: Int) -> some View {
-        HStack(spacing: 8) {
-            ForEach(0..<OnboardingStage.allCases.count, id: \.self) { index in
-                Capsule(style: .continuous)
-                    .fill(index < activeCount ? AppColor.brandBlue : AppColor.tagBackground)
-                    .frame(height: 6)
+    private func primaryButton(
+        title: String,
+        action: @escaping () -> Void,
+        showsProgress: Bool = false
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.sm) {
+                Text(title)
+                    .font(Typography.headline)
+
+                Spacer(minLength: 0)
+
+                if showsProgress {
+                    ProgressView()
+                        .tint(.white)
+                        .accessibilityHidden(true)
+                } else {
+                    Image(systemName: "arrow.right")
+                        .font(.headline.weight(.bold))
+                        .accessibilityHidden(true)
+                }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func advancingArrowImage(font: Font) -> some View {
-        let image = Image(systemName: "arrow.right")
-            .font(font)
             .foregroundStyle(.white)
-        if reduceMotion {
-            image
-        } else {
-            image.symbolEffect(.bounce, value: progressStep)
+            .padding(.horizontal, Spacing.lg)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(AppColor.coachingInk, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
-    }
-
-    private func helperText(for stage: OnboardingStage) -> String? {
-        // Multi-choice stages don't need helper text.
-        nil
+        .buttonStyle(.pressable)
     }
 
     private func canAdvance(from stage: OnboardingStage) -> Bool {
-        // Context + challenge keep sensible defaults so the user can always
-        // advance. The VOICE stage requires an explicit pick — it drives the
-        // entire tailored coaching persona, so we never let a tap-through
-        // assign a phantom default.
         switch stage {
-        case .style:
-            return speakingStyleGoal != nil
+        case .context:
+            return speakingContext != nil
         case .challenge:
             if usesCustomChallenge {
                 return customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3
             }
-            return true
-        case .context:
-            return true
+            return biggestChallenge != nil
+        case .style:
+            return speakingStyleGoal != nil
         }
     }
 
     private func advance(from stage: OnboardingStage) {
         guard canAdvance(from: stage) else { return }
-        // After the guard, so a blocked tap stays silent rather than
-        // confirming progress that did not happen.
         CoachHaptic.selectionTap()
-        focusedField = nil
+        customChallengeFocused = false
 
         if let next = OnboardingStage(rawValue: stage.rawValue + 1) {
-            animate(.standardSpring) {
-                screen = .question(next)
-            }
+            transition(to: .question(next))
         } else {
-            animate(.standardSpring) {
-                screen = .summary
-            }
+            transition(to: .summary)
         }
     }
 
     private func goBack() {
-        focusedField = nil
+        customChallengeFocused = false
+        saveError = nil
 
         switch screen {
         case .intro:
             dismiss()
         case let .question(stage):
             if let previous = OnboardingStage(rawValue: stage.rawValue - 1) {
-                animate(.standardSpring) {
-                    screen = .question(previous)
-                }
+                transition(to: .question(previous))
             } else {
-                animate(.standardSpring) {
-                    screen = .intro
-                }
+                transition(to: .intro)
             }
         case .summary:
-            break
+            transition(to: .question(.style))
         }
     }
 
-    private func animate(_ animation: Animation, _ updates: @escaping () -> Void) {
+    private func transition(to next: OnboardingScreen) {
+        withCalmMotion { screen = next }
+    }
+
+    private func withCalmMotion(_ updates: @escaping () -> Void) {
         if reduceMotion {
             updates()
         } else {
-            withAnimation(animation, updates)
+            withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false), updates)
         }
     }
 
@@ -1138,10 +659,6 @@ struct CoachingOnboardingView: View {
         }
 
         isSaving = false
-        // Commitment register: finishing setup is the user committing to the
-        // practice, and it is the single biggest moment in the first run.
-        // Fires only after persistence succeeded — the early return above
-        // keeps a failed save silent rather than celebrating nothing.
         CoachHaptic.drillStart()
         if let onComplete {
             onComplete()
@@ -1151,20 +668,19 @@ struct CoachingOnboardingView: View {
     }
 
     private func saveProfile() async throws {
-        // Voice is required to finish onboarding (the continue button on the
-        // style stage is gated on it), so a nil here is a programmer error, not
-        // a user path — bail rather than persist a phantom default.
-        guard let chosenVoice = speakingStyleGoal else {
+        guard let chosenVoice = speakingStyleGoal,
+              let chosenContext = speakingContext,
+              let chosenChallenge = biggestChallenge else {
             throw CoachingProfilePersistenceError.encodingFailed
         }
         let trimmedCustomChallenge = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
         let savedChallenge = usesCustomChallenge
             ? SpeakingChallenge.routingFallback(forCustomText: trimmedCustomChallenge)
-            : biggestChallenge
+            : chosenChallenge
 
         try await coachingProfileStore.saveForOnboarding(
             CoachingProfile(
-                speakingContext: speakingContext,
+                speakingContext: chosenContext,
                 primaryGoal: savedChallenge.recommendedPriority,
                 confidenceLevel: .rebuilding,
                 biggestChallenge: savedChallenge,
@@ -1175,7 +691,7 @@ struct CoachingOnboardingView: View {
                 coachingBrief: coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines),
                 motivationWhyNow: whyNow.trimmingCharacters(in: .whitespacesAndNewlines),
                 successVision: successVision.trimmingCharacters(in: .whitespacesAndNewlines),
-                chosenStyleGoal: chosenVoice   // finishing onboarding IS an explicit choice
+                chosenStyleGoal: chosenVoice
             )
         )
     }
@@ -1183,9 +699,7 @@ struct CoachingOnboardingView: View {
     private func limitedBinding(_ binding: Binding<String>, maxLength: Int) -> Binding<String> {
         Binding(
             get: { binding.wrappedValue },
-            set: { newValue in
-                binding.wrappedValue = String(newValue.prefix(maxLength))
-            }
+            set: { binding.wrappedValue = String($0.prefix(maxLength)) }
         )
     }
 
@@ -1196,9 +710,6 @@ struct CoachingOnboardingView: View {
             biggestChallenge = profile.biggestChallenge
             customChallengeText = profile.customChallengeText ?? ""
             usesCustomChallenge = !customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            // Pre-fill the picker from the user's real prior choice (nil-safe: a
-            // legacy profile that was never genuinely chosen leaves the picker
-            // empty so they pick deliberately when editing).
             speakingStyleGoal = profile.chosenStyleGoal
             coachingGoal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
             whyNow = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1206,9 +717,8 @@ struct CoachingOnboardingView: View {
             return
         }
 
-        // A fast-lane draft owns only the two choices the user actually made.
-        // It can prefill full setup, but must never invent a voice goal or
-        // promote itself into a complete CoachingProfile.
+        // A fast-lane draft can prefill only the two choices the user made. It
+        // cannot invent a voice goal or become a complete coaching profile.
         if let prefill {
             speakingContext = prefill.speakingContext
             biggestChallenge = prefill.speakingChallenge
@@ -1220,21 +730,13 @@ struct CoachingOnboardingView: View {
     private var displayedChallengeTitle: String {
         if usesCustomChallenge {
             let trimmed = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
+            if !trimmed.isEmpty { return trimmed }
         }
-        return biggestChallenge.title
+        return biggestChallenge?.title ?? "Choose a focus"
     }
 
-    /// The onboarding profile spoken back in the coach's own voice, with the
-    /// honesty stance stated before the first rep: Noum names a lever only once
-    /// it has evidence. Built from the same enum resolvers Home cold-start and
-    /// the Ask Noum day-0 greeting use, so the coach sounds like one person.
-    /// Enum-derived — never surfaces user-typed challenge text (custom challenge
-    /// is mapped to a routing bucket at `CoachingOnboardingView` line ~785).
     private var coachCommitmentLine: String {
-        let focus = biggestChallenge.trainingFocusFragment
+        let focus = biggestChallenge?.trainingFocusFragment ?? "your first speaking focus"
         let stance = "The first rep sets the evidence; then Noum can name one useful move."
         if let style = speakingStyleGoal {
             return "Noum will help you \(style.coachingDescription), starting with \(focus). \(stance)"
@@ -1242,57 +744,25 @@ struct CoachingOnboardingView: View {
         return "Noum will start with \(focus). \(stance)"
     }
 
-    private var coachCommitmentCard: some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            ZStack {
-                Circle()
-                    .fill(AppColor.brandBlue.opacity(0.12))
-                    .frame(width: 36, height: 36)
-
-                Image(systemName: "waveform")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.brandBlue)
-            }
-
-            Text(coachCommitmentLine)
-                .font(.subheadline)
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(AppColor.brandBlue.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("How Noum will coach you. \(coachCommitmentLine)")
-    }
-
-    private func optionDetail<Option: Identifiable & Hashable>(for option: Option) -> String where Option: CustomStringConvertible {
+    private func optionDetail<Option>(for option: Option) -> String {
         switch option {
         case let context as SpeakingContext:
             switch context {
             case .work: return "Meetings, updates, and everyday work conversations."
-            case .interviews: return "Faster answers under pressure."
-            case .presentations: return "Stronger openings and clearer delivery."
+            case .interviews: return "Clearer answers when the stakes rise."
+            case .presentations: return "Stronger openings and steadier delivery."
             case .social: return "More natural confidence in regular conversation."
             }
         case let challenge as SpeakingChallenge:
             switch challenge {
-            case .fillerWords: return "Sound more deliberate instead of hesitant."
-            case .rambling: return "Keep your structure instead of drifting."
+            case .fillerWords: return "Replace hesitation with deliberate pauses."
+            case .rambling: return "Hold a clear point without drifting."
             case .freezing: return "Recover faster when put on the spot."
-            case .rushing: return "Slow down enough to stay composed."
+            case .rushing: return "Keep control when pressure speeds you up."
             }
         case let style as SpeakingStyleGoal:
-            let desc = style.coachingDescription
-            return desc.prefix(1).uppercased() + desc.dropFirst() + "."
+            let description = style.coachingDescription
+            return description.prefix(1).uppercased() + description.dropFirst() + "."
         default:
             return ""
         }

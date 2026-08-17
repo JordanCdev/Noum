@@ -7,13 +7,50 @@ enum HomeMomentCopy {
     }
 }
 
+/// Truthful, non-persisted progress for Today’s deliberately small mission.
+/// A rep counts only after the existing daily-goal owner accepts it; this type
+/// merely clamps that reconciled same-day count into a three-rep view.
+struct TodayRepMissionProgress: Equatable {
+    static let targetReps = 3
+
+    let completedReps: Int
+
+    init(completedReps: Int) {
+        self.completedReps = min(max(completedReps, 0), Self.targetReps)
+    }
+
+    var isComplete: Bool {
+        completedReps == Self.targetReps
+    }
+
+    var currentRep: Int {
+        isComplete ? Self.targetReps : completedReps + 1
+    }
+
+    var progress: Double {
+        Double(completedReps) / Double(Self.targetReps)
+    }
+
+    var compactLabel: String {
+        isComplete ? "3 of 3 complete" : "Rep \(currentRep) of 3"
+    }
+
+    var accessibilityValue: String {
+        if isComplete {
+            return "All three reps complete today"
+        }
+        let remaining = Self.targetReps - completedReps
+        return "\(completedReps) of three reps complete. \(remaining) remaining."
+    }
+}
+
 // MARK: - Home Coach Card (M14)
 //
 // One composed hero that replaces the populated home's split greeting
 // (heroCard) + suggestion (quickStartCard). The product shift is from
-// "dashboard of tiles" to "a coach speaking to you on open" — the
-// character is present, the coach's recommendation is the primary copy,
-// and a single Begin CTA carries the user into the right rep.
+// "dashboard of tiles" to "a coach speaking to you on open" — the shared
+// waveform carries Noum's identity, the coach's recommendation is the primary
+// copy, and a single Begin CTA carries the user into the right rep.
 //
 // All copy comes from the existing recommendation pipeline
 // (`RecommendationBiasEngine` + `CoachingPlanner`); nothing here invents
@@ -311,6 +348,10 @@ enum HomeCoachPresentation {
 struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
+    /// Read from `DailyGoalManager`, which already reconciles qualified speech
+    /// sessions and explicitly recorded drills. This view never owns or writes
+    /// a second progress counter.
+    let completedRepsToday: Int
 
     /// Host-supplied gate (>= 1 completed rep). The row additionally
     /// self-gates on an actual active plan via `HomePlanArcLine` — both
@@ -324,8 +365,8 @@ struct HomeCoachCard: View {
     /// recommendation surface. The delayed dwell task is cancelled before it
     /// can replace that surface's current exact ledger exposure.
     var recordsRecommendationExposure: Bool = true
-    /// Top safe-area inset measured by the host — the V4.6 hero bleeds
-    /// behind the status bar, so its content pads down by this amount.
+    /// Top safe-area inset measured by the host because the enclosing Today
+    /// scroll view extends under the status bar.
     var heroTopInset: CGFloat = 0
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
@@ -352,25 +393,23 @@ struct HomeCoachCard: View {
     /// Reduce Motion sets both flags without animation (instant appear).
     @State private var heroTextSettled = false
     @State private var heroCTASettled = false
-    /// Real press state of the commit CTA — while held, the hero trace
-    /// gains slightly (the V4.6.1 "armed" presence state).
+    /// Real press state of the commit CTA — while held, the waveform responds
+    /// as the mission moves into its committed state.
     @State private var commitCTAPressed = false
 
-    /// Choreography beats (V4.6.1 plan §3 Today): headline block settles
-    /// at 0 ms, the trace breath arms at +350 ms, the CTA settles at
-    /// +120 ms — total well inside ScreenshotTour's 1.5 s post-
+    /// Choreography beats: the headline settles first and the CTA follows
+    /// at +120 ms — total well inside ScreenshotTour's 1.5 s post-
     /// `home.screen` wait. Offsets only; curves come from the shared
     /// motion tokens (`.settle`).
     private enum HeroEntranceBeat {
-        static let traceWake: TimeInterval = 0.28
         static let ctaDelay: TimeInterval = 0.12
-        /// Commit handoff: the trace lifts toward the recording surface's
+        /// Commit handoff: the waveform lifts toward the recording surface's
         /// presence for one beat before the push, so Today flows into the
         /// rep instead of cutting away. All business state (acceptance,
         /// arming, ledger) runs BEFORE the delay — only navigation waits.
         static let handoff: TimeInterval = 0.18
     }
-    /// True during the commit handoff beat — the hero trace lifts while
+    /// True during the commit handoff beat — the waveform lifts while
     /// the push is in flight. Reset when Home reappears on pop-back.
     @State private var heroHandoff = false
     @State private var plannedPhraseError: String?
@@ -389,126 +428,44 @@ struct HomeCoachCard: View {
             .blueprintForRendering(coherentRecommendationBlueprint)
         let renderedBlueprint = renderedAvailability.resolving(sourceBlueprint)
         let renderedExposure = recommendationExposure(for: renderedBlueprint)
-        // V4.6 Today hero (Figma 258:934) — the app's single marquee
-        // gradient. Structure: eyebrow → one target headline → one reason →
-        // practice meta → idle voice trace → one dominant Start. All copy
-        // still flows from the existing recommendation pipeline; only the
-        // presentation changed.
-        return VStack(alignment: .leading, spacing: 0) {
-            // Headline block — first beat of the entrance choreography.
-            // The nested stack is layout-neutral (same alignment, zero
-            // spacing) and lets the whole block settle as one unit.
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Today")
-                    .font(Typography.figtree(size: 15, weight: .heavy, relativeTo: .subheadline))
-                    // 0.8 measured 4.18:1 on the hero's end stop — under AA.
-                    .foregroundStyle(AppColor.homeHeroMetaText)
-                    .accessibilityAddTraits(.isHeader)
+        // V3 Today: one compact three-rep mission. Recommendation state,
+        // evidence and launch truth still come from the existing owners; the
+        // new layer only makes the next small commitment obvious.
+        return NoumSurface(.mission) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                missionHeader(todayMissionProgress)
 
-                // V4.6 Updated Today (258:1078) — the earned chip announces one
-                // un-acknowledged retry-comparison win; the hero's structure
-                // tightens to chip → headline → meta → earned trace → CTA.
-                // The chip/headline/meta swaps ride the announcement's
-                // payoff transaction (see `resolveEarnedState`).
-                if let earned = activeEarned {
-                    earnedChip(earned.chipText)
-                        .padding(.top, Spacing.sm)
-                        .transition(.opacity)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: Spacing.lg) {
+                        missionHeadline(for: renderedBlueprint)
+                        Spacer(minLength: Spacing.sm)
+                        missionWaveform
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        missionWaveform
+                        missionHeadline(for: renderedBlueprint)
+                    }
                 }
+                .heroEntrance(settled: heroTextSettled)
 
-                Text(activeEarned?.headlineOverride ?? coachTitle(for: renderedBlueprint))
-                    .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
-                    .foregroundStyle(AppColor.homeHeroTitleText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, activeEarned == nil ? Spacing.lg : Spacing.sm)
-                    .contentTransition(.opacity)
-                    .accessibilityIdentifier("home.coachCard.title")
+                missionRepTrack(todayMissionProgress)
+                    .heroEntrance(settled: heroTextSettled)
 
-                if activeEarned == nil, let subtitle = coachSubtitle(for: renderedBlueprint) {
-                    Text(subtitle)
-                        .font(Typography.manrope(size: 15.5, weight: .regular, relativeTo: .subheadline))
-                        .foregroundStyle(AppColor.homeHeroSubtitleText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, Spacing.md)
-                        .transition(.opacity)
-                        .accessibilityIdentifier("home.coachCard.subtitle")
-                }
-
-                Text(activeEarned?.metaOverride ?? heroMetaText(for: renderedBlueprint))
-                    .font(Typography.monoDigit(Typography.manrope(size: 13.5, weight: .semibold, relativeTo: .footnote)))
-                    // 0.7 measured 3.57:1 on the hero's end stop — the worst
-                    // text contrast in the app and the Home XXXL audit's
-                    // contrast failure. Hierarchy stays in size and weight.
-                    .foregroundStyle(AppColor.homeHeroMetaText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Spacing.lg)
-                    .contentTransition(.opacity)
-            }
-            .heroEntrance(settled: heroTextSettled)
-
-            // The trace draws at rest immediately; its breath arms one
-            // beat after the headline settles (the entrance's second beat).
-            VoiceTrace(
-                variant: activeEarned == nil ? .idleHero : .earnedHero,
-                wakeDelay: HeroEntranceBeat.traceWake,
-                armed: commitCTAPressed
-            )
-            .frame(maxWidth: .infinity)
-            .padding(.top, Spacing.lg)
-            // Armed gain follows the CTA's real press state. Reduce Motion
-            // gets the same state cue instantly (the animation collapses).
-            .animation(
-                reduceMotion ? nil : .listChange,
-                value: commitCTAPressed
-            )
-            // Commit handoff (Moment A): the trace lifts toward the
-            // recording presence during the pre-push beat.
-            .scaleEffect(heroHandoff ? 1.1 : 1)
-            .animation(
-                reduceMotion ? nil : NoumMotion.screenContinuation,
-                value: heroHandoff
-            )
-
-            heroActions(renderedExposure: renderedExposure)
-                .padding(.top, Spacing.lg)
-                .heroEntrance(settled: heroCTASettled)
-
-            // The cohesive Home intentionally suppresses the generic plan arc,
-            // but an explicitly saved line is a concrete current-week action,
-            // not extra dashboard furniture. Let that one bounded handoff
-            // surface without reopening the broader plan row.
-            if showsPlanArc || currentPlannedPhrase != nil {
-                planArcRow
-                    .padding(.top, Spacing.xs)
+                heroActions(renderedExposure: renderedExposure)
                     .heroEntrance(settled: heroCTASettled)
+
+                // A saved current-week phrase is concrete practice, not an
+                // additional recommendation. The broader plan stays hidden.
+                if showsPlanArc || currentPlannedPhrase != nil {
+                    planArcRow
+                        .heroEntrance(settled: heroCTASettled)
+                }
             }
         }
-        .padding(.horizontal, Spacing.xl)
+        .padding(.horizontal, Spacing.screenH)
         .padding(.top, heroTopInset + Spacing.sm)
-        .padding(.bottom, Spacing.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            UnevenRoundedRectangle(
-                cornerRadii: .init(
-                    bottomLeading: CornerRadius.hero,
-                    bottomTrailing: CornerRadius.hero
-                ),
-                style: .continuous
-            )
-            .fill(
-                LinearGradient(
-                    colors: [AppColor.heroGradientStart, AppColor.heroGradientEnd],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            // Bleed generously above the content top so no canvas sliver can
-            // show between the hero and the physical top edge — even on a
-            // hard rubber-band pull. Background only, clipped by the
-            // ScrollView at rest, so layout is unaffected.
-            .padding(.top, -240)
-            .shadow(color: AppColor.coachAccent.opacity(0.28), radius: 22, y: 14)
-        }
+        .padding(.bottom, Spacing.xs)
         .onAppear {
             lastRenderedRecommendationExposure = renderedExposure
             // Pop-back from a rep: the handoff lift settles home again.
@@ -547,6 +504,165 @@ struct HomeCoachCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.coachCard")
+    }
+
+    private var todayMissionProgress: TodayRepMissionProgress {
+        TodayRepMissionProgress(completedReps: completedRepsToday)
+    }
+
+    private func missionHeader(_ progress: TodayRepMissionProgress) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                missionEyebrow
+                Spacer(minLength: Spacing.xs)
+                missionProgressPill(progress)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                missionEyebrow
+                missionProgressPill(progress)
+            }
+        }
+    }
+
+    private var missionEyebrow: some View {
+        Text("Today's mission")
+            .font(Typography.caption)
+            .foregroundStyle(AppColor.homeHeroMetaText)
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func missionProgressPill(
+        _ progress: TodayRepMissionProgress
+    ) -> some View {
+        Text(progress.compactLabel)
+            .font(Typography.monoDigit(Typography.captionSmall))
+            .foregroundStyle(.white)
+            .padding(.horizontal, Spacing.sm)
+            .frame(minHeight: 32)
+            // Keep the capsule at or below 12%: full-white caption copy then
+            // clears AA even over the gradient's lightest production stop.
+            .background(Color.white.opacity(0.12), in: Capsule())
+            .accessibilityHidden(true)
+    }
+
+    private func missionHeadline(
+        for blueprint: RecommendationBiasBlueprint
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            if let earned = activeEarned {
+                earnedChip(earned.chipText)
+                    .transition(.opacity)
+            }
+
+            Text(activeEarned?.headlineOverride ?? coachTitle(for: blueprint))
+                .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
+                .foregroundStyle(AppColor.homeHeroTitleText)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+                .accessibilityIdentifier("home.coachCard.title")
+
+            if activeEarned == nil, let subtitle = coachSubtitle(for: blueprint) {
+                Text(subtitle)
+                    .font(Typography.subheadline)
+                    .foregroundStyle(AppColor.homeHeroSubtitleText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("home.coachCard.subtitle")
+            }
+
+            Text(activeEarned?.metaOverride ?? heroMetaText(for: blueprint))
+                .font(Typography.monoDigit(Typography.caption))
+                .foregroundStyle(AppColor.homeHeroMetaText)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var missionWaveform: some View {
+        NoumWaveformMark(
+            state: activeEarned != nil
+                ? .earned
+                : (commitCTAPressed || heroHandoff ? .listening : .idle),
+            level: commitCTAPressed || heroHandoff ? 1 : 0,
+            tint: .white,
+            size: 72
+        )
+        .scaleEffect(heroHandoff ? 1.08 : 1)
+        .animation(
+            reduceMotion ? nil : NoumMotion.screenContinuation,
+            value: heroHandoff
+        )
+        .accessibilityHidden(true)
+    }
+
+    private func missionRepTrack(
+        _ progress: TodayRepMissionProgress
+    ) -> some View {
+        HStack(spacing: 0) {
+            ForEach(1...TodayRepMissionProgress.targetReps, id: \.self) { rep in
+                missionRepNode(rep, progress: progress)
+
+                if rep < TodayRepMissionProgress.targetReps {
+                    Capsule(style: .continuous)
+                        .fill(
+                            Color.white.opacity(
+                                progress.completedReps > rep ? 0.90 : 0.22
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 3)
+                        .padding(.horizontal, Spacing.xs)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .animation(
+            NoumMotion.animation(for: .earned, reduceMotion: reduceMotion),
+            value: progress.completedReps
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's three-rep mission")
+        .accessibilityValue(progress.accessibilityValue)
+        .accessibilityIdentifier("home.mission.progress")
+    }
+
+    private func missionRepNode(
+        _ rep: Int,
+        progress: TodayRepMissionProgress
+    ) -> some View {
+        let isComplete = rep <= progress.completedReps
+        let isCurrent = !progress.isComplete && rep == progress.currentRep
+
+        return ZStack {
+            Circle()
+                .fill(
+                    isComplete
+                        ? Color.white
+                        : Color.white.opacity(isCurrent ? 0.10 : 0.06)
+                )
+            Circle()
+                .stroke(
+                    Color.white.opacity(isCurrent ? 0.95 : 0.28),
+                    lineWidth: isCurrent ? 2 : 1
+                )
+
+            if isComplete {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(AppColor.coachingInk)
+            } else {
+                Text("\(rep)")
+                    .font(Typography.monoDigit(Typography.caption))
+                    .foregroundStyle(Color.white)
+            }
+        }
+        .frame(width: 32, height: 32)
+        .scaleEffect(!reduceMotion && isCurrent ? 1.06 : 1)
+        .accessibilityHidden(true)
     }
 
     /// Label for the primary CTA. Keep it verb-led and natural rather than
@@ -718,7 +834,7 @@ struct HomeCoachCard: View {
         .padding(.leading, 10)
         .padding(.trailing, Spacing.sm)
         .padding(.vertical, 6)
-        .background(Color.white.opacity(0.16), in: Capsule())
+        .background(Color.white.opacity(0.12), in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("New evidence, from your retry"))
         .accessibilityIdentifier("home.coachCard.earnedChip")
@@ -728,8 +844,8 @@ struct HomeCoachCard: View {
     /// first render is what enforces "shown once, then collapsed" — the
     /// @State copy keeps this visit stable while the ledger moves on.
     ///
-    /// V4.6.1 announcement beat: the chip, headline/meta overrides and
-    /// the idleHero→earnedHero trace flip all land on one payoff reveal
+    /// Announcement beat: the chip, headline/meta overrides and waveform's
+    /// earned state all land on one payoff reveal
     /// (Reduce Motion: 200 ms cross-fade), with the milestone-register
     /// haptic fired once — the nil-guard plus the immediate ledger
     /// acknowledge are the once-per-event contract, so neither the
@@ -749,9 +865,8 @@ struct HomeCoachCard: View {
         CoachHaptic.earnedEvidence()
     }
 
-    /// One-shot entrance (V4.6.1): the headline block settles immediately,
-    /// the CTA follows one beat later; the trace's breath arms on its own
-    /// `wakeDelay`. Guarded on the settled flag so pop-returns to the
+    /// One-shot entrance: the headline block settles immediately and the CTA
+    /// follows one beat later. Guarded on the settled flag so pop-returns to the
     /// retained Home never replay it; a cold remount starts fresh @State
     /// and plays again. Reduce Motion: instant appear, no animation.
     private func playEntranceChoreography() {
@@ -1056,7 +1171,7 @@ struct HomeCoachCard: View {
 
     /// Moment A commit continuity: every business mutation has already run
     /// by the time this is called — only the navigation push rides the
-    /// 180ms handoff beat while the trace lifts. Reduce Motion pushes
+    /// 180ms handoff beat while the waveform lifts. Reduce Motion pushes
     /// immediately with no beat.
     private func commitWithHandoff(_ push: @escaping () -> Void) {
         guard !reduceMotion else {
@@ -1070,9 +1185,9 @@ struct HomeCoachCard: View {
         }
     }
 
-    // NOTE (V4.6.1): the mood lifecycle (`isBursting`/`restingMood`/
-    // `displayedMood`) was deleted, not rewired. It drove a NoumCharacter
-    // the V4.6 hero no longer renders, and its burst fired on fingerprint
+    // NOTE: the former mood lifecycle (`isBursting`/`restingMood`/
+    // `displayedMood`) was deleted, not rewired. It drove an illustration
+    // this hero no longer renders, and its burst fired on fingerprint
     // changes that happen almost exclusively while Home is off-screen
     // (post-rep, retained tab root) — a beat that would never be seen.
     // Dead state either way; deletion is the honest, smaller change.
@@ -1207,11 +1322,25 @@ private extension View {
 #Preview("Coach Card — Populated") {
     ScrollView {
         VStack(spacing: Spacing.cardGap) {
-            HomeCoachCard(navigationPath: .constant(NavigationPath()))
+            HomeCoachCard(
+                navigationPath: .constant(NavigationPath()),
+                completedRepsToday: 1
+            )
         }
-        .padding(.horizontal, Spacing.screenH)
     }
     .background(AppColor.screenBackground.ignoresSafeArea())
+}
+
+#Preview("Coach Card — Dark Accessibility") {
+    ScrollView {
+        HomeCoachCard(
+            navigationPath: .constant(NavigationPath()),
+            completedRepsToday: 2
+        )
+    }
+    .background(AppColor.screenBackground.ignoresSafeArea())
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .preferredColorScheme(.dark)
 }
 #endif
 

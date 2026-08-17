@@ -278,6 +278,13 @@ enum CoachReplyPipeline {
             latestUserTurn,
             intent: turnIntent
         )
+        let requestedMetrics = TurnDepthClassifier.requestedPersonalMetrics(
+            latestUserTurn ?? ""
+        )
+        let replyPosture = CoachReplyPosture.resolve(
+            userText: latestUserTurn ?? "",
+            requestedMetrics: requestedMetrics
+        )
         let turnDepth = judgementPassEnabled
             ? TurnDepthClassifier.classify(
                 userText: latestUserTurn ?? "",
@@ -288,10 +295,11 @@ enum CoachReplyPipeline {
         Self.recordTrace(
             coachID,
             stage: CoachTraceStage.classified,
-            reason: "intent=\(turnIntent.rawValue) response=\(responseKind.rawValue) depth=\(turnDepth.rawValue)",
+            reason: "intent=\(turnIntent.rawValue) response=\(responseKind.rawValue) depth=\(turnDepth.rawValue) posture=\(replyPosture.rawValue)",
             numerics: [
                 "historyRows": history.count,
                 "userCharacters": latestUserTurn?.count ?? 0,
+                "requestedMetricKinds": requestedMetrics.count,
             ]
         )
         Self.recordTrace(
@@ -575,11 +583,11 @@ enum CoachReplyPipeline {
         }
         var providerChoice: CoachTurnProviderChoice?
 
-        let context: String
+        let baseContext: String
         if responseKind == .generalCoaching ||
             responseKind == .conversational ||
             responseKind == .memoryHandoff {
-            context = CoachContextBuilder.nonPersonalContext(
+            baseContext = CoachContextBuilder.nonPersonalContext(
                 profile: profileStore.profile,
                 responseKind: responseKind,
                 coachingExpertise: responseKind == .generalCoaching ? coachingExpertise : [],
@@ -588,12 +596,39 @@ enum CoachReplyPipeline {
                 goalChangeMemory: pendingGoalIntent?.kind == .change ? coachMemory : nil
             )
         } else {
-            context = CoachContextBuilder.personalTurnContext(
+            baseContext = CoachContextBuilder.personalTurnContext(
                 profile: profileStore.profile,
                 coachingExpertise: coachingExpertise,
                 hasCoachingBrief: coachingBrief != nil
             )
         }
+        // Put the deterministic deliberation contract immediately before model
+        // prose. The provider sees one structured situation/evidence/intervention
+        // plan, but none of these private labels are persisted or shown. General
+        // coaching gets a non-personal plan; conversational turns get one only
+        // when low capacity makes presence the deliberate intervention.
+        let decisionPlanContext: String
+        if let providerAssessment {
+            decisionPlanContext = CoachPromptBundle.contextBlock(
+                assessment: providerAssessment,
+                rubric: coachingRubric,
+                surface: surface
+            )
+        } else if responseKind == .generalCoaching ||
+                    replyPosture == .presenceOnly ||
+                    replyPosture == .informationOnly {
+            decisionPlanContext = CoachPromptBundle.generalContextBlock(
+                userQuestion: latestUserTurn ?? "",
+                turnDepth: turnDepth,
+                surface: surface,
+                recentMoves: recentCoachReplies
+            )
+        } else {
+            decisionPlanContext = ""
+        }
+        let context: String = decisionPlanContext.isEmpty
+            ? baseContext
+            : baseContext + "\n" + decisionPlanContext
         // Context enrichment is complete before provider work begins. Capture
         // one immutable String so the Sendable provider task and the later
         // final-vision evaluation use identical input without sharing a mutable

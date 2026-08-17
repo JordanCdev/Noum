@@ -93,8 +93,7 @@ struct PathUnlockCelebrationIntegrityTests {
         #expect(reviewOnly.count == 4)
         #expect(progressSessions.isEmpty)
         #expect(ProfileCompositionPlan.make(
-            sessionCount: progressSessions.count,
-            hasProgressEvidence: false
+            sessionCount: progressSessions.count
         ).stage == .zero)
         #expect(CoachParityReadiness.build(
             memory: nil,

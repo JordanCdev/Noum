@@ -2,7 +2,711 @@ import Foundation
 
 // MARK: - Deterministic coach reasoning pass
 
+/// A coarse learning stage keeps the coach from handing the user the same
+/// beginner drill forever. It is an internal planning value, never surface copy.
+enum CoachSkillStage: String, Codable, Equatable, CaseIterable {
+    case establish
+    case stretch
+    case transfer
+    case recover
+}
+
+/// One bounded professional intervention. The catalogue is intentionally small:
+/// each move has a clear indication, contraindication, demonstration, exercise,
+/// pass condition and real-world transfer. This is more useful than a long menu
+/// of tips because the reasoning pass must choose one move and explain why.
+struct CoachInterventionSpec: Equatable, Identifiable {
+    let id: String
+    let dimensionID: String?
+    let title: String
+    let whenToUse: String
+    let whenNotToUse: String
+    let modelLine: String
+    let drill: String
+    let passCondition: String
+    let transferPrompt: String
+    let signatureTerms: [String]
+
+    func move(for stage: CoachSkillStage) -> String {
+        switch stage {
+        case .establish:
+            return drill
+        case .stretch:
+            return "\(drill) Add one extra demand. It passes when \(passCondition)"
+        case .transfer:
+            return transferPrompt
+        case .recover:
+            return "Do not add a drill yet. Model the move once: “\(modelLine)”"
+        }
+    }
+}
+
+struct CoachInterventionChoice: Equatable {
+    let intervention: CoachInterventionSpec
+    let stage: CoachSkillStage
+    let move: String
+
+    var noveltyKey: String { "\(intervention.id):\(stage.rawValue)" }
+}
+
+/// Private deliberation contract used to brief the provider before it writes
+/// prose. Keeping these fields typed prevents "scorecard first, advice second"
+/// generation: the model receives one situation, one behavioural read and one
+/// chosen intervention with an observable success test.
+struct CoachDecisionPlan: Equatable {
+    let situation: String
+    let stakes: String
+    let emotion: String
+    let observedBehavior: String
+    let exactEvidence: String
+    let skillStage: CoachSkillStage
+    let chosenIntervention: String
+    let successTest: String
+    let modelLine: String?
+    let invitation: String?
+    let replyPosture: CoachReplyPosture
+    /// Non-nil only for a user-requested generic reference range. It never
+    /// authorizes a claim about the user's own performance.
+    let benchmarkAuthorization: CoachBenchmarkAuthorization?
+}
+
 enum CoachReasoningPass {
+
+    static let interventionCatalogue: [CoachInterventionSpec] = [
+        CoachInterventionSpec(
+            id: "answer-first",
+            dimensionID: "verdict_first",
+            title: "Answer first",
+            whenToUse: "The answer is delayed by setup or context.",
+            whenNotToUse: "The user is asking for presence, or the decision itself is still unknown.",
+            modelLine: "My recommendation is to delay the launch by one week. The dependency is not ready.",
+            drill: "Give one 30-second answer: recommendation in sentence one, one reason in sentence two, then stop.",
+            passCondition: "a listener can state the recommendation after sentence one.",
+            transferPrompt: "Use the same two-sentence shape in the next real update, then ask whether the decision was clear.",
+            signatureTerms: ["sentence one", "recommendation first", "answer first", "verdict first"]
+        ),
+        CoachInterventionSpec(
+            id: "one-proof-point",
+            dimensionID: "salience",
+            title: "One proof point",
+            whenToUse: "The claim is clear but generic or forgettable.",
+            whenNotToUse: "The listener cannot yet tell what the main point is.",
+            modelLine: "We should delay because the payment flow still fails for returning customers.",
+            drill: "State the point, add one concrete example, then stop before a second example.",
+            passCondition: "the example proves the point without opening a second thread.",
+            transferPrompt: "Use one real proof point in the next meeting and notice what the listener repeats back.",
+            signatureTerms: ["one proof point", "one concrete example", "second example", "concrete detail", "the example"]
+        ),
+        CoachInterventionSpec(
+            id: "clean-close",
+            dimensionID: "clean_close",
+            title: "Land the close",
+            whenToUse: "The point lands but the speaker reopens it, trails off, or hides the ask.",
+            whenNotToUse: "The opening is still unclear enough that the listener cannot follow the answer.",
+            modelLine: "I need your decision by Thursday.",
+            drill: "Make the final sentence the ask or decision, then leave the silence there.",
+            passCondition: "nothing after the final sentence weakens or re-explains it.",
+            transferPrompt: "Use the clean close in the next real ask and note whether the listener responds to it directly.",
+            signatureTerms: ["final sentence", "clean close", "leave the silence", "then stop", "the ask"]
+        ),
+        CoachInterventionSpec(
+            id: "functional-pause",
+            dimensionID: "controlled_pacing",
+            title: "Give the pause a job",
+            whenToUse: "Sentence boundaries disappear or filler pressure rises between ideas.",
+            whenNotToUse: "The user is already slow and the real problem is an unclear message.",
+            modelLine: "The answer is no. [one beat] The cost is too high.",
+            drill: "Keep the natural pace and place one silent beat before the final sentence.",
+            passCondition: "the next sentence starts cleanly without a filler or restart.",
+            transferPrompt: "Use one deliberate beat before the key line in the next real conversation and check whether it feels easier to follow.",
+            signatureTerms: ["silent beat", "one beat", "natural pace", "before the final sentence", "filler"]
+        ),
+        CoachInterventionSpec(
+            id: "plain-commitment",
+            dimensionID: "hedge_control",
+            title: "Plain commitment",
+            whenToUse: "A clear recommendation is softened by an unnecessary hedge.",
+            whenNotToUse: "Uncertainty is real and should be named rather than hidden.",
+            modelLine: "I recommend option B. The evidence is incomplete, but this is the better risk.",
+            drill: "Replace one unnecessary maybe or probably with a plain recommendation, while keeping any real uncertainty.",
+            passCondition: "the commitment and the genuine uncertainty are both easy to hear.",
+            transferPrompt: "Use one plain recommendation in the next decision conversation and ask what sounded certain versus still open.",
+            signatureTerms: ["plain recommendation", "maybe", "probably", "real uncertainty", "genuine uncertainty", "commitment", "hedge"]
+        ),
+        CoachInterventionSpec(
+            id: "pressure-anchor",
+            dimensionID: "pressure_stability",
+            title: "Protect one anchor line",
+            whenToUse: "A useful structure breaks when time, interruption, or social risk rises.",
+            whenNotToUse: "The base message has not yet been made clear without pressure.",
+            modelLine: "The point I do not want to lose is this: we need a decision today.",
+            drill: "Run the same prompt under pressure and protect only the first clear sentence from setup.",
+            passCondition: "the anchor line stays intact even if the rest becomes less polished.",
+            transferPrompt: "Use the anchor line in the next stakes moment and note whether you can return to it after an interruption.",
+            signatureTerms: ["under pressure", "anchor line", "timer", "keep sentence one", "after an interruption"]
+        ),
+        CoachInterventionSpec(
+            id: "warm-disagreement",
+            dimensionID: "pressure_stability",
+            title: "Disagree before reassuring",
+            whenToUse: "Reassurance delays the disagreement and makes the speaker sound defensive.",
+            whenNotToUse: "The relationship needs immediate repair or the user does not yet know their position.",
+            modelLine: "I disagree with that direction. My concern is the customer risk.",
+            drill: "Say the disagreement in sentence one, add one calm reason, then stop before reassuring.",
+            passCondition: "the position is clear without the delivery becoming hostile.",
+            transferPrompt: "Use the same order in one low-risk disagreement and notice whether warmth survives after the point is clear.",
+            signatureTerms: ["disagreement in sentence one", "calm reason", "before reassuring", "i disagree", "position is clear", "low-risk disagreement"]
+        ),
+        CoachInterventionSpec(
+            id: "story-beat",
+            dimensionID: "salience",
+            title: "Build one story beat",
+            whenToUse: "A story is abstract, chronological without a point, or missing the moment that changed something.",
+            whenNotToUse: "The listener needs a direct decision or answer before any narrative.",
+            modelLine: "We thought onboarding was fixed. Then one customer shared their screen and stalled at the same step twice. That is why we changed the flow.",
+            drill: "Tell one 45-second story with three beats: expectation, turning point, meaning. Keep one concrete detail in the turning point.",
+            passCondition: "the listener can name what changed and why the story matters.",
+            transferPrompt: "Use the three-beat story in the next real explanation and ask what moment the listener remembers.",
+            signatureTerms: ["three beats", "turning point", "why the story matters", "story beat", "moment the listener remembers", "expectation"]
+        ),
+        CoachInterventionSpec(
+            id: "listening-loop",
+            dimensionID: nil,
+            title: "Close the listening loop",
+            whenToUse: "The speaker is preparing a reply too early, interrupting, or answering before checking the other person's meaning.",
+            whenNotToUse: "The other person has already made a clear request and needs a direct answer, not another reflection.",
+            modelLine: "What I hear is that the deadline matters less than knowing the risk early. Have I got that right?",
+            drill: "After one short answer from a partner, paraphrase the meaning in one sentence and ask one check question before adding your view.",
+            passCondition: "the partner confirms or corrects the meaning before the speaker responds.",
+            transferPrompt: "Use one paraphrase-and-check loop in the next real conversation and notice what the other person clarifies.",
+            signatureTerms: ["paraphrase the meaning", "check question", "have i got that right", "listening loop", "partner confirms", "other person clarifies"]
+        ),
+        CoachInterventionSpec(
+            id: "vocal-contrast",
+            dimensionID: "controlled_pacing",
+            title: "Create vocal contrast",
+            whenToUse: "The wording is clear but important words disappear into an even, flat, or rushed delivery.",
+            whenNotToUse: "The message itself is still unclear or extra vocal energy would feel performative in a sensitive moment.",
+            modelLine: "The launch is not late. The risk is untested. [stress: untested]",
+            drill: "Mark one meaning word in each sentence; give that word a little more stress and let the surrounding words stay conversational.",
+            passCondition: "a listener identifies the intended meaning words without the delivery sounding theatrical.",
+            transferPrompt: "Use one marked meaning word in the next real update and ask which phrase sounded most important.",
+            signatureTerms: ["meaning word", "vocal contrast", "more stress", "sounding theatrical", "phrase sounded most important", "flat delivery"]
+        ),
+        CoachInterventionSpec(
+            id: "audience-lens",
+            dimensionID: nil,
+            title: "Choose the audience lens",
+            whenToUse: "The message is accurate but pitched at the wrong level of detail, consequence, or assumed knowledge for this listener.",
+            whenNotToUse: "The audience is not yet known or the core point changes across versions.",
+            modelLine: "For the executive room: revenue is protected, but the launch moves one week. For the technical room: the payment dependency needs one more validation cycle.",
+            drill: "Name one audience and rewrite the same point around the decision, consequence, and detail that audience needs.",
+            passCondition: "the core point stays stable while the consequence and level of detail fit the listener.",
+            transferPrompt: "Before the next real message, write one sentence for that audience and remove any detail that does not change their decision.",
+            signatureTerms: ["audience lens", "level of detail", "fit the listener", "executive room", "technical room", "that audience", "change their decision"]
+        ),
+        CoachInterventionSpec(
+            id: "presence-before-practice",
+            dimensionID: nil,
+            title: "Presence before practice",
+            whenToUse: "The user is exhausted, overwhelmed, defeated, or explicitly asks to stop.",
+            whenNotToUse: "The user has energy and is explicitly asking for a concrete coaching attempt.",
+            modelLine: "That sounds exhausting. You do not need to force another rep right now.",
+            drill: "No drill. Reduce pressure and leave the door open.",
+            passCondition: "the user feels no obligation to perform or answer another question.",
+            transferPrompt: "Return to one small answer only when the user says they have room for it.",
+            signatureTerms: ["no drill", "do not force another", "sounds exhausting", "when you have room"]
+        )
+    ]
+
+    /// Build the private plan that precedes any provider prose. This method is
+    /// intentionally pure so evals can inspect the decision without calling a
+    /// model or exposing it to the user.
+    static func decisionPlan(for assessment: CoachAssessment) -> CoachDecisionPlan {
+        let requestedMetrics = assessment.requestedMetrics ?? []
+        let posture = CoachReplyPosture.resolve(
+            userText: assessment.questionRestatement,
+            requestedMetrics: requestedMetrics
+        )
+        let intervention = interventionForAssessment(assessment, posture: posture)
+        let stage = decisionStage(for: assessment, posture: posture)
+        let exactEvidence = assessment.evidenceUsed.first(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) ?? "No quantity-qualified personal evidence is available."
+
+        let chosenIntervention: String
+        let successTest: String
+        if posture == .requestedMetrics {
+            chosenIntervention = "No intervention. Answer only the metric kinds the user explicitly requested."
+            successTest = "Every number in the answer belongs to the explicit metric request."
+        } else if let intervention {
+            chosenIntervention = [
+                intervention.title,
+                "Use when: \(intervention.whenToUse)",
+                "Do not use when: \(intervention.whenNotToUse)"
+            ].joined(separator: " | ")
+            successTest = intervention.passCondition
+        } else {
+            chosenIntervention = "Evidence boundary before intervention."
+            successTest = assessment.missingEvidence.first
+                ?? "The response makes no claim beyond the available evidence."
+        }
+
+        return CoachDecisionPlan(
+            situation: assessment.questionRestatement,
+            stakes: stakesRead(in: assessment.questionRestatement),
+            emotion: emotionRead(
+                in: assessment.questionRestatement,
+                repairFocus: assessment.repairFocus
+            ),
+            observedBehavior: assessment.directVerdict,
+            exactEvidence: exactEvidence,
+            skillStage: stage,
+            chosenIntervention: chosenIntervention,
+            successTest: successTest,
+            modelLine: posture == .coachedAttempt
+                ? intervention.map {
+                    adaptedModelLine(
+                        for: $0,
+                        situation: assessment.questionRestatement
+                    )
+                }
+                : nil,
+            invitation: posture == .coachedAttempt
+                ? "Invite one attempt now; do not assign a menu or a second drill."
+                : nil,
+            replyPosture: posture,
+            benchmarkAuthorization: nil
+        )
+    }
+
+    /// General craft questions have no personal assessment by design, but they
+    /// still need a decision before prose. This plan states the evidence
+    /// boundary explicitly and selects a demonstrable technique without
+    /// pretending the app observed the user's delivery.
+    static func generalDecisionPlan(
+        userQuestion: String,
+        recentMoves: [String] = []
+    ) -> CoachDecisionPlan {
+        let posture = CoachReplyPosture.resolve(userText: userQuestion)
+        let benchmarkAuthorization = CoachBenchmarkAuthorization.explicitRequest(
+            in: userQuestion
+        )
+        let candidates: [CoachInterventionSpec]
+        if posture == .presenceOnly,
+           let presence = interventionCatalogue.first(where: {
+            $0.id == "presence-before-practice"
+           }) {
+            candidates = [presence]
+        } else if posture == .coachedAttempt {
+            candidates = orderedInterventions(
+                for: userQuestion,
+                preferredDimensionID: nil
+            )
+        } else {
+            candidates = []
+        }
+        let recentKeys = Set(
+            recentMoves.prefix(3).compactMap(interventionMoveKey)
+        )
+        let stages: [CoachSkillStage] = posture == .presenceOnly
+            ? [.recover]
+            : [.establish, .stretch, .transfer]
+        var choice: CoachInterventionChoice?
+        for intervention in candidates where choice == nil {
+            for stage in stages where choice == nil {
+                let candidate = CoachInterventionChoice(
+                    intervention: intervention,
+                    stage: stage,
+                    move: intervention.move(for: stage)
+                )
+                if !recentKeys.contains(candidate.noveltyKey) {
+                    choice = candidate
+                }
+            }
+        }
+        let selected = choice ?? candidates.first.map {
+            CoachInterventionChoice(
+                intervention: $0,
+                stage: posture == .presenceOnly ? .recover : .transfer,
+                move: $0.move(
+                    for: posture == .presenceOnly ? .recover : .transfer
+                )
+            )
+        }
+
+        let chosenIntervention: String
+        let successTest: String
+        if let benchmarkAuthorization {
+            chosenIntervention = "Answer-only bounded benchmark: \(benchmarkAuthorization.promptName). No personal diagnosis or exercise."
+            successTest = "The answer gives the authorized range, names context that can move it, and avoids false precision."
+        } else if posture == .informationOnly {
+            chosenIntervention = "Answer-only craft explanation. Do not turn a legitimate knowledge question into a coached attempt."
+            successTest = "The reply answers the craft question directly without a diagnosis, drill, or compulsory follow-up."
+        } else if let selected {
+            chosenIntervention = "\(selected.intervention.title) | Use when: \(selected.intervention.whenToUse) | Do not use when: \(selected.intervention.whenNotToUse)"
+            successTest = selected.intervention.passCondition
+        } else {
+            chosenIntervention = "No catalogue move is earned by the wording. Answer the action request without defaulting to answer-first."
+            successTest = "The reply addresses the exact request without inventing personal evidence or an unrelated technique."
+        }
+
+        return CoachDecisionPlan(
+            situation: userQuestion.trimmingCharacters(in: .whitespacesAndNewlines),
+            stakes: stakesRead(in: userQuestion),
+            emotion: emotionRead(in: userQuestion, repairFocus: nil),
+            observedBehavior: "No personal delivery claim is earned; answer the craft question itself.",
+            exactEvidence: "No personal rep evidence is authorized on this general-coaching turn.",
+            skillStage: selected?.stage ?? .establish,
+            chosenIntervention: chosenIntervention,
+            successTest: successTest,
+            modelLine: posture == .coachedAttempt
+                ? selected.map {
+                    adaptedModelLine(
+                        for: $0.intervention,
+                        situation: userQuestion
+                    )
+                }
+                : nil,
+            invitation: posture == .coachedAttempt && selected != nil
+                ? "Invite one attempt using the demonstrated shape."
+                : nil,
+            replyPosture: posture,
+            benchmarkAuthorization: benchmarkAuthorization
+        )
+    }
+
+    static func interventionForAssessment(
+        _ assessment: CoachAssessment,
+        posture: CoachReplyPosture? = nil
+    ) -> CoachInterventionSpec? {
+        let posture = posture ?? CoachReplyPosture.resolve(
+            userText: assessment.questionRestatement,
+            requestedMetrics: assessment.requestedMetrics ?? []
+        )
+        if posture == .requestedMetrics || posture == .informationOnly {
+            return nil
+        }
+        if posture == .presenceOnly {
+            return interventionCatalogue.first { $0.id == "presence-before-practice" }
+        }
+
+        let lower = [
+            assessment.questionRestatement,
+            assessment.directVerdict,
+            assessment.nextProofTest
+        ].joined(separator: " ").lowercased()
+        if containsAny(lower, ["disagree", "disagreement", "reassur", "defensive"]) {
+            return interventionCatalogue.first { $0.id == "warm-disagreement" }
+        }
+        for id in domainInterventionIDs(for: lower) {
+            if let match = interventionCatalogue.first(where: { $0.id == id }) {
+                return match
+            }
+        }
+        if let dimensionID = assessment.nextProofDimensionID,
+           let match = interventionCatalogue.first(where: { $0.dimensionID == dimensionID }) {
+            return match
+        }
+        return interventionCatalogue.max { lhs, rhs in
+            interventionMatchScore(lhs, in: lower) <
+                interventionMatchScore(rhs, in: lower)
+        }.flatMap { interventionMatchScore($0, in: lower) > 0 ? $0 : nil }
+    }
+
+    static func adaptedModelLine(
+        for intervention: CoachInterventionSpec,
+        situation: String
+    ) -> String {
+        let lower = situation.lowercased()
+        if intervention.id == "answer-first",
+           containsAny(lower, ["delay", "launch"]) {
+            return intervention.modelLine
+        }
+        switch intervention.id {
+        case "answer-first":
+            return "I recommend option A. The reason is the delivery risk."
+        case "one-proof-point":
+            return "The risk is real: one customer failed at the final step."
+        case "clean-close":
+            return "I need your decision by Thursday."
+        case "functional-pause":
+            return "The answer is no. [one beat] The cost is too high."
+        case "plain-commitment":
+            return "I recommend option B. The evidence is incomplete, but it is the better risk."
+        case "pressure-anchor":
+            return "The point I do not want to lose is this: we need a decision today."
+        case "warm-disagreement":
+            return "I disagree with that direction. My concern is the customer impact."
+        case "story-beat":
+            return "We expected the handoff to work. Then one customer stalled at the same step twice. That is why we changed it."
+        case "listening-loop":
+            return "What I hear is that early warning matters more than a perfect forecast. Have I got that right?"
+        case "vocal-contrast":
+            return "The launch is not late. The risk is untested. [stress: untested]"
+        case "audience-lens":
+            return "For this room, the decision is simple: protect revenue now, then validate the dependency."
+        case "presence-before-practice":
+            return intervention.modelLine
+        default:
+            return intervention.modelLine
+        }
+    }
+
+    /// Selects one intervention and one stage while avoiding any move used in
+    /// the last three typed proof tests. Repeating a skill target is allowed only
+    /// by advancing its stage (establish -> stretch -> transfer), never by
+    /// silently handing back the same exercise with synonyms.
+    static func selectIntervention(
+        userQuestion: String,
+        preferredDimensionID: String?,
+        trajectory: UserTrajectorySnapshot,
+        turnDepth: CoachTurnDepth,
+        replyPosture: CoachReplyPosture,
+        recentMoves: [String]
+    ) -> CoachInterventionChoice? {
+        if replyPosture == .requestedMetrics || replyPosture == .informationOnly {
+            return nil
+        }
+        if replyPosture == .presenceOnly {
+            guard let presence = interventionCatalogue.first(where: {
+                $0.id == "presence-before-practice"
+            }) else { return nil }
+            return CoachInterventionChoice(
+                intervention: presence,
+                stage: .recover,
+                move: presence.move(for: .recover)
+            )
+        }
+
+        let candidates = orderedInterventions(
+            for: userQuestion,
+            preferredDimensionID: preferredDimensionID
+        )
+        guard !candidates.isEmpty else { return nil }
+        let preferredStage = skillStage(
+            trajectory: trajectory,
+            turnDepth: turnDepth
+        )
+        let recentKeys = Set(
+            recentMoves.prefix(3).compactMap(interventionMoveKey)
+        )
+        let stageOrder = progressiveStageOrder(startingAt: preferredStage)
+
+        for candidate in candidates {
+            for stage in stageOrder {
+                let choice = CoachInterventionChoice(
+                    intervention: candidate,
+                    stage: stage,
+                    move: candidate.move(for: stage)
+                )
+                if !recentKeys.contains(choice.noveltyKey) {
+                    return choice
+                }
+            }
+        }
+
+        // Three recent stages can exhaust one target. Preserve plan continuity
+        // and move into real-world transfer rather than switching skills merely
+        // to sound novel.
+        let candidate = candidates[0]
+        return CoachInterventionChoice(
+            intervention: candidate,
+            stage: .transfer,
+            move: candidate.transferPrompt
+        )
+    }
+
+    static func interventionMoveKey(_ text: String) -> String? {
+        let lower = text.lowercased()
+        guard let intervention = interventionCatalogue.max(by: { lhs, rhs in
+            interventionMatchScore(lhs, in: lower) <
+                interventionMatchScore(rhs, in: lower)
+        }), interventionMatchScore(intervention, in: lower) > 0 else {
+            return nil
+        }
+
+        let stage: CoachSkillStage
+        if intervention.id == "presence-before-practice" {
+            stage = .recover
+        } else if containsAny(lower, [
+            "next real", "real update", "real ask", "real conversation",
+            "real meeting", "stakes moment", "low-risk disagreement"
+        ]) {
+            stage = .transfer
+        } else if containsAny(lower, [
+            "passes when", "it passes", "one extra demand", "check whether",
+            "notice whether", "compare whether"
+        ]) {
+            stage = .stretch
+        } else {
+            stage = .establish
+        }
+        return "\(intervention.id):\(stage.rawValue)"
+    }
+
+    private static func orderedInterventions(
+        for userQuestion: String,
+        preferredDimensionID: String?
+    ) -> [CoachInterventionSpec] {
+        let lower = userQuestion.lowercased()
+        var preferredIDs = domainInterventionIDs(for: lower)
+        if containsAny(lower, ["depth", "example"]) &&
+            containsAny(lower, ["ramble", "overexplain", "too much context"]) {
+            preferredIDs.append("one-proof-point")
+        }
+        if containsAny(lower, ["disagree", "disagreement", "defensive", "conflict"]) {
+            preferredIDs.append("warm-disagreement")
+        }
+        if containsAny(lower, ["ramble", "overexplain", "too much context"]) {
+            preferredIDs.append(contentsOf: ["clean-close", "answer-first"])
+        }
+        if containsAny(lower, ["pace", "too fast", "filler", " um", " uh", "pause"]) {
+            preferredIDs.append("functional-pause")
+        }
+        if containsAny(lower, ["example", "depth", "memorable", "proof point"]) {
+            preferredIDs.append("one-proof-point")
+        }
+        if containsAny(lower, ["close", "ending", "ask", "trail off"]) {
+            preferredIDs.append("clean-close")
+        }
+        if containsAny(lower, ["pressure", "timer", "freeze", "blank", "interruption"]) {
+            preferredIDs.append("pressure-anchor")
+        }
+        if containsAny(lower, ["hedge", "maybe", "probably", "conviction", "timid"]) {
+            preferredIDs.append("plain-commitment")
+        }
+        if containsAny(lower, ["opening", "opener", "answer first", "recommendation"]) {
+            preferredIDs.append("answer-first")
+        }
+
+        var candidates: [CoachInterventionSpec] = []
+        func append(_ intervention: CoachInterventionSpec) {
+            if !candidates.contains(where: { $0.id == intervention.id }) {
+                candidates.append(intervention)
+            }
+        }
+        for id in preferredIDs {
+            if let match = interventionCatalogue.first(where: { $0.id == id }) {
+                append(match)
+            }
+        }
+        if let preferredDimensionID {
+            interventionCatalogue
+                .filter { $0.dimensionID == preferredDimensionID }
+                .forEach(append)
+        }
+        return candidates
+    }
+
+    private static func domainInterventionIDs(for lower: String) -> [String] {
+        var ids: [String] = []
+        if containsAny(lower, ["story", "storytelling", "anecdote", "narrative", "turning point"]) {
+            ids.append("story-beat")
+        }
+        if containsAny(lower, ["listen", "listening", "paraphrase", "interrupt", "heard", "other person"]) {
+            ids.append("listening-loop")
+        }
+        if containsAny(lower, ["monotone", "flat", "prosody", "vocal", "emphasis", "energy", "intonation", "delivery sounds"]) {
+            ids.append("vocal-contrast")
+        }
+        if containsAny(lower, ["audience", "stakeholder", "executive", "technical room", "tailor", "level of detail", "assumed knowledge"]) {
+            ids.append("audience-lens")
+        }
+        return ids
+    }
+
+    private static func interventionMatchScore(
+        _ intervention: CoachInterventionSpec,
+        in lower: String
+    ) -> Int {
+        intervention.signatureTerms.reduce(0) {
+            $0 + (lower.contains($1) ? 1 : 0)
+        }
+    }
+
+    private static func skillStage(
+        trajectory: UserTrajectorySnapshot,
+        turnDepth: CoachTurnDepth
+    ) -> CoachSkillStage {
+        if turnDepth == .trustRepair {
+            return .recover
+        }
+        if let intervention = trajectory.activeInterventionState {
+            if intervention.followedRepCount >= 2 { return .transfer }
+            if intervention.followedRepCount == 1 { return .stretch }
+        }
+        return trajectory.evidenceCoverage < 0.45 ? .establish : .stretch
+    }
+
+    private static func progressiveStageOrder(
+        startingAt stage: CoachSkillStage
+    ) -> [CoachSkillStage] {
+        switch stage {
+        case .establish: return [.establish, .stretch, .transfer]
+        case .stretch: return [.stretch, .transfer, .establish]
+        case .transfer: return [.transfer, .stretch, .establish]
+        case .recover: return [.recover]
+        }
+    }
+
+    private static func decisionStage(
+        for assessment: CoachAssessment,
+        posture: CoachReplyPosture
+    ) -> CoachSkillStage {
+        if posture == .presenceOnly || assessment.turnDepth == .trustRepair {
+            return .recover
+        }
+        if let moveKey = interventionMoveKey(assessment.nextProofTest) {
+            if moveKey.hasSuffix(":\(CoachSkillStage.transfer.rawValue)") {
+                return .transfer
+            }
+            if moveKey.hasSuffix(":\(CoachSkillStage.stretch.rawValue)") {
+                return .stretch
+            }
+            if moveKey.hasSuffix(":\(CoachSkillStage.establish.rawValue)") {
+                return .establish
+            }
+        }
+        let lower = assessment.nextProofTest.lowercased()
+        if containsAny(lower, ["next real", "real meeting", "real update", "stakes moment"]) {
+            return .transfer
+        }
+        if assessment.confidence < 0.45 {
+            return .establish
+        }
+        return .stretch
+    }
+
+    private static func stakesRead(in userQuestion: String) -> String {
+        let lower = userQuestion.lowercased()
+        if containsAny(lower, ["tomorrow", "interview", "board", "leadership", "client", "presentation", "pitch"]) {
+            return "A near-term real-world communication moment is at stake."
+        }
+        if containsAny(lower, ["disagree", "conflict", "raise", "feedback"]) {
+            return "The social risk of a real conversation matters."
+        }
+        return "Routine practice; do not manufacture urgency."
+    }
+
+    private static func emotionRead(
+        in userQuestion: String,
+        repairFocus: String?
+    ) -> String {
+        let lower = ([userQuestion, repairFocus ?? ""])
+            .joined(separator: " ")
+            .lowercased()
+        if containsAny(lower, ["exhausted", "overwhelmed", "defeated", "too tired", "need to stop"]) {
+            return "Low capacity. Presence may be the complete response."
+        }
+        if containsAny(lower, ["not easy", "harder", "freeze", "panic", "scared", "nervous"]) {
+            return "Friction or pressure is explicit; reduce the size of the ask."
+        }
+        if containsAny(lower, ["not helpful", "generic", "robotic", "missed", "wrong", "repeating"]) {
+            return "Trust is damaged; own the miss before coaching."
+        }
+        return "No strong emotion is explicit; acknowledge context without inventing one."
+    }
 
     static func assess(
         turnDepth: CoachTurnDepth,
@@ -38,7 +742,19 @@ enum CoachReasoningPass {
             turnDepth: turnDepth,
             isMemoryHandoff: isMemoryHandoff
         )
-        let preferredProofTest = preferredProofTest(
+        let replyPosture = CoachReplyPosture.resolve(
+            userText: userQuestion,
+            requestedMetrics: requestedMetrics
+        )
+        let interventionChoice = selectIntervention(
+            userQuestion: userQuestion,
+            preferredDimensionID: preferredDimensionID,
+            trajectory: trajectory,
+            turnDepth: turnDepth,
+            replyPosture: replyPosture,
+            recentMoves: Array(recentProofTests.prefix(3))
+        )
+        let explicitPreferredProofTest = preferredProofTest(
             for: userQuestion,
             turnDepth: turnDepth
         )
@@ -80,7 +796,8 @@ enum CoachReasoningPass {
                 rubric: rubric.rubric,
                 surface: surface,
                 preferredDimensionID: preferredDimensionID,
-                preferredProofTest: preferredProofTest,
+                preferredProofTest: explicitPreferredProofTest,
+                interventionChoice: interventionChoice,
                 repairFocus: repairFocus,
                 recentProofTests: recentProofTests
             )
@@ -545,6 +1262,7 @@ enum CoachReasoningPass {
         surface: CoachReplySurface,
         preferredDimensionID: String?,
         preferredProofTest: String?,
+        interventionChoice: CoachInterventionChoice?,
         repairFocus: String?,
         recentProofTests: [String]
     ) -> ProofTestSelection {
@@ -559,9 +1277,22 @@ enum CoachReasoningPass {
             orderedIDs = sortedIDs
         }
         let recentKeys = Set(recentProofTests.map(proofTestKey).filter { !$0.isEmpty })
+        let recentInterventionKeys = Set(
+            recentProofTests.prefix(3).compactMap(interventionMoveKey)
+        )
+        func isFresh(_ candidate: String) -> Bool {
+            if recentKeys.contains(proofTestKey(candidate)) {
+                return false
+            }
+            if let interventionKey = interventionMoveKey(candidate),
+               recentInterventionKeys.contains(interventionKey) {
+                return false
+            }
+            return true
+        }
         if let preferredProofTest,
            !preferredProofTest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !recentKeys.contains(proofTestKey(preferredProofTest)) {
+           isFresh(preferredProofTest) {
             return ProofTestSelection(
                 text: surface == .live ? liveVersion(of: preferredProofTest) : preferredProofTest,
                 dimensionID: preferredDimensionID
@@ -575,16 +1306,31 @@ enum CoachReasoningPass {
             repairFocus: repairFocus
         ) {
             let rendered = surface == .live ? liveVersion(of: candidate) : candidate
-            if !recentKeys.contains(proofTestKey(rendered)) {
+            if isFresh(rendered) {
                 return ProofTestSelection(
                     text: rendered,
                     dimensionID: preferredDimensionID
                 )
             }
         }
+        if let interventionChoice {
+            let candidate = surface == .live
+                ? liveVersion(of: interventionChoice.move)
+                : interventionChoice.move
+            if isFresh(candidate) {
+                return ProofTestSelection(
+                    text: candidate,
+                    dimensionID: interventionChoice.intervention.dimensionID
+                        ?? preferredDimensionID
+                )
+            }
+        }
         for id in orderedIDs {
             guard let dimension = rubric.dimensions.first(where: { $0.id == id }) else { continue }
-            for candidate in proofTestCandidates(for: dimension, surface: surface) where !recentKeys.contains(proofTestKey(candidate)) {
+            for candidate in proofTestCandidates(
+                for: dimension,
+                surface: surface
+            ) where isFresh(candidate) {
                 return ProofTestSelection(text: candidate, dimensionID: id)
             }
         }

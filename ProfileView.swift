@@ -19,18 +19,19 @@ enum ProfileDefaultSurface: String, Equatable {
     case identity
     case progressHero
     case coachRead
+    case optionalPrompt
     case evidenceHub
 }
 
 struct ProfileDefaultSurfacePlan: Equatable {
     let surfaces: [ProfileDefaultSurface]
 
-    static func make(hasProgressEvidence: Bool) -> ProfileDefaultSurfacePlan {
-        var surfaces: [ProfileDefaultSurface] = [.identity]
-        if hasProgressEvidence {
-            surfaces.append(.progressHero)
+    static func make(hasOptionalPrompt: Bool = false) -> ProfileDefaultSurfacePlan {
+        var surfaces: [ProfileDefaultSurface] = [.identity, .coachRead]
+        if hasOptionalPrompt {
+            surfaces.append(.optionalPrompt)
         }
-        surfaces.append(contentsOf: [.coachRead, .evidenceHub])
+        surfaces.append(.evidenceHub)
         return ProfileDefaultSurfacePlan(surfaces: surfaces)
     }
 
@@ -39,6 +40,39 @@ struct ProfileDefaultSurfacePlan: Equatable {
     var ratingSurfaceCount: Int {
         surfaces.filter { $0 == .progressHero }.count
     }
+}
+
+enum ProfileOptionalPrompt: String, Equatable {
+    case weeklyCheckIn
+    case transformationFeedback
+}
+
+/// Deterministic, presentation-only queue for Profile prompts. A weekly
+/// coaching check-in carries richer durable context, so it receives the
+/// default slot first; a short outcome question waits behind Library when
+/// both are due. No store, cadence, or completion behavior is changed here.
+struct ProfileOptionalPromptPlan: Equatable {
+    let orderedPrompts: [ProfileOptionalPrompt]
+
+    static let none = ProfileOptionalPromptPlan(orderedPrompts: [])
+
+    static func make(
+        hasProgressEligibleEvidence: Bool,
+        isWeeklyCheckInDue: Bool,
+        shouldAskTransformationQuestion: Bool
+    ) -> ProfileOptionalPromptPlan {
+        var prompts: [ProfileOptionalPrompt] = []
+        if hasProgressEligibleEvidence && isWeeklyCheckInDue {
+            prompts.append(.weeklyCheckIn)
+        }
+        if shouldAskTransformationQuestion {
+            prompts.append(.transformationFeedback)
+        }
+        return ProfileOptionalPromptPlan(orderedPrompts: prompts)
+    }
+
+    var primary: ProfileOptionalPrompt? { orderedPrompts.first }
+    var secondary: ProfileOptionalPrompt? { orderedPrompts.dropFirst().first }
 }
 
 enum ProfileCompositionEvidenceStage: Equatable {
@@ -55,23 +89,23 @@ enum ProfileCompositionEvidenceStage: Equatable {
     }
 }
 
-/// The default Profile is intentionally bounded to four roles. The progress
-/// hero self-suppresses when neither rating nor baseline has enough evidence;
-/// every other secondary system lives behind the single library disclosure.
+/// The default Profile is intentionally bounded to four roles: identity,
+/// current coach read, at most one due prompt, and Library. Rating and every
+/// other secondary system live behind the single Library disclosure.
 struct ProfileCompositionPlan: Equatable {
     let stage: ProfileCompositionEvidenceStage
     let surfaces: [ProfileDefaultSurface]
 
     static func make(
         sessionCount: Int,
-        hasProgressEvidence: Bool
+        optionalPromptPlan: ProfileOptionalPromptPlan = .none
     ) -> ProfileCompositionPlan {
         let stage = ProfileCompositionEvidenceStage.make(sessionCount: sessionCount)
-        var surfaces: [ProfileDefaultSurface] = [.identity]
-        if hasProgressEvidence {
-            surfaces.append(.progressHero)
+        var surfaces: [ProfileDefaultSurface] = [.identity, .coachRead]
+        if optionalPromptPlan.primary != nil {
+            surfaces.append(.optionalPrompt)
         }
-        surfaces.append(contentsOf: [.coachRead, .evidenceHub])
+        surfaces.append(.evidenceHub)
         return ProfileCompositionPlan(stage: stage, surfaces: surfaces)
     }
 }
@@ -80,6 +114,7 @@ enum ProfileLibraryRow: String, Equatable {
     case coachingEvidence
     case coachingMemory
     case growthLibrary
+    case pendingPrompt
     case allReps
     case personalBests
     case friends
@@ -92,18 +127,24 @@ struct ProfileLibraryPresentation: Equatable {
     let rows: [ProfileLibraryRow]
 
     static func make(
+        showsFriends: Bool = false,
+        showsSecondaryPrompt: Bool = false,
         showsPeerComparison: Bool,
         isPremium: Bool
     ) -> ProfileLibraryPresentation {
         var rows: [ProfileLibraryRow] = [
             .coachingEvidence,
             .coachingMemory,
-            .growthLibrary,
-            .allReps,
-            .personalBests,
-            .friends,
-            .achievements
+            .growthLibrary
         ]
+        if showsSecondaryPrompt {
+            rows.append(.pendingPrompt)
+        }
+        rows.append(contentsOf: [.allReps, .personalBests])
+        if showsFriends {
+            rows.append(.friends)
+        }
+        rows.append(.achievements)
         if showsPeerComparison {
             rows.append(.peerComparison)
         }
@@ -1555,14 +1596,18 @@ struct ProfileView: View {
         return genericRead
     }
 
-    private var hasProgressEvidence: Bool {
-        ratingStore.rating.hasRatedEvidence
-    }
-
     private var defaultSurfacePlan: ProfileCompositionPlan {
         ProfileCompositionPlan.make(
             sessionCount: progressEligibleSessions.count,
-            hasProgressEvidence: hasProgressEvidence
+            optionalPromptPlan: optionalPromptPlan
+        )
+    }
+
+    private var optionalPromptPlan: ProfileOptionalPromptPlan {
+        ProfileOptionalPromptPlan.make(
+            hasProgressEligibleEvidence: !progressEligibleSessions.isEmpty,
+            isWeeklyCheckInDue: coachCheckInStore.isCheckInDue(),
+            shouldAskTransformationQuestion: shouldAskTransformationQuestion
         )
     }
 
@@ -1589,6 +1634,8 @@ struct ProfileView: View {
 
     private var profileLibraryPresentation: ProfileLibraryPresentation {
         ProfileLibraryPresentation.make(
+            showsFriends: SocialReleaseCapabilities.friendConnections.isAvailable,
+            showsSecondaryPrompt: optionalPromptPlan.secondary != nil,
             showsPeerComparison: SocialReleaseCapabilities.peerProgress.isAvailable
                 && peerComparisonVisibility.showsProfileEntry,
             isPremium: premium.isPremium
@@ -1616,21 +1663,13 @@ struct ProfileView: View {
                 identityHeader
                     .cardEntrance(0)
 
-                if surfacePlan.surfaces.contains(.progressHero) {
-                    compactSpeakingRatingHero
-                        .cardEntrance(1)
-                }
-
                 profileCoachReadCard
-                    .cardEntrance(2)
+                    .cardEntrance(1)
 
-                // A due real-world check-in is part of the active coaching
-                // loop, not evidence-library content. The row self-hides when
-                // cadence says it is not due.
-                weeklyCheckInCard
-
-                if shouldAskTransformationQuestion {
-                    transformationQuestionCard
+                if surfacePlan.surfaces.contains(.optionalPrompt),
+                   let primaryPrompt = optionalPromptPlan.primary {
+                    profilePrompt(primaryPrompt)
+                        .cardEntrance(2)
                 }
 
                 profileEvidenceHub
@@ -1697,6 +1736,39 @@ struct ProfileView: View {
         )
     }
 
+    @ViewBuilder
+    private func profilePrompt(_ prompt: ProfileOptionalPrompt) -> some View {
+        switch prompt {
+        case .weeklyCheckIn:
+            weeklyCheckInCard
+        case .transformationFeedback:
+            transformationQuestionCard
+        }
+    }
+
+    private var secondaryPromptDestination: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Spacing.cardGap) {
+                if let prompt = optionalPromptPlan.secondary {
+                    profilePrompt(prompt)
+                } else {
+                    Label("You're caught up", systemImage: "checkmark.circle.fill")
+                        .font(Typography.headline)
+                        .foregroundStyle(AppColor.positive)
+                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                        .accessibilityIdentifier("profile.pendingPrompts.caughtUp")
+                }
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.vertical, Spacing.md)
+        }
+        .background(AppColor.screenBackground.ignoresSafeArea())
+        .navigationTitle("Coach check-ins")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .accessibilityIdentifier("profile.pendingPrompts.screen")
+    }
+
     private var transformationQuestionCard: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: Spacing.md) {
@@ -1753,14 +1825,20 @@ struct ProfileView: View {
                 .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.brandBlue)
                 .padding(.horizontal, Spacing.md)
-                .frame(minHeight: 44)
+                .frame(minWidth: 80, minHeight: 44)
                 .background(AppColor.cardBackground, in: Capsule())
                 .overlay(
                     Capsule().stroke(AppColor.brandBlue.opacity(0.35), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(
+            value == "yes"
+                ? "Yes, this helped outside the app"
+                : "Not yet, this has not helped outside the app"
+        )
         .accessibilityHint("Records an account-local response without transcript text.")
+        .accessibilityIdentifier("profile.transformationQuestion.response.\(value)")
     }
 
     // MARK: - Collapsed Profile
@@ -1777,53 +1855,48 @@ struct ProfileView: View {
             ).first
         )
 
-        return VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.pro)
-                    .accessibilityHidden(true)
-                Text("Current focus")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-
-            Text(presentation.observation)
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "scope")
-                    .font(Typography.captionSmall.weight(.bold))
-                    .foregroundStyle(AppColor.brandBlue)
-                    .padding(.top, 3)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Next rep")
-                        .font(Typography.captionSmall.weight(.semibold))
+        return NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                        .accessibilityHidden(true)
+                    Text("Current focus")
+                        .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(AppColor.textSecondary)
-                    Text(presentation.nextMove)
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textPrimary)
+                }
+
+                Text(presentation.observation)
+                    .font(Typography.headline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "scope")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .padding(.top, 3)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Next rep")
+                            .font(Typography.captionSmall.weight(.semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                        Text(presentation.nextMove)
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if let evidenceCaption = presentation.evidenceCaption {
+                    Text(evidenceCaption)
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(AppColor.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            if let evidenceCaption = presentation.evidenceCaption {
-                Text(evidenceCaption)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(AppColor.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.12), lineWidth: 1)
-        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.coachRead")
     }
@@ -2030,6 +2103,20 @@ struct ProfileView: View {
             .buttonStyle(.pressable)
             .accessibilityIdentifier("profile.library.coachingMemory")
 
+        case .pendingPrompt:
+            NavigationLink {
+                secondaryPromptDestination
+            } label: {
+                profileLibraryRowLabel(
+                    title: "One more coach check-in",
+                    subtitle: secondaryPromptSubtitle,
+                    icon: "bubble.left.and.text.bubble.right",
+                    tint: AppColor.pro
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.library.pendingPrompt")
+
         case .allReps:
             NavigationLink(value: AppDestination.sessionHistory) {
                 profileLibraryRowLabel(
@@ -2163,6 +2250,17 @@ struct ProfileView: View {
             return "Current lever · \(lever.displayName)"
         }
         return "Goal and preferences you have shared"
+    }
+
+    private var secondaryPromptSubtitle: String {
+        switch optionalPromptPlan.secondary {
+        case .weeklyCheckIn:
+            return "Share what changed outside the app"
+        case .transformationFeedback:
+            return "Tell Noum whether the coaching transferred"
+        case .none:
+            return "No other check-in is waiting"
+        }
     }
 
     private var baselineCoachMap: BaselineCoachMap {
@@ -2508,9 +2606,16 @@ struct ProfileView: View {
     private var identityHeader: some View {
         let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
         let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
-        // One icon only — the voice target's small glyph beside the subtitle.
-        // The former 52pt leading tile duplicated it and added no meaning.
-        return HStack(spacing: Spacing.sm) {
+        // The waveform is Noum's identity; the optional small glyph remains
+        // user-owned voice-goal metadata rather than a second brand mark.
+        return HStack(alignment: .center, spacing: Spacing.md) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: AppColor.coachingInk,
+                size: 44
+            )
+            .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack(spacing: 8) {
                     Text(displayName)
@@ -2629,44 +2734,6 @@ struct ProfileView: View {
     }
 
     // MARK: - Speaking Rating
-
-    private var compactSpeakingRatingHero: some View {
-        let presentation = ProfileRatingHeroPresentation.make(rating: ratingStore.rating)
-        return HStack(alignment: .center, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                HStack(spacing: Spacing.xs) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(Typography.caption.weight(.bold))
-                    .foregroundStyle(AppColor.brandBlue)
-                    .accessibilityHidden(true)
-                Text("Speaking rating")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.profileMetricLabelText)
-                }
-
-                Text(presentation.directionLine)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text("\(presentation.value)")
-                .font(Typography.figtreeNumeric(size: 36, relativeTo: .largeTitle))
-                .foregroundStyle(AppColor.textPrimary)
-                .contentTransition(reduceMotion ? .identity : .numericText())
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.subtleBorder, lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Speaking rating \(presentation.value). \(presentation.directionLine)")
-        .accessibilityIdentifier("profile.rating.hero")
-    }
 
     @ViewBuilder
     private var speakingRatingCard: some View {

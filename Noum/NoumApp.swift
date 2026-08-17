@@ -282,19 +282,16 @@ struct NoumApp: App {
         // override with the Figtree-backed `Typography.headline` /
         // `Typography.cardTitle` etc. for headlines.
         .environment(\.font, Typography.body)
-        // M13: drive the in-app locale from LocaleSettingsManager so any
-        // `Text("key")` call site reads from the matching translation in
-        // `Localizable.xcstrings`. The .id(...) modifier forces a re-render
-        // when the user picks a different locale in Settings — without it,
-        // already-rendered Text views keep their original locale.
-        .environment(\.locale, Locale(identifier: localeSettings.current.code))
+        // The private beta ships one complete interface language. Practice
+        // locale remains independent and still reaches prompts, filler
+        // detection, and every transcription provider.
+        .environment(\.locale, BetaInterfaceLanguagePolicy.locale)
         // Appearance override (Settings -> Appearance): nil follows the
         // system - including iOS's own time-of-day schedule; light/dark
         // pin the app regardless.
         .preferredColorScheme(
             AppearanceMode(rawValue: appearanceMode)?.colorScheme
         )
-        .id(localeSettings.current.code)
         .sheet(isPresented: $showFirstRepCloudProcessingConsent) {
             CloudProcessingConsentDisclosure(
                 isCurrentlyAllowed: aiSettings.isCloudProcessingAllowed,

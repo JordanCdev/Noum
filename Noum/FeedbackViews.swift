@@ -92,7 +92,6 @@ struct ReviewerResponse: Codable, Identifiable {
 
 /// Sheet view for composing a feedback request before sharing.
 struct FeedbackRequestComposer: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let transcript: String
     let fillerCount: Int
     let duration: TimeInterval
@@ -108,8 +107,6 @@ struct FeedbackRequestComposer: View {
     @State private var requestNote = ""
     @State private var includeTranscript = true
     @State private var includeAIFeedback = true
-    @State private var isGeneratingLink = false
-    @State private var generatedShareText: String?
     @Environment(\.dismiss) private var dismiss
 
     private var senderName: String {
@@ -306,139 +303,21 @@ struct FeedbackRequestComposer: View {
 
     // MARK: - Send Buttons
 
-    @State private var showFriendPicker = false
-    @State private var selectedFriend: NoumFriend?
-    @State private var requestSent = false
-
     private var sendSection: some View {
-        VStack(spacing: 12) {
-            // Primary: Send to a friend (in-app)
-            Button {
-                showFriendPicker = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.fill")
-                        .font(.headline.weight(.semibold))
-                    Text("Send to Friend")
-                        .font(.headline.weight(.semibold))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(AppColor.brandBlue.gradient, in: Capsule(style: .continuous))
+        // This is an honest system share. Noum makes no delivery claim and
+        // creates no local "request sent" receipt for another person.
+        ShareLink(item: feedbackShareText) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.headline.weight(.semibold))
+                Text("Share for feedback")
+                    .font(.headline.weight(.semibold))
             }
-            .buttonStyle(.pressable)
-
-            // Secondary: External share
-            ShareLink(item: feedbackShareText) {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Share Externally")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.black.opacity(0.04), in: Capsule())
-            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(AppColor.brandBlue.gradient, in: Capsule(style: .continuous))
         }
-        .sheet(isPresented: $showFriendPicker) {
-            friendPickerSheet
-        }
-        .overlay {
-            if requestSent {
-                requestSentConfirmation
-                    // Reduce Motion: the confirmation still arrives, without scale.
-                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
-            }
-        }
-    }
-
-    private var friendPickerSheet: some View {
-        NavigationStack {
-            List {
-                if FriendsManager.shared.friends.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "person.2.slash")
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
-                        Text("No friends added yet")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text("Add friends from your Profile to send them feedback requests.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                    .listRowBackground(Color.clear)
-                } else {
-                    ForEach(FriendsManager.shared.friends) { friend in
-                        Button {
-                            sendToFriend(friend)
-                        } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle()
-                                        .fill(AppColor.brandBlue.opacity(0.12))
-                                        .frame(width: 40, height: 40)
-                                    Text(friend.initials)
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(AppColor.brandBlue)
-                                }
-                                Text(friend.displayName)
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Image(systemName: "paperplane.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColor.brandBlue)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Choose Friend")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showFriendPicker = false }
-                }
-            }
-        }
-    }
-
-    private func sendToFriend(_ friend: NoumFriend) {
-        _ = FeedbackRequestManager.shared.createRequest(
-            recipientName: friend.displayName,
-            transcript: includeTranscript ? transcript : "",
-            score: score,
-            headline: headline,
-            prompt: prompt,
-            mode: mode,
-            requestNote: requestNote
-        )
-        showFriendPicker = false
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-            requestSent = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            withAnimation { requestSent = false }
-            dismiss()
-        }
-    }
-
-    private var requestSentConfirmation: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
-            Text("Request sent")
-                .font(.headline.weight(.bold))
-        }
-        .padding(32)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var feedbackShareText: String {

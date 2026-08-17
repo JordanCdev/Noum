@@ -96,6 +96,37 @@ final class HomePracticePathPolishUITests: XCTestCase {
     }
 
     @MainActor
+    func testFillerControlSpeechAuthorizationDenialOffersSettingsNotStart() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_MICROPHONE_GRANTED",
+            "UI_TESTING_SPEECH_AUTHORIZATION_DENIED",
+            "-DeepLink",
+            "noum://practice/ah-counter",
+        ]
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ahCounter.screen"].waitForExistence(timeout: 10)
+        )
+        let start = app.buttons["Start Filler Control"]
+        XCTAssertTrue(start.waitForExistence(timeout: 3))
+        start.tap()
+
+        let issue = app.descendants(matching: .any)["ahCounter.recordingIssue"]
+        XCTAssertTrue(issue.waitForExistence(timeout: 15))
+        XCTAssertTrue(issue.label.contains("Speech Recognition is off"))
+        XCTAssertFalse(app.buttons["Start Filler Control"].exists)
+
+        let settings = app.buttons["ahCounter.recordingIssue.openSettings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.isHittable)
+    }
+
+    @MainActor
     func testUnsupportedOnDeviceLocaleRendersSpecificActionableIssueAtAccessibilityXXXL() {
         let app = XCUIApplication()
         app.launchArguments += [

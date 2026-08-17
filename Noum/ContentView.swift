@@ -297,6 +297,36 @@ struct HomeAccessibilityModalGate: Equatable {
     }
 }
 
+/// Resolves the single supporting row allowed beneath Today’s mission.
+/// The row never competes with the primary CTA, and every input remains owned
+/// by its existing store. Dismissal or completion naturally reveals the next
+/// eligible item without persisting a parallel queue.
+enum HomeSupportSurface: Equatable {
+    case outcomeAcknowledgement
+    case goalReview
+    case progressReceipt
+    case firstWeek
+    case deferredSetup
+    case ratingReview
+
+    static func resolve(
+        hasOutcomeAcknowledgement: Bool,
+        hasGoalReview: Bool,
+        hasProgressReceipt: Bool,
+        hasFirstWeekEntry: Bool,
+        hasDeferredSetup: Bool,
+        hasRatingReview: Bool
+    ) -> HomeSupportSurface? {
+        if hasOutcomeAcknowledgement { return .outcomeAcknowledgement }
+        if hasGoalReview { return .goalReview }
+        if hasProgressReceipt { return .progressReceipt }
+        if hasFirstWeekEntry { return .firstWeek }
+        if hasDeferredSetup { return .deferredSetup }
+        if hasRatingReview { return .ratingReview }
+        return nil
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct ContentView: View {
     @StateObject private var authManager = AuthManager.shared
@@ -417,10 +447,9 @@ struct ContentView: View {
         NavigationStack(path: $navigationPath) {
             GeometryReader { screenProxy in
             ZStack {
-                // V4.6 Today — warm editorial canvas with the violet wash
-                // rising softly from the bottom (Figma 258:944). The hero
-                // itself bleeds behind the status bar, so the scroll view
-                // ignores the top safe area and the hero pads its content.
+                // Today keeps the warm editorial canvas and a restrained
+                // violet wash. The scroll view may extend under the status
+                // bar, while the bounded mission supplies the real top inset.
                 AppColor.warmCanvas
                     .ignoresSafeArea()
 
@@ -486,12 +515,6 @@ struct ContentView: View {
     // (first completed rep), so the row is never empty furniture on a cold
     // start.
 
-    private enum HomeConditionalSurface {
-        case goalReview
-        case outcomeAcknowledgement
-        case ratingReview
-    }
-
     private var homePrimaryAction: HomePrimaryActionPresentation {
         let hasUpcomingPrep: Bool
         if let moment = bigMomentStore.activeMoment,
@@ -508,16 +531,21 @@ struct ContentView: View {
         )
     }
 
-    /// Only one quiet row may follow the primary action and Ask Noum.
-    /// Direction review wins because it is explicitly due, followed by a
-    /// just-saved real-world acknowledgement, then a transient rating review.
-    private var homeConditionalSurface: HomeConditionalSurface? {
-        if goalRefresh.shouldPresent { return .goalReview }
-        if bigMomentStore.pendingOutcomeAck != nil { return .outcomeAcknowledgement }
-        if ratingStore.pendingPeakGlow && ratingStore.rating.hasRatedEvidence {
-            return .ratingReview
-        }
-        return nil
+    /// Today has one primary mission, optional Ask Noum, and at most one
+    /// supporting row. Earned receipts outrank programme reminders so the
+    /// action→evidence loop is felt immediately, while due coaching reviews
+    /// remain higher priority than cosmetic rating movement.
+    private var homeSupportSurface: HomeSupportSurface? {
+        HomeSupportSurface.resolve(
+            hasOutcomeAcknowledgement: bigMomentStore.pendingOutcomeAck != nil,
+            hasGoalReview: goalRefresh.shouldPresent,
+            hasProgressReceipt: progressReceiptIdentity != nil,
+            hasFirstWeekEntry: firstWeekEntryPresentation != nil,
+            hasDeferredSetup: coachingProfileStore.profile == nil
+                && coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true,
+            hasRatingReview: ratingStore.pendingPeakGlow
+                && ratingStore.rating.hasRatedEvidence
+        )
     }
 
     @ViewBuilder
@@ -531,13 +559,14 @@ struct ContentView: View {
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, topInset + Spacing.lg)
         } else {
-            // V4.6 hero — full-bleed gradient section with the quiet Adjust
-            // row on the canvas beneath it (one tertiary row per screen).
-            // No cardEntrance here: the V4.6.1 hero owns its entrance
+            // V3 mission — one rounded, bounded commitment surface with the
+            // quiet Adjust row beneath it (one tertiary row per screen).
+            // No cardEntrance here: the hero owns its entrance
             // choreography internally (blocks settle from 0.97/0.85 —
             // content is never invisible, unlike the 0-opacity card fade).
             HomeCoachCard(
                 navigationPath: $navigationPath,
+                completedRepsToday: dailyGoal.repsToday,
                 showsPlanArc: false,
                 recordsRecommendationExposure: !showFirstWeekRecommendationAction,
                 heroTopInset: topInset
@@ -548,55 +577,7 @@ struct ContentView: View {
                 .padding(.top, Spacing.xs)
         }
 
-        homeProgressReceipt
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.top, Spacing.cardGap)
-            // V4.6.1 — receipt rows settle in and fade out (Reduce Motion:
-            // fade both ways). Value-scoped so the initial mount renders
-            // without motion; deliberately no haptic — the hero's earned
-            // announcement had it, the 10-min-floor receipt stays quiet.
-            .animation(
-                reduceMotion ? .v46ReduceMotionFade : .settle,
-                value: progressReceiptIdentity
-            )
-
-        // Days 0–6 show exactly one unfinished first-week step. Day 7 keeps
-        // the same durable read entry and direct Home navigation behavior.
-        if let firstWeekEntryPresentation {
-            firstWeekEntryCard(firstWeekEntryPresentation)
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.cardGap)
-                .cardEntrance(1)
-        }
-
-        if coachingProfileStore.profile == nil,
-           coachingProfileStore.onboardingDraft?.hasCompletedFirstValue == true {
-            deferredCoachingSetupCard
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.cardGap)
-                .cardEntrance(1)
-        }
-
-        if presentation.showsAskNoum {
-            homeAskNoumRow
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.cardGap)
-                .cardEntrance(1)
-        }
-
-        switch homeConditionalSurface {
-        case .goalReview:
-            if showGoalReview {
-                GoalRefreshInlineCard()
-                    .padding(.horizontal, Spacing.screenH)
-                    .padding(.top, Spacing.cardGap)
-                    .cardEntrance(2)
-            } else {
-                homeGoalReviewRow
-                    .padding(.horizontal, Spacing.screenH)
-                    .padding(.top, Spacing.cardGap)
-                    .cardEntrance(2)
-            }
+        switch homeSupportSurface {
         case .outcomeAcknowledgement:
             if let report = bigMomentStore.pendingOutcomeAck {
                 BigMomentOutcomeAckCard(report: report) {
@@ -604,16 +585,55 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.cardGap)
-                .cardEntrance(2)
+                .cardEntrance(1)
                 .transition(.opacity)
             }
+        case .goalReview:
+            if showGoalReview {
+                GoalRefreshInlineCard()
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.cardGap)
+                    .cardEntrance(1)
+            } else {
+                homeGoalReviewRow
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.cardGap)
+                    .cardEntrance(1)
+            }
+        case .progressReceipt:
+            homeProgressReceipt
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
+                .animation(
+                    reduceMotion ? .v46ReduceMotionFade : .settle,
+                    value: progressReceiptIdentity
+                )
+        case .firstWeek:
+            if let firstWeekEntryPresentation {
+                firstWeekEntryCard(firstWeekEntryPresentation)
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.cardGap)
+                    .cardEntrance(1)
+            }
+        case .deferredSetup:
+            deferredCoachingSetupCard
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
+                .cardEntrance(1)
         case .ratingReview:
             homeRatingReviewRow
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.cardGap)
-                .cardEntrance(2)
+                .cardEntrance(1)
         case nil:
             EmptyView()
+        }
+
+        if presentation.showsAskNoum {
+            homeAskNoumRow
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.cardGap)
+                .cardEntrance(2)
         }
     }
 

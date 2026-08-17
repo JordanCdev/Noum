@@ -26,10 +26,6 @@ struct CutTheCrutchView: View {
     private let tint: Color = AppColor.modeCrutch
     private static let universalCrutches = ["actually", "basically", "honestly"]
 
-    private var characterStage: NoumCharacter.Stage {
-        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-    }
-
     private var isResultPhase: Bool {
         if case .ended = engine.phase, hasValidatedResult { return true }
         return false
@@ -416,12 +412,11 @@ struct CutTheCrutchView: View {
     private var statusBar: some View {
         VStack(spacing: Spacing.xs) {
             HStack(alignment: .center, spacing: Spacing.md) {
-                NoumCharacter(
-                    mood: speechVM.isRecording ? .listening : .calm,
+                NoumWaveformMark(
+                    state: speechVM.isRecording ? .listening : .idle,
+                    level: speechVM.audioLevel,
                     tint: tint,
-                    size: 36,
-                    audioLevel: speechVM.audioLevel,
-                    stage: characterStage
+                    size: 36
                 )
                 .accessibilityHidden(true)
 

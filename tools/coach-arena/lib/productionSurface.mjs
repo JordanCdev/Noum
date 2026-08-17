@@ -641,6 +641,121 @@ function containsAny(lowered, markers) {
   return markers.some((marker) => lowered.includes(marker));
 }
 
+// High-precision JS mirror of CoachCraftKnowledgeRequest plus the
+// information-only branch of CoachReliabilityGate. The Arena uses this only
+// for a deterministic user-visible approximation; it does not infer personal
+// evidence or broaden applied "how do I" coaching turns into definitions.
+function informationOnlyRequest(text) {
+  if (genericBenchmarkAnswer(text)) return true;
+  const turn = String(text || '').toLowerCase().replaceAll('’', "'").trim();
+  if (
+    turn.startsWith('how do i ')
+    || turn.startsWith('how can i ')
+    || turn.startsWith('what should i say')
+    || turn.startsWith('what do i say')
+  ) return false;
+  if (
+    turn.includes(' my ')
+    || turn.startsWith('my ')
+    || containsAny(turn, ['about me', 'know about me', 'noticed about me'])
+  ) return false;
+
+  const leads = [
+    'what is ', "what's ", 'what are ', 'what does ', 'what makes ',
+    "what's the difference", 'what is the difference', 'why does ',
+    'why is ', 'why are ', 'how does ', 'when should ', 'explain ',
+    'can you explain ', 'could you explain ', 'is there ', 'tell me about ',
+  ];
+  const craftTerms = [
+    'communication', 'speaking', 'speaker', 'presentation', 'keynote',
+    'pitch', 'pause', 'silence', 'cadence', 'pace', 'prosody', 'vocal',
+    'tone', 'emphasis', 'storytelling', 'story', 'narrative', 'listening',
+    'listen', 'audience', 'stakeholder', 'executive', 'clarity', 'concise',
+    'rambling', 'filler', 'eye contact', 'body language', 'delivery',
+    'rhetoric', 'message', 'conversation', 'turn-taking', 'paraphrase',
+    'summarise', 'summarize',
+  ];
+  return leads.some((lead) => turn.startsWith(lead))
+    && craftTerms.some((term) => turn.includes(term));
+}
+
+function genericBenchmarkAnswer(text) {
+  const turn = normalizedTurnText(text);
+  if (containsAny(turn, [
+    'my pace', 'my wpm', 'my filler', 'my score', 'my rating',
+    'was my ', 'did i ', 'how fast was i',
+  ])) return null;
+  const asksForGuidance = containsAny(turn, [
+    'should', 'ideal', 'recommended', 'recommend', 'good range', 'typical',
+    'usually', 'good', 'best', 'how long', 'how fast', 'what pace',
+    'starting point', 'benchmark',
+  ]);
+  if (!asksForGuidance) return null;
+  if (
+    containsAny(turn, ['keynote', 'presentation', 'speech'])
+    && containsAny(turn, ['pace', 'wpm', 'words per minute', 'how fast'])
+  ) {
+    return 'For most keynotes, about 120–150 words per minute is a useful starting range, not a universal target; adjust for audience familiarity, idea density, emphasis, and the room.';
+  }
+  if (turn.includes('elevator pitch') && containsAny(turn, ['length', 'long', 'duration', 'seconds', 'time'])) {
+    return "A useful starting range for an elevator pitch is 30–60 seconds, not a universal target; adjust for the listener's context, permission, and the decision you want.";
+  }
+  if (
+    containsAny(turn, ['pause', 'silence', 'silent beat'])
+    && containsAny(turn, ['length', 'long', 'duration', 'seconds', 'time', 'ideal'])
+  ) {
+    return 'For an emphasis pause, 0.5–1.5 seconds is a useful starting range, not a fixed rule; use the shorter end inside a thought and more space at a transition or in a larger room.';
+  }
+  return null;
+}
+
+function craftKnowledgeFallback(text) {
+  const turn = normalizedTurnText(text);
+  if (containsAny(turn, ['active listening', 'listening loop'])) {
+    return 'Active listening means attending to the speaker’s meaning, reflecting it accurately, and checking your understanding before adding your own view.';
+  }
+  if (containsAny(turn, ['cadence', 'speech rhythm'])) {
+    return 'Cadence is the pattern of pace, rhythm, sentence length, and pauses that shapes how speech moves and where emphasis lands.';
+  }
+  if (containsAny(turn, ['clarity', 'clear communication'])) {
+    return 'Communication clarity means the listener can identify the main point, understand how the support connects, and know what response or decision is needed.';
+  }
+  if (containsAny(turn, ['prosody', 'vocal delivery', 'intonation'])) {
+    return 'Prosody is the pattern of pitch, stress, rhythm, and pauses that carries meaning beyond the words themselves.';
+  }
+  if (containsAny(turn, ['storytelling', 'narrative', 'story beat'])) {
+    return 'A useful communication story creates an expectation, shows the moment something changed, and makes the meaning of that change explicit.';
+  }
+  if (containsAny(turn, ['audience adaptation', 'audience lens', 'tailor'])) {
+    return 'Audience adaptation keeps the core point stable while changing the consequence, assumed knowledge, and level of detail for that listener.';
+  }
+  if (containsAny(turn, ['turntaking', 'turn taking'])) {
+    return 'Conversational turn-taking is how speakers signal, yield, and take the floor so an exchange stays coordinated rather than becoming interruption or silence.';
+  }
+  return 'That is a craft question, so the useful answer is the principle itself—not a diagnosis or another exercise. I do not have a reliable definition in this bounded fallback.';
+}
+
+function informationOnlyFallback(text) {
+  return genericBenchmarkAnswer(text) || craftKnowledgeFallback(text);
+}
+
+function informationOnlyAddsForcedWork(text) {
+  const trimmed = String(text || '').trim();
+  const withoutTrailingQuotes = trimmed.toLowerCase().replace(/["'”’ ]+$/g, '');
+  if (withoutTrailingQuotes.endsWith('?')) return true;
+  const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
+  const markers = [
+    'your turn', 'try it now', 'try this now', 'now try ', 'then try ',
+    'do one rep', 'run one rep', 'run this drill', 'do this drill',
+    'record one', 'record yourself', 'practice it', 'practise it',
+    'practice this', 'practise this', 'practice once', 'practise once',
+    'repeat that', 'say it once', 'try that once', 'try this once',
+    'try one rep', 'give it a try', 'give that a try',
+  ];
+  return containsAny(lower, markers)
+    || /(?:^|[.!;]\s+)(?:now\s+|then\s+)(?:try|practise|practice|record|repeat|say|run|do)\b/.test(lower);
+}
+
 function isColdStartFixture(fixture = {}, opts = {}) {
   const contextBlock = String(opts.contextBlock || '').toLowerCase();
   return fixture.evidence?.noRatedSessions === true
@@ -1411,6 +1526,22 @@ export function productionSurfaceReplyForFixture(raw, fixture = {}, opts = {}) {
       finalizer,
       issue: 'offTopicTestWithDrill',
       source: 'CoachReliabilityGate.offTopicTestFallback',
+    });
+  }
+
+  if (
+    informationOnlyRequest(fixture.userTurn)
+    && informationOnlyAddsForcedWork(finalizer.text)
+  ) {
+    const text = informationOnlyFallback(fixture.userTurn);
+    return fallbackResult({
+      text,
+      raw,
+      fixture,
+      opts,
+      finalizer,
+      issue: 'wrongQuestion',
+      source: 'CoachReliabilityGate.professionalContractFallback',
     });
   }
 

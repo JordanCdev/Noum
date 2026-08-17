@@ -204,16 +204,16 @@ struct CohesiveProfileCompositionTests {
     }
 
     @Test func zeroThinAndEstablishedPlansStayBounded() {
-        let zero = ProfileCompositionPlan.make(sessionCount: 0, hasProgressEvidence: false)
-        let thin = ProfileCompositionPlan.make(sessionCount: 3, hasProgressEvidence: true)
-        let established = ProfileCompositionPlan.make(sessionCount: 12, hasProgressEvidence: true)
+        let zero = ProfileCompositionPlan.make(sessionCount: 0)
+        let thin = ProfileCompositionPlan.make(sessionCount: 3)
+        let established = ProfileCompositionPlan.make(sessionCount: 12)
 
         #expect(zero.stage == .zero)
         #expect(zero.surfaces == [.identity, .coachRead, .evidenceHub])
         #expect(thin.stage == .thin)
-        #expect(thin.surfaces == [.identity, .progressHero, .coachRead, .evidenceHub])
+        #expect(thin.surfaces == [.identity, .coachRead, .evidenceHub])
         #expect(established.stage == .established)
-        #expect(established.surfaces == [.identity, .progressHero, .coachRead, .evidenceHub])
+        #expect(established.surfaces == [.identity, .coachRead, .evidenceHub])
     }
 
     @Test func oneOrTwoRepsDescribeAStartingPointWithoutAttributingTheStatedGoal() {
@@ -465,6 +465,17 @@ struct PeerComparisonVisibilityTests {
         )
         #expect(!presentation.rows.contains(.peerComparison))
         #expect(presentation.rows.last == .upgrade)
+    }
+
+    @Test func betaLibraryHidesLocalFriendsAndPeerRoutes() {
+        let presentation = ProfileLibraryPresentation.make(
+            showsFriends: SocialReleaseCapabilities.friendConnections.isAvailable,
+            showsPeerComparison: SocialReleaseCapabilities.peerProgress.isAvailable,
+            isPremium: true
+        )
+
+        #expect(!presentation.rows.contains(.friends))
+        #expect(!presentation.rows.contains(.peerComparison))
     }
 }
 

@@ -1,0 +1,18 @@
+{
+  "id": "cadence-definition",
+  "category": "craft-knowledge",
+  "turnDepth": "groundedRead",
+  "voice": "concise",
+  "goal": "Understand communication craft without being pushed into an unrequested exercise.",
+  "userTurn": "Tell me about cadence.",
+  "emotionalSignal": null,
+  "memoryState": {},
+  "expectedCoachMove": "Define cadence directly and clearly. Do not infer anything about this user's delivery, append a drill, invite an attempt, or end with a question.",
+  "badAnswerExample": "Cadence is the rhythm and pacing of speech. Now record one rep and tell me what changed?",
+  "excellentAnswerExample": "Cadence is the pattern of pace, rhythm, sentence length, and pauses that shapes how speech moves and where emphasis lands.",
+  "disqualifiers": [
+    { "pattern": "your cadence|your delivery", "regex": true, "cap": "fabricatesEvidence" },
+    { "pattern": "\\b(?:try|record|practice|practise)\\b|your turn", "regex": true, "cap": "ignoresIntent" },
+    { "pattern": "\\?$", "regex": true, "cap": "ignoresIntent" }
+  ]
+}

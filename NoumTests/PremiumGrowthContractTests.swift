@@ -506,7 +506,7 @@ struct SummaryReviewPromptExitGateTests {
         #expect(!source.contains(".task(id: pendingReviewPromptMoment)"))
         #expect(!source.contains("Task.sleep(for: .seconds(1.4))"))
         #expect(
-            source.components(separatedBy: "SummaryExitPanel(onDone: completeSummaryReview)").count - 1 == 2
+            source.components(separatedBy: "SummaryExitPanel(onDone: completeSummaryReview)").count - 1 == 1
         )
         #expect(source.contains(".accessibilityAction(named: Text(\"Done\"))"))
         #expect(source.contains("completeSummaryReview()"))
