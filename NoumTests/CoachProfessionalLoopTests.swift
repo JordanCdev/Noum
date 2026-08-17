@@ -409,6 +409,55 @@ struct CoachProfessionalLoopTests {
         #expect(verdict.fallbackText?.contains("WPM") == false)
     }
 
+    @Test("Pre-finalizer scorecard gate preserves only explicit metric and benchmark asks")
+    func preFinalizerScorecardAuthorizationIsExact() {
+        let compactScorecard = "7/10, 3 fillers, 60s. Put the recommendation first."
+        #expect(CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: compactScorecard,
+            latestUserTurn: "What should I work on next?"
+        ))
+        #expect(CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: compactScorecard,
+            latestUserTurn: "Am I improving?"
+        ))
+        for alternateScorecard in [
+            "7 out of 10, 3 filler words, 60 seconds. Put the recommendation first.",
+            "Rating 7 out of 10, filler count 3, duration 60 seconds. Put the recommendation first.",
+            "Score 74, 3 fillers, 60 seconds. Put the recommendation first.",
+            "Your score was 7/10. Put the recommendation first.",
+            "You scored 74 with 3 fillers. Put the recommendation first.",
+            "3 fillers in 60 seconds. Put the recommendation first.",
+            "- Score 7/10\n- Put the recommendation first."
+        ] {
+            #expect(CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+                replyText: alternateScorecard,
+                latestUserTurn: "What should I work on next?"
+            ))
+        }
+
+        #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: "Your pace is the root — 210 words per minute is why it feels rushed. On Monday, aim for 160 WPM. On Tuesday, target under 4 fillers.",
+            latestUserTurn: "Can you give me a practice plan for this week?"
+        ))
+        #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: "Calm you scored 81, but under pressure the pause disappeared and fillers jumped to 10. The timer is making you rush past the gap you normally take.",
+            latestUserTurn: "Why does pressure mode wreck me when normal practice is fine?"
+        ))
+
+        #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: "Your score was 7/10, with 3 fillers and a duration of 60 seconds.",
+            latestUserTurn: "What were my exact score, filler count, and duration?"
+        ))
+        #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: "For most keynotes, about 120–150 words per minute is a useful starting range, not a universal target; adjust for audience familiarity, idea density, emphasis, and the room.",
+            latestUserTurn: "What pace should I use for a keynote?"
+        ))
+        #expect(CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: "The perfect keynote pace is exactly 135 words per minute.",
+            latestUserTurn: "What pace should I use for a keynote?"
+        ))
+    }
+
     @Test("An explicitly requested score remains allowed")
     func requestedMetricPassesReportCap() {
         let verdict = CoachReliabilityGate.evaluate(

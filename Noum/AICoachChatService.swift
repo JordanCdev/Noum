@@ -2038,19 +2038,23 @@ actor AICoachChatService {
                     return .failure(.backendVersionMissing)
                 }
             }
-            let finalized = Self.finalizedCoachReply(
-                from: completion.text,
-                latestUserTurn: latestUserTurn,
-                turnDepth: turnDepth
+            // Gate the normalized provider reply before the last-mile display
+            // finalizer. `finalizedCoachReply` may remove report-voice residue;
+            // evaluating only that edited text can turn a rejected scorecard
+            // into grammatically damaged prose that appears to pass. Raw
+            // semantic violations must trigger repair or fail closed instead.
+            let qualityCandidate = CoachReplyTextSanitizer.displayText(
+                from: completion.text
             )
-            guard !finalized.isEmpty else { return .failure(.empty) }
-            if let issue = Self.replyQualityIssue(
-                in: finalized,
+            guard !qualityCandidate.isEmpty else { return .failure(.empty) }
+            if let issue = Self.secureReplyQualityIssue(
+                in: qualityCandidate,
                 latestUserTurn: latestUserTurn,
                 quoteGuard: quoteGuard,
                 systemContext: userContext,
                 recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
+                assessment: laneAssessment,
                 surface: surface,
                 responseKind: responseKind,
                 coachingBrief: coachingBrief
@@ -2097,6 +2101,44 @@ actor AICoachChatService {
                     )
                     return .reply(repaired)
                 }
+                // A raw scorecard is rejected before the finalizer can remove
+                // only its numeric clause. Prefer a complete, independently
+                // gate-checked deterministic answer over grammar surgery. This
+                // mirrors the direct-provider path while remaining narrow to
+                // the pre-finalizer report-voice defect.
+                if Self.isPreFinalizerReportVoiceIssue(issue),
+                   let typedRepair = Self.deterministicAssessmentFallbackReply(
+                    assessment: laneAssessment,
+                    latestUserTurn: latestUserTurn,
+                    quoteGuard: quoteGuard,
+                    systemContext: userContext,
+                    recentCoachReplies: recentCoachReplies,
+                    turnDepth: turnDepth,
+                    surface: surface,
+                    responseKind: responseKind,
+                    coachingBrief: coachingBrief
+                   ) {
+                    let repaired = Self.finalizedCoachReply(
+                        from: typedRepair,
+                        latestUserTurn: latestUserTurn,
+                        turnDepth: turnDepth
+                    )
+                    let fallbackChoice = CoachTurnProviderChoice(
+                        providerName: "Typed judgement fallback",
+                        model: "CoachAssessment",
+                        resolvedTier: resolvedTier,
+                        policyVersion: completion.policyVersion,
+                        generationMode: .deterministicBrief
+                    )
+                    await onProviderChosen?(fallbackChoice)
+                    await onQualityGateEvent?(.fallback(issue.auditLabel))
+                    Self.log.notice("Secure coach scorecard recovered by complete typed fallback")
+                    recordChatDiagnostic(
+                        .success,
+                        "Secure coach scorecard used complete typed fallback"
+                    )
+                    return .reply(repaired)
+                }
                 Self.log.notice("Secure coach reply rejected by local gate (\(issue.auditLabel, privacy: .public))")
                 recordChatDiagnostic(
                     .failure,
@@ -2104,6 +2146,13 @@ actor AICoachChatService {
                 )
                 return .failure(.contentRejected)
             }
+
+            let finalized = Self.finalizedCoachReply(
+                from: qualityCandidate,
+                latestUserTurn: latestUserTurn,
+                turnDepth: turnDepth
+            )
+            guard !finalized.isEmpty else { return .failure(.empty) }
 
             let landedChoice = CoachTurnProviderChoice(
                 providerName: completion.generationMode == .deterministicBrief
@@ -3931,6 +3980,65 @@ actor AICoachChatService {
         replyQualityIssue(in: text, latestUserTurn: nil)
     }
 
+    /// Client-side parity gate for replies returned by the secure transport.
+    /// The callable applies its own policy, but the app may ship newer
+    /// professional, semantic, or VISION rules. All three inspect the same
+    /// normalized provider text before any display-only residue stripping.
+    private nonisolated static func secureReplyQualityIssue(
+        in text: String,
+        latestUserTurn: String?,
+        quoteGuard: CoachChatQuoteGuardContext?,
+        systemContext: String?,
+        recentCoachReplies: [String],
+        turnDepth: CoachTurnDepth,
+        assessment: CoachAssessment?,
+        surface: CoachReplySurface,
+        responseKind: CoachChatResponseKind,
+        coachingBrief: CoachChatBrief?
+    ) -> CoachChatReplyQualityIssue? {
+        if let issue = replyQualityIssue(
+            in: text,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: systemContext,
+            recentCoachReplies: recentCoachReplies,
+            turnDepth: turnDepth,
+            surface: surface,
+            responseKind: responseKind,
+            coachingBrief: coachingBrief
+        ) {
+            return issue
+        }
+        if let issue = semanticQualityIssue(
+            in: text,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext,
+            turnDepth: turnDepth,
+            assessment: responseKind == .conversational ? nil : assessment,
+            responseKind: responseKind
+        ) {
+            return .semanticJudgement(issue)
+        }
+        return visionQualityIssue(
+            in: text,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: systemContext,
+            recentCoachReplies: recentCoachReplies,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface,
+            responseKind: responseKind
+        )
+    }
+
+    private nonisolated static func isPreFinalizerReportVoiceIssue(
+        _ issue: CoachChatReplyQualityIssue
+    ) -> Bool {
+        guard case .roboticPhrase(let phrase) = issue else { return false }
+        return phrase == "unrequested report voice"
+    }
+
     /// Turn-aware variant of the live reply gate. The no-context gate catches
     /// obvious global failures; this layer catches replies that are plausible
     /// in isolation but wrong for the user's actual turn.
@@ -3966,6 +4074,17 @@ actor AICoachChatService {
     ) -> CoachChatReplyQualityIssue? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+
+        // Keep this inside the canonical professional gate, not only the
+        // secure-transport caller. Provider rewrites, typed fallbacks, safe
+        // references, and downstream pipeline fallbacks all validate through
+        // this function before final display cleanup.
+        if CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: trimmed,
+            latestUserTurn: latestUserTurn
+        ) {
+            return .roboticPhrase("unrequested report voice")
+        }
 
         let lower = trimmed.lowercased()
         let responseKind = explicitResponseKind ?? {

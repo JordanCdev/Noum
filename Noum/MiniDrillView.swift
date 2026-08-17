@@ -2,6 +2,9 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 #if canImport(SwiftUI) && canImport(AVFoundation)
 
@@ -15,6 +18,7 @@ struct MiniDrillView: View {
     let onCancel: () -> Void
 
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -162,9 +166,23 @@ struct MiniDrillView: View {
                     }
 
                     if phase == .ready, let error = speechVM.connectionError {
-                        FocusedPracticeErrorStatus(message: error)
+                        let presentation = SpeechRecordingIssuePresentation.make(
+                            issue: speechVM.recordingIssue,
+                            message: error
+                        )
+                        if presentation.recovery == .openSettings {
+                            FocusedPracticePermissionIssueStatus(
+                                presentation: presentation,
+                                settingsButtonIdentifier: "miniDrill.recordingIssue.openSettings",
+                                openSettings: openAppSettingsAfterRecordingIssue
+                            )
                             .padding(.horizontal, Spacing.sm)
-                            .accessibilityIdentifier("miniDrill.captureError")
+                            .accessibilityIdentifier("miniDrill.recordingIssue")
+                        } else {
+                            FocusedPracticeErrorStatus(message: error)
+                                .padding(.horizontal, Spacing.sm)
+                                .accessibilityIdentifier("miniDrill.captureError")
+                        }
                     }
 
                     if phase == .ready, let completionIssue {
@@ -192,7 +210,10 @@ struct MiniDrillView: View {
             )
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if dynamicTypeSize.isAccessibilitySize,
-                   phase == .ready || phase == .speaking {
+                   phase == .speaking || (
+                    phase == .ready
+                        && recordingIssuePresentation?.recovery != .openSettings
+                   ) {
                     HStack {
                         Spacer(minLength: 0)
                         phaseAction
@@ -283,22 +304,24 @@ struct MiniDrillView: View {
     private var phaseAction: some View {
         switch phase {
         case .ready:
-            Button {
-                startCountdown()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.subheadline.weight(.bold))
-                    Text("Start drill")
-                        .font(.subheadline.weight(.bold))
+            if recordingIssuePresentation?.recovery != .openSettings {
+                Button {
+                    startCountdown()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.fill")
+                            .font(.subheadline.weight(.bold))
+                        Text("Start drill")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .foregroundStyle(drill.skillArea.miniDrillActionForeground)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 14)
+                    .background(drill.skillArea.miniDrillActionFill, in: Capsule())
                 }
-                .foregroundStyle(drill.skillArea.miniDrillActionForeground)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 14)
-                .background(drill.skillArea.miniDrillActionFill, in: Capsule())
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("miniDrill.start")
             }
-            .buttonStyle(.pressable)
-            .accessibilityIdentifier("miniDrill.start")
         case .countdown, .connecting:
             EmptyView()
         case .speaking:
@@ -324,6 +347,7 @@ struct MiniDrillView: View {
     }
 
     private func startCountdown() {
+        guard recordingIssuePresentation?.recovery != .openSettings else { return }
         completionIssue = nil
         setPhase(.countdown, animation: .snappySpring)
         CoachHaptic.drillStart()
@@ -370,6 +394,22 @@ struct MiniDrillView: View {
             }
             beginSpeakingTimer()
         }
+    }
+
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private func openAppSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
     }
 
     private func beginSpeakingTimer() {

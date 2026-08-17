@@ -88,6 +88,14 @@ struct CoachingOnboardingView: View {
         self.prefill = prefill
         self.onComplete = onComplete
         self.onDefer = onDefer
+        // The permissionless fast lane already captured context and challenge.
+        // Re-asking them (and replaying a second intro) adds taps without new
+        // personalisation, so resume at the only unanswered decision: style.
+        if let prefill {
+            _screen = State(initialValue: .question(.style))
+            _speakingContext = State(initialValue: prefill.speakingContext)
+            _biggestChallenge = State(initialValue: prefill.speakingChallenge)
+        }
     }
 
     private var progressStep: Int {
@@ -152,7 +160,11 @@ struct CoachingOnboardingView: View {
 
                 Spacer()
 
-                Text(screen == .summary ? "Review" : "Choice \(progressStep) of 3")
+                Text(screen == .summary
+                    ? "Review"
+                    : (prefill != nil && screen == .question(.style)
+                        ? "Final choice"
+                        : "Choice \(progressStep) of 3"))
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(AppColor.textSecondary)
             }

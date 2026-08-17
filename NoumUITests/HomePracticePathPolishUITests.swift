@@ -127,6 +127,76 @@ final class HomePracticePathPolishUITests: XCTestCase {
     }
 
     @MainActor
+    func testFillerControlMicrophoneDenialOffersSettingsNotStart() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_MICROPHONE_DENIED",
+            "-DeepLink",
+            "noum://practice/ah-counter",
+        ]
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ahCounter.screen"].waitForExistence(timeout: 10)
+        )
+        let start = app.buttons["Start Filler Control"]
+        XCTAssertTrue(start.waitForExistence(timeout: 3))
+        start.tap()
+
+        let issue = app.descendants(matching: .any)["ahCounter.recordingIssue"]
+        XCTAssertTrue(
+            issue.waitForExistence(timeout: 15),
+            "A denied microphone must resolve to a typed recovery surface."
+        )
+        XCTAssertTrue(issue.label.contains("Microphone access is off"))
+        XCTAssertTrue(issue.label.contains("Open iOS Settings"))
+        XCTAssertFalse(app.buttons["Start Filler Control"].exists)
+
+        let settings = app.buttons["ahCounter.recordingIssue.openSettings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.isHittable)
+    }
+
+    @MainActor
+    func testPaceMicrophoneDenialOffersSettingsNotStart() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_MICROPHONE_DENIED",
+            "-DeepLink",
+            "noum://practice/pace",
+        ]
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["paceTraining.screen"]
+                .waitForExistence(timeout: 10)
+        )
+        let start = app.buttons["paceTraining.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 3))
+        start.tap()
+
+        let issue = app.descendants(matching: .any)["paceTraining.recordingIssue"]
+        XCTAssertTrue(
+            issue.waitForExistence(timeout: 15),
+            "Pace Training must not turn a denied microphone into a retry loop."
+        )
+        XCTAssertTrue(issue.label.contains("Microphone access is off"))
+        XCTAssertTrue(issue.label.contains("Open iOS Settings"))
+        XCTAssertFalse(app.buttons["paceTraining.start"].exists)
+
+        let settings = app.buttons["paceTraining.recordingIssue.openSettings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        scrollUntilHittable(settings, in: app, attempts: 5)
+        XCTAssertTrue(settings.isHittable)
+    }
+
+    @MainActor
     func testUnsupportedOnDeviceLocaleRendersSpecificActionableIssueAtAccessibilityXXXL() {
         let app = XCUIApplication()
         app.launchArguments += [

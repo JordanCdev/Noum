@@ -2158,6 +2158,59 @@ struct CoachChatWireContractTests {
     }
 
     @MainActor
+    @Test func secureCompactScorecardUsesCompleteTypedFallbackBeforeClauseSurgery() async throws {
+        let userTurn = "What should I work on next?"
+        let rawScorecard = "7/10, 3 fillers, 60s. Your recommendation arrived after the setup, so the listener had to wait for it. Next rep, put the recommendation in sentence one, give one reason, then stop."
+        let assessment = CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "The recommendation arrives after the setup.",
+            confidence: 0.72,
+            evidenceUsed: ["The latest rep opens with background before the recommendation."],
+            rubricScores: [],
+            missingEvidence: ["A comparable follow-up rep is missing."],
+            nextProofTest: "Put the recommendation first in the next equivalent rep, give one reason, then stop.",
+            responseMode: .immediateOnly
+        )
+        let transport = CapturingCoachTransport(completionText: rawScorecard)
+        let service = AICoachChatService(secureTransport: transport)
+        var providerChoice: CoachTurnProviderChoice?
+        var gateEvents: [CoachTurnQualityGateEvent] = []
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "Coach the next observable move.",
+            userContext: "RECENT: latest rep 7/10, 3 fillers, 60s. The recommendation arrived after the setup.",
+            accountID: "firebase-guest",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            preferredTier: .geminiFast,
+            onProviderChosen: { providerChoice = $0 },
+            onQualityGateEvent: { gateEvents.append($0) }
+        )
+
+        guard case .reply(let landed) = outcome else {
+            Issue.record("The secure path did not recover the rejected scorecard")
+            return
+        }
+        #expect(landed != rawScorecard)
+        #expect(!landed.hasPrefix("."))
+        #expect(!landed.lowercased().hasPrefix("scorecard"))
+        #expect(!landed.contains("7/10"))
+        #expect(!landed.contains("3 fillers"))
+        #expect(landed.contains("recommendation"))
+        #expect(providerChoice?.providerName == "Typed judgement fallback")
+        #expect(providerChoice?.model == "CoachAssessment")
+        #expect(providerChoice?.resolvedTier == .geminiFast)
+        #expect(providerChoice?.generationMode == .deterministicBrief)
+        #expect(gateEvents == [
+            .rejected("professional:roboticPhrase"),
+            .fallback("professional:roboticPhrase"),
+        ])
+    }
+
+    @MainActor
     @Test func secureInAppTechniqueFollowUpUsesSourceBackedLocalRepair() async throws {
         let userTurn = "So how can I do that in this app???"
         let previousReply = "It sounds like you want to make a stronger impression and connect more deeply with your colleagues. To do that, practice active listening by focusing on what others say and asking clarifying questions."

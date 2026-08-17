@@ -9,38 +9,41 @@ enum HomeMomentCopy {
 
 /// Truthful, non-persisted progress for Today’s deliberately small mission.
 /// A rep counts only after the existing daily-goal owner accepts it; this type
-/// merely clamps that reconciled same-day count into a three-rep view.
+/// merely projects that reconciled same-day count against the user's persisted
+/// 1–3 rep preference.
 struct TodayRepMissionProgress: Equatable {
-    static let targetReps = 3
-
+    let targetReps: Int
     let completedReps: Int
 
-    init(completedReps: Int) {
-        self.completedReps = min(max(completedReps, 0), Self.targetReps)
+    init(completedReps: Int, targetReps: Int) {
+        self.targetReps = min(max(targetReps, 1), 3)
+        self.completedReps = min(max(completedReps, 0), self.targetReps)
     }
 
     var isComplete: Bool {
-        completedReps == Self.targetReps
+        completedReps == targetReps
     }
 
     var currentRep: Int {
-        isComplete ? Self.targetReps : completedReps + 1
+        isComplete ? targetReps : completedReps + 1
     }
 
     var progress: Double {
-        Double(completedReps) / Double(Self.targetReps)
+        Double(completedReps) / Double(targetReps)
     }
 
     var compactLabel: String {
-        isComplete ? "3 of 3 complete" : "Rep \(currentRep) of 3"
+        isComplete
+            ? "\(targetReps) of \(targetReps) complete"
+            : "Rep \(currentRep) of \(targetReps)"
     }
 
     var accessibilityValue: String {
         if isComplete {
-            return "All three reps complete today"
+            return "All \(targetReps) rep\(targetReps == 1 ? "" : "s") complete today."
         }
-        let remaining = Self.targetReps - completedReps
-        return "\(completedReps) of three reps complete. \(remaining) remaining."
+        let remaining = targetReps - completedReps
+        return "\(completedReps) of \(targetReps) reps complete. \(remaining) remaining."
     }
 }
 
@@ -93,6 +96,12 @@ struct HomeCoachRecommendationExposure: Equatable {
         profile: CoachingProfile?,
         recentSessions: [PracticeSession]
     ) -> HomeCoachRecommendationExposure {
+        let rawFocus = blueprint.focus.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawTarget = blueprint.target.trimmingCharacters(in: .whitespacesAndNewlines)
+        let focus = rawFocus.isEmpty ? "Build one clear rep." : String(rawFocus.prefix(180))
+        let target = rawTarget.isEmpty
+            ? "Answer first. Give one reason. Then stop."
+            : String(rawTarget.prefix(180))
         let recent = PracticeProgressEligibility.eligibleSessions(in: recentSessions).prefix(5).map { session in
             "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
         }.joined(separator: "|")
@@ -118,15 +127,15 @@ struct HomeCoachRecommendationExposure: Equatable {
             prescribedDemand?.recommendationFingerprintComponent ?? "mode-only",
             blueprint.suggestedTheme.rawValue,
             title,
-            blueprint.focus,
-            blueprint.target,
+            focus,
+            target,
             recent
         ].joined(separator: "|")
         return HomeCoachRecommendationExposure(
             fingerprint: fingerprint,
             title: title,
-            focus: blueprint.focus,
-            target: blueprint.target,
+            focus: focus,
+            target: target,
             mode: blueprint.recommendedMode,
             scenario: blueprint.recommendedScenario,
             tone: blueprint.recommendedTone,
@@ -164,6 +173,20 @@ struct HomeCoachRecommendationExposure: Equatable {
             tone: nil,
             suggestedTheme: .all,
             prescribedDemand: persisted.prescribedDemand
+        )
+    }
+
+    /// One immutable handoff derived from this exact visible projection. The
+    /// caller supplies time for deterministic tests; no target or demand is
+    /// re-resolved at the navigation boundary.
+    func quickStartIntent(acceptedAt: Date = Date()) -> PracticeQuickStartIntent? {
+        PracticeQuickStartIntent(
+            fingerprint: fingerprint,
+            focus: focus,
+            target: target,
+            mode: mode,
+            prescribedDemand: prescribedDemand,
+            acceptedAt: acceptedAt
         )
     }
 }
@@ -352,6 +375,9 @@ struct HomeCoachCard: View {
     /// sessions and explicitly recorded drills. This view never owns or writes
     /// a second progress counter.
     let completedRepsToday: Int
+    /// The persisted user preference owned by `DailyGoalManager`. Defaulted for
+    /// previews/legacy call sites; production Home always passes the live value.
+    var targetRepsToday: Int = 1
 
     /// Host-supplied gate (>= 1 completed rep). The row additionally
     /// self-gates on an actual active plan via `HomePlanArcLine` — both
@@ -428,7 +454,7 @@ struct HomeCoachCard: View {
             .blueprintForRendering(coherentRecommendationBlueprint)
         let renderedBlueprint = renderedAvailability.resolving(sourceBlueprint)
         let renderedExposure = recommendationExposure(for: renderedBlueprint)
-        // V3 Today: one compact three-rep mission. Recommendation state,
+        // V3 Today: one compact user-sized mission. Recommendation state,
         // evidence and launch truth still come from the existing owners; the
         // new layer only makes the next small commitment obvious.
         return NoumSurface(.mission) {
@@ -448,6 +474,9 @@ struct HomeCoachCard: View {
                     }
                 }
                 .heroEntrance(settled: heroTextSettled)
+
+                missionTarget(renderedExposure.target)
+                    .heroEntrance(settled: heroTextSettled)
 
                 missionRepTrack(todayMissionProgress)
                     .heroEntrance(settled: heroTextSettled)
@@ -507,7 +536,10 @@ struct HomeCoachCard: View {
     }
 
     private var todayMissionProgress: TodayRepMissionProgress {
-        TodayRepMissionProgress(completedReps: completedRepsToday)
+        TodayRepMissionProgress(
+            completedReps: completedRepsToday,
+            targetReps: targetRepsToday
+        )
     }
 
     private func missionHeader(_ progress: TodayRepMissionProgress) -> some View {
@@ -599,14 +631,45 @@ struct HomeCoachCard: View {
         .accessibilityHidden(true)
     }
 
+    /// The exact observable target accepted by the primary action. This is
+    /// intentionally rendered from the same immutable exposure value passed to
+    /// `beginRecommendedRep`; the live view must never regenerate it.
+    private func missionTarget(_ target: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("One target")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(Color.white.opacity(0.72))
+            Text(target)
+                .font(Typography.headline)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(
+            cornerRadius: CornerRadius.medium,
+            style: .continuous
+        ))
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: CornerRadius.medium,
+                style: .continuous
+            )
+            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Today's practice target. \(target)")
+        .accessibilityIdentifier("home.coachCard.target")
+    }
+
     private func missionRepTrack(
         _ progress: TodayRepMissionProgress
     ) -> some View {
         HStack(spacing: 0) {
-            ForEach(1...TodayRepMissionProgress.targetReps, id: \.self) { rep in
+            ForEach(1...progress.targetReps, id: \.self) { rep in
                 missionRepNode(rep, progress: progress)
 
-                if rep < TodayRepMissionProgress.targetReps {
+                if rep < progress.targetReps {
                     Capsule(style: .continuous)
                         .fill(
                             Color.white.opacity(
@@ -625,7 +688,9 @@ struct HomeCoachCard: View {
             value: progress.completedReps
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Today's three-rep mission")
+        .accessibilityLabel(
+            "Today's \(progress.targetReps)-rep mission"
+        )
         .accessibilityValue(progress.accessibilityValue)
         .accessibilityIdentifier("home.mission.progress")
     }
@@ -710,7 +775,7 @@ struct HomeCoachCard: View {
         if let moment = bigMomentStore.activeMoment,
            let days = bigMomentStore.daysUntil(moment),
            days >= 0 && days <= 14 {
-            return "Three focused reps before the real conversation."
+            return "Today's focused mission builds toward the real conversation."
         }
 
         guard hasSignal else {
@@ -731,7 +796,7 @@ struct HomeCoachCard: View {
         }
 
         if sessionStore.progressEligibleSessionCount < 3 {
-            return "Three reps and Noum starts finding your weakest line."
+            return "Complete three qualifying reps and Noum can start finding your weakest line."
         }
 
         if blueprint.source == .caseIntervention {
@@ -827,7 +892,7 @@ struct HomeCoachCard: View {
             .accessibilityHidden(true)
 
             Text(text)
-                .font(Typography.figtree(size: 10.5, weight: .heavy, relativeTo: .caption2))
+                .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
                 .tracking(0.6)
                 .foregroundStyle(.white)
         }
@@ -1160,8 +1225,19 @@ struct HomeCoachCard: View {
             // because the mode that opens is not the mode the user saw, and
             // an unseen mode auto-starting the microphone is exactly the
             // interrupted-one-tap leak the other surfaces fail closed on.
-            if launch.acceptsDisplayedPrescription {
-                PracticeModeQuickStart.arm(for: launch.launchedMode)
+            let exactIntentArmed: Bool
+            if launch.acceptsDisplayedPrescription,
+               launch.launchedMode == exposure.mode,
+               let intent = exposure.quickStartIntent() {
+                // Timed capture consumes the exact target and demand; the other
+                // mode views consume the same gate without retaining it for a
+                // later tab.
+                exactIntentArmed = PracticeModeQuickStart.arm(intent: intent)
+            } else {
+                exactIntentArmed = false
+            }
+            if !exactIntentArmed {
+                PracticeModeQuickStart.clear()
             }
             commitWithHandoff {
                 navigationPath.append(launch.destination)

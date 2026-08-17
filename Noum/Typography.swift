@@ -63,10 +63,12 @@ enum Typography {
     static let caption = Typography.manrope(size: 13, weight: .semibold, relativeTo: .footnote)
     /// 11 / semibold / text — minor labels, secondary chips
     static let captionSmall = Typography.manrope(size: 11, weight: .semibold, relativeTo: .caption)
-    /// 10 / bold / rounded — compact auxiliary labels; sentence case by default
-    static let micro = Typography.figtree(size: 10, weight: .bold, relativeTo: .caption2)
-    /// 10 / semibold / rounded — compact navigation labels in sentence case
-    static let nav = Typography.figtree(size: 10, weight: .semibold, relativeTo: .caption2)
+    /// 11 / bold / rounded — compact auxiliary labels; sentence case by default.
+    /// Eleven points is the production floor for user-facing copy at the
+    /// default Dynamic Type size; decorative glyphs may be smaller, text may not.
+    static let micro = Typography.figtree(size: 11, weight: .bold, relativeTo: .caption2)
+    /// 11 / semibold / rounded — compact navigation labels in sentence case.
+    static let nav = Typography.figtree(size: 11, weight: .semibold, relativeTo: .caption2)
 
     // MARK: - Builders
 

@@ -1,10 +1,11 @@
 // High-precision JS mirror of the last-mile production surface.
 //
-// `finalizeReplyForFixture` mirrors AICoachChatService.finalizedCoachReply.
-// Production then still runs CoachReliabilityGate before committing the text to
-// the UI. The full Swift gate has assessment-aware fallbacks, so this file only
-// mirrors cases with a stable static recovery shape. It is diagnostic; official
-// replay scoring remains tied to captured judge files.
+// The secure client and direct-provider paths quality-gate raw display text
+// before `finalizedCoachReply` can strip report-voice clauses. Production then
+// runs CoachReliabilityGate again before committing the text to the UI. The full
+// Swift gate has assessment-aware fallbacks, so this file only mirrors cases
+// with a stable static recovery shape. It is diagnostic; official replay
+// scoring remains tied to captured judge files.
 
 import { finalizeReplyForFixture } from './finalizeReply.mjs';
 import { runChecks } from './checks.mjs';
@@ -16,6 +17,7 @@ const COLD_START_FINDINGS = new Set([
   'coldStartUncalibratedMetricTarget',
   'coldStartVagueBaselineRep',
 ]);
+const PRE_FINALIZER_REPORT_VOICE_FINDINGS = new Set(['unrequestedRawReportVoice']);
 
 const LOW_SIGNAL_OFF_TOPIC_TESTS = new Set(['egg', 'banana', 'asdf', 'test', 'lol', 'huh']);
 const GREETING_SMALL_TALK = new Set([
@@ -1479,7 +1481,17 @@ function fallbackResult({ text, raw, fixture, opts, finalizer, issue, source }) 
   };
 }
 
+function preFinalizerReportVoiceFallback(surface = 'text') {
+  return surface === 'live'
+    ? 'I cannot turn that scorecard into honest coaching. Give me one clean rep and I will name the single change that matters.'
+    : 'I cannot turn that scorecard into honest coaching. Give me one clean rep on the same prompt, and I will name the single observable change that matters.';
+}
+
 export function productionSurfaceReplyForFixture(raw, fixture = {}, opts = {}) {
+  const preFinalizerDeterministic = runChecks(String(raw || '').trim(), fixture, {
+    contextBlock: opts.contextBlock || '',
+    recentReplies: opts.recentReplies || [],
+  });
   const finalizer = finalizeReplyForFixture(raw, fixture);
   const recentReplies = opts.recentReplies || [];
   const deterministic = runChecks(finalizer.text, fixture, {
@@ -1791,6 +1803,26 @@ export function productionSurfaceReplyForFixture(raw, fixture = {}, opts = {}) {
       finalizer,
       issue: 'coldStartJargon',
       source: 'CoachReliabilityGate.coldStartFallback',
+    });
+  }
+
+  // Preserve the raw finding across finalization, but let the same narrow,
+  // turn-specific complete fallbacks above win when they apply. This mirrors
+  // the Swift path: raw text is gated first, then the typed deterministic
+  // fallback selects the user's actual turn shape instead of editing a clause.
+  if (hasFinding(
+    preFinalizerDeterministic.findings,
+    PRE_FINALIZER_REPORT_VOICE_FINDINGS,
+  )) {
+    const text = preFinalizerReportVoiceFallback(fixture.surface || opts.surface || 'text');
+    return fallbackResult({
+      text,
+      raw,
+      fixture,
+      opts,
+      finalizer,
+      issue: 'rawReportVoice',
+      source: 'AICoachChatService.preFinalizerRawReportVoiceGate',
     });
   }
 

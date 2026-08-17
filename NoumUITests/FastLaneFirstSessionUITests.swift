@@ -105,6 +105,22 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         assertMinimumTapTarget(spokenProof)
         XCTAssertEqual(spokenProof.label, "Try a 30-second spoken proof")
 
+        let otherOptions = app.buttons["fastLane.otherOptions"]
+        XCTAssertTrue(otherOptions.waitForExistence(timeout: 5))
+        scrollUntilHittable(otherOptions, in: app)
+        assertMinimumTapTarget(otherOptions)
+        XCTAssertFalse(
+            app.buttons["fastLane.completeSetup"].exists,
+            "Secondary exits should stay collapsed so the spoken proof remains the one primary continuation."
+        )
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Fast Lane - One Primary Spoken Continuation"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        otherOptions.tap()
+
         let completeProfile = app.buttons["fastLane.completeSetup"]
         XCTAssertTrue(completeProfile.waitForExistence(timeout: 5))
         scrollUntilHittable(completeProfile, in: app)
@@ -115,11 +131,6 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         XCTAssertTrue(explore.waitForExistence(timeout: 5))
         scrollUntilHittable(explore, in: app)
         assertMinimumTapTarget(explore)
-
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Fast Lane - Truthful Structure-Only First Value"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
 
         XCTAssertTrue(explore.isHittable)
         explore.tap()
@@ -397,24 +408,32 @@ final class FastLaneFirstSessionUITests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5))
         submit.tap()
 
+        let otherOptions = app.buttons["fastLane.otherOptions"]
+        scrollUntilHittable(otherOptions, in: app)
+        XCTAssertTrue(otherOptions.waitForExistence(timeout: 8))
+        otherOptions.tap()
+
         let upgrade = app.buttons["fastLane.completeSetup"]
         scrollUntilHittable(upgrade, in: app)
         XCTAssertTrue(upgrade.waitForExistence(timeout: 8))
         upgrade.tap()
 
-        let startSetup = app.buttons["coaching.start"]
-        XCTAssertTrue(startSetup.waitForExistence(timeout: 8))
-        startSetup.tap()
-
-        let prefilledContext = app.buttons["coaching.option.work"]
-        XCTAssertTrue(prefilledContext.waitForExistence(timeout: 5))
-        XCTAssertTrue(prefilledContext.isSelected)
-        app.buttons["coaching.continue"].tap()
-
-        let prefilledChallenge = app.buttons["coaching.option.rambling"]
-        XCTAssertTrue(prefilledChallenge.waitForExistence(timeout: 5))
-        XCTAssertTrue(prefilledChallenge.isSelected)
-        app.buttons["coaching.continue"].tap()
+        XCTAssertFalse(
+            app.buttons["coaching.start"].exists,
+            "Fast-lane handoff must not replay the full-profile intro."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Final choice"].waitForExistence(timeout: 8),
+            "Fast-lane handoff must resume at the one unanswered profile choice."
+        )
+        XCTAssertFalse(
+            app.buttons["coaching.option.work"].exists,
+            "The already-saved context must not be asked again."
+        )
+        XCTAssertFalse(
+            app.buttons["coaching.option.rambling"].exists,
+            "The already-saved challenge must not be asked again."
+        )
 
         let concise = app.buttons["coaching.option.concise"]
         scrollUntilHittable(concise, in: app)

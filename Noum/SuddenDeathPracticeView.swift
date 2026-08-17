@@ -2,6 +2,9 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 #if canImport(AVFAudio)
 import AVFAudio
 #endif
@@ -94,6 +97,7 @@ enum SuddenDeathPromptReadoutPolicy {
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
@@ -125,6 +129,9 @@ struct SuddenDeathPracticeView: View {
     @State private var runHadUsableCapture = false
     @State private var recorderPreparationTask: Task<Void, Never>?
     @State private var recorderPreparationGeneration: UUID?
+    /// Exact Today/Train target retained for this mounted pressure run. The
+    /// recommendation ledger remains the durable attribution owner.
+    @State private var acceptedPracticeIntent: PracticeQuickStartIntent?
     #if DEBUG
     @State private var isPresentingResultFixture = false
     #endif
@@ -255,7 +262,11 @@ struct SuddenDeathPracticeView: View {
             // Quick Start handshake — picker armed Sudden Death for a
             // one-tap launch. `beginSession` resolves a fresh prompt
             // and starts the automatic pressure ramp.
-            if engine.phase == .setup, PracticeModeQuickStart.consume(for: .suddenDeath) {
+            if engine.phase == .setup,
+               let quickStartLaunch = PracticeModeQuickStart.consumeLaunch(
+                    for: .suddenDeath
+               ) {
+                acceptedPracticeIntent = quickStartLaunch.recommendationIntent
                 beginSession()
             }
         }
@@ -506,31 +517,48 @@ struct SuddenDeathPracticeView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("A filler, slow start, or short response ends the drill.")
 
+                acceptedTargetCue
+
                 if let error = speechVM.connectionError {
-                    FocusedPracticeErrorStatus(message: error)
+                    let presentation = SpeechRecordingIssuePresentation.make(
+                        issue: speechVM.recordingIssue,
+                        message: error
+                    )
+                    if presentation.recovery == .openSettings {
+                        FocusedPracticePermissionIssueStatus(
+                            presentation: presentation,
+                            settingsButtonIdentifier: "suddenDeath.recordingIssue.openSettings",
+                            openSettings: openAppSettingsAfterRecordingIssue
+                        )
+                        .accessibilityIdentifier("suddenDeath.recordingIssue")
+                    } else {
+                        FocusedPracticeErrorStatus(message: error)
+                    }
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button {
-                beginSession()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "bolt.fill")
-                        .font(.headline)
-                    Text("Start pressure drill")
-                        .font(.headline.weight(.bold))
+            if recordingIssuePresentation?.recovery != .openSettings {
+                Button {
+                    beginSession()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .font(.headline)
+                        Text("Start pressure drill")
+                            .font(.headline.weight(.bold))
+                    }
+                    .foregroundStyle(AppColor.warning)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .background(.white, in: Capsule())
                 }
-                .foregroundStyle(AppColor.warning)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.md)
-                .background(.white, in: Capsule())
+                .buttonStyle(.pressable)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.black.opacity(0.10).ignoresSafeArea())
+                .accessibilityIdentifier("suddenDeath.begin")
             }
-            .buttonStyle(.pressable)
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.black.opacity(0.10).ignoresSafeArea())
-            .accessibilityIdentifier("suddenDeath.begin")
         }
     }
 
@@ -592,6 +620,22 @@ struct SuddenDeathPracticeView: View {
         .padding(.vertical, Spacing.xs)
     }
 
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private func openAppSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
+    }
+
     // MARK: - Countdown Screen
 
     private var countdownScreen: some View {
@@ -621,11 +665,16 @@ struct SuddenDeathPracticeView: View {
             // Top bar: round + survival dots
             topBar(round: round)
 
+            acceptedTargetCue
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.bottom, Spacing.xs)
+
             // Goal-aware intent reminder — fires once per session (not per
             // round) so the user sees what voice they're working toward
             // without being re-prompted each pressure turn. Silent when
             // no CoachingProfile is set.
-            if let voice = coachingProfileStore.profile?.chosenStyleGoal {
+            if acceptedPracticeIntent == nil,
+               let voice = coachingProfileStore.profile?.chosenStyleGoal {
                 VoiceAnchorBanner(
                     styleGoal: voice,
                     isRecording: speechVM.isRecording,
@@ -664,6 +713,77 @@ struct SuddenDeathPracticeView: View {
                 doneButton
             }
         }
+    }
+
+    @ViewBuilder
+    private var acceptedTargetCue: some View {
+        if let intent = acceptedPracticeIntent {
+            let usesDarkCanvas = phaseGroup == .setup
+            let primary = usesDarkCanvas ? Color.white : AppColor.textPrimary
+            let secondary = usesDarkCanvas
+                ? Color.white.opacity(0.72)
+                : AppColor.textSecondary
+            let fill = usesDarkCanvas
+                ? Color.white.opacity(0.10)
+                : accentColor.opacity(0.08)
+            let stroke = usesDarkCanvas
+                ? Color.white.opacity(0.14)
+                : accentColor.opacity(0.18)
+
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "scope")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(usesDarkCanvas ? Color.white : accentColor)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("YOUR TARGET")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(secondary)
+                        .tracking(0.7)
+                    Text(intent.target)
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let difficulty = intent.prescribedDemand?.suddenDeathDifficulty {
+                        Text("\(difficulty.title) pressure")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(secondary)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                fill,
+                in: RoundedRectangle(
+                    cornerRadius: CornerRadius.medium,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: CornerRadius.medium,
+                    style: .continuous
+                )
+                .stroke(stroke, lineWidth: 1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(acceptedTargetAccessibilityLabel(intent))
+            .accessibilityIdentifier("suddenDeath.acceptedTarget")
+        }
+    }
+
+    private func acceptedTargetAccessibilityLabel(
+        _ intent: PracticeQuickStartIntent
+    ) -> String {
+        if let difficulty = intent.prescribedDemand?.suddenDeathDifficulty {
+            return "Practice target. \(intent.target). \(difficulty.title) pressure."
+        }
+        return "Practice target. \(intent.target)"
     }
 
     // MARK: Top Bar
@@ -1119,7 +1239,10 @@ struct SuddenDeathPracticeView: View {
             engine.configure(
                 openingPrompt: openingPrompt,
                 followUpProvider: PressureFollowUpService.shared,
-                previousBest: previousBestRounds
+                previousBest: previousBestRounds,
+                difficulty: acceptedPracticeIntent?
+                    .prescribedDemand?
+                    .suddenDeathDifficulty ?? .medium
             )
             engine.beginCountdown()
         }
@@ -1136,7 +1259,10 @@ struct SuddenDeathPracticeView: View {
             engine.configure(
                 openingPrompt: openingPrompt,
                 followUpProvider: PressureFollowUpService.shared,
-                previousBest: previousBestRounds
+                previousBest: previousBestRounds,
+                difficulty: acceptedPracticeIntent?
+                    .prescribedDemand?
+                    .suddenDeathDifficulty ?? .medium
             )
             engine.beginCountdown()
         }

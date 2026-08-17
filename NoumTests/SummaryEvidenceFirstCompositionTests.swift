@@ -32,7 +32,7 @@ struct SummaryEvidenceFirstCompositionTests {
         }
     }
 
-    @Test func collapsedSummaryUsesFourPerceptualStages() throws {
+    @Test func collapsedSummaryKeepsOneBoundedReceiptAndOneAction() throws {
         let source = try summarySource
         let collapsed = try #require(
             slice(
@@ -45,6 +45,9 @@ struct SummaryEvidenceFirstCompositionTests {
         try expectOrdered(
             [
                 "SummaryCompletionHeader(",
+                "if isSuddenDeathSummary",
+                "resultOverviewCard",
+                "postRepProgressReceipt",
                 "if isIMSummary",
                 "IMDebriefCard(",
                 "PostRepDebriefCard(",
@@ -59,14 +62,14 @@ struct SummaryEvidenceFirstCompositionTests {
             "transcriptRetryComparisonSection",
             "rewriteSection",
             "reviewExperimentActionCard",
-            "postRepProgressReceipt",
-            "resultOverviewCard",
         ] {
             #expect(!collapsed.contains(secondary))
         }
+        #expect(collapsed.components(separatedBy: "resultOverviewCard").count - 1 == 1)
         #expect(collapsed.contains(".cardEntrance(1)"))
-        #expect(collapsed.contains(".cardEntrance(2)"))
-        #expect(collapsed.components(separatedBy: ".cardEntrance(3)").count - 1 == 1)
+        #expect(collapsed.components(separatedBy: ".cardEntrance(2)").count - 1 == 2)
+        #expect(collapsed.contains(".cardEntrance(3)"))
+        #expect(collapsed.components(separatedBy: ".cardEntrance(4)").count - 1 == 1)
     }
 
     @Test func secondaryAnalysisIsContainedBehindTheExistingDisclosure() throws {
@@ -88,11 +91,12 @@ struct SummaryEvidenceFirstCompositionTests {
                 "if focusedActionStage != .transcriptUpgrade",
                 "rewriteSection",
                 "if focusedActionStage != .prescription",
+                "focusedActionStage != .pressurePrescription",
                 "reviewExperimentActionCard",
-                "postRepProgressReceipt",
             ],
             in: details
         )
+        #expect(!details.contains("postRepProgressReceipt"))
         #expect(details.contains("if !isSuddenDeathSummary"))
         #expect(source.contains("HeroScoreCard("))
         #expect(source.contains("IMVerdictCard("))
@@ -111,18 +115,41 @@ struct SummaryEvidenceFirstCompositionTests {
 
         try expectOrdered(
             [
-                "case .pressureReceipt:",
-                "resultOverviewCard",
                 "case .transcriptUpgrade:",
                 "rewriteSection",
-                "case .prescription:",
+                "case .pressurePrescription, .prescription:",
                 "reviewExperimentActionCard",
             ],
             in: focused
         )
-        #expect(focused.components(separatedBy: "resultOverviewCard").count - 1 == 1)
+        #expect(!focused.contains("resultOverviewCard"))
         #expect(focused.components(separatedBy: "rewriteSection").count - 1 == 1)
         #expect(focused.components(separatedBy: "reviewExperimentActionCard").count - 1 == 1)
+    }
+
+    @Test func pressureReceiptNeverOwnsOrRepeatsTheNextAction() throws {
+        let source = try summarySource
+        let collapsed = try #require(
+            slice(
+                source,
+                from: "ScrollView(showsIndicators: false) {",
+                through: "// END V3 ATTENTION BUDGET"
+            )
+        )
+        let receipt = try #require(
+            slice(
+                source,
+                from: "private var postRepProgressReceipt: some View",
+                through: "private func progressReceiptDisclosure"
+            )
+        )
+
+        #expect(collapsed.contains("if isSuddenDeathSummary"))
+        #expect(collapsed.contains("resultOverviewCard"))
+        #expect(collapsed.contains("focusedSummaryActionStage"))
+        #expect(receipt.contains("if !isSuddenDeathSummary"))
+        #expect(source.contains("case .pressurePrescription, .prescription:"))
+        #expect(source.contains("focusedActionStage != .pressurePrescription"))
     }
 
     @Test func askNoumIsDepthNotACompetingPrimaryAction() throws {
@@ -149,11 +176,13 @@ struct SummaryEvidenceFirstCompositionTests {
     @Test func visibleDoneUsesTheExistingExitBoundary() throws {
         let source = try summarySource
 
-        #expect(source.contains("ToolbarItem(placement: .topBarTrailing)"))
-        #expect(source.contains("Button(CohesiveSummaryCopy.done)"))
-        #expect(source.contains(".accessibilityIdentifier(\"summary.toolbar.done\")"))
+        #expect(source.components(separatedBy: "SummaryExitPanel(onDone: completeSummaryReview)").count - 1 == 1)
+        #expect(!source.contains("summary.toolbar.done"))
+        #expect(source.contains(".toolbar(.hidden, for: .navigationBar)"))
         #expect(source.contains(".accessibilityAction(named: Text(\"Done\"))"))
-        #expect(source.components(separatedBy: "completeSummaryReview()").count - 1 >= 2)
+        // One invocation belongs to the non-visual rotor escape; the other is
+        // the function declaration. The visible exit is the panel above.
+        #expect(source.components(separatedBy: "completeSummaryReview()").count - 1 == 2)
     }
 
     @Test func rewriteReusesTheExactSessionsSavedSnapshot() throws {
@@ -177,9 +206,7 @@ struct SummaryEvidenceFirstCompositionTests {
         )
 
         #expect(
-            collapsed.components(
-                separatedBy: "suppressesNextMove: focusedActionStage == .transcriptUpgrade"
-            ).count - 1 == 2
+            collapsed.components(separatedBy: "suppressesNextMove: true").count - 1 == 2
         )
         #expect(cards.contains("var suppressesNextMove: Bool = false"))
         #expect(cards.contains("if !suppressesNextMove"))
@@ -217,11 +244,47 @@ struct SummaryEvidenceFirstCompositionTests {
 
         #expect(!collapsed.contains("InterventionReviewPromptCard(intervention:"))
         #expect(details.contains("deferredInterventionReviewCard"))
-        #expect(deferredReview.contains("focusedActionStage == .transcriptUpgrade"))
+        #expect(!deferredReview.contains("focusedActionStage == .transcriptUpgrade"))
         #expect(deferredReview.contains("let intervention = activeReviewDueIntervention"))
         #expect(deferredReview.contains("let onAskNoumAboutRep"))
         #expect(deferredReview.contains("InterventionReviewPromptCard(intervention: intervention)"))
         #expect(deferredReview.contains("interventionReviewOpener(for: intervention)"))
+    }
+
+    @Test func missingEvaluatorScoreNeverBecomesAVisibleNumber() throws {
+        let source = try summarySource
+        let cards = try summaryCardsSource
+
+        #expect(source.contains("private var presentedScore: Int?"))
+        #expect(source.contains("SummaryScorePresentation.value("))
+        #expect(source.contains("scoreValue: presentedScore"))
+        #expect(source.contains("Text(\"NOT SCORED\")"))
+        #expect(cards.contains("let scoreValue: Int?"))
+        #expect(cards.contains("Text(\"Not scored\")"))
+        #expect(cards.contains("?? \"Not scored\""))
+    }
+
+    @Test func scorePresentationFailsClosedWithoutEvaluatorEvidence() {
+        #expect(SummaryScorePresentation.value(
+            isProgressEligible: true,
+            evaluatorScore: nil
+        ) == nil)
+        #expect(SummaryScorePresentation.value(
+            isProgressEligible: false,
+            evaluatorScore: 10
+        ) == nil)
+        #expect(SummaryScorePresentation.value(
+            isProgressEligible: true,
+            evaluatorScore: 8
+        ) == 8)
+        #expect(SummaryScorePresentation.value(
+            isProgressEligible: true,
+            evaluatorScore: -1
+        ) == nil)
+        #expect(SummaryScorePresentation.value(
+            isProgressEligible: true,
+            evaluatorScore: 11
+        ) == nil)
     }
 
     @Test func verifiedEvidenceCarriesSourceProvenanceAndCanYieldToOneUpgrade() {

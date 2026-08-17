@@ -48,6 +48,9 @@ struct AhCounterView: View {
     @State private var fillerFeedbackTask: Task<Void, Never>?
     @State private var isFinalizingSession = false
     @State private var sessionNotice: String?
+    /// Exact Today/Train target for this mounted rep. It is deliberately not a
+    /// second persistence owner; the recommendation ledger owns attribution.
+    @State private var acceptedPracticeIntent: PracticeQuickStartIntent?
 
     private static let prompts: [String] = [
         "Describe your morning routine",
@@ -148,7 +151,10 @@ struct AhCounterView: View {
             if !speechVM.isRecording,
                launchCountdown == nil,
                !showGoCue,
-               PracticeModeQuickStart.consume(for: .ahCounter) {
+               let quickStartLaunch = PracticeModeQuickStart.consumeLaunch(
+                    for: .ahCounter
+               ) {
+                acceptedPracticeIntent = quickStartLaunch.recommendationIntent
                 beginLaunchCountdown()
             }
         }
@@ -210,7 +216,10 @@ struct AhCounterView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Speaking prompt: \(currentPrompt)")
 
-            if let voice = coachingProfileStore.profile?.chosenStyleGoal {
+            acceptedTargetCue
+
+            if acceptedPracticeIntent == nil,
+               let voice = coachingProfileStore.profile?.chosenStyleGoal {
                 VoiceAnchorBanner(styleGoal: voice, isRecording: false)
             }
 
@@ -343,6 +352,8 @@ struct AhCounterView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Recording, \(formattedElapsed) elapsed")
 
+            acceptedTargetCue
+
             NoumSurface(.quiet) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.lg) {
@@ -390,6 +401,50 @@ struct AhCounterView: View {
                     .foregroundStyle(AppColor.caution)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var acceptedTargetCue: some View {
+        if let intent = acceptedPracticeIntent {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "scope")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.modeAhCounter)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("YOUR TARGET")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .tracking(0.7)
+                    Text(intent.target)
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AppColor.modeAhCounter.opacity(0.08),
+                in: RoundedRectangle(
+                    cornerRadius: CornerRadius.medium,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: CornerRadius.medium,
+                    style: .continuous
+                )
+                .stroke(AppColor.modeAhCounter.opacity(0.18), lineWidth: 1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Practice target. \(intent.target)")
+            .accessibilityIdentifier("ahCounter.acceptedTarget")
         }
     }
 

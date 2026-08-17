@@ -41,13 +41,27 @@ enum SummaryRewardQualification {
     }
 }
 
-/// The collapsed Summary has one slot after its coaching debrief. Pressure's
-/// required run receipt wins that slot; otherwise a source-bound transcript
-/// upgrade wins when its existing truth gate owns the next action; every other
-/// rep receives the finalized prescription. Keeping this decision pure makes
-/// it impossible for presentation code to stack all three at once.
+/// User-facing score boundary. Only a qualifying exact rep with evaluator-
+/// owned score evidence may render a number; duration/filler heuristics are
+/// never promoted into a score label.
+enum SummaryScorePresentation {
+    static func value(
+        isProgressEligible: Bool,
+        evaluatorScore: Int?
+    ) -> Int? {
+        guard isProgressEligible,
+              let evaluatorScore,
+              (0...10).contains(evaluatorScore) else { return nil }
+        return evaluatorScore
+    }
+}
+
+/// The collapsed Summary has one action slot after its coaching debrief. A
+/// Pressure run still receives the finalized next move; its run receipt is
+/// mounted separately and can never masquerade as an action. Otherwise a
+/// source-bound transcript upgrade wins when its truth gate owns the retry.
 enum SummaryFocusedActionStage: Equatable {
-    case pressureReceipt
+    case pressurePrescription
     case transcriptUpgrade
     case prescription
 
@@ -55,7 +69,7 @@ enum SummaryFocusedActionStage: Equatable {
         isPressureRun: Bool,
         transcriptUpgradeOwnsNextAction: Bool
     ) -> SummaryFocusedActionStage {
-        if isPressureRun { return .pressureReceipt }
+        if isPressureRun { return .pressurePrescription }
         if transcriptUpgradeOwnsNextAction { return .transcriptUpgrade }
         return .prescription
     }
@@ -390,6 +404,17 @@ struct SummaryView: View {
         if effectiveDuration < 4 || transcriptWordCount < 4 { return 1 }
         if effectiveDuration < 8 || transcriptWordCount < 8 { return max(2, 5 - effectiveFillerCount) }
         return max(3, min(8, 7 - effectiveFillerCount))
+    }
+
+    /// Display only evaluator-owned score evidence. Legacy recommendation
+    /// engines still receive their historical scalar input below, but no
+    /// result, share card, or accessibility label may turn that fallback into
+    /// a user-facing score.
+    private var presentedScore: Int? {
+        SummaryScorePresentation.value(
+            isProgressEligible: currentRepIsProgressEligible,
+            evaluatorScore: coachScoreEvidence
+        )
     }
 
     /// True when the user barely said anything — don't give credit for zero fillers etc.
@@ -839,7 +864,8 @@ struct SummaryView: View {
         if currentRepUnlockedPathStep {
             return "Progress saved"
         }
-        switch scoreValue {
+        guard let presentedScore else { return "Rep saved" }
+        switch presentedScore {
         case 9...10: return "Strong delivery"
         case 7...8: return "Good control"
         case 4...6: return "Building momentum"
@@ -848,7 +874,8 @@ struct SummaryView: View {
     }
 
     private var scoreAccent: Color {
-        switch scoreValue {
+        guard let presentedScore else { return AppColor.brandBlue }
+        switch presentedScore {
         case 8...10: return AppColor.positive
         case 5...7: return AppColor.caution
         default: return AppColor.warning
@@ -856,7 +883,8 @@ struct SummaryView: View {
     }
 
     private var scoreEmoji: String {
-        switch scoreValue {
+        guard let presentedScore else { return "waveform.path" }
+        switch presentedScore {
         case 9...10: return "flame.fill"
         case 7...8: return "hand.thumbsup.fill"
         case 4...6: return "arrow.up.right"
@@ -985,11 +1013,9 @@ struct SummaryView: View {
     @ViewBuilder
     private var focusedSummaryActionStage: some View {
         switch focusedActionStage {
-        case .pressureReceipt:
-            resultOverviewCard
         case .transcriptUpgrade:
             rewriteSection
-        case .prescription:
+        case .pressurePrescription, .prescription:
             reviewExperimentActionCard
                 .onAppear(perform: recordReviewExperimentExposureIfNeeded)
         }
@@ -1186,15 +1212,31 @@ struct SummaryView: View {
                     )
                     .cardEntrance(0)
 
+                    // Pressure's points/tiers card is a run receipt, never the
+                    // action slot. It remains immediate for the existing share
+                    // and replay contract while the prescription below owns the
+                    // sole next move.
+                    if isSuddenDeathSummary {
+                        resultOverviewCard
+                            .cardEntrance(1)
+                    }
+
+                    // One exact-session earned receipt is visible without
+                    // opening analytics. A verified transcript-retry milestone
+                    // continues to own this beat exclusively when present.
+                    postRepProgressReceipt
+                        .cardEntrance(1)
+
                     // V3 ATTENTION BUDGET: the default result is deliberately
-                    // bounded to four perceptual stages: completion, one
-                    // evidence/debrief surface, one selected action/upgrade
-                    // surface, then the Details + exit controls. Comparison,
+                    // bounded to completion, at most one earned receipt, one
+                    // evidence/debrief surface, one selected action/upgrade,
+                    // then the Details + exit controls. Comparison,
                     // rewrite, experiment and progress surfaces never stack in
                     // this collapsed reading path.
                     if isIMSummary {
                         // IM has no verified ProofMoment surface, so its exact-
-                        // session debrief leads without inventing a quote.
+                        // session debrief stays observation-only without
+                        // inventing a quote or a second next action.
                         IMDebriefCard(
                             coachNote: coachNote,
                             effectiveDuration: effectiveDuration,
@@ -1204,14 +1246,14 @@ struct SummaryView: View {
                             onReview: activeReviewDueIntervention.map { intervention in
                                 { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
                             },
-                            suppressesNextMove: focusedActionStage == .transcriptUpgrade
+                            suppressesNextMove: true
                         )
-                        .cardEntrance(1)
+                        .cardEntrance(2)
                     } else {
                         // Timed, Ah-Counter and Pressure all use the exact
-                        // persisted evidence projection. A transcript upgrade
-                        // only suppresses the inline next move when it actually
-                        // owns the single focused slot below.
+                        // persisted evidence projection. The debrief remains
+                        // observation-only because the focused slot below owns
+                        // the single next action for every route.
                         PostRepDebriefCard(
                             content: postRepVerdictContent,
                             revisedChange: freshRevisedReadChange,
@@ -1219,23 +1261,23 @@ struct SummaryView: View {
                             onReview: activeReviewDueIntervention.map { intervention in
                                 { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
                             },
-                            suppressesNextMove: focusedActionStage == .transcriptUpgrade,
+                            suppressesNextMove: true,
                             observationOverride: focusedActionStage == .transcriptUpgrade
                                 ? transcriptUpgradeObservation
                                 : nil
                         )
-                        .cardEntrance(1)
+                        .cardEntrance(2)
                     }
 
                     focusedSummaryActionStage
-                        .cardEntrance(2)
+                        .cardEntrance(3)
 
                     VStack(spacing: Spacing.xs) {
                         expandableDetailsSection
                         SummaryExitPanel(onDone: completeSummaryReview)
                     }
                     .accessibilityElement(children: .contain)
-                    .cardEntrance(3)
+                    .cardEntrance(4)
                     // END V3 ATTENTION BUDGET
                 }
                 .padding(.horizontal, 16)
@@ -1245,11 +1287,16 @@ struct SummaryView: View {
                 .confirmationDialog("Share Session", isPresented: $showShareMenu) {
                     ShareLink(
                         item: shareImage,
-                        preview: SharePreview(isSuddenDeathSummary ? "My Pressure Drill Run" : "My Noum Score", image: shareImage)
+                        preview: SharePreview(
+                            isSuddenDeathSummary
+                                ? "My Pressure Drill Run"
+                                : (presentedScore == nil ? "My Noum Practice" : "My Noum Score"),
+                            image: shareImage
+                        )
                     ) {
                         Label(isSuddenDeathSummary ? "Share Run Card" : "Share Achievement Card", systemImage: "photo.fill")
                     }
-                    if !isSuddenDeathSummary {
+                    if !isSuddenDeathSummary, presentedScore != nil {
                         Button {
                             // SwiftUI guards against two presentations at once — if we
                             // flip the sheet binding here, it races the dialog dismissal
@@ -1267,19 +1314,21 @@ struct SummaryView: View {
                     Text("Choose how to share this session")
                 }
                 .sheet(isPresented: $showFeedbackRequestSheet) {
-                    FeedbackRequestComposer(
-                        transcript: transcriptText,
-                        fillerCount: effectiveFillerCount,
-                        duration: effectiveDuration,
-                        score: scoreValue,
-                        headline: headline,
-                        prompt: sessionPrompt,
-                        theme: sessionTheme,
-                        mode: currentMode,
-                        feedbackCategories: feedbackCategories,
-                        aiFeedback: aiFeedback,
-                        recordingURL: recordingURL
-                    )
+                    if let presentedScore {
+                        FeedbackRequestComposer(
+                            transcript: transcriptText,
+                            fillerCount: effectiveFillerCount,
+                            duration: effectiveDuration,
+                            score: presentedScore,
+                            headline: headline,
+                            prompt: sessionPrompt,
+                            theme: sessionTheme,
+                            mode: currentMode,
+                            feedbackCategories: feedbackCategories,
+                            aiFeedback: aiFeedback,
+                            recordingURL: recordingURL
+                        )
+                    }
                 }
                 .sheet(isPresented: $showAIDisclosure) {
                     CloudProcessingConsentDisclosure(
@@ -1349,21 +1398,7 @@ struct SummaryView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(CohesiveSummaryCopy.done) {
-                    completeSummaryReview()
-                }
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(AppColor.brandBlue)
-                .accessibilityIdentifier("summary.toolbar.done")
-                .accessibilityHint("Finishes the review and returns to your journey.")
-            }
-        }
-        .toolbar(
-            displayedTranscriptRetryMilestone == nil ? .visible : .hidden,
-            for: .navigationBar
-        )
+        .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(AppColor.screenBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .disableSwipeBack()
@@ -1465,7 +1500,9 @@ struct SummaryView: View {
     /// It sits inside Results after the coaching read; no achievement, level,
     /// skill crossing, or personal best earns a separate mandatory screen.
     private var postRepReceiptProjection: PostRepReceiptProjection? {
-        PostRepReceiptProjection.resolve(
+        guard finalizedSessionID == currentStoredSession?.id,
+              currentRepIsProgressEligible else { return nil }
+        return PostRepReceiptProjection.resolve(
             milestone: sessionMilestone,
             reachedNewPracticeLevel: progressionReachedNewPracticeLevel,
             practiceLevelTitle: PracticeVolumeNarration.title(forXP: profile.xp),
@@ -1482,7 +1519,9 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var postRepProgressReceipt: some View {
-        if postRepReceiptProjection != nil || showsStandaloneRewardPill {
+        if !isSuddenDeathSummary,
+           effectiveTranscriptRetryMilestonePresentation == nil,
+           postRepReceiptProjection != nil || showsStandaloneRewardPill {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if showsStandaloneRewardPill {
                     NoumRewardPill(kind: .xp(earnedXPForPresentation))
@@ -1654,7 +1693,7 @@ struct SummaryView: View {
     private var resultOverviewCardContent: some View {
         if isIMSummary {
             IMVerdictCard(
-                scoreValue: scoreValue,
+                scoreValue: presentedScore,
                 scoreAccent: scoreAccent,
                 scoreEmoji: scoreEmoji,
                 headline: headline,
@@ -1673,7 +1712,7 @@ struct SummaryView: View {
             )
         } else {
             HeroScoreCard(
-                scoreValue: scoreValue,
+                scoreValue: presentedScore,
                 practiceTitle: practiceTitle,
                 scoreAccent: scoreAccent,
                 scoreEmoji: scoreEmoji,
@@ -1720,9 +1759,8 @@ struct SummaryView: View {
                     // disclosure tap.
                     transcriptRetryComparisonSection
 
-                    // When transcript recovery owns the one immediate action,
-                    // both debrief variants suppress their inline Next move.
-                    // A review whose evidence cadence is already due remains
+                    // Both debrief variants are observation-only above. A
+                    // review whose evidence cadence is already due remains
                     // reachable here as optional depth, never as a competing
                     // root action and never through a no-op callback.
                     deferredInterventionReviewCard
@@ -1732,19 +1770,20 @@ struct SummaryView: View {
                         rewriteSection
                     }
 
-                    if focusedActionStage != .prescription {
+                    if focusedActionStage != .prescription,
+                       focusedActionStage != .pressurePrescription {
                         reviewExperimentActionCard
                             .onAppear(perform: recordReviewExperimentExposureIfNeeded)
                     }
-
-                    postRepProgressReceipt
 
                     // Practice credit — visible-but-demoted (progression
                     // spine): the primary loop stays evidence + restrained
                     // read + prescribed retry; the XP that accrued this rep
                     // reads as a quiet volume caption in here. Self-hides
                     // when nothing accrued (never renders "+0").
-                    if postRepReceiptProjection == nil,
+                    if effectiveTranscriptRetryMilestonePresentation == nil,
+                       !showsStandaloneRewardPill,
+                       postRepReceiptProjection == nil,
                        let credit = PracticeVolumeNarration.verdictCreditLine(
                         xpEarned: earnedXPForPresentation,
                         eloquenceBonus: currentRepIsProgressEligible
@@ -1794,7 +1833,7 @@ struct SummaryView: View {
                             effectiveDuration: effectiveDuration,
                             explicitMode: explicitMode,
                             score: score,
-                            scoreValue: scoreValue,
+                            scoreValue: presentedScore,
                             rating: ratingStore.rating,
                             pressureLevel: currentStoredSession?.pressureLevel ?? .standard
                         )
@@ -2420,8 +2459,7 @@ struct SummaryView: View {
     /// the review to Details instead of dropping it or adding a second root CTA.
     @ViewBuilder
     private var deferredInterventionReviewCard: some View {
-        if focusedActionStage == .transcriptUpgrade,
-           let intervention = activeReviewDueIntervention,
+        if let intervention = activeReviewDueIntervention,
            let onAskNoumAboutRep {
             InterventionReviewPromptCard(intervention: intervention) {
                 onAskNoumAboutRep(interventionReviewOpener(for: intervention))
@@ -2485,7 +2523,7 @@ struct SummaryView: View {
                     .tracking(4)
                 Spacer()
                 Text(currentMode.displayLabel.uppercased())
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(shareModeTint.opacity(0.8))
                     .tracking(1.5)
                     .padding(.horizontal, 10)
@@ -2507,7 +2545,7 @@ struct SummaryView: View {
                         .tracking(1.2)
                 }
                 .padding(.bottom, 16)
-            } else {
+            } else if let presentedScore {
                 // Hero score
                 ZStack {
                     Circle()
@@ -2515,7 +2553,7 @@ struct SummaryView: View {
                         .frame(width: 140, height: 140)
 
                     Circle()
-                        .trim(from: 0, to: Double(scoreValue) / 10.0)
+                        .trim(from: 0, to: Double(presentedScore) / 10.0)
                         .stroke(
                             AngularGradient(
                                 colors: [shareModeTint, shareModeTint.opacity(0.6), shareModeTint],
@@ -2531,7 +2569,7 @@ struct SummaryView: View {
                         .frame(width: 120, height: 120)
 
                     VStack(spacing: 0) {
-                        Text("\(scoreValue)")
+                        Text("\(presentedScore)")
                             .font(.system(size: 52, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("out of 10")
@@ -2539,6 +2577,21 @@ struct SummaryView: View {
                             .foregroundStyle(.white.opacity(0.4))
                     }
                 }
+                .padding(.bottom, 16)
+            } else {
+                VStack(spacing: 4) {
+                    Text("—")
+                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("NOT SCORED")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .tracking(1.2)
+                }
+                .frame(width: 140, height: 140)
+                .overlay(
+                    Circle().stroke(shareModeTint.opacity(0.18), lineWidth: 3)
+                )
                 .padding(.bottom, 16)
             }
 
@@ -2635,7 +2688,7 @@ struct SummaryView: View {
                 .font(Typography.headline)
                 .foregroundStyle(.white)
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.35))
         }
         .frame(maxWidth: .infinity)

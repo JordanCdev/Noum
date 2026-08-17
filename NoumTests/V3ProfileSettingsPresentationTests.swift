@@ -74,9 +74,16 @@ struct V3ProfileSettingsPresentationTests {
             isWeeklyCheckInDue: true,
             shouldAskTransformationQuestion: false
         )
+        let coldStartWithFeedback = ProfileOptionalPromptPlan.make(
+            hasProgressEligibleEvidence: false,
+            isWeeklyCheckInDue: true,
+            shouldAskTransformationQuestion: true
+        )
 
         #expect(coldStart.primary == nil)
         #expect(!coldStart.orderedPrompts.contains(.weeklyCheckIn))
+        #expect(coldStartWithFeedback.primary == .transformationFeedback)
+        #expect(!coldStartWithFeedback.orderedPrompts.contains(.weeklyCheckIn))
         #expect(eligible.primary == .weeklyCheckIn)
         #expect(eligible.orderedPrompts == [.weeklyCheckIn])
     }

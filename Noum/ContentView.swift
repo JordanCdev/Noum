@@ -188,6 +188,29 @@ struct FirstWeekHomeEntryPresentation: Equatable {
     }
 }
 
+/// Presentation-only acknowledgement for Home's one support slot. The durable
+/// read remains in CoachMemory and its route remains valid; Home stops
+/// promoting it only after the existing account-scoped growth ledger proves
+/// that this exact first-week read was opened.
+enum FirstWeekHomeEntryAvailability {
+    static func shouldPresent(
+        snapshot: FirstWeekCoachingContract.Snapshot,
+        growthEvents: [GrowthEvent]
+    ) -> Bool {
+        guard snapshot.nextAction == .reviewFirstWeekRead else { return true }
+        guard let correlationID = snapshot.activation.correlationID
+                ?? snapshot.activation.sessionID else {
+            // Without a stable content-free key, fail open: hiding the read
+            // would invent an acknowledgement that no owner can prove.
+            return true
+        }
+        return !growthEvents.contains {
+            $0.name == .weeklyReadViewed
+                && $0.correlationID == correlationID
+        }
+    }
+}
+
 enum HomeAskNoumEvidenceCopy {
     static func line(sessionCount: Int) -> String {
         switch sessionCount {
@@ -319,8 +342,11 @@ enum HomeSupportSurface: Equatable {
     ) -> HomeSupportSurface? {
         if hasOutcomeAcknowledgement { return .outcomeAcknowledgement }
         if hasGoalReview { return .goalReview }
-        if hasProgressReceipt { return .progressReceipt }
+        // A due coaching step changes what the user should do next. A passive
+        // earned receipt can wait in the same existing ledger until that step
+        // is completed or acknowledged; no second row is introduced.
         if hasFirstWeekEntry { return .firstWeek }
+        if hasProgressReceipt { return .progressReceipt }
         if hasDeferredSetup { return .deferredSetup }
         if hasRatingReview { return .ratingReview }
         return nil
@@ -345,6 +371,7 @@ struct ContentView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
+    @StateObject private var flowEventLog = FlowEventLog.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showFreezeNudge = false
@@ -392,7 +419,14 @@ struct ContentView: View {
     }
 
     private var firstWeekEntryPresentation: FirstWeekHomeEntryPresentation? {
-        firstWeekSnapshot.flatMap(FirstWeekHomeEntryPresentation.make)
+        guard let snapshot = firstWeekSnapshot,
+              FirstWeekHomeEntryAvailability.shouldPresent(
+                snapshot: snapshot,
+                growthEvents: flowEventLog.growthEvents()
+              ) else {
+            return nil
+        }
+        return FirstWeekHomeEntryPresentation.make(snapshot: snapshot)
     }
 
     var body: some View {
@@ -532,9 +566,9 @@ struct ContentView: View {
     }
 
     /// Today has one primary mission, optional Ask Noum, and at most one
-    /// supporting row. Earned receipts outrank programme reminders so the
-    /// action→evidence loop is felt immediately, while due coaching reviews
-    /// remain higher priority than cosmetic rating movement.
+    /// supporting row. Due coaching actions outrank passive earned receipts;
+    /// after the action is completed (or a Day-7 read is acknowledged), the
+    /// same slot naturally reveals the still-pending receipt.
     private var homeSupportSurface: HomeSupportSurface? {
         HomeSupportSurface.resolve(
             hasOutcomeAcknowledgement: bigMomentStore.pendingOutcomeAck != nil,
@@ -567,6 +601,7 @@ struct ContentView: View {
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 completedRepsToday: dailyGoal.repsToday,
+                targetRepsToday: dailyGoal.goalReps,
                 showsPlanArc: false,
                 recordsRecommendationExposure: !showFirstWeekRecommendationAction,
                 heroTopInset: topInset

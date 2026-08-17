@@ -229,18 +229,18 @@ enum NotificationCopy {
             )
         case 1...2:
             return NotificationLine(
-                title: "Day \(streakDays + 1) starts now",
-                body: "Two days don't make a habit. Today's rep is the one that does."
+                title: "Your next short rep is ready",
+                body: "Return to the same focus and see whether it feels easier today."
             )
         case 3...6:
             return NotificationLine(
-                title: "Keep your \(streakDays)-day streak going",
-                body: "You're \(7 - streakDays) day\(7 - streakDays == 1 ? "" : "s") from a full week — one short rep adds today."
+                title: "Continue your current focus",
+                body: "One short rep gives Noum another clean comparison for your coach read."
             )
         case 7...:
             return NotificationLine(
-                title: "\(streakDays) days of steady practice",
-                body: "A habit this established is worth one more rep today."
+                title: "Practise the move you are building",
+                body: "Repeat today's target when it fits. Your evidence will still be here tomorrow."
             )
         default:
             return NotificationLine(

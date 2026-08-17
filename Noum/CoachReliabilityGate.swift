@@ -572,25 +572,11 @@ enum CoachReliabilityGate {
            ) {
             issues.append(.repeatedIntervention)
         }
-        if !trimmed.isEmpty {
-            let personalMetrics = TurnDepthClassifier.requestedPersonalMetrics(
-                latestUserTurn ?? ""
-            )
-            let benchmark = CoachBenchmarkAuthorization.explicitRequest(
-                in: latestUserTurn ?? ""
-            )
-            if let benchmark {
-                if violatesGenericBenchmarkAuthorization(
-                    lowered,
-                    authorization: benchmark
-                ) {
-                    issues.append(.rawReportVoice)
-                }
-            } else if personalMetrics.isEmpty,
-                      leaksUnrequestedRawReportVoice(lowered) ||
-                        leaksUnrequestedGenericBenchmark(lowered) {
-                issues.append(.rawReportVoice)
-            }
+        if preFinalizerRawReportVoiceNeedsRepair(
+            replyText: trimmed,
+            latestUserTurn: latestUserTurn
+        ) {
+            issues.append(.rawReportVoice)
         }
         if responseKind != .conversational,
            !trimmed.isEmpty,
@@ -970,8 +956,10 @@ enum CoachReliabilityGate {
 
     /// Generic report-voice cap. A time limit inside a proposed exercise (for
     /// example "run one 60-second answer") is not telemetry and is intentionally
-    /// excluded. The detector catches labelled rows, user-owned score claims and
-    /// multi-metric clusters when no metric was requested.
+    /// excluded. The detector catches labelled rows and
+    /// compact multi-metric clusters when no metric was requested. It must not
+    /// reject normal coaching prose merely for saying "your pace" or for using
+    /// separate, grounded targets in a requested plan.
     static func leaksUnrequestedRawReportVoice(_ lowered: String) -> Bool {
         let labelPatterns = [
             #"\b(?:score|rating|wpm|pace|filler count|filler rate|duration)\s*:"#,
@@ -984,27 +972,57 @@ enum CoachReliabilityGate {
             return true
         }
 
-        let userOwnedMetricPatterns = [
-            #"\byour (?:score|rating|pace|wpm|filler count|filler rate|duration)\b"#,
-            #"\byou (?:scored|had)\s+\d+(?:\.\d+)?\s*(?:/\s*10|fillers?)"#,
-            #"\byou were at\s+\d{2,3}\s*wpm\b"#
+        // A score/stat line at the opening of the reply (or a new sentence) is
+        // still scorecard voice even without a colon. Keep this anchored to a
+        // sentence boundary so an interpreted causal read such as "calm you
+        // scored 81, but the pause disappeared under pressure" remains valid.
+        let readoutBoundary = #"(?:^|[.!?]\s+|\n)\s*(?:[-*+•]\s*)?"#
+        let leadingReadoutPatterns = [
+            readoutBoundary + #"(?:your\s+)?(?:score|rating|pace|wpm|filler count|filler rate|duration)\s*(?:was|is|came in at|landed at|of|:)?\s*\d+(?:\.\d+)?(?:\s*/\s*10)?\b"#,
+            readoutBoundary + #"you scored\s+\d+(?:\.\d+)?(?:\s*/\s*10)?\b"#,
+            readoutBoundary + #"\d+(?:\.\d+)?\s*(?:/\s*10|out of\s+(?:10|ten))\b"#,
+            readoutBoundary + #"\d+(?:\.\d+)?\s*(?:fillers?|filler words?|wpm|words per minute)\b"#
         ]
-        if userOwnedMetricPatterns.contains(where: {
+        if leadingReadoutPatterns.contains(where: {
             lowered.range(of: $0, options: .regularExpression) != nil
         }) {
             return true
         }
 
-        let categoryPatterns = [
-            #"\b\d+(?:\.\d+)?\s*/\s*10\b"#,
-            #"\b\d{2,3}\s*(?:wpm|words per minute)\b"#,
-            #"\b\d+(?:\.\d+)?\s*fillers?\s*(?:per minute|/min|in the rep)?\b"#,
-            #"\b(?:duration|lasted)\s+(?:was\s+)?\d+\s*(?:seconds?|secs?)\b"#
-        ]
-        let categoryCount = categoryPatterns.reduce(0) { count, pattern in
-            count + (lowered.range(of: pattern, options: .regularExpression) == nil ? 0 : 1)
+        let score = #"\d+(?:\.\d+)?\s*/\s*10"#
+        let companion = #"(?:\d{2,3}\s*(?:wpm|words per minute)|\d+(?:\.\d+)?\s*fillers?\s*(?:per minute|/min|in the rep)?|(?:duration|lasted)\s+(?:was\s+)?\d+\s*(?:seconds?|secs?)|\d+\s*s(?:ec(?:ond)?s?)?)"#
+        let compactCluster = #"(?:\b"# + score + #"\b[^.?!\n]{0,80}\b"# + companion +
+            #"\b|\b"# + companion + #"\b[^.?!\n]{0,80}\b"# + score + #"\b)"#
+        return lowered.range(
+            of: compactCluster,
+            options: .regularExpression
+        ) != nil
+    }
+
+    /// Raw report voice must be judged before any last-mile metric stripping.
+    /// Otherwise a compact scorecard can be reduced to a broken leading clause
+    /// and then appear clean to the downstream reliability gate. This helper is
+    /// shared by the secure transport boundary and the final pipeline gate so
+    /// both preserve the same explicit personal-metric and craft-benchmark
+    /// authorizations.
+    static func preFinalizerRawReportVoiceNeedsRepair(
+        replyText: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let trimmed = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let lowered = normalize(trimmed)
+        let userTurn = latestUserTurn ?? ""
+        let personalMetrics = TurnDepthClassifier.requestedPersonalMetrics(userTurn)
+        if let benchmark = CoachBenchmarkAuthorization.explicitRequest(in: userTurn) {
+            return violatesGenericBenchmarkAuthorization(
+                lowered,
+                authorization: benchmark
+            )
         }
-        return categoryCount >= 2
+        guard personalMetrics.isEmpty else { return false }
+        return leaksUnrequestedRawReportVoice(lowered) ||
+            leaksUnrequestedGenericBenchmark(lowered)
     }
 
     /// A generic benchmark is answerable without personal evidence, but only

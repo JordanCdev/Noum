@@ -251,6 +251,23 @@ struct TrainRecommendationProjection {
     let suggestedTheme: PromptTheme
     let prescribedDemand: PracticeSessionDemand?
 
+    /// The immutable contract accepted from Train's rendered recommendation.
+    /// The caller supplies the exact exposure fingerprint so the launch and
+    /// RecommendationLearningStore continue to describe the same projection.
+    func quickStartIntent(
+        fingerprint: String,
+        acceptedAt: Date = Date()
+    ) -> PracticeQuickStartIntent? {
+        PracticeQuickStartIntent(
+            fingerprint: fingerprint,
+            focus: focus,
+            target: target,
+            mode: mode,
+            prescribedDemand: prescribedDemand,
+            acceptedAt: acceptedAt
+        )
+    }
+
     static var initialBlueprint: RecommendationBiasBlueprint {
         timedBlueprint(theme: .all, source: .coldStart)
     }
@@ -1596,7 +1613,24 @@ struct PracticeModeSelectionView: View {
         }
         if launch.acceptsDisplayedPrescription {
             if quickStart {
-                PracticeModeQuickStart.arm(for: launch.launchedMode)
+                if recordsRecommendationAcceptance {
+                    // The destination consumes the exact target/demand once.
+                    // Construction or encoding failure must not downgrade a
+                    // recommendation tap to a mode-only auto-start.
+                    guard let intent = launchRecommendation.quickStartIntent(
+                        fingerprint: recommendationFingerprint(
+                            for: launchRecommendation.blueprint
+                        )
+                    ), PracticeModeQuickStart.arm(intent: intent) else {
+                        PracticeModeQuickStart.clear()
+                        navigationPath.append(launch.destination)
+                        return
+                    }
+                } else {
+                    // Retain the legacy mode-only path for non-recommendation
+                    // callers; it carries no coaching provenance by design.
+                    PracticeModeQuickStart.arm(for: launch.launchedMode)
+                }
             }
         } else {
             // The capability changed after this mode rendered. Route safely,

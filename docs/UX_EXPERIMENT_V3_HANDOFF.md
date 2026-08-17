@@ -6,11 +6,11 @@ Milestone: M14 — open the loop and earn TestFlight evidence
 
 ## Status
 
-The V3 product direction and its source implementation are complete for the
-private-beta candidate. The branch is source- and static-verified, but it is not
-yet a signed or device-proven TestFlight build. Do not merge to
+The V3 product direction and its production-hardening source pass are complete
+for a private-beta candidate. The branch is source- and static-verified, but it
+is not yet a signed or device-proven TestFlight build. Do not merge to
 `ux-overhaul` or describe it as production-ready until the Mac, simulator,
-physical-device, and human-coach gates below pass.
+physical-device, live-service, and human-coach gates below pass.
 
 ## Experience contract
 
@@ -19,9 +19,11 @@ physical-device, and human-coach gates below pass.
 - The unboxed waveform is Noum's identity and follows real states: ready,
   listening, processing, and earned improvement.
 - One focus, one rep, one proof, one next move.
-- Default Today mission: three bite-sized reps in about three minutes.
-- Default Summary: completion, one evidence read, one selected next action,
-  then optional Details and Done.
+- Today mission: the user's persisted one-to-three-rep goal, one exact visible
+  coaching target, and numbered reps. The three-rep Figma frame is a sample,
+  not a hard-coded product contract or a fake Warm-up/Pressure curriculum.
+- Default Summary: completion, at most one exact-session receipt, one evidence
+  read, one selected next action, then optional Details and one visible Done.
 - Profile: identity, current coach read, at most one due prompt, then Library.
 - Reward energy is attached to exact-session verified improvement. XP supports
   the evidence; it never replaces it or pays twice.
@@ -55,6 +57,16 @@ fractional typography, sub-11-point type, or internal-facing copy. Root and all
 extractor incorrectly emits `loop/infinite`, so the visible one-shot
 annotation and persisted Plugin API values are authoritative.
 
+The canonical Today frame is named `Sample 3 · supports goal 1–3`, and its
+mission nodes are now truthfully numbered Rep 1/2/3 rather than claiming an
+unimplemented Warm-up → Answer first → Pressure sequence.
+
+The refreshed 61.1-second visual walkthrough is at
+`deliverables/noum-v3/full-recording/Noum-V3-Lead-UX-Production-Walkthrough.mp4`
+in the workspace deliverables root. It is deliberately labelled **DESIGN
+PROTOTYPE / NATIVE QA STILL REQUIRED** and orders verified reward before the
+evidence Summary. It is design review evidence, not an iOS interaction record.
+
 Code Connect could not be published because the current Figma seat is not an
 Organization/Enterprise Dev or Full seat. Component and screen node IDs are
 recorded in the local design-state ledger for a future mapping pass.
@@ -67,6 +79,12 @@ recorded in the local design-state ledger for a future mapping pass.
   defaults.
 - Today and Train: one coach-built mission/recommendation first, progressive
   catalogue second.
+- The exact accepted Today or Train recommendation now crosses navigation as
+  one bounded, one-shot intent (fingerprint, focus, target, mode, demand).
+  Timed, Conversation, Filler Control, and Pressure show that same target;
+  stale, malformed, mismatched, expired, or double-consumed intents fail
+  closed. Non-Timed mounted targets are not promoted into verified Progress
+  evidence without a transcript-retry comparison.
 - Timed practice, processing, Summary, transcript retry, and verified reward.
 - Ask Noum, live coach, Coach Read, and four-week plan.
 - Lessons, roleplay, Filler Control, Conversation Practice, Pressure, and Cut
@@ -74,8 +92,17 @@ recorded in the local design-state ledger for a future mapping pass.
   finalization owners.
 - Progress, Profile, Coaching Memory, Settings, privacy/account, permission,
   offline, and beta-feedback surfaces.
-- Speech Recognition denial now routes to Open Settings instead of retrying a
-  permanently denied capture.
+- Microphone and Speech Recognition denial remain distinct typed causes and
+  route all nine audited spoken-practice surfaces to Open Settings instead of
+  retrying a permanently denied capture.
+- Summary exposes no synthetic numeric score: without exact evaluator evidence
+  it says **Not scored**. It has one next-action owner and one visible exit.
+- Progress cohorts like-for-like verified retry evidence by lever, validates
+  its source → retry join, and offers one prompt-backed **Practice this target**
+  action only when the original source is still qualified and available.
+- First-week comparison, transfer check-in, and Day-7 read actions are
+  evidence-driven. Elapsed days change reminder bands but cannot manufacture a
+  comparison, and viewing the Day-7 read releases Home's one support slot.
 - Local-only fake friend requests and unavailable social destinations are
   removed from the beta surface.
 
@@ -83,7 +110,10 @@ recorded in the local design-state ledger for a future mapping pass.
 
 The provider context now receives a private eight-field decision plan before
 prose. The response contract is acknowledge, specific read, demonstrated
-wording or delivery, then one attempt. Personal metrics are opt-in.
+wording or delivery, then one attempt. Personal metrics are opt-in. The client
+now evaluates normalized provider prose before the display finalizer can strip
+raw report-voice fragments, so a rejected scorecard cannot be clause-edited
+into broken user-visible prose.
 
 The intervention catalogue covers answer structure, proof, closing, pauses,
 commitment, pressure, disagreement, storytelling, listening, vocal contrast,
@@ -104,10 +134,11 @@ evidence.
 
 - Operational static readiness: 22/22.
 - App Store package validator: pass.
-- Coach Arena Node: 118 passed, one expected skip for absent local replay
+- Coach Arena Node: 124 passed, one expected skip for absent local replay
   captures.
 - Coach Arena Python: 178/178.
-- Release-script Python suite: 117/117.
+- Authored coach fixtures: 53/53 validated.
+- Release-script Python suite: 120/120.
 - Cloud/static tests: 35/35.
 - Combined delimiter/directive, resource, manifest, workflow, identifier, and
   source-contract audits: pass.
@@ -122,18 +153,21 @@ another source revision do not prove this branch.
 1. Materialize the protected build configuration and bind the source commit.
 2. Run a clean Release build and the complete `NoumTests` target.
 3. Run the mandatory UI shard: onboarding → spoken rep → verified reward →
-   Summary → return, plus beta feedback and speech-denial recovery.
+   Summary → return, plus beta feedback and microphone/Speech-denial recovery.
 4. Capture iPhone SE-size and current Pro-size screenshots, dark/light,
    Accessibility XXXL, Reduce Motion, and interruption/background states.
 5. Complete a physical VoiceOver pass and real microphone/Bluetooth/offline
    pass.
 6. Verify StoreKit, auth upgrade, sign-out/in, deletion, App Check, and support
    URLs on the same signed build.
-7. Archive, upload, wait for TestFlight processing, and install that exact
+7. Deploy the reviewed privacy/support/coaching-trust pages and bind
+   `noum.app` DNS/TLS. The currently live support/coaching routes and parked
+   custom domain are not a releasable legal/support surface.
+8. Archive, upload, wait for TestFlight processing, and install that exact
    build.
-8. Run 10–20 varied live-provider reps, then a blinded professional-coach
+9. Run 10–20 varied live-provider reps, then a blinded professional-coach
    review before widening the beta.
-9. Run a 7-day concierge beta with baseline/retry audio and one real-world
+10. Run a 7-day concierge beta with baseline/retry audio and one real-world
    transfer check per tester.
 
 Until those gates pass, the correct release verdict is: **source-complete,

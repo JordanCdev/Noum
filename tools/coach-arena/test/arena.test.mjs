@@ -46,6 +46,17 @@ test('extractPrompt: all voices compose with integrity anchors', () => {
   }
 });
 
+test('production parity: Swift secure path gates display text before finalizer', () => {
+  const source = readFileSync(join(rootDir, '..', '..', 'Noum', 'AICoachChatService.swift'), 'utf8');
+  const secure = source.indexOf('private func secureReply(');
+  const candidate = source.indexOf('let qualityCandidate = CoachReplyTextSanitizer.displayText', secure);
+  const gate = source.indexOf('Self.secureReplyQualityIssue(', candidate);
+  const finalizer = source.indexOf('let finalized = Self.finalizedCoachReply(', gate);
+  assert.ok(secure >= 0 && candidate > secure && gate > candidate && finalizer > gate);
+  assert.ok(source.includes('preFinalizerRawReportVoiceNeedsRepair'));
+  assert.ok(source.includes('Secure coach scorecard used complete typed fallback'));
+});
+
 test('replay captures cover every gold fixture when local captures are present', (t) => {
   const fixtureDir = join(rootDir, 'fixtures', 'gold');
   const captureDir = join(rootDir, 'runners', 'captures');
@@ -392,6 +403,64 @@ test('checks: trust-repair raw score readout flags report voice', () => {
   assert.ok(!good.findings.some((f) => f.id === 'trustRepairReportVoice'));
 });
 
+test('checks: pre-finalizer scorecard cap is exact about metric authorization', () => {
+  const raw = '7/10, 3 fillers, 60s. Put the recommendation first, give one reason, then stop.';
+  for (const userTurn of ['What should I work on next?', 'Am I improving?']) {
+    const result = runChecks(raw, baseFx({ userTurn }), {
+      contextBlock: 'RECENT: latest rep 7/10, 3 fillers, 60s.',
+    });
+    assert.ok(result.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+    assert.equal(result.hardCap, 65);
+  }
+  for (const alternateScorecard of [
+    '7 out of 10, 3 filler words, 60 seconds. Put the recommendation first.',
+    'Rating 7 out of 10, filler count 3, duration 60 seconds. Put the recommendation first.',
+    'Score 74, 3 fillers, 60 seconds. Put the recommendation first.',
+    'Your score was 7/10. Put the recommendation first.',
+    'You scored 74 with 3 fillers. Put the recommendation first.',
+    '3 fillers in 60 seconds. Put the recommendation first.',
+    '- Score 7/10\n- Put the recommendation first.',
+  ]) {
+    const result = runChecks(alternateScorecard, baseFx({ userTurn: 'What should I work on next?' }), {
+      contextBlock: alternateScorecard,
+    });
+    assert.ok(result.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+  }
+
+  const groundedPlan = runChecks(
+    'Your pace is the root — 210 words per minute is why it feels rushed. On Monday, aim for 160 WPM. On Tuesday, target under 4 fillers.',
+    baseFx({ turnDepth: 'plan', userTurn: 'Can you give me a practice plan for this week?' }),
+    { contextBlock: 'BASELINE: pace 210 words per minute, fillers 6.0 per minute.' },
+  );
+  assert.ok(!groundedPlan.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+
+  const causalRead = runChecks(
+    'Calm you scored 81, but under pressure the pause disappeared and fillers jumped to 10. The timer is making you rush past the gap you normally take.',
+    baseFx({ userTurn: 'Why does pressure mode wreck me when normal practice is fine?' }),
+    { contextBlock: 'CALM score 81. PRESSURE fillers 10.' },
+  );
+  assert.ok(!causalRead.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+
+  const requested = runChecks(
+    'Your score was 7/10, with 3 fillers and a duration of 60 seconds.',
+    baseFx({ userTurn: 'What were my exact score, filler count, and duration?' }),
+    { contextBlock: 'RECENT: latest rep score 7/10, 3 fillers, duration 60 seconds.' },
+  );
+  assert.ok(!requested.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+
+  const benchmark = runChecks(
+    'For most keynotes, about 120–150 words per minute is a useful starting range, not a universal target; adjust for audience familiarity, idea density, emphasis, and the room.',
+    baseFx({ userTurn: 'What pace should I use for a keynote?' }),
+  );
+  assert.ok(!benchmark.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+
+  const falseBenchmark = runChecks(
+    'The perfect keynote pace is exactly 135 words per minute.',
+    baseFx({ userTurn: 'What pace should I use for a keynote?' }),
+  );
+  assert.ok(falseBenchmark.findings.some((finding) => finding.id === 'unrequestedRawReportVoice'));
+});
+
 test('checks: trust-repair scaffold plus raw metric caps placeholder', () => {
   const fx = baseFx({
     category: 'trust-repair',
@@ -521,6 +590,29 @@ test('production surface: requested benchmark keeps the authorized direct answer
   assert.match(result.text, /120–150 words per minute/);
   assert.match(result.text, /not a universal target/);
   assert.doesNotMatch(result.text, /practise|what changed|\?$/i);
+});
+
+test('production surface: unrequested compact scorecard regenerates before clause surgery', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'quickMove',
+    userTurn: 'What should I work on next?',
+  });
+  const raw = '7/10, 3 fillers, 60s. Your recommendation arrived after the setup, so the listener had to wait for it. Put the recommendation in sentence one, give one reason, then stop.';
+  const result = productionSurfaceReplyForFixture(raw, fx, {
+    contextBlock: 'RECENT: latest rep 7/10, 3 fillers, 60s.',
+  });
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['rawReportVoice']);
+  assert.equal(result.reliabilityGate.source, 'AICoachChatService.preFinalizerRawReportVoiceGate');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.ok(result.finalizer.text.startsWith('.'), 'fixture must reproduce the old clause-surgery defect');
+  assert.ok(!result.text.startsWith('.'));
+  assert.doesNotMatch(result.text, /7\/10|3 fillers|60s/);
+  assert.match(result.text, /honest coaching/i);
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
 });
 
 test('production surface: cold-start product jargon falls back before user display', () => {

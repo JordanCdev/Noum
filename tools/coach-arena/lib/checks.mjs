@@ -159,9 +159,92 @@ function normalizedTurnText(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function canonicalQuestion(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^a-z0-9.'\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[?.!]+$/g, '')
+    .trim();
+}
+
 function turnExplicitlyRequestsMetrics(fixture) {
-  const lower = String(fixture.userTurn || '').toLowerCase();
-  return /\b(score|rate|rating|number|numbers|metric|metrics|data|stats|statistics|filler rate|how many fillers|how many ums|how many uhs|what'?s my filler|what is my filler|how did i do|how'?d i do|how am i doing|am i improving)\b/.test(lower);
+  const turn = canonicalQuestion(fixture.userTurn);
+  const metricNoun = '(?:words per minute|filler count|filler rate|statistics|metrics?|stats|numbers|duration|rating|score|data|wpm|pace)';
+  const subject = '(?:my (?:exact )?|the exact |exact )';
+  const leads = [
+    "^what(?:'s|s| is| was| were| are) ",
+    '^(?:please )?(?:show|give|report)(?: me)? ',
+    '^(?:please )?tell me ',
+    '^(?:can|could|would|will) you (?:please )?(?:show|give|report)(?: me)? ',
+    '^(?:can|could|would|will) you (?:please )?tell me ',
+    '^(?:can|could) i (?:see|get) ',
+  ];
+  const readoutLead = leads.some((lead) => new RegExp(`${lead}${subject}${metricNoun}(?:$| )`).test(turn));
+  const elliptical = /^(?:and |what about )?my (?:exact )?(?:words per minute|filler count|filler rate|duration|rating|score|wpm|pace)$/.test(turn)
+    && String(fixture.userTurn || '').trim().endsWith('?');
+  const personalCount = [
+    'how many fillers did i', 'how many filler words did i',
+    'how many ums did i', 'how many uhs did i',
+    'how many fillers were in my', 'how many filler words were in my',
+  ].some((needle) => turn.includes(needle));
+  return readoutLead || elliptical || personalCount;
+}
+
+function benchmarkAuthorization(fixture) {
+  if (turnExplicitlyRequestsMetrics(fixture)) return null;
+  const turn = canonicalQuestion(fixture.userTurn);
+  const guidance = ['should', 'ideal', 'recommended', 'recommend', 'good range', 'typical', 'usually', 'good', 'best', 'how long', 'how fast', 'what pace', 'starting point', 'benchmark']
+    .some((needle) => turn.includes(needle));
+  if (!guidance) return null;
+  if (['keynote', 'presentation', 'speech'].some((needle) => turn.includes(needle))
+      && ['pace', 'wpm', 'words per minute', 'how fast'].some((needle) => turn.includes(needle))) return 'keynotePace';
+  if (turn.includes('elevator pitch')
+      && ['length', 'long', 'duration', 'seconds', 'time'].some((needle) => turn.includes(needle))) return 'elevatorPitchLength';
+  if (['pause', 'silence', 'silent beat'].some((needle) => turn.includes(needle))
+      && ['length', 'long', 'duration', 'seconds', 'time', 'ideal'].some((needle) => turn.includes(needle))) return 'pauseDuration';
+  return null;
+}
+
+function violatesBenchmarkAuthorization(lower, kind) {
+  const hasRange = /\b\d+(?:\.\d+)?\s*(?:\u2013|\u2014|-|to)\s*\d+(?:\.\d+)?\b/.test(lower);
+  const hasCaveat = ['starting range', 'rough range', 'about ', 'depends', 'adjust', 'varies', 'not a universal', 'not universal', 'not a fixed', 'context', 'audience', 'room', 'idea density', 'listener', 'purpose', 'transition', 'decision you want']
+    .some((needle) => lower.includes(needle));
+  const falseCertainty = ['exactly ', 'always ', 'must be', 'the perfect ', 'the correct ', 'guaranteed', 'universal target']
+    .some((needle) => lower.includes(needle)) && !/not (?:a )?universal/.test(lower);
+  if (!hasRange || !hasCaveat || falseCertainty) return true;
+  if (/(?:score|rating|filler count|filler rate|fillers per|\/10|%)/.test(lower)) return true;
+  if (kind === 'keynotePace') return !/(?:wpm|words per minute)/.test(lower) || /(?:duration:|seconds long)/.test(lower);
+  if (kind === 'elevatorPitchLength') return !lower.includes('second') && !lower.includes('minute') || /(?:wpm|words per minute)/.test(lower);
+  return !lower.includes('second') || /(?:wpm|words per minute)/.test(lower);
+}
+
+function leaksUnrequestedRawReportVoice(lower) {
+  if (/\b(?:score|rating|wpm|pace|filler count|filler rate|duration)\s*:|\bwhat the numbers show\b|\bmetrics?\s+(?:show|say|indicate)\b/.test(lower)) return true;
+  const readoutBoundary = '(?:^|[.!?]\\s+|\\n)\\s*(?:[-*+•]\\s*)?';
+  if (new RegExp(`${readoutBoundary}(?:your\\s+)?(?:score|rating|pace|wpm|filler count|filler rate|duration)\\s*(?:was|is|came in at|landed at|of|:)?\\s*\\d+(?:\\.\\d+)?(?:\\s*\\/\\s*10)?\\b`).test(lower)) return true;
+  if (new RegExp(`${readoutBoundary}you scored\\s+\\d+(?:\\.\\d+)?(?:\\s*\\/\\s*10)?\\b`).test(lower)) return true;
+  if (new RegExp(`${readoutBoundary}\\d+(?:\\.\\d+)?\\s*(?:\\/\\s*10|out of\\s+(?:10|ten))\\b`).test(lower)) return true;
+  if (new RegExp(`${readoutBoundary}\\d+(?:\\.\\d+)?\\s*(?:fillers?|filler words?|wpm|words per minute)\\b`).test(lower)) return true;
+  const score = '\\d+(?:\\.\\d+)?\\s*\\/\\s*10';
+  const companion = '(?:\\d{2,3}\\s*(?:wpm|words per minute)|\\d+(?:\\.\\d+)?\\s*fillers?\\s*(?:per minute|\\/min|in the rep)?|(?:duration|lasted)\\s+(?:was\\s+)?\\d+\\s*(?:seconds?|secs?)|\\d+\\s*s(?:ec(?:ond)?s?)?)';
+  return new RegExp(`(?:\\b${score}\\b[^.?!\\n]{0,80}\\b${companion}\\b|\\b${companion}\\b[^.?!\\n]{0,80}\\b${score}\\b)`).test(lower);
+}
+
+function leaksUnrequestedGenericBenchmark(lower) {
+  const hasRange = /\b\d+(?:\.\d+)?\s*(?:\u2013|\u2014|-|to)\s*\d+(?:\.\d+)?\b/.test(lower);
+  if (!hasRange) return false;
+  if (/(?:wpm|words per minute)/.test(lower)) return true;
+  return lower.includes('second') && /(?:ideal|recommended|benchmark|starting range|good range|typical range|should be)/.test(lower);
+}
+
+function preFinalizerRawReportVoiceNeedsRepair(fixture, lower) {
+  const benchmark = benchmarkAuthorization(fixture);
+  if (benchmark) return violatesBenchmarkAuthorization(lower, benchmark);
+  if (turnExplicitlyRequestsMetrics(fixture)) return false;
+  return leaksUnrequestedRawReportVoice(lower) || leaksUnrequestedGenericBenchmark(lower);
 }
 
 function vulnerableEmotionalSignal(signal) {
@@ -276,6 +359,27 @@ export function runChecks(reply, fixture, opts = {}) {
   }
   if (raw.includes('!')) {
     pushFinding(findings, flag('exclamation', 6, 'Exclamation mark (banned by core voice rules).', snippet(raw, '!')));
+  }
+
+  // The shipping client evaluates this raw scorecard contract before its
+  // last-mile report-voice finalizer. Checking only the stripped text can turn
+  // `7/10, 3 fillers, 60s. ...` into a broken leading clause that appears clean.
+  if (preFinalizerRawReportVoiceNeedsRepair(fixture, lower)) {
+    pushFinding(findings, cap(
+      'unrequestedRawReportVoice',
+      'voiceIntegrity',
+      'Unrequested raw scorecard/report telemetry must be regenerated before display cleanup.',
+      rawReportMetricDumpMatch(raw, lower) || raw.slice(0, 80),
+    ));
+  }
+
+  if (/^[.,;:]\s/.test(raw)) {
+    pushFinding(findings, cap(
+      'brokenLeadingClause',
+      'placeholderOrBroken',
+      'Reply begins with punctuation left by a removed clause.',
+      raw.slice(0, 40),
+    ));
   }
   // -- scaffold labels ------------------------------------------------------
   const SCAFFOLD = /(?:^|\n|[.!?]\s+|—\s+|-\s+)\s*(Read|The read|Coach read|Real read|Observation|Diagnosis|Insight|Next move|Next rep|Move|Action|Why|Evidence|Try this|Try|Focus|Target|Drill|Practice|Recommend|Recommendation|Verdict)\s*:/i;

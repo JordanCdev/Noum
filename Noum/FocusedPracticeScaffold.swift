@@ -133,6 +133,56 @@ struct FocusedPracticeErrorStatus: View {
     }
 }
 
+/// Shared terminal-permission treatment for dark practice setup screens.
+/// These screens can keep their own layout, but a system permission denial
+/// must always expose the viable recovery instead of a decorative error line
+/// beside a start button that is guaranteed to fail again.
+struct FocusedPracticePermissionIssueStatus: View {
+    let presentation: SpeechRecordingIssuePresentation
+    let settingsButtonIdentifier: String
+    let openSettings: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "mic.slash.fill")
+                    .foregroundStyle(Color(red: 1.0, green: 0.67, blue: 0.62))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(presentation.title)
+                        .font(Typography.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                    Text(presentation.detail)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(.white.opacity(0.94))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            Button(action: openSettings) {
+                Label("Open Settings", systemImage: "gearshape.fill")
+                    .font(Typography.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .noumMinimumTouchTarget()
+                    .background(.white, in: Capsule(style: .continuous))
+                    .foregroundStyle(AppColor.coachingInk)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier(settingsButtonIdentifier)
+        }
+        .padding(Spacing.md)
+        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 struct FocusedPracticeScaffold<Accessory: View, Content: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 

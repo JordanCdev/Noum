@@ -842,11 +842,15 @@ enum TimedLiveRepFocus {
     static func target(
         retryFocus: String?,
         drillConstraint: String?,
+        acceptedRecommendationTarget: String? = nil,
         styleGoal: SpeakingStyleGoal?,
         pressureEnabled: Bool
     ) -> String {
         if let retryFocus = bounded(retryFocus) { return retryFocus }
         if let drillConstraint = bounded(drillConstraint) { return drillConstraint }
+        if let acceptedRecommendationTarget = bounded(acceptedRecommendationTarget) {
+            return acceptedRecommendationTarget
+        }
 
         if let styleGoal {
             switch styleGoal {
@@ -1069,6 +1073,10 @@ struct TimedPracticeView: View {
     /// Immutable scoring/demand input captured when this rep begins. Settings
     /// may change between reps, but never retroactively change an active rep.
     @State private var activeTimedDifficulty: TimedPracticeDifficulty?
+    /// Exact Home recommendation consumed once on route entry. It remains
+    /// immutable for this rep, then is cleared before any retry/new drill so a
+    /// later capture cannot inherit Today’s prior target or demand.
+    @State private var acceptedPracticeIntent: PracticeQuickStartIntent?
     @State private var showExitConfirmation = false
     /// Consent can be granted without abandoning the rep: the recognizer
     /// re-resolves its provider on every start, so allowing here and retrying
@@ -1343,12 +1351,15 @@ struct TimedPracticeView: View {
             // redundant second Begin at the flagship first-rep moment.
             // `beginSession()` resolves the prompt and configures TTS itself,
             // so the work skipped here is not lost — just not done twice.
-            let quickStartRequested = phase == .setup
-                && PracticeModeQuickStart.consume(for: .timed)
+            let quickStartLaunch = phase == .setup
+                ? PracticeModeQuickStart.consumeLaunch(for: .timed)
+                : nil
+            let quickStartRequested = quickStartLaunch != nil
             let quickStartSeededPrompt = quickStartRequested
                 ? consumeSeededPrompt()
                 : nil
             if quickStartRequested, targetedRetryPresentation == nil {
+                acceptedPracticeIntent = quickStartLaunch?.recommendationIntent
                 if let seeded = quickStartSeededPrompt { question = seeded }
                 // Consume the auto-guided first-rep instant-start one-shot. A
                 // returning-user QuickStart never armed it, so this is a no-op
@@ -2943,7 +2954,7 @@ struct TimedPracticeView: View {
                             .fill(Color.red.opacity(0.6))
                             .frame(width: 5, height: 5)
                         Text("Fillers")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.3))
                         Text("\(speechVM.fillerWordCount)")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -3204,6 +3215,7 @@ struct TimedPracticeView: View {
         TimedLiveRepFocus.target(
             retryFocus: targetedRetryPresentation?.focus,
             drillConstraint: activeDrill?.constraint,
+            acceptedRecommendationTarget: acceptedPracticeIntent?.target,
             styleGoal: coachingProfileStore.profile?.chosenStyleGoal,
             pressureEnabled: practiceSettings.pressureModeEnabled
         )
@@ -3221,6 +3233,7 @@ struct TimedPracticeView: View {
     private var recordingModeLabel: String {
         if targetedRetryPresentation != nil { return "REC · TARGETED RETRY" }
         if let drill = activeDrill { return "REC · \(drill.title.uppercased())" }
+        if acceptedPracticeIntent != nil { return "REC · TODAY'S MISSION" }
         if practiceSettings.pressureModeEnabled { return "REC · PRESSURE ON" }
         return "REC · TIMED PRACTICE"
     }
@@ -3264,7 +3277,7 @@ struct TimedPracticeView: View {
                         .fill(AppColor.voiceLive)
                         .frame(width: 8, height: 8)
                     Text("READING YOUR REP")
-                        .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
+                        .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
                         .tracking(1.2)
                         .foregroundStyle(.white.opacity(0.8))
                 }
@@ -4120,7 +4133,9 @@ struct TimedPracticeView: View {
 
         elapsedSeconds = 0
         isStopping = false
-        activeTimedDifficulty = prescribedTimedDifficulty ?? practiceSettings.timedDifficulty
+        activeTimedDifficulty = acceptedPracticeIntent?.prescribedDemand?.timedDifficulty
+            ?? prescribedTimedDifficulty
+            ?? practiceSettings.timedDifficulty
         lastMilestoneState = .neutral
         milestoneScale = 1.0
 
@@ -4518,6 +4533,7 @@ struct TimedPracticeView: View {
         // A retry / new-prompt rep in the same view must fall back to the user's
         // persistent prep-countdown / prompt prefs — never inherit fast-start.
         fastStartActive = false
+        acceptedPracticeIntent = nil
         // Don't reset phase yet — launchSessionFlow will set it
         phase = .setup
     }

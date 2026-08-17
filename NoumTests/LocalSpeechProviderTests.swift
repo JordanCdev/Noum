@@ -85,6 +85,36 @@ struct LocalSpeechProviderTests {
         #expect(presentation.recovery != .retry)
     }
 
+    @Test func microphoneDenialRoutesToItsOwnSettingsRecovery() {
+        #expect(
+            SpeechRecognizerViewModel.recordingIssue(for: .denied)
+                == .microphoneDenied
+        )
+        #expect(SpeechRecognizerViewModel.recordingIssue(for: .granted) == nil)
+        #expect(SpeechRecognizerViewModel.recordingIssue(for: .undetermined) == nil)
+        #expect(
+            SpeechRecognizerViewModel.recordingIssue(for: .unknown)
+                == .captureUnavailable(started: false)
+        )
+
+        let presentation = SpeechRecordingIssuePresentation.make(
+            issue: .microphoneDenied,
+            message: PracticeMicrophonePermissionState.denied.userFacingRecoveryMessage ?? ""
+        )
+        #expect(presentation.title == "Microphone access is off")
+        #expect(presentation.detail.contains("Open iOS Settings"))
+        #expect(presentation.recovery == .openSettings)
+        #expect(presentation.recovery != .retry)
+
+        // Apple Speech is a separate permission and must keep its typed cause.
+        #expect(
+            SpeechRecordingIssuePresentation.make(
+                issue: .speechRecognitionDenied,
+                message: "Speech recognition access is off."
+            ).title == "Speech Recognition is off"
+        )
+    }
+
     /// One owner for what a failure means. A surface may render it in its own
     /// register, but none may offer a retry for a cause a retry cannot clear —
     /// that is the loop this mapping exists to prevent.
@@ -100,6 +130,12 @@ struct LocalSpeechProviderTests {
                 issue: .cloudProcessingDisabled,
                 message: "Cloud processing is off."
             ).recovery == .grantCloudConsent
+        )
+        #expect(
+            SpeechRecordingIssuePresentation.make(
+                issue: .microphoneDenied,
+                message: "Microphone access is off."
+            ).recovery == .openSettings
         )
         #expect(
             SpeechRecordingIssuePresentation.make(
@@ -119,6 +155,65 @@ struct LocalSpeechProviderTests {
         )
         #expect(interrupted.title == "Live transcription stopped")
         #expect(interrupted.recovery == .retry)
+    }
+
+    @Test func everyReachableSpokenSurfaceKeepsSettingsRecoveryVisible() throws {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let repositoryRoot = testsDirectory.deletingLastPathComponent()
+        let contracts = [
+            ("Noum/AhCounterView.swift", "ahCounter.recordingIssue.openSettings"),
+            ("Noum/RoleplayView.swift", "roleplay.recordingIssue.openSettings"),
+            ("Noum/IMPracticeView.swift", "imPractice.recordingIssue.openSettings"),
+            ("Noum/SuddenDeathPracticeView.swift", "suddenDeath.recordingIssue.openSettings"),
+            ("Noum/CutTheCrutchView.swift", "cutTheCrutch.recordingIssue.openSettings"),
+            ("Noum/TimedPracticeView.swift", "timedPractice.recordingIssue.openSettings"),
+            ("Noum/LessonView.swift", "openAppSettingsAfterApplyIssue"),
+            ("Noum/MiniDrillView.swift", "miniDrill.recordingIssue.openSettings"),
+            ("Noum/PaceTrainingView.swift", "paceTraining.recordingIssue.openSettings"),
+        ]
+
+        for (relativePath, identifier) in contracts {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            #expect(
+                source.contains("SpeechRecordingIssuePresentation.make"),
+                "\(relativePath) must render the shared typed issue mapping"
+            )
+            #expect(
+                source.contains(identifier),
+                "\(relativePath) must expose its Settings recovery to UI automation"
+            )
+        }
+    }
+
+    @Test func auxiliaryDrillsReplaceADeadStartWithSettingsRecovery() throws {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let repositoryRoot = testsDirectory.deletingLastPathComponent()
+        let contracts = [
+            (
+                "Noum/MiniDrillView.swift",
+                "miniDrill.start",
+                "miniDrill.recordingIssue.openSettings"
+            ),
+            (
+                "Noum/PaceTrainingView.swift",
+                "paceTraining.start",
+                "paceTraining.recordingIssue.openSettings"
+            ),
+        ]
+
+        for (relativePath, startIdentifier, settingsIdentifier) in contracts {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            #expect(source.contains(startIdentifier))
+            #expect(source.contains(settingsIdentifier))
+            #expect(source.contains("recordingIssuePresentation?.recovery != .openSettings"))
+            #expect(source.contains("openAppSettingsAfterRecordingIssue"))
+        }
     }
 
     /// The locale copy must carry the failing locale and the way out, because

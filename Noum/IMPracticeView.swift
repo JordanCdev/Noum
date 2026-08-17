@@ -2,11 +2,15 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct IMPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var navigationPath: NavigationPath
@@ -48,6 +52,10 @@ struct IMPracticeView: View {
     @State private var openingTask: Task<Void, Never>?
     @State private var replyTask: Task<Void, Never>?
     @State private var evaluationTask: Task<Void, Never>?
+    /// Exact target accepted on Today/Train for this mounted conversation.
+    /// RecommendationLearningStore remains the durable attribution owner; this
+    /// state exists only so the live room cannot silently coach a different aim.
+    @State private var acceptedPracticeIntent: PracticeQuickStartIntent?
 
     private static let sessionMaxSeconds = 900    // 15-minute hard cap
     private static let sessionNudgeSeconds = 720  // 12-minute gentle nudge
@@ -206,9 +214,21 @@ struct IMPracticeView: View {
             Text("Your current session will be lost.")
         }
         .alert("Conversation Practice unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
-            Button("OK", role: .cancel) { serviceErrorMessage = nil }
+            if recordingIssuePresentation?.recovery == .openSettings {
+                Button("Open Settings") {
+                    openAppSettingsAfterRecordingIssue()
+                }
+                .accessibilityIdentifier("imPractice.recordingIssue.openSettings")
+                Button("Cancel", role: .cancel) { serviceErrorMessage = nil }
+            } else {
+                Button("OK", role: .cancel) { serviceErrorMessage = nil }
+            }
         }, message: {
-            Text(serviceErrorMessage ?? "")
+            if let presentation = recordingIssuePresentation {
+                Text("\(presentation.title). \(presentation.detail)")
+            } else {
+                Text(serviceErrorMessage ?? "")
+            }
         })
         // C5 — surface transcription start failures the way Timed /
         // SuddenDeath already do. Without this the IM rep was the one
@@ -269,7 +289,11 @@ struct IMPracticeView: View {
             // existing `resolved*` fallbacks) and goes straight into
             // `beginConversation` so the user lands in a live thread,
             // not on the scenario grid.
-            if !isSessionActive, PracticeModeQuickStart.consume(for: .imConversation) {
+            if !isSessionActive,
+               let quickStartLaunch = PracticeModeQuickStart.consumeLaunch(
+                    for: .imConversation
+               ) {
+                acceptedPracticeIntent = quickStartLaunch.recommendationIntent
                 if scenario == nil { scenario = resolvedScenario }
                 if targetTone == nil { targetTone = resolvedTargetTone }
                 cachedRelationshipProfile = IMRelationshipProfile.initial(for: resolvedScenario)
@@ -306,17 +330,23 @@ struct IMPracticeView: View {
                 )
                 .accessibilityHidden(true)
             } content: {
-                setupPanel
+                VStack(spacing: Spacing.md) {
+                    acceptedTargetCue
+                    setupPanel
+                }
             }
         } else {
             VStack(spacing: 12) {
                 activeHeaderCard
 
+                acceptedTargetCue
+
                 // Goal-aware intent reminder — fires once per session (not
                 // per dictated reply) so the IM user sees what voice
                 // they're working toward without being re-anchored every
                 // turn. Silent when no CoachingProfile is set.
-                if let voice = coachingProfileStore.profile?.chosenStyleGoal {
+                if acceptedPracticeIntent == nil,
+                   let voice = coachingProfileStore.profile?.chosenStyleGoal {
                     VoiceAnchorBanner(
                         styleGoal: voice,
                         isRecording: speechVM.isRecording,
@@ -329,6 +359,50 @@ struct IMPracticeView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .environment(\.colorScheme, .dark)
+        }
+    }
+
+    @ViewBuilder
+    private var acceptedTargetCue: some View {
+        if let intent = acceptedPracticeIntent {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "scope")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("YOUR TARGET")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .tracking(0.7)
+                    Text(intent.target)
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color.white.opacity(0.10),
+                in: RoundedRectangle(
+                    cornerRadius: CornerRadius.medium,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: CornerRadius.medium,
+                    style: .continuous
+                )
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Practice target. \(intent.target)")
+            .accessibilityIdentifier("imPractice.acceptedTarget")
         }
     }
 
@@ -1142,6 +1216,25 @@ struct IMPracticeView: View {
         if !started {
             serviceErrorMessage = speechVM.connectionError
         }
+    }
+
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let serviceErrorMessage,
+              let connectionError = speechVM.connectionError,
+              serviceErrorMessage == connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: serviceErrorMessage
+        )
+    }
+
+    private func openAppSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        serviceErrorMessage = nil
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
     }
 
     private func finishUserReply() {

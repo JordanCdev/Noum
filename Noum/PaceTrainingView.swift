@@ -1,4 +1,8 @@
+import Foundation
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Pace Training mini-game — trains real-time speaking pace awareness.
 /// Two sub-modes: Freestyle (speak on a topic) and Read-Along (match
@@ -9,6 +13,7 @@ struct PaceTrainingView: View {
     @StateObject private var engine = PaceTrainingEngine()
     @EnvironmentObject private var profileManager: ProfileManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var didAwardXP = false
@@ -168,6 +173,7 @@ struct PaceTrainingView: View {
 
     private func beginCountdown() {
         guard engine.phase == .setup else { return }
+        guard recordingIssuePresentation?.recovery != .openSettings else { return }
         hasValidatedResult = false
         didAwardXP = false
         completionIssue = nil
@@ -268,14 +274,45 @@ struct PaceTrainingView: View {
                     FocusedPracticeErrorStatus(message: completionIssue)
                         .accessibilityIdentifier("paceTraining.insufficientSpeech")
                 } else if let error = speechVM.connectionError {
-                    FocusedPracticeErrorStatus(message: error)
+                    let presentation = SpeechRecordingIssuePresentation.make(
+                        issue: speechVM.recordingIssue,
+                        message: error
+                    )
+                    if presentation.recovery == .openSettings {
+                        FocusedPracticePermissionIssueStatus(
+                            presentation: presentation,
+                            settingsButtonIdentifier: "paceTraining.recordingIssue.openSettings",
+                            openSettings: openAppSettingsAfterRecordingIssue
+                        )
+                        .accessibilityIdentifier("paceTraining.recordingIssue")
+                    } else {
+                        FocusedPracticeErrorStatus(message: error)
+                    }
                 }
             }
         }
         .accessibilityIdentifier("paceTraining.screen")
         .safeAreaInset(edge: .bottom) {
-            beginButton
+            if recordingIssuePresentation?.recovery != .openSettings {
+                beginButton
+            }
         }
+    }
+
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private func openAppSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
     }
 
     private var paceSetupCue: some View {

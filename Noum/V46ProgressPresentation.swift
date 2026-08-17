@@ -30,6 +30,75 @@ struct V46TrajectoryDay: Equatable {
     let isLapse: Bool
 }
 
+/// Content-free identity for the one target represented by the Progress
+/// cohort. The actual prompt remains owned by `PracticeSessionStore` and only
+/// enters the existing process-local Timed Practice handoff at tap time.
+struct V46ProgressPracticeTarget: Equatable {
+    let outcomeID: UUID
+    let sourceSessionID: UUID
+    let lever: TranscriptPracticeLever
+    let fingerprint: String
+    let targetDimensionID: String?
+    let goal: SpeakingStyleGoal?
+}
+
+/// A route-ready, prompt-backed projection for "Practice this target". It
+/// fails closed when the cohort's exact latest row is absent, below the shared
+/// evidence floor, or has no original prompt to repeat.
+struct V46ProgressPracticeProjection: Equatable {
+    let sourceSessionID: UUID
+    let suggestedPrompt: String
+    let title: String
+    let focus: String
+    let target: String
+    let targetDimensionID: String?
+    let goal: SpeakingStyleGoal?
+    let retryTarget: TranscriptRetryTarget
+
+    static func make(
+        target: V46ProgressPracticeTarget,
+        sessions: [PracticeSession]
+    ) -> V46ProgressPracticeProjection? {
+        guard let source = sessions.first(where: { $0.id == target.sourceSessionID }),
+              PracticeProgressEligibility.qualifies(source),
+              let prompt = clean(source.prompt) else {
+            return nil
+        }
+        let retryTarget = TranscriptRetryTarget(lever: target.lever)
+        guard retryTarget.isSupported else { return nil }
+        return V46ProgressPracticeProjection(
+            sourceSessionID: source.id,
+            suggestedPrompt: prompt,
+            title: "Practice \(target.lever.focusLabel)",
+            focus: target.lever.focusLabel,
+            target: target.lever.successMeasure,
+            targetDimensionID: target.targetDimensionID,
+            goal: target.goal,
+            retryTarget: retryTarget
+        )
+    }
+
+    func prescription(correlationID: UUID) -> TranscriptPracticePrescription {
+        TranscriptPracticePrescription(
+            correlationID: correlationID,
+            sourceSessionID: sourceSessionID,
+            suggestedPrompt: suggestedPrompt,
+            title: title,
+            focus: focus,
+            target: target,
+            targetDimensionID: targetDimensionID,
+            goal: goal,
+            retryTarget: retryTarget
+        )
+    }
+
+    private static func clean(_ source: String?) -> String? {
+        guard let trimmed = source?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+}
+
 /// The Progress head: what is becoming reliable, the honest tally, up to
 /// four trajectory days, up to three evidence rows, and one plan-review row.
 struct V46ProgressPresentation: Equatable {
@@ -44,6 +113,10 @@ struct V46ProgressPresentation: Equatable {
     let reviewIsDue: Bool
     /// Spoken summary for the whole chart (rows read individually).
     let chartAccessibilitySummary: String
+    /// The exact latest row and lever represented by every number and row in
+    /// this presentation. The view resolves it against session history before
+    /// offering a practice route.
+    let practiceTarget: V46ProgressPracticeTarget
 
     /// Comparable-evidence window and floors. One rep renders an early read;
     /// three comparable reps unlock a reliability claim. Nothing renders with
@@ -55,22 +128,29 @@ struct V46ProgressPresentation: Equatable {
         calendar: Calendar = .current
     ) -> V46ProgressPresentation? {
         let windowStart = now.addingTimeInterval(-14 * 24 * 3600)
-        let comparable = outcomes
-            .filter { $0.transcriptRetryComparison?.isComparable == true }
+        let candidates = outcomes
             .filter { $0.completedAt >= windowStart && $0.completedAt <= now }
-            .sorted { $0.completedAt < $1.completedAt }
+            .compactMap(Self.validatedCohortMember)
+            .sorted { $0.outcome.completedAt < $1.outcome.completedAt }
+        guard let latest = candidates.last else { return nil }
+        let cohortLever = latest.lever
+
+        // One target owns the whole read. A closing retry can never inflate an
+        // opening tally (or vice versa), even if both happened this week.
+        let comparable = candidates
+            .filter { $0.lever == cohortLever }
             .suffix(6)
         guard !comparable.isEmpty else { return nil }
+        let comparableOutcomes = comparable.map(\.outcome)
 
-        let results = comparable.compactMap { $0.transcriptRetryComparison?.result }
+        let results = comparableOutcomes.compactMap { $0.transcriptRetryComparison?.result }
         let holds = results.filter { $0 == .improved || $0 == .held }.count
         // No `lapses` count here: the lapse read is derived per-row further
         // down from `group.allRegressed`, so a second tally was dead weight
         // rather than a dropped signal.
         let tally = results.count
 
-        let lever = comparable.last?.transcriptRetryTarget?.lever
-        let eyebrow = Self.eyebrow(intervention: intervention, lever: lever)
+        let eyebrow = cohortLever.focusLabel.uppercased()
 
         let headline: String
         if tally >= 3, Double(holds) / Double(tally) >= 0.75 {
@@ -81,7 +161,7 @@ struct V46ProgressPresentation: Equatable {
             headline = "Early read."
         }
 
-        let pressureHoldCount = comparable.filter {
+        let pressureHoldCount = comparableOutcomes.filter {
             guard let result = $0.transcriptRetryComparison?.result,
                   result == .improved || result == .held else { return false }
             return Self.isPressureDemand($0.executedDemand)
@@ -99,7 +179,7 @@ struct V46ProgressPresentation: Equatable {
             subtitle += " Noum needs \(3 - tally) more for a reliable read."
         }
 
-        let dayGroups = Self.dayGroups(comparable: Array(comparable), now: now, calendar: calendar)
+        let dayGroups = Self.dayGroups(comparable: comparableOutcomes, now: now, calendar: calendar)
         let trajectory = dayGroups.suffix(4).map { group in
             V46TrajectoryDay(
                 label: group.label,
@@ -141,22 +221,47 @@ struct V46ProgressPresentation: Equatable {
             rows: Array(rows),
             reviewRowTitle: reviewTitle,
             reviewIsDue: reviewIsDue,
-            chartAccessibilitySummary: chartSummary
+            chartAccessibilitySummary: chartSummary,
+            practiceTarget: V46ProgressPracticeTarget(
+                outcomeID: latest.outcome.id,
+                sourceSessionID: latest.sourceSessionID,
+                lever: cohortLever,
+                fingerprint: latest.outcome.fingerprint,
+                targetDimensionID: latest.outcome.targetDimensionID,
+                goal: latest.outcome.goal
+            )
         )
     }
 
-    private static func eyebrow(
-        intervention: CoachIntervention?,
-        lever: TranscriptPracticeLever?
-    ) -> String {
-        if let target = intervention?.target?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !target.isEmpty, target.count <= 32 {
-            return target.uppercased()
+    private struct CohortMember {
+        let outcome: RecommendationOutcome
+        let lever: TranscriptPracticeLever
+        let sourceSessionID: UUID
+    }
+
+    /// Validates the persisted source → retry join before the outcome may
+    /// enter either the chart or a new practice route. A mismatched legacy row
+    /// fails closed instead of borrowing the latest session's prompt.
+    private static func validatedCohortMember(
+        _ outcome: RecommendationOutcome
+    ) -> CohortMember? {
+        guard let target = outcome.transcriptRetryTarget,
+              target.isSupported,
+              let comparison = outcome.transcriptRetryComparison,
+              comparison.isComparable,
+              comparison.lever == target.lever,
+              comparison.retrySessionID == outcome.sessionID else {
+            return nil
         }
-        if let lever {
-            return lever.focusLabel.uppercased()
+        if let recordedSource = outcome.sourceSessionID,
+           recordedSource != comparison.sourceSessionID {
+            return nil
         }
-        return "CURRENT TARGET"
+        return CohortMember(
+            outcome: outcome,
+            lever: target.lever,
+            sourceSessionID: comparison.sourceSessionID
+        )
     }
 
     private static func isPressureDemand(_ demand: PracticeSessionDemand?) -> Bool {

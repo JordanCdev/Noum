@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Cut the Crutch — Playable Screen
 
@@ -13,6 +16,7 @@ struct CutTheCrutchView: View {
     @StateObject private var profileManager = ProfileManager.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var didAwardXP = false
@@ -267,13 +271,28 @@ struct CutTheCrutchView: View {
                     FocusedPracticeErrorStatus(message: completionIssue)
                         .accessibilityIdentifier("cutTheCrutch.insufficientSpeech")
                 } else if let error = speechVM.connectionError {
-                    FocusedPracticeErrorStatus(message: error)
+                    let presentation = SpeechRecordingIssuePresentation.make(
+                        issue: speechVM.recordingIssue,
+                        message: error
+                    )
+                    if presentation.recovery == .openSettings {
+                        FocusedPracticePermissionIssueStatus(
+                            presentation: presentation,
+                            settingsButtonIdentifier: "cutTheCrutch.recordingIssue.openSettings",
+                            openSettings: openAppSettingsAfterRecordingIssue
+                        )
+                        .accessibilityIdentifier("cutTheCrutch.recordingIssue")
+                    } else {
+                        FocusedPracticeErrorStatus(message: error)
+                    }
                 }
             }
         }
         .accessibilityIdentifier("cutTheCrutch.screen")
         .safeAreaInset(edge: .bottom) {
-            beginCTA
+            if recordingIssuePresentation?.recovery != .openSettings {
+                beginCTA
+            }
         }
     }
 
@@ -376,6 +395,22 @@ struct CutTheCrutchView: View {
             words.append(word)
         }
         return Array(words.prefix(5))
+    }
+
+    private var recordingIssuePresentation: SpeechRecordingIssuePresentation? {
+        guard let error = speechVM.connectionError else { return nil }
+        return SpeechRecordingIssuePresentation.make(
+            issue: speechVM.recordingIssue,
+            message: error
+        )
+    }
+
+    private func openAppSettingsAfterRecordingIssue() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        speechVM.connectionError = nil
+        openURL(url)
+        #endif
     }
 
     // MARK: - Countdown

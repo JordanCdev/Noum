@@ -12,6 +12,8 @@ struct V3OnboardingShellTests {
         #expect(source.contains("fastLane.contextContinue"))
         #expect(source.contains("Structure only · not saved"))
         #expect(source.contains("A written rehearsal can show answer shape"))
+        #expect(source.contains("fastLane.otherOptions"))
+        #expect(source.contains("Not ready to record?"))
         #expect(source.contains("NoumWaveformMark"))
         #expect(source.contains("NoumProgressTrack"))
         #expect(!source.contains("buttonStyle(.borderedProminent)"))
@@ -28,6 +30,8 @@ struct V3OnboardingShellTests {
         #expect(source.contains("NoumMotion.animation(for: .calm"))
         #expect(source.contains("@State private var speakingContext: SpeakingContext?"))
         #expect(source.contains("@State private var biggestChallenge: SpeakingChallenge?"))
+        #expect(source.contains("_screen = State(initialValue: .question(.style))"))
+        #expect(source.contains("Final choice"))
         #expect(source.contains("KeychainHelper.uiAutomationLaunchMode("))
         #expect(source.contains("saveForOnboarding("))
         #expect(!source.contains("LinearGradient"))
@@ -48,6 +52,7 @@ struct V3OnboardingShellTests {
         #expect(source.contains("NoumMotion.animation(for: .calm"))
         #expect(source.contains("SocialReleaseCapabilities.friendConnections.isAvailable"))
         #expect(source.contains("SocialReleaseCapabilities.peerProgress.isAvailable"))
+        #expect(source.contains("size: 11, weight: isSelected"))
     }
 
     private func repositorySource(_ relativePath: String) throws -> String {

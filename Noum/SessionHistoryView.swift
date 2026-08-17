@@ -297,6 +297,14 @@ struct SessionHistoryView: View {
         )
     }
 
+    private var v46PracticeProjection: V46ProgressPracticeProjection? {
+        guard let target = v46Progress?.practiceTarget else { return nil }
+        return V46ProgressPracticeProjection.make(
+            target: target,
+            sessions: sessionStore.sessions
+        )
+    }
+
     /// The evidence-led trajectory: eyebrow (active target) → one bounded
     /// reliability statement → honest tally → weekly trajectory clusters →
     /// up to three evidence rows (lapse kept, amber + text cue) → one
@@ -350,7 +358,7 @@ struct SessionHistoryView: View {
                     ForEach(presentation.rows) { row in
                         HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                             Text(row.dayLabel)
-                                .font(Typography.figtree(size: 9.5, weight: .heavy, relativeTo: .caption2))
+                                .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
                                 .tracking(0.8)
                                 .foregroundStyle(row.tone == .lapse ? AppColor.caution : AppColor.coachingInk)
                                 .frame(width: 56, alignment: .leading)
@@ -384,6 +392,36 @@ struct SessionHistoryView: View {
                             underlineSettled = true
                         }
                     }
+
+                if let practice = v46PracticeProjection {
+                    Button {
+                        startV46TargetPractice(practice)
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption.weight(.semibold))
+                                .accessibilityHidden(true)
+                            Text("Practice this target")
+                                .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
+                            Spacer(minLength: Spacing.xs)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
+                        .padding(.horizontal, Spacing.md)
+                        .frame(minHeight: 48)
+                        .background(
+                            AppColor.proQuietSurface,
+                            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
+                    .padding(.top, Spacing.xl)
+                    .accessibilityHint("Repeats the original prompt with the same coaching target.")
+                    .accessibilityIdentifier("progress.v46.practiceTarget")
+                }
 
                 if let reviewTitle = presentation.reviewRowTitle {
                     Button {
@@ -440,6 +478,29 @@ struct SessionHistoryView: View {
         presentation.trajectory
             .map { "\($0.label)|\($0.intensity)|\($0.isLapse)" }
             .joined(separator: "·")
+    }
+
+    private func startV46TargetPractice(_ projection: V46ProgressPracticeProjection) {
+        let correlationID = UUID()
+        let prescription = projection.prescription(correlationID: correlationID)
+        guard let token = TimedPracticePromptHandoff.shared
+            .offerTranscriptRetryToken(prescription) else { return }
+
+        recommendationLearningStore.recordShown(
+            fingerprint: prescription.fingerprint,
+            title: prescription.title,
+            focus: prescription.focus,
+            target: prescription.target,
+            mode: .timed,
+            isAIBacked: false,
+            goal: prescription.goal,
+            targetDimensionID: prescription.targetDimensionID,
+            sourceSessionID: prescription.sourceSessionID,
+            observabilityID: correlationID,
+            transcriptRetryTarget: prescription.retryTarget
+        )
+        recommendationLearningStore.markTapped(mode: .timed)
+        navigationPath.append(AppDestination.timedPracticePrompt(token: token))
     }
 
     // MARK: - Development

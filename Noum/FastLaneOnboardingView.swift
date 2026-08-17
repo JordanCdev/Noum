@@ -29,6 +29,7 @@ struct FastLaneOnboardingView: View {
     @State private var response = ""
     @State private var result: StructuredFirstValueResult?
     @State private var saveError: String?
+    @State private var showsOtherResultOptions = false
 
     init(
         profileStore: CoachingProfileStore,
@@ -350,20 +351,51 @@ struct FastLaneOnboardingView: View {
                     .accessibilityIdentifier("fastLane.spokenProof")
                     .accessibilityHint("Opens a short Timed Practice setup. Recording and microphone permission begin only after you choose to start.")
 
-                secondaryButton(title: "Complete my coaching profile", action: completeSetup)
-                    .accessibilityIdentifier("fastLane.completeSetup")
-                    .accessibilityHint("Opens the full coaching profile setup. Your two choices are kept.")
-
-                Button(action: enterApp) {
-                    Text("Explore Noum first")
-                        .font(Typography.body.weight(.semibold))
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Button {
+                        withCalmMotion {
+                            showsOtherResultOptions.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            Text(showsOtherResultOptions ? "Hide other options" : "Not ready to record?")
+                                .font(Typography.body.weight(.semibold))
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .rotationEffect(.degrees(showsOtherResultOptions ? 180 : 0))
+                                .accessibilityHidden(true)
+                        }
                         .foregroundStyle(AppColor.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .noumMinimumTouchTarget()
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("fastLane.otherOptions")
+                    .accessibilityValue(showsOtherResultOptions ? "Expanded" : "Collapsed")
+
+                    if showsOtherResultOptions {
+                        NoumSurface(.quiet) {
+                            VStack(spacing: Spacing.sm) {
+                                secondaryButton(title: "Complete my coaching profile", action: completeSetup)
+                                    .accessibilityIdentifier("fastLane.completeSetup")
+                                    .accessibilityHint("Opens the full coaching profile setup. Your two choices are kept.")
+
+                                Button(action: enterApp) {
+                                    Text("Explore Noum without recording")
+                                        .font(Typography.body.weight(.semibold))
+                                        .foregroundStyle(AppColor.textSecondary)
+                                        .frame(maxWidth: .infinity)
+                                        .noumMinimumTouchTarget()
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("fastLane.enterApp")
+                                .accessibilityHint("Opens Noum now. You can try the spoken proof and finish your coaching profile later.")
+                            }
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("fastLane.enterApp")
-                .accessibilityHint("Opens Noum now. You can finish your coaching profile from Home later.")
             }
         }
     }

@@ -3,6 +3,7 @@ import Foundation
 enum BetaFeedbackCategory: String, CaseIterable, Identifiable, Hashable {
     case bug = "Something broke"
     case confusing = "Something was confusing"
+    case coaching = "Coaching felt wrong"
     case idea = "I have an idea"
 
     var id: String { rawValue }
@@ -11,8 +12,32 @@ enum BetaFeedbackCategory: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .bug: return "Bug"
         case .confusing: return "Confusing experience"
+        case .coaching: return "Coaching quality"
         case .idea: return "Idea"
         }
+    }
+}
+
+/// Content-free, compile-time allowlist for where a beta report was opened.
+/// This deliberately cannot accept arbitrary route titles, prompts, transcript
+/// fragments, or user-entered metadata.
+enum BetaFeedbackFlowScreen: String, CaseIterable, Equatable {
+    case settingsBetaFeedback = "settings/beta-feedback"
+
+    var flowLabel: String {
+        switch self {
+        case .settingsBetaFeedback: return "Settings"
+        }
+    }
+
+    var screenLabel: String {
+        switch self {
+        case .settingsBetaFeedback: return "Beta feedback"
+        }
+    }
+
+    var redactedSummary: String {
+        "Flow: \(flowLabel)\nScreen: \(screenLabel)"
     }
 }
 
@@ -27,6 +52,8 @@ struct BetaFeedbackDiagnostics: Equatable {
 
     static let excludedDataNotice =
         "Diagnostics never include: name, email, account ID, transcripts, recordings, prompts, coaching content, or authentication data."
+    static let crashLogNotice =
+        "No crash logs are attached to this report."
 
     static func current(
         bundle: Bundle = .main,
@@ -51,7 +78,7 @@ struct BetaFeedbackDiagnostics: Equatable {
         Build: \(buildNumber)
         Source commit: \(sourceCommit)
         System: \(systemVersion)
-        Automatic crash logs: not collected
+        \(Self.crashLogNotice)
         """
     }
 }
@@ -62,16 +89,19 @@ struct BetaFeedbackReport: Equatable {
     let category: BetaFeedbackCategory
     let message: String
     let diagnostics: BetaFeedbackDiagnostics
+    let flowScreen: BetaFeedbackFlowScreen
 
     init(
         category: BetaFeedbackCategory,
         message: String,
-        diagnostics: BetaFeedbackDiagnostics
+        diagnostics: BetaFeedbackDiagnostics,
+        flowScreen: BetaFeedbackFlowScreen = .settingsBetaFeedback
     ) {
         self.category = category
         self.message = String(message.prefix(Self.maximumMessageLength))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.diagnostics = diagnostics
+        self.flowScreen = flowScreen
     }
 
     var canSend: Bool { !message.isEmpty }
@@ -85,6 +115,7 @@ struct BetaFeedbackReport: Equatable {
         Noum private beta feedback
 
         Type: \(category.rawValue)
+        \(flowScreen.redactedSummary)
 
         Feedback:
         \(message)
@@ -111,16 +142,22 @@ struct BetaFeedbackView: View {
     @State private var feedback = ""
 
     private let diagnostics: BetaFeedbackDiagnostics
+    private let flowScreen: BetaFeedbackFlowScreen
 
-    init(diagnostics: BetaFeedbackDiagnostics = .current()) {
+    init(
+        diagnostics: BetaFeedbackDiagnostics = .current(),
+        flowScreen: BetaFeedbackFlowScreen = .settingsBetaFeedback
+    ) {
         self.diagnostics = diagnostics
+        self.flowScreen = flowScreen
     }
 
     private var report: BetaFeedbackReport {
         BetaFeedbackReport(
             category: category,
             message: feedback,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            flowScreen: flowScreen
         )
     }
 
@@ -217,7 +254,8 @@ struct BetaFeedbackView: View {
                 diagnosticRow("Version", value: diagnostics.appVersionSummary)
                 diagnosticRow("Source commit", value: diagnostics.sourceCommit)
                 diagnosticRow("System", value: diagnostics.systemVersion)
-                diagnosticRow("Crash logs", value: "Not collected")
+                diagnosticRow("Flow / screen", value: "\(flowScreen.flowLabel) / \(flowScreen.screenLabel)")
+                diagnosticRow("Crash logs", value: BetaFeedbackDiagnostics.crashLogNotice)
 
                 Divider()
 

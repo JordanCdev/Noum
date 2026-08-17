@@ -106,6 +106,57 @@ struct FirstWeekHomeEntryPresentationTests {
         #expect(presentation == nil)
     }
 
+    @Test("An acknowledged Day-seven read releases Home's support slot")
+    func viewedReadDoesNotStayPinnedToHome() throws {
+        let correlationID = try #require(activation.correlationID)
+        let readSnapshot = snapshot(
+            action: .reviewFirstWeekRead,
+            intent: .firstWeekRead,
+            firstWeekRead: .init(
+                whatChanged: .notYetProven(eligibleRepCount: 2),
+                remainsUnproven: [.practiceChange],
+                verifiedExample: nil,
+                nextWeekPlan: .init(
+                    lever: nil,
+                    mode: .timed,
+                    remainingComparableRepsBeforeReview: 1,
+                    recommendedAction: .repeatRep(mode: .timed)
+                )
+            )
+        )
+        let viewed = GrowthEvent(
+            correlationID: correlationID,
+            name: .weeklyReadViewed,
+            entryPoint: .home
+        )
+
+        #expect(FirstWeekHomeEntryAvailability.shouldPresent(
+            snapshot: readSnapshot,
+            growthEvents: []
+        ))
+        #expect(!FirstWeekHomeEntryAvailability.shouldPresent(
+            snapshot: readSnapshot,
+            growthEvents: [viewed]
+        ))
+        #expect(FirstWeekHomeEntryAvailability.shouldPresent(
+            snapshot: readSnapshot,
+            growthEvents: [GrowthEvent(
+                correlationID: UUID(),
+                name: .weeklyReadViewed,
+                entryPoint: .home
+            )]
+        ))
+
+        let nextStep = snapshot(
+            action: .repeatRep(mode: .timed),
+            intent: .repeatRep
+        )
+        #expect(FirstWeekHomeEntryAvailability.shouldPresent(
+            snapshot: nextStep,
+            growthEvents: [viewed]
+        ))
+    }
+
     private func snapshot(
         action: FirstWeekCoachingContract.NextAction,
         intent: FirstWeekCoachingContract.NotificationIntent,

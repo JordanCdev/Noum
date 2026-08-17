@@ -62,6 +62,37 @@ struct FirstWeekCoachingContractTests {
         )
     }
 
+    private func comparisonReadyMemory(
+        prescribedAt: Date,
+        observedAt: Date? = nil,
+        followedRepCount: Int = 2,
+        reviewStatus: CoachInterventionReviewStatus = .formingEvidence,
+        reviewDueAt: Date? = nil
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: observedAt ?? prescribedAt,
+            evidenceCount: max(1, followedRepCount),
+            evidenceConfidence: .moderate,
+            currentLever: .structure,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            activeIntervention: CoachIntervention(
+                title: "Structure comparison",
+                focus: "Lead with the answer",
+                target: "Answer first, give one reason, then stop.",
+                mode: .timed,
+                prescribedAt: prescribedAt,
+                lastObservedAt: observedAt,
+                followedRepCount: followedRepCount,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: reviewStatus,
+                reviewBasis: "Bounded followed-rep evidence.",
+                reviewDueAt: reviewDueAt
+            )
+        )
+    }
+
     private func input(
         activationAt: Date,
         sessions: [PracticeSession] = [],
@@ -98,7 +129,7 @@ struct FirstWeekCoachingContractTests {
         )
     }
 
-    @Test("Calendar time travel resolves every first-week stage")
+    @Test("Calendar selects reminder bands without inventing evidence")
     func stageBoundaries() throws {
         let activationAt = date(1, hour: 23)
         let spokenBaseline = session(
@@ -125,7 +156,12 @@ struct FirstWeekCoachingContractTests {
                 calendar: calendar
             ))
             #expect(snapshot.stage == item.stage)
-            #expect((snapshot.firstWeekRead != nil) == (item.stage == .day7FirstWeekRead))
+            let expectedAction: FirstWeekCoachingContract.NextAction =
+                item.day == 1
+                    ? .recordSpokenBaseline
+                    : .repeatRep(mode: nil)
+            #expect(snapshot.nextAction == expectedAction)
+            #expect(snapshot.firstWeekRead == nil)
         }
 
         let afterFirstWeek = try #require(FirstWeekCoachingContract.resolve(
@@ -137,7 +173,8 @@ struct FirstWeekCoachingContractTests {
             calendar: calendar
         ))
         #expect(afterFirstWeek.stage == .day7FirstWeekRead)
-        #expect(afterFirstWeek.firstWeekRead != nil)
+        #expect(afterFirstWeek.nextAction == .repeatRep(mode: nil))
+        #expect(afterFirstWeek.firstWeekRead == nil)
 
         let muchLater = try #require(FirstWeekCoachingContract.resolve(
             input: input(
@@ -148,7 +185,8 @@ struct FirstWeekCoachingContractTests {
             calendar: calendar
         ))
         #expect(muchLater.stage == .day7FirstWeekRead)
-        #expect(muchLater.firstWeekRead != nil)
+        #expect(muchLater.nextAction == .repeatRep(mode: nil))
+        #expect(muchLater.firstWeekRead == nil)
         #expect(FirstWeekCoachingContract.resolve(
             input: input(activationAt: activationAt),
             now: date(1, hour: 22),
@@ -217,8 +255,8 @@ struct FirstWeekCoachingContractTests {
         #expect(daySeven.day == 21)
         #expect(daySeven.stage == .day7FirstWeekRead)
         #expect(daySeven.eligibleSessionCount == 2)
-        #expect(daySeven.firstWeekRead != nil)
-        #expect(daySeven.firstWeekRead?.verifiedExample?.sessionID == daySevenRep.id)
+        #expect(daySeven.nextAction == .repeatRep(mode: nil))
+        #expect(daySeven.firstWeekRead == nil)
     }
 
     @Test("Day zero keeps writing permissionless and asks for a user-started spoken proof")
@@ -310,7 +348,7 @@ struct FirstWeekCoachingContractTests {
             mode: .timed,
             prescribedAt: observedAt,
             lastObservedAt: nil,
-            followedRepCount: 1,
+            followedRepCount: 2,
             minimumFollowedRepsForReview: 2,
             reviewStatus: .formingEvidence,
             reviewBasis: "PRIVATE BASIS"
@@ -349,14 +387,70 @@ struct FirstWeekCoachingContractTests {
         #expect(!lockScreen.contains("PRIVATE"))
     }
 
+    @Test("Comparison waits for followed evidence even after the calendar band changes")
+    func comparisonDoesNotUnlockFromElapsedDays() throws {
+        let activationAt = date(1)
+        let baseline = session(at: activationAt.addingTimeInterval(60))
+        let oneFollowed = comparisonReadyMemory(
+            prescribedAt: date(2),
+            observedAt: date(3),
+            followedRepCount: 1
+        )
+        let inconsistentAdaptation = comparisonReadyMemory(
+            prescribedAt: date(2),
+            observedAt: date(3),
+            followedRepCount: 0,
+            reviewStatus: .adaptBeforeRepeating
+        )
+        let enoughFollowed = comparisonReadyMemory(
+            prescribedAt: date(2),
+            observedAt: date(3),
+            followedRepCount: 2
+        )
+
+        for memory in [oneFollowed, inconsistentAdaptation] {
+            let waiting = try #require(FirstWeekCoachingContract.resolve(
+                input: input(
+                    activationAt: activationAt,
+                    sessions: [baseline],
+                    memory: memory
+                ),
+                now: date(4),
+                calendar: calendar
+            ))
+            #expect(waiting.stage == .day3To4CompareAndAdapt)
+            #expect(waiting.nextAction == .repeatRep(mode: .timed))
+            #expect(waiting.firstWeekRead == nil)
+        }
+
+        let comparison = try #require(FirstWeekCoachingContract.resolve(
+            input: input(
+                activationAt: activationAt,
+                sessions: [baseline],
+                memory: enoughFollowed
+            ),
+            now: date(4),
+            calendar: calendar
+        ))
+        #expect(
+            comparison.nextAction
+                == .compareAndAdapt(lever: .structure, mode: .timed)
+        )
+    }
+
     @Test("Real-world check-in is the unfinished day-five step")
     func realWorldCheckInProgression() throws {
         let activationAt = date(1)
         let now = date(6)
+        let memory = comparisonReadyMemory(
+            prescribedAt: date(2),
+            observedAt: date(5)
+        )
         let due = try #require(FirstWeekCoachingContract.resolve(
             input: input(
                 activationAt: activationAt,
-                sessions: [session(at: activationAt.addingTimeInterval(60))]
+                sessions: [session(at: activationAt.addingTimeInterval(60))],
+                memory: memory
             ),
             now: now,
             calendar: calendar
@@ -372,6 +466,7 @@ struct FirstWeekCoachingContractTests {
             input: input(
                 activationAt: activationAt,
                 sessions: [session(at: activationAt.addingTimeInterval(60))],
+                memory: memory,
                 checkIn: inAppOnly
             ),
             now: now,
@@ -387,13 +482,14 @@ struct FirstWeekCoachingContractTests {
             input: input(
                 activationAt: activationAt,
                 sessions: [session(at: activationAt.addingTimeInterval(60))],
+                memory: memory,
                 checkIn: transferred
             ),
             now: now,
             calendar: calendar
         ))
         #expect(complete.hasRealWorldCheckIn)
-        #expect(complete.nextAction == .repeatRep(mode: nil))
+        #expect(complete.nextAction == .repeatRep(mode: .timed))
     }
 
     @Test("Day-seven read projects change, unknowns, one example reference, and next week")
@@ -431,7 +527,7 @@ struct FirstWeekCoachingContractTests {
             lastObservedAt: date(7),
             followedRepCount: 2,
             minimumFollowedRepsForReview: 2,
-            reviewStatus: .adaptBeforeRepeating,
+            reviewStatus: .continueAndVerify,
             reviewBasis: "PRIVATE REVIEW"
         )
         let memory = CoachMemory(
@@ -465,10 +561,10 @@ struct FirstWeekCoachingContractTests {
         #expect(read.verifiedExample?.score == 8)
         #expect(read.nextWeekPlan.lever == .structure)
         #expect(read.nextWeekPlan.mode == .timed)
-        #expect(read.nextWeekPlan.remainingComparableRepsBeforeReview == 0)
+        #expect(read.nextWeekPlan.remainingComparableRepsBeforeReview == 1)
         #expect(
             read.nextWeekPlan.recommendedAction
-                == .compareAndAdapt(lever: .structure, mode: .timed)
+                == .repeatRep(mode: .timed)
         )
 
         let visibleProjection = String(describing: read)
@@ -502,6 +598,10 @@ struct FirstWeekCoachingContractTests {
                     session(id: priorID, at: activationAt.addingTimeInterval(-60)),
                     session(id: inWindowID, at: date(7), score: 8, isRated: true),
                 ],
+                memory: comparisonReadyMemory(
+                    prescribedAt: date(2),
+                    observedAt: date(7)
+                ),
                 longitudinalTrend: trend
             ),
             now: date(14),
@@ -558,7 +658,11 @@ struct FirstWeekCoachingContractTests {
                     proofCapable,
                     noCoherentThought,
                     tooThin,
-                ]
+                ],
+                memory: comparisonReadyMemory(
+                    prescribedAt: date(2),
+                    observedAt: date(7)
+                )
             ),
             now: date(8),
             calendar: calendar
@@ -594,6 +698,10 @@ struct FirstWeekCoachingContractTests {
     @Test("First-week notification attribution is bounded, routable, and decodable")
     func notificationAttributionContract() throws {
         let activationAt = date(1)
+        let readyMemory = comparisonReadyMemory(
+            prescribedAt: date(2),
+            observedAt: date(3)
+        )
         let snapshots = [
             try #require(FirstWeekCoachingContract.resolve(
                 input: input(activationAt: activationAt),
@@ -611,7 +719,8 @@ struct FirstWeekCoachingContractTests {
             try #require(FirstWeekCoachingContract.resolve(
                 input: input(
                     activationAt: activationAt,
-                    sessions: [session(at: activationAt.addingTimeInterval(60))]
+                    sessions: [session(at: activationAt.addingTimeInterval(60))],
+                    memory: readyMemory
                 ),
                 now: date(4),
                 calendar: calendar
@@ -619,7 +728,8 @@ struct FirstWeekCoachingContractTests {
             try #require(FirstWeekCoachingContract.resolve(
                 input: input(
                     activationAt: activationAt,
-                    sessions: [session(at: activationAt.addingTimeInterval(60))]
+                    sessions: [session(at: activationAt.addingTimeInterval(60))],
+                    memory: readyMemory
                 ),
                 now: date(6),
                 calendar: calendar
@@ -627,7 +737,8 @@ struct FirstWeekCoachingContractTests {
             try #require(FirstWeekCoachingContract.resolve(
                 input: input(
                     activationAt: activationAt,
-                    sessions: [session(at: activationAt.addingTimeInterval(60))]
+                    sessions: [session(at: activationAt.addingTimeInterval(60))],
+                    memory: readyMemory
                 ),
                 now: date(8),
                 calendar: calendar
@@ -857,7 +968,11 @@ struct FirstWeekCoachingContractTests {
 
         let contractInput = input(
             activationAt: activationAt,
-            sessions: eligibleSessions
+            sessions: eligibleSessions,
+            memory: comparisonReadyMemory(
+                prescribedAt: date(2),
+                observedAt: date(7)
+            )
         )
         let futureSnapshot = try #require(FirstWeekCoachingContract.resolve(
             input: contractInput,
@@ -892,7 +1007,11 @@ struct FirstWeekCoachingContractTests {
         let eligibleSessions = [session(at: date(2))]
         let contractInput = input(
             activationAt: activationAt,
-            sessions: eligibleSessions
+            sessions: eligibleSessions,
+            memory: comparisonReadyMemory(
+                prescribedAt: date(2),
+                observedAt: date(7)
+            )
         )
         let now = date(9, hour: 12)
         let liveSnapshot = try #require(FirstWeekCoachingContract.resolve(
@@ -1007,7 +1126,11 @@ struct FirstWeekCoachingContractTests {
                 sessions: [
                     session(id: firstWeekID, at: date(8), score: 7),
                     session(id: laterID, at: date(17), score: 10),
-                ]
+                ],
+                memory: comparisonReadyMemory(
+                    prescribedAt: date(8),
+                    observedAt: date(8)
+                )
             ),
             now: date(20),
             calendar: calendar
@@ -1090,7 +1213,11 @@ struct FirstWeekCoachingContractTests {
             currentLever: .paceControl,
             goalFit: .noVoice,
             strengths: [],
-            blockers: []
+            blockers: [],
+            activeIntervention: comparisonReadyMemory(
+                prescribedAt: date(2),
+                observedAt: date(7)
+            ).activeIntervention
         )
         let dayTen = try #require(FirstWeekCoachingContract.resolve(
             input: input(

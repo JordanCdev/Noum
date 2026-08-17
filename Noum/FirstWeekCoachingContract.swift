@@ -252,8 +252,9 @@ struct FirstWeekCoachingContract {
         let currentLever: SkillArea?
         let prescription: PrescriptionEvidence?
         let hasRealWorldCheckIn: Bool
-        /// Non-nil from Day 7 onward. A caller can render the four requested
-        /// sections directly: change, unknowns, example, and next-week plan.
+        /// Non-nil once the Day-7 band has qualified comparison evidence. A caller
+        /// can render the four requested sections directly: change, unknowns,
+        /// example, and next-week plan.
         let firstWeekRead: FirstWeekReadProjection?
         let nextAction: NextAction
         let notificationIntent: NotificationIntent
@@ -371,12 +372,16 @@ struct FirstWeekCoachingContract {
             eligibleSessions: eligibleSessions
         )
 
+        // Calendar time selects the reminder band, never the evidence claim.
+        // The user-facing action below must still earn comparison/review from
+        // the existing intervention/outcome or trajectory owners.
         let stage = stage(forDay: elapsedDays)
         let nextAction = nextAction(
             stage: stage,
             eligibleSessionCount: eligibleSessions.count,
             currentLever: currentLever,
             prescription: prescription,
+            hasQualifiedComparison: longitudinalTrend != nil,
             hasRealWorldCheckIn: hasRealWorldCheckIn,
             now: now
         )
@@ -390,7 +395,7 @@ struct FirstWeekCoachingContract {
             currentLever: currentLever,
             prescription: prescription,
             hasRealWorldCheckIn: hasRealWorldCheckIn,
-            firstWeekRead: stage == .day7FirstWeekRead
+            firstWeekRead: nextAction == .reviewFirstWeekRead
                 ? firstWeekRead(
                     eligibleSessions: eligibleSessions,
                     longitudinalTrend: longitudinalTrend,
@@ -600,13 +605,36 @@ struct FirstWeekCoachingContract {
         eligibleSessionCount: Int,
         currentLever: SkillArea?,
         prescription: PrescriptionEvidence?,
+        hasQualifiedComparison: Bool,
         hasRealWorldCheckIn: Bool,
-        now _: Date
+        now: Date
     ) -> NextAction {
         // A written Day-0 value does not become spoken evidence merely because
         // the calendar advanced. Keep asking for the bounded baseline until an
         // eligible rep exists, then continue the staged plan.
         guard eligibleSessionCount > 0 else { return .recordSpokenBaseline }
+
+        // A review-state owner may require diagnosis/adaptation as soon as a
+        // followed attempt exposes a problem. Do not keep prescribing the
+        // same rep merely because the calendar has not reached Day 3.
+        if let prescription,
+           prescription.followedRepCount > 0,
+           prescription.needsReview(at: now) {
+            return .compareAndAdapt(
+                lever: currentLever,
+                mode: prescription.mode
+            )
+        }
+
+        // `followedRepCount` is projected from RecommendationLearningStore;
+        // the longitudinal trend is independently qualified by
+        // UserTrajectoryCache and revalidated above. Raw elapsed days and raw
+        // session count are deliberately insufficient for comparison/review.
+        let hasMinimumFollowedEvidence = prescription.map {
+            $0.followedRepCount >= $0.minimumFollowedRepsForReview
+        } ?? false
+        let hasComparisonEvidence = hasQualifiedComparison
+            || hasMinimumFollowedEvidence
 
         switch stage {
         case .day0Baseline:
@@ -614,16 +642,25 @@ struct FirstWeekCoachingContract {
         case .day1To2Repeat:
             return .repeatRep(mode: prescription?.mode)
         case .day3To4CompareAndAdapt:
+            guard hasMinimumFollowedEvidence, let prescription else {
+                return .repeatRep(mode: prescription?.mode)
+            }
             return .compareAndAdapt(
                 lever: currentLever,
-                mode: prescription?.mode
+                mode: prescription.mode
             )
         case .day5To6RealWorldCheckIn:
+            guard hasComparisonEvidence else {
+                return .repeatRep(mode: prescription?.mode)
+            }
             guard !hasRealWorldCheckIn else {
                 return .repeatRep(mode: prescription?.mode)
             }
             return .realWorldCheckIn
         case .day7FirstWeekRead:
+            guard hasComparisonEvidence else {
+                return .repeatRep(mode: prescription?.mode)
+            }
             return .reviewFirstWeekRead
         }
     }

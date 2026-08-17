@@ -1,5 +1,35 @@
 # Noum — Current state
 
+## 2026-08-17 — V3 production-UX hardening complete in source; native and external gates remain NO-GO
+
+The `ux-experiment` branch now has one coherent adult coaching language across
+activation, Today, practice, evidence, reward, Ask Noum, Progress, Profile,
+Settings, secondary modes, permission recovery, and offline states. The
+unboxed waveform replaces the experimental mascot; motion is bounded and
+Reduce-Motion aware; verified improvement retains the one expressive reward
+beat. The canonical Figma Today sample no longer labels numbered activity as a
+fake Warm-up/Pressure curriculum.
+
+This hardening pass also closes product-truth gaps that styling could not: the
+persisted one-to-three daily goal drives Today; the exact accepted target and
+demand survive as a bounded one-shot handoff into the selected practice;
+Summary has one next action, one visible exit, an exact-session receipt, and no
+synthetic visible score; Progress validates retry provenance and compares one
+lever at a time; and first-week actions require evidence rather than elapsed days alone.
+Microphone and Speech Recognition denials are distinct and route all nine
+audited spoken-practice surfaces to Settings. Beta feedback has a content-free
+coach-quality category, and release CI now owns deterministic Coach Arena plus
+core journey/permission UI shards.
+
+Static readiness, release-script tests, Coach Arena, authored fixture
+validation, resource/workflow checks, and `git diff --check` pass in the Linux
+workspace. This is not native proof. The branch still requires a clean Xcode
+Release build and serialized tests, same-build simulator/physical-device
+accessibility and speech QA, live legal/support deployment, signing and
+TestFlight processing, StoreKit/auth/App Check verification, a current live-
+provider sweep, blinded professional-coach review, and longitudinal beta
+evidence. Production therefore remains correctly **NO-GO**.
+
 ## 2026-07-29 — Accessibility and UI-suite closure; external launch gates remain NO-GO
 
 The handover's app-side accessibility work now preserves the existing account,

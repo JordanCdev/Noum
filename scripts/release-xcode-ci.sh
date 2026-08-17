@@ -45,5 +45,7 @@ xcodebuild test -quiet \
   -derivedDataPath "$derived_data" \
   -clonedSourcePackagesDirPath "$source_packages" \
   -only-testing:NoumTests \
+  -parallel-testing-enabled NO \
+  -maximum-parallel-testing-workers 1 \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 runner_temp="${RUNNER_TEMP:-/tmp}"
-derived_data="${DERIVED_DATA_PATH:-$runner_temp/NoumBetaFeedbackDerivedData}"
+derived_data="${DERIVED_DATA_PATH:-$runner_temp/NoumCorePermissionDerivedData}"
 source_packages="${SOURCE_PACKAGES_PATH:-$runner_temp/NoumSourcePackages}"
 destination="${DESTINATION:-platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2}"
 
@@ -19,9 +19,9 @@ done
 mkdir -p "$derived_data" "$source_packages"
 cd "$repo_root"
 
-# Intentionally one source-bound journey, not the full screenshot/a11y tour.
-# This catches Settings routing, Dynamic SwiftUI discovery, text entry, and
-# the disabled-to-enabled send contract within a short release shard.
+# Release-critical journeys are intentionally serialized. These owners use
+# process-wide account, permission, and session stores; parallel simulator
+# shards would make a green run less trustworthy, not faster in a useful way.
 xcodebuild test -quiet \
   -project Noum.xcodeproj \
   -scheme Noum \
@@ -29,7 +29,10 @@ xcodebuild test -quiet \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
   -clonedSourcePackagesDirPath "$source_packages" \
-  -only-testing:NoumUITests/BetaFeedbackUITests/testSettingsBetaFeedbackRouteShowsRedactedReport \
+  -only-testing:NoumUITests/NoumUITests/testFirstRunCreatesAccountThenTimedHarnessReachesFirstVerdict \
+  -only-testing:NoumUITests/GoalOutcomeLoopUITests/testTranscriptLadderPractisesOneStepRewriteFromSummary \
+  -only-testing:NoumUITests/HomePracticePathPolishUITests/testFillerControlMicrophoneDenialOffersSettingsNotStart \
+  -only-testing:NoumUITests/HomePracticePathPolishUITests/testPaceMicrophoneDenialOffersSettingsNotStart \
   -parallel-testing-enabled NO \
   -maximum-parallel-testing-workers 1 \
   CODE_SIGNING_ALLOWED=NO \

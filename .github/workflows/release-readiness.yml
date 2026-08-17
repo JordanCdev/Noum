@@ -83,6 +83,20 @@ jobs:
       - name: Run emulator integration suite
         run: ./scripts/release-functions-emulator.sh
 
+  coach-arena:
+    name: Coach regression harness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run deterministic Node and Python suites
+        run: ./tools/coach-arena/run.sh test
+      - name: Validate authored coaching fixtures
+        run: ./tools/coach-arena/run.sh validate
+
   static-readiness:
     name: Static release boundaries
     runs-on: ubuntu-24.04
@@ -118,6 +132,8 @@ jobs:
         run: ./scripts/release-xcode-ci.sh
       - name: Smoke private-beta feedback route
         run: ./scripts/release-beta-feedback-ui-smoke.sh
+      - name: Verify core journey and permission recovery
+        run: ./scripts/release-core-permission-ui-smoke.sh
       - name: Remove materialized plist secrets
         if: always()
         run: ./scripts/release-materialize-ci-config.sh --clean

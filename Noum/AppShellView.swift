@@ -368,7 +368,7 @@ struct AppShellView: View {
                         .accessibilityHidden(true)
                 }
                 Text(title)
-                    .font(Typography.figtree(size: 10.5, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))
+                    .font(Typography.figtree(size: 11, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))
                     .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
             }
             .padding(.horizontal, 14)

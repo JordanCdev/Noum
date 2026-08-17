@@ -10,7 +10,7 @@ import AudioToolbox
 #endif
 
 #if canImport(AVFoundation)
-enum PracticeMicrophonePermissionState: Equatable {
+enum PracticeMicrophonePermissionState: Equatable, Sendable {
     case unknown
     case undetermined
     case denied
@@ -36,6 +36,9 @@ enum PracticeMicrophonePermissionState: Equatable {
 
     static func current() -> PracticeMicrophonePermissionState {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_MICROPHONE_DENIED") {
+            return .denied
+        }
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_MICROPHONE_GRANTED") {
             return .granted
         }
@@ -87,6 +90,10 @@ enum RecordingLifecycleState: Equatable, Sendable {
 /// actions without parsing provider strings or retaining provider errors.
 enum SpeechRecordingIssue: Equatable, Sendable {
     case unsupportedOnDeviceLocale(String)
+    /// Microphone authorization was declined. The recorder cannot change an
+    /// iOS permission by retrying, so every spoken surface must route to the
+    /// app's Settings page instead of starting the same failed request again.
+    case microphoneDenied
     /// Apple Speech authorization was declined. Retrying the provider cannot
     /// change this system permission, so practice must route to Settings.
     case speechRecognitionDenied
@@ -138,6 +145,12 @@ struct SpeechRecordingIssuePresentation: Equatable, Sendable {
                 title: "This language isn't available offline",
                 detail: "\(message) Choose another Practice language in Settings or continue on a device that supports it.",
                 recovery: .leaveRep
+            )
+        case .microphoneDenied:
+            return SpeechRecordingIssuePresentation(
+                title: "Microphone access is off",
+                detail: message,
+                recovery: .openSettings
             )
         case .speechRecognitionDenied:
             return SpeechRecordingIssuePresentation(
@@ -657,7 +670,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         prepareForInteractiveUse()
         refreshRecordPermission()
         if microphonePermissionState.blocksRecording {
-            connectionError = microphonePermissionState.userFacingRecoveryMessage
+            applyMicrophonePermissionFailure(microphonePermissionState)
             transition(to: .failed(connectionError ?? "Microphone access is unavailable."))
             return false
         }
@@ -991,7 +1004,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             connectionError = nil
             return true
         case .denied, .unknown:
-            connectionError = microphonePermissionState.userFacingRecoveryMessage
+            applyMicrophonePermissionFailure(microphonePermissionState)
             return false
         case .undetermined:
             let granted = await withCheckedContinuation { continuation in
@@ -1004,9 +1017,35 @@ class SpeechRecognizerViewModel: ObservableObject {
                 connectionError = nil
                 return true
             }
-            connectionError = PracticeMicrophonePermissionState.denied.userFacingRecoveryMessage
+            // The authorization callback is authoritative even if the global
+            // permission property has not propagated yet on this run loop.
+            applyMicrophonePermissionFailure(.denied)
             return false
         }
+    }
+
+    /// Pure permission-to-issue boundary used by the recorder and tests. Keep
+    /// microphone denial separate from Apple Speech denial: both recover in
+    /// Settings, but they are different toggles and need accurate copy.
+    nonisolated static func recordingIssue(
+        for microphonePermission: PracticeMicrophonePermissionState
+    ) -> SpeechRecordingIssue? {
+        switch microphonePermission {
+        case .denied:
+            return .microphoneDenied
+        case .unknown:
+            return .captureUnavailable(started: false)
+        case .undetermined, .granted:
+            return nil
+        }
+    }
+
+    private func applyMicrophonePermissionFailure(
+        _ permission: PracticeMicrophonePermissionState
+    ) {
+        microphonePermissionState = permission
+        recordingIssue = Self.recordingIssue(for: permission)
+        connectionError = permission.userFacingRecoveryMessage
     }
 
     private enum AudioStreamError: LocalizedError {

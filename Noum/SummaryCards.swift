@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Hero Score Card
 
 struct HeroScoreCard: View {
-    let scoreValue: Int
+    let scoreValue: Int?
     let practiceTitle: String
     let scoreAccent: Color
     let scoreEmoji: String
@@ -152,7 +152,7 @@ struct HeroScoreCard: View {
                 Text("Too short to score")
                     .font(Typography.captionSmall)
                     .foregroundStyle(AppColor.textSecondary)
-            } else {
+            } else if let scoreValue {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("\(scoreValue)")
                         .font(Typography.figtreeNumeric(size: 40, weight: .bold, relativeTo: .largeTitle))
@@ -162,10 +162,21 @@ struct HeroScoreCard: View {
                         .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(AppColor.textSecondary)
                 }
+            } else {
+                Text("—")
+                    .font(Typography.figtreeNumeric(size: 36, weight: .bold, relativeTo: .title))
+                    .foregroundStyle(AppColor.textPrimary)
+                Text("Not scored")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(belowEvidenceFloor ? "Too short to score" : "Score \(scoreValue) out of 10")
+        .accessibilityLabel(
+            belowEvidenceFloor
+                ? "Too short to score"
+                : scoreValue.map { "Score \($0) out of 10" } ?? "Not scored"
+        )
     }
 
     @ViewBuilder
@@ -404,7 +415,7 @@ struct DurationAssessmentPill: View {
                 Image(systemName: durationAssessment.icon)
                     .font(.system(size: 9, weight: .bold))
                 Text(durationAssessment.rawValue)
-                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
+                    .font(Typography.figtree(size: 11, weight: .bold, relativeTo: .caption2))
             }
             .foregroundStyle(durationAssessment.tint)
         }
@@ -564,7 +575,7 @@ struct YourNextMoveCard: View {
                 Spacer()
                 // Format badge
                 Text(drill.format == .miniDrill ? "Quick Drill" : "Full Retry")
-                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
+                    .font(Typography.figtree(size: 11, weight: .bold, relativeTo: .caption2))
                     .foregroundStyle(drill.tint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -878,7 +889,7 @@ struct BaselineComparisonCard: View {
     let effectiveDuration: TimeInterval
     let explicitMode: PracticeMode?
     let score: Int?
-    let scoreValue: Int
+    let scoreValue: Int?
     let rating: SpeakingRating
     let pressureLevel: PressureLevel
 
@@ -1013,7 +1024,7 @@ struct BaselineComparisonCard: View {
 // MARK: - IM Verdict Card
 
 struct IMVerdictCard: View {
-    let scoreValue: Int
+    let scoreValue: Int?
     let scoreAccent: Color
     let scoreEmoji: String
     let headline: String
@@ -1036,7 +1047,7 @@ struct IMVerdictCard: View {
                     .tracking(1.4)
                 Spacer()
                 Text(confidenceLabel.uppercased())
-                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
+                    .font(Typography.figtree(size: 11, weight: .bold, relativeTo: .caption2))
                     .foregroundStyle(scoreAccent.opacity(0.7))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -1068,12 +1079,18 @@ struct IMVerdictCard: View {
                 }
                 Spacer()
                 // Score shown small, not as hero
-                Text("\(scoreValue)/10")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(scoreAccent)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(scoreAccent.opacity(0.1), in: Capsule())
+                if let scoreValue {
+                    Text("\(scoreValue)/10")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(scoreAccent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(scoreAccent.opacity(0.1), in: Capsule())
+                } else {
+                    Text("Not scored")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                }
             }
 
             // Compact stats
