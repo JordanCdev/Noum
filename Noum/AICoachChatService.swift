@@ -4009,6 +4009,47 @@ actor AICoachChatService {
         ) {
             return issue
         }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+
+        // The canonical typed abstention has already cleared the client
+        // professional gate above. On an evidence lane with no typed fact and
+        // no recent-session context, it is the complete honest answer—not a
+        // low-scoring coaching draft that should be forced to invent an anchor
+        // or action for the vision rubric.
+        if replyIsAllowedCanonicalEvidenceAbstention(
+            trimmed,
+            responseKind: responseKind,
+            coachingBrief: coachingBrief,
+            systemContext: systemContext
+        ) {
+            return nil
+        }
+
+        // A typed metric/trend answer is validated by exact fact provenance,
+        // direction, comparison language, and qualification inside the common
+        // professional gate. Preserve the semantic transfer-causality check,
+        // then stop: the generic deep-assessment rubric would otherwise demand
+        // a new drill that this evidence-only brief deliberately withdrew.
+        if responseKind == .personalEvidenceRead,
+           coachingBrief?.evidenceReadKind != nil,
+           replySatisfiesTypedEvidenceRead(
+                lower,
+                coachingBrief: coachingBrief
+           ) {
+            if let issue = semanticQualityIssue(
+                in: trimmed,
+                latestUserTurn: latestUserTurn,
+                systemContext: systemContext,
+                turnDepth: turnDepth,
+                assessment: nil,
+                responseKind: responseKind
+            ) {
+                return .semanticJudgement(issue)
+            }
+            return nil
+        }
         if let issue = semanticQualityIssue(
             in: text,
             latestUserTurn: latestUserTurn,
@@ -4079,12 +4120,11 @@ actor AICoachChatService {
         // secure-transport caller. Provider rewrites, typed fallbacks, safe
         // references, and downstream pipeline fallbacks all validate through
         // this function before final display cleanup.
-        if CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+        let hasPreFinalizerRawReportVoice =
+            CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
             replyText: trimmed,
             latestUserTurn: latestUserTurn
-        ) {
-            return .roboticPhrase("unrequested report voice")
-        }
+        )
 
         let lower = trimmed.lowercased()
         let responseKind = explicitResponseKind ?? {
@@ -4094,6 +4134,15 @@ actor AICoachChatService {
         let turnIntent = CoachChatTurnIntent.classify(latestUserTurn)
         let userLower = latestUserTurn?.lowercased() ?? ""
         let contextLower = systemContext?.lowercased() ?? ""
+        if trimmed == CoachChatBrief.insufficientEvidenceVerdict,
+           !replyIsAllowedCanonicalEvidenceAbstention(
+            trimmed,
+            responseKind: responseKind,
+            coachingBrief: coachingBrief,
+            systemContext: systemContext
+           ) {
+            return .unanchoredCoaching
+        }
         let userTokens = Set(userLower
             .split { !$0.isLetter && !$0.isNumber }
             .map(String.init))
@@ -4179,6 +4228,7 @@ actor AICoachChatService {
         if responseKind == .personalEvidenceRead,
            coachingBrief?.decisiveEvidence == nil,
            !replyShouldCiteRecentSession(systemContext),
+           !hasPreFinalizerRawReportVoice,
            replyIsHonestNoBaselineNotice(lower) {
             return nil
         }
@@ -4288,6 +4338,37 @@ actor AICoachChatService {
             Self.log.notice("quality rejection: overclaim language")
             return .overclaimsEvidence
         }
+        // A cold-start target is the actionable contract failure even when the
+        // same draft also resembles a numeric readout. Diagnose it before the
+        // general report-voice style cap so repair can remove the invented
+        // calibration rather than merely rephrase it.
+        if !replyUsesColdStartProductMode(lower),
+           let coldStartPhrase = replyUsesColdStartMetricTarget(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+           ) {
+            return .roboticPhrase(coldStartPhrase)
+        }
+        // Evidence integrity is the primary defect when a raw metric read also
+        // makes an unsupported certainty claim. Keep the report-voice check
+        // fail-closed, but let the stronger safety diagnosis drive repair and
+        // deterministic fixture projections.
+        let isValidatedTypedEvidenceRead =
+            responseKind == .personalEvidenceRead &&
+            coachingBrief?.evidenceReadKind != nil &&
+            replySatisfiesTypedEvidenceRead(
+                lower,
+                coachingBrief: coachingBrief
+            ) &&
+            CoachReliabilityGate.typedEvidenceReadMayOverrideRawMetricCluster(
+                replyText: trimmed,
+                latestUserTurn: latestUserTurn
+            )
+        if hasPreFinalizerRawReportVoice,
+           !isValidatedTypedEvidenceRead {
+            return .roboticPhrase("unrequested report voice")
+        }
         if replyUsesUnrequestedNamedTechnique(
             lower,
             latestUserTurn: latestUserTurn
@@ -4373,7 +4454,6 @@ actor AICoachChatService {
         ) {
             return .roboticPhrase(coldStartPhrase)
         }
-
         // These response lanes deliberately do not use the personal coaching
         // rubric. A conversational acknowledgement can own Noum's wording miss
         // without assigning work to the speaker. General craft must be useful
@@ -4394,6 +4474,11 @@ actor AICoachChatService {
         }
         if responseKind == .generalCoaching {
             let actionRequested = turnExpectsPrescribedAction(latestUserTurn)
+            let hasObservableAnchor = replyHasLaneGroundedObservableAnchor(
+                lower,
+                latestUserTurn: latestUserTurn,
+                responseKind: responseKind
+            )
             if actionRequested,
                !replyPrescribesAction(lower) {
                 return .missingPrescribedAction
@@ -4404,11 +4489,11 @@ actor AICoachChatService {
             // how-to turns still require an observable communication anchor
             // and an explanation that connects it to the prescribed move.
             if actionRequested,
-               !replyHasObservableAnchor(lower) {
+               !hasObservableAnchor {
                 return .unanchoredCoaching
             }
             if actionRequested,
-               replyHasObservableAnchor(lower),
+               hasObservableAnchor,
                replyPrescribesAction(lower),
                !replyHasInsightBridge(lower) {
                 return .missingInsightBridge
@@ -4417,8 +4502,7 @@ actor AICoachChatService {
         }
         if responseKind == .personalEvidenceRead,
            replyIsEvidenceGapClarification(lower),
-           (coachingBrief?.missingEvidence != nil ||
-            coachingBrief?.decisiveEvidence == nil ||
+           (coachingBrief?.decisiveEvidence == nil ||
             (turnRequestsSessionExample(latestUserTurn) &&
              quoteGuard?.hasVerifiedProofQuotes != true)) {
             return nil
@@ -4742,7 +4826,7 @@ actor AICoachChatService {
         ) != nil
     }
 
-    private nonisolated static func moveGroundingTerms(_ value: String) -> Set<String> {
+    private nonisolated static func moveGroundingTokens(_ value: String) -> [String] {
         let canonical = value
             .lowercased()
             .replacingOccurrences(
@@ -4767,10 +4851,14 @@ actor AICoachChatService {
             "showed", "appears", "that", "the", "then", "this",
             "through", "when", "with", "you", "your"
         ]
-        return Set(canonical
+        return canonical
             .split { !$0.isLetter && !$0.isNumber }
             .map(String.init)
-            .filter { $0.count >= 4 && !ignored.contains($0) })
+            .filter { $0.count >= 4 && !ignored.contains($0) }
+    }
+
+    private nonisolated static func moveGroundingTerms(_ value: String) -> Set<String> {
+        Set(moveGroundingTokens(value))
     }
 
     private nonisolated static func recentActionSentenceFingerprints(
@@ -4992,7 +5080,12 @@ actor AICoachChatService {
         let actionExpected = responseKind != .conversational &&
             responseKind != .memoryHandoff &&
             turnExpectsPrescribedAction(latestUserTurn)
-        if anchorExpected, !replyHasObservableAnchor(lower) {
+        let hasObservableAnchor = replyHasLaneGroundedObservableAnchor(
+            lower,
+            latestUserTurn: latestUserTurn,
+            responseKind: responseKind
+        )
+        if anchorExpected, !hasObservableAnchor {
             apply(.missingObservableAnchor, penalty: 2)
         }
 
@@ -5002,7 +5095,7 @@ actor AICoachChatService {
 
         if anchorExpected,
            !expandedAnswer,
-           replyHasObservableAnchor(lower),
+           hasObservableAnchor,
            replyPrescribesAction(lower),
            !replyHasInsightBridge(lower) {
             apply(.missingInsightBridge, penalty: 2)
@@ -5083,7 +5176,11 @@ actor AICoachChatService {
         }
 
         let isCritique = isCritiqueTurn(latestLower)
-        let hasObservableAnchor = replyHasObservableAnchor(lower)
+        let hasObservableAnchor = replyHasLaneGroundedObservableAnchor(
+            lower,
+            latestUserTurn: latestUserTurn,
+            responseKind: responseKind
+        )
         let hasSpecificPracticeMove = replyHasSpecificPracticeMove(lower)
         // Keep the scorer content-aware. Lane policy still rejects this copy
         // for general craft before vision runs, while the canonical personal
@@ -6912,6 +7009,68 @@ actor AICoachChatService {
         ])
     }
 
+    /// One lane-aware anchor decision is shared by the professional gate,
+    /// rubric, and VISION scorer so a grounded recommendation cannot clear one
+    /// layer and be rejected by an earlier one. The extension remains limited
+    /// to general coaching and the explicit user-grounded decision contract.
+    private nonisolated static func replyHasLaneGroundedObservableAnchor(
+        _ lower: String,
+        latestUserTurn: String?,
+        responseKind: CoachChatResponseKind
+    ) -> Bool {
+        replyHasObservableAnchor(lower) ||
+            (responseKind == .generalCoaching &&
+             replyUsesUserGroundedDecisionAnchor(
+                lower,
+                latestUserTurn: latestUserTurn
+             ))
+    }
+
+    /// A user may ask for a bounded decision recommendation while supplying the
+    /// evidence in the same long turn. That evidence is an observable anchor
+    /// even when it uses domain nouns outside the communication-marker list.
+    /// Require an explicit decision ask, a causal bridge, and three meaningful
+    /// user-authored terms in the reply so generic agreement cannot pass.
+    private nonisolated static func replyUsesUserGroundedDecisionAnchor(
+        _ lower: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        guard let turn = latestUserTurn?.lowercased(),
+              containsAny(turn, [
+                "recommend whether", "which option", "which path",
+                "should we", "what should we choose"
+              ]),
+              replyHasInsightBridge(lower) else {
+            return false
+        }
+        let genericDecisionTerms: Set<String> = [
+            "answer", "choose", "decision", "delay", "give", "keep",
+            "message", "recommend", "should", "today", "update", "whether",
+            "first", "option", "operational", "context", "remains", "relevant"
+        ]
+        let userTermCounts = Dictionary(
+            grouping: moveGroundingTokens(turn),
+            by: { $0 }
+        ).mapValues { $0.count }
+        let userTerms = Set(userTermCounts.compactMap { entry in
+            entry.value <= 3 ? entry.key : nil
+        }).subtracting(genericDecisionTerms)
+        let replyTerms = moveGroundingTerms(lower).subtracting(genericDecisionTerms)
+        return userTerms.intersection(replyTerms).count >= 3
+    }
+
+    private nonisolated static func replyIsAllowedCanonicalEvidenceAbstention(
+        _ trimmed: String,
+        responseKind: CoachChatResponseKind,
+        coachingBrief: CoachChatBrief?,
+        systemContext: String?
+    ) -> Bool {
+        responseKind == .personalEvidenceRead &&
+            trimmed == CoachChatBrief.insufficientEvidenceVerdict &&
+            coachingBrief?.decisiveEvidence == nil &&
+            !replyShouldCiteRecentSession(systemContext)
+    }
+
     private nonisolated static func replyShouldCiteRecentSession(_ systemContext: String?) -> Bool {
         guard let lower = systemContext?.lowercased() else { return false }
         return lower.contains("recent (most-recent first)")
@@ -7492,14 +7651,39 @@ actor AICoachChatService {
             return nil
         }
 
-        if containsAny(lower, [
+        if replyUsesColdStartProductMode(lower) {
+            return "cold-start product mode"
+        }
+        return replyUsesColdStartMetricTarget(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        )
+    }
+
+    private nonisolated static func replyUsesColdStartProductMode(
+        _ lower: String
+    ) -> Bool {
+        containsAny(lower, [
             "ah-counter",
             "ah counter",
             "sudden death",
             "im conversation"
-        ]) {
-            return "cold-start product mode"
+        ])
+    }
+
+    private nonisolated static func replyUsesColdStartMetricTarget(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> String? {
+        guard replyIsColdStartBaselineTurn(
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) else {
+            return nil
         }
+
         if lower.range(
             of: #"(?:first number|starting number|baseline number|a number to (?:hit|beat|track|chase|aim for)|(?:under|below|less than|fewer than|no more than|at most)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|stay\s+(?:under|below)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|(?:target|aim(?:ing)?(?:\s+to)?|aim for)\s+(?:stay\s+)?(?:under|below|at|for|to)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|keep\s+(?:your\s+)?fillers?\s+(?:under|below|to)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)|beat\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?)"#,
             options: .regularExpression
@@ -7960,7 +8144,7 @@ actor AICoachChatService {
             }
     }
 
-    private nonisolated static func replySatisfiesTypedEvidenceRead(
+    nonisolated static func replySatisfiesTypedEvidenceRead(
         _ lower: String,
         coachingBrief: CoachChatBrief?
     ) -> Bool {
@@ -7996,8 +8180,8 @@ actor AICoachChatService {
             ) ? ["duration-seconds:"] : []
             let permittedPrefixes = relevantPrefixes.union(contextualPrefixes)
             guard !replyFacts.isEmpty,
-                  replyFacts.contains(where: { fact in
-                    relevantPrefixes.contains { fact.hasPrefix($0) }
+                  relevantPrefixes.allSatisfy({ prefix in
+                    replyFacts.contains { $0.hasPrefix(prefix) }
                   }),
                   replyFacts.allSatisfy({ fact in
                     permittedPrefixes.contains { fact.hasPrefix($0) }
@@ -8019,8 +8203,11 @@ actor AICoachChatService {
                 "earlier rep", "earlier reps"
             ])
             let staysQualified = containsAny(lower, [
-                "signal", "steady", "mixed", "moved", "not a broad verdict",
-                "wouldn’t call broad improvement", "wouldn't call broad improvement"
+                "not a broad verdict", "wouldn’t call it overall improvement",
+                "wouldn't call it overall improvement",
+                "wouldn’t call broad improvement", "wouldn't call broad improvement",
+                "not proof", "doesn’t prove", "doesn't prove", "does not prove",
+                "practice evidence", "within this setup", "only in this setup"
             ])
             let directions = Set(trend.metrics.map(\.direction))
             let hasImproving = directions.contains(.improving)

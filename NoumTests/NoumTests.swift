@@ -28854,6 +28854,191 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply) == nil)
     }
 
+    @Test func acceptsUserGroundedDecisionRecommendationWithoutCoachMarkerNouns() {
+        let userTurn = "Which option should we choose for the launch, and what should we do: delay two weeks because existing beta users remain exposed, or keep customer demos on a controlled build and give support one message today?"
+        let reply = "Recommend the two-week delay first because existing beta users remain exposed. Keep the demos on a controlled build and give support one message today."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: userTurn,
+            responseKind: .generalCoaching
+        ) == nil)
+        #expect(AICoachChatService.coachVisionEvaluation(
+            reply: reply,
+            latestUserTurn: userTurn,
+            responseKind: .generalCoaching
+        ).missed.contains(.observableAnchor) == false)
+    }
+
+    @Test func rejectsGenericDecisionRecommendationWithoutUserGrounding() {
+        let userTurn = "Which option should we choose for the launch, and what should we do: delay two weeks because existing beta users remain exposed, or keep customer demos on a controlled build and give support one message today?"
+        for reply in [
+            "Do the first option because it is safer. Do that today.",
+            "Operational context remains relevant because operational context remains relevant. Do the first option."
+        ] {
+            #expect(AICoachChatService.replyQualityIssue(
+                in: reply,
+                latestUserTurn: userTurn,
+                responseKind: .generalCoaching
+            ) == .unanchoredCoaching)
+        }
+    }
+
+    @Test func rawReportCannotHideBehindHonestNoEvidenceCopy() {
+        let drafts = [
+            "\(CoachChatBrief.insufficientEvidenceVerdict) Results: 9/10, 3 fillers.",
+            "\(CoachChatBrief.insufficientEvidenceVerdict) Results: 9/10, 3 fillers. Put the recommendation first next time."
+        ]
+
+        for draft in drafts {
+            #expect(AICoachChatService.replyQualityIssue(
+                in: draft,
+                latestUserTurn: "What should I fix first?",
+                responseKind: .personalEvidenceRead
+            ) == .roboticPhrase("unrequested report voice"))
+        }
+    }
+
+    @Test func canonicalNoMoveRejectsContradictoryEvidenceState() {
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What should I fix first?",
+            directVerdict: "The close is the clearest current issue.",
+            confidence: 0.70,
+            evidenceUsed: ["latest rep: the final sentence recapped instead of asking"],
+            rubricScores: [RubricScore(
+                dimensionID: "clean_close",
+                label: "Clean close",
+                score: 0.42,
+                confidence: 0.70,
+                evidence: ["latest rep: the final sentence recapped instead of asking"],
+                missingEvidence: nil
+            )],
+            nextProofDimensionID: "clean_close",
+            missingEvidence: ["Need another comparable rep before calling it stable."],
+            nextProofTest: "Rewrite only the final sentence as the ask.",
+            responseMode: .immediateOnly
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+        #expect(brief.decisiveEvidence != nil)
+        #expect(brief.missingEvidence != nil)
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: CoachChatBrief.insufficientEvidenceVerdict,
+            latestUserTurn: "What should I fix first?",
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .unanchoredCoaching)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: CoachChatBrief.insufficientEvidenceVerdict,
+            latestUserTurn: "What should I fix first?",
+            systemContext: "RECENT (most-recent first)\n- Latest rep: the close recapped.",
+            responseKind: .personalEvidenceRead
+        ) == .unanchoredCoaching)
+    }
+
+    @Test func typedLongitudinalReadRequiresIndependentLimitation() {
+        let trend = CoachLongitudinalTrendProjection(
+            sourceSessionID: UUID(),
+            comparisonMetricSchemaVersion: 2,
+            mode: "Ah Counter",
+            comparableSessionIDs: [UUID(), UUID()],
+            metrics: [CoachLongitudinalMetricTrend(
+                metric: .score,
+                direction: .improving,
+                currentValue: 8,
+                priorAverage: 7
+            )]
+        )
+        let assessment = CoachAssessment(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            questionRestatement: "Am I improving?",
+            directVerdict: "",
+            confidence: 0.70,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .longitudinalTrend,
+            longitudinalTrend: trend,
+            missingEvidence: [],
+            nextProofTest: "A drill must not enter this evidence-only turn.",
+            responseMode: .expandable
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+        let broadReply = "There’s a positive signal in your latest Ah Counter rep. Compared with 2 earlier reps using the same setup, score was 8.0/10 versus 7.0/10. This is overall improvement."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: brief.directVerdict,
+            latestUserTurn: "Am I improving?",
+            turnDepth: .deepAssessment,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: broadReply,
+            latestUserTurn: "Am I improving?",
+            turnDepth: .deepAssessment,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .overclaimsEvidence)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "Results: \(brief.directVerdict)",
+            latestUserTurn: "Am I improving?",
+            turnDepth: .deepAssessment,
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .roboticPhrase("unrequested report voice"))
+    }
+
+    @Test func typedLatestReadRequiresEveryAvailableRequestedMetric() throws {
+        let projection = try #require(CoachLatestRepMetricProjection(
+            evidencePack: LatestRepEvidencePack(
+                mode: "Ah Counter",
+                score: 8,
+                fillerCount: 3,
+                durationSeconds: 60,
+                wordsPerMinute: 120,
+                transcriptWordCount: 120,
+                transcriptConfidence: 0.90,
+                transcriptExcerpt: nil,
+                evidenceLines: [],
+                sourceSessionID: UUID(),
+                comparisonMetricSchemaVersion: 2,
+                isEvaluationFixture: false
+            )
+        ))
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: "What were my score, fillers, and duration?",
+            directVerdict: "",
+            confidence: 0.70,
+            evidenceUsed: [],
+            rubricScores: [],
+            evidenceReadKind: .latestRepMetrics,
+            requestedMetrics: [.score, .fillerCount, .durationSeconds],
+            latestRepMetrics: projection,
+            missingEvidence: [],
+            nextProofTest: "A drill must not enter this evidence-only turn.",
+            responseMode: .immediateOnly
+        )
+        let brief = CoachChatBrief(assessment: assessment)
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: brief.directVerdict,
+            latestUserTurn: "What were my score, fillers, and duration?",
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "In your latest Ah Counter rep, you scored 8/10.",
+            latestUserTurn: "What were my score, fillers, and duration?",
+            responseKind: .personalEvidenceRead,
+            coachingBrief: brief
+        ) == .overclaimsEvidence)
+    }
+
     @Test func rejectsRoboticTemplatePhrase() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Based on your data, the key insight is that you should optimize your opening."
@@ -28975,6 +29160,23 @@ struct AICoachChatReplyQualityGateTests {
             systemContext: context
         )
         #expect(issue == .roboticPhrase("cold-start product mode"))
+    }
+
+    @Test func coldStartIntakeDiagnosisStillPrecedesProductMode() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        GOAL
+        - No voice set yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so do one Ah-Counter round. What's the interview for?",
+            latestUserTurn: "How do I get better before my interview?",
+            systemContext: context
+        )
+        #expect(issue == .menuInsteadOfDecision)
     }
 
     @Test func rejectsColdStartNumericFillerTargetBeforeBaseline() {

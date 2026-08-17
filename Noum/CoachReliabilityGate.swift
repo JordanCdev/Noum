@@ -572,10 +572,21 @@ enum CoachReliabilityGate {
            ) {
             issues.append(.repeatedIntervention)
         }
+        let isValidatedTypedEvidenceRead =
+            responseKind == .personalEvidenceRead &&
+            coachingBrief?.evidenceReadKind != nil &&
+            AICoachChatService.replySatisfiesTypedEvidenceRead(
+                lowered,
+                coachingBrief: coachingBrief
+            ) &&
+            typedEvidenceReadMayOverrideRawMetricCluster(
+                replyText: trimmed,
+                latestUserTurn: latestUserTurn
+            )
         if preFinalizerRawReportVoiceNeedsRepair(
             replyText: trimmed,
             latestUserTurn: latestUserTurn
-        ) {
+        ), !isValidatedTypedEvidenceRead {
             issues.append(.rawReportVoice)
         }
         if responseKind != .conversational,
@@ -798,6 +809,35 @@ enum CoachReliabilityGate {
             fallback = greetingFallback(surface: surface, assessment: assessment)
         } else if issues.contains(.offTopicTestWithDrill) {
             fallback = offTopicTestFallback(surface: surface)
+        } else if issues.contains(.rawReportVoice),
+                  issues.contains(.paceSelfFrustrationReportVoice) {
+            // In this exact collision, prefer the issue-specific attuned recovery
+            // over the generic raw-report fallback. Any echoed metric must come
+            // from typed assessment evidence; rejected draft numbers are never
+            // trusted.
+            fallback = paceSelfFrustrationFallback(
+                surface: surface,
+                assessment: assessment,
+                replyText: trimmed
+            )
+        } else if issues.contains(.rawReportVoice),
+                  issues.contains(.goalStateDirectiveLeak) ||
+                    issues.contains(.goalStateReportVoiceLeak) ||
+                    issues.contains(.goalAuthenticityShaming) {
+            // A raw metric cluster inside a goal-change draft must recover as a
+            // goal decision, not as generic report cleanup.
+            fallback = goalStateDirectiveFallback(
+                surface: surface,
+                latestUserTurn: latestUserTurn,
+                replyText: trimmed,
+                coachVoice: coachVoice
+            )
+        } else if issues.contains(.rawReportVoice),
+                  issues.contains(.coldStartJargon) {
+            fallback = coldStartFallback(surface: surface)
+        } else if issues.contains(.rawReportVoice),
+                  issues.contains(.evidenceOverclaimNoBaseline) {
+            fallback = noBaselineReadFallback(surface: surface)
         } else if issues.contains(.wrongQuestion) ||
                     issues.contains(.rawReportVoice) ||
                     issues.contains(.repeatedIntervention) ||
@@ -961,8 +1001,16 @@ enum CoachReliabilityGate {
     /// reject normal coaching prose merely for saying "your pace" or for using
     /// separate, grounded targets in a requested plan.
     static func leaksUnrequestedRawReportVoice(_ lowered: String) -> Bool {
+        leaksAlwaysBlockingRawReportVoice(lowered) ||
+            leaksUnrequestedRawMetricCluster(lowered)
+    }
+
+    /// Labels and sentence-leading readouts are scorecard register, not merely
+    /// an over-broad numeric-cluster match. They remain blocked even when every
+    /// fact is authorized by a typed evidence brief.
+    static func leaksAlwaysBlockingRawReportVoice(_ lowered: String) -> Bool {
         let labelPatterns = [
-            #"\b(?:score|rating|wpm|pace|filler count|filler rate|duration)\s*:"#,
+            #"\b(?:results?|scorecard|stats?|score|rating|wpm|pace|filler count|filler rate|duration)\s*:"#,
             #"\bwhat the numbers show\b"#,
             #"\bmetrics?\s+(?:show|say|indicate)\b"#
         ]
@@ -976,27 +1024,181 @@ enum CoachReliabilityGate {
         // still scorecard voice even without a colon. Keep this anchored to a
         // sentence boundary so an interpreted causal read such as "calm you
         // scored 81, but the pause disappeared under pressure" remains valid.
+        // Do not manufacture a sentence boundary inside common abbreviations.
+        // This detector is about scorecard structure, not sentence counting;
+        // masking punctuation only for this scan keeps "e.g. 180 WPM in the
+        // open, so..." inside its interpreted coaching sentence.
+        let boundaryText = lowered
+            .replacingOccurrences(of: "e.g.", with: "eg")
+            .replacingOccurrences(of: "i.e.", with: "ie")
+            .replacingOccurrences(of: "vs.", with: "vs")
         let readoutBoundary = #"(?:^|[.!?]\s+|\n)\s*(?:[-*+•]\s*)?"#
         let leadingReadoutPatterns = [
             readoutBoundary + #"(?:your\s+)?(?:score|rating|pace|wpm|filler count|filler rate|duration)\s*(?:was|is|came in at|landed at|of|:)?\s*\d+(?:\.\d+)?(?:\s*/\s*10)?\b"#,
             readoutBoundary + #"you scored\s+\d+(?:\.\d+)?(?:\s*/\s*10)?\b"#,
             readoutBoundary + #"\d+(?:\.\d+)?\s*(?:/\s*10|out of\s+(?:10|ten))\b"#,
-            readoutBoundary + #"\d+(?:\.\d+)?\s*(?:fillers?|filler words?|wpm|words per minute)\b"#
+            // A bare metric is a readout only when it ends there, is separated
+            // like a scorecard row, or opens a compact duration cluster. A
+            // grounded clause such as "5 fillers show the rush is near the
+            // close" is interpretation, not report voice.
+            readoutBoundary + #"\d+(?:\.\d+)?\s*(?:fillers?|filler words?|wpm|words per minute)\b(?=\s*(?:[,;.!?]|$)|\s+(?:(?:and|plus|with)\s+\d|(?:in|over|across)\s+\d))"#
         ]
         if leadingReadoutPatterns.contains(where: {
-            lowered.range(of: $0, options: .regularExpression) != nil
+            boundaryText.range(of: $0, options: .regularExpression) != nil
         }) {
             return true
         }
+        return false
+    }
 
-        let score = #"\d+(?:\.\d+)?\s*/\s*10"#
-        let companion = #"(?:\d{2,3}\s*(?:wpm|words per minute)|\d+(?:\.\d+)?\s*fillers?\s*(?:per minute|/min|in the rep)?|(?:duration|lasted)\s+(?:was\s+)?\d+\s*(?:seconds?|secs?)|\d+\s*s(?:ec(?:ond)?s?)?)"#
-        let compactCluster = #"(?:\b"# + score + #"\b[^.?!\n]{0,80}\b"# + companion +
-            #"\b|\b"# + companion + #"\b[^.?!\n]{0,80}\b"# + score + #"\b)"#
-        return lowered.range(
-            of: compactCluster,
+    /// Interpreted typed trend prose can legitimately contain several exact
+    /// facts in one sentence. Keep the generic detector fail-closed, but expose
+    /// this numeric-only reason separately so a fully validated typed read can
+    /// suppress this reason—and only this reason.
+    static func leaksUnrequestedRawMetricCluster(_ lowered: String) -> Bool {
+        let boundaryText = rawReportBoundaryText(lowered)
+        let score = #"\b\d+(?:\.\d+)?\s*/\s*10\b"#
+        let companion = #"\b(?:\d{2,3}\s*(?:wpm|words per minute)|\d+(?:\.\d+)?\s*fillers?\s*(?:per minute|/min|in the rep)?|(?:duration|lasted)\s+(?:was\s+)?\d+\s*(?:seconds?|secs?)|\d+\s*s(?:ec(?:ond)?s?)?)\b"#
+        func matchCount(_ pattern: String, in value: String) -> Int {
+            var count = 0
+            var cursor = value.startIndex
+            while cursor < value.endIndex,
+                  let range = value.range(
+                    of: pattern,
+                    options: .regularExpression,
+                    range: cursor..<value.endIndex
+                  ) {
+                count += 1
+                cursor = range.upperBound
+            }
+            return count
+        }
+
+        // Two unlabelled metric facts can still be a raw readout (for example,
+        // "You had 5 fillers and 180 WPM"). A single compact pair is allowed
+        // only when its own sentence interprets the facts. More than two facts
+        // in one sentence stays fail-closed: one opening bridge must not bless a
+        // second raw pair later in that sentence. Score-to-score longitudinal
+        // comparisons remain outside this style detector and are governed by
+        // the typed evidence contract.
+        for sentencePart in boundaryText.split(whereSeparator: {
+            ".!?\n".contains($0)
+        }) {
+            let sentence = String(sentencePart)
+            let scoreCount = matchCount(score, in: sentence)
+            let companionCount = matchCount(companion, in: sentence)
+            guard companionCount >= 2 ||
+                    (scoreCount >= 1 && companionCount >= 1) else {
+                continue
+            }
+            if scoreCount + companionCount > 2 {
+                return true
+            }
+            let hasMeaningBridge = sentence.range(
+                of: #"\b(?:shows?|showed|means?|suggests?|indicates?|points?\s+to|signals?|reflects?)\b"#,
+                options: .regularExpression
+            ) != nil
+            let hasMechanicsRead = containsAny(sentence, [
+                "mechanically", "this rep is closer", "the useful signal",
+                "the usable signal"
+            ])
+            let hasMechanicsContrast = containsAny(sentence, [" but ", " yet ", " while "])
+                && containsAny(sentence, [
+                    "pause", "close", "opening", "sentence", "recommendation",
+                    "setup", "pressure", "rush", "reason", "ask", "decision"
+                ])
+            if !(hasMeaningBridge || hasMechanicsRead || hasMechanicsContrast) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func rawReportBoundaryText(_ lowered: String) -> String {
+        lowered
+            .replacingOccurrences(of: "e.g.", with: "eg")
+            .replacingOccurrences(of: "i.e.", with: "ie")
+            .replacingOccurrences(of: "vs.", with: "vs")
+    }
+
+    /// The typed exception is deliberately reason-specific. It can repair the
+    /// numeric-cluster false positive only; scorecard labels, leading readouts,
+    /// and generic benchmark leaks retain their ordinary fail-closed behavior.
+    static func typedEvidenceReadMayOverrideRawMetricCluster(
+        replyText: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let trimmed = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let lowered = normalize(trimmed)
+        let userTurn = latestUserTurn ?? ""
+        guard TurnDepthClassifier.requestedPersonalMetrics(userTurn).isEmpty,
+              CoachBenchmarkAuthorization.explicitRequest(in: userTurn) == nil,
+              !leaksAlwaysBlockingRawReportVoice(lowered),
+              !leaksUnrequestedGenericBenchmark(lowered) else {
+            return false
+        }
+        return leaksUnrequestedRawMetricCluster(lowered)
+    }
+
+    /// The senior fixture's filler-count follow-up explicitly points back to one
+    /// already-visible metric and asks how to use it. Preserve only that metric
+    /// family, and only when the reply turns the fact into an observable action.
+    /// A read-only cluster, a different metric family, or a scorecard scaffold
+    /// still fails closed through the ordinary raw-report detector.
+    private static func replyGroundsFillerReferenceIntoAction(
+        _ lowered: String,
+        userTurn: String
+    ) -> Bool {
+        let turn = normalize(userTurn)
+        guard turn.range(
+            of: #"^(?:what should i do with|what do i do with|how should i use|how do i use|what can i learn from)\s+(?:that|this|the|my)\s+(?:filler count|filler rate)\??$"#,
+            options: .regularExpression
+        ) != nil else {
+            return false
+        }
+        guard lowered.range(
+            of: #"\b\d+(?:\.\d+)?\s+(?:fillers?|filler words?)(?:\s+(?:in|over|across)\s+\d+\s*(?:seconds?|secs?|s))?\b"#,
+            options: .regularExpression
+        ) != nil else {
+            return false
+        }
+        let unrelatedMetricPatterns = [
+            #"\b\d+(?:\.\d+)?\s*/\s*10\b"#,
+            #"\bscore(?:d)?\s+\d"#,
+            #"\b(?:score|rating|pace|wpm|words per minute)\b\s*(?::|was|is|of|at|came in at|landed at)?\s*\d"#,
+            #"\b\d{2,3}\s*(?:wpm|words per minute)\b"#
+        ]
+        guard !unrelatedMetricPatterns.contains(where: {
+            lowered.range(of: $0, options: .regularExpression) != nil
+        }) else {
+            return false
+        }
+        let hasDurationFact = lowered.range(
+            of: #"\b(?:duration\s*(?::|was|is)?\s*)?\d+\s*(?:seconds?|secs?)\b"#,
             options: .regularExpression
         ) != nil
+        let hasStandaloneDurationRead = lowered.range(
+            of: #"\b(?:duration\s*(?::|was|is)?\s*|lasted\s+)\d+\s*(?:seconds?|secs?)\b"#,
+            options: .regularExpression
+        ) != nil
+        let durationQualifiesFiller = lowered.range(
+            of: #"\b\d+(?:\.\d+)?\s+(?:fillers?|filler words?)\s+(?:in|over|across)\s+\d+\s*(?:seconds?|secs?)\b"#,
+            options: .regularExpression
+        ) != nil
+        guard !hasStandaloneDurationRead,
+              !hasDurationFact || durationQualifiesFiller else {
+            return false
+        }
+        let hasBridge = lowered.range(
+            of: #"\b(?:so|which means|that means|use that|based on that)\b"#,
+            options: .regularExpression
+        ) != nil
+        let hasObservableAction = lowered.range(
+            of: #"\b(?:hold|pause|repeat|run|record|try|compare|listen|watch|check|lead|put|take)\b"#,
+            options: .regularExpression
+        ) != nil
+        return hasBridge && hasObservableAction
     }
 
     /// Raw report voice must be judged before any last-mile metric stripping.
@@ -1019,6 +1221,13 @@ enum CoachReliabilityGate {
                 lowered,
                 authorization: benchmark
             )
+        }
+        if replyGroundsFillerReferenceIntoAction(
+            lowered,
+            userTurn: userTurn
+        ) {
+            return leaksAlwaysBlockingRawReportVoice(lowered) ||
+                leaksUnrequestedGenericBenchmark(lowered)
         }
         guard personalMetrics.isEmpty else { return false }
         return leaksUnrequestedRawReportVoice(lowered) ||
@@ -1093,17 +1302,211 @@ enum CoachReliabilityGate {
         if isNarrowRepeatFollowUp(latestUserTurn) {
             return false
         }
-        guard !containsAny(reply, [
-            "this time", "now add", "now take", "advance", "next stage",
-            "in the real", "because that held", "since that held",
-            "keep the target but", "same target, new"
-        ]), let currentKey = CoachReasoningPass.interventionMoveKey(reply) else {
+        let lower = normalize(reply)
+        let currentFamilies = interventionFamilyKeys(
+            in: lower,
+            catalogueKey: CoachReasoningPass.interventionMoveKey(reply)
+        )
+        guard !currentFamilies.isEmpty else { return false }
+        let recentWithFamilies = recentCoachReplies.prefix(3).map { prior in
+            let priorLower = normalize(prior)
+            return (reply: prior, families: interventionFamilyKeys(
+                in: priorLower,
+                catalogueKey: CoachReasoningPass.interventionMoveKey(prior)
+            ))
+        }
+        let repeatedFamilies = currentFamilies.filter { family in
+            recentWithFamilies.filter { $0.families.contains(family) }.count >= 2
+        }
+        guard !repeatedFamilies.isEmpty else { return false }
+        let matchingPriorReplies = recentWithFamilies.compactMap { prior in
+            prior.families.isDisjoint(with: repeatedFamilies)
+                ? nil
+                : prior.reply
+        }
+
+        // An evidence-led continuation must still be materially new. Exact,
+        // contained, or near-duplicate copy cannot earn a progression exemption
+        // by appending a token phrase such as "the signal".
+        let materiallyRepeatsPrior = matchingPriorReplies.contains { prior in
+            let priorLower = normalize(prior)
+            return priorLower == lower ||
+                priorLower.contains(lower) || lower.contains(priorLower) ||
+                isNearDuplicate(lower, priorLower) ||
+                reissuesAnswerFirstShape(lower, prior: priorLower) ||
+                (!isBranchingProofCriterion(lower) && containsAny(lower, [
+                    "run one", "record ", "repeat ", "answer first",
+                    "put the recommendation", "state the recommendation",
+                    "give one reason", "lead with", "support it with"
+                ]) && visiblyRepeatsProofTest(
+                    reply: lower,
+                    proofTest: priorLower
+                ))
+        }
+        if materiallyRepeatsPrior {
+            return true
+        }
+        // Staying on one skill is not the same as handing back the same drill.
+        // A professional follow-up may turn the active move into an observable
+        // proof criterion, or change exactly one variable after the user reports
+        // an attempt. Keep those progressions available while still blocking a
+        // third unchanged prescription below.
+        if isEvidenceLedInterventionProgression(
+            reply: reply,
+            latestUserTurn: latestUserTurn
+        ) {
             return false
         }
-        let priorMatches = recentCoachReplies.prefix(3).filter {
-            CoachReasoningPass.interventionMoveKey($0) == currentKey
-        }.count
-        return priorMatches >= 2
+        return true
+    }
+
+    /// The catalogue key includes the skill stage, but visible wording can
+    /// move a paraphrase between neighbouring catalogue entries. Preserve the
+    /// catalogue family and add only the concrete answer-first action shape
+    /// shared by those paraphrases. A stage label must never make the same
+    /// observable prescription look new.
+    private static func interventionFamilyKeys(
+        in lower: String,
+        catalogueKey: String?
+    ) -> Set<String> {
+        var families = Set<String>()
+        if let catalogueFamily = catalogueKey?
+            .split(separator: ":")
+            .first
+            .map(String.init),
+           !catalogueFamily.isEmpty {
+            families.insert(catalogueFamily)
+        }
+        if namesAnswerFirstShape(lower) {
+            families.insert("observable-answer-first")
+        }
+        return families
+    }
+
+    private static func namesAnswerFirstShape(_ lower: String) -> Bool {
+        let namesDecision = containsAny(lower, [
+            "recommendation", "decision", "answer", "verdict"
+        ])
+        let namesFirstPosition = containsAny(lower, [
+            "sentence one", "first sentence", "recommendation first",
+            "recommendation is first", "answer first", "verdict first",
+            "lead with the", "open with the", "starts before context"
+        ])
+        return namesDecision && namesFirstPosition
+    }
+
+    private static func reissuesAnswerFirstShape(
+        _ lower: String,
+        prior: String
+    ) -> Bool {
+        guard namesAnswerFirstShape(lower), namesAnswerFirstShape(prior) else {
+            return false
+        }
+        let namesSingleSupport = containsAny(lower, [
+            "one reason", "single reason", "one proof", "one evidence"
+        ])
+        let visiblyPrescribesAnotherRun = containsAny(lower, [
+            "run one", "record one", "repeat ", "put the", "state the",
+            "give one", "lead with", "open with", "support it with"
+        ])
+        return namesSingleSupport && visiblyPrescribesAnotherRun
+    }
+
+    /// A paired if/keep and if/rewrite branch is an observable scoring rule,
+    /// not another copy of the drill. Keep this exemption structural and
+    /// narrow: a token "check whether" wrapper around the same run does not
+    /// qualify.
+    private static func isBranchingProofCriterion(_ lower: String) -> Bool {
+        lower.range(
+            of: #"\bif\b[^.?!\n]{0,120}\bkeep\b[\s\S]{0,160}\bif\b[^.?!\n]{0,120}\b(?:rewrite|change|stop)\b"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    static func isEvidenceLedInterventionProgression(
+        reply: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let turn = normalize(latestUserTurn ?? "")
+        let lower = normalize(reply)
+
+        let asksForProofCriterion = containsAny(turn, [
+            "what should i listen for", "what should i look for",
+            "what should i check", "what should noum judge",
+            "what should i judge", "how do i test it",
+            "how do i know if it worked", "what proves it worked",
+            "what should i capture", "before i call it progress",
+            "what do i do after that rep", "what should i do after that rep"
+        ])
+        let providesProofCriterion = containsAny(lower, [
+            "listen for whether", "look for whether", "judge whether",
+            "judge only whether", "check whether", "check only whether",
+            "review whether", "success is", "before calling it progress"
+        ])
+            || (lower.contains("did the") && lower.contains("?"))
+            || (containsAny(lower, [
+                    "listen", "look", "judge", "check", "review"
+                ]) && containsAny(lower, [" whether ", " if "]))
+            || lower.range(
+                of: #"\bif\b[^.?!\n]{0,120}\b(?:asks?|recaps?|starts?|ends?|contains?|lands?|stays?|sounds?|holds?)\b[^.?!\n]{0,120}\b(?:keep|rewrite|change|repeat|stop|record)\b"#,
+                options: .regularExpression
+            ) != nil
+        let namesObservableCriterion = containsAny(lower, [
+            "sentence", "recommendation", "setup", "ask", "choice",
+            "reason", "listener", "filler", "pause", "close", "opening",
+            "timeline", "risk", "what happens next"
+        ])
+        if asksForProofCriterion,
+           providesProofCriterion,
+           namesObservableCriterion {
+            return true
+        }
+
+        let asksForRealWorldTransfer = containsAny(turn, [
+            "what do i take into", "what should i take into",
+            "what do i bring into", "what should i bring into"
+        ])
+        let namesTransferContext = containsAny(lower, [
+            "after the interview", "after the meeting", "after the call",
+            "after the presentation", "in the interview", "in the meeting",
+            "in the call", "in the presentation"
+        ])
+        let providesTransferCriterion = containsAny(lower, [
+            "check whether", "listen for whether", "look for whether",
+            "judge whether"
+        ]) && containsAny(lower, [
+            "interviewer asked", "asked a clearer follow-up",
+            "asked a follow-up", "looked confused", "listener tracked",
+            "audience tracked", "made the decision", "gave a decision"
+        ])
+        if asksForRealWorldTransfer,
+           namesTransferContext,
+           providesTransferCriterion {
+            return true
+        }
+
+        let reportsAttemptOutcome = containsAny(turn, [
+            "i tried", "i did", "i rewrote", "that rep", "it rambled",
+            "it was cleaner", "it became", "felt better", "sounded",
+            "fillers dropped", "people asked"
+        ])
+        let preservesTarget = containsAny(lower, [
+            "keep the", "keep sentence", "keep that", "same target",
+            "before the final ask"
+        ])
+        let changesOneVariable = containsAny(lower, [
+            "cut the", "add one", "change the", "slow only",
+            "soften sentence", "instead"
+        ])
+        let groundsAdaptationInOutcome = containsAny(lower, [
+            "good read", "good boundary", "that outcome", "people asked",
+            "was missing", "reported", "but the"
+        ]) && containsAny(lower, [
+            "sentence", "explanation", "timeline", "date", "ask",
+            "reason", "filler", "pause", "close", "opening"
+        ])
+        return reportsAttemptOutcome && preservesTarget && changesOneVariable
+            && groundsAdaptationInOutcome
     }
 
     static func missesExplicitDemonstration(
@@ -1635,8 +2038,8 @@ enum CoachReliabilityGate {
     }
 
     /// Recovery for pace self-frustration that leaked a score or generic
-    /// confidence/speed advice. Use metrics only when the assessment or draft
-    /// actually supplied them; otherwise keep the mechanism truthful.
+    /// confidence/speed advice. Use metrics only when typed assessment evidence
+    /// supplied them; otherwise keep the mechanism truthful and nonnumeric.
     static func paceSelfFrustrationFallback(
         surface: CoachReplySurface,
         assessment: CoachAssessment?,
@@ -3052,10 +3455,14 @@ enum CoachReliabilityGate {
 
     static func paceSelfFrustrationMetricRead(
         assessment: CoachAssessment?,
-        replyText: String
+        replyText _: String
     ) -> String? {
+        // A draft that reached this fallback was rejected. Its numbers are not
+        // evidence and must not be repeated back to the user. Only the typed
+        // assessment may authorize the metric-rich recovery; otherwise the
+        // caller uses the nonnumeric pause-gap fallback.
         let evidence = assessment?.evidenceUsed.joined(separator: " ") ?? ""
-        let source = "\(evidence) \(replyText)"
+        let source = evidence
         let pace = firstRegexCapture(
             in: source,
             patterns: [

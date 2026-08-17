@@ -2031,6 +2031,7 @@ struct CoachChatWireContractTests {
             generationMode: .deterministicBrief
         )
         let service = AICoachChatService(secureTransport: transport)
+        var gateEvents: [CoachTurnQualityGateEvent] = []
 
         let outcome = await service.reply(
             history: [CoachMessage(role: .user, text: "Am I improving?")],
@@ -2039,7 +2040,8 @@ struct CoachChatWireContractTests {
             accountID: "firebase-guest",
             turnDepth: .deepAssessment,
             assessment: assessment,
-            preferredTier: .claudeReasoning
+            preferredTier: .claudeReasoning,
+            onQualityGateEvent: { gateEvents.append($0) }
         )
 
         let request = try #require(transport.capturedRequest())
@@ -2048,11 +2050,12 @@ struct CoachChatWireContractTests {
         #expect(request.coachingBrief?.longitudinalTrend?.comparableSessionIDs == priorIDs)
         #expect(request.coachingBrief?.nextMove == nil)
         guard case .reply(let landed) = outcome else {
-            Issue.record("Typed longitudinal evidence did not land")
+            Issue.record("Typed longitudinal evidence did not land: \(gateEvents)")
             return
         }
         #expect(landed == expected)
         #expect(landed.contains("same setup"))
+        #expect(gateEvents == [.passed])
         #expect(landed.contains("not proof"))
         #expect(!landed.lowercased().contains("qualified"))
         #expect(!landed.lowercased().contains("comparable"))
@@ -2642,6 +2645,7 @@ struct CoachChatWireContractTests {
         )
         let service = AICoachChatService(secureTransport: transport)
         var landedChoice: CoachTurnProviderChoice?
+        var gateEvents: [CoachTurnQualityGateEvent] = []
 
         let outcome = await service.reply(
             history: [CoachMessage(role: .user, text: "What should I fix first?")],
@@ -2649,16 +2653,18 @@ struct CoachChatWireContractTests {
             userContext: "No comparable rep is available.",
             turnDepth: .quickMove,
             preferredTier: .geminiFast,
-            onProviderChosen: { landedChoice = $0 }
+            onProviderChosen: { landedChoice = $0 },
+            onQualityGateEvent: { gateEvents.append($0) }
         )
 
         guard case .reply(let landed) = outcome else {
-            Issue.record("The honest no-move verdict was rejected by the client gate")
+            Issue.record("The honest no-move verdict was rejected by the client gate: \(gateEvents)")
             return
         }
         #expect(landed == reply)
         #expect(landedChoice?.providerName == "Noum deterministic coach")
         #expect(landedChoice?.generationMode == .deterministicBrief)
+        #expect(gateEvents == [.passed])
     }
 
     @MainActor
@@ -3011,6 +3017,13 @@ struct TypedCoachEvidencePipelineWireTests {
                 CoachChatResponseKind.personalEvidenceRead.rawValue)
             #expect(brief.evidenceReadKind == fixture.expectedKind)
             #expect(brief.nextMove == nil)
+            #expect(AICoachChatService.replyQualityIssue(
+                in: brief.directVerdict,
+                latestUserTurn: fixture.turn,
+                turnDepth: TurnDepthClassifier.classify(userText: fixture.turn),
+                responseKind: .personalEvidenceRead,
+                coachingBrief: brief
+            ) == nil)
             let encoded = try JSONEncoder().encode(request)
             let object = try #require(JSONSerialization.jsonObject(
                 with: encoded
@@ -3094,6 +3107,7 @@ struct TypedCoachEvidencePipelineWireTests {
         let ids = store.appendUserTurn(turn)
         let transport = CapturingCoachTransport(completionText: landedReply)
         let service = AICoachChatService(secureTransport: transport)
+        var gateEvents: [CoachTurnQualityGateEvent] = []
 
         let outcome = await CoachReplyPipeline.generate(
             coachID: ids.coachID,
@@ -3102,7 +3116,8 @@ struct TypedCoachEvidencePipelineWireTests {
             judgementPassEnabled: true,
             realtimeCoachModeEnabled: true,
             sessionsOverride: [],
-            coachMemoryOverride: { nil }
+            coachMemoryOverride: { nil },
+            onQualityGateEvent: { gateEvents.append($0) }
         )
 
         let request = try #require(transport.capturedRequest())
@@ -3110,10 +3125,11 @@ struct TypedCoachEvidencePipelineWireTests {
         #expect(request.responseKind == CoachChatResponseKind.generalCoaching.rawValue)
         #expect(request.turnDepth == CoachTurnDepth.quickMove.rawValue)
         guard case .reply(let reply) = outcome else {
-            Issue.record("Long prompt did not finish with a live reply")
+            Issue.record("Long prompt did not finish with a live reply: \(gateEvents)")
             return
         }
         #expect(reply == landedReply)
+        #expect(gateEvents == [.passed])
 
         let committed = try #require(store.messages.first(where: { $0.id == ids.coachID }))
         #expect(!committed.isPending)

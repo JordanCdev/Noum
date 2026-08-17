@@ -792,7 +792,31 @@ struct CoachReliabilityGateTests {
         #expect(verdict.issues.contains(.paceSelfFrustrationReportVoice))
         #expect(verdict.blockingIssues.contains(.paceSelfFrustrationReportVoice))
         #expect(verdict.blocked)
-        #expect(verdict.fallbackText?.contains("You're not imagining it") == true)
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.lowercased().contains("not imagining it"))
+        #expect(fallback.contains("215 WPM"))
+        #expect(fallback.contains("0.09 pause rate"))
+        #expect(fallback.contains("one silent beat"))
+    }
+
+    @Test func paceFallbackDoesNotEchoNumbersFromRejectedDraft() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Pace was 215 WPM with a 0.09 pause rate. Slow down and sound more confident.",
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "I talk way too fast, people can't keep up.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(evidence: [
+                "The user reports that listeners struggle to keep up."
+            ]),
+            evidenceCoverage: 0.4
+        )
+
+        #expect(verdict.issues.contains(.paceSelfFrustrationReportVoice))
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.lowercased().contains("not imagining it"))
+        #expect(fallback.contains("one silent beat"))
+        #expect(!fallback.contains("215"))
+        #expect(!fallback.contains("0.09"))
     }
 
     @Test func rambleScaffoldedReplyBlocksWithStopRuleFallback() {

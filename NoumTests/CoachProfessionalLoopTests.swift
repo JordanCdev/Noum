@@ -33,7 +33,7 @@ struct CoachProfessionalLoopTests {
         #expect(plan.skillStage == .establish)
         #expect(plan.chosenIntervention.contains("Answer first"))
         #expect(!plan.successTest.isEmpty)
-        #expect(plan.modelLine?.contains("recommendation") == true)
+        #expect(plan.modelLine?.lowercased().contains("recommend") == true)
         #expect(plan.replyPosture == .coachedAttempt)
     }
 
@@ -449,6 +449,23 @@ struct CoachProfessionalLoopTests {
             latestUserTurn: "What were my exact score, filler count, and duration?"
         ))
         #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+            replyText: "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute). One filler appeared after the decision line, so hold one silent beat there on an equivalent rep, then compare fillers per minute.",
+            latestUserTurn: "What should I do with that filler count?"
+        ))
+        for rawReadout in [
+            "Results: 5 fillers in 61 seconds. Put the recommendation first.",
+            "5 fillers in 61 seconds. Put the recommendation first.",
+            "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute).",
+            "Your latest qualified rep had 5 fillers in 61 seconds (4.9 per minute). Hold one silent beat there on an equivalent rep.",
+            "Your latest qualified rep had 5 fillers in 61 seconds. It lasted 90 seconds, so hold one silent beat there on an equivalent rep.",
+            "Your latest qualified rep had 5 fillers in 61 seconds and scored 7/10 at 180 WPM, so hold one silent beat there on an equivalent rep."
+        ] {
+            #expect(CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+                replyText: rawReadout,
+                latestUserTurn: "What should I do with that filler count?"
+            ))
+        }
+        #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
             replyText: "For most keynotes, about 120–150 words per minute is a useful starting range, not a universal target; adjust for audience familiarity, idea density, emphasis, and the room.",
             latestUserTurn: "What pace should I use for a keynote?"
         ))
@@ -456,6 +473,36 @@ struct CoachProfessionalLoopTests {
             replyText: "The perfect keynote pace is exactly 135 words per minute.",
             latestUserTurn: "What pace should I use for a keynote?"
         ))
+    }
+
+    @Test("Grounded metrics inside an interpretation are not raw scorecard voice")
+    func interpretedMetricsPassReportCap() {
+        let replies = [
+            "5 fillers show the rush is happening near the close. Next rep, hold one beat before the final sentence.",
+            "Mechanically, this rep is closer: recommendation first, 7/10, 1 filler. That still does not prove authority under pressure.",
+            "Your pace ran fast, e.g. 180 WPM in the open, so the pause is the useful test.",
+            "You had 5 fillers and 180 WPM, which shows the rush is concentrated near the close."
+        ]
+
+        for reply in replies {
+            #expect(!CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+                replyText: reply,
+                latestUserTurn: "What next?"
+            ))
+        }
+
+        for scorecard in [
+            "Results: 7/10, 3 fillers, 60s. Put the recommendation first.",
+            "5 fillers and 180 WPM. Put the recommendation first.",
+            "You had 5 fillers and 180 WPM. Put the recommendation first.",
+            "Mechanically, this rep is closer: recommendation first, 7/10, 1 filler. The opening improved. 4/10, 6 fillers.",
+            "Mechanically, this rep is closer: 7/10, 1 filler, but the close improved, then 4/10, 6 fillers."
+        ] {
+            #expect(CoachReliabilityGate.preFinalizerRawReportVoiceNeedsRepair(
+                replyText: scorecard,
+                latestUserTurn: "What next?"
+            ))
+        }
     }
 
     @Test("An explicitly requested score remains allowed")
@@ -552,6 +599,191 @@ struct CoachProfessionalLoopTests {
 
         #expect(verdict.issues.contains(.repeatedIntervention))
         #expect(verdict.blocked)
+    }
+
+    @Test("A proof-criterion follow-up advances the same skill without looking repetitive")
+    func proofCriterionFollowUpDoesNotBlock() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Listen for whether sentence one states the recommendation before setup. If it does, keep it and check the reason next.",
+            previousCoachReply: "Put the recommendation in sentence one, give one reason, then stop.",
+            recentCoachReplies: [
+                "Put the recommendation in sentence one, give one reason, then stop.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "What should I listen for?",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(!verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("A proof question does not excuse simply reissuing the same drill")
+    func proofCriterionQuestionStillBlocksAnUnchangedDrill() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Run one answer with the recommendation first in sentence one, then one reason.",
+            previousCoachReply: "Put the recommendation in sentence one, give one reason, then stop.",
+            recentCoachReplies: [
+                "Put the recommendation in sentence one, give one reason, then stop.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "What should I listen for?",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("A token proof phrase does not excuse a reissued drill")
+    func proofPhraseStillBlocksAReissuedDrill() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Run one answer with the recommendation first in sentence one, then one reason. Check the signal.",
+            previousCoachReply: "Put the recommendation in sentence one, give one reason, then stop.",
+            recentCoachReplies: [
+                "Put the recommendation in sentence one, give one reason, then stop.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "What should I listen for?",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("A paraphrased check cannot hide a reissued drill")
+    func paraphrasedCheckStillBlocksAReissuedDrill() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Check whether the recommendation is first, then run one answer with one reason.",
+            previousCoachReply: "Put the recommendation in sentence one, give one reason, then stop.",
+            recentCoachReplies: [
+                "Put the recommendation in sentence one, give one reason, then stop.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "What should I listen for?",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("Stage language alone cannot excuse the same action family")
+    func stagePhraseStillBlocksTheSameActionFamily() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "This time, lead with the decision and support it with a single reason.",
+            previousCoachReply: "Put the recommendation in sentence one, give one reason, then stop.",
+            recentCoachReplies: [
+                "Put the recommendation in sentence one, give one reason, then stop.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "What should I do next?",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("One prior in each of two families does not become a repeated intervention")
+    func splitFamilyHistoryDoesNotAggregateIntoARepeat() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Lead with the recommendation in sentence one, then make the final sentence the ask.",
+            previousCoachReply: "Make the final sentence the ask or decision, then leave the silence there.",
+            recentCoachReplies: [
+                "Make the final sentence the ask or decision, then leave the silence there.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "How should I shape the whole answer?",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(!verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("A conditional close criterion advances the exact corpus turn")
+    func conditionalClosingCriterionDoesNotBlock() {
+        let userTurn = "How do I test it?"
+        let reply = "The signal is the last 10 seconds: if the final sentence asks for alignment or a decision, keep it. If it recaps, rewrite only that line and record 45 seconds again."
+        #expect(CoachReliabilityGate.isEvidenceLedInterventionProgression(
+            reply: reply,
+            latestUserTurn: userTurn
+        ))
+        #expect(!CoachReliabilityGate.isEvidenceLedInterventionProgression(
+            reply: reply,
+            latestUserTurn: "Tell me more."
+        ))
+
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Use the last rep's close: summarize before the final sentence, because the close should not recap the whole update. The final line should ask for the decision or alignment you need.",
+            recentCoachReplies: [
+                "Use the last rep's close: summarize before the final sentence, because the close should not recap the whole update. The final line should ask for the decision or alignment you need.",
+                "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again."
+            ],
+            latestUserTurn: userTurn,
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+        #expect(!verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("A real-world transfer criterion advances the exact long-form turn")
+    func realWorldTransferCriterionIsProgression() {
+        let reply = "The drift is the interview risk, so take only the opener and proof test: answer first, one evidence line, then stop. After the interview, check whether the interviewer asked a clearer follow-up or looked confused."
+        #expect(CoachReliabilityGate.isEvidenceLedInterventionProgression(
+            reply: reply,
+            latestUserTurn: "What do I take into the interview?"
+        ))
+        #expect(!CoachReliabilityGate.isEvidenceLedInterventionProgression(
+            reply: reply,
+            latestUserTurn: "Tell me more."
+        ))
+    }
+
+    @Test("A reported attempt may keep the target while changing one variable")
+    func oneVariableAdaptationDoesNotBlock() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Good read: keep sentence one, but cut the second explanation to one reason, then stop.",
+            previousCoachReply: "Put the recommendation in sentence one, give one reason, then stop.",
+            recentCoachReplies: [
+                "Put the recommendation in sentence one, give one reason, then stop.",
+                "Run one answer with the recommendation first in sentence one, then one reason."
+            ],
+            latestUserTurn: "What happened in that rep? It rambled after sentence two.",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(!verdict.issues.contains(.repeatedIntervention))
+    }
+
+    @Test("An outcome can shift the proof variable while retaining the final ask")
+    func evidenceLedOutcomeShiftDoesNotBlock() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "That outcome matters: the ask may have been clear, but the timeline proof was missing, so next prep should add one date before the final ask.",
+            previousCoachReply: "Check the close: did the final sentence ask for alignment or a choice?",
+            recentCoachReplies: [
+                "Check the close: did the final sentence ask for alignment or a choice?",
+                "Record a leadership update and make the final sentence the ask, not a summary."
+            ],
+            latestUserTurn: "I did the update. People asked for the timeline, not the decision.",
+            turnDepth: .quickMove,
+            assessment: Self.answerFirstAssessment,
+            evidenceCoverage: 0.6
+        )
+
+        #expect(!verdict.issues.contains(.repeatedIntervention))
     }
 
     @Test("Private decision-plan labels are scaffold leakage")
