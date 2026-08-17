@@ -234,7 +234,7 @@ final class AppleAccountDeletionAuthorizationRequest: NSObject,
                 throw AppleAccountDeletionAuthorizationError
                     .authorizationFailed
             }
-            guard random < characterSet.count else { continue }
+            guard Int(random) < characterSet.count else { continue }
             result.append(characterSet[Int(random)])
         }
         return result
