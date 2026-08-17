@@ -96,7 +96,7 @@ class AppStorePackageValidatorTests(unittest.TestCase):
         return FakeHTTPResponse(url, source.read_bytes())
 
     def test_live_origin_requires_all_four_exact_bounded_bodies(self) -> None:
-        with mock.patch.object(MODULE, "urlopen", side_effect=self.live_response) as opener:
+        with mock.patch.object(MODULE, "open_live_url", side_effect=self.live_response) as opener:
             MODULE.validate_live_origin(MODULE.FIREBASE_HOSTING_ORIGIN)
             MODULE.validate_live_origin(MODULE.CUSTOM_HOSTING_ORIGIN)
 
@@ -111,7 +111,7 @@ class AppStorePackageValidatorTests(unittest.TestCase):
                 response._body += b"\n<!-- stale but marker-complete -->\n"
             return response
 
-        with mock.patch.object(MODULE, "urlopen", side_effect=stale_response):
+        with mock.patch.object(MODULE, "open_live_url", side_effect=stale_response):
             with self.assertRaisesRegex(AssertionError, "bodyMismatch"):
                 MODULE.validate_live_origin(MODULE.FIREBASE_HOSTING_ORIGIN)
 
@@ -124,7 +124,7 @@ class AppStorePackageValidatorTests(unittest.TestCase):
                 b"x" * (MODULE.MAX_HOSTED_PAGE_BODY_BYTES + 50),
             )
 
-        with mock.patch.object(MODULE, "urlopen", side_effect=oversized_response):
+        with mock.patch.object(MODULE, "open_live_url", side_effect=oversized_response):
             with self.assertRaisesRegex(AssertionError, "responseBodyOversize"):
                 MODULE.validate_live_origin(MODULE.FIREBASE_HOSTING_ORIGIN)
 

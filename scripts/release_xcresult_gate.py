@@ -19,6 +19,7 @@ COUNT_KEYS = (
     "expectedFailures",
     "totalTestCount",
 )
+DESTINATION_COUNT_KEYS = COUNT_KEYS[:-1]
 
 
 def declared_test_count(tests_root: Path) -> int:
@@ -42,6 +43,22 @@ def validate(summary: dict[str, Any], tests_root: Path) -> list[str]:
     if declared == 0:
         errors.append("no source-declared UI test methods were found")
 
+    destinations = summary.get("devicesAndConfigurations")
+    destination_counts: dict[str, int] = {}
+    if not isinstance(destinations, list) or len(destinations) != 1:
+        errors.append("xcresult summary must contain exactly one test destination")
+    elif not isinstance(destinations[0], dict):
+        errors.append("xcresult test destination must be an object")
+    else:
+        for key in DESTINATION_COUNT_KEYS:
+            value = destinations[0].get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                errors.append(
+                    f"xcresult destination has no nonnegative integer {key}"
+                )
+            else:
+                destination_counts[key] = value
+
     if counts.get("failedTests", 1) != 0:
         errors.append(f"failed UI tests: {counts.get('failedTests', 'unknown')}")
     if counts.get("skippedTests", 1) != 0:
@@ -53,10 +70,28 @@ def validate(summary: dict[str, Any], tests_root: Path) -> list[str]:
 
     passed = counts.get("passedTests")
     total = counts.get("totalTestCount")
-    if passed is not None and passed < declared:
-        errors.append(f"only {passed} UI tests passed; source declares {declared}")
-    if total is not None and total < declared:
-        errors.append(f"xcresult contains {total} UI tests; source declares {declared}")
+    if passed is not None and passed != declared:
+        errors.append(f"{passed} UI tests passed; source declares exactly {declared}")
+    if total is not None and total != declared:
+        errors.append(
+            f"xcresult contains {total} UI tests; source declares exactly {declared}"
+        )
+    if passed is not None and total is not None and passed != total:
+        errors.append(f"passed/total UI test counts disagree: {passed}/{total}")
+    if len(counts) == len(COUNT_KEYS):
+        accounted = sum(counts[key] for key in DESTINATION_COUNT_KEYS)
+        if total != accounted:
+            errors.append(
+                "xcresult total does not equal passed + failed + skipped + "
+                f"expected failures: {total}/{accounted}"
+            )
+    if len(destination_counts) == len(DESTINATION_COUNT_KEYS):
+        for key in DESTINATION_COUNT_KEYS:
+            if destination_counts[key] != counts.get(key):
+                errors.append(
+                    f"xcresult destination {key} disagrees with summary: "
+                    f"{destination_counts[key]}/{counts.get(key, 'unknown')}"
+                )
     if summary.get("result") != "Passed":
         errors.append(f"xcresult status is not Passed: {summary.get('result')!r}")
     return errors

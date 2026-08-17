@@ -23,8 +23,11 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from privacy_body_verifier import (  # noqa: E402
+    HOSTING_ORIGINS_BY_TARGET,
     MAX_HOSTED_PAGE_BODY_BYTES,
+    active_hosting_target_from_source,
     approved_https_origin_matches,
+    build_no_redirect_opener,
     verify_hosted_page_response,
 )
 
@@ -38,6 +41,7 @@ PUBLIC_LIVE_PAGE_SPECS = (
     ("supportURL", "/support", "public/support.html"),
     ("coachingMethodURL", "/how-noum-coaches", "public/how-noum-coaches.html"),
 )
+NO_REDIRECT_OPENER = build_no_redirect_opener()
 
 DEFAULT_REPORT = ARENA_ROOT / "reports" / "app-path" / "latest.json"
 CANONICAL_APP_PATH_REPORT_DIR = ARENA_ROOT / "reports" / "app-path"
@@ -3701,12 +3705,12 @@ def noum_target_membership_exceptions(repo_root=REPO_ROOT):
 
 def hosting_origin_from_repo(repo_root=REPO_ROOT):
     web_urls = file_text(repo_root, "Noum/NoumWebURLs.swift") or ""
-    match = re.search(
-        r"static\s+let\s+hostingOrigin\s*=\s*URL\(string:\s*\"(https://[^\"/]+)\"\)!",
-        web_urls,
-    )
-    if match:
-        return match.group(1)
+    try:
+        return HOSTING_ORIGINS_BY_TARGET[
+            active_hosting_target_from_source(web_urls)
+        ]
+    except ValueError:
+        pass
     legacy = re.search(
         r"static\s+let\s+privacy\s*=\s*URL\(string:\s*\"(https://[^\"/]+)/privacy\"\)",
         web_urls,
@@ -3727,7 +3731,7 @@ def default_fetch_url(url, timeout=10):
             "Accept-Encoding": "gzip, identity",
         },
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
         content_encoding = (response.headers.get("Content-Encoding") or "identity").lower()
         if content_encoding in ("", "identity"):
             body = response.read(MAX_HOSTED_PAGE_BODY_BYTES + 1)
@@ -3743,6 +3747,7 @@ def default_fetch_url(url, timeout=10):
             "bodyBytes": body,
             "bodyComplete": len(body) <= MAX_HOSTED_PAGE_BODY_BYTES,
             "bodySize": len(body),
+            "redirectCount": 0,
         }
 
 
@@ -3762,7 +3767,11 @@ def operational_live_probe(repo_root=REPO_ROOT, fetch_url=default_fetch_url):
 
     def add_response_checks(prefix, source_path, source_error, verification, status):
         error_set = set(verification.errors)
-        origin_errors = {"requestedURLNotApprovedHTTPS", "redirectOriginEscape"}
+        origin_errors = {
+            "requestedURLNotApprovedHTTPS",
+            "redirectOriginEscape",
+            "httpRedirectNotAllowed",
+        }
         body_errors = {"expectedBodyOversize", "responseBodyOversize", "bodyMismatch"}
         outcomes = (
             (
@@ -3865,6 +3874,7 @@ def operational_live_probe(repo_root=REPO_ROOT, fetch_url=default_fetch_url):
                     final_url=response.get("finalURL") or "",
                     status=status,
                     content_type=content_type,
+                    redirect_count=response.get("redirectCount", 0),
                     observed_complete=response.get("bodyComplete") is True,
                     observed_size=response.get("bodySize") or len(body),
                 )
@@ -3878,6 +3888,7 @@ def operational_live_probe(repo_root=REPO_ROOT, fetch_url=default_fetch_url):
                     final_url=exc.geturl() or requested_url,
                     status=exc.code,
                     content_type=content_type or "",
+                    redirect_count=0,
                 )
                 add_response_checks(prefix, source_path, source_error, verification, exc.code)
                 try:

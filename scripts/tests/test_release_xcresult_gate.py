@@ -13,6 +13,12 @@ def passing_summary(passed: int = 2) -> dict[str, object]:
         "expectedFailures": 0,
         "totalTestCount": passed,
         "result": "Passed",
+        "devicesAndConfigurations": [{
+            "passedTests": passed,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "expectedFailures": 0,
+        }],
     }
 
 
@@ -43,9 +49,13 @@ class ReleaseXCResultGateTests(unittest.TestCase):
         skipped = passing_summary()
         skipped["passedTests"] = 1
         skipped["skippedTests"] = 1
+        skipped["devicesAndConfigurations"][0]["passedTests"] = 1
+        skipped["devicesAndConfigurations"][0]["skippedTests"] = 1
         expected = passing_summary()
         expected["passedTests"] = 1
         expected["expectedFailures"] = 1
+        expected["devicesAndConfigurations"][0]["passedTests"] = 1
+        expected["devicesAndConfigurations"][0]["expectedFailures"] = 1
 
         self.assertTrue(
             any(
@@ -65,7 +75,42 @@ class ReleaseXCResultGateTests(unittest.TestCase):
 
         errors = validate(partial, self.tests_root)
 
-        self.assertTrue(any("source declares 2" in error for error in errors))
+        self.assertTrue(any("source declares exactly 2" in error for error in errors))
+
+    def test_rejects_extra_or_unaccounted_execution(self) -> None:
+        extra = passing_summary(passed=3)
+        unaccounted = passing_summary()
+        unaccounted["totalTestCount"] = 3
+
+        extra_errors = validate(extra, self.tests_root)
+        unaccounted_errors = validate(unaccounted, self.tests_root)
+
+        self.assertTrue(
+            any("declares exactly 2" in error for error in extra_errors)
+        )
+        self.assertTrue(any("passed/total" in error for error in unaccounted_errors))
+        self.assertTrue(any("does not equal" in error for error in unaccounted_errors))
+
+    def test_rejects_multiple_or_disagreeing_destinations(self) -> None:
+        multiple = passing_summary()
+        multiple["devicesAndConfigurations"].append(
+            dict(multiple["devicesAndConfigurations"][0])
+        )
+        disagreeing = passing_summary()
+        disagreeing["devicesAndConfigurations"][0]["passedTests"] = 1
+
+        multiple_errors = validate(multiple, self.tests_root)
+        disagreeing_errors = validate(disagreeing, self.tests_root)
+
+        self.assertTrue(
+            any("exactly one test destination" in error for error in multiple_errors)
+        )
+        self.assertTrue(
+            any(
+                "destination passedTests disagrees" in error
+                for error in disagreeing_errors
+            )
+        )
 
     def test_rejects_missing_or_invalid_summary_schema(self) -> None:
         invalid = passing_summary()

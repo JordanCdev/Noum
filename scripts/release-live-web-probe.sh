@@ -3,12 +3,30 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 verifier="$repo_root/scripts/privacy_body_verifier.py"
-target="${1:-firebase}"
+target="${1:-active}"
 
 firebase_origin="https://noum-d0b6f.web.app"
 custom_origin="https://noum.app"
 
 case "$target" in
+  active)
+    active_target="$(
+      python3 "$verifier" \
+        --print-active-hosting-target "$repo_root/Noum/NoumWebURLs.swift"
+    )" || exit 2
+    case "$active_target" in
+      firebase)
+        origins=("$firebase_origin")
+        ;;
+      custom)
+        origins=("$custom_origin")
+        ;;
+      *)
+        echo "Active Hosting target is invalid." >&2
+        exit 2
+        ;;
+    esac
+    ;;
   firebase)
     origins=("$firebase_origin")
     ;;
@@ -19,7 +37,7 @@ case "$target" in
     origins=("$firebase_origin" "$custom_origin")
     ;;
   *)
-    echo "Live web probe target must be firebase, custom, or both." >&2
+    echo "Live web probe target must be active, firebase, custom, or both." >&2
     exit 2
     ;;
 esac
@@ -50,16 +68,15 @@ for origin in "${origins[@]}"; do
     : > "$response"
     : > "$metadata"
 
-    if ! curl --silent --show-error --location \
+    if ! curl --silent --show-error \
       --proto '=https' \
-      --proto-redir '=https' \
       --tlsv1.2 \
       --compressed \
       --connect-timeout 10 \
       --max-time 30 \
       --max-filesize "$transport_limit" \
       --output "$response" \
-      --write-out '%{http_code}\n%{url_effective}\n%{content_type}\n' \
+      --write-out '%{http_code}\n%{url_effective}\n%{content_type}\n%{num_redirects}\n' \
       "$requested_url" > "$metadata"; then
       echo "Live $page_id transport or size-bound check failed for $origin." >&2
       exit 1
@@ -68,10 +85,12 @@ for origin in "${origins[@]}"; do
     http_status=""
     final_url=""
     content_type=""
+    redirect_count=""
     {
       IFS= read -r http_status
       IFS= read -r final_url
       IFS= read -r content_type
+      IFS= read -r redirect_count
     } < "$metadata"
 
     python3 "$verifier" \
@@ -81,7 +100,8 @@ for origin in "${origins[@]}"; do
       --requested-url "$requested_url" \
       --final-url "$final_url" \
       --status "$http_status" \
-      --content-type "$content_type"
+      --content-type "$content_type" \
+      --redirect-count "$redirect_count"
   done
 done
 

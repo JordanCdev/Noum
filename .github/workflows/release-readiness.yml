@@ -199,8 +199,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Probe active Firebase Hosting pages
-        run: ./scripts/release-live-web-probe.sh firebase
+      - name: Probe source-configured active Hosting pages
+        run: ./scripts/release-live-web-probe.sh active
       - name: Prove custom-domain cutover candidate
         if: >-
           ${{ github.event_name == 'workflow_dispatch' &&

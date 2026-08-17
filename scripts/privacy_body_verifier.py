@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, OpenerDirector, build_opener
 
 
 MAX_HOSTED_PAGE_BODY_BYTES = 256 * 1024
@@ -24,12 +26,46 @@ MAX_PRIVACY_BODY_BYTES = MAX_HOSTED_PAGE_BODY_BYTES
 
 FIREBASE_HOSTING_ORIGIN = "https://noum-d0b6f.web.app"
 CUSTOM_HOSTING_ORIGIN = "https://noum.app"
+HOSTING_ORIGINS_BY_TARGET = {
+    "firebase": FIREBASE_HOSTING_ORIGIN,
+    "custom": CUSTOM_HOSTING_ORIGIN,
+}
 APPROVED_HOSTING_HTTPS_ORIGINS = frozenset({
     ("https", "noum-d0b6f.web.app", 443),
     ("https", "noum.app", 443),
 })
 # Compatibility for tests and integrations that use the original name.
 APPROVED_PRIVACY_HTTPS_ORIGINS = APPROVED_HOSTING_HTTPS_ORIGINS
+
+
+class RejectHTTPRedirects(HTTPRedirectHandler):
+    """Leave every 3xx response visible to the caller instead of following it."""
+
+    def redirect_request(self, request, file_pointer, code, message, headers, url):
+        del request, file_pointer, code, message, headers, url
+        return None
+
+
+def build_no_redirect_opener() -> OpenerDirector:
+    return build_opener(RejectHTTPRedirects())
+
+
+def active_hosting_target_from_source(source: str) -> str:
+    """Return the allowlisted target named by NoumWebURLs.hostingOrigin."""
+
+    matches = re.findall(
+        r'static let hostingOrigin = URL\(string: "(https://[^"/]+)"\)!',
+        source,
+    )
+    if len(matches) != 1:
+        raise ValueError("expected exactly one literal hostingOrigin")
+    target_by_origin = {
+        origin: target for target, origin in HOSTING_ORIGINS_BY_TARGET.items()
+    }
+    try:
+        return target_by_origin[matches[0]]
+    except KeyError as error:
+        raise ValueError("hostingOrigin is not an approved Noum origin") from error
 
 
 def sha256_hex(value: bytes) -> str:
@@ -96,6 +132,7 @@ def verify_hosted_page_response(
     final_url: str,
     status: int,
     content_type: str,
+    redirect_count: int,
     max_body_bytes: int = MAX_HOSTED_PAGE_BODY_BYTES,
     observed_complete: bool = True,
     observed_size: int | None = None,
@@ -112,6 +149,12 @@ def verify_hosted_page_response(
         errors.append("requestedURLNotApprovedHTTPS")
     if requested_origin != final_origin:
         errors.append("redirectOriginEscape")
+    if (
+        isinstance(redirect_count, bool)
+        or not isinstance(redirect_count, int)
+        or redirect_count != 0
+    ):
+        errors.append("httpRedirectNotAllowed")
     if not isinstance(status, int) or status != 200:
         errors.append("httpStatusNotSuccessful")
 
@@ -170,13 +213,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Verify a hosted launch page against its exact source body."
     )
-    parser.add_argument("--print-max-body-bytes", action="store_true")
+    inspection = parser.add_mutually_exclusive_group()
+    inspection.add_argument("--print-max-body-bytes", action="store_true")
+    inspection.add_argument("--print-active-hosting-target", type=Path)
     parser.add_argument("--expected-body", type=Path)
     parser.add_argument("--observed-body", type=Path)
     parser.add_argument("--requested-url")
     parser.add_argument("--final-url")
     parser.add_argument("--status", type=int)
     parser.add_argument("--content-type")
+    parser.add_argument("--redirect-count", type=int)
     parser.add_argument(
         "--page-id",
         choices=("homepage", "privacy", "support", "coaching-method"),
@@ -191,6 +237,17 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.print_max_body_bytes:
         print(MAX_HOSTED_PAGE_BODY_BYTES)
         return 0
+    if arguments.print_active_hosting_target:
+        try:
+            source = arguments.print_active_hosting_target.read_text(encoding="utf-8")
+            print(active_hosting_target_from_source(source))
+        except (OSError, UnicodeError, ValueError) as error:
+            print(
+                f"Unable to determine active Hosting target: {type(error).__name__}",
+                file=sys.stderr,
+            )
+            return 2
+        return 0
 
     required = {
         "--expected-body": arguments.expected_body,
@@ -199,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         "--final-url": arguments.final_url,
         "--status": arguments.status,
         "--content-type": arguments.content_type,
+        "--redirect-count": arguments.redirect_count,
     }
     missing = [flag for flag, value in required.items() if value is None]
     if missing:
@@ -224,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         final_url=arguments.final_url,
         status=arguments.status,
         content_type=arguments.content_type,
+        redirect_count=arguments.redirect_count,
         observed_complete=observed_complete,
         observed_size=observed_size,
     )

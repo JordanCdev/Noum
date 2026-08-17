@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +45,10 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 from privacy_body_verifier import (  # noqa: E402
     CUSTOM_HOSTING_ORIGIN,
     FIREBASE_HOSTING_ORIGIN,
+    HOSTING_ORIGINS_BY_TARGET,
     MAX_HOSTED_PAGE_BODY_BYTES,
+    active_hosting_target_from_source,
+    build_no_redirect_opener,
     verify_hosted_page_response,
 )
 
@@ -56,6 +59,7 @@ PUBLIC_PAGE_SOURCES = {
     "/how-noum-coaches": ROOT / "public" / "how-noum-coaches.html",
 }
 APPROVED_PUBLIC_ORIGINS = frozenset({FIREBASE_HOSTING_ORIGIN, CUSTOM_HOSTING_ORIGIN})
+NO_REDIRECT_OPENER = build_no_redirect_opener()
 
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -326,15 +330,12 @@ def validate_video(path: Path, expected_width: int, expected_height: int, minimu
 def active_public_origin() -> str:
     source_path = ROOT / "Noum" / "NoumWebURLs.swift"
     source = source_path.read_text(encoding="utf-8")
-    matches = re.findall(
-        r'static let hostingOrigin = URL\(string: "(https://[^"/]+)"\)!',
-        source,
-    )
-    require(len(matches) == 1,
-            "NoumWebURLs.swift must declare exactly one literal hostingOrigin")
-    origin = matches[0]
-    require(origin in APPROVED_PUBLIC_ORIGINS,
-            "NoumWebURLs.hostingOrigin must remain on the approved Firebase or noum.app origin")
+    try:
+        origin = HOSTING_ORIGINS_BY_TARGET[active_hosting_target_from_source(source)]
+    except ValueError as error:
+        raise AssertionError(
+            "NoumWebURLs.swift must declare exactly one approved literal hostingOrigin"
+        ) from error
     required_routes = (
         'static let landing = hostingOrigin',
         'static let privacy = hostingOrigin.appendingPathComponent("privacy")',
@@ -908,6 +909,12 @@ def validate_hosting_sources() -> None:
         require(source.is_file(), f"Missing hosted source for {route}: {display_path(source)}")
 
 
+def open_live_url(request: Request, timeout: int):
+    """Open one response while leaving any HTTP redirect as a 3xx error."""
+
+    return NO_REDIRECT_OPENER.open(request, timeout=timeout)
+
+
 def validate_live_origin(origin: str) -> None:
     require(origin in APPROVED_PUBLIC_ORIGINS,
             f"{origin}: live verification accepts only approved Noum Hosting origins")
@@ -915,7 +922,7 @@ def validate_live_origin(origin: str) -> None:
         url = f"{origin}{route}"
         request = Request(url, headers={"User-Agent": "NoumReleaseValidator/1.0"})
         try:
-            with urlopen(request, timeout=12) as response:
+            with open_live_url(request, timeout=12) as response:
                 status = response.status
                 content_type = response.headers.get("Content-Type", "")
                 final_url = response.geturl()
@@ -938,6 +945,7 @@ def validate_live_origin(origin: str) -> None:
             final_url=final_url,
             status=status,
             content_type=content_type,
+            redirect_count=0,
             observed_complete=observed_complete,
             observed_size=len(observed_body),
         )

@@ -156,11 +156,17 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
 
         self.assertIn("github.event_name != 'workflow_dispatch'", live_web_job)
         self.assertIn("inputs.run_live_web_probe", live_web_job)
-        self.assertIn("./scripts/release-live-web-probe.sh firebase", live_web_job)
+        self.assertIn("./scripts/release-live-web-probe.sh active", live_web_job)
         self.assertIn("github.event_name == 'workflow_dispatch'", live_web_job)
         self.assertIn("inputs.probe_custom_domain", live_web_job)
         self.assertIn("./scripts/release-live-web-probe.sh custom", live_web_job)
         self.assertIn("default: false", custom_input)
+
+        probe = self.source("scripts/release-live-web-probe.sh")
+        verifier = self.source("scripts/privacy_body_verifier.py")
+        self.assertIn("--print-active-hosting-target", probe)
+        self.assertNotIn("--location", probe)
+        self.assertIn("httpRedirectNotAllowed", verifier)
 
     def test_core_and_microphone_permission_ui_contracts_are_required(self) -> None:
         workflow = self.source(".github/workflows/release-readiness.yml")

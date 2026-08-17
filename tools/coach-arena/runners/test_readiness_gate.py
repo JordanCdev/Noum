@@ -805,7 +805,7 @@ class ReadinessGateTests(unittest.TestCase):
                 return "https://noum-d0b6f.web.app/privacy"
 
         response = FakeResponse(gzip.compress(STATIC_PRIVACY_BODY))
-        with mock.patch.object(gate.urllib.request, "urlopen", return_value=response):
+        with mock.patch.object(gate.NO_REDIRECT_OPENER, "open", return_value=response):
             result = gate.default_fetch_url(
                 "https://noum-d0b6f.web.app/privacy",
             )
@@ -832,7 +832,7 @@ class ReadinessGateTests(unittest.TestCase):
                 return "https://noum-d0b6f.web.app/privacy"
 
         response = FakeResponse(b"x" * (gate.MAX_PRIVACY_BODY_BYTES + 100))
-        with mock.patch.object(gate.urllib.request, "urlopen", return_value=response):
+        with mock.patch.object(gate.NO_REDIRECT_OPENER, "open", return_value=response):
             result = gate.default_fetch_url(
                 "https://noum-d0b6f.web.app/privacy",
             )
@@ -3125,6 +3125,24 @@ class ReadinessGateTests(unittest.TestCase):
             write_static_ops_repo(root)
 
             probe = gate.operational_live_probe(root, fetch_redirect_escape)
+
+        self.assertEqual(
+            [item["key"] for item in probe["failures"]],
+            ["privacyURLOrigin"],
+        )
+
+    def test_operational_live_probe_rejects_same_origin_redirect_history(self):
+        def fetch_redirect_history(url):
+            result = successful_privacy_fetch(url)
+            if urlparse(url).path == "/privacy":
+                result["redirectCount"] = 1
+            return result
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+
+            probe = gate.operational_live_probe(root, fetch_redirect_history)
 
         self.assertEqual(
             [item["key"] for item in probe["failures"]],

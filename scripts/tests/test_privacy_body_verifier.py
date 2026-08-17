@@ -47,6 +47,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
             "final_url": REQUEST_URL,
             "status": 200,
             "content_type": "text/html; charset=utf-8",
+            "redirect_count": 0,
         }
         arguments.update(overrides)
         return verifier.verify_privacy_response(**arguments)
@@ -71,6 +72,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
             final_url=REQUEST_URL,
             status=200,
             content_type="text/html",
+            redirect_count=0,
         )
 
         self.assertFalse(result.passed)
@@ -87,6 +89,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
             final_url=REQUEST_URL,
             status=200,
             content_type="text/html",
+            redirect_count=0,
         )
 
         self.assertEqual(result.errors, ("bodyMismatch",))
@@ -101,6 +104,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
             final_url=REQUEST_URL,
             status=200,
             content_type="text/html",
+            redirect_count=0,
         )
 
         self.assertIn("bodyMismatch", result.errors)
@@ -116,6 +120,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
             final_url=REQUEST_URL,
             status=200,
             content_type="text/html",
+            redirect_count=0,
             max_body_bytes=64,
         )
 
@@ -151,6 +156,13 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
 
         self.assertEqual(result.errors, ("redirectOriginEscape",))
 
+    def test_any_redirect_fails_even_when_it_returns_to_the_requested_origin(self):
+        expected = b"<html><h1>Noum Privacy Policy</h1></html>"
+
+        result = self.verify(expected, redirect_count=2)
+
+        self.assertEqual(result.errors, ("httpRedirectNotAllowed",))
+
     def test_unapproved_https_origin_fails(self):
         expected = b"<html><h1>Noum Privacy Policy</h1></html>"
 
@@ -178,6 +190,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
                         final_url=f"{origin}{route}",
                         status=200,
                         content_type="text/html; charset=utf-8",
+                        redirect_count=0,
                     )
                     self.assertTrue(result.passed)
 
@@ -191,9 +204,40 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
             final_url=REQUEST_URL,
             status=200,
             content_type="text/html",
+            redirect_count=0,
         )
 
         self.assertEqual(result.errors, ("redirectOriginEscape",))
+
+    def test_active_hosting_target_parser_accepts_only_one_allowlisted_literal(self):
+        source = (REPO_ROOT / "Noum" / "NoumWebURLs.swift").read_text(
+            encoding="utf-8"
+        )
+        custom_source = source.replace(
+            verifier.FIREBASE_HOSTING_ORIGIN,
+            verifier.CUSTOM_HOSTING_ORIGIN,
+            1,
+        )
+        unapproved_source = source.replace(
+            verifier.FIREBASE_HOSTING_ORIGIN,
+            "https://lookalike.example",
+            1,
+        )
+
+        self.assertEqual(verifier.active_hosting_target_from_source(source), "firebase")
+        self.assertEqual(
+            verifier.active_hosting_target_from_source(custom_source),
+            "custom",
+        )
+        with self.assertRaises(ValueError):
+            verifier.active_hosting_target_from_source(unapproved_source)
+
+    def test_no_redirect_transport_handler_never_builds_a_follow_up_request(self):
+        handler = verifier.RejectHTTPRedirects()
+
+        self.assertIsNone(
+            handler.redirect_request(None, None, 302, "Found", {}, "https://noum.app/")
+        )
 
     def test_cli_diagnostics_never_print_response_body(self):
         secret = "TEST-ONLY-PRIVATE-BODY-MUST-NOT-LEAK"
@@ -213,6 +257,7 @@ class PrivacyBodyVerifierTests(unittest.TestCase):
                     "--final-url", REQUEST_URL,
                     "--status", "200",
                     "--content-type", "text/html",
+                    "--redirect-count", "0",
                 ])
 
         self.assertEqual(status, 1)
@@ -238,6 +283,8 @@ class LivePrivacyProbeShellTests(unittest.TestCase):
                 import sys
 
                 args = sys.argv[1:]
+                if "--location" in args:
+                    raise SystemExit("probe must not follow redirects")
                 output = args[args.index("--output") + 1]
                 limit = int(args[args.index("--max-filesize") + 1])
                 source = os.environ["FAKE_PRIVACY_BODY_PATH"]
@@ -248,6 +295,7 @@ class LivePrivacyProbeShellTests(unittest.TestCase):
                 sys.stdout.write(status.__str__() + "\\n")
                 sys.stdout.write(os.environ.get("FAKE_PRIVACY_FINAL_URL", "https://noum-d0b6f.web.app/privacy") + "\\n")
                 sys.stdout.write(os.environ.get("FAKE_PRIVACY_CONTENT_TYPE", "text/html; charset=utf-8") + "\\n")
+                sys.stdout.write(os.environ.get("FAKE_PRIVACY_REDIRECT_COUNT", "0") + "\\n")
                 """
             ),
             encoding="utf-8",
@@ -301,6 +349,15 @@ class LivePrivacyProbeShellTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("redirectOriginEscape", result.stderr)
 
+    def test_shell_probe_rejects_same_origin_redirect_history(self):
+        result = self.run_probe(
+            EXPECTED_PATH,
+            FAKE_PRIVACY_REDIRECT_COUNT="1",
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("httpRedirectNotAllowed", result.stderr)
+
     def test_shell_probe_rejects_404_via_shared_contract(self):
         result = self.run_probe(
             EXPECTED_PATH,
@@ -336,6 +393,8 @@ class LiveWebProbeShellTests(unittest.TestCase):
                 from urllib.parse import urlsplit
 
                 args = sys.argv[1:]
+                if "--location" in args:
+                    raise SystemExit("probe must not follow redirects")
                 output = args[args.index("--output") + 1]
                 limit = int(args[args.index("--max-filesize") + 1])
                 requested_url = args[-1]
@@ -355,6 +414,7 @@ class LiveWebProbeShellTests(unittest.TestCase):
                 sys.stdout.write(os.environ.get("FAKE_WEB_STATUS", "200") + "\\n")
                 sys.stdout.write(final_url + "\\n")
                 sys.stdout.write(os.environ.get("FAKE_WEB_CONTENT_TYPE", "text/html; charset=utf-8") + "\\n")
+                sys.stdout.write(os.environ.get("FAKE_WEB_REDIRECT_COUNT", "0") + "\\n")
                 """
             ),
             encoding="utf-8",
@@ -414,11 +474,26 @@ class LiveWebProbeShellTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("redirectOriginEscape", result.stderr)
 
+    def test_same_origin_redirect_history_is_rejected(self):
+        result = self.run_probe(
+            "firebase",
+            FAKE_WEB_REDIRECT_COUNT="1",
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("httpRedirectNotAllowed", result.stderr)
+
+    def test_active_target_uses_the_source_configured_origin(self):
+        result = self.run_probe("active")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("target: active", result.stdout)
+
     def test_unknown_probe_target_is_rejected_before_transport(self):
         result = self.run_probe("preview")
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("firebase, custom, or both", result.stderr)
+        self.assertIn("active, firebase, custom, or both", result.stderr)
 
 
 if __name__ == "__main__":
