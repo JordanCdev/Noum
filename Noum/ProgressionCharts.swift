@@ -97,8 +97,8 @@ struct ProgressionChartsCard: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
-            NoumWaveformMark(
-                state: .idle,
+            NoumSemanticGraphic(
+                role: .progressTrajectory,
                 tint: AppColor.coachingInk,
                 size: 36
             )
@@ -683,10 +683,10 @@ extension ProgressionChartsCard {
         var symbolName: String {
             switch self {
             case .score:      return "star.fill"
-            case .fillerRate: return "speaker.slash.fill"
+            case .fillerRate: return NoumSemanticGraphicRole.fillerWords.systemName
             case .pace:       return "speedometer"
             case .pauseRate:  return "pause.circle.fill"
-            case .pitch:      return "waveform.path"
+            case .pitch:      return "arrow.up.and.down"
             }
         }
 

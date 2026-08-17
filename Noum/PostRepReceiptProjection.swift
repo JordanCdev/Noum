@@ -51,7 +51,7 @@ struct PostRepReceiptProjection: Equatable {
                         id: update.id,
                         title: "Practice record updated",
                         detail: update.detail,
-                        systemImage: "waveform.path"
+                        systemImage: "chart.bar.fill"
                     )
                 )
             } else {
@@ -75,7 +75,7 @@ struct PostRepReceiptProjection: Equatable {
                     id: "practice-level-\(normalized(practiceLevelTitle))",
                     title: "Practice record updated",
                     detail: "Reached \(practiceLevelTitle)",
-                    systemImage: "waveform.path"
+                    systemImage: "chart.bar.fill"
                 )
             )
         }

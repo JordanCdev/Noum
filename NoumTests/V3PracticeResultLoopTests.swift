@@ -314,20 +314,185 @@ struct V3PracticeResultLoopTests {
         #expect(source.contains("Live microphone waveform"))
     }
 
-    @Test("Earned retry uses shared adaptive primitives")
-    func earnedRetryUsesFoundationAndSupportsDarkMode() throws {
+    @Test("Earned retry separates evidence graphics from audio")
+    func earnedRetryUsesSemanticGraphicsAndSupportsDarkMode() throws {
         let source = try repositorySource("TranscriptPracticeLoop.swift")
         let milestone = try #require(sourceSlice(
             source,
             from: "struct TranscriptRetryMilestoneView: View",
-            through: "private enum RetryRewardWaveformPhase"
+            through: "private enum RetryRewardEmblemPhase"
+        ))
+        let burst = try #require(sourceSlice(
+            source,
+            from: "private struct RetryRewardParticleBurst: View",
+            through: "private enum RetryComparisonStage"
         ))
 
-        #expect(milestone.contains("NoumWaveformMark(state: .earned"))
+        #expect(milestone.contains("role: .verifiedEvidence"))
+        #expect(milestone.contains("role: .nextStepUnlocked"))
+        #expect(milestone.contains("if earnedXP > 0"))
+        #expect(milestone.contains("if unlockedNextStep"))
+        #expect(milestone.contains("See the comparison"))
+        #expect(!milestone.contains("Evidence ready"))
+        #expect(!milestone.contains("NoumWaveformMark"))
+        #expect(burst.contains("Image(systemName: \"diamond.fill\")"))
+        #expect(burst.contains("Image(systemName: \"star.fill\")"))
+        #expect(!burst.contains("Capsule()"))
         #expect(milestone.contains("NoumRewardPill("))
         #expect(milestone.contains("NoumEvidenceCard("))
         #expect(!milestone.contains(".preferredColorScheme(.light)"))
         #expect(!milestone.contains("repeatForever"))
+    }
+
+    @Test("Retry comparison uses numbered evidence stages")
+    func retryComparisonGraphicsCommunicateSequence() throws {
+        let source = try repositorySource("TranscriptPracticeLoop.swift")
+
+        #expect(source.contains("case .source: return .originalAttempt"))
+        #expect(source.contains("case .retry: return .retryAttempt"))
+        #expect(source.contains("Text(\"“\")"))
+        #expect(source.contains("Text(\"”\")"))
+        #expect(source.contains("Text(\"Same coaching target\")"))
+        #expect(source.contains("case .regressed:"))
+        #expect(source.contains("return self == .source"))
+        #expect(source.contains("case .held, .needsMoreEvidence:"))
+        #expect(source.contains("Text(\"COMPARISON · TWO TRIES\")"))
+        #expect(source.contains("let rungFont = dominant"))
+        #expect(source.contains("font: rungFont"))
+        #expect(source.contains(".font(font)"))
+        #expect(!source.contains("Image(systemName: \"arrow.left.arrow.right\")"))
+    }
+
+    @Test("Retry comparison presentation revalidates the exact persisted join")
+    func retryComparisonQualificationFailsClosed() throws {
+        let sourceID = UUID()
+        let retryID = UUID()
+        let sourceSession = qualifiedTimedSession(id: sourceID)
+        let retrySession = qualifiedTimedSession(id: retryID)
+        let valid = retryOutcome(
+            sourceSessionID: sourceID,
+            retrySessionID: retryID,
+            result: .improved
+        )
+
+        #expect(TranscriptRetryComparisonQualification.resolve(
+            outcome: valid,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        )?.result == .improved)
+
+        let needsMore = retryOutcome(
+            sourceSessionID: sourceID,
+            retrySessionID: retryID,
+            result: .needsMoreEvidence
+        )
+        #expect(TranscriptRetryComparisonQualification.resolve(
+            outcome: needsMore,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        )?.result == .needsMoreEvidence)
+
+        let mismatchedSource = retryOutcome(
+            sourceSessionID: sourceID,
+            retrySessionID: retryID,
+            comparisonSourceSessionID: UUID(),
+            result: .improved
+        )
+        #expect(TranscriptRetryComparisonQualification.resolve(
+            outcome: mismatchedSource,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        ) == nil)
+
+        let mismatchedRetry = retryOutcome(
+            sourceSessionID: sourceID,
+            retrySessionID: retryID,
+            comparisonRetrySessionID: UUID(),
+            result: .improved
+        )
+        #expect(TranscriptRetryComparisonQualification.resolve(
+            outcome: mismatchedRetry,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        ) == nil)
+
+        let legacy = retryOutcome(
+            sourceSessionID: sourceID,
+            retrySessionID: retryID,
+            adherenceSchemaVersion: nil,
+            result: .improved
+        )
+        #expect(TranscriptRetryComparisonQualification.resolve(
+            outcome: legacy,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        ) == nil)
+
+        let inconsistentResult = retryOutcome(
+            sourceSessionID: sourceID,
+            retrySessionID: retryID,
+            result: .improved,
+            sourceSignal: 70,
+            retrySignal: 30
+        )
+        #expect(TranscriptRetryComparisonQualification.resolve(
+            outcome: inconsistentResult,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        ) == nil)
+    }
+
+    private func qualifiedTimedSession(id: UUID) -> PracticeSession {
+        PracticeSession(
+            id: id,
+            transcript: "I recommend we launch today because the evidence and accountable owner are ready.",
+            fillerWordCount: 0,
+            duration: 30,
+            date: Date(),
+            mode: .timed,
+            score: 8,
+            prompt: "Should we launch today?"
+        )
+    }
+
+    private func retryOutcome(
+        sourceSessionID: UUID,
+        retrySessionID: UUID,
+        comparisonSourceSessionID: UUID? = nil,
+        comparisonRetrySessionID: UUID? = nil,
+        adherenceSchemaVersion: Int? = RecommendationAdherenceContract.schemaVersion,
+        result: TranscriptRetryResult,
+        sourceSignal: Int = 40,
+        retrySignal: Int = 70
+    ) -> RecommendationOutcome {
+        RecommendationOutcome(
+            id: UUID(),
+            fingerprint: "v3-source-bound-comparison",
+            title: "Answer first",
+            focus: "Lead with the answer",
+            target: "Lead with the answer, then give one reason.",
+            mode: .timed,
+            sessionID: retrySessionID,
+            followed: true,
+            adherenceSchemaVersion: adherenceSchemaVersion,
+            completedAt: Date(),
+            scoreDelta: 0,
+            hasComparableScore: true,
+            fillerDelta: 0,
+            durationDelta: 0,
+            sourceSessionID: sourceSessionID,
+            transcriptRetryTarget: TranscriptRetryTarget(lever: .opening),
+            transcriptRetryComparison: TranscriptRetryComparison(
+                schemaVersion: TranscriptRetryComparison.schemaVersion,
+                lever: .opening,
+                sourceSessionID: comparisonSourceSessionID ?? sourceSessionID,
+                retrySessionID: comparisonRetrySessionID ?? retrySessionID,
+                sourceSignal: sourceSignal,
+                retrySignal: retrySignal,
+                meaningOverlapPercent: 80,
+                result: result
+            )
+        )
     }
 
     private func repositorySource(_ filename: String) throws -> String {

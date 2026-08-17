@@ -544,7 +544,7 @@ private struct ImpromptuSettingsPanel: View {
             thinDivider
 
             premiumToggleRow(
-                icon: "waveform.badge.magnifyingglass",
+                icon: NoumSemanticGraphicRole.fillerWords.systemName,
                 iconColor: .red,
                 title: "Filler tracking",
                 caption: "Live count",
@@ -1980,7 +1980,7 @@ struct TimedPracticeView: View {
             )
         case .unknown:
             microphoneCard(
-                icon: "waveform.badge.exclamationmark",
+                icon: "mic.slash.fill",
                 title: "Mic unavailable",
                 message: PracticeMicrophonePermissionState.unknown.userFacingRecoveryMessage ?? "Check the audio route and try again.",
                 actionTitle: nil,
@@ -3159,7 +3159,7 @@ struct TimedPracticeView: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     } icon: {
-                        Image(systemName: "waveform.badge.magnifyingglass")
+                        Image(systemName: NoumSemanticGraphicRole.fillerWords.systemName)
                             .font(.caption)
                             .foregroundStyle(.red.opacity(0.8))
                     }

@@ -62,7 +62,7 @@ struct WeakAreasCard: View {
 
         var symbolName: String {
             switch self {
-            case .fillerControl: return "speaker.slash.fill"
+            case .fillerControl: return NoumSemanticGraphicRole.fillerWords.systemName
             case .opening:       return "text.alignleft"
             case .structure:     return "list.number"
             case .pace:          return "speedometer"

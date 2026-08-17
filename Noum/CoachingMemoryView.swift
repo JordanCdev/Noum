@@ -227,10 +227,10 @@ struct CoachingMemoryView: View {
 
     private var memoryIntroduction: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
-            NoumWaveformMark(
-                state: .idle,
+            NoumSemanticGraphic(
+                role: .coachingMemory,
                 tint: AppColor.coachingInk,
-                size: NoumControlMetric.waveformMark
+                size: NoumControlMetric.semanticGraphic
             )
             .accessibilityHidden(true)
 

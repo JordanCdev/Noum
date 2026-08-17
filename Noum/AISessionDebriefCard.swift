@@ -31,13 +31,9 @@ struct AISessionDebriefCard: View {
             EmptyView()
         } else {
             HStack(alignment: .top, spacing: 12) {
-                // M14: NoumCharacter is the coach. Anchored to the left
-                // so the headline + body read as a quote from the
-                // character — the user said the app didn't feel like
-                // coaching enough; making the messenger present (not
-                // an abstract speech-bubble icon) closes that gap
-                // without adding more cards.
-                NoumCharacter(mood: .coaching, tint: AppColor.brandBlue, size: 44)
+                // A scope identifies coach interpretation without repeating
+                // the live-audio waveform or reintroducing a mascot.
+                NoumSemanticGraphic(role: .coachRead, tint: AppColor.brandBlue, size: 44)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 10) {

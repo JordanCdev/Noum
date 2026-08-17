@@ -215,7 +215,7 @@ struct ShareableSessionCard: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Image(systemName: "waveform.and.mic")
+            Image(systemName: "mic.fill")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
             Text(displayName.isEmpty ? "Speaker" : displayName)

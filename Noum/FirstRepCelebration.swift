@@ -10,11 +10,8 @@ import SwiftUI
 // The composition is deliberately spare:
 //   • Tinted radial backdrop in `AppColor.pro` (purple premium register,
 //     same vocabulary as `TierPromotionOverlay` for upward moments).
-//   • Slow-drifting orbs for depth (no illustration, brand rule).
-//   • Large `NoumCharacter` at `.excited` (150–180pt) — the coach
-//     character, sparkle ribbon, the only "face" of the moment.
-//     Briefly pulses `.noticing` when the proof-moment lands so the
-//     orb itself acknowledges the catch.
+//   • Static blurred colour fields for depth (no illustration, no ambient loop).
+//   • Large milestone emblem (150–180pt) — one semantic hero graphic.
 //   • A single bold display headline.
 //   • The observation slot — a verbatim quote pulled from the user's
 //     actual first rep, framed in their voice. The async proof-moment
@@ -24,17 +21,16 @@ import SwiftUI
 //   • Optional "Share" secondary (kept — `ImageRenderer` is wired).
 //
 // Beats (full-motion):
-//   1. Backdrop + orbs fade in (0.4s).
-//   2. Character springs from 0.8 → 1.0 (0.6s).
-//      One short confetti burst at entrance (~1.5s).
+//   1. Backdrop + static atmosphere fade in (0.4s).
+//   2. Emblem springs from 0.8 → 1.0 (0.6s).
+//      One bounded six-particle burst at entrance (~1s).
 //   3. Headline slides up + fades in.
 //   4. Subtitle fades in (200ms after the headline).
 //   5. CTA + share fade in last.
 //
 // Reduce-Motion:
-//   All springs collapse to a single fade-in. Confetti burst skipped
-//   entirely. Orbs render static. Sparkle ribbon stays — it's a
-//   non-vestibular per-symbol opacity twinkle, not a moving layer.
+//   All springs collapse to a single fade-in. Particle burst is skipped;
+//   the blurred background fields are static in both motion modes.
 //
 // Driven by `FirstRepCelebrationManager.shared` so the caller doesn't
 // need to know whether this is the user's first or hundredth rep.
@@ -49,22 +45,26 @@ struct FirstRepCelebration: View {
     @State private var showShareSheet = false
     /// Async-loaded proof moment. Nil while loading or when the rep
     /// can't yield a verbatim slice (we fall through to the duration+
-    /// filler safety net in that case). Bumping this triggers the
-    /// observation slot fade-in and the `.noticing` orb pulse.
+    /// filler safety net in that case). Arrival reveals the observation slot;
+    /// the hero emblem stays stable so the proof gets the attention.
     @State private var proof: ProofMoment?
-    /// Bumped once when the proof transitions from nil → non-nil so the
-    /// `.noticing` mood pulse fires exactly once, not on every redraw.
-    @State private var noticeFlashID: Int = 0
     @State private var loadTask: Task<Void, Never>?
+    /// Distinguishes a resumed proof request from an older cancelled task so
+    /// the older task's cleanup cannot clear the replacement owner.
+    @State private var loadTaskGeneration: UUID?
+    /// Owns the one-shot entrance cadence. A single cancellable task prevents
+    /// delayed phases or haptics from outliving the celebration surface.
+    @State private var sequenceTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Animation phases. Drives both the spring sequence (full-motion) and
     /// the flat-fade resolution (reduce-motion). Each phase is a single
     /// step forward — phases never reverse.
     enum Phase: Int, Comparable {
         case preReveal   // Nothing visible yet
-        case backdropIn  // Radial + orbs fading in
-        case characterIn // NoumCharacter scaled in, confetti firing
+        case backdropIn  // Radial + static atmosphere fading in
+        case emblemIn // milestone emblem scaled in, particles firing
         case headlineIn  // Headline slid + faded in
         case subtitleIn  // Subtitle faded in
         case ctaIn       // Continue + Share faded in
@@ -79,7 +79,7 @@ struct FirstRepCelebration: View {
             backdrop
                 .ignoresSafeArea()
 
-            FloatingOrbsLayer(tint: AppColor.proLight)
+            StaticCelebrationAtmosphere(tint: AppColor.proLight)
                 .opacity(phase >= .backdropIn ? 1 : 0)
                 .ignoresSafeArea()
 
@@ -88,7 +88,11 @@ struct FirstRepCelebration: View {
             // enabled — so the gate here is just so we don't allocate the
             // pieces on the inert path.
             if !reduceMotion {
-                ConfettiLayer(active: confettiActive, pieceCount: 20, duration: 1.5)
+                ConfettiLayer(
+                    active: confettiActive,
+                    pieceCount: NoumMotionMetric.maximumEarnedParticles,
+                    duration: 1.0
+                )
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
@@ -99,7 +103,7 @@ struct FirstRepCelebration: View {
                 headline
                     .padding(.horizontal, Spacing.lg)
 
-                character
+                emblem
                     .padding(.vertical, Spacing.xs)
 
                 observationSlot
@@ -122,8 +126,25 @@ struct FirstRepCelebration: View {
             loadProof()
         }
         .onDisappear {
+            sequenceTask?.cancel()
+            sequenceTask = nil
             loadTask?.cancel()
             loadTask = nil
+            loadTaskGeneration = nil
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                loadProof()
+                return
+            }
+            sequenceTask?.cancel()
+            sequenceTask = nil
+            loadTask?.cancel()
+            loadTask = nil
+            loadTaskGeneration = nil
+            if phase < .ctaIn {
+                settleSequenceWithoutFeedback()
+            }
         }
         .sheet(isPresented: $showShareSheet) {
             FirstRepShareSheet(session: session)
@@ -133,7 +154,7 @@ struct FirstRepCelebration: View {
     // MARK: - Backdrop
 
     /// Tinted radial in `AppColor.pro` — same purple premium register as
-    /// `TierPromotionOverlay`. Anchored top so the character sits in the
+    /// `TierPromotionOverlay`. Anchored top so the emblem sits in the
     /// brighter band; black floor at the bottom focuses the CTA.
     private var backdrop: some View {
         ZStack {
@@ -167,29 +188,16 @@ struct FirstRepCelebration: View {
         .opacity(phase >= .backdropIn ? 1 : 0)
     }
 
-    // MARK: - Character
+    // MARK: - Emblem
 
-    /// Large `NoumCharacter` at `.excited` — the only "face" of the
-    /// celebration. The mood owns the sparkle ribbon already, so we don't
-    /// stack a second one. Springs from 0.8 → 1.0 on entrance. Briefly
-    /// pulses `.noticing` once when the proof-moment lands so the orb
-    /// itself acknowledges the catch — keyed by `noticeFlashID` so the
-    /// pulse fires exactly once on the proof transition, not on every
-    /// surrounding redraw.
+    /// A milestone emblem is the single hero graphic. The phase spring is
+    /// one-shot; proof copy, not a mascot, carries the meaning.
     @ViewBuilder
-    private var character: some View {
-        let base = NoumCharacter(mood: .excited, tint: .white, size: 160)
-        Group {
-            if noticeFlashID > 0 {
-                base.moodPulse(.noticing, duration: 1.2)
-                    .id(noticeFlashID)
-            } else {
-                base
-            }
-        }
-        .scaleEffect(phase >= .characterIn ? 1.0 : 0.8)
-        .opacity(phase >= .characterIn ? 1.0 : 0.0)
-        .accessibilityHidden(true)
+    private var emblem: some View {
+        NoumSemanticGraphic(role: .milestone, tint: .white, size: 160)
+            .scaleEffect(phase >= .emblemIn ? 1.0 : 0.8)
+            .opacity(phase >= .emblemIn ? 1.0 : 0.0)
+            .accessibilityHidden(true)
     }
 
     // MARK: - Headline + subtitle
@@ -320,49 +328,83 @@ struct FirstRepCelebration: View {
     /// fade-in that resolves all phases instantly (no spring, no particle
     /// burst). Everything else lays in at the documented cadence.
     private func runSequence() {
+        guard phase == .preReveal, sequenceTask == nil else { return }
+        guard scenePhase == .active else {
+            settleSequenceWithoutFeedback()
+            return
+        }
         guard !reduceMotion else {
             // Resolve all phases at once with a single short fade.
             withAnimation(.easeOut(duration: 0.4)) {
                 phase = .ctaIn
             }
-            CoachHaptic.scoreReveal()
+            if scenePhase == .active {
+                CoachHaptic.scoreReveal()
+            }
             return
         }
 
-        // Beat 1 — Backdrop + orbs (0.0s → 0.4s)
+        // Beat 1 — Backdrop + static atmosphere (0.0s → 0.4s)
         withAnimation(.easeOut(duration: 0.4)) {
             phase = .backdropIn
         }
 
-        // Beat 2 — Character springs in + confetti burst (0.35s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        sequenceTask = Task { @MainActor in
+            defer { sequenceTask = nil }
+            // Beat 2 — Emblem springs in + particle burst (0.35s)
+            guard await waitForSequenceBeat(0.35) else { return }
+            guard scenePhase == .active else { return }
             CoachHaptic.trendBreakthrough()
             withAnimation(.spring(response: 0.6, dampingFraction: 0.72)) {
-                phase = .characterIn
+                phase = .emblemIn
             }
             confettiActive = true
-        }
 
-        // Beat 3 — Headline slides up + fades in (0.95s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
+            // Beat 3 — Headline slides up + fades in (0.95s total)
+            guard await waitForSequenceBeat(0.60) else { return }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) {
                 phase = .headlineIn
             }
-        }
 
-        // Beat 4 — Subtitle fades in 200ms after the headline (1.15s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.15) {
+            // Beat 4 — Subtitle fades in 200ms after the headline (1.15s total)
+            guard await waitForSequenceBeat(0.20) else { return }
             withAnimation(.easeOut(duration: 0.35)) {
                 phase = .subtitleIn
             }
-        }
 
-        // Beat 5 — CTAs fade in last (1.55s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
+            // Beat 5 — CTAs fade in last (1.55s total)
+            guard await waitForSequenceBeat(0.40) else { return }
             withAnimation(.easeOut(duration: 0.35)) {
                 phase = .ctaIn
             }
-            CoachHaptic.scoreReveal()
+            if scenePhase == .active {
+                CoachHaptic.scoreReveal()
+            }
+        }
+    }
+
+    /// Cancellation-aware delay for the owned entrance sequence.
+    @MainActor
+    private func waitForSequenceBeat(_ duration: TimeInterval) async -> Bool {
+        do {
+            try await Task.sleep(
+                nanoseconds: UInt64(max(0, duration) * 1_000_000_000)
+            )
+            return !Task.isCancelled
+        } catch {
+            return false
+        }
+    }
+
+    /// Backgrounding must never leave an invisible CTA or resume celebration
+    /// feedback later. Resolve the readable final frame with no animation,
+    /// particles, sound, or haptic.
+    private func settleSequenceWithoutFeedback() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            confettiActive = false
+            phase = .ctaIn
         }
     }
 
@@ -412,8 +454,16 @@ struct FirstRepCelebration: View {
     /// The celebration cannot fail — if every path returns nothing
     /// useful, the slot keeps the duration+filler safety net.
     private func loadProof() {
-        guard proof == nil, loadTask == nil else { return }
+        guard scenePhase == .active, proof == nil, loadTask == nil else { return }
+        let generation = UUID()
+        loadTaskGeneration = generation
         loadTask = Task { @MainActor in
+            defer {
+                if loadTaskGeneration == generation {
+                    loadTask = nil
+                    loadTaskGeneration = nil
+                }
+            }
             let profile = CoachingProfileStore.shared.profile
             let baseline = BaselineStore.shared.baseline
             let input = ProofMomentInput(
@@ -441,9 +491,10 @@ struct FirstRepCelebration: View {
             guard let resolved = resolved else { return }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.45)) {
                 self.proof = resolved
-                self.noticeFlashID += 1
             }
-            CoachHaptic.selectionTap()
+            if scenePhase == .active {
+                CoachHaptic.selectionTap()
+            }
         }
     }
 
@@ -562,37 +613,25 @@ struct FirstRepCelebration: View {
     }
 }
 
-// MARK: - Floating orbs backdrop (purple register)
+// MARK: - Static atmosphere (purple register)
 
-/// Three slow-drifting blurred circles that add depth to the celebration
-/// surface. White-on-purple only — sized so they read as ambient bloom,
-/// not decoration. Reduce-Motion turns them static; otherwise they
-/// breathe on a 5–6s cycle. No illustration, per the brand rule.
+/// Three fixed blurred circles add depth without competing with the proof or
+/// authoring an ambient loop. White-on-purple only; no illustration.
 @available(iOS 17.0, macOS 12.0, *)
-private struct FloatingOrbsLayer: View {
+private struct StaticCelebrationAtmosphere: View {
     let tint: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var phase: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
             let w = proxy.size.width
             let h = proxy.size.height
             ZStack {
-                orb(size: 260, x: w * 0.18, y: h * (0.22 + 0.02 * phase), opacity: 0.20)
-                orb(size: 340, x: w * 0.86, y: h * (0.34 - 0.03 * phase), opacity: 0.14)
-                orb(size: 220, x: w * 0.70, y: h * (0.80 + 0.04 * phase), opacity: 0.18)
+                orb(size: 260, x: w * 0.18, y: h * 0.22, opacity: 0.20)
+                orb(size: 340, x: w * 0.86, y: h * 0.34, opacity: 0.14)
+                orb(size: 220, x: w * 0.70, y: h * 0.80, opacity: 0.18)
             }
         }
         .allowsHitTesting(false)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(
-                .easeInOut(duration: 5.6).repeatForever(autoreverses: true)
-            ) {
-                phase = 1
-            }
-        }
     }
 
     private func orb(size: CGFloat, x: CGFloat, y: CGFloat, opacity: Double) -> some View {

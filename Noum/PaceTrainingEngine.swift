@@ -110,8 +110,8 @@ struct PaceTrainingResult: Equatable {
     var verdictIcon: String {
         switch zonePercentage {
         case 0.70...: return "metronome"
-        case 0.40..<0.70: return "waveform.path"
-        default: return "waveform"
+        case 0.40..<0.70: return "metronome.fill"
+        default: return "speedometer"
         }
     }
 

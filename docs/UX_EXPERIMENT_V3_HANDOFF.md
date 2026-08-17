@@ -16,8 +16,16 @@ physical-device, live-service, and human-coach gates below pass.
 
 - Professional adult communication coaching; no mascot, face, orb, or generic
   AI-chat visual language.
-- The unboxed waveform is Noum's identity and follows real states: ready,
-  listening, processing, and earned improvement.
+- The unboxed waveform is reserved for voice: live listening, recording,
+  capture finalization or spoken-turn processing, and the single
+  Today-to-recording handoff. The source contract permits exactly 11 rendered
+  callsites. It is never a
+  generic badge, reward, navigation icon, proof marker, or chart.
+- Static graphics use one closed semantic vocabulary: scope for a coach read,
+  seals for verified evidence, star for XP, lock-open for a real unlock,
+  numbered markers for attempts, chart/chronology for progress, microphone
+  for practice, person for Profile, and raised hand for privacy. One graphic
+  per surface is the default; a second appears only for separate data.
 - One focus, one rep, one proof, one next move.
 - Today mission: the user's persisted one-to-three-rep goal, one exact visible
   coaching target, and numbered reps. The three-rep Figma frame is a sample,
@@ -28,7 +36,9 @@ physical-device, live-service, and human-coach gates below pass.
 - Reward energy is attached to exact-session verified improvement. XP supports
   the evidence; it never replaces it or pays twice.
 - Motion has three tiers (calm, responsive, earned), is bounded, and respects
-  Reduce Motion. The verified reward is a one-shot 2.4-second ceremony.
+  Reduce Motion. The verified reward is one-shot and actionable within the
+  1.8-second source budget; optional XP and unlock stages render only when
+  their exact-session inputs exist.
 - Social/friend surfaces remain hidden until their trusted authority is live.
 - The beta interface is English; practice speech language remains an
   independent STT/prompt choice.
@@ -62,6 +72,28 @@ Second-pass comparison row (originals preserved):
 - Profile: `464:1085`
 - Settings: `464:1142`
 
+V3.2 semantic-graphics row (all earlier rows preserved):
+
+- Section: `476:1004`
+- Onboarding: `476:1007`
+- Today: `476:1024`
+- Practice: `476:1049`
+- Ask Noum: `476:1072`
+- Progress: `476:1103`
+- Verified reward: `476:2333`
+- Comparison: `476:2466`
+- Profile: `476:1141`
+- Settings: `476:1184`
+
+The V3.2 audit retains exactly one waveform, on the Today-to-recording
+handoff. Reward, comparison, Progress, navigation, profile, privacy, plans,
+learning, roleplay, and coach reads use role-specific graphics. Progress has
+one authored read plus a categorical chronology—no duplicate tally tile—and
+the path receipt makes only a path-unlock claim. Figma could validate but not
+visibly render helper-generated SF Symbol private-use glyphs, so its visible
+handoff uses Material Symbols Rounded while each layer name records the exact
+authoritative SwiftUI SF Symbol mapping.
+
 The V3.1 row addresses the first pass's main weakness outside the earned-reward
 screen: it replaces equal-weight card stacks with screen-specific authored
 hierarchy. Today now builds anticipation around the exact mission; Practice
@@ -82,11 +114,13 @@ The canonical Today frame is named `Sample 3 · supports goal 1–3`, and its
 mission nodes are now truthfully numbered Rep 1/2/3 rather than claiming an
 unimplemented Warm-up → Answer first → Pressure sequence.
 
-The refreshed 61.1-second visual walkthrough is at
-`deliverables/noum-v3/full-recording/Noum-V3-Lead-UX-Production-Walkthrough.mp4`
-in the workspace deliverables root. It is deliberately labelled **DESIGN
-PROTOTYPE / NATIVE QA STILL REQUIRED** and orders verified reward before the
-evidence Summary. It is design review evidence, not an iOS interaction record.
+The current 40.6-second semantic-graphics walkthrough is at
+`deliverables/noum-v32-semantic/Noum-V3.2-Semantic-Graphics-Walkthrough.mp4`.
+Its source contact sheet, transition QA sheet, and decode report sit beside it.
+Every frame is labelled **FIGMA DESIGN PROTOTYPE · NATIVE QA REQUIRED**. It is
+design-review evidence, not an iOS interaction recording. The verified video
+SHA-256 is
+`5273e17c17d4a405786e174638fcd214ae5444ed06b17b1df5b7a646fbd61fd8`.
 
 Code Connect could not be published because the current Figma seat is not an
 Organization/Enterprise Dev or Full seat. Component and screen node IDs are
@@ -94,8 +128,9 @@ recorded in the local design-state ledger for a future mapping pass.
 
 ## Implemented in SwiftUI
 
-- Shared V3 primitives: waveform, semantic surfaces, mission, evidence,
-  progress, reward, minimum controls, and three-tier motion.
+- Shared V3 primitives: audio-bound waveform, closed semantic graphics,
+  semantic surfaces, mission, evidence, progress, reward, minimum controls,
+  and three-tier motion.
 - Fast-lane and full onboarding: one decision per step with no phantom
   defaults.
 - Today and Train: one coach-built mission/recommendation first, progressive
@@ -112,8 +147,17 @@ recorded in the local design-state ledger for a future mapping pass.
 - Ask Noum, live coach, Coach Read, and four-week plan. The current reply is
   visually distinct from quiet history and owns one bounded continuation.
 - Lessons, roleplay, Filler Control, Conversation Practice, Pressure, and Cut
-  the Crutch use the shared waveform and preserve their existing evidence and
-  finalization owners.
+  the Crutch use mode/learning/conversation graphics at rest and reserve the
+  shared waveform for real recording, capture finalization, or a live spoken
+  turn. Their existing evidence
+  and finalization owners remain unchanged.
+- Progress no longer draws arbitrary waveform heights as if they were a
+  continuous score. Comparable evidence renders as a labelled categorical
+  chronology: Improved, Held, or Didn't hold.
+- Verified retry reward no longer repeats one waveform for hero, XP, proof,
+  and unlock. It shows a verification seal, real XP only when earned, one
+  source-bound evidence card, an unlock only when true, and one comparison
+  action. Comparison uses numbered attempts and a transformation bridge.
 - Progress, Profile, Coaching Memory, Settings, privacy/account, permission,
   offline, and beta-feedback surfaces. Progress now presents interpretation,
   comparable evidence, and one target-bound practice action in that order;

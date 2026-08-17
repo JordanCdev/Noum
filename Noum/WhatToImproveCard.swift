@@ -135,7 +135,7 @@ struct WhatToImproveCard: View {
             out.append(
                 Bullet(
                     id: "filler",
-                    icon: "waveform.path",
+                    icon: NoumSemanticGraphicRole.fillerWords.systemName,
                     iconTint: AppColor.warning,
                     headline: headline,
                     evidence: topWords.isEmpty

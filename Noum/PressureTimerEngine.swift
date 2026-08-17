@@ -197,7 +197,7 @@ extension RoundOutcome {
         switch self {
         case .survived: return "checkmark.circle.fill"
         case .timeoutBeforeStart: return "clock.badge.exclamationmark"
-        case .fillerOverload: return "waveform.badge.exclamationmark"
+        case .fillerOverload: return NoumSemanticGraphicRole.fillerWords.systemName
         case .tooShort: return "text.badge.minus"
         }
     }
@@ -341,7 +341,7 @@ struct PressureSessionResult: Equatable {
         case "Beat the Clock": return "checkmark.seal.fill"
         case "Held Under Pressure": return "shield.fill"
         case "Strong Recovery": return "arrow.up.heart.fill"
-        case "Filler Spike": return "waveform.badge.exclamationmark"
+        case "Filler Spike": return NoumSemanticGraphicRole.fillerWords.systemName
         case "Rushed Start": return "hare.fill"
         case "Clock Ran Out": return "clock.badge.exclamationmark"
         default: return "questionmark.circle"

@@ -21,7 +21,7 @@ struct DeliveryProfileCard: View {
                 .tracking(0.8)
 
             if let patternLine = profile.patternLine {
-                row(icon: "waveform", label: "Recurring read", text: patternLine)
+                row(icon: "brain.head.profile", label: "Recurring read", text: patternLine)
             }
             if let improved = profile.improvedLine {
                 row(icon: "arrow.up.right", label: "What's improved", text: improved)

@@ -122,11 +122,6 @@ struct RoleplayView: View {
     @State private var submissionTask: Task<Void, Never>?
     @State private var showCloudProcessingConsent = false
 
-    private var isCompletePhase: Bool {
-        if case .complete = phase { return true }
-        return false
-    }
-
     private var postTurnPresentation: RoleplayPostTurnPresentation? {
         guard let result = turnResults.last else { return nil }
         let continuation: RoleplayPostTurnContinuation
@@ -337,12 +332,12 @@ struct RoleplayView: View {
 
     private var personaIdentity: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
-            NoumWaveformMark(
-                state: waveformState,
-                level: speechVM.audioLevel,
+            NoumSemanticGraphic(
+                role: .roleplay,
                 tint: AppColor.modeIM,
                 size: 44
             )
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text("WITH \(scenario.personaName.uppercased())")
@@ -357,13 +352,36 @@ struct RoleplayView: View {
         }
     }
 
-    private var waveformState: NoumWaveformState {
-        if isCompletePhase { return .earned }
+    @ViewBuilder
+    private var responseGraphic: some View {
         switch speechVM.recordingLifecycle {
-        case .recording: return .listening
-        case .connecting, .finalizing: return .processing
-        case .idle, .completed, .failed: return .idle
+        case .recording:
+            responseWaveform(state: .listening, level: speechVM.audioLevel)
+        case .connecting, .finalizing:
+            responseWaveform(state: .processing, level: 0)
+        case .idle:
+            NoumSemanticGraphic(role: .practice, tint: AppColor.modeIM, size: 48)
+        case .completed(let transcript):
+            if transcript.hasUsableSpeech {
+                NoumSemanticGraphic(role: .evidenceSaved, tint: AppColor.modeIM, size: 48)
+            } else {
+                NoumSemanticGraphic(role: .needsAttention, tint: AppColor.caution, size: 48)
+            }
+        case .failed:
+            NoumSemanticGraphic(role: .needsAttention, tint: AppColor.caution, size: 48)
         }
+    }
+
+    private func responseWaveform(
+        state: NoumWaveformState,
+        level: Double
+    ) -> some View {
+        NoumWaveformMark(
+            state: state,
+            level: level,
+            tint: AppColor.modeIM,
+            size: 48
+        )
     }
 
     private var pressureChip: some View {
@@ -429,12 +447,8 @@ struct RoleplayView: View {
         NoumSurface(speechVM.isRecording ? .standard : .quiet) {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack(alignment: .center, spacing: Spacing.md) {
-                    NoumWaveformMark(
-                        state: waveformState,
-                        level: speechVM.audioLevel,
-                        tint: AppColor.modeIM,
-                        size: 48
-                    )
+                    responseGraphic
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
                         Text(roleplayRecordingStatus)

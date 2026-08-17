@@ -176,7 +176,7 @@ enum DailyChallengeKind: String, CaseIterable, Codable {
         case .zeroFillers:              return "checkmark.seal.fill"
         case .sustainedAnswer:          return "clock.fill"
         case .cleanSuddenDeath:         return "flame.fill"
-        case .crispDelivery:            return "waveform"
+        case .crispDelivery:            return "checkmark.seal.fill"
         case .highScoreSession:         return "star.fill"
         case .multiplePauses:           return "pause.fill"
         case .lowFillerRate:            return "minus.circle.fill"

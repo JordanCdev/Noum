@@ -7331,7 +7331,7 @@ enum DrillEngine {
                 reason: "You used \(fillerCount) filler words — most appeared between ideas before the next point was ready.",
                 constraint: "Pause silently for a full beat before every new point. No \"um\", \"uh\", or \"like\" allowed.",
                 successGoal: "Fewer than 2 filler words",
-                icon: "waveform.path",
+                icon: NoumSemanticGraphicRole.fillerWords.systemName,
                 tint: .red
             )
         }

@@ -5,10 +5,14 @@
 The `ux-experiment` branch now has one coherent adult coaching language across
 activation, Today, practice, evidence, reward, Ask Noum, Progress, Profile,
 Settings, secondary modes, permission recovery, and offline states. The
-unboxed waveform replaces the experimental mascot; motion is bounded and
-Reduce-Motion aware; verified improvement retains the one expressive reward
-beat. The canonical Figma Today sample no longer labels numbered activity as a
-fake Warm-up/Pressure curriculum.
+waveform is now voice-bound rather than app-wide chrome: it appears only for
+live voice/listening, capture finalization or spoken-turn processing, and the
+Today-to-recording handoff. Coach read,
+evidence, XP, unlock, comparison, progress, practice, profile, privacy,
+learning, roleplay, memory, and plan states use distinct semantic graphics.
+Motion is bounded and Reduce-Motion aware; verified improvement retains one
+expressive reward beat. The canonical Figma Today sample no longer labels
+numbered activity as a fake Warm-up/Pressure curriculum.
 
 A second authored-design pass now closes the visible quality gap outside that
 reward beat: Today has an exact-target rep journey, Practice has a prescription-
@@ -18,6 +22,17 @@ evidence story, and Profile/Settings use quieter identity and trust hierarchy.
 The preserved Figma comparison row is `464:801`; its seven review exports live
 under `deliverables/noum-v3/round2/`. These are design-review assets, not native
 iOS execution evidence.
+
+The semantic-graphics pass also removes false visual measurement. Progress
+uses a connected Improved/Held/Didn't-hold chronology instead of arbitrary
+waveform heights. Reward shows no generic “evidence saved” prize when XP is
+zero, no unlock strip when nothing unlocked, and one comparison action.
+Original and retry are numbered evidence stages rather than two identical
+audio marks. A source contract caps rendered waveform callsites at 11 approved
+voice-state/handoff locations and runtime-tests every closed-role SF Symbol.
+The matching preserved Figma V3.2 row is `476:1004`; it contains nine
+393×852 canonical frames and exactly one waveform. The current labelled design
+walkthrough and QA artifacts live under `deliverables/noum-v32-semantic/`.
 
 This hardening pass also closes product-truth gaps that styling could not: the
 persisted one-to-three daily goal drives Today; the exact accepted target and

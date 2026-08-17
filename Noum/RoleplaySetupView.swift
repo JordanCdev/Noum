@@ -57,12 +57,14 @@ struct RoleplaySetupView: View {
     private var header: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: Spacing.md) {
-                NoumWaveformMark(state: .idle, tint: AppColor.modeIM)
+                NoumSemanticGraphic(role: .roleplay, tint: AppColor.modeIM)
+                    .accessibilityHidden(true)
                 headerCopy
             }
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                NoumWaveformMark(state: .idle, tint: AppColor.modeIM)
+                NoumSemanticGraphic(role: .roleplay, tint: AppColor.modeIM)
+                    .accessibilityHidden(true)
                 headerCopy
             }
         }
@@ -90,7 +92,14 @@ struct RoleplaySetupView: View {
         NoumSurface(.mission) {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 HStack(alignment: .top, spacing: Spacing.md) {
-                    NoumWaveformMark(state: .idle, tint: .white)
+                    Image(systemName: "person.2.fill")
+                        .symbolRenderingMode(.hierarchical)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(
+                            width: NoumControlMetric.semanticGraphic,
+                            height: NoumControlMetric.semanticGraphic
+                        )
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: Spacing.xs) {

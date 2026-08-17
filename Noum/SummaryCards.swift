@@ -1097,7 +1097,7 @@ struct IMVerdictCard: View {
             HStack(spacing: 16) {
                 Label("\(userTurns) turns", systemImage: "bubble.left.and.bubble.right")
                 Label("\(Int(effectiveDuration))s", systemImage: "clock")
-                Label("\(effectiveFillerCount) fillers", systemImage: "waveform.path")
+                Label("\(effectiveFillerCount) fillers", systemImage: NoumSemanticGraphicRole.fillerWords.systemName)
             }
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)

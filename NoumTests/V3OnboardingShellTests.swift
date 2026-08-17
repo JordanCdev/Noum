@@ -39,7 +39,8 @@ struct V3OnboardingShellTests {
         #expect(source.contains("A written rehearsal can show answer shape"))
         #expect(source.contains("fastLane.otherOptions"))
         #expect(source.contains("Not ready to record?"))
-        #expect(source.contains("NoumWaveformMark"))
+        #expect(source.contains("NoumSemanticGraphic"))
+        #expect(!source.contains("NoumWaveformMark"))
         #expect(source.contains("NoumProgressTrack"))
         #expect(source.contains("startingHypothesisNote"))
         #expect(source.contains("FastLaneChoicePresentation"))
@@ -49,11 +50,12 @@ struct V3OnboardingShellTests {
         #expect(!source.contains("LinearGradient"))
     }
 
-    @Test("Full setup uses shared V3 identity and calm motion")
+    @Test("Full setup uses semantic graphics and calm motion")
     func coachingSetupUsesFoundation() throws {
         let source = try repositorySource("Noum/CoachingOnboardingView.swift")
 
-        #expect(source.contains("NoumWaveformMark"))
+        #expect(source.contains("NoumSemanticGraphic"))
+        #expect(!source.contains("NoumWaveformMark"))
         #expect(source.contains("NoumSurface(.quiet)"))
         #expect(source.contains("NoumProgressTrack"))
         #expect(source.contains("NoumMotion.animation(for: .calm"))
@@ -80,7 +82,8 @@ struct V3OnboardingShellTests {
         #expect(source.contains("@State private var trainPath = NavigationPath()"))
         #expect(source.contains("@State private var reviewPath = NavigationPath()"))
         #expect(source.contains("@State private var profilePath = NavigationPath()"))
-        #expect(source.contains("NoumWaveformMark("))
+        #expect(source.contains("mic.fill"))
+        #expect(!source.contains("NoumWaveformMark("))
         #expect(source.contains("NoumMotion.animation(for: .calm"))
         #expect(source.contains("SocialReleaseCapabilities.friendConnections.isAvailable"))
         #expect(source.contains("SocialReleaseCapabilities.peerProgress.isAvailable"))

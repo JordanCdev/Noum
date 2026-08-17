@@ -113,7 +113,7 @@ struct RepEventTrendCopyTests {
     func styleReusesTimelineTokens() {
         #expect(RepEventTrendCopy.style(for: .rushedBurst).symbol == "hare.fill")
         #expect(RepEventTrendCopy.style(for: .longestPause).symbol == "pause.circle.fill")
-        #expect(RepEventTrendCopy.style(for: .fillerCluster).symbol == "waveform")
+        #expect(RepEventTrendCopy.style(for: .fillerCluster).symbol == "ellipsis.bubble.fill")
     }
 
     // 5 — Home hero subtitle: the composed one-line projection.

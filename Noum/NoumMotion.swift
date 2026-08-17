@@ -27,7 +27,7 @@ enum NoumMotion {
     /// Earned progress landing (comparison payoff, earned hero flip).
     static let earnedProgress = Animation.payoffReveal
     /// Ambient presence loops — VoiceTrace breath (2.4s, signed-off) and
-    /// NoumCharacter (4s) own their cycles; this exists so no NEW ambient
+    /// Legacy animated assets own their cycles; this exists so no NEW ambient
     /// timing is ever invented at a call site.
     static let ambientBreathingPeriod: TimeInterval = 2.4
     /// Live trace response to the mic envelope.
@@ -71,27 +71,33 @@ enum PhraseTransformationBeat {
 enum RetryRewardBeat {
     static let startDelay: TimeInterval = 0.18
     static let headlineReveal: TimeInterval = 0.24
-    static let waveformHold: TimeInterval = 0.09
-    static let waveformLift: TimeInterval = 0.21
+    static let emblemHold: TimeInterval = 0.09
+    static let emblemLift: TimeInterval = 0.21
     static let burstToReward: TimeInterval = 0.22
     static let rewardToEvidence: TimeInterval = 0.28
     static let evidenceToNextStep: TimeInterval = 0.28
     static let nextStepToAction: TimeInterval = 0.30
     static let actionReveal: TimeInterval = 0.20
     static let reducedMotionReveal: TimeInterval = 0.16
-    /// Six authored particles around the waveform — never full-screen rain.
+    /// Six authored particles around the verification emblem — never full-screen rain.
     static let celebrationParticles = NoumMotionMetric.maximumEarnedParticles
     static let requiresExplicitContinue = true
 
     /// Relative offset from playback start to the CTA becoming actionable.
-    static let actionReadyOffset: TimeInterval = waveformHold
-        + waveformLift
-        + burstToReward
-        + rewardToEvidence
-        + evidenceToNextStep
-        + nextStepToAction
-    static let actionReady: TimeInterval = startDelay + actionReadyOffset
-    static let animationComplete: TimeInterval = actionReady + actionReveal
+    /// Optional XP and path receipts do not hold an empty slot in the
+    /// ceremony, so the timing contract models all four truthful branches.
+    static func actionReadyOffset(earnsXP: Bool, unlocksNextStep: Bool) -> TimeInterval {
+        emblemHold
+            + emblemLift
+            + burstToReward
+            + (earnsXP ? rewardToEvidence : 0)
+            + (unlocksNextStep ? evidenceToNextStep : 0)
+            + nextStepToAction
+    }
+
+    static let maximumActionReady: TimeInterval = startDelay
+        + actionReadyOffset(earnsXP: true, unlocksNextStep: true)
+    static let maximumAnimationComplete: TimeInterval = maximumActionReady + actionReveal
 }
 
 /// Microphone → trace envelope contract (Moment B). Attack is fast so

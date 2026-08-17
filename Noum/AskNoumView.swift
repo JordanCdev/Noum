@@ -10,16 +10,16 @@ import os
 // by `CoachContextBuilder` at send-time.
 //
 // Layout (top to bottom):
-//   • Header: native navigation title and back behavior. The waveform lives
-//     with the current coach read instead of occupying a second custom bar.
+//   • Header: native navigation title and back behavior. Coach interpretation
+//     uses the shared scope mark instead of borrowing live-audio identity.
 //   • Current focus strip: visible only when the thread has messages and the
 //     case file has an active target/focus.
 //   • Empty state (no messages): one recommended ask, with alternatives tucked
 //     into a menu. Removes first-message friction without a prompt tray.
 //   • Thread: alternating user (right-aligned brand-blue bubble) +
 //     coach (left-aligned) rows. Only the current coach read receives the
-//     authored card + waveform identity; older replies become quiet history.
-//     The in-flight bubble uses the shared processing waveform. A just-landed reply then REVEALS word by word
+//     authored card + scope identity; older replies become quiet history.
+//     The in-flight bubble uses the same static coach-read mark. A just-landed reply then REVEALS word by word
 //     (the coach reads as writing to you, not popping in fully formed) —
 //     view-only timing, the store still holds the full text, and
 //     reduce-motion lands it instantly.
@@ -31,7 +31,7 @@ import os
 //     back to send-only when voice can't be served.
 //
 // Brand alignment: white cards on light background, brand-purple accents
-// for the coach surface, with the waveform as the sole coach identity mark.
+// for the coach surface, with role-specific static graphics.
 
 /// Pure presentation contract for a typed transport limitation. Keeping the
 /// retry policy beside the copy prevents a permanent on-device identity from
@@ -1438,8 +1438,8 @@ struct AskNoumView: View {
     /// composer would otherwise be.
     private var dayZeroIntroCard: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            NoumWaveformMark(
-                state: .idle,
+            NoumSemanticGraphic(
+                role: .coachRead,
                 tint: AppColor.coachAccent,
                 size: NoumControlMetric.minimumTouchTarget
             )
@@ -1475,8 +1475,8 @@ struct AskNoumView: View {
 
     private var standardEmptyState: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            NoumWaveformMark(
-                state: .idle,
+            NoumSemanticGraphic(
+                role: .coachRead,
                 tint: AppColor.coachAccent,
                 size: NoumControlMetric.minimumTouchTarget
             )
@@ -2661,8 +2661,8 @@ struct AskNoumView: View {
         if launch != nil || layout.primary != nil {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack(spacing: Spacing.sm) {
-                    NoumWaveformMark(
-                        state: .idle,
+                    NoumSemanticGraphic(
+                        role: .practice,
                         tint: AppColor.coachAccent,
                         size: Spacing.xxl
                     )
@@ -2850,10 +2850,10 @@ struct AskNoumView: View {
     }
 
     private func coachBubble(message: CoachMessage) -> some View {
-        // The waveform appears only on the current read. Older replies keep a
+        // The scope appears only on the current read. Older replies keep a
         // slim leading rule, so a long thread does not become repeated brand
-        // chrome; the in-flight row owns the processing waveform until it
-        // resolves into the authored current-read card.
+        // chrome; the in-flight row owns the same coach-read semantics until
+        // it resolves into the authored current-read card.
         //
         // LEGACY OFFLINE STATE: older builds could persist local fallback copy
         // as `.coach` rows with `isOffline`. New turns no longer create those
@@ -2944,13 +2944,13 @@ struct AskNoumView: View {
         )
     }
 
-    /// The newest coach response receives one authored identity line. Older
+    /// The newest coach response receives one authored coach-read line. Older
     /// replies remain quiet transcript history, so a long thread has a clear
     /// current read rather than a stack of visually identical chat cards.
     private func coachReplyIdentity(accent: Color) -> some View {
         HStack(spacing: Spacing.sm) {
-            NoumWaveformMark(
-                state: .idle,
+            NoumSemanticGraphic(
+                role: .coachRead,
                 tint: accent,
                 size: Spacing.xxl
             )
@@ -2983,7 +2983,7 @@ struct AskNoumView: View {
                     }
                 } label: {
                     HStack(spacing: Spacing.xs) {
-                        Image(systemName: move == nil ? "checkmark.seal" : "waveform.path")
+                        Image(systemName: move == nil ? "checkmark.seal" : "scope")
                             .font(Typography.captionSmall.weight(.semibold))
                             .accessibilityHidden(true)
                         Text(move == nil ? "Why this read" : "Practice this move")
@@ -3085,8 +3085,8 @@ struct AskNoumView: View {
     private func provisionalCoachRead(message: CoachMessage, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                NoumWaveformMark(
-                    state: .processing,
+                NoumSemanticGraphic(
+                    role: .coachRead,
                     tint: AppColor.coachAccent,
                     size: 20
                 )
@@ -3158,17 +3158,17 @@ struct AskNoumView: View {
 
     // MARK: - Pending state
     //
-    // One static processing read, using the same unboxed waveform as the
-    // header. There is no ambient loop: the transition into this state is the
-    // motion, and Reduce Motion receives the foundation's short fade.
+    // One static coach-read mark. Waiting on a text/model response is not a
+    // voice state, so this surface must not borrow the live-audio waveform.
 
     private var pendingDots: some View {
         HStack(spacing: Spacing.sm) {
-            NoumWaveformMark(
-                state: .processing,
+            NoumSemanticGraphic(
+                role: .coachRead,
                 tint: AppColor.coachAccent,
                 size: 24
             )
+            .accessibilityHidden(true)
             Text("Thinking through one useful response…")
                 .font(Typography.caption)
                 .foregroundStyle(AppColor.textSecondary)
@@ -3623,7 +3623,7 @@ struct AskNoumView: View {
         case .mic: return "mic.fill"
         case .recording: return "stop.fill"
         case .processing: return "waveform"
-        case .speaking: return "waveform"
+        case .speaking: return "speaker.wave.2.fill"
         }
     }
 

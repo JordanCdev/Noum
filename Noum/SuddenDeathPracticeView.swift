@@ -498,7 +498,7 @@ struct SuddenDeathPracticeView: View {
         } content: {
             VStack(spacing: Spacing.lg) {
                 HStack(alignment: .center, spacing: Spacing.md) {
-                    Image(systemName: "waveform.badge.exclamationmark")
+                    Image(systemName: "exclamationmark.triangle.fill")
                         .font(Typography.headline)
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
@@ -568,7 +568,7 @@ struct SuddenDeathPracticeView: View {
                 Section("How the drill works") {
                     ruleRow(icon: "timer", text: "A prompt appears. You have seconds to start speaking.")
                     ruleRow(icon: "arrow.turn.right.up", text: "Noum follows up based on your answer.")
-                    ruleRow(icon: "waveform.badge.exclamationmark", text: "One filler, a slow start, or a short response ends the drill.")
+                    ruleRow(icon: "exclamationmark.triangle.fill", text: "One filler, a slow start, or a short response ends the drill.")
                     ruleRow(icon: "flame.fill", text: "Pressure increases every round.")
                 }
 

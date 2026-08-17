@@ -295,7 +295,7 @@ struct ReviewStoryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(spacing: Spacing.xs) {
-                Image(systemName: "waveform.path.ecg")
+                Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(Typography.caption.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
                     .accessibilityHidden(true)

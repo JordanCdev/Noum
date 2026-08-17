@@ -139,7 +139,7 @@ struct FastLaneOnboardingView: View {
                 Spacer(minLength: 0)
 
                 if phase == .result {
-                    NoumWaveformMark(state: .idle, size: 56)
+                    NoumSemanticGraphic(role: .coachRead, tint: AppColor.coachingInk, size: 56)
                         .accessibilityHidden(true)
                 }
             }
@@ -292,12 +292,12 @@ struct FastLaneOnboardingView: View {
         if let challenge = option as? SpeakingChallenge {
             return .challenge(challenge)
         }
-        return FastLaneChoicePresentation(symbol: "waveform", detail: "Choose this coaching direction")
+        return FastLaneChoicePresentation(symbol: "scope", detail: "Choose this coaching direction")
     }
 
     private var startingHypothesisNote: some View {
         HStack(alignment: .center, spacing: Spacing.md) {
-            NoumWaveformMark(state: .idle, tint: AppColor.textSecondary, size: 44)
+            NoumSemanticGraphic(role: .coachRead, tint: AppColor.textSecondary, size: 44)
                 .accessibilityHidden(true)
 
             Text("Your first plan starts as a hypothesis. Your reps refine it.")

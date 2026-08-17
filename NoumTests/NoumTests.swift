@@ -9588,7 +9588,7 @@ struct ProgressionSpineNarrationTests {
 
         #expect(PracticeVolumeNarration.symbol(forXP: 0) == "sparkles")
         #expect(PracticeVolumeNarration.symbol(forXP: 3_000) == "figure.stand")
-        #expect(PracticeVolumeNarration.symbol(forXP: 6_000) == "waveform.path.ecg")
+        #expect(PracticeVolumeNarration.symbol(forXP: 6_000) == "chart.line.uptrend.xyaxis")
         #expect(PracticeVolumeNarration.symbol(forXP: 9_000) == "shield.lefthalf.filled")
         #expect(PracticeVolumeNarration.symbol(forXP: 12_000) == "crown.fill")
     }
@@ -38443,14 +38443,14 @@ struct PaceTrainingResultTests {
         #expect(result.verdictIcon == "metronome")
     }
 
-    @Test func verdictIconWaveformPathForMiddle() {
+    @Test func verdictIconMetronomeForMiddle() {
         let result = makeResult(zonePercentage: 0.55)
-        #expect(result.verdictIcon == "waveform.path")
+        #expect(result.verdictIcon == "metronome.fill")
     }
 
-    @Test func verdictIconWaveformForLow() {
+    @Test func verdictIconSpeedometerForLow() {
         let result = makeResult(zonePercentage: 0.20)
-        #expect(result.verdictIcon == "waveform")
+        #expect(result.verdictIcon == "speedometer")
     }
 
     // MARK: Equatable

@@ -46,12 +46,14 @@ struct LessonsHomeView: View {
     private var header: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: Spacing.md) {
-                NoumWaveformMark(state: .idle, tint: AppColor.coachingInk)
+                NoumSemanticGraphic(role: .learning, tint: AppColor.coachingInk)
+                    .accessibilityHidden(true)
                 headerCopy
             }
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                NoumWaveformMark(state: .idle, tint: AppColor.coachingInk)
+                NoumSemanticGraphic(role: .learning, tint: AppColor.coachingInk)
+                    .accessibilityHidden(true)
                 headerCopy
             }
         }
@@ -84,6 +86,7 @@ struct LessonsHomeView: View {
                 title: lesson.title,
                 instruction: lesson.tagline,
                 metadata: LessonReviewPresentation(progress: lessonStore.progress(for: lesson.id)).rowLabel,
+                graphicRole: .learning,
                 actionTitle: "Start lesson",
                 action: { navigationPath.append(AppDestination.lesson(id: lesson.id)) }
             )
@@ -120,7 +123,7 @@ struct LessonsHomeView: View {
            let lesson = LessonsCatalog.lesson(id: celebration.lessonID) {
             NoumSurface(.evidence) {
                 HStack(alignment: .top, spacing: Spacing.sm) {
-                    NoumWaveformMark(state: .earned, tint: AppColor.positive, size: 44)
+                    NoumSemanticGraphic(role: .verifiedEvidence, tint: AppColor.positive, size: 44)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: Spacing.xxs) {

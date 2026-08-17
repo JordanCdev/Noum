@@ -198,7 +198,7 @@ struct CoachingOnboardingView: View {
     private var introScreen: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Spacing.xl) {
-                NoumWaveformMark(state: .idle, size: 80)
+                NoumSemanticGraphic(role: .practicePlan, tint: AppColor.coachingInk, size: 80)
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text(isEditingExistingProfile ? "YOUR COACHING PROFILE" : "YOUR FIRST TRAINING PLAN")
@@ -382,7 +382,7 @@ struct CoachingOnboardingView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        NoumWaveformMark(state: .idle, size: 56)
+                        NoumSemanticGraphic(role: .practice, tint: AppColor.coachingInk, size: 56)
                             .accessibilityHidden(true)
                     }
 
@@ -401,7 +401,7 @@ struct CoachingOnboardingView: View {
                             )
                             Divider().padding(.leading, 44)
                             profileRow(
-                                symbol: speakingStyleGoal?.voiceIconSystemName ?? "waveform",
+                                symbol: speakingStyleGoal?.voiceIconSystemName ?? "scope",
                                 label: "Delivery goal",
                                 value: speakingStyleGoal?.title ?? "Choose a goal"
                             )
@@ -410,7 +410,7 @@ struct CoachingOnboardingView: View {
 
                     NoumSurface(.quiet) {
                         HStack(alignment: .top, spacing: Spacing.md) {
-                            NoumWaveformMark(state: .idle, size: 44)
+                            NoumSemanticGraphic(role: .coachRead, tint: AppColor.coachingInk, size: 44)
                                 .accessibilityHidden(true)
 
                             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -651,7 +651,7 @@ struct CoachingOnboardingView: View {
         if let style = option as? SpeakingStyleGoal {
             return .style(style)
         }
-        return CoachingOnboardingChoicePresentation(symbol: "waveform", detail: optionDetail(for: option))
+        return CoachingOnboardingChoicePresentation(symbol: "scope", detail: optionDetail(for: option))
     }
 
     private func primaryButton(

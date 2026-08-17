@@ -363,7 +363,7 @@ struct TrainRecommendationMeta: Equatable {
             systemImage = "bolt.fill"
         case .ahCounter:
             sessionShape = "Filler-control rep"
-            systemImage = "waveform"
+            systemImage = "pause.circle.fill"
         case .imConversation:
             sessionShape = "Live exchange"
             systemImage = "bubble.left.and.bubble.right.fill"
@@ -482,7 +482,7 @@ struct PracticeModeSelectionView: View {
                 title: PracticeMode.ahCounter.displayLabel,
                 subtitle: "Speak freely while Noum tracks fillers and pacing.",
                 instruction: "Pause instead of filling the space.",
-                systemImage: "waveform.and.mic",
+                systemImage: "pause.circle.fill",
                 tint: AppColor.modeAhCounter
             )
         ] + (imConversationAvailable ? [
@@ -491,7 +491,7 @@ struct PracticeModeSelectionView: View {
                 title: PracticeMode.imConversation.displayLabel,
                 subtitle: "Live conversation reps with tone and pressure control.",
                 instruction: "Hold one clear point through the back-and-forth.",
-                systemImage: "message.badge.waveform.fill",
+                systemImage: "bubble.left.and.bubble.right.fill",
                 tint: AppColor.modeIM
             )
         ] : [])
@@ -764,11 +764,11 @@ struct PracticeModeSelectionView: View {
             animateMode(.settle) { showOtherWays = false }
         } label: {
             HStack(spacing: Spacing.sm) {
-                NoumWaveformMark(
-                    state: .idle,
-                    tint: option.tint,
-                    size: 32
-                )
+                Image(systemName: option.systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(option.tint)
+                    .frame(width: 32, height: 32)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -830,12 +830,12 @@ struct PracticeModeSelectionView: View {
 
                     Spacer(minLength: Spacing.sm)
 
-                    NoumWaveformMark(
-                        state: .idle,
-                        tint: AppColor.coachingInk,
-                        size: 60
-                    )
-                    .accessibilityHidden(true)
+                    Image(systemName: option.systemImage)
+                        .font(.system(size: 30, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(option.tint)
+                        .frame(width: 60, height: 60)
+                        .accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1444,23 +1444,22 @@ struct PracticeModeSelectionView: View {
         .accessibilityHint("Shows the pressure type, what this surfaces, and the typical rep length.")
     }
 
-    /// The "What this trains" body that drops in under the row. The naked
-    /// waveform is the only identity mark; details explain the exercise while
-    /// the single bottom Start action remains the commitment point.
+    /// The "What this trains" body uses the mode's semantic mark. Details
+    /// explain the exercise while the single bottom Start action remains the
+    /// commitment point.
     private func modeExpandedSection(_ option: ModeOption) -> some View {
         let copy = PracticeModeExpansionCopy.copy(for: option.mode)
         let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
         let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
         return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top, spacing: Spacing.md) {
-                NoumWaveformMark(
-                    state: .idle,
-                    level: 0,
-                    tint: option.tint,
-                    size: 28
-                )
-                .padding(.top, 2)
-                .accessibilityHidden(true)
+                Image(systemName: option.systemImage)
+                    .font(.system(size: 17, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(option.tint)
+                    .frame(width: 28, height: 28)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(copy.pressureType)

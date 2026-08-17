@@ -69,15 +69,27 @@ struct V3CoachSurfacesPresentationTests {
         ) == nil)
     }
 
-    @Test("Coaching presentation uses waveform identity and one-shot motion")
+    @Test("Coaching graphics explain state without mascot or ambient motion")
     func coachChromeHasNoMascotOrAmbientLoop() throws {
+        let askNoum = try repositorySource("Noum/AskNoumView.swift")
+        #expect(askNoum.contains("role: .coachRead"))
+        #expect(askNoum.contains("NoumWaveformMark("))
+
+        let coachRead = try repositorySource("Noum/CoachReadCard.swift")
+        #expect(coachRead.contains("role: .coachRead"))
+        #expect(coachRead.contains("state: .processing"))
+        #expect(!coachRead.contains("state: .idle"))
+
+        let coachingPlan = try repositorySource("Noum/CoachingPlanCard.swift")
+        #expect(coachingPlan.contains("role: .practicePlan"))
+        #expect(!coachingPlan.contains("NoumWaveformMark("))
+
         for relativePath in [
             "Noum/AskNoumView.swift",
             "Noum/CoachReadCard.swift",
             "Noum/CoachingPlanCard.swift",
         ] {
             let source = try repositorySource(relativePath)
-            #expect(source.contains("NoumWaveformMark("))
             #expect(!source.contains("NoumCharacter"))
             #expect(!source.contains("repeatForever"))
             #expect(!source.contains("options: .repeating"))

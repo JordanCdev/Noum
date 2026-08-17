@@ -117,13 +117,15 @@ struct V46ProgressPresentationTests {
         #expect(presentation.readStage == .reliable)
         #expect(presentation.coachReadEyebrow == "COACH READ · LAST 4 REPS")
         #expect(presentation.authoredHeadline == "Your opening is becoming reliable.")
-        #expect(presentation.evidenceValue == "3 / 4")
-        #expect(presentation.evidenceLabel == "opening directness held")
         #expect(presentation.nextFocus == TranscriptPracticeLever.opening.successMeasure)
         #expect(presentation.subtitle.contains("Held in 3 of 4 comparable reps"))
         #expect(presentation.subtitle.contains("under pressure"))
         #expect(presentation.rows.count <= 3)
         #expect(presentation.trajectory.count <= 4)
+        #expect(presentation.trajectory.map(\.outcome) == [
+            .improved, .held, .lapse, .improved
+        ])
+        #expect(presentation.trajectoryAccessibilitySummary.contains("held 3 of 4"))
     }
 
     @Test("A regressed day is an amber lapse row with a text cue, never colour alone")
@@ -142,7 +144,66 @@ struct V46ProgressPresentationTests {
         let lapse = try #require(presentation.rows.first { $0.tone == .lapse })
         #expect(lapse.copy.contains("Didn't hold"))
         let lapseDay = try #require(presentation.trajectory.first { $0.isLapse })
-        #expect(lapseDay.intensity < 0.8)
+        #expect(lapseDay.outcome == .lapse)
+        #expect(presentation.trajectory.first?.outcome == .improved)
+    }
+
+    @Test("Chronology keeps the day's best while the receipt shows the actual newest attempt")
+    func newestReceiptDoesNotHideALaterRegression() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_787_000_400) // fixed evening UTC
+        let unpressuredImprovement = outcome(
+            result: .improved,
+            daysAgo: 1.10,
+            difficulty: .easy,
+            now: now
+        )
+        let pressuredRegression = outcome(
+            result: .regressed,
+            daysAgo: 1.05,
+            difficulty: .hard,
+            now: now
+        )
+
+        let presentation = try #require(V46ProgressPresentation.make(
+            outcomes: [unpressuredImprovement, pressuredRegression],
+            intervention: nil,
+            now: now,
+            calendar: calendar
+        ))
+        let row = try #require(presentation.rows.first)
+
+        #expect(presentation.trajectory == [
+            V46TrajectoryDay(label: "YESTERDAY", outcome: .improved)
+        ])
+        #expect(row.id == pressuredRegression.id)
+        #expect(row.tone == .lapse)
+        #expect(row.copy.contains("Didn't hold under time pressure"))
+        #expect(!presentation.subtitle.contains("under pressure"))
+    }
+
+    @Test("Sparse multi-week chronology labels include a date")
+    func chronologyLabelsStayUniqueAcrossRepeatedWeekdays() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_787_000_400)
+        let presentation = try #require(V46ProgressPresentation.make(
+            outcomes: [
+                outcome(result: .improved, daysAgo: 13, now: now),
+                outcome(result: .held, daysAgo: 6, now: now),
+                outcome(result: .improved, daysAgo: 0, now: now),
+            ],
+            intervention: nil,
+            now: now,
+            calendar: calendar
+        ))
+        let labels = presentation.trajectory.map(\.label)
+
+        #expect(Set(labels).count == labels.count)
+        #expect(labels.filter { $0 != "TODAY" && $0 != "YESTERDAY" }.allSatisfy { label in
+            label.contains { character in character.isNumber }
+        })
     }
 
     @Test("Below three comparable reps the head stays an early read")
@@ -289,6 +350,22 @@ struct V46ProgressPresentationTests {
         #expect(source.contains("AppDestination.timedPracticePrompt(token: token)"))
         #expect(source.contains(".accessibilityIdentifier(\"progress.v46.practiceTarget\")"))
         #expect(source.contains(".accessibilityIdentifier(\"progress.v46.evidenceDisclosure\")"))
+    }
+
+    @Test("Progress graphics describe evidence instead of repeating voice bars")
+    func progressUsesAnHonestProofChronology() throws {
+        let source = try progressViewSource
+
+        #expect(!source.contains("NoumWaveformMark("))
+        #expect(!source.contains("VoiceTraceDayCluster("))
+        #expect(!source.contains("trajectoryHeights("))
+        #expect(source.contains("Image(systemName: \"scope\")"))
+        #expect(source.contains("v46ProofChronology(presentation)"))
+        #expect(source.contains("Best result each day"))
+        #expect(!source.contains("Text(presentation.evidenceValue)"))
+        #expect(source.contains(".accessibilityIdentifier(\"progress.v46.chronology\")"))
+        #expect(source.contains("dynamicTypeSize.isAccessibilitySize"))
+        #expect(source.contains("reduceMotion || revealed"))
     }
 
     @Test("Earned Today fires once per un-acknowledged evidence event")

@@ -161,12 +161,7 @@ struct LessonView: View {
     private var lessonHeader: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .center, spacing: Spacing.md) {
-                NoumWaveformMark(
-                    state: lessonWaveformState,
-                    level: speech.audioLevel,
-                    tint: lessonHeroTint,
-                    size: 48
-                )
+                lessonHeaderGraphic
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(lesson.category.label.uppercased())
@@ -187,13 +182,9 @@ struct LessonView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var lessonWaveformState: NoumWaveformState {
-        if didShowSummary { return .earned }
-        switch applyPhase {
-        case .recording: return .listening
-        case .connecting, .evaluating: return .processing
-        case .ready, .done: return .idle
-        }
+    private var lessonHeaderGraphic: some View {
+        NoumSemanticGraphic(role: .learning, tint: lessonHeroTint, size: 48)
+            .accessibilityHidden(true)
     }
 
     /// Tint per lesson category. Delivery reads as the Ah-Counter green
@@ -455,6 +446,7 @@ struct LessonView: View {
                     tint: lessonHeroTint,
                     size: 36
                 )
+                .accessibilityHidden(true)
                 Text("Listening to your answer")
                     .font(Typography.caption.weight(.bold))
                     .foregroundStyle(lessonHeroTint)
@@ -1001,7 +993,10 @@ struct LessonView: View {
     private var lessonSummary: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             HStack(alignment: .center, spacing: Spacing.md) {
-                NoumWaveformMark(state: .earned, tint: lessonHeroTint)
+                NoumSemanticGraphic(
+                    role: summaryOutcome.passed ? .verifiedEvidence : .learning,
+                    tint: summaryOutcome.passed ? AppColor.positive : lessonHeroTint
+                )
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(passedHeadline)

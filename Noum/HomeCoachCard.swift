@@ -646,21 +646,27 @@ struct HomeCoachCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var missionWaveform: some View {
-        NoumWaveformMark(
-            state: activeEarned != nil
-                ? .earned
-                : (heroHandoff ? .listening : .idle),
-            level: heroHandoff ? 1 : 0,
-            tint: .white,
-            size: 72
-        )
-        .scaleEffect(heroHandoff ? 1.08 : 1)
-        .animation(
-            reduceMotion ? nil : NoumMotion.screenContinuation,
-            value: heroHandoff
-        )
-        .accessibilityHidden(true)
+    @ViewBuilder
+    private var missionGraphic: some View {
+        if activeEarned != nil {
+            NoumSemanticGraphic(role: .milestone, tint: .white, size: 72)
+                .accessibilityHidden(true)
+        } else {
+            // This is the one non-live waveform allowed outside capture: it
+            // visibly hands the accepted target into the recording surface.
+            NoumWaveformMark(
+                state: heroHandoff ? .listening : .idle,
+                level: heroHandoff ? 1 : 0,
+                tint: .white,
+                size: 72
+            )
+            .scaleEffect(heroHandoff ? 1.08 : 1)
+            .animation(
+                reduceMotion ? nil : NoumMotion.screenContinuation,
+                value: heroHandoff
+            )
+            .accessibilityHidden(true)
+        }
     }
 
     /// The violet stage is reserved for the coach's exact prescription. It
@@ -678,12 +684,12 @@ struct HomeCoachCard: View {
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: Spacing.lg) {
-                        missionWaveform
+                        missionGraphic
                         coachFocusCopy(exposure)
                     }
 
                     VStack(alignment: .leading, spacing: Spacing.sm) {
-                        missionWaveform
+                        missionGraphic
                         coachFocusCopy(exposure)
                     }
                 }

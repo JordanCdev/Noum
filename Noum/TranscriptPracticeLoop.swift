@@ -412,6 +412,62 @@ enum TranscriptRetryComparator {
     ]
 }
 
+/// Revalidates a persisted comparison at the presentation boundary. The
+/// comparator creates these fields together, but legacy/corrupt storage must
+/// not be able to join one result to different source or retry transcripts.
+enum TranscriptRetryComparisonQualification {
+    static func resolve(
+        outcome: RecommendationOutcome,
+        sourceSession: PracticeSession?,
+        retrySession: PracticeSession
+    ) -> TranscriptRetryComparison? {
+        guard outcome.isVerifiedFollowed,
+              outcome.mode == .timed,
+              retrySession.mode == .timed,
+              outcome.sessionID == retrySession.id,
+              PracticeProgressEligibility.qualifies(retrySession),
+              let target = outcome.transcriptRetryTarget,
+              target.isSupported,
+              let sourceSession,
+              PracticeProgressEligibility.qualifies(sourceSession),
+              outcome.sourceSessionID == sourceSession.id,
+              let comparison = outcome.transcriptRetryComparison,
+              comparison.schemaVersion == TranscriptRetryComparison.schemaVersion,
+              comparison.lever == target.lever,
+              comparison.sourceSessionID == sourceSession.id,
+              comparison.retrySessionID == retrySession.id,
+              (0...100).contains(comparison.sourceSignal),
+              (0...100).contains(comparison.retrySignal),
+              (0...100).contains(comparison.meaningOverlapPercent),
+              comparison.result == .needsMoreEvidence || (
+                comparison.isComparable && resultMatchesPersistedSignals(comparison)
+              ) else {
+            return nil
+        }
+        return comparison
+    }
+
+    private static func resultMatchesPersistedSignals(
+        _ comparison: TranscriptRetryComparison
+    ) -> Bool {
+        let delta = comparison.retrySignal - comparison.sourceSignal
+        let hasMeaningFloor = comparison.meaningOverlapPercent >= Int(
+            (TranscriptRetryComparator.minimumMeaningOverlap * 100).rounded()
+        )
+        guard hasMeaningFloor else { return false }
+        switch comparison.result {
+        case .improved:
+            return delta >= TranscriptRetryComparator.meaningfulSignalMovement
+        case .held:
+            return abs(delta) < TranscriptRetryComparator.meaningfulSignalMovement
+        case .regressed:
+            return delta <= -TranscriptRetryComparator.meaningfulSignalMovement
+        case .needsMoreEvidence:
+            return true
+        }
+    }
+}
+
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
@@ -443,16 +499,18 @@ struct TranscriptRetryMilestonePresentation: Identifiable, Equatable {
               target.isSupported,
               let sourceSession,
               outcome.sourceSessionID == sourceSession.id,
-              let comparison = outcome.transcriptRetryComparison,
+              let comparison = TranscriptRetryComparisonQualification.resolve(
+                outcome: outcome,
+                sourceSession: sourceSession,
+                retrySession: retrySession
+              ),
               comparison.isComparable,
               comparison.result == .improved,
               (comparison.retrySignal - comparison.sourceSignal) >= TranscriptRetryComparator.meaningfulSignalMovement,
               comparison.meaningOverlapPercent >= Int(
                 (TranscriptRetryComparator.minimumMeaningOverlap * 100).rounded()
               ),
-              comparison.lever == target.lever,
-              comparison.sourceSessionID == sourceSession.id,
-              comparison.retrySessionID == retrySession.id else {
+              comparison.lever == target.lever else {
             return nil
         }
 
@@ -490,8 +548,8 @@ struct TranscriptRetryMilestonePresentation: Identifiable, Equatable {
 
 /// Full-screen earned beat between a verified retry and its evidence card.
 /// This is the production translation of Figma V2.1 F1: an explicit reward
-/// stack (licensed waveform reaction, real XP when present, source-bound
-/// evidence, next step, then continue) rather than an abstract report
+/// stack (verification emblem, source-bound evidence, optional earned XP or
+/// unlock, then one comparison action) rather than an abstract report
 /// transition. Nothing shown here is inferred from chrome: the presentation
 /// has already passed the strict retry truth gate, and optional progress is
 /// supplied by Summary's exact rep.
@@ -505,7 +563,7 @@ struct TranscriptRetryMilestoneView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @AccessibilityFocusState private var evidenceFocused: Bool
-    @State private var waveformPhase = RetryRewardWaveformPhase.anticipation
+    @State private var emblemPhase = RetryRewardEmblemPhase.anticipation
     @State private var headlineVisible = false
     @State private var haloVisible = false
     @State private var particleBurstActive = false
@@ -531,10 +589,14 @@ struct TranscriptRetryMilestoneView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
                     header
-                    waveformStage
-                    rewardPill
+                    verificationStage
+                    if earnedXP > 0 {
+                        rewardPill
+                    }
                     evidenceCard
-                    nextStepStrip
+                    if unlockedNextStep {
+                        nextStepStrip
+                    }
                 }
                 .frame(maxWidth: 430)
                 .padding(.horizontal, 20)
@@ -617,7 +679,7 @@ struct TranscriptRetryMilestoneView: View {
         .accessibilityHidden(!headlineVisible)
     }
 
-    private var waveformStage: some View {
+    private var verificationStage: some View {
         ZStack {
             RadialGradient(
                 colors: [AppColor.coachAccent.opacity(0.16), .clear],
@@ -632,20 +694,27 @@ struct TranscriptRetryMilestoneView: View {
 
             RetryRewardParticleBurst(active: particleBurstActive)
 
-            NoumWaveformMark(state: .earned, size: 180)
-                .scaleEffect(waveformPhase.scale)
-                .rotationEffect(waveformPhase.rotation)
-                .offset(y: waveformPhase.yOffset)
-                .opacity(waveformPhase.opacity)
+            NoumSemanticGraphic(
+                role: .verifiedEvidence,
+                tint: AppColor.coachAccent,
+                size: 180
+            )
+                .shadow(
+                    color: AppColor.coachAccent.opacity(0.24),
+                    radius: 22,
+                    y: 12
+                )
+                .scaleEffect(emblemPhase.scale)
+                .rotationEffect(emblemPhase.rotation)
+                .offset(y: emblemPhase.yOffset)
+                .opacity(emblemPhase.opacity)
         }
         .frame(height: 190)
         .accessibilityHidden(true)
     }
 
     private var rewardPill: some View {
-        NoumRewardPill(
-            kind: earnedXP > 0 ? .xp(earnedXP) : .evidenceSaved
-        )
+        NoumRewardPill(kind: .xp(earnedXP))
         .opacity(rewardVisible ? 1 : 0)
         .offset(y: rewardVisible ? 0 : 28)
         .scaleEffect(rewardVisible ? 1 : 0.55)
@@ -671,27 +740,22 @@ struct TranscriptRetryMilestoneView: View {
         NoumSurface(.standard) {
             Label {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(
-                        unlockedNextStep
-                            ? String(localized: "Next step unlocked")
-                            : String(localized: "Evidence ready")
-                    )
+                    Text("Path milestone unlocked")
                         .font(Typography.headline)
                         .foregroundStyle(AppColor.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(
-                        unlockedNextStep
-                            ? String(localized: "Continue to see the next target.")
-                            : String(localized: "Review the source and retry side by side.")
-                    )
+                    Text("See the comparison, then continue along your path.")
                         .font(Typography.caption)
                         .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } icon: {
-                Image(systemName: unlockedNextStep ? "lock.open.fill" : "checkmark.seal.fill")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(AppColor.coachAccent)
+                NoumSemanticGraphic(
+                    role: .nextStepUnlocked,
+                    tint: AppColor.coachAccent,
+                    size: NoumControlMetric.minimumTouchTarget
+                )
+                .accessibilityHidden(true)
             }
         }
         .opacity(nextStepVisible ? 1 : 0)
@@ -703,8 +767,8 @@ struct TranscriptRetryMilestoneView: View {
 
     private var continueButton: some View {
         PrimaryCTA(
-            "Continue to evidence",
-            icon: "arrow.right",
+            "See the comparison",
+            icon: "arrow.left.arrow.right",
             tint: AppColor.coachingInk,
             action: continueToEvidence
         )
@@ -753,12 +817,12 @@ struct TranscriptRetryMilestoneView: View {
         withAnimation(NoumMotion.animation(for: .calm, reduceMotion: false)) {
             headlineVisible = true
         }
-        guard await wait(RetryRewardBeat.waveformHold) else { return }
+        guard await wait(RetryRewardBeat.emblemHold) else { return }
         withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
-            waveformPhase = .lifted
+            emblemPhase = .lifted
         }
 
-        guard await wait(RetryRewardBeat.waveformLift) else { return }
+        guard await wait(RetryRewardBeat.emblemLift) else { return }
         withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             haloVisible = true
         }
@@ -766,20 +830,24 @@ struct TranscriptRetryMilestoneView: View {
 
         guard await wait(RetryRewardBeat.burstToReward) else { return }
         withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
-            waveformPhase = .settled
-            rewardVisible = true
+            emblemPhase = .settled
+            rewardVisible = earnedXP > 0
         }
         fireEvidenceFeedbackIfNeeded()
 
-        guard await wait(RetryRewardBeat.rewardToEvidence) else { return }
+        if earnedXP > 0 {
+            guard await wait(RetryRewardBeat.rewardToEvidence) else { return }
+        }
         withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
             evidenceVisible = true
         }
         evidenceFocused = true
 
-        guard await wait(RetryRewardBeat.evidenceToNextStep) else { return }
-        withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
-            nextStepVisible = true
+        if unlockedNextStep {
+            guard await wait(RetryRewardBeat.evidenceToNextStep) else { return }
+            withAnimation(NoumMotion.animation(for: .earned, reduceMotion: false)) {
+                nextStepVisible = true
+            }
         }
 
         guard await wait(RetryRewardBeat.nextStepToAction) else { return }
@@ -825,13 +893,13 @@ struct TranscriptRetryMilestoneView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            waveformPhase = .settled
+            emblemPhase = .settled
             headlineVisible = true
             haloVisible = true
             particleBurstActive = false
-            rewardVisible = true
+            rewardVisible = earnedXP > 0
             evidenceVisible = true
-            nextStepVisible = true
+            nextStepVisible = unlockedNextStep
             actionVisible = true
             self.contentVisible = contentVisible
         }
@@ -858,7 +926,7 @@ struct TranscriptRetryMilestoneView: View {
     }
 }
 
-private enum RetryRewardWaveformPhase: Equatable {
+private enum RetryRewardEmblemPhase: Equatable {
     case anticipation
     case lifted
     case settled
@@ -881,9 +949,8 @@ private enum RetryRewardWaveformPhase: Equatable {
 
     var rotation: Angle {
         switch self {
-        case .anticipation: return .degrees(-9)
-        case .lifted: return .degrees(-1)
-        case .settled: return .degrees(-2)
+        case .anticipation: return .degrees(-6)
+        case .lifted, .settled: return .degrees(0)
         }
     }
 
@@ -925,12 +992,19 @@ private struct RetryRewardParticleBurst: View {
 
     @ViewBuilder
     private func particle(for index: Int) -> some View {
-        if index < 2 {
+        switch index {
+        case 0, 1:
             Image(systemName: "sparkle")
                 .font(.system(size: index == 0 ? 22 : 18, weight: .bold))
-        } else {
-            Capsule()
-                .frame(width: 6, height: index == 2 ? 22 : 18)
+        case 2, 4:
+            Image(systemName: "diamond.fill")
+                .font(.system(size: index == 2 ? 13 : 10, weight: .bold))
+        case 3:
+            Image(systemName: "star.fill")
+                .font(.system(size: 13, weight: .bold))
+        default:
+            Image(systemName: "circle.fill")
+                .font(.system(size: 9, weight: .bold))
         }
     }
 
@@ -947,8 +1021,8 @@ private struct RetryRewardParticleBurst: View {
 
     private func color(for index: Int) -> Color {
         switch index {
-        case 0, 3: return Color(red: 248 / 255, green: 177 / 255, blue: 42 / 255)
-        case 1, 4: return Color(red: 124 / 255, green: 58 / 255, blue: 237 / 255)
+        case 0, 3: return AppColor.rewardGoldEnd
+        case 1, 4: return AppColor.coachAccent
         default: return AppColor.brandBlueLight
         }
     }
@@ -959,6 +1033,32 @@ private struct RetryRewardParticleBurst: View {
 
     private func opacity(for index: Int) -> Double {
         [1, 0.90, 0.85, 0.90, 0.80, 0.72][index]
+    }
+}
+
+/// The comparison has two evidence roles, not two interchangeable audio clips.
+/// Numbered markers make sequence and dominance legible without reusing the
+/// waveform as generic decoration.
+private enum RetryComparisonStage: Equatable {
+    case source
+    case retry
+
+    var graphicRole: NoumSemanticGraphicRole {
+        switch self {
+        case .source: return .originalAttempt
+        case .retry: return .retryAttempt
+        }
+    }
+
+    func isDominant(for result: TranscriptRetryResult) -> Bool {
+        switch result {
+        case .improved:
+            return self == .retry
+        case .regressed:
+            return self == .source
+        case .held, .needsMoreEvidence:
+            return false
+        }
     }
 }
 
@@ -992,12 +1092,16 @@ struct TranscriptRetryComparisonCard: View {
     /// felt and seen beats are one moment. Never loops, never on held/
     /// regressed, skipped under Reduce Motion.
     @State private var payoffPulse = false
-    /// Trigger for the one-shot changed-word brighten wave; never toggled
+    /// Trigger for the one-shot changed-word brighten sweep; never toggled
     /// under Reduce Motion (the static highlight is the RM presentation).
-    @State private var waveTrigger = false
+    @State private var changeSweepTrigger = false
 
     private var comparison: TranscriptRetryComparison? {
-        outcome.transcriptRetryComparison
+        TranscriptRetryComparisonQualification.resolve(
+            outcome: outcome,
+            sourceSession: sourceSession,
+            retrySession: retrySession
+        )
     }
 
     private var result: TranscriptRetryResult {
@@ -1020,6 +1124,9 @@ struct TranscriptRetryComparisonCard: View {
     }
 
     private var resultDetail: String {
+        guard comparison != nil else {
+            return "There is not enough source-bound evidence for a fair comparison yet."
+        }
         switch result {
         case .improved:
             return "Your \(lever.focusLabel) was stronger than in the verified source rep. One retry is promising, not proof."
@@ -1074,7 +1181,7 @@ struct TranscriptRetryComparisonCard: View {
     /// Tally counts this attempt; both sentences self-suppress without data.
     private var planLine: String? {
         var sentences: [String] = []
-        if let priorHolds, let priorTries {
+        if comparison != nil, let priorHolds, let priorTries {
             let holds = priorHolds + (result == .improved || result == .held ? 1 : 0)
             let tries = priorTries + 1
             sentences.append("\(Self.spelled(holds).capitalized) hold\(holds == 1 ? "" : "s") in \(Self.spelled(tries)) tr\(tries == 1 ? "y" : "ies").")
@@ -1098,19 +1205,14 @@ struct TranscriptRetryComparisonCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
-                    .foregroundStyle(tint)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("SAME TARGET · TWO TRIES")
-                        .font(Typography.micro.weight(.heavy))
-                        .tracking(0.5)
-                        .foregroundStyle(.secondary)
-                    Text(resultTitle)
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(.primary)
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("COMPARISON · TWO TRIES")
+                    .font(Typography.micro.weight(.heavy))
+                    .tracking(0.5)
+                    .foregroundStyle(.secondary)
+                Text(resultTitle)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(.primary)
             }
 
             if let payoffLine {
@@ -1140,7 +1242,7 @@ struct TranscriptRetryComparisonCard: View {
                 .padding(.vertical, 7)
                 .background(tint.opacity(payoffLanded ? 0.10 : 0.04), in: Capsule())
 
-            if let sourceSession {
+            if comparison != nil, let sourceSession {
                 let sourceSnippet = AIRewriteService.originalSnippet(
                     transcript: sourceSession.transcript,
                     weakness: lever.weakness
@@ -1153,16 +1255,17 @@ struct TranscriptRetryComparisonCard: View {
                     label: rungLabel("FIRST TRY", session: sourceSession),
                     text: Text(sourceSnippet)
                         .foregroundColor(AppColor.neutralReceded),
-                    dominant: false
+                    stage: .source
                 )
+                comparisonBridge
                 comparisonRung(
                     label: rungLabel("RETRY", session: retrySession),
                     text: TranscriptChangeHighlighter.highlightedText(
                         original: sourceSnippet,
                         revision: retrySnippet
                     ),
-                    dominant: true,
-                    wave: (original: sourceSnippet, revision: retrySnippet)
+                    stage: .retry,
+                    sweep: (original: sourceSnippet, revision: retrySnippet)
                 )
             }
 
@@ -1235,7 +1338,7 @@ struct TranscriptRetryComparisonCard: View {
         } completion: {
             fireResultHaptic()
             if result == .improved || result == .held {
-                waveTrigger.toggle()
+                changeSweepTrigger.toggle()
             }
             if result == .improved {
                 // The one visual pulse, paired with the two-beat haptic.
@@ -1257,29 +1360,57 @@ struct TranscriptRetryComparisonCard: View {
         }
     }
 
-    /// Frozen design: the first try recedes, the retry leads. Dominance is
-    /// carried by fill + border + text colour, never by hiding the original.
-    /// `wave` (retry rung only) supplies the snippet pair for the one-shot
-    /// changed-word brighten wave layered over the static highlight.
+    /// Numbered evidence markers communicate sequence. Dominance is earned by
+    /// the comparison result: a verified improvement lifts the retry, a
+    /// regression preserves the source, and uncertain/held results stay
+    /// visually even. `sweep` (retry rung only) supplies the snippet pair for
+    /// the one-shot changed-word brighten sweep layered over the static
+    /// highlight.
     private func comparisonRung(
         label: String,
         text: Text,
-        dominant: Bool,
-        wave: (original: String, revision: String)? = nil
+        stage: RetryComparisonStage,
+        sweep: (original: String, revision: String)? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(Typography.micro.weight(.heavy))
-                .foregroundStyle(dominant ? AppColor.proText : AppColor.neutralReceded)
-            text
-                .font(dominant ? Typography.body.weight(.semibold) : Typography.caption.weight(.medium))
-                .foregroundStyle(dominant ? AppColor.textPrimary : AppColor.neutralReceded)
-                .fixedSize(horizontal: false, vertical: true)
-                .overlay(alignment: .topLeading) {
-                    if let wave {
-                        changedWordWave(original: wave.original, revision: wave.revision)
+        let dominant = stage.isDominant(for: result)
+        let rungFont = dominant
+            ? Typography.body.weight(.semibold)
+            : Typography.caption.weight(.medium)
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: stage.graphicRole.systemName)
+                    .font(.caption.weight(.bold))
+                    .accessibilityHidden(true)
+
+                Text(label)
+                    .font(Typography.micro.weight(.heavy))
+            }
+            .foregroundStyle(dominant ? AppColor.proText : AppColor.neutralReceded)
+            HStack(alignment: .top, spacing: Spacing.xs) {
+                Text("“")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(dominant ? AppColor.proText : AppColor.neutralReceded)
+                    .accessibilityHidden(true)
+
+                text
+                    .font(rungFont)
+                    .foregroundStyle(dominant ? AppColor.textPrimary : AppColor.neutralReceded)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .overlay(alignment: .topLeading) {
+                        if let sweep {
+                            changedWordSweep(
+                                original: sweep.original,
+                                revision: sweep.revision,
+                                font: rungFont
+                            )
+                        }
                     }
-                }
+
+                Text("”")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(dominant ? AppColor.proText : AppColor.neutralReceded)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1293,26 +1424,38 @@ struct TranscriptRetryComparisonCard: View {
         )
     }
 
-    /// Decorative one-shot brighten wave over the retry rung: each changed
+    private var comparisonBridge: some View {
+        Text("Same coaching target")
+            .font(Typography.micro.weight(.heavy))
+            .foregroundStyle(AppColor.proText)
+            .padding(.leading, Spacing.sm)
+            .accessibilityLabel("Same coaching target for the first try and retry")
+    }
+
+    /// Decorative one-shot brighten sweep over the retry rung: each changed
     /// word briefly brightens in reading order on the `coachLineStagger`
     /// cadence, then recedes to the static highlight. Purely additive — the
     /// base `highlightedText` underneath stays the authoritative (and RM)
     /// presentation, and the layers are hidden from accessibility. The
     /// trigger only ever toggles outside Reduce Motion, so the phase
     /// animator rests at opacity 0 (no motion, no loop) for RM users.
-    private func changedWordWave(original: String, revision: String) -> some View {
+    private func changedWordSweep(
+        original: String,
+        revision: String,
+        font: Font
+    ) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(
-                Array(Self.waveLayers(original: original, revision: revision).enumerated()),
+                Array(Self.sweepLayers(original: original, revision: revision).enumerated()),
                 id: \.offset
             ) { index, layer in
                 layer
-                    // Mirrors the dominant rung's text styling exactly so the
-                    // overlay lays out glyph-identical to the base highlight.
-                    .font(Typography.body.weight(.semibold))
+                    // Mirrors this rung's exact text styling so held/even
+                    // comparisons stay glyph-aligned as well as improvements.
+                    .font(font)
                     .fixedSize(horizontal: false, vertical: true)
                     .brightness(0.25)
-                    .phaseAnimator([0.0, 1.0], trigger: waveTrigger) { view, phase in
+                    .phaseAnimator([0.0, 1.0], trigger: changeSweepTrigger) { view, phase in
                         view.opacity(phase)
                     } animation: { _ in
                         .coachLineStagger(index)
@@ -1323,15 +1466,15 @@ struct TranscriptRetryComparisonCard: View {
         .allowsHitTesting(false)
     }
 
-    /// Salience cap for the brighten wave — beyond this the wave stops
+    /// Salience cap for the brighten sweep — beyond this the sweep stops
     /// reading as emphasis and starts reading as decoration.
-    private static let waveWordCap = 6
+    private static let sweepWordCap = 6
 
     /// Mirrors `TranscriptChangeHighlighter`'s word tokenisation (same
-    /// pattern) so wave layers land on the same words the static highlight
-    /// marks. Drift would only mute the decorative wave — the highlight
+    /// pattern) so sweep layers land on the same words the static highlight
+    /// marks. Drift would only mute the decorative sweep — the highlight
     /// underneath remains authoritative.
-    private static let waveWordRegex = try! NSRegularExpression(
+    private static let sweepWordRegex = try! NSRegularExpression(
         pattern: #"[\p{L}\p{N}'’-]+"#
     )
 
@@ -1339,9 +1482,9 @@ struct TranscriptRetryComparisonCard: View {
     /// rendered with every glyph clear except that word, styled exactly like
     /// the base highlight's changed words so each layer wraps identically
     /// and the visible word sits pixel-aligned over its static counterpart.
-    private static func waveLayers(original: String, revision: String) -> [Text] {
+    private static func sweepLayers(original: String, revision: String) -> [Text] {
         let nsRevision = revision as NSString
-        let matches = waveWordRegex.matches(
+        let matches = sweepWordRegex.matches(
             in: revision,
             range: NSRange(location: 0, length: nsRevision.length)
         )
@@ -1349,7 +1492,7 @@ struct TranscriptRetryComparisonCard: View {
             original: original,
             revision: revision
         )
-        let emphasized = matches.indices.filter(changed.contains).prefix(waveWordCap)
+        let emphasized = matches.indices.filter(changed.contains).prefix(sweepWordCap)
         return emphasized.map { emphasisIndex in
             var rendered = Text("")
             var cursor = 0

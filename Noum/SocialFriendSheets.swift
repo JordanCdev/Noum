@@ -290,7 +290,7 @@ struct ChallengePickFriendSheet: View {
                         Spacer()
 
                         VStack(spacing: Spacing.sm) {
-                            Image(systemName: "waveform.circle.fill")
+                            Image(systemName: "person.2.fill")
                                 .font(.system(size: 44, weight: .semibold))
                                 .foregroundStyle(AppColor.brandBlue)
                             Text("Speak-off ready")

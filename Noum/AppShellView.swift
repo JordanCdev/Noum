@@ -26,7 +26,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .home: return "house"
-        case .train: return "waveform"
+        case .train: return "mic.fill"
         case .review: return "book.closed"
         case .profile: return "person"
         case .settings: return "slider.horizontal.3"
@@ -303,7 +303,7 @@ struct AppShellView: View {
     private var experienceTabBar: some View {
         HStack(spacing: 0) {
             experienceTabButton(.home, title: "Today", glyph: "sun.max")
-            experienceTabButton(.train, title: "Practice", glyph: "waveform")
+            experienceTabButton(.train, title: "Practice", glyph: "mic.fill")
             experienceTabButton(.review, title: "Progress", glyph: "chart.line.uptrend.xyaxis")
             experienceTabButton(.profile, title: "You", glyph: "person.crop.circle")
         }
@@ -369,22 +369,12 @@ struct AppShellView: View {
                         .accessibilityHidden(true)
                 }
 
-                if tab == .train {
-                    NoumWaveformMark(
-                        state: .idle,
-                        tint: isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded,
-                        size: 18
-                    )
+                Image(systemName: glyph)
+                    .font(.system(size: 16, weight: isSelected ? .bold : .semibold))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
                     .frame(height: 18)
                     .accessibilityHidden(true)
-                } else {
-                    Image(systemName: glyph)
-                        .font(.system(size: 16, weight: isSelected ? .bold : .semibold))
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
-                        .frame(height: 18)
-                        .accessibilityHidden(true)
-                }
 
                 Text(title)
                     .font(Typography.figtree(size: 11, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))

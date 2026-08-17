@@ -67,7 +67,7 @@ enum ProgressOutcomeKind: String, CaseIterable {
     var symbolName: String {
         switch self {
         case .personalBest: return "star.fill"
-        case .practiceLevel: return "waveform.path.ecg"
+        case .practiceLevel: return "chart.bar.fill"
         case .achievement: return "checkmark"
         case .landmark: return "arrow.up.right"
         }
@@ -475,7 +475,7 @@ struct AchievementsTreeView: View {
     private var recentOutcomesEmptyState: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             sectionHeading("Recent outcomes")
-            Label("Complete a qualifying rep to add a source-bound outcome.", systemImage: "waveform")
+            Label("Complete a qualifying rep to add a source-bound outcome.", systemImage: "mic.fill")
                 .font(Typography.caption)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

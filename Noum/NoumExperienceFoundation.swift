@@ -13,8 +13,103 @@ enum NoumControlMetric {
     static let progressTrackHeight: CGFloat = 10
     /// Default identity-mark size on cards.
     static let waveformMark: CGFloat = 56
+    /// Default size for a static semantic graphic.
+    static let semanticGraphic: CGFloat = 56
     /// Inner reward content; surface padding brings the total above 68pt.
     static let rewardMinimumHeight: CGFloat = minimumTouchTarget
+}
+
+/// Closed graphic vocabulary for non-audio product meaning.
+///
+/// `NoumWaveformMark` is reserved for voice capture, listening, processing,
+/// and the single Today-to-recording handoff. Everything else names its
+/// meaning through this enum so the waveform cannot become generic chrome.
+enum NoumSemanticGraphicRole: String, CaseIterable, Sendable {
+    case coachRead
+    case verifiedEvidence
+    case evidenceSaved
+    case earnedXP
+    case milestone
+    case nextStepUnlocked
+    case originalAttempt
+    case retryAttempt
+    case progressTrajectory
+    case practice
+    case practicePlan
+    case learning
+    case roleplay
+    case coachingMemory
+    case dailyChallenge
+    case fillerWords
+    case needsAttention
+    case profile
+    case privacy
+
+    var systemName: String {
+        switch self {
+        case .coachRead: return "scope"
+        case .verifiedEvidence: return "checkmark.seal.fill"
+        case .evidenceSaved: return "tray.and.arrow.down.fill"
+        case .earnedXP: return "star.fill"
+        case .milestone: return "star.circle.fill"
+        case .nextStepUnlocked: return "lock.open.fill"
+        case .originalAttempt: return "1.circle"
+        case .retryAttempt: return "2.circle.fill"
+        case .progressTrajectory: return "chart.line.uptrend.xyaxis"
+        case .practice: return "mic.fill"
+        case .practicePlan: return "checklist"
+        case .learning: return "books.vertical.fill"
+        case .roleplay: return "bubble.left.and.bubble.right.fill"
+        case .coachingMemory: return "brain.head.profile"
+        case .dailyChallenge: return "calendar.badge.clock"
+        case .fillerWords: return "ellipsis.bubble.fill"
+        case .needsAttention: return "exclamationmark.triangle.fill"
+        case .profile: return "person.crop.circle"
+        case .privacy: return "hand.raised.fill"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .coachRead: return String(localized: "Coach read")
+        case .verifiedEvidence: return String(localized: "Verified evidence")
+        case .evidenceSaved: return String(localized: "Evidence saved")
+        case .earnedXP: return String(localized: "Experience earned")
+        case .milestone: return String(localized: "Milestone reached")
+        case .nextStepUnlocked: return String(localized: "Next step unlocked")
+        case .originalAttempt: return String(localized: "Original attempt")
+        case .retryAttempt: return String(localized: "Retry attempt")
+        case .progressTrajectory: return String(localized: "Progress trajectory")
+        case .practice: return String(localized: "Practice")
+        case .practicePlan: return String(localized: "Practice plan")
+        case .learning: return String(localized: "Lesson")
+        case .roleplay: return String(localized: "Roleplay")
+        case .coachingMemory: return String(localized: "Coaching memory")
+        case .dailyChallenge: return String(localized: "Daily challenge")
+        case .fillerWords: return String(localized: "Filler words")
+        case .needsAttention: return String(localized: "Needs attention")
+        case .profile: return String(localized: "Profile")
+        case .privacy: return String(localized: "Privacy")
+        }
+    }
+}
+
+/// Unboxed semantic symbol. Surfaces own any background treatment so the app
+/// does not replace one repetitive badge with another repetitive badge.
+struct NoumSemanticGraphic: View {
+    let role: NoumSemanticGraphicRole
+    var tint: Color = AppColor.coachingInk
+    var size: CGFloat = NoumControlMetric.minimumTouchTarget
+
+    var body: some View {
+        Image(systemName: role.systemName)
+            .symbolRenderingMode(.hierarchical)
+            .font(.system(size: size * 0.52, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: size, height: size)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(role.accessibilityLabel)
+    }
 }
 
 enum NoumMotionMetric {
@@ -23,11 +118,8 @@ enum NoumMotionMetric {
 }
 
 extension AppColor {
-    // The waveform owns this spectrum. Other artwork should use the semantic
-    // brand, coaching, or mode tokens instead of copying these stops.
-    static let waveformStart = brandBlueLight
-    static let waveformMid = coachAccent
-    static let waveformEnd = proLight
+    // The waveform owns this depth tint. Other artwork should use semantic
+    // brand, coaching, or mode tokens instead of copying its treatment.
     static let waveformDepth = Color(red: 55 / 255, green: 18 / 255, blue: 124 / 255)
 
     // Earned-reward colours are intentionally separate from caution amber.
@@ -126,13 +218,11 @@ enum NoumWaveformState: String, CaseIterable, Sendable {
     case idle
     case listening
     case processing
-    case earned
 
     var motionTier: NoumMotionTier {
         switch self {
         case .idle, .processing: return .calm
         case .listening: return .responsive
-        case .earned: return .earned
         }
     }
 
@@ -141,7 +231,6 @@ enum NoumWaveformState: String, CaseIterable, Sendable {
         case .idle: return String(localized: "Noum is ready")
         case .listening: return String(localized: "Noum is listening")
         case .processing: return String(localized: "Noum is reviewing your rep")
-        case .earned: return String(localized: "Improvement earned")
         }
     }
 }
@@ -164,14 +253,7 @@ struct NoumWaveformMark: View {
                 .offset(y: size * 0.035)
 
             waveform
-                .foregroundStyle(foregroundStyle)
-                .shadow(
-                    color: state == .earned
-                        ? AppColor.waveformDepth.opacity(0.22)
-                        : .clear,
-                    radius: state == .earned ? Spacing.sm : 0,
-                    y: state == .earned ? Spacing.xs : 0
-                )
+                .foregroundStyle(tint)
         }
         .frame(width: size, height: size)
         .scaleEffect(renderedScale)
@@ -195,19 +277,6 @@ struct NoumWaveformMark: View {
             .scaledToFit()
     }
 
-    private var foregroundStyle: AnyShapeStyle {
-        if state == .earned {
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [AppColor.waveformStart, AppColor.waveformMid, AppColor.waveformEnd],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-        }
-        return AnyShapeStyle(tint)
-    }
-
     private var renderedLevel: CGFloat {
         CGFloat(min(max(level, 0), 1))
     }
@@ -217,8 +286,6 @@ struct NoumWaveformMark: View {
         switch state {
         case .listening:
             return 1 + renderedLevel * state.motionTier.allowance(reduceMotion: false).maximumScaleDelta
-        case .earned:
-            return 1.04
         case .idle, .processing:
             return 1
         }
@@ -324,6 +391,7 @@ struct NoumMissionCard: View {
     let title: String
     let instruction: String
     var metadata: String? = nil
+    var graphicRole: NoumSemanticGraphicRole = .practice
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
 
@@ -359,7 +427,7 @@ struct NoumMissionCard: View {
     }
 
     private var mark: some View {
-        NoumWaveformMark(state: .idle, tint: .white)
+        NoumSemanticGraphic(role: graphicRole, tint: .white)
             .accessibilityHidden(true)
     }
 
@@ -406,7 +474,7 @@ enum NoumEvidenceStatus: CaseIterable, Sendable {
     var symbol: String {
         switch self {
         case .verified: return "checkmark.seal.fill"
-        case .provisional: return "waveform"
+        case .provisional: return "clock.fill"
         case .needsMore: return "ellipsis.circle"
         }
     }
@@ -537,6 +605,14 @@ enum NoumRewardKind: Equatable, Sendable {
         case .milestone: return String(localized: "Milestone")
         }
     }
+
+    var semanticGraphicRole: NoumSemanticGraphicRole {
+        switch self {
+        case .xp: return .earnedXP
+        case .evidenceSaved: return .evidenceSaved
+        case .milestone: return .milestone
+        }
+    }
 }
 
 /// Compact earned-value receipt. Invalid rewards (for example zero XP) do not
@@ -549,8 +625,9 @@ struct NoumRewardPill: View {
             if kind.isRenderable {
                 NoumSurface(.reward) {
                     HStack(spacing: Spacing.sm) {
-                        NoumWaveformMark(
-                            state: .earned,
+                        NoumSemanticGraphic(
+                            role: kind.semanticGraphicRole,
+                            tint: AppColor.rewardGoldInk,
                             size: NoumControlMetric.minimumTouchTarget
                         )
                         .accessibilityHidden(true)

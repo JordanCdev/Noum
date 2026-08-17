@@ -46,7 +46,7 @@ struct TrajectoryView: View {
                         }
                     }
 
-                    section(title: "Recent reps", icon: "waveform") {
+                    section(title: "Recent reps", icon: "clock.arrow.circlepath") {
                         if snapshot.recentReps.isEmpty {
                             emptyRow("No reps yet — your practice history will show up here.")
                         } else {

@@ -178,13 +178,11 @@ struct SessionHistoryView: View {
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var isProgressExpanded = ReviewProgressDisclosure.defaultExpanded
     @State private var isV46EvidenceExpanded = false
-    /// One-shot settle for the progress head's accent underline (once per
-    /// view lifetime — the head itself is not identity-keyed on data).
-    @State private var underlineSettled = false
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isAppTabRoot) private var isAppTabRoot
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -307,7 +305,7 @@ struct SessionHistoryView: View {
     }
 
     /// The evidence-led trajectory: eyebrow (active target) → one bounded
-    /// reliability statement → honest tally → weekly trajectory clusters →
+    /// reliability statement → honest tally → comparable proof chronology →
     /// up to three evidence rows (lapse kept, amber + text cue) → one
     /// plan-review action. Renders only on real comparable evidence; the
     /// legacy story card remains the fallback.
@@ -363,19 +361,19 @@ struct SessionHistoryView: View {
         }
     }
 
-    /// The primary interpretation is one authored surface: waveform identity,
-    /// bounded read, trajectory, then the freshest supporting receipt. Older
-    /// receipts remain available without making the page read like a ledger.
+    /// The primary interpretation is one authored surface: a semantic read
+    /// mark, bounded conclusion, categorical proof chronology, then the
+    /// newest supporting receipt. Older receipts remain available without
+    /// making the page read like a ledger.
     private func v46CoachReadCard(_ presentation: V46ProgressPresentation) -> some View {
         NoumSurface(.standard) {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack(spacing: Spacing.sm) {
-                    NoumWaveformMark(
-                        state: presentation.readStage == .reliable ? .earned : .idle,
-                        tint: AppColor.coachAccent,
-                        size: NoumControlMetric.minimumTouchTarget
-                    )
-                    .accessibilityHidden(true)
+                    Image(systemName: "scope")
+                        .font(Typography.headline.weight(.semibold))
+                        .foregroundStyle(v46ReadTint(for: presentation.readStage))
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
                         Text(presentation.coachReadEyebrow)
@@ -400,56 +398,146 @@ struct SessionHistoryView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("progress.v46.subtitle")
 
-                HStack(alignment: .bottom, spacing: 0) {
-                    ForEach(Array(presentation.trajectory.enumerated()), id: \.offset) { index, day in
-                        if index > 0 { Spacer(minLength: Spacing.sm) }
-                        VoiceTraceDayCluster(
-                            heights: trajectoryHeights(for: day),
-                            label: day.label,
-                            isLapse: day.isLapse
-                        )
-                        .modifier(V46TrajectoryGrowIn(index: index, reduceMotion: reduceMotion))
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.xs)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(presentation.chartAccessibilitySummary))
-                .id(trajectoryIdentity(for: presentation))
-
-                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                    Text(presentation.evidenceValue)
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(v46ReadTint(for: presentation.readStage))
-                    Text(presentation.evidenceLabel)
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    AppColor.innerSurface,
-                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                )
-                .accessibilityElement(children: .combine)
+                v46ProofChronology(presentation)
 
                 v46EvidenceDisclosure(presentation)
-
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(AppColor.coachAccent)
-                    .frame(width: 40, height: 3)
-                    .scaleEffect(x: underlineSettled ? 1 : 0, anchor: .leading)
-                    .accessibilityHidden(true)
-                    .onAppear {
-                        guard !underlineSettled else { return }
-                        withMotion(reduceMotion, .progressAck) {
-                            underlineSettled = true
-                        }
-                    }
             }
         }
+    }
+
+    /// A chronology, not a score chart. Every node sits on the same baseline
+    /// because the ledger gives us categorical retry outcomes, not a
+    /// continuous daily measurement. The caption makes the per-day roll-up
+    /// explicit. The authored read gives the cohort total once; this view
+    /// shows the day-level evidence without repeating a second tally tile.
+    private func v46ProofChronology(_ presentation: V46ProgressPresentation) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text("Comparable retries")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                Spacer(minLength: Spacing.xs)
+                Text("Best result each day")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+
+            if dynamicTypeSize.isAccessibilitySize {
+                v46VerticalProofChronology(presentation.trajectory)
+            } else {
+                v46HorizontalProofChronology(presentation.trajectory)
+            }
+        }
+        .padding(.vertical, Spacing.xs)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(trajectoryAccessibilityLabel(for: presentation)))
+        .accessibilityIdentifier("progress.v46.chronology")
+        .id(trajectoryIdentity(for: presentation))
+    }
+
+    private func v46HorizontalProofChronology(_ days: [V46TrajectoryDay]) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(days.enumerated()), id: \.offset) { index, day in
+                VStack(spacing: Spacing.xxs) {
+                    HStack(spacing: 0) {
+                        v46TrajectoryConnector(isVisible: index > 0)
+                        v46TrajectoryNode(for: day.outcome)
+                        v46TrajectoryConnector(isVisible: index < days.count - 1)
+                    }
+                    Text(day.label)
+                        .font(Typography.captionSmall.weight(.bold))
+                        .tracking(0.6)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineLimit(1)
+                    Text(day.outcome.label)
+                        .font(Typography.captionSmall.weight(.semibold))
+                        .foregroundStyle(v46TrajectoryTint(for: day.outcome))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity)
+                .modifier(V46TrajectoryReveal(index: index, reduceMotion: reduceMotion))
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func v46VerticalProofChronology(_ days: [V46TrajectoryDay]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(days.enumerated()), id: \.offset) { index, day in
+                HStack(alignment: .top, spacing: Spacing.sm) {
+                    VStack(spacing: 0) {
+                        v46TrajectoryNode(for: day.outcome)
+                        Rectangle()
+                            .fill(AppColor.textTertiary.opacity(0.30))
+                            .frame(width: 2, height: 24)
+                            .opacity(index < days.count - 1 ? 1 : 0)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(width: 32)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(day.label)
+                            .font(Typography.captionSmall.weight(.bold))
+                            .tracking(0.6)
+                            .foregroundStyle(AppColor.textSecondary)
+                        Text(day.outcome.label)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(v46TrajectoryTint(for: day.outcome))
+                    }
+                    .padding(.top, Spacing.xxs)
+
+                    Spacer(minLength: 0)
+                }
+                .modifier(V46TrajectoryReveal(index: index, reduceMotion: reduceMotion))
+            }
+        }
+    }
+
+    private func v46TrajectoryConnector(isVisible: Bool) -> some View {
+        Rectangle()
+            .fill(AppColor.textTertiary.opacity(0.30))
+            .frame(maxWidth: .infinity, minHeight: 2, maxHeight: 2)
+            .opacity(isVisible ? 1 : 0)
+            .accessibilityHidden(true)
+    }
+
+    private func v46TrajectoryNode(for outcome: V46TrajectoryOutcome) -> some View {
+        ZStack {
+            Circle()
+                .fill(AppColor.cardBackground)
+            Circle()
+                .stroke(v46TrajectoryTint(for: outcome), lineWidth: 2)
+            Image(systemName: v46TrajectorySymbol(for: outcome))
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(v46TrajectoryTint(for: outcome))
+        }
+        .frame(width: 30, height: 30)
+        .accessibilityHidden(true)
+    }
+
+    private func v46TrajectorySymbol(for outcome: V46TrajectoryOutcome) -> String {
+        switch outcome {
+        case .improved: return "arrow.up.right"
+        case .held: return "checkmark"
+        case .lapse: return "arrow.down.right"
+        }
+    }
+
+    private func v46TrajectoryTint(for outcome: V46TrajectoryOutcome) -> Color {
+        switch outcome {
+        case .improved: return AppColor.positive
+        case .held: return AppColor.coachingInk
+        case .lapse: return AppColor.caution
+        }
+    }
+
+    private func trajectoryAccessibilityLabel(for presentation: V46ProgressPresentation) -> String {
+        let sequence = presentation.trajectory
+            .map { "\($0.label): \($0.outcome.label)" }
+            .joined(separator: ", ")
+        return "\(presentation.trajectoryAccessibilitySummary) Best comparable result each day: \(sequence)."
     }
 
     @ViewBuilder
@@ -560,20 +648,11 @@ struct SessionHistoryView: View {
         }
     }
 
-    /// Cluster silhouette scaled by the day's honest intensity; today's
-    /// winning cluster reads tallest, a lapse day sits visibly lower.
-    private func trajectoryHeights(for day: V46TrajectoryDay) -> [CGFloat] {
-        let base: [CGFloat] = day.label == "TODAY"
-            ? [10, 35, 52, 35, 10]
-            : [8, 26, 33, 26, 8]
-        return base.map { $0 * day.intensity }
-    }
-
-    /// Stable identity for the current trajectory data — the cluster grow-in
-    /// keys on this so it runs once per evidence state, not once per visit.
+    /// Stable identity for the current chronology so new evidence resets the
+    /// restrained reveal while unchanged content stays coherent in-place.
     private func trajectoryIdentity(for presentation: V46ProgressPresentation) -> String {
         presentation.trajectory
-            .map { "\($0.label)|\($0.intensity)|\($0.isLapse)" }
+            .map { "\($0.label)|\($0.outcome.label)" }
             .joined(separator: "·")
     }
 
@@ -826,27 +905,37 @@ struct SessionHistoryView: View {
 
 }
 
-/// One-time grow-in for a trajectory day cluster: the bars rise from a low
-/// crouch into their honest heights, staggered left-to-right. The owning
-/// container is `.id`-keyed on the trajectory content, so fresh evidence
-/// re-grows once and scrolling back never replays (the one-shot state
-/// survives while the identity holds — LazyVStack retains loaded views).
-/// Reduce Motion: static, full height immediately, no fade. The cluster is
-/// already `accessibilityHidden` decoration, so the motion adds nothing to
-/// (and removes nothing from) the spoken chart summary.
-private struct V46TrajectoryGrowIn: ViewModifier {
+/// One restrained reveal for the presented chronology. Nodes settle in
+/// reading order; Reduce Motion is fully static from the first rendered frame.
+private struct V46TrajectoryReveal: ViewModifier {
     let index: Int
     let reduceMotion: Bool
-    @State private var grown = false
+    @State private var revealed = false
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(y: grown ? 1 : 0.35, anchor: .bottom)
-            .opacity(grown ? 1 : 0.6)
+            .opacity(reduceMotion || revealed ? 1 : 0)
+            .offset(y: reduceMotion || revealed ? 0 : 6)
             .onAppear {
-                guard !grown else { return }
-                withMotion(reduceMotion, .stagger(index)) {
-                    grown = true
+                guard !revealed else { return }
+                if reduceMotion {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        revealed = true
+                    }
+                    return
+                }
+                withMotion(false, .stagger(index)) {
+                    revealed = true
+                }
+            }
+            .onChange(of: reduceMotion) { _, enabled in
+                guard enabled, !revealed else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    revealed = true
                 }
             }
     }

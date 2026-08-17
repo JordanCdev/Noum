@@ -90,8 +90,8 @@ struct CoachReadCard: View {
         NoumSurface(.standard) {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack(spacing: Spacing.sm) {
-                    NoumWaveformMark(
-                        state: .idle,
+                    NoumSemanticGraphic(
+                        role: .coachRead,
                         tint: AppColor.coachAccent,
                         size: 28
                     )
@@ -308,8 +308,8 @@ struct CoachReadCard: View {
 
     private var insightLoadingState: some View {
         HStack(spacing: Spacing.sm) {
-            NoumWaveformMark(
-                state: .processing,
+            NoumSemanticGraphic(
+                role: .progressTrajectory,
                 tint: AppColor.coachAccent,
                 size: 24
             )

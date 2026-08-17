@@ -125,7 +125,7 @@ enum RepEventTrendCopy {
         switch kind {
         case .rushedBurst:   return ("hare.fill", AppColor.caution)
         case .longestPause:  return ("pause.circle.fill", AppColor.brandBlue)
-        case .fillerCluster: return ("waveform", AppColor.textSecondary)
+        case .fillerCluster: return (NoumSemanticGraphicRole.fillerWords.systemName, AppColor.textSecondary)
         }
     }
 

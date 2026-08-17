@@ -71,19 +71,20 @@ struct MotionSemanticsTests {
     // MARK: Earned retry reward (page-19 V2.1 F1)
 
     @Test func retryRewardBeatsStayInsideOneFastReveal() {
-        let summedToAction = RetryRewardBeat.waveformHold
-            + RetryRewardBeat.waveformLift
+        let fixedToAction = RetryRewardBeat.emblemHold
+            + RetryRewardBeat.emblemLift
             + RetryRewardBeat.burstToReward
-            + RetryRewardBeat.rewardToEvidence
-            + RetryRewardBeat.evidenceToNextStep
             + RetryRewardBeat.nextStepToAction
 
-        #expect(RetryRewardBeat.actionReadyOffset == summedToAction)
+        #expect(RetryRewardBeat.actionReadyOffset(earnsXP: false, unlocksNextStep: false) == fixedToAction)
+        #expect(RetryRewardBeat.actionReadyOffset(earnsXP: true, unlocksNextStep: false) == fixedToAction + RetryRewardBeat.rewardToEvidence)
+        #expect(RetryRewardBeat.actionReadyOffset(earnsXP: false, unlocksNextStep: true) == fixedToAction + RetryRewardBeat.evidenceToNextStep)
         #expect(
-            RetryRewardBeat.actionReady
-                == RetryRewardBeat.startDelay + RetryRewardBeat.actionReadyOffset
+            RetryRewardBeat.maximumActionReady
+                == RetryRewardBeat.startDelay
+                    + RetryRewardBeat.actionReadyOffset(earnsXP: true, unlocksNextStep: true)
         )
-        #expect(RetryRewardBeat.animationComplete <= 1.80)
+        #expect(RetryRewardBeat.maximumAnimationComplete <= 1.80)
     }
 
     @Test func retryRewardRequiresContinueAndHasReducedMotionFallback() {

@@ -182,14 +182,16 @@ struct AhCounterView: View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: Spacing.md) {
-                    NoumWaveformMark(state: .idle, tint: AppColor.modeAhCounter)
+                    NoumSemanticGraphic(role: .fillerWords, tint: AppColor.modeAhCounter)
+                        .accessibilityHidden(true)
                     setupHeaderCopy
                     adjustSetupButton
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack {
-                        NoumWaveformMark(state: .idle, tint: AppColor.modeAhCounter)
+                        NoumSemanticGraphic(role: .fillerWords, tint: AppColor.modeAhCounter)
+                            .accessibilityHidden(true)
                         Spacer()
                         adjustSetupButton
                     }
@@ -228,7 +230,7 @@ struct AhCounterView: View {
                     Text("What Noum measures")
                         .font(Typography.headline)
                         .foregroundStyle(AppColor.textPrimary)
-                    Label("Filler words heard in the transcript", systemImage: "waveform")
+                    Label("Filler words heard in the transcript", systemImage: "text.quote")
                     Label("Your longest filler-free stretch", systemImage: "timer")
                     Text("No score or XP is created until a usable recording finishes.")
                         .font(Typography.caption)
@@ -302,7 +304,7 @@ struct AhCounterView: View {
                     Label {
                         Text("Fillers, clean time, and a quiet transcript appear while you speak.")
                     } icon: {
-                        Image(systemName: "ear.and.waveform")
+                        Image(systemName: "ear.fill")
                             .foregroundStyle(AppColor.modeAhCounter)
                     }
                 }
@@ -481,7 +483,6 @@ struct AhCounterView: View {
         VStack(alignment: .center, spacing: Spacing.lg) {
             Spacer(minLength: Spacing.xl)
             NoumWaveformMark(state: .processing, tint: AppColor.modeAhCounter, size: 72)
-            ProgressView()
             Text("Reviewing your rep")
                 .font(Typography.cardTitle)
                 .foregroundStyle(AppColor.textPrimary)
@@ -627,7 +628,8 @@ struct AhCounterView: View {
             Color.black.opacity(0.68).ignoresSafeArea()
 
             VStack(spacing: Spacing.md) {
-                NoumWaveformMark(state: .listening, tint: .white, size: 72)
+                NoumSemanticGraphic(role: .practice, tint: .white, size: 72)
+                    .accessibilityHidden(true)
                 Text(value)
                     .font(Typography.figtreeNumeric(size: 72, weight: .bold, relativeTo: .largeTitle))
                     .foregroundStyle(.white)

@@ -38,7 +38,7 @@ enum SkillArea: String, Codable, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .fillerReduction: return "waveform.path"
+        case .fillerReduction: return NoumSemanticGraphicRole.fillerWords.systemName
         case .openingStrength: return "bolt.fill"
         case .closingStrength: return "flag.checkered"
         case .paceControl: return "metronome.fill"

@@ -358,7 +358,7 @@ enum RatingEngine {
         switch category {
         case .highestScore: return "star.fill"
         case .longestCleanRun: return "text.badge.checkmark"
-        case .lowestFillerRate: return "waveform.path.ecg"
+        case .lowestFillerRate: return NoumSemanticGraphicRole.fillerWords.systemName
         case .highestRating: return "chart.line.uptrend.xyaxis"
         case .longestPracticeStreak: return "flame.fill"
         case .bestPressureScore: return "bolt.fill"

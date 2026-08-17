@@ -8,7 +8,31 @@ TestFlight, and proof that Chat with Noum is ready for production use. A green
 local eval or smoke flow is evidence, but it is not enough to claim production
 readiness.
 
-## Current Recovery Status (2026-07-17)
+## Current Release Status (2026-08-17)
+
+**Release verdict: NO-GO for external TestFlight or App Store release.** The
+executable readiness validator currently reports **20/100** and fails closed on
+stale app-path evidence plus missing live-provider, professional-calibration,
+real-device, longitudinal-transfer, and operational-signoff artifacts. The
+`ux-experiment` source/static candidate is materially newer than the evidence
+below and has not run on macOS CI because the branch is not on the remote.
+
+Current critical path:
+
+1. Commit and push one immutable `ux-experiment` candidate SHA.
+2. Deploy the reviewed Firebase privacy/support/coaching pages and connect the
+   `noum.app` domain; the live Firebase support/coaching routes are 404 and the
+   custom domain is still a parked redirect.
+3. Pass the macOS Release build, serialized unit target, mandatory journey and
+   permission UI shards, then archive/sign/upload that same SHA.
+4. Complete the same-build physical-device contract, current live-provider
+   sweep, blinded professional-coach calibration, longitudinal beta, and
+   attachment-backed operational checklist.
+5. Re-run readiness without diagnostic/stale-source overrides. Production is
+   earned only when it reports `launchReady: true`, score at least 85, and zero
+   blockers with matching source fingerprints.
+
+## Historical Recovery Snapshot (2026-07-17)
 
 **Release verdict: NO-GO for external TestFlight or App Store release. The
 latest authoritative source-bound result remains the inherited `ac664112`

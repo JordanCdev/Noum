@@ -139,7 +139,7 @@ enum PracticeVolumeNarration {
         switch bandIndex(forXP: xp) {
         case 0: return "sparkles"
         case 1: return "figure.stand"
-        case 2: return "waveform.path.ecg"
+        case 2: return "chart.line.uptrend.xyaxis"
         case 3: return "shield.lefthalf.filled"
         default: return "crown.fill"
         }

@@ -494,7 +494,7 @@ enum PathNodeRegistry {
                 coachLine: "Composed delivery isn't no pauses — it's pauses that sound chosen. This is the bar.",
                 actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
-                symbolName: "waveform.path"
+                symbolName: "pause.circle.fill"
             ),
             .cleanPauseSession(maxRatio: 0.25, minPauses: 3)
         )

@@ -120,15 +120,20 @@ struct V3ProfileSettingsPresentationTests {
         #expect(profile.contains("Not yet, this has not helped outside the app"))
     }
 
-    @Test("Owned V3 surfaces use the waveform identity instead of a mascot")
-    func waveformIdentityReplacesCharacterChrome() throws {
-        for relativePath in [
-            "ProfileView.swift",
-            "Noum/CoachingMemoryView.swift",
-            "Noum/SettingsView.swift",
-        ] {
-            let source = try source(relativePath)
-            #expect(source.contains("NoumWaveformMark("))
+    @Test("Profile, memory, and settings use distinct semantic graphics")
+    func semanticGraphicsReplaceGenericCharacterChrome() throws {
+        let profile = try source("ProfileView.swift")
+        let memory = try source("Noum/CoachingMemoryView.swift")
+        let settings = try source("Noum/SettingsView.swift")
+
+        #expect(profile.contains("role: .profile"))
+        #expect(profile.contains("role: .coachRead"))
+        #expect(memory.contains("role: .coachingMemory"))
+        #expect(settings.contains("role: .privacy"))
+        #expect(settings.contains("role: .profile"))
+
+        for source in [profile, memory, settings] {
+            #expect(!source.contains("NoumWaveformMark("))
             #expect(!source.contains("NoumCharacter("))
         }
     }
@@ -175,7 +180,7 @@ struct V3ProfileSettingsPresentationTests {
         #expect(profile.contains("profile.identity"))
         #expect(profile.contains("ProfilePracticeSummaryPresentation.make("))
         #expect(profile.contains("let readTint = AppColor.coachingInkOnQuiet"))
-        #expect(profile.contains("Image(systemName: \"waveform\")"))
+        #expect(profile.contains("role: .coachRead"))
     }
 
     private func source(_ relativePath: String) throws -> String {

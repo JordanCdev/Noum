@@ -526,8 +526,8 @@ struct SettingsView: View {
     }
 
     private var settingsIntroductionMark: some View {
-        NoumWaveformMark(
-            state: .idle,
+        NoumSemanticGraphic(
+            role: .privacy,
             tint: AppColor.textSecondary,
             size: 56
         )
@@ -548,7 +548,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Premium-tier presence tint for the waveform and quiet identity wash.
+    /// Premium-tier presence tint for the profile mark and quiet identity wash.
     /// Pro users get the brand purple; everyone else gets brand blue.
     private var profileHeroTint: Color {
         premium.isPremium ? AppColor.pro : AppColor.brandBlue
@@ -713,8 +713,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var profileHeroMark: some View {
-        NoumWaveformMark(
-            state: .idle,
+        NoumSemanticGraphic(
+            role: .profile,
             tint: profileHeroTint,
             size: 56
         )
@@ -2380,7 +2380,7 @@ struct SettingsView: View {
                 runAIProviderHealthCheck()
             } label: {
                 HStack(spacing: Spacing.xs) {
-                    Image(systemName: isRunningAIProviderHealthCheck ? "hourglass" : "waveform.path.ecg")
+                    Image(systemName: isRunningAIProviderHealthCheck ? "hourglass" : "network")
                         .accessibilityHidden(true)
                     Text(isRunningAIProviderHealthCheck ? "Checking providers..." : "Check providers")
                     Spacer(minLength: Spacing.xs)
@@ -2856,7 +2856,7 @@ struct CloudProcessingConsentDisclosure: View {
                                 detail: "After you allow, Firebase may sync your coaching profile, XP, practice sessions—including transcripts and session evidence—and recommendation state. Missing, declined, or stale permission keeps that content on this device."
                             )
                             disclosureRow(
-                                icon: "waveform",
+                                icon: "mic.fill",
                                 title: "Audio and transcripts",
                                 detail: "Production live audio goes to Deepgram for transcription. If server observation is enabled, one bounded competitive rep first passes in memory through a protected Firebase Function; Noum does not store that audio or its full server transcript. Noum sets Deepgram's model-improvement opt-out flag, and transcripts may then be used for coaching you request."
                             )

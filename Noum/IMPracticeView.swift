@@ -323,8 +323,8 @@ struct IMPracticeView: View {
                 title: "Conversation Practice",
                 subtitle: "Choose the situation, then decide how you want to sound."
             ) {
-                NoumWaveformMark(
-                    state: .idle,
+                NoumSemanticGraphic(
+                    role: .roleplay,
                     tint: .white,
                     size: 48
                 )
@@ -408,7 +408,7 @@ struct IMPracticeView: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Conversation Practice", systemImage: "message.badge.waveform.fill")
+            Label("Conversation Practice", systemImage: NoumSemanticGraphicRole.roleplay.systemName)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.blue)
 
@@ -493,14 +493,6 @@ struct IMPracticeView: View {
     private var activeHeaderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                NoumWaveformMark(
-                    state: speechVM.isRecording ? .listening : .idle,
-                    level: speechVM.audioLevel,
-                    tint: AppColor.modeIM,
-                    size: 32
-                )
-                .accessibilityHidden(true)
-
                 ZStack {
                     Circle()
                         .fill(Color.blue.opacity(0.12))

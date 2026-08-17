@@ -1,6 +1,9 @@
 import SwiftUI
 import Testing
 @testable import Noum
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @Suite("Noum experience foundation")
 struct NoumExperienceFoundationTests {
@@ -40,7 +43,7 @@ struct NoumExperienceFoundationTests {
         #expect(NoumWaveformState.idle.motionTier == .calm)
         #expect(NoumWaveformState.listening.motionTier == .responsive)
         #expect(NoumWaveformState.processing.motionTier == .calm)
-        #expect(NoumWaveformState.earned.motionTier == .earned)
+        #expect(NoumWaveformState.allCases.count == 3)
     }
 
     @Test("Progress values cannot draw outside their track")
@@ -60,6 +63,26 @@ struct NoumExperienceFoundationTests {
         #expect(NoumRewardKind.milestone("First hold").isRenderable)
         #expect(NoumRewardKind.evidenceSaved.isRenderable)
     }
+
+    @Test("Static graphic roles are closed, distinct, and never waveforms")
+    func semanticGraphicVocabularyIsIntentional() {
+        let symbols = NoumSemanticGraphicRole.allCases.map(\.systemName)
+        #expect(Set(symbols).count == symbols.count)
+        #expect(symbols.allSatisfy { !$0.localizedCaseInsensitiveContains("waveform") })
+        #expect(NoumRewardKind.xp(10).semanticGraphicRole == .earnedXP)
+        #expect(NoumRewardKind.evidenceSaved.semanticGraphicRole == .evidenceSaved)
+        #expect(NoumRewardKind.milestone("First hold").semanticGraphicRole == .milestone)
+    }
+
+    #if canImport(UIKit)
+    @Test("Every semantic graphic is available on the target platform")
+    @MainActor
+    func semanticGraphicSymbolsResolve() {
+        for role in NoumSemanticGraphicRole.allCases {
+            #expect(UIImage(systemName: role.systemName) != nil, Comment(rawValue: role.rawValue))
+        }
+    }
+    #endif
 
     @Test("Interactive controls retain Apple's minimum target")
     func minimumTouchTargetIsAccessible() {

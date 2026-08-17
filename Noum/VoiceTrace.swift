@@ -277,43 +277,6 @@ struct VoiceTrace: View {
     }
 }
 
-// MARK: - Weekly trajectory (Progress chart)
-
-/// One day cluster of the Progress trajectory — five bars + reflections in
-/// coach accent, with the day label under it. Day + outcome read as one
-/// VoiceOver element at the row level; the chart itself is summarised by
-/// the surrounding copy, so the cluster is decorative here.
-struct VoiceTraceDayCluster: View {
-    /// Relative bar heights for the cluster (5 values, points).
-    let heights: [CGFloat]
-    let label: String
-    /// Amber label marks the honest lapse day; violet otherwise.
-    var isLapse: Bool = false
-
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .center, spacing: 3.5) {
-                ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
-                    VStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(AppColor.coachAccent)
-                            .frame(width: 4.5, height: max(3, height))
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(AppColor.coachAccent.opacity(0.45))
-                            .frame(width: 4.5, height: max(3, height * 0.4))
-                    }
-                }
-            }
-            Text(label)
-                .font(Typography.figtree(size: 9.5, weight: .heavy, relativeTo: .caption2))
-                .tracking(0.8)
-                .foregroundStyle(isLapse ? AppColor.caution : AppColor.coachingInk)
-                .textCase(.uppercase)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 #if DEBUG
 #Preview("Traces") {
     VStack(spacing: 32) {
@@ -341,11 +304,6 @@ struct VoiceTraceDayCluster: View {
             }
         }
         .frame(height: 340)
-        HStack(spacing: 40) {
-            VoiceTraceDayCluster(heights: [8, 26, 33, 26, 8], label: "Mon")
-            VoiceTraceDayCluster(heights: [8, 23, 29, 23, 8], label: "Wed", isLapse: true)
-            VoiceTraceDayCluster(heights: [8, 35, 52, 52, 35], label: "Today")
-        }
     }
 }
 #endif

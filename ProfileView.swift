@@ -1891,9 +1891,7 @@ struct ProfileView: View {
 
                     Spacer(minLength: Spacing.sm)
 
-                    Image(systemName: "waveform")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(readTint)
+                    NoumSemanticGraphic(role: .coachRead, tint: readTint, size: 28)
                         .accessibilityHidden(true)
                 }
 
@@ -2657,7 +2655,7 @@ struct ProfileView: View {
             verifiedRepCount: totalProgressSessions
         )
         let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
-        // The waveform is Noum's identity; the optional small glyph remains
+        // Identity uses a person mark; the optional small glyph remains
         // user-owned voice-goal metadata rather than a second brand mark.
         return VStack(alignment: .leading, spacing: Spacing.lg) {
             Text("You")
@@ -2690,8 +2688,8 @@ struct ProfileView: View {
     }
 
     private var profileIdentityMark: some View {
-        NoumWaveformMark(
-            state: .idle,
+        NoumSemanticGraphic(
+            role: .profile,
             tint: AppColor.textSecondary,
             size: 64
         )

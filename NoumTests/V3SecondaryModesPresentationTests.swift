@@ -16,9 +16,50 @@ struct V3SecondaryModesPresentationTests {
         )
     }
 
-    @Test("Secondary learning modes use the waveform identity without mascot fallbacks")
-    func waveformIdentityIsConsistent() throws {
-        let paths = [
+    @Test("Secondary modes use semantic identities and reserve waveforms for live audio")
+    func graphicSemanticsMatchVisibleState() throws {
+        let lessonsHome = try source("Noum/LessonsHomeView.swift")
+        #expect(lessonsHome.contains("NoumSemanticGraphic(role: .learning"))
+        #expect(lessonsHome.contains("graphicRole: .learning"))
+        #expect(!lessonsHome.contains("NoumWaveformMark("))
+
+        let roleplaySetup = try source("Noum/RoleplaySetupView.swift")
+        #expect(roleplaySetup.contains("NoumSemanticGraphic(role: .roleplay"))
+        #expect(roleplaySetup.contains("Image(systemName: \"person.2.fill\")"))
+        #expect(!roleplaySetup.contains("NoumWaveformMark("))
+
+        let imPractice = try source("Noum/IMPracticeView.swift")
+        #expect(imPractice.contains("role: .roleplay"))
+        #expect(imPractice.contains("NoumSemanticGraphicRole.roleplay.systemName"))
+        #expect(!imPractice.contains("NoumWaveformMark("))
+        #expect(!imPractice.contains("message.badge.waveform"))
+
+        let lesson = try source("Noum/LessonView.swift")
+        #expect(lesson.contains("NoumSemanticGraphic(role: .learning"))
+        #expect(lesson.contains("NoumWaveformMark("))
+        #expect(lesson.contains("state: .listening"))
+        #expect(!lesson.contains("state: .earned"))
+
+        let roleplay = try source("Noum/RoleplayView.swift")
+        #expect(roleplay.contains("role: .roleplay"))
+        #expect(roleplay.contains("NoumSemanticGraphic(role: .practice"))
+        #expect(roleplay.contains("NoumWaveformMark("))
+        #expect(roleplay.contains("state: .listening"))
+        #expect(roleplay.contains("case .completed(let transcript):"))
+        #expect(roleplay.contains("if transcript.hasUsableSpeech"))
+        #expect(roleplay.contains("role: .evidenceSaved"))
+        #expect(roleplay.contains("role: .needsAttention"))
+        #expect(!roleplay.contains("state: .earned"))
+
+        let fillerControl = try source("Noum/AhCounterView.swift")
+        #expect(fillerControl.contains("NoumSemanticGraphic(role: .practice"))
+        #expect(fillerControl.contains("NoumWaveformMark("))
+        #expect(fillerControl.contains("state: .listening"))
+        #expect(fillerControl.contains("state: .processing"))
+        #expect(!fillerControl.contains("NoumWaveformMark(state: .idle"))
+        #expect(!fillerControl.contains("ear.and.waveform"))
+
+        let pathsWithoutMascotsOrAmbientLoops = [
             "Noum/LessonsHomeView.swift",
             "Noum/LessonView.swift",
             "Noum/RoleplaySetupView.swift",
@@ -29,9 +70,8 @@ struct V3SecondaryModesPresentationTests {
             "Noum/CutTheCrutchView.swift",
         ]
 
-        for path in paths {
+        for path in pathsWithoutMascotsOrAmbientLoops {
             let body = try source(path)
-            #expect(body.contains("NoumWaveformMark("), Comment(rawValue: path))
             #expect(!body.contains("NoumCharacter("), Comment(rawValue: path))
             #expect(!body.contains("repeatForever"), Comment(rawValue: path))
         }

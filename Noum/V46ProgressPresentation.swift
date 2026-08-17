@@ -21,19 +21,36 @@ struct V46EvidenceRow: Equatable, Identifiable {
     let tone: Tone
 }
 
-/// One day cluster in the weekly trajectory. Intensity scales the cluster's
-/// bar heights (1.0 = strongest); lapse days carry the amber label and are
-/// always paired with the row's text cue — never colour alone.
-struct V46TrajectoryDay: Equatable {
-    let label: String
-    let intensity: Double
-    let isLapse: Bool
+/// One bounded result represented by the comparable-retry chronology. These
+/// are categorical outcomes, not invented score points: the view keeps every
+/// node on one level and names the state in text.
+enum V46TrajectoryOutcome: Equatable {
+    case improved
+    case held
+    case lapse
+
+    var label: String {
+        switch self {
+        case .improved: return "Improved"
+        case .held: return "Held"
+        case .lapse: return "Didn't hold"
+        }
+    }
 }
 
-/// Visual register for the Progress coach read. This is deliberately derived
-/// from the same comparable-retry floor as the visible claim: the waveform may
-/// enter its earned state only after at least three comparable reps with a
-/// three-in-four hold rate. Activity alone can never produce an earned hero.
+/// The best comparable result recorded on one day. The global tally above
+/// still counts every comparable rep; this compact chronology deliberately
+/// communicates sequence only, never a continuous or activity-based metric.
+struct V46TrajectoryDay: Equatable {
+    let label: String
+    let outcome: V46TrajectoryOutcome
+
+    var isLapse: Bool { outcome == .lapse }
+}
+
+/// Evidence register for the Progress coach read. This is deliberately derived
+/// from the same comparable-retry floor as the visible claim. Activity alone
+/// can never produce a reliable read.
 enum V46ProgressReadStage: Equatable {
     case early
     case forming
@@ -121,9 +138,6 @@ struct V46ProgressPresentation: Equatable {
     /// legacy bounded class above stays available for existing consumers.
     let authoredHeadline: String
     let subtitle: String
-    /// Compact receipt values from this exact cohort, never global activity.
-    let evidenceValue: String
-    let evidenceLabel: String
     /// The next observable behavior, derived from the represented lever.
     let nextFocus: String
     let trajectory: [V46TrajectoryDay]
@@ -132,8 +146,8 @@ struct V46ProgressPresentation: Equatable {
     /// when no real review date exists.
     let reviewRowTitle: String?
     let reviewIsDue: Bool
-    /// Spoken summary for the whole chart (rows read individually).
-    let chartAccessibilitySummary: String
+    /// Spoken summary for the whole chronology (rows read individually).
+    let trajectoryAccessibilitySummary: String
     /// The exact latest row and lever represented by every number and row in
     /// this presentation. The view resolves it against session history before
     /// offering a practice route.
@@ -166,8 +180,8 @@ struct V46ProgressPresentation: Equatable {
 
         let results = comparableOutcomes.compactMap { $0.transcriptRetryComparison?.result }
         let holds = results.filter { $0 == .improved || $0 == .held }.count
-        // No `lapses` count here: the lapse read is derived per-row further
-        // down from `group.allRegressed`, so a second tally was dead weight
+        // No separate `lapses` count here: each newest receipt carries its
+        // exact outcome and tone, so a second tally would be dead weight
         // rather than a dropped signal.
         let tally = results.count
 
@@ -215,16 +229,15 @@ struct V46ProgressPresentation: Equatable {
         let trajectory = dayGroups.suffix(4).map { group in
             V46TrajectoryDay(
                 label: group.label,
-                intensity: group.bestIsImproved ? 1.0 : (group.allRegressed ? 0.45 : 0.8),
-                isLapse: group.allRegressed
+                outcome: group.bestIsImproved ? .improved : (group.bestIsHeld ? .held : .lapse)
             )
         }
         let rows = dayGroups.suffix(3).map { group -> V46EvidenceRow in
             V46EvidenceRow(
-                id: group.newestOutcomeID,
+                id: group.evidenceOutcomeID,
                 dayLabel: group.label,
                 copy: group.rowCopy,
-                tone: group.allRegressed ? .lapse : (group.bestIsImproved || group.anyHeld ? .held : .neutral)
+                tone: group.evidenceTone
             )
         }
 
@@ -243,7 +256,7 @@ struct V46ProgressPresentation: Equatable {
         }
 
         let daysDescribed = trajectory.count
-        let chartSummary = "\(daysDescribed) comparable practice day\(daysDescribed == 1 ? "" : "s") shown \u{2014} held \(holds) of \(tally)\(pressureHoldCount > 0 ? ", including under pressure" : "")."
+        let trajectorySummary = "\(daysDescribed) comparable practice day\(daysDescribed == 1 ? "" : "s") shown \u{2014} held \(holds) of \(tally)\(pressureHoldCount > 0 ? ", including under pressure" : "")."
 
         return V46ProgressPresentation(
             readStage: readStage,
@@ -252,14 +265,12 @@ struct V46ProgressPresentation: Equatable {
             headline: headline,
             authoredHeadline: authoredHeadline,
             subtitle: subtitle,
-            evidenceValue: "\(holds) / \(tally)",
-            evidenceLabel: "\(cohortLever.focusLabel) held",
             nextFocus: cohortLever.successMeasure,
             trajectory: Array(trajectory),
             rows: Array(rows),
             reviewRowTitle: reviewTitle,
             reviewIsDue: reviewIsDue,
-            chartAccessibilitySummary: chartSummary,
+            trajectoryAccessibilitySummary: trajectorySummary,
             practiceTarget: V46ProgressPracticeTarget(
                 outcomeID: latest.outcome.id,
                 sourceSessionID: latest.sourceSessionID,
@@ -300,7 +311,7 @@ struct V46ProgressPresentation: Equatable {
     }
 
     /// Validates the persisted source → retry join before the outcome may
-    /// enter either the chart or a new practice route. A mismatched legacy row
+    /// enter either the chronology or a new practice route. A mismatched legacy row
     /// fails closed instead of borrowing the latest session's prompt.
     private static func validatedCohortMember(
         _ outcome: RecommendationOutcome
@@ -333,11 +344,11 @@ struct V46ProgressPresentation: Equatable {
 
     private struct DayGroup {
         let label: String
-        let newestOutcomeID: UUID
+        let evidenceOutcomeID: UUID
         let bestIsImproved: Bool
-        let anyHeld: Bool
-        let allRegressed: Bool
+        let bestIsHeld: Bool
         let rowCopy: String
+        let evidenceTone: V46EvidenceRow.Tone
     }
 
     private static func dayGroups(
@@ -350,51 +361,88 @@ struct V46ProgressPresentation: Equatable {
         }
         let formatter = DateFormatter()
         formatter.calendar = calendar
-        formatter.dateFormat = "EEE"
+        formatter.locale = Locale(identifier: "en_GB")
+        formatter.dateFormat = "EEE d"
 
-        return grouped.keys.sorted().map { day in
+        return grouped.keys.sorted().compactMap { day -> DayGroup? in
             let dayOutcomes = grouped[day] ?? []
-            let results = dayOutcomes.compactMap { $0.transcriptRetryComparison?.result }
-            let improved = results.contains(.improved)
-            let held = results.contains(.held)
-            let allRegressed = !results.isEmpty && results.allSatisfy { $0 == .regressed }
-            let isToday = calendar.isDate(day, inSameDayAs: now)
-            let label = isToday ? "TODAY" : formatter.string(from: day).uppercased()
-            let newest = dayOutcomes.max { $0.completedAt < $1.completedAt }
-
-            let underPressure = dayOutcomes.contains {
-                Self.isPressureDemand($0.executedDemand)
+            let rankedEvidence = dayOutcomes.compactMap { outcome -> (outcome: RecommendationOutcome, result: TranscriptRetryResult)? in
+                guard let result = outcome.transcriptRetryComparison?.result else { return nil }
+                return (outcome, result)
             }
-            let lever = newest?.transcriptRetryTarget?.lever
+            guard let selectedEvidence = rankedEvidence.max(by: { lhs, rhs in
+                let leftRank = Self.resultRank(lhs.result)
+                let rightRank = Self.resultRank(rhs.result)
+                if leftRank != rightRank { return leftRank < rightRank }
+                return lhs.outcome.completedAt < rhs.outcome.completedAt
+            }),
+            let newest = dayOutcomes.max(by: { $0.completedAt < $1.completedAt }),
+            let newestResult = newest.transcriptRetryComparison?.result else {
+                return nil
+            }
+            let bestIsImproved = selectedEvidence.result == .improved
+            let bestIsHeld = selectedEvidence.result == .held
+            let isToday = calendar.isDate(day, inSameDayAs: now)
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: now)
+            let isYesterday = yesterday.map { calendar.isDate(day, inSameDayAs: $0) } ?? false
+            let label = isToday
+                ? "TODAY"
+                : (isYesterday ? "YESTERDAY" : formatter.string(from: day).uppercased())
+
+            // The chronology deliberately shows the day's best comparable
+            // result, but the supporting receipt must stay chronological. Its
+            // copy, pressure state, tone, and ID all belong to the actual
+            // newest attempt so a later regression can never disappear behind
+            // an earlier improvement from the same day.
+            let underPressure = Self.isPressureDemand(newest.executedDemand)
+            let lever = newest.transcriptRetryTarget?.lever
             let copy = Self.rowCopy(
-                improved: improved,
-                held: held,
-                allRegressed: allRegressed,
+                improved: newestResult == .improved,
+                held: newestResult == .held,
+                regressed: newestResult == .regressed,
                 underPressure: underPressure,
                 isToday: isToday,
                 lever: lever
             )
+            let evidenceTone: V46EvidenceRow.Tone
+            switch newestResult {
+            case .improved, .held:
+                evidenceTone = .held
+            case .regressed:
+                evidenceTone = .lapse
+            case .needsMoreEvidence:
+                evidenceTone = .neutral
+            }
 
             return DayGroup(
                 label: label,
-                newestOutcomeID: newest?.id ?? UUID(),
-                bestIsImproved: improved,
-                anyHeld: held,
-                allRegressed: allRegressed,
-                rowCopy: copy
+                evidenceOutcomeID: newest.id,
+                bestIsImproved: bestIsImproved,
+                bestIsHeld: bestIsHeld,
+                rowCopy: copy,
+                evidenceTone: evidenceTone
             )
+        }
+    }
+
+    private static func resultRank(_ result: TranscriptRetryResult) -> Int {
+        switch result {
+        case .improved: return 3
+        case .held: return 2
+        case .needsMoreEvidence: return 1
+        case .regressed: return 0
         }
     }
 
     private static func rowCopy(
         improved: Bool,
         held: Bool,
-        allRegressed: Bool,
+        regressed: Bool,
         underPressure: Bool,
         isToday: Bool,
         lever: TranscriptPracticeLever?
     ) -> String {
-        if allRegressed {
+        if regressed {
             let failure = lever == .opening
                 ? "the wind-up came back"
                 : "the first try read stronger"

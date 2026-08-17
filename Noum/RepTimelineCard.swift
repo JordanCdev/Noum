@@ -66,7 +66,7 @@ struct RepTimelineCard: View {
         if let zone = locations.fillerClusterZone, let count = locations.fillerClusterCount {
             result.append(Marker(
                 zone: zone,
-                symbol: "waveform",
+                symbol: NoumSemanticGraphicRole.fillerWords.systemName,
                 color: AppColor.textSecondary,
                 value: "×\(count)",
                 kind: "fillers"

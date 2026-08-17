@@ -187,7 +187,7 @@ struct IMScenarioDetailView: View {
     private var traceChartCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "waveform.path.ecg")
+                Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
                 Text("Trust vs tension")

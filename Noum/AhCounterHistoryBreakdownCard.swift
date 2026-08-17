@@ -64,7 +64,7 @@ struct AhCounterHistoryBreakdownCard: View {
     private func header(for stats: AhCounterHistorySummaryStats) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Image(systemName: "waveform.path")
+                Image(systemName: NoumSemanticGraphicRole.fillerWords.systemName)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
                 Text("Filler Control history")

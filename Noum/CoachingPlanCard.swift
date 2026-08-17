@@ -172,8 +172,8 @@ struct CoachingPlanCard: View {
                 onTap()
             } label: {
                 HStack(alignment: .top, spacing: Spacing.md) {
-                    NoumWaveformMark(
-                        state: .idle,
+                    NoumSemanticGraphic(
+                        role: .practicePlan,
                         tint: AppColor.coachAccent,
                         size: 36
                     )
@@ -222,8 +222,8 @@ struct CoachingPlanCard: View {
                     } label: {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
                             HStack(alignment: .center, spacing: Spacing.sm) {
-                                NoumWaveformMark(
-                                    state: isStale ? .processing : .idle,
+                                NoumSemanticGraphic(
+                                    role: .practicePlan,
                                     tint: isStale ? AppColor.caution : AppColor.coachAccent,
                                     size: 30
                                 )

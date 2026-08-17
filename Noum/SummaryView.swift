@@ -101,9 +101,13 @@ struct SummaryCompletionHeader: View {
     }
 
     private var mark: some View {
-        NoumWaveformMark(
-            state: hasEarnedReward ? .earned : .idle,
-            tint: AppColor.coachAccent,
+        NoumSemanticGraphic(
+            role: hasEarnedReward
+                ? .milestone
+                : (isProgressEligible ? .verifiedEvidence : .coachRead),
+            tint: hasEarnedReward
+                ? AppColor.rewardGoldDepth
+                : (isProgressEligible ? AppColor.positive : AppColor.coachAccent),
             size: 58
         )
         .accessibilityHidden(true)
@@ -883,7 +887,7 @@ struct SummaryView: View {
     }
 
     private var scoreEmoji: String {
-        guard let presentedScore else { return "waveform.path" }
+        guard let presentedScore else { return "doc.text" }
         switch presentedScore {
         case 9...10: return "flame.fill"
         case 7...8: return "hand.thumbsup.fill"
@@ -1550,7 +1554,7 @@ struct SummaryView: View {
 
                             if !showsStandaloneRewardPill,
                                let credit = projection.practiceCredit {
-                                Label(credit, systemImage: "waveform.path")
+                                Label(credit, systemImage: "chart.bar.fill")
                                     .font(Typography.caption.monospacedDigit())
                                     .foregroundStyle(AppColor.textSecondary)
                                     .accessibilityLabel("Practice volume. \(credit)")
