@@ -1461,6 +1461,11 @@ class AuthManager: ObservableObject {
             accountDeletionState = .failed(.completionUncertain)
             accountLifecycleGeneration &+= 1
             cancelActiveAccountHydration()
+            // An unreadable/present fence is already a durable fail-closed
+            // admission state. Close the in-flight snapshot transport before
+            // suspending its downstream stores so no older snapshot can land
+            // after those mutation boundaries have been invalidated.
+            cancelActiveCoachingContentSnapshotSync()
             AskNoumStore.shared.suspendProviderWorkForDeletion(accountID: accountID)
             ForwardPlanStore.shared.suspendProviderWorkForDeletion(accountID: accountID)
             await ForwardPlanService.shared.suspendProviderWorkForDeletion(
@@ -1469,9 +1474,10 @@ class AuthManager: ObservableObject {
             throw AccountDeletionError.completionUncertain
         }
 
-        // Existing snapshot transport must close only after durable admission.
-        // Apple cancellation, revocation failure, or fence-persistence failure
-        // therefore leaves the signed-in account's provider work untouched.
+        // Existing snapshot transport closes after verified durable admission.
+        // Apple cancellation, revocation failure, or a definitively missing
+        // fence leaves provider work untouched; the ambiguous present/unreadable
+        // persistence path above deliberately closes the transport fail-closed.
         cancelActiveCoachingContentSnapshotSync()
 
         // No suspension occurs between publishing deletion, rotating the

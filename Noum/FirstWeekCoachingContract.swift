@@ -96,6 +96,7 @@ struct FirstWeekCoachingContract {
     struct PrescriptionEvidence: Equatable {
         let mode: PracticeMode
         let prescribedAt: Date?
+        let lastObservedAt: Date?
         let followedRepCount: Int
         let minimumFollowedRepsForReview: Int
         let reviewStatus: CoachInterventionReviewStatus
@@ -104,10 +105,67 @@ struct FirstWeekCoachingContract {
         init(_ intervention: CoachIntervention) {
             mode = intervention.mode
             prescribedAt = intervention.prescribedAt
+            lastObservedAt = intervention.lastObservedAt
             followedRepCount = max(0, intervention.followedRepCount)
             minimumFollowedRepsForReview = max(1, intervention.minimumFollowedRepsForReview)
             reviewStatus = intervention.reviewStatus
             reviewDueAt = intervention.reviewDueAt
+        }
+
+        private init(
+            mode: PracticeMode,
+            prescribedAt: Date?,
+            lastObservedAt: Date?,
+            followedRepCount: Int,
+            minimumFollowedRepsForReview: Int,
+            reviewStatus: CoachInterventionReviewStatus,
+            reviewDueAt: Date?
+        ) {
+            self.mode = mode
+            self.prescribedAt = prescribedAt
+            self.lastObservedAt = lastObservedAt
+            self.followedRepCount = followedRepCount
+            self.minimumFollowedRepsForReview = minimumFollowedRepsForReview
+            self.reviewStatus = reviewStatus
+            self.reviewDueAt = reviewDueAt
+        }
+
+        /// RecommendationLearningStore remains authoritative for whether a rep
+        /// followed the prescription. Session history supplies the independent
+        /// upper bound: the stored count cannot exceed same-mode sessions that
+        /// actually occurred after the prescription and no later than the last
+        /// bounded observation. A missing or out-of-window observation cannot
+        /// authorize comparison or a first-week read.
+        func bounded(
+            by eligibleSessions: [PracticeSession],
+            programStartedAt: Date,
+            evidenceUpperBound: Date
+        ) -> PrescriptionEvidence {
+            let boundedCount: Int = {
+                guard followedRepCount > 0,
+                      let prescribedAt,
+                      let lastObservedAt,
+                      programStartedAt <= lastObservedAt,
+                      lastObservedAt <= evidenceUpperBound else {
+                    return 0
+                }
+                let possibleFollowedReps = eligibleSessions.lazy.filter {
+                    $0.mode == mode
+                        && prescribedAt < $0.date
+                        && $0.date <= lastObservedAt
+                }.count
+                return min(followedRepCount, possibleFollowedReps)
+            }()
+
+            return PrescriptionEvidence(
+                mode: mode,
+                prescribedAt: prescribedAt,
+                lastObservedAt: lastObservedAt,
+                followedRepCount: boundedCount,
+                minimumFollowedRepsForReview: minimumFollowedRepsForReview,
+                reviewStatus: reviewStatus,
+                reviewDueAt: reviewDueAt
+            )
         }
 
         func needsReview(at now: Date) -> Bool {
@@ -359,7 +417,11 @@ struct FirstWeekCoachingContract {
                   let prescribedAt = value.prescribedAt,
                   programStartedAt <= prescribedAt,
                   prescribedAt <= evidenceUpperBound else { return nil }
-            return value
+            return value.bounded(
+                by: eligibleSessions,
+                programStartedAt: programStartedAt,
+                evidenceUpperBound: evidenceUpperBound
+            )
         }()
         let hasRealWorldCheckIn: Bool = {
             guard let checkIn = coaching?.latestCheckIn,
