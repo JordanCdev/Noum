@@ -142,7 +142,6 @@ The app does **not** use Firebase Analytics, Crashlytics, or any third-party ana
 |-------|---------|----------------|---------|-----------|---------|-----------|-----------|----------|-------------|
 | Premium Status | true/false | StoreKit 2 | Feature gating | Automatic | UserDefaults (`NoumPremiumEntitlement`) | Apple StoreKit | Indefinite | Managed by Apple | Low |
 | Purchased Product IDs | "com.noum.pro.monthly" | StoreKit 2 | Subscription tracking | Automatic | Memory (verified at runtime) | Apple StoreKit | Managed by Apple | Managed by Apple | Low |
-| Video Analysis Credits | 3 remaining | Credit system | Usage limiting | Automatic | UserDefaults (`NoumVideoAnalysisCredits`) | Local only | Monthly reset | Automatic reset | None |
 | AI Analysis Count | 45 this month | Usage tracking | Fair use cap | Automatic | UserDefaults (`aiMonthlyAnalysisCount`) | Local only | Monthly reset | Automatic reset | None |
 
 ### 2.11 Gamification & Progress Data

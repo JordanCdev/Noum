@@ -33,6 +33,15 @@ Current critical path:
    earned only when it reports `launchReady: true`, score at least 85, and zero
    blockers with matching source fingerprints.
 
+Release scope decision: video delivery analysis is omitted from non-DEBUG
+builds and from the release paywall. Its current implementation sends frames
+directly to a provider, while release bundles correctly contain no provider
+secret, and the retired five-use device counter was never paid-product
+authority. Re-enable only after a reviewed secure vision callable and an
+account-scoped, idempotent server usage ledger are deployed and read back. This
+is not a launch blocker while App Store metadata and screenshots omit the
+feature; advertising or enabling it before that backend exists is a blocker.
+
 ## Historical Recovery Snapshot (2026-07-17)
 
 **Release verdict: NO-GO for external TestFlight or App Store release. The

@@ -25418,6 +25418,54 @@ struct FeedbackRatingDecodingTests {
 
 struct VideoAnalysisContractTests {
 
+    @Test func requestGateAllowsOnlyOneEntitledUnfinishedAttempt() {
+        #expect(VideoAnalysisRequestGate.canStart(
+            isAuthorized: true,
+            hasMonthlyAllowance: true,
+            isInFlight: false,
+            hasAcceptedResult: false
+        ))
+        #expect(!VideoAnalysisRequestGate.canStart(
+            isAuthorized: false,
+            hasMonthlyAllowance: true,
+            isInFlight: false,
+            hasAcceptedResult: false
+        ))
+        #expect(!VideoAnalysisRequestGate.canStart(
+            isAuthorized: true,
+            hasMonthlyAllowance: false,
+            isInFlight: false,
+            hasAcceptedResult: false
+        ))
+        #expect(!VideoAnalysisRequestGate.canStart(
+            isAuthorized: true,
+            hasMonthlyAllowance: true,
+            isInFlight: true,
+            hasAcceptedResult: false
+        ))
+        #expect(!VideoAnalysisRequestGate.canStart(
+            isAuthorized: true,
+            hasMonthlyAllowance: true,
+            isInFlight: false,
+            hasAcceptedResult: true
+        ))
+    }
+
+    @Test func failedAttemptCanReturnToRetryableState() {
+        #expect(!VideoAnalysisRequestGate.canStart(
+            isAuthorized: true,
+            hasMonthlyAllowance: true,
+            isInFlight: true,
+            hasAcceptedResult: false
+        ))
+        #expect(VideoAnalysisRequestGate.canStart(
+            isAuthorized: true,
+            hasMonthlyAllowance: true,
+            isInFlight: false,
+            hasAcceptedResult: false
+        ))
+    }
+
     @Test func providerEligibilityRequiresVisionCapableProvider() {
         #expect(VideoAnalysisContract.providerSupportsVision(.openAI))
         #expect(VideoAnalysisContract.providerSupportsVision(.gemini))
@@ -25572,10 +25620,34 @@ struct PaywallFeatureAccuracyTests {
                 "Filler tracking is gated Pro — it must not be free, matching the paywall listing")
     }
 
-    // Video analysis credits are bounded at 5/month for Pro users.
-    @Test func videoAnalysisLimitIsEnforced() {
-        #expect(PremiumManager.monthlyVideoAnalysisLimit == 5,
-                "Paywall advertises 5 video analyses/month — limit constant must match")
+    @Test func videoAnalysisReleaseRequiresSecureProductionAuthority() {
+        #expect(!PremiumManager.resolvesVideoAnalysisAvailability(
+            isDebugBuild: false,
+            secureProductionAuthorityAvailable: false
+        ))
+        #expect(PremiumManager.resolvesVideoAnalysisAvailability(
+            isDebugBuild: true,
+            secureProductionAuthorityAvailable: false
+        ))
+        #expect(PremiumManager.resolvesVideoAnalysisAvailability(
+            isDebugBuild: false,
+            secureProductionAuthorityAvailable: true
+        ))
+    }
+
+    @Test func retiredDeviceLocalVideoCreditsArePurged() {
+        let suiteName = "PaywallFeatureAccuracyTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        for key in PremiumManager.retiredVideoAnalysisCreditKeys {
+            defaults.set(3, forKey: key)
+        }
+        PremiumManager.purgeRetiredVideoAnalysisCreditState(defaults: defaults)
+
+        for key in PremiumManager.retiredVideoAnalysisCreditKeys {
+            #expect(defaults.object(forKey: key) == nil)
+        }
     }
 
     // Free users get 1 async challenge slot; Pro users are unlimited.

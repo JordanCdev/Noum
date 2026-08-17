@@ -4394,7 +4394,9 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
 
 ### Premium & infra
 - `Noum/Noum/PremiumManager.swift` — StoreKit 2 (Monthly/Annual),
-  feature gates, monthly video-analysis credits.
+  feature gates. The retired device-local five-video-credit experiment is not
+  a paid-product authority: release video analysis stays fail-closed and absent
+  from the paywall until a secure vision callable and server usage ledger ship.
 - `Noum/Noum/AuthManager.swift` — Apple, Google, anonymous, account
   delete with full per-account UserDefaults wipe.
 - `Noum/Noum/BackendSyncManager.swift` — Firebase + REST sync.

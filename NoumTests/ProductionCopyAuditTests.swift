@@ -11,6 +11,8 @@ struct ProductionCopyAuditRegressionTests {
             IMModeServiceError.unavailable.errorDescription,
             IMModeServiceError.replyGenerationFailed("provider timeout").errorDescription,
             IMModeServiceError.evaluationFailed("invalid JSON").errorDescription,
+            VideoAnalysisError.releaseUnavailable.errorDescription,
+            VideoAnalysisError.premiumRequired.errorDescription,
             VideoAnalysisError.providerNotVisionCapable.errorDescription,
             VideoAnalysisError.invalidProviderRead.errorDescription,
             AICoachError.providerDisabled.errorDescription,

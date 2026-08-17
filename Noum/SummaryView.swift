@@ -1972,7 +1972,7 @@ struct SummaryView: View {
                     // card that carried it was only mounted from dead code.
                     if currentRepIsProgressEligible && recordingURL != nil {
                         videoPlaybackButton
-                        if premium.isPremium {
+                        if premium.canUseVideoAnalysis {
                             videoAnalysisSection
                         }
                     }
@@ -2103,30 +2103,47 @@ struct SummaryView: View {
     /// Premium AI video analysis entry + result, next to Watch recording.
     private var videoAnalysisSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                analyzeVideo()
-            } label: {
-                HStack(spacing: 8) {
-                    if isAnalyzingVideo {
-                        ProgressView()
-                            .tint(.secondary)
-                            .scaleEffect(0.7)
-                    } else {
-                        Image(systemName: "sparkles")
-                            .font(.caption.weight(.semibold))
+            if videoAnalysisResult == nil {
+                if aiSettings.hasReachedLimit {
+                    Text("Monthly AI analysis allowance reached. Fresh analyses available \(aiSettings.resetDateFormatted).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("summary.details.videoAnalysisLimit")
+                } else {
+                    Button {
+                        analyzeVideo()
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isAnalyzingVideo {
+                                ProgressView()
+                                    .tint(.secondary)
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "sparkles")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            Text(isAnalyzingVideo ? "Analyzing…" : "Analyze delivery")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44, alignment: .leading)
                     }
-                    Text(isAnalyzingVideo ? "Analyzing…" : "Analyze delivery")
-                        .font(.caption.weight(.semibold))
+                    .disabled(!VideoAnalysisRequestGate.canStart(
+                        isAuthorized: premium.canUseVideoAnalysis,
+                        hasMonthlyAllowance: !aiSettings.hasReachedLimit,
+                        isInFlight: isAnalyzingVideo,
+                        hasAcceptedResult: videoAnalysisResult != nil
+                    ))
+                    // "Analyze delivery" doesn't say WHAT gets analysed. The
+                    // action reads the video recording (and may ask for cloud-
+                    // processing consent first), which a non-visual user cannot
+                    // infer. The shared allowance is charged only for an accepted
+                    // result, so transport failures leave this retry available.
+                    .accessibilityHint("Reviews your video recording for posture, eye contact, and gestures. Uses one monthly AI analysis after a result is accepted.")
+                    .accessibilityIdentifier("summary.details.analyzeVideo")
                 }
-                .foregroundStyle(AppColor.brandBlue)
-                .frame(minHeight: 44, alignment: .leading)
             }
-            .disabled(isAnalyzingVideo)
-            // "Analyze delivery" doesn't say WHAT gets analysed. The action
-            // reads the video recording (and may ask for cloud-processing
-            // consent first), which a non-visual user cannot infer.
-            .accessibilityHint("Reviews your video recording for posture, eye contact, and gestures.")
-            .accessibilityIdentifier("summary.details.analyzeVideo")
 
             if let result = videoAnalysisResult {
                 videoAnalysisResultView(result)
@@ -3189,6 +3206,19 @@ struct SummaryView: View {
     }
 
     private func analyzeVideo() {
+        guard VideoAnalysisRequestGate.canStart(
+            isAuthorized: premium.canUseVideoAnalysis,
+            hasMonthlyAllowance: !aiSettings.hasReachedLimit,
+            isInFlight: isAnalyzingVideo,
+            hasAcceptedResult: videoAnalysisResult != nil
+        ) else {
+            if !premium.canUseVideoAnalysis {
+                showPaywall = true
+            } else if aiSettings.hasReachedLimit {
+                aiError = "You've used all \(aiSettings.monthlyLimit) AI analyses this month. Fresh analyses available \(aiSettings.resetDateFormatted)."
+            }
+            return
+        }
         guard currentRepIsProgressEligible else {
             aiError = "This capture is saved for review, but there isn't enough speech for a delivery read."
             return

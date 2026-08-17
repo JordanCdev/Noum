@@ -7552,6 +7552,8 @@ struct VideoAnalysisResult: Codable {
 }
 
 enum VideoAnalysisError: LocalizedError, Equatable {
+    case releaseUnavailable
+    case premiumRequired
     case localeUnsupported
     case providerNotVisionCapable
     case noUsableFrames
@@ -7559,6 +7561,10 @@ enum VideoAnalysisError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .releaseUnavailable:
+            return "Video delivery analysis isn't available in this build."
+        case .premiumRequired:
+            return "Video delivery analysis is available with Noum Pro."
         case .localeUnsupported:
             return "Video analysis is currently available only for English practice."
         case .providerNotVisionCapable:
@@ -7568,6 +7574,23 @@ enum VideoAnalysisError: LocalizedError, Equatable {
         case .invalidProviderRead:
             return "Noum couldn't complete a reliable video read."
         }
+    }
+}
+
+/// Pure UI-side admission for one recording. The owning Summary can retry a
+/// failed transport, but it cannot launch overlapping work or spend the shared
+/// AI allowance again after an accepted result is already on screen.
+enum VideoAnalysisRequestGate {
+    static func canStart(
+        isAuthorized: Bool,
+        hasMonthlyAllowance: Bool,
+        isInFlight: Bool,
+        hasAcceptedResult: Bool
+    ) -> Bool {
+        isAuthorized
+            && hasMonthlyAllowance
+            && !isInFlight
+            && !hasAcceptedResult
     }
 }
 
@@ -15839,10 +15862,62 @@ final class VideoAnalysisService {
 
     private let settings = AISettingsManager.shared
     private let frameCount = 4  // Extract 4 frames evenly spaced
+    private let completedCacheLimit = 8
+    private var inFlightAnalyses: [URL: Task<VideoAnalysisResult, Error>] = [:]
+    private var completedAnalyses: [URL: VideoAnalysisResult] = [:]
+    private var completedAnalysisOrder: [URL] = []
 
     private init() {}
 
     func analyzeRecording(at url: URL) async throws -> VideoAnalysisResult {
+        guard PremiumManager.videoAnalysisAvailableInCurrentBuild else {
+            AICallDiagnostics.record(
+                surface: "Video analysis",
+                providerName: nil,
+                model: nil,
+                outcome: .skipped,
+                reason: "Secure release authority unavailable",
+                usageAccounting: .informational
+            )
+            throw VideoAnalysisError.releaseUnavailable
+        }
+        guard PremiumManager.shared.isPremium else {
+            AICallDiagnostics.record(
+                surface: "Video analysis",
+                providerName: nil,
+                model: nil,
+                outcome: .skipped,
+                reason: "Premium entitlement unavailable",
+                usageAccounting: .informational
+            )
+            throw VideoAnalysisError.premiumRequired
+        }
+
+        let recordingKey = url.standardizedFileURL
+        if let completed = completedAnalyses[recordingKey] {
+            return completed
+        }
+        if let inFlight = inFlightAnalyses[recordingKey] {
+            return try await inFlight.value
+        }
+
+        // One provider task owns one recording. Overlapping taps/callers await
+        // the same task; a failed task is removed so an explicit retry can
+        // recover, while an accepted result is cached and never counted twice.
+        let task = Task { try await self.performAnalysis(at: recordingKey) }
+        inFlightAnalyses[recordingKey] = task
+        do {
+            let result = try await task.value
+            cacheAccepted(result, for: recordingKey)
+            inFlightAnalyses[recordingKey] = nil
+            return result
+        } catch {
+            inFlightAnalyses[recordingKey] = nil
+            throw error
+        }
+    }
+
+    private func performAnalysis(at url: URL) async throws -> VideoAnalysisResult {
         func record(
             _ outcome: AICallDiagnosticOutcome,
             _ reason: String,
@@ -15938,9 +16013,26 @@ final class VideoAnalysisService {
             record(.fallback, "Video analysis failed normalization", provider: provider, startedAt: startedAt)
             throw VideoAnalysisError.invalidProviderRead
         }
-        await MainActor.run { settings.recordAnalysis() }
+        // The shared allowance is charged only after a provider response has
+        // passed decoding and the visual-read integrity contract. Transport,
+        // frame, decode, and normalization failures remain retryable and cost
+        // no user-visible analysis. The outer single-flight/cache boundary
+        // guarantees this line runs once per accepted recording in this app
+        // lifetime.
+        settings.recordAnalysis()
         record(.success, "Video analysis accepted", provider: provider, startedAt: startedAt)
         return normalized
+    }
+
+    private func cacheAccepted(_ result: VideoAnalysisResult, for key: URL) {
+        completedAnalyses[key] = result
+        completedAnalysisOrder.removeAll { $0 == key }
+        completedAnalysisOrder.append(key)
+
+        while completedAnalysisOrder.count > completedCacheLimit {
+            let evicted = completedAnalysisOrder.removeFirst()
+            completedAnalyses[evicted] = nil
+        }
     }
 
     // MARK: - Frame Extraction

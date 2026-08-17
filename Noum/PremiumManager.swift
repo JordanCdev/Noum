@@ -535,16 +535,46 @@ final class PremiumManager: ObservableObject {
     @Published private(set) var productLoadIssue: PremiumProductLoadIssue?
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var subscriptionLifecycle: SubscriptionLifecycleSnapshot = .unknown
-    @Published private(set) var videoAnalysisCreditsRemaining: Int
 
-    private let creditsKey = "NoumVideoAnalysisCredits"
-    private let creditsResetKey = "NoumVideoAnalysisResetDate"
     /// StoreKit-derived lifecycle history is device/Apple-account scoped rather
     /// than attributable to a Noum account. Keep the key visible to the privacy
     /// registry so it remains exportable and deletable as legacy device data.
     nonisolated static let lifecycleSnapshotKey = "NoumVerifiedSubscriptionLifecycle.v1"
+    /// Retired device-local quota keys from the pre-release video-analysis
+    /// experiment. They were never account- or server-authoritative, so they
+    /// cannot safely represent a paid monthly allowance. Keep the exact names
+    /// only for one-way cleanup of existing development installs.
+    nonisolated static let retiredVideoAnalysisCreditKeys = [
+        "NoumVideoAnalysisCredits",
+        "NoumVideoAnalysisResetDate",
+    ]
     private var lastObservedLifecycle: SubscriptionLifecycleSnapshot
-    static let monthlyVideoAnalysisLimit = 5
+
+    /// Video analysis still calls provider vision APIs directly. Release
+    /// bundles deliberately contain no provider credential, and there is no
+    /// checked-in secure vision callable or server-authoritative usage ledger.
+    /// Keep the developer surface testable while making the paid release claim
+    /// fail closed until both pieces exist.
+    nonisolated static let secureVideoAnalysisAuthorityAvailable = false
+
+    nonisolated static func resolvesVideoAnalysisAvailability(
+        isDebugBuild: Bool,
+        secureProductionAuthorityAvailable: Bool
+    ) -> Bool {
+        isDebugBuild || secureProductionAuthorityAvailable
+    }
+
+    nonisolated static var videoAnalysisAvailableInCurrentBuild: Bool {
+        #if DEBUG
+        let isDebugBuild = true
+        #else
+        let isDebugBuild = false
+        #endif
+        return resolvesVideoAnalysisAvailability(
+            isDebugBuild: isDebugBuild,
+            secureProductionAuthorityAvailable: secureVideoAnalysisAuthorityAvailable
+        )
+    }
 
     /// StoreKit product identifiers
     nonisolated static let monthlyID = "com.noum.pro.monthly"
@@ -565,8 +595,7 @@ final class PremiumManager: ObservableObject {
         // rather than briefly granting access from a stale persisted flag.
         isPremium = false
         lastObservedLifecycle = Self.loadLastObservedLifecycle()
-        videoAnalysisCreditsRemaining = UserDefaults.standard.object(forKey: creditsKey) as? Int ?? Self.monthlyVideoAnalysisLimit
-        resetCreditsIfNeeded()
+        Self.purgeRetiredVideoAnalysisCreditState()
         // Defer StoreKit work so it doesn't block the first frame.
         // The transaction listener and product loading involve XPC calls
         // that trigger heavy plist decoding on the main thread.
@@ -855,35 +884,21 @@ final class PremiumManager: ObservableObject {
         #endif
     }
 
-    // MARK: - Video Analysis Credits
+    // MARK: - Video Analysis Availability
 
-    var canUseVideoAnalysis: Bool { isPremium && videoAnalysisCreditsRemaining > 0 }
-
-    func consumeVideoAnalysisCredit() -> Bool {
-        guard canUseVideoAnalysis else { return false }
-        videoAnalysisCreditsRemaining -= 1
-        UserDefaults.standard.set(videoAnalysisCreditsRemaining, forKey: creditsKey)
-        return true
+    /// StoreKit entitlement and release transport readiness are both required.
+    /// The shared AI allowance remains owned by `AISettingsManager`; there is no
+    /// second, device-local paid-credit ledger.
+    var canUseVideoAnalysis: Bool {
+        isPremium && Self.videoAnalysisAvailableInCurrentBuild
     }
 
-    private func resetCreditsIfNeeded() {
-        let defaults = UserDefaults.standard
-        if let resetDate = defaults.object(forKey: creditsResetKey) as? Date {
-            if Date() >= resetDate {
-                videoAnalysisCreditsRemaining = Self.monthlyVideoAnalysisLimit
-                defaults.set(videoAnalysisCreditsRemaining, forKey: creditsKey)
-                defaults.set(nextMonthlyReset(), forKey: creditsResetKey)
-            }
-        } else {
-            // First launch — set initial reset date
-            defaults.set(nextMonthlyReset(), forKey: creditsResetKey)
-            defaults.set(Self.monthlyVideoAnalysisLimit, forKey: creditsKey)
-            videoAnalysisCreditsRemaining = Self.monthlyVideoAnalysisLimit
+    static func purgeRetiredVideoAnalysisCreditState(
+        defaults: UserDefaults = .standard
+    ) {
+        retiredVideoAnalysisCreditKeys.forEach {
+            defaults.removeObject(forKey: $0)
         }
-    }
-
-    private func nextMonthlyReset() -> Date {
-        Calendar.current.date(byAdding: .month, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
     }
 
     // MARK: - Feature Gating
@@ -1452,7 +1467,13 @@ struct PaywallView: View {
 
                                 featureRow(icon: "text.magnifyingglass", title: "Ask Noum", description: "A coaching thread grounded in your recent reps")
                                 featureRow(icon: "chart.line.uptrend.xyaxis", title: "Deeper review", description: "See meaningful change and the next move")
-                                featureRow(icon: "video.fill", title: "Video analysis", description: "Review delivery from saved practice recordings")
+                                if PremiumManager.videoAnalysisAvailableInCurrentBuild {
+                                    featureRow(
+                                        icon: "video.fill",
+                                        title: "Video analysis",
+                                        description: "Review saved recordings using your shared monthly AI allowance"
+                                    )
+                                }
 
                                 Divider()
                                     .padding(.vertical, Spacing.xs)
