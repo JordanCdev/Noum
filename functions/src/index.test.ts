@@ -3176,7 +3176,13 @@ test("completed deletion tombstones remain server-only write fences", () => {
 
   const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
   const deletion = deletionExecutorSource(source);
-  assert.match(deletion, /schemaVersion: 2,[\s\S]*?status: "pending"/);
+  assert.match(deletion, /schemaVersion: 3,[\s\S]*?status: "pending"/);
+  assert.match(deletion, /appleRevocationRequiredAtAdmission/);
+  assert.match(deletion, /appleAuthorizationRevoked/);
+  assert.match(
+    deletion,
+    /admission === "resumePending"[\s\S]*?schemaVersion: 3/
+  );
   assert.match(
     deletion,
     // eslint-disable-next-line max-len
@@ -3197,7 +3203,12 @@ test("completed deletion tombstones remain server-only write fences", () => {
     scheduler,
     /pendingAccountDeletionReconciliationCandidate\(/
   );
+  assert.match(
+    scheduler,
+    /const candidates: PendingAccountDeletionReconciliationCandidate\[\]/
+  );
   assert.match(scheduler, /executeAccountDeletion\(null, candidate\)/);
+  assert.match(scheduler, /case "retained"/);
   assert.match(scheduler, /pageQuery\.startAfter\(cursor\)/);
   assert.match(
     scheduler,

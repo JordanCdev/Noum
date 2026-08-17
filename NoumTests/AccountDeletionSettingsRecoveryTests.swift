@@ -39,6 +39,7 @@ struct AccountDeletionSettingsRecoveryTests {
         let recoverableErrors: [AccountDeletionError?] = [
             nil,
             .noActiveAccount,
+            .deletionAlreadyInProgress,
             .safeToRetry,
             .requiresRecentAuthentication,
             .appleRevocationUnavailable,

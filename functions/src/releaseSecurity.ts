@@ -180,6 +180,8 @@ export type AccountDeletionStateAdmission =
 export interface PendingAccountDeletionReconciliationCandidate {
   accountID: string;
   requestID: string;
+  appleRevocationRequiredAtAdmission: boolean;
+  appleAuthorizationRevoked: boolean;
 }
 
 /** Timestamp projection shared by Firestore and deterministic tests. */
@@ -233,21 +235,36 @@ export function accountDeletionStateAdmission(
   dateMilliseconds: AccountDeletionTimestampMilliseconds
 ): AccountDeletionStateAdmission {
   if (data === undefined) return "createPending";
-  if (!isRecord(data) || data.schemaVersion !== 2 ||
+  if (!isRecord(data) ||
       data.accountID !== accountID || data.requestID !== requestID) {
     return "invalid";
   }
   if (data.status === "pending") {
-    if (!hasExactKeys(data, [
+    const legacyKeys = [
       "accountID", "requestID", "schemaVersion", "startedAt", "status",
       "updatedAt",
-    ])) return "invalid";
+    ];
+    const currentKeys = [
+      "accountID", "appleAuthorizationRevoked",
+      "appleRevocationRequiredAtAdmission", "requestID", "schemaVersion",
+      "startedAt", "status", "updatedAt",
+    ];
+    const legacy = data.schemaVersion === 2 && hasExactKeys(data, legacyKeys);
+    const current = data.schemaVersion === 3 &&
+      hasExactKeys(data, currentKeys) &&
+      typeof data.appleRevocationRequiredAtAdmission === "boolean" &&
+      typeof data.appleAuthorizationRevoked === "boolean" &&
+      (!data.appleRevocationRequiredAtAdmission ||
+        data.appleAuthorizationRevoked) &&
+      (data.appleRevocationRequiredAtAdmission ||
+        !data.appleAuthorizationRevoked);
+    if (!legacy && !current) return "invalid";
     const startedAtMs = dateMilliseconds(data.startedAt);
     const updatedAtMs = dateMilliseconds(data.updatedAt);
     return startedAtMs !== null && updatedAtMs !== null &&
       startedAtMs <= updatedAtMs ? "resumePending" : "invalid";
   }
-  if (data.status === "complete") {
+  if (data.status === "complete" && data.schemaVersion === 2) {
     if (!hasExactKeys(data, [
       "accountID", "completedAt", "expiresAt", "requestID", "schemaVersion",
       "status",
@@ -280,8 +297,11 @@ export function pendingAccountDeletionReconciliationCandidate(
   dateMilliseconds: AccountDeletionTimestampMilliseconds
 ): PendingAccountDeletionReconciliationCandidate | null {
   if (!Number.isFinite(nowMs) || !isRecord(data) ||
+      data.schemaVersion !== 3 ||
       typeof data.accountID !== "string" ||
       typeof data.requestID !== "string" ||
+      typeof data.appleRevocationRequiredAtAdmission !== "boolean" ||
+      typeof data.appleAuthorizationRevoked !== "boolean" ||
       data.accountID !== documentID || !UUID_PATTERN.test(data.requestID) ||
       accountDeletionStateAdmission(
         data,
@@ -294,7 +314,13 @@ export function pendingAccountDeletionReconciliationCandidate(
       nowMs - updatedAtMs < ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS) {
     return null;
   }
-  return {accountID: documentID, requestID: data.requestID};
+  return {
+    accountID: documentID,
+    requestID: data.requestID,
+    appleRevocationRequiredAtAdmission:
+      data.appleRevocationRequiredAtAdmission,
+    appleAuthorizationRevoked: data.appleAuthorizationRevoked,
+  };
 }
 
 /**

@@ -78,6 +78,45 @@ struct AppleAccountDeletionAuthorizationTests {
         #expect(AuthManager.accountDeletionError(for: .cancelled) == .safeToRetry)
     }
 
+    @Test("Task cancellation at a stage boundary cannot reach Firebase")
+    func taskCancellationStopsAtStageBoundary() async {
+        var pendingCredential:
+            CheckedContinuation<AppleAccountDeletionCredential, Never>?
+        var calls: [String] = []
+        let task = Task { @MainActor in
+            await captureError {
+                try await AppleAccountDeletionAuthorizationGate
+                    .authorizeAndRevoke(
+                        expectedAccountID: accountID,
+                        linkedProviderIDs: ["apple.com"],
+                        acquireCredential: {
+                            calls.append("acquire")
+                            return await withCheckedContinuation {
+                                pendingCredential = $0
+                            }
+                        },
+                        reauthenticate: { _ in
+                            calls.append("reauthenticate")
+                            return self.accountID
+                        },
+                        revokeAuthorizationCode: { _ in
+                            calls.append("revoke")
+                        }
+                    )
+            }
+        }
+
+        while pendingCredential == nil {
+            await Task.yield()
+        }
+        task.cancel()
+        pendingCredential?.resume(returning: credential())
+
+        let error = await task.value
+        #expect(error == .cancelled)
+        #expect(calls == ["acquire"])
+    }
+
     @Test("A missing authorization code cannot enter Firebase")
     func missingCodeFailsClosed() async {
         var calls: [String] = []
@@ -242,12 +281,26 @@ struct AppleAccountDeletionAuthorizationTests {
         let revocation = try #require(deletion.range(
             of: "revokeAppleAuthorizationForDeletionIfNeeded("
         ))
+        let singleFlight = try #require(deletion.range(
+            of: "activeAccountDeletionOperationID == nil"
+        ))
         let admission = try #require(deletion.range(of: ".beginOrResume("))
+        let snapshotCancellation = try #require(deletion.range(
+            of: "cancelActiveCoachingContentSnapshotSync()"
+        ))
         let suspension = try #require(deletion.range(
             of: "AskNoumStore.shared.suspendProviderWorkForDeletion"
         ))
+        #expect(singleFlight.lowerBound < revocation.lowerBound)
         #expect(revocation.lowerBound < admission.lowerBound)
-        #expect(admission.lowerBound < suspension.lowerBound)
+        #expect(admission.lowerBound < snapshotCancellation.lowerBound)
+        #expect(snapshotCancellation.lowerBound < suspension.lowerBound)
+        #expect(authSource.contains("@MainActor\nclass AuthManager"))
+        #expect(deletion.contains("deletionAlreadyInProgress"))
+        #expect(deletion.contains("hasPendingPromotedGuestBackendSeed("))
+        #expect(deletion.contains(
+            "clearsPromotedGuestSeedMarker: true"
+        ))
         #expect(deletion.contains("case .resumeVerifiedFence("))
         #expect(deletion.contains(
             "appleAuthorizationRevoked = persistedRevocation"
@@ -279,6 +332,16 @@ struct AppleAccountDeletionAuthorizationTests {
         #expect(firebaseAdapter.contains("Auth.auth().revokeToken("))
         #expect(firebaseAdapter.contains("withAuthorizationCode:"))
 
+        let authorizationSource = try repositorySource(
+            "Noum/AppleAccountDeletionAuthorization.swift"
+        )
+        #expect(authorizationSource.contains("Task.checkCancellation()"))
+        #expect(authorizationSource.contains("withTaskCancellationHandler("))
+        #expect(authorizationSource.contains("controller.cancel()"))
+        #expect(authorizationSource.contains(
+            "finish(.failure(AppleAccountDeletionAuthorizationError.cancelled))"
+        ))
+
         let serverSource = try repositorySource("functions/src/index.ts")
         let serverDeletion = try sourceSlice(
             serverSource,
@@ -288,6 +351,11 @@ struct AppleAccountDeletionAuthorizationTests {
         #expect(serverDeletion.contains("assertAppleRevocationAttested("))
         #expect(serverDeletion.contains("providerData.map"))
         #expect(serverDeletion.contains("deletionRequest"))
+        #expect(serverDeletion.contains("schemaVersion: 3"))
+        #expect(serverDeletion.contains(
+            "appleRevocationRequiredAtAdmission"
+        ))
+        #expect(serverDeletion.contains("appleAuthorizationRevoked"))
         let providerRead = try #require(serverDeletion.range(
             of: "user.providerData.map"
         ))

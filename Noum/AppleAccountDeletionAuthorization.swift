@@ -48,6 +48,18 @@ enum AppleAccountDeletionAuthorizationDisposition: Equatable, Sendable {
 enum AppleAccountDeletionAuthorizationGate {
     static let providerID = "apple.com"
 
+    /// Converts structured-concurrency cancellation into the typed,
+    /// pre-admission failure surfaced by account deletion. Calling this at
+    /// every external stage boundary prevents a cancelled task from drifting
+    /// into reauthentication, revocation, or durable deletion admission.
+    static func checkCancellation() throws {
+        do {
+            try Task.checkCancellation()
+        } catch {
+            throw AppleAccountDeletionAuthorizationError.cancelled
+        }
+    }
+
     static func isRequired(linkedProviderIDs: [String]) -> Bool {
         linkedProviderIDs.contains(providerID)
     }
@@ -68,14 +80,18 @@ enum AppleAccountDeletionAuthorizationGate {
     ) async throws {
         guard isRequired(linkedProviderIDs: linkedProviderIDs) else { return }
 
+        try checkCancellation()
+
         let credential: AppleAccountDeletionCredential
         do {
             credential = try await acquireCredential()
         } catch let error as AppleAccountDeletionAuthorizationError {
             throw error
         } catch {
+            try checkCancellation()
             throw AppleAccountDeletionAuthorizationError.authorizationFailed
         }
+        try checkCancellation()
 
         guard credential.providerID == providerID else {
             throw AppleAccountDeletionAuthorizationError.providerMismatch
@@ -90,25 +106,31 @@ enum AppleAccountDeletionAuthorizationGate {
             throw AppleAccountDeletionAuthorizationError.missingAuthorizationCode
         }
 
+        try checkCancellation()
         let reauthenticatedAccountID: String
         do {
             reauthenticatedAccountID = try await reauthenticate(credential)
         } catch let error as AppleAccountDeletionAuthorizationError {
             throw error
         } catch {
+            try checkCancellation()
             throw AppleAccountDeletionAuthorizationError.reauthenticationFailed
         }
+        try checkCancellation()
         guard reauthenticatedAccountID == expectedAccountID else {
             throw AppleAccountDeletionAuthorizationError.providerMismatch
         }
 
+        try checkCancellation()
         do {
             try await revokeAuthorizationCode(authorizationCode)
         } catch let error as AppleAccountDeletionAuthorizationError {
             throw error
         } catch {
+            try checkCancellation()
             throw AppleAccountDeletionAuthorizationError.revocationFailed
         }
+        try checkCancellation()
     }
 }
 
@@ -148,17 +170,33 @@ final class AppleAccountDeletionAuthorizationRequest: NSObject,
     }
 
     func credential() async throws -> AppleAccountDeletionCredential {
-        if let terminalResult {
-            return try terminalResult.get()
-        }
-        guard continuation == nil else {
-            throw AppleAccountDeletionAuthorizationError.authorizationFailed
-        }
+        try AppleAccountDeletionAuthorizationGate.checkCancellation()
+        return try await withTaskCancellationHandler(operation: {
+            try AppleAccountDeletionAuthorizationGate.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                if let terminalResult = self.terminalResult {
+                    continuation.resume(with: terminalResult)
+                    return
+                }
+                guard self.continuation == nil else {
+                    continuation.resume(throwing:
+                        AppleAccountDeletionAuthorizationError
+                            .authorizationFailed)
+                    return
+                }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
-            controller.performRequests()
-        }
+                self.continuation = continuation
+                if Task.isCancelled {
+                    self.cancelAuthorizationRequest()
+                } else {
+                    self.controller.performRequests()
+                }
+            }
+        }, onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelAuthorizationRequest()
+            }
+        })
     }
 
     func presentationAnchor(
@@ -219,6 +257,14 @@ final class AppleAccountDeletionAuthorizationRequest: NSObject,
         continuation?.resume(with: result)
     }
 
+    private func cancelAuthorizationRequest() {
+        // `ASAuthorizationController.cancel()` is the platform cancellation
+        // primitive. `finish` is idempotent, covering both callback orderings:
+        // Apple's delegate may report cancellation before or after this call.
+        controller.cancel()
+        finish(.failure(AppleAccountDeletionAuthorizationError.cancelled))
+    }
+
     private static func secureNonce(length: Int = 32) throws -> String {
         precondition(length > 0)
         let characterSet = Array(
@@ -231,8 +277,7 @@ final class AppleAccountDeletionAuthorizationRequest: NSObject,
             var random: UInt8 = 0
             let status = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
             guard status == errSecSuccess else {
-                throw AppleAccountDeletionAuthorizationError
-                    .authorizationFailed
+                throw AppleAccountDeletionAuthorizationError.authorizationFailed
             }
             guard Int(random) < characterSet.count else { continue }
             result.append(characterSet[Int(random)])

@@ -68,6 +68,7 @@ import {
   grantDeepgramTranscriptionToken,
   nextWindowRateState,
   pendingAccountDeletionReconciliationCandidate,
+  type PendingAccountDeletionReconciliationCandidate,
   ProviderGrantError,
   TRANSCRIPTION_TOKEN_HOUR_LIMIT,
   TRANSCRIPTION_TOKEN_MINUTE_LIMIT,
@@ -4875,7 +4876,8 @@ function verifiedAccountDeletionStateAdmission(
 type AccountDeletionExecutionResult =
   | "deleted"
   | "alreadyCompleted"
-  | "stateChanged";
+  | "stateChanged"
+  | "retained";
 
 /**
  * Executes the one shared deletion worklist for a callable or reconciliation.
@@ -4886,10 +4888,7 @@ type AccountDeletionExecutionResult =
  */
 async function executeAccountDeletion(
   request: CallableRequest<unknown> | null,
-  reconciliation: {
-    accountID: string;
-    requestID: string;
-  } | null = null
+  reconciliation: PendingAccountDeletionReconciliationCandidate | null = null
 ): Promise<AccountDeletionExecutionResult> {
   const startedAt = Date.now();
   const firestore = getFirestore();
@@ -4897,6 +4896,8 @@ async function executeAccountDeletion(
   let uid: string;
   let requestID: string;
   let authUserExists: boolean;
+  let appleRevocationRequiredAtAdmission = false;
+  let appleAuthorizationRevoked = false;
 
   if (request) {
     assertTrustedCaller(request.auth, request.app);
@@ -4959,13 +4960,25 @@ async function executeAccountDeletion(
         );
       }
     }
-    assertAppleRevocationAttested(providerIDs, deletionRequest);
+    // A missing Admin Auth row cannot prove the account was not Apple-linked.
+    // Require the current revocation-capable client in that ambiguous case and
+    // durably carry this server-derived requirement into reconciliation.
+    appleRevocationRequiredAtAdmission = !authUserExists ||
+      providerIDs.includes("apple.com");
+    assertAppleRevocationAttested(
+      appleRevocationRequiredAtAdmission ? ["apple.com"] : providerIDs,
+      deletionRequest
+    );
+    appleAuthorizationRevoked = appleRevocationRequiredAtAdmission &&
+      deletionRequest.schemaVersion === 3 &&
+      deletionRequest.appleAuthorizationRevoked;
   } else {
     if (!reconciliation) {
       throw new Error("Missing account deletion reconciliation candidate.");
     }
-    uid = reconciliation.accountID;
-    requestID = reconciliation.requestID;
+    const scheduledCandidate = reconciliation;
+    uid = scheduledCandidate.accountID;
+    requestID = scheduledCandidate.requestID;
     const deletionStateRef = firestore.collection("_accountDeletionState")
       .doc(uid);
     const pendingState = await deletionStateRef.get();
@@ -4977,16 +4990,29 @@ async function executeAccountDeletion(
         socialDateMilliseconds
       ) : null;
     if (!currentCandidate ||
-          currentCandidate.accountID !== reconciliation.accountID ||
-          currentCandidate.requestID !== reconciliation.requestID) {
+          currentCandidate.accountID !== scheduledCandidate.accountID ||
+          currentCandidate.requestID !== scheduledCandidate.requestID ||
+          currentCandidate.appleRevocationRequiredAtAdmission !==
+            scheduledCandidate.appleRevocationRequiredAtAdmission ||
+          currentCandidate.appleAuthorizationRevoked !==
+            scheduledCandidate.appleAuthorizationRevoked) {
       return "stateChanged";
     }
+    let providerIDs: string[] = [];
     try {
-      await auth.getUser(uid);
+      const user = await auth.getUser(uid);
+      providerIDs = user.providerData.map((provider) => provider.providerId);
       authUserExists = true;
     } catch (error) {
       if (!isAuthUserNotFound(error)) throw error;
       authUserExists = false;
+    }
+    // A provider linked after the original non-Apple admission has no durable
+    // revocation proof. Retain the fence for operator review instead of
+    // silently converting a later Apple account into scheduled deletion work.
+    if (providerIDs.includes("apple.com") &&
+        !currentCandidate.appleAuthorizationRevoked) {
+      return "retained";
     }
   }
 
@@ -5000,27 +5026,69 @@ async function executeAccountDeletion(
     const pendingAdmission = await firestore.runTransaction(
       async (transaction) => {
         const snapshot = await transaction.get(deletionStateRef);
+        const storedState = snapshot.exists ? snapshot.data() : undefined;
         const admission = verifiedAccountDeletionStateAdmission(
-          snapshot.exists ? snapshot.data() : undefined,
+          storedState,
           uid,
           requestID
         );
+        const persistedAppleRevocationRequired =
+          admission === "resumePending" &&
+          storedState?.schemaVersion === 3 &&
+          storedState.appleRevocationRequiredAtAdmission === true;
+        const persistedAppleAuthorizationRevoked =
+          admission === "resumePending" &&
+          storedState?.schemaVersion === 3 &&
+          storedState.appleAuthorizationRevoked === true;
+        const effectiveAppleRevocationRequired =
+          persistedAppleRevocationRequired ||
+          appleRevocationRequiredAtAdmission;
+        const effectiveAppleAuthorizationRevoked =
+          persistedAppleAuthorizationRevoked || appleAuthorizationRevoked;
+        if (effectiveAppleRevocationRequired &&
+            !effectiveAppleAuthorizationRevoked) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Apple authorization revocation could not be verified.",
+            {reason: "apple-revocation-required"}
+          );
+        }
         if (admission === "createPending") {
           transaction.set(deletionStateRef, {
-            schemaVersion: 2,
+            schemaVersion: 3,
             status: "pending",
             accountID: uid,
             requestID,
+            appleRevocationRequiredAtAdmission:
+              effectiveAppleRevocationRequired,
+            appleAuthorizationRevoked:
+              effectiveAppleAuthorizationRevoked,
             startedAt: Timestamp.fromMillis(startedAt),
             updatedAt: Timestamp.now(),
           });
         } else if (admission === "resumePending") {
-          transaction.update(deletionStateRef, {updatedAt: Timestamp.now()});
+          // An authenticated retry is the only route that may promote a
+          // legacy pending marker. Unattended schema-2 rows remain excluded
+          // by the scheduler until a current server-derived provider check and
+          // any required client revocation attestation pass this transaction.
+          transaction.update(deletionStateRef, {
+            schemaVersion: 3,
+            appleRevocationRequiredAtAdmission:
+              effectiveAppleRevocationRequired,
+            appleAuthorizationRevoked:
+              effectiveAppleAuthorizationRevoked,
+            updatedAt: Timestamp.now(),
+          });
         }
-        return admission;
+        return {
+          admission,
+          appleRevocationRequiredAtAdmission:
+            effectiveAppleRevocationRequired,
+          appleAuthorizationRevoked: effectiveAppleAuthorizationRevoked,
+        };
       }
     );
-    if (pendingAdmission === "alreadyCompleted") {
+    if (pendingAdmission.admission === "alreadyCompleted") {
       logger.info(
         "deleteAccount concurrently completed",
         accountDeletionLogMetadata(
@@ -5031,7 +5099,15 @@ async function executeAccountDeletion(
       );
       return "alreadyCompleted";
     }
+    appleRevocationRequiredAtAdmission =
+      pendingAdmission.appleRevocationRequiredAtAdmission;
+    appleAuthorizationRevoked =
+      pendingAdmission.appleAuthorizationRevoked;
   } else {
+    const scheduledCandidate = reconciliation;
+    if (!scheduledCandidate) {
+      throw new Error("Missing account deletion reconciliation candidate.");
+    }
     const stillPending = await firestore.runTransaction(
       async (transaction) => {
         const current = await transaction.get(deletionStateRef);
@@ -5043,7 +5119,11 @@ async function executeAccountDeletion(
             socialDateMilliseconds
           ) : null;
         return candidate?.accountID === uid &&
-            candidate.requestID === requestID;
+            candidate.requestID === requestID &&
+            candidate.appleRevocationRequiredAtAdmission ===
+              scheduledCandidate.appleRevocationRequiredAtAdmission &&
+            candidate.appleAuthorizationRevoked ===
+              scheduledCandidate.appleAuthorizationRevoked;
       }
     );
     if (!stillPending) return "stateChanged";
@@ -5410,7 +5490,7 @@ export const reconcileAccountDeletionTombstones = onSchedule(
       .where("status", "==", "pending")
       .where("updatedAt", "<=", cutoff)
       .orderBy("updatedAt", "asc");
-    const candidates: Array<{accountID: string; requestID: string}> = [];
+    const candidates: PendingAccountDeletionReconciliationCandidate[] = [];
     let cursor: QueryDocumentSnapshot | null = null;
     let scanned = 0;
     let reconciled = 0;
@@ -5456,6 +5536,9 @@ export const reconcileAccountDeletionTombstones = onSchedule(
           break;
         case "stateChanged":
           superseded += 1;
+          break;
+        case "retained":
+          retained += 1;
           break;
         }
       } catch {

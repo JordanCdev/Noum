@@ -72,6 +72,7 @@ enum AccountUpgradeConflict: LocalizedError, Equatable, Identifiable {
 
 enum AccountDeletionError: LocalizedError, Equatable {
     case noActiveAccount
+    case deletionAlreadyInProgress
     case safeToRetry
     case requiresRecentAuthentication
     case appleRevocationUnavailable
@@ -86,6 +87,8 @@ enum AccountDeletionError: LocalizedError, Equatable {
         switch self {
         case .noActiveAccount:
             return "No active account was found."
+        case .deletionAlreadyInProgress:
+            return "Account deletion is already in progress. Keep Noum open while it finishes."
         case .safeToRetry:
             return "Noum paused before contacting the account service. Your account and local data are unchanged. You can retry account deletion."
         case .requiresRecentAuthentication:
@@ -289,6 +292,7 @@ class AuthManager: ObservableObject {
     private var activeInitialRemoteProfileFetch: InitialRemoteProfileFetchHandle?
     private var activeCoachingContentSnapshotSync:
         CoachingContentSnapshotSyncHandle?
+    private var activeAccountDeletionOperationID: UUID?
     private var localGuestPromotionIsConnecting = false
     private var lastLocalGuestPromotionAttemptAt: Date?
     /// Monotonic process-local identity epoch. Async consumers that handle
@@ -1321,13 +1325,23 @@ class AuthManager: ObservableObject {
     /// durable completion receipt or unauthenticated post-deletion recovery
     /// route, so this client state must not be described as backend resumability.
     func deleteCurrentAccount() async throws {
+        guard activeAccountDeletionOperationID == nil else {
+            throw AccountDeletionError.deletionAlreadyInProgress
+        }
+        let deletionOperationID = UUID()
+        activeAccountDeletionOperationID = deletionOperationID
+        defer {
+            if activeAccountDeletionOperationID == deletionOperationID {
+                activeAccountDeletionOperationID = nil
+            }
+        }
+
         _ = restorePendingDeletionIdentityIfNeeded()
         guard !localGuestPromotionIsConnecting,
               localGuestPromotionJournalRepository.pendingLookup() == .missing else {
             accountDeletionState = .failed(.secureDataUpgradeIncomplete)
             throw AccountDeletionError.secureDataUpgradeIncomplete
         }
-        cancelActiveCoachingContentSnapshotSync()
         guard let accountID = currentAccountID,
               let providerRawValue = currentAuthProviderRawValue else {
             accountDeletionState = .failed(.noActiveAccount)
@@ -1397,6 +1411,11 @@ class AuthManager: ObservableObject {
             )
             throw AccountDeletionError.completionUncertain
         }
+
+        // Existing snapshot transport must close only after durable admission.
+        // Apple cancellation, revocation failure, or fence-persistence failure
+        // therefore leaves the signed-in account's provider work untouched.
+        cancelActiveCoachingContentSnapshotSync()
 
         // No suspension occurs between publishing deletion, rotating the
         // lifecycle epoch, and closing the two MainActor mutation boundaries.
@@ -1547,6 +1566,12 @@ class AuthManager: ObservableObject {
                        currentAuthProviderRawValue == providerRawValue {
                         RecommendationLearningStore.shared.syncCurrentState()
                         resumeCoachingContentSyncIfReady()
+                        if hasPendingPromotedGuestBackendSeed(for: accountID) {
+                            beginCoachingContentSnapshotSyncIfReady(
+                                accountID: accountID,
+                                clearsPromotedGuestSeedMarker: true
+                            )
+                        }
                     }
                 } else {
                     // Failure to verify fence removal turns an otherwise safe

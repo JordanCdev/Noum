@@ -244,13 +244,19 @@ test("deletion state admission preserves exact terminal markers", () => {
 test(
   "deletion state admission resumes only the same exact pending request",
   () => {
-    const pending = {
+    const legacyPending = {
       schemaVersion: 2,
       status: "pending",
       accountID: "account-alpha",
       requestID,
       startedAt: new Date(1_720_000_000_000),
       updatedAt: new Date(1_720_000_001_000),
+    };
+    const pending = {
+      ...legacyPending,
+      schemaVersion: 3,
+      appleRevocationRequiredAtAdmission: true,
+      appleAuthorizationRevoked: true,
     };
     assert.equal(accountDeletionStateAdmission(
       undefined,
@@ -264,10 +270,22 @@ test(
       requestID,
       dateMilliseconds
     ), "resumePending");
+    assert.equal(accountDeletionStateAdmission(
+      legacyPending,
+      "account-alpha",
+      requestID,
+      dateMilliseconds
+    ), "resumePending");
     for (const invalid of [
       {...pending, requestID: "3cb446d8-4f39-43a6-a95c-2486e47155bc"},
       {...pending, unexpected: true},
       {...pending, updatedAt: new Date(pending.startedAt.getTime() - 1)},
+      {...pending, appleAuthorizationRevoked: false},
+      {
+        ...pending,
+        appleRevocationRequiredAtAdmission: false,
+        appleAuthorizationRevoked: true,
+      },
     ]) {
       assert.equal(accountDeletionStateAdmission(
         invalid,
@@ -280,14 +298,16 @@ test(
 );
 
 test(
-  "pending reconciliation requires exact stale state before work resumes",
+  "pending reconciliation requires durable Apple admission provenance",
   () => {
     const nowMs = 1_720_010_000_000;
     const pending = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       status: "pending",
       accountID: "account-alpha",
       requestID,
+      appleRevocationRequiredAtAdmission: true,
+      appleAuthorizationRevoked: true,
       startedAt: new Date(
         nowMs - ACCOUNT_DELETION_RECONCILIATION_MIN_AGE_MS - 2_000
       ),
@@ -300,7 +320,27 @@ test(
       "account-alpha",
       nowMs,
       dateMilliseconds
-    ), {accountID: "account-alpha", requestID});
+    ), {
+      accountID: "account-alpha",
+      requestID,
+      appleRevocationRequiredAtAdmission: true,
+      appleAuthorizationRevoked: true,
+    });
+    assert.deepEqual(pendingAccountDeletionReconciliationCandidate(
+      {
+        ...pending,
+        appleRevocationRequiredAtAdmission: false,
+        appleAuthorizationRevoked: false,
+      },
+      "account-alpha",
+      nowMs,
+      dateMilliseconds
+    ), {
+      accountID: "account-alpha",
+      requestID,
+      appleRevocationRequiredAtAdmission: false,
+      appleAuthorizationRevoked: false,
+    });
     assert.equal(pendingAccountDeletionReconciliationCandidate(
       {...pending, updatedAt: new Date(nowMs - 1)},
       "account-alpha",
@@ -315,6 +355,25 @@ test(
     ), null);
     assert.equal(pendingAccountDeletionReconciliationCandidate(
       {...pending, unexpected: true},
+      "account-alpha",
+      nowMs,
+      dateMilliseconds
+    ), null);
+    assert.equal(pendingAccountDeletionReconciliationCandidate(
+      {
+        schemaVersion: 2,
+        status: "pending",
+        accountID: "account-alpha",
+        requestID,
+        startedAt: pending.startedAt,
+        updatedAt: pending.updatedAt,
+      },
+      "account-alpha",
+      nowMs,
+      dateMilliseconds
+    ), null);
+    assert.equal(pendingAccountDeletionReconciliationCandidate(
+      {...pending, appleAuthorizationRevoked: false},
       "account-alpha",
       nowMs,
       dateMilliseconds
