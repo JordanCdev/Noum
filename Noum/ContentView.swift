@@ -487,17 +487,22 @@ struct ContentView: View {
                 AppColor.warmCanvas
                     .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    LinearGradient(
-                        colors: [
-                            AppColor.coachAccent.opacity(0),
-                            AppColor.coachAccent.opacity(0.08)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
+                // The reward screen's depth comes from light, not furniture.
+                // Today borrows that authored atmosphere without borrowing its
+                // celebration: two quiet, static halos frame the mission.
+                ZStack {
+                    RadialGradient(
+                        colors: [AppColor.coachAccent.opacity(0.09), .clear],
+                        center: .topTrailing,
+                        startRadius: 0,
+                        endRadius: 260
                     )
-                    .frame(height: 200)
+                    RadialGradient(
+                        colors: [AppColor.brandBlueLight.opacity(0.06), .clear],
+                        center: .bottomLeading,
+                        startRadius: 0,
+                        endRadius: 300
+                    )
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
@@ -680,11 +685,25 @@ struct ContentView: View {
         Button {
             showAdjustPractice = true
         } label: {
-            Text("Adjust practice \u{203A}")
-                .font(Typography.manrope(size: 12, weight: .semibold, relativeTo: .caption))
-                .foregroundStyle(AppColor.neutralReceded.opacity(0.75))
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+                Text("Change this rep")
+                    .font(Typography.caption.weight(.semibold))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(AppColor.textSecondary)
+            .padding(.horizontal, Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .background(
+                AppColor.innerSurface,
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text("Adjust practice"))

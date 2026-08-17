@@ -177,6 +177,7 @@ struct SessionHistoryView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var isProgressExpanded = ReviewProgressDisclosure.defaultExpanded
+    @State private var isV46EvidenceExpanded = false
     /// One-shot settle for the progress head's accent underline (once per
     /// view lifetime — the head itself is not identity-keyed on data).
     @State private var underlineSettled = false
@@ -273,8 +274,8 @@ struct SessionHistoryView: View {
                 }
             }
         }
-        .navigationTitle("Review")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Progress")
+        .navigationBarTitleDisplayMode(.large)
         .accessibilityIdentifier("history.screen")
         .onAppear {
             FlowEventLog.shared.recordReviewSurfaceOpened()
@@ -313,30 +314,95 @@ struct SessionHistoryView: View {
     @ViewBuilder
     private var v46ProgressHead: some View {
         if let presentation = v46Progress {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(presentation.eyebrow)
-                    .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(AppColor.coachingInk)
-                    .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                Text("What changed in your communication.")
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Text(presentation.headline)
-                    .font(Typography.figtree(size: 28, weight: .heavy, relativeTo: .title))
+                v46CoachReadCard(presentation)
+
+                v46NextFocusCard(
+                    presentation: presentation,
+                    practice: v46PracticeProjection
+                )
+
+                if let reviewTitle = presentation.reviewRowTitle {
+                    Button {
+                        navigationPath.append(AppDestination.weeklyCheckIn)
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: presentation.reviewIsDue ? "calendar.badge.exclamationmark" : "calendar")
+                                .font(Typography.caption.weight(.semibold))
+                                .foregroundStyle(AppColor.coachingInkOnQuiet)
+                                .accessibilityHidden(true)
+                            Text(reviewTitle)
+                                .font(Typography.caption.weight(.semibold))
+                                .foregroundStyle(AppColor.coachingInkOnQuiet)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: Spacing.xs)
+                            Image(systemName: "chevron.right")
+                                .font(Typography.captionSmall.weight(.bold))
+                                .foregroundStyle(AppColor.coachingInkOnQuiet)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: NoumControlMetric.minimumTouchTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("progress.v46.reviewTarget")
+                }
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.xs)
+            .padding(.bottom, Spacing.lg)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("progress.v46.head")
+        } else {
+            storySection
+        }
+    }
+
+    /// The primary interpretation is one authored surface: waveform identity,
+    /// bounded read, trajectory, then the freshest supporting receipt. Older
+    /// receipts remain available without making the page read like a ledger.
+    private func v46CoachReadCard(_ presentation: V46ProgressPresentation) -> some View {
+        NoumSurface(.standard) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: Spacing.sm) {
+                    NoumWaveformMark(
+                        state: presentation.readStage == .reliable ? .earned : .idle,
+                        tint: AppColor.coachAccent,
+                        size: NoumControlMetric.minimumTouchTarget
+                    )
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(presentation.coachReadEyebrow)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(v46ReadTint(for: presentation.readStage))
+                        Text(presentation.eyebrow.capitalized)
+                            .font(Typography.captionSmall.weight(.semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                Text(presentation.authoredHeadline)
+                    .font(Typography.cardTitle)
                     .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Spacing.sm)
                     .accessibilityIdentifier("progress.v46.headline")
 
                 Text(presentation.subtitle)
-                    .font(Typography.manrope(size: 15, weight: .regular, relativeTo: .subheadline))
+                    .font(Typography.body)
                     .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Spacing.xs)
                     .accessibilityIdentifier("progress.v46.subtitle")
 
                 HStack(alignment: .bottom, spacing: 0) {
                     ForEach(Array(presentation.trajectory.enumerated()), id: \.offset) { index, day in
-                        if index > 0 { Spacer(minLength: Spacing.md) }
+                        if index > 0 { Spacer(minLength: Spacing.sm) }
                         VoiceTraceDayCluster(
                             heights: trajectoryHeights(for: day),
                             label: day.label,
@@ -346,120 +412,151 @@ struct SessionHistoryView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, Spacing.xxl)
+                .padding(.vertical, Spacing.xs)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(presentation.chartAccessibilitySummary))
-                // Keyed on the trajectory content: fresh evidence re-grows the
-                // clusters once; scrolling back never replays (the modifiers'
-                // one-shot state survives while the identity holds).
                 .id(trajectoryIdentity(for: presentation))
 
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(presentation.rows) { row in
-                        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                            Text(row.dayLabel)
-                                .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
-                                .tracking(0.8)
-                                .foregroundStyle(row.tone == .lapse ? AppColor.caution : AppColor.coachingInk)
-                                .frame(width: 56, alignment: .leading)
-                            Text(row.copy)
-                                .font(Typography.manrope(
-                                    size: 14,
-                                    weight: row.tone == .lapse ? .regular : .semibold,
-                                    relativeTo: .footnote
-                                ))
-                                .foregroundStyle(row.tone == .lapse ? AppColor.textSecondary : AppColor.textPrimary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.vertical, 7)
-                        .accessibilityElement(children: .combine)
-                    }
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    Text(presentation.evidenceValue)
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(v46ReadTint(for: presentation.readStage))
+                    Text(presentation.evidenceLabel)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
                 }
-                .padding(.top, Spacing.md)
-                .accessibilityIdentifier("progress.v46.rows")
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    AppColor.innerSurface,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .accessibilityElement(children: .combine)
+
+                v46EvidenceDisclosure(presentation)
 
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(AppColor.coachAccent)
                     .frame(width: 40, height: 3)
                     .scaleEffect(x: underlineSettled ? 1 : 0, anchor: .leading)
-                    .padding(.top, Spacing.lg)
                     .accessibilityHidden(true)
                     .onAppear {
                         guard !underlineSettled else { return }
-                        // Settles in with the cluster grow-in on the shared
-                        // progress-acknowledgement clock. RM: static.
                         withMotion(reduceMotion, .progressAck) {
                             underlineSettled = true
                         }
                     }
+            }
+        }
+    }
 
-                if let practice = v46PracticeProjection {
+    @ViewBuilder
+    private func v46EvidenceDisclosure(_ presentation: V46ProgressPresentation) -> some View {
+        if let latest = presentation.rows.last {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Latest evidence")
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(AppColor.textTertiary)
+                v46EvidenceRow(latest)
+
+                let earlier = Array(presentation.rows.dropLast())
+                if !earlier.isEmpty {
                     Button {
-                        startV46TargetPractice(practice)
+                        withAnimation(NoumMotion.animation(for: .calm, reduceMotion: reduceMotion)) {
+                            isV46EvidenceExpanded.toggle()
+                        }
                     } label: {
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption.weight(.semibold))
-                                .accessibilityHidden(true)
-                            Text("Practice this target")
-                                .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
+                        HStack(spacing: Spacing.xs) {
+                            Text(isV46EvidenceExpanded
+                                ? "Hide earlier evidence"
+                                : "Show \(earlier.count) earlier receipt\(earlier.count == 1 ? "" : "s")")
+                                .font(Typography.caption.weight(.semibold))
                             Spacer(minLength: Spacing.xs)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
+                            Image(systemName: isV46EvidenceExpanded ? "chevron.up" : "chevron.down")
+                                .font(Typography.captionSmall.weight(.bold))
                                 .accessibilityHidden(true)
                         }
                         .foregroundStyle(AppColor.coachingInkOnQuiet)
-                        .padding(.horizontal, Spacing.md)
-                        .frame(minHeight: 48)
-                        .background(
-                            AppColor.proQuietSurface,
-                            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                        .frame(maxWidth: .infinity, minHeight: NoumControlMetric.minimumTouchTarget)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.pressable)
-                    .padding(.top, Spacing.xl)
-                    .accessibilityHint("Repeats the original prompt with the same coaching target.")
-                    .accessibilityIdentifier("progress.v46.practiceTarget")
-                }
+                    .accessibilityIdentifier("progress.v46.evidenceDisclosure")
 
-                if let reviewTitle = presentation.reviewRowTitle {
-                    Button {
-                        navigationPath.append(AppDestination.weeklyCheckIn)
-                    } label: {
-                        HStack(spacing: Spacing.sm) {
-                            Text(reviewTitle)
-                                .font(Typography.manrope(size: 14, weight: .semibold, relativeTo: .footnote))
-                                // `-OnQuiet` is the register for this surface.
-                                // The general `coachingInk` is a fill role and
-                                // measures 3.68:1 on proQuietSurface in Dark —
-                                // under AA for 14pt text. This token is 5.56:1.
-                                .foregroundStyle(AppColor.coachingInkOnQuiet)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: Spacing.xs)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AppColor.coachingInkOnQuiet)
-                                .accessibilityHidden(true)
+                    if isV46EvidenceExpanded {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            ForEach(earlier) { row in
+                                v46EvidenceRow(row)
+                            }
                         }
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.cardGap)
-                        .frame(minHeight: 48)
-                        .background(AppColor.proQuietSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
-                    .buttonStyle(.pressable)
-                    .padding(.top, Spacing.xxl)
-                    .accessibilityIdentifier("progress.v46.reviewTarget")
                 }
             }
-            .padding(.horizontal, Spacing.xl)
-            .padding(.top, Spacing.md)
-            .padding(.bottom, Spacing.xl)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("progress.v46.head")
-        } else {
-            storySection
+            .accessibilityIdentifier("progress.v46.rows")
+        }
+    }
+
+    private func v46EvidenceRow(_ row: V46EvidenceRow) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+            Text(row.dayLabel)
+                .font(Typography.captionSmall.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(row.tone == .lapse ? AppColor.caution : AppColor.coachingInk)
+                .frame(width: 56, alignment: .leading)
+            Text(row.copy)
+                .font(Typography.caption.weight(row.tone == .lapse ? .regular : .semibold))
+                .foregroundStyle(row.tone == .lapse ? AppColor.textSecondary : AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Spacing.xxs)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func v46NextFocusCard(
+        presentation: V46ProgressPresentation,
+        practice: V46ProgressPracticeProjection?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Next focus")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.coachingInkOnQuiet)
+                Text(presentation.nextFocus)
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AppColor.proQuietSurface,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+
+            if let practice {
+                PrimaryCTA(
+                    "Practice this target",
+                    icon: "mic.fill",
+                    tint: AppColor.coachingInk
+                ) {
+                    startV46TargetPractice(practice)
+                }
+                .frame(minHeight: NoumControlMetric.minimumTouchTarget + Spacing.cardGap)
+                .accessibilityHint("Repeats the original prompt with the same coaching target.")
+                .accessibilityIdentifier("progress.v46.practiceTarget")
+            }
+        }
+    }
+
+    private func v46ReadTint(for stage: V46ProgressReadStage) -> Color {
+        switch stage {
+        case .early: return AppColor.coachingInk
+        case .forming: return AppColor.caution
+        case .reliable: return AppColor.positive
         }
     }
 

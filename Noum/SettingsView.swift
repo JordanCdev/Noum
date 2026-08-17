@@ -163,6 +163,7 @@ struct SettingsView: View {
                 Section {
                     advancedDisclosure
                 }
+                .listRowBackground(AppColor.innerSurface)
 
                 if advancedExpanded {
                     Section {
@@ -266,7 +267,7 @@ struct SettingsView: View {
             .listSectionSpacing(.compact)
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle(isAppTabRoot ? "Settings" : "")
+        .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.screen")
         .toolbar {
@@ -507,32 +508,44 @@ struct SettingsView: View {
     }
 
     private var settingsIntroduction: some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
-            NoumWaveformMark(
-                state: .idle,
-                tint: AppColor.coachingInk,
-                size: 48
-            )
-            .accessibilityHidden(true)
+        NoumSurface(.quiet) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Spacing.lg) {
+                    settingsIntroductionMark
+                    settingsIntroductionCopy
+                }
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("YOUR EXPERIENCE")
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(AppColor.brandBlue)
-                Text("Keep practice working for you")
-                    .font(Typography.screenTitle)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Core choices stay visible. Less-used controls are one tap away.")
-                    .font(Typography.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    settingsIntroductionMark
+                    settingsIntroductionCopy
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, Spacing.sm)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("settings.introduction")
+    }
+
+    private var settingsIntroductionMark: some View {
+        NoumWaveformMark(
+            state: .idle,
+            tint: AppColor.textSecondary,
+            size: 56
+        )
+        .accessibilityHidden(true)
+    }
+
+    private var settingsIntroductionCopy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("Your practice, your data.")
+                .font(Typography.headline)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Core controls stay visible. Advanced tuning stays out of the way.")
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Premium-tier presence tint for the waveform and quiet identity wash.
@@ -558,38 +571,45 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var profileHeroContent: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            // At accessibility sizes the subtitle needs the card's full
-            // width. Keeping the compact row would leave it squeezed between
-            // the waveform and chevron, producing one-character lines.
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(alignment: .center, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Spacing.lg) {
                     profileHeroMark
-                    Spacer(minLength: Spacing.sm)
+                    profileHeroCompactIdentity
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    profileHeroMark
+                    profileHeroExpandedIdentity
+                }
+            }
+
+            Divider()
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Spacing.sm) {
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text("Coaching direction")
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text(profileHeroSubtitle)
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                     Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.bold))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(AppColor.textTertiary)
                         .accessibilityHidden(true)
                 }
 
-                profileHeroExpandedIdentity
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                profileHeroSubtitleChip(isExpanded: true)
-            }
-        } else {
-            HStack(spacing: Spacing.md) {
-                profileHeroMark
-
-                VStack(alignment: .leading, spacing: 6) {
-                    profileHeroCompactIdentity
-                    profileHeroSubtitleChip(isExpanded: false)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Coaching direction")
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                    profileHeroSubtitleChip(isExpanded: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(AppColor.textTertiary)
-                    .accessibilityHidden(true)
             }
         }
     }
@@ -702,7 +722,8 @@ struct SettingsView: View {
     }
 
     private var profileHeroAccessibilityLabel: String {
-        profileHeroPresentation.accessibilityLabel
+        let subscription = premium.isPremium ? ", Pro subscriber" : ""
+        return "\(profileHeroPresentation.accessibilityLabel)\(subscription). Open coaching profile to edit."
     }
 
     /// Editorial account surface: a quiet tint acknowledges identity without

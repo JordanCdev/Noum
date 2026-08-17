@@ -31,6 +31,29 @@ private enum OnboardingScreen: Equatable {
     case summary
 }
 
+@available(iOS 17.0, macOS 12.0, *)
+struct CoachingOnboardingChoicePresentation: Equatable {
+    let symbol: String
+    let detail: String
+
+    static func context(_ context: SpeakingContext) -> CoachingOnboardingChoicePresentation {
+        let fastLane = FastLaneChoicePresentation.context(context)
+        return CoachingOnboardingChoicePresentation(symbol: fastLane.symbol, detail: fastLane.detail)
+    }
+
+    static func challenge(_ challenge: SpeakingChallenge) -> CoachingOnboardingChoicePresentation {
+        let fastLane = FastLaneChoicePresentation.challenge(challenge)
+        return CoachingOnboardingChoicePresentation(symbol: fastLane.symbol, detail: fastLane.detail)
+    }
+
+    static func style(_ style: SpeakingStyleGoal) -> CoachingOnboardingChoicePresentation {
+        CoachingOnboardingChoicePresentation(
+            symbol: style.voiceIconSystemName,
+            detail: style.trainingObjectiveLabel
+        )
+    }
+}
+
 enum OnboardingCompletionTiming {
     static let profileRevealDelay: Double = 0.35
 }
@@ -201,14 +224,17 @@ struct CoachingOnboardingView: View {
                 NoumSurface(.quiet) {
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         onboardingPromise(
+                            symbol: "1.circle.fill",
                             title: "One decision at a time",
                             detail: "Situation, challenge, then delivery goal."
                         )
                         onboardingPromise(
+                            symbol: "2.circle.fill",
                             title: "No microphone yet",
                             detail: "Recording starts only after you choose to begin a rep."
                         )
                         onboardingPromise(
+                            symbol: "3.circle.fill",
                             title: "No invented diagnosis",
                             detail: "The first rep sets the evidence boundary."
                         )
@@ -242,43 +268,45 @@ struct CoachingOnboardingView: View {
         }
     }
 
-    private func onboardingPromise(title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
-            Text(title)
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(AppColor.textPrimary)
-            Text(detail)
-                .font(Typography.caption)
-                .foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func onboardingPromise(symbol: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(AppColor.coachingInkOnQuiet)
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                Text(detail)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     private func questionScreen(stage: OnboardingStage) -> some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    NoumWaveformMark(state: .idle, size: 48)
-
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text(stage.title)
-                            .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title2))
-                            .foregroundStyle(AppColor.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text(stage.subtitle)
-                            .font(Typography.caption)
-                            .foregroundStyle(AppColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
                 NoumProgressTrack(
                     value: Double(progressStep) / Double(OnboardingStage.allCases.count),
                     label: "Coaching direction",
                     valueLabel: "\(progressStep) of \(OnboardingStage.allCases.count)",
                     tint: AppColor.coachingInk
                 )
+
+                Text(stage.title)
+                    .font(Typography.screenTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(stage.subtitle)
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, Spacing.screenH)
             .padding(.vertical, Spacing.sm)
@@ -308,6 +336,10 @@ struct CoachingOnboardingView: View {
                 .padding(.vertical, Spacing.sm)
                 .padding(.bottom, Spacing.md)
             }
+            // Choice stages are separate questions. Reset their scroll
+            // identity so AX-sized option lists cannot carry a bottom offset
+            // into the next stage and hide its first choices.
+            .id(stage.rawValue)
             .scrollDismissesKeyboard(.interactively)
 
             questionFooter(stage: stage)
@@ -337,28 +369,42 @@ struct CoachingOnboardingView: View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
-                    HStack(alignment: .center, spacing: Spacing.md) {
-                        NoumWaveformMark(state: .idle, size: 64)
-
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    HStack(alignment: .top, spacing: Spacing.md) {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("YOUR STARTING DIRECTION")
                                 .font(Typography.micro.weight(.bold))
                                 .tracking(0.8)
-                                .foregroundStyle(AppColor.textSecondary)
-                            Text("One focus for the first rep.")
-                                .font(Typography.figtree(size: 30, weight: .bold, relativeTo: .title))
+                                .foregroundStyle(AppColor.positive)
+                            Text("One focus. One first rep.")
+                                .font(Typography.screenTitle)
                                 .foregroundStyle(AppColor.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        NoumWaveformMark(state: .idle, size: 56)
+                            .accessibilityHidden(true)
                     }
 
-                    NoumSurface(.standard) {
-                        VStack(spacing: Spacing.md) {
-                            profileRow(label: "Situation", value: speakingContext?.title ?? "Choose a situation")
-                            Divider()
-                            profileRow(label: "First focus", value: displayedChallengeTitle)
-                            Divider()
-                            profileRow(label: "Delivery goal", value: speakingStyleGoal?.title ?? "Choose a goal")
+                    NoumSurface(.quiet) {
+                        VStack(spacing: 0) {
+                            profileRow(
+                                symbol: speakingContext.map { CoachingOnboardingChoicePresentation.context($0).symbol } ?? "person.2.fill",
+                                label: "Situation",
+                                value: speakingContext?.title ?? "Choose a situation"
+                            )
+                            Divider().padding(.leading, 44)
+                            profileRow(
+                                symbol: biggestChallenge.map { CoachingOnboardingChoicePresentation.challenge($0).symbol } ?? "scope",
+                                label: "First focus",
+                                value: displayedChallengeTitle
+                            )
+                            Divider().padding(.leading, 44)
+                            profileRow(
+                                symbol: speakingStyleGoal?.voiceIconSystemName ?? "waveform",
+                                label: "Delivery goal",
+                                value: speakingStyleGoal?.title ?? "Choose a goal"
+                            )
                         }
                     }
 
@@ -418,16 +464,25 @@ struct CoachingOnboardingView: View {
         .background(AppColor.screenBackground)
     }
 
-    private func profileRow(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
-            Text(label)
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(AppColor.textSecondary)
-            Text(value)
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func profileRow(symbol: String, label: String, value: String) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(AppColor.coachingInkOnQuiet)
+                .frame(width: 28, height: 44)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(label)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                Text(value)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -441,9 +496,11 @@ struct CoachingOnboardingView: View {
         VStack(spacing: Spacing.sm) {
             ForEach(options) { option in
                 let isSelected = selectedID == option.id
+                let presentation = optionPresentation(for: option)
                 optionButton(
                     title: option[keyPath: title],
-                    detail: optionDetail(for: option),
+                    detail: presentation.detail,
+                    symbol: presentation.symbol,
                     isSelected: isSelected,
                     accessibilityID: "coaching.option.\(option[keyPath: id])"
                 ) {
@@ -459,7 +516,8 @@ struct CoachingOnboardingView: View {
                 let isSelected = !usesCustomChallenge && biggestChallenge == challenge
                 optionButton(
                     title: challenge.title,
-                    detail: optionDetail(for: challenge),
+                    detail: CoachingOnboardingChoicePresentation.challenge(challenge).detail,
+                    symbol: CoachingOnboardingChoicePresentation.challenge(challenge).symbol,
                     isSelected: isSelected,
                     accessibilityID: "coaching.option.\(challenge.id)"
                 ) {
@@ -478,6 +536,7 @@ struct CoachingOnboardingView: View {
             optionButton(
                 title: "Something else",
                 detail: "Describe the pattern in your own words.",
+                symbol: "square.and.pencil",
                 isSelected: usesCustomChallenge,
                 accessibilityID: "coaching.option.customChallenge"
             ) {
@@ -520,6 +579,7 @@ struct CoachingOnboardingView: View {
     private func optionButton(
         title: String,
         detail: String,
+        symbol: String,
         isSelected: Bool,
         accessibilityID: String,
         action: @escaping () -> Void
@@ -529,44 +589,69 @@ struct CoachingOnboardingView: View {
             withCalmMotion(action)
         } label: {
             HStack(alignment: .center, spacing: Spacing.md) {
+                Image(systemName: symbol)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(AppColor.coachingInkOnQuiet)
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
+
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
-                        .font(Typography.body.weight(.semibold))
+                        .font(Typography.headline)
                         .foregroundStyle(AppColor.textPrimary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if isSelected && !detail.isEmpty {
+                    if !detail.isEmpty {
                         Text(detail)
                             .font(Typography.caption)
                             .foregroundStyle(AppColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .transition(.opacity)
                     }
                 }
 
                 Spacer(minLength: Spacing.sm)
 
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? AppColor.coachingInk : AppColor.neutralReceded)
+                Image(systemName: isSelected ? "checkmark" : "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.textTertiary)
+                    .frame(width: 28, height: 44)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
             .background(
                 isSelected ? AppColor.proQuietSurface : AppColor.cardBackground,
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(isSelected ? AppColor.coachingInk : AppColor.subtleBorder, lineWidth: isSelected ? 2 : 1)
             )
+            .shadow(
+                color: isSelected ? AppColor.coachingInk.opacity(0.09) : .clear,
+                radius: Spacing.sm,
+                y: Spacing.xxs
+            )
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityIdentifier(accessibilityID)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityValue(detail)
+    }
+
+    private func optionPresentation<Option>(for option: Option) -> CoachingOnboardingChoicePresentation {
+        if let context = option as? SpeakingContext {
+            return .context(context)
+        }
+        if let challenge = option as? SpeakingChallenge {
+            return .challenge(challenge)
+        }
+        if let style = option as? SpeakingStyleGoal {
+            return .style(style)
+        }
+        return CoachingOnboardingChoicePresentation(symbol: "waveform", detail: optionDetail(for: option))
     }
 
     private func primaryButton(

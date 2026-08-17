@@ -41,6 +41,37 @@ struct DailyLoopV3PresentationTests {
         #expect(!copy.contains("unlocked"))
     }
 
+    @Test("The authored rep stack has exactly one current step until complete")
+    func missionRepStackDerivesOnlyFromDailyGoalTruth() {
+        let active = TodayRepMissionProgress(completedReps: 1, targetReps: 3)
+        let complete = TodayRepMissionProgress(completedReps: 3, targetReps: 3)
+        let activeItems = TodayMissionRepPresentation.items(for: active)
+        let completeItems = TodayMissionRepPresentation.items(for: complete)
+
+        #expect(activeItems.map(\.state) == [.complete, .current, .upcoming])
+        #expect(activeItems.filter { $0.state == .current }.count == 1)
+        #expect(activeItems.map(\.supporting) == ["Complete", "Ready now", "After rep 2"])
+        #expect(completeItems.allSatisfy { $0.state == .complete })
+        #expect(completeItems.filter { $0.state == .current }.isEmpty)
+    }
+
+    @Test("The mission commitment names the exact next rep without fake reward copy")
+    func missionActionTitleIsSmallAndTruthful() {
+        let single = TodayRepMissionProgress(completedReps: 0, targetReps: 1)
+        let middle = TodayRepMissionProgress(completedReps: 1, targetReps: 3)
+        let complete = TodayRepMissionProgress(completedReps: 3, targetReps: 3)
+        let copy = [single.actionTitle, middle.actionTitle, complete.actionTitle]
+            .joined(separator: " ")
+            .lowercased()
+
+        #expect(single.actionTitle == "Start today's rep")
+        #expect(middle.actionTitle == "Start rep 2 of 3")
+        #expect(complete.actionTitle == "Practice another rep")
+        #expect(!copy.contains("xp"))
+        #expect(!copy.contains("unlock"))
+        #expect(!copy.contains("streak"))
+    }
+
     @Test("Today gives the one support slot to due coaching before receipts")
     func supportPriorityIsSingleAndStable() {
         #expect(HomeSupportSurface.resolve(

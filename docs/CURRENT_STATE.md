@@ -10,6 +10,15 @@ Reduce-Motion aware; verified improvement retains the one expressive reward
 beat. The canonical Figma Today sample no longer labels numbered activity as a
 fake Warm-up/Pressure curriculum.
 
+A second authored-design pass now closes the visible quality gap outside that
+reward beat: Today has an exact-target rep journey, Practice has a prescription-
+first composition and complete progressive catalogue, Ask makes the current
+coach read distinct from thread history, Progress tells one comparable-
+evidence story, and Profile/Settings use quieter identity and trust hierarchy.
+The preserved Figma comparison row is `464:801`; its seven review exports live
+under `deliverables/noum-v3/round2/`. These are design-review assets, not native
+iOS execution evidence.
+
 This hardening pass also closes product-truth gaps that styling could not: the
 persisted one-to-three daily goal drives Today; the exact accepted target and
 demand survive as a bounded one-shot handoff into the selected practice;

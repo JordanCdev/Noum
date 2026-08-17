@@ -51,6 +51,27 @@ Key frames:
 - Settings: `437:2493`
 - Speech-permission recovery: `437:2547`
 
+Second-pass comparison row (originals preserved):
+
+- Section: `464:801`
+- Onboarding: `464:804`
+- Today: `464:851`
+- Practice: `464:909`
+- Ask Noum: `464:964`
+- Progress: `464:997`
+- Profile: `464:1085`
+- Settings: `464:1142`
+
+The V3.1 row addresses the first pass's main weakness outside the earned-reward
+screen: it replaces equal-weight card stacks with screen-specific authored
+hierarchy. Today now builds anticipation around the exact mission; Practice
+leads with one prescription and progressively discloses the catalogue; Ask
+binds the current coach read to one next move; Progress tells one comparable-
+evidence story; Profile separates identity, coach read, plan, and library; and
+Settings keeps trust/account controls quiet and scannable. The static review
+exports are in `deliverables/noum-v3/round2/`; production remains responsible
+for bounded state transitions and Reduce Motion behavior.
+
 The 15-screen design audit has zero unexpected overflow, text collisions,
 fractional typography, sub-11-point type, or internal-facing copy. Root and all
 13 reward tracks persist `autoplay=true, loop=false`; Figma's motion-context
@@ -78,7 +99,9 @@ recorded in the local design-state ledger for a future mapping pass.
 - Fast-lane and full onboarding: one decision per step with no phantom
   defaults.
 - Today and Train: one coach-built mission/recommendation first, progressive
-  catalogue second.
+  catalogue second. The second pass adds an authored vertical rep journey,
+  truthful mode-specific metadata, a complete expanded catalogue, and a
+  glyph-led dock without changing recommendation or navigation ownership.
 - The exact accepted Today or Train recommendation now crosses navigation as
   one bounded, one-shot intent (fingerprint, focus, target, mode, demand).
   Timed, Conversation, Filler Control, and Pressure show that same target;
@@ -86,12 +109,15 @@ recorded in the local design-state ledger for a future mapping pass.
   closed. Non-Timed mounted targets are not promoted into verified Progress
   evidence without a transcript-retry comparison.
 - Timed practice, processing, Summary, transcript retry, and verified reward.
-- Ask Noum, live coach, Coach Read, and four-week plan.
+- Ask Noum, live coach, Coach Read, and four-week plan. The current reply is
+  visually distinct from quiet history and owns one bounded continuation.
 - Lessons, roleplay, Filler Control, Conversation Practice, Pressure, and Cut
   the Crutch use the shared waveform and preserve their existing evidence and
   finalization owners.
 - Progress, Profile, Coaching Memory, Settings, privacy/account, permission,
-  offline, and beta-feedback surfaces.
+  offline, and beta-feedback surfaces. Progress now presents interpretation,
+  comparable evidence, and one target-bound practice action in that order;
+  Profile and Settings reserve success styling for supported claims.
 - Microphone and Speech Recognition denial remain distinct typed causes and
   route all nine audited spoken-practice surfaces to Open Settings instead of
   retrying a permanently denied capture.

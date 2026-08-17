@@ -1,6 +1,37 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+struct FastLaneChoicePresentation: Equatable {
+    let symbol: String
+    let detail: String
+
+    static func context(_ context: SpeakingContext) -> FastLaneChoicePresentation {
+        switch context {
+        case .work:
+            return FastLaneChoicePresentation(symbol: "person.2.fill", detail: "Answer clearly in meetings")
+        case .interviews:
+            return FastLaneChoicePresentation(symbol: "briefcase.fill", detail: "Show confident thinking")
+        case .presentations:
+            return FastLaneChoicePresentation(symbol: "rectangle.on.rectangle.angled", detail: "Lead a clear update")
+        case .social:
+            return FastLaneChoicePresentation(symbol: "bubble.left.and.bubble.right.fill", detail: "Speak naturally with people")
+        }
+    }
+
+    static func challenge(_ challenge: SpeakingChallenge) -> FastLaneChoicePresentation {
+        switch challenge {
+        case .fillerWords:
+            return FastLaneChoicePresentation(symbol: "pause.fill", detail: "Replace fillers with a clean beat")
+        case .rambling:
+            return FastLaneChoicePresentation(symbol: "arrow.right.to.line.compact", detail: "Land one point without drifting")
+        case .freezing:
+            return FastLaneChoicePresentation(symbol: "bolt.fill", detail: "Find your opening under pressure")
+        case .rushing:
+            return FastLaneChoicePresentation(symbol: "metronome.fill", detail: "Hold a deliberate speaking pace")
+        }
+    }
+}
+
 /// Permissionless first value. The two setup choices are deliberately split
 /// across separate screens; the resulting read remains structure-only and
 /// never creates a spoken `PracticeSession`.
@@ -70,6 +101,10 @@ struct FastLaneOnboardingView: View {
                 .padding(.top, Spacing.lg)
                 .padding(.bottom, Spacing.xxl)
             }
+            // Every phase is a new bounded task. Recreating the scroll
+            // container prevents a long choice/result screen from carrying
+            // its offset into the next question and hiding the new header.
+            .id(phase.rawValue)
             .scrollDismissesKeyboard(.interactively)
         }
         .accessibilityIdentifier("fastLane.screen")
@@ -77,7 +112,16 @@ struct FastLaneOnboardingView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .center, spacing: Spacing.md) {
+            if phase != .result {
+                NoumProgressTrack(
+                    value: Double(phase.step) / 3,
+                    label: "Quick start",
+                    valueLabel: "Step \(phase.step) of 3",
+                    tint: AppColor.coachingInk
+                )
+            }
+
+            HStack(alignment: .center, spacing: Spacing.sm) {
                 if phase != .context && phase != .result {
                     NoumIconButton(
                         systemName: "chevron.left",
@@ -86,19 +130,19 @@ struct FastLaneOnboardingView: View {
                     )
                 }
 
+                Text(phase == .result ? "YOUR FIRST READ" : "STEP \(phase.step) OF 3")
+                    .font(Typography.micro.weight(.bold))
+                    .tracking(0.9)
+                    .foregroundStyle(phase == .result ? AppColor.positive : AppColor.coachingInkOnQuiet)
+                    .accessibilityIdentifier(phase == .result ? "fastLane.result" : "fastLane.stage")
+
                 Spacer(minLength: 0)
 
-                NoumWaveformMark(
-                    state: .idle,
-                    size: phase == .result ? 64 : 48
-                )
+                if phase == .result {
+                    NoumWaveformMark(state: .idle, size: 56)
+                        .accessibilityHidden(true)
+                }
             }
-
-            Text(phase == .result ? "YOUR FIRST READ" : "A QUICK START")
-                .font(Typography.micro.weight(.bold))
-                .tracking(0.9)
-                .foregroundStyle(AppColor.textSecondary)
-                .accessibilityIdentifier(phase == .result ? "fastLane.result" : "fastLane.stage")
 
             Text(headerTitle)
                 .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
@@ -110,14 +154,6 @@ struct FastLaneOnboardingView: View {
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if phase != .result {
-                NoumProgressTrack(
-                    value: Double(phase.step) / 3,
-                    label: "Quick start",
-                    valueLabel: "Step \(phase.step) of 3",
-                    tint: AppColor.coachingInk
-                )
-            }
         }
     }
 
@@ -152,6 +188,8 @@ struct FastLaneOnboardingView: View {
                 idFor: \SpeakingContext.id,
                 accessibilityPrefix: "fastLane.context"
             ) { selectedContext = $0 }
+
+            startingHypothesisNote
 
             primaryButton(title: "Continue", action: continueFromContext)
                 .disabled(selectedContext == nil)
@@ -193,34 +231,83 @@ struct FastLaneOnboardingView: View {
                     CoachHaptic.selectionTap()
                     withCalmMotion { select(option) }
                 } label: {
+                    let presentation = choicePresentation(for: option)
                     HStack(spacing: Spacing.md) {
-                        Text(option[keyPath: titleFor])
-                            .font(Typography.body.weight(.semibold))
-                            .foregroundStyle(AppColor.textPrimary)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: presentation.symbol)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(AppColor.coachingInkOnQuiet)
+                            .frame(width: 44, height: 44)
+                            .accessibilityHidden(true)
 
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.title3)
-                            .foregroundStyle(isSelected ? AppColor.coachingInk : AppColor.neutralReceded)
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            Text(option[keyPath: titleFor])
+                                .font(Typography.headline)
+                                .foregroundStyle(AppColor.textPrimary)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(presentation.detail)
+                                .font(Typography.caption)
+                                .foregroundStyle(AppColor.textSecondary)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Image(systemName: isSelected ? "checkmark" : "chevron.right")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.textTertiary)
+                            .frame(width: 28, height: 44)
                             .accessibilityHidden(true)
                     }
-                    .padding(.horizontal, Spacing.md)
-                    .frame(minHeight: 56)
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
                     .background(
                         isSelected ? AppColor.proQuietSurface : AppColor.cardBackground,
-                        in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                             .stroke(isSelected ? AppColor.coachingInk : AppColor.subtleBorder, lineWidth: isSelected ? 2 : 1)
                     )
+                    .shadow(
+                        color: isSelected ? AppColor.coachingInk.opacity(0.09) : .clear,
+                        radius: Spacing.sm,
+                        y: Spacing.xxs
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityIdentifier("\(accessibilityPrefix).\(option[keyPath: idFor])")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityValue(presentation.detail)
             }
         }
+    }
+
+    private func choicePresentation<Option>(for option: Option) -> FastLaneChoicePresentation {
+        if let context = option as? SpeakingContext {
+            return .context(context)
+        }
+        if let challenge = option as? SpeakingChallenge {
+            return .challenge(challenge)
+        }
+        return FastLaneChoicePresentation(symbol: "waveform", detail: "Choose this coaching direction")
+    }
+
+    private var startingHypothesisNote: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            NoumWaveformMark(state: .idle, tint: AppColor.textSecondary, size: 44)
+                .accessibilityHidden(true)
+
+            Text("Your first plan starts as a hypothesis. Your reps refine it.")
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("fastLane.hypothesisNote")
     }
 
     @ViewBuilder

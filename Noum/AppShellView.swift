@@ -199,6 +199,7 @@ struct AppShellView: View {
     @State private var reviewPath = NavigationPath()
     @State private var profilePath = NavigationPath()
     @State private var settingsPath = NavigationPath()
+    @Namespace private var dockSelectionNamespace
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -320,10 +321,11 @@ struct AppShellView: View {
             // the audit read the curve as failing content inside the tab
             // items. The shadow carries the floating edge. A visible
             // boundary here would need to clear 3:1 (WCAG 1.4.11).
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            Capsule(style: .continuous)
                 .fill(AppColor.cardBackground)
                 .shadow(color: Color.black.opacity(0.07), radius: Spacing.lg, y: Spacing.xs)
         }
+        .padding(.horizontal, Spacing.lg)
         .padding(.bottom, Spacing.xs)
         // Navigation state uses the calm tier; the TabView content itself
         // remains instant and Reduce Motion removes the cross-fade.
@@ -351,39 +353,59 @@ struct AppShellView: View {
             CoachHaptic.selectionTap()
             selectedTab = tab
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: Spacing.xxs) {
+                if isSelected {
+                    Capsule(style: .continuous)
+                        .fill(AppColor.coachAccentOnQuiet)
+                        .frame(width: 18, height: 4)
+                        .matchedGeometryEffect(
+                            id: "rootNavigationIndicator",
+                            in: dockSelectionNamespace
+                        )
+                        .accessibilityHidden(true)
+                } else {
+                    Color.clear
+                        .frame(width: 18, height: 4)
+                        .accessibilityHidden(true)
+                }
+
                 if tab == .train {
                     NoumWaveformMark(
                         state: .idle,
-                        tint: isSelected ? AppColor.coachAccentOnQuiet : AppColor.neutralReceded,
+                        tint: isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded,
                         size: 18
                     )
+                    .frame(height: 18)
                     .accessibilityHidden(true)
                 } else {
                     Image(systemName: glyph)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(
-                            isSelected ? AppColor.coachAccentOnQuiet : AppColor.neutralReceded
-                        )
+                        .font(.system(size: 16, weight: isSelected ? .bold : .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
+                        .frame(height: 18)
                         .accessibilityHidden(true)
                 }
+
                 Text(title)
                     .font(Typography.figtree(size: 11, weight: isSelected ? .heavy : .semibold, relativeTo: .caption2))
                     .foregroundStyle(isSelected ? AppColor.coachingInkOnQuiet : AppColor.neutralReceded)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                         .fill(AppColor.proQuietSurface)
-                        .transition(.opacity)
+                        .matchedGeometryEffect(
+                            id: "rootNavigationSelection",
+                            in: dockSelectionNamespace
+                        )
                 }
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         // The bar clamps Dynamic Type to `.large` to protect the dock
         // geometry, and the comment there claims native tab bars do the same.
         // They do — but they pair the clamp with the large-content viewer, the

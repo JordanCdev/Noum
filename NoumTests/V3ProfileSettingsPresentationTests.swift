@@ -4,6 +4,14 @@ import Testing
 
 @Suite("V3 profile, progress, memory, and settings presentation")
 struct V3ProfileSettingsPresentationTests {
+    @Test("Profile identity names only verified practice")
+    func profilePracticeSummaryFailsClosed() {
+        #expect(ProfilePracticeSummaryPresentation.make(streak: 4, verifiedRepCount: 0).line == "No verified reps yet")
+        #expect(ProfilePracticeSummaryPresentation.make(streak: 0, verifiedRepCount: 1).line == "1 verified rep")
+        #expect(ProfilePracticeSummaryPresentation.make(streak: 3, verifiedRepCount: 12).line == "3-day practice streak · 12 verified reps")
+        #expect(ProfilePracticeSummaryPresentation.make(streak: -2, verifiedRepCount: -8).line == "No verified reps yet")
+    }
+
     @Test("Profile keeps metrics behind Library and uses one prompt slot")
     func profileNarrativeKeepsAFourSurfaceBudget() throws {
         let prompts = ProfileOptionalPromptPlan.make(
@@ -138,6 +146,36 @@ struct V3ProfileSettingsPresentationTests {
         #expect(betaFeedback.lowerBound > disclosure.lowerBound)
         #expect(settings.contains("settings.betaFeedback"))
         #expect(settings.contains("settings.account.delete"))
+        #expect(settings.contains("Your practice, your data."))
+        #expect(settings.contains("Core controls stay visible. Advanced tuning stays out of the way."))
+        #expect(settings.contains(".navigationTitle(\"Settings\")"))
+        #expect(settings.contains("profileHeroPresentation.accessibilityLabel"))
+        #expect(settings.contains("Pro subscriber"))
+
+        let heroStart = try #require(settings.range(of: "private var profileHeroContent"))
+        let heroEnd = try #require(settings.range(
+            of: "private var profileHeroCompactIdentity",
+            range: heroStart.upperBound..<settings.endIndex
+        ))
+        let hero = settings[heroStart.lowerBound..<heroEnd.lowerBound]
+        #expect(hero.contains("profileHeroCompactIdentity"))
+        #expect(hero.contains("profileHeroExpandedIdentity"))
+        #expect(!hero.contains("settingsIntroductionCopy"))
+        #expect(!hero.contains("profileHeroProBadge"))
+    }
+
+    @Test("Profile gives coach read and library authored hierarchy")
+    func profileSourceUsesAuthoredHierarchy() throws {
+        let profile = try source("ProfileView.swift")
+
+        #expect(profile.contains("CURRENT COACH READ"))
+        #expect(profile.contains("STARTING DIRECTION"))
+        #expect(profile.contains("Your coaching library"))
+        #expect(profile.contains("Open the full coaching record"))
+        #expect(profile.contains("profile.identity"))
+        #expect(profile.contains("ProfilePracticeSummaryPresentation.make("))
+        #expect(profile.contains("let readTint = AppColor.coachingInkOnQuiet"))
+        #expect(profile.contains("Image(systemName: \"waveform\")"))
     }
 
     private func source(_ relativePath: String) throws -> String {

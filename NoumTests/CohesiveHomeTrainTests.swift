@@ -96,6 +96,31 @@ struct CohesivePracticeNamingTests {
         #expect(line.contains("practice rounds"))
         #expect(line == "recent reps make fillers the main focus across practice rounds.")
     }
+
+    @Test func recommendationMetadataDescribesTheAcceptedSessionShape() {
+        let timed = TrainRecommendationMeta.make(
+            mode: .timed,
+            prescribedDemand: .timed(difficulty: .hard, speechProjectID: nil)
+        )
+        let open = TrainRecommendationMeta.make(
+            mode: .timed,
+            prescribedDemand: .timed(difficulty: .free, speechProjectID: nil)
+        )
+        let pressure = TrainRecommendationMeta.make(
+            mode: .suddenDeath,
+            prescribedDemand: nil
+        )
+
+        #expect(timed.line == "15 seconds · one clear target")
+        #expect(open.line == "Open clock · one clear target")
+        #expect(pressure.line == "Pressure rep · one clear target")
+        #expect(timed.systemImage == "timer")
+        #expect(pressure.systemImage == "bolt.fill")
+        #expect(![timed.line, open.line, pressure.line]
+            .joined(separator: " ")
+            .lowercased()
+            .contains("xp"))
+    }
 }
 
 @Suite("Train practice library")

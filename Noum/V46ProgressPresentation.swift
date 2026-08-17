@@ -30,6 +30,16 @@ struct V46TrajectoryDay: Equatable {
     let isLapse: Bool
 }
 
+/// Visual register for the Progress coach read. This is deliberately derived
+/// from the same comparable-retry floor as the visible claim: the waveform may
+/// enter its earned state only after at least three comparable reps with a
+/// three-in-four hold rate. Activity alone can never produce an earned hero.
+enum V46ProgressReadStage: Equatable {
+    case early
+    case forming
+    case reliable
+}
+
 /// Content-free identity for the one target represented by the Progress
 /// cohort. The actual prompt remains owned by `PracticeSessionStore` and only
 /// enters the existing process-local Timed Practice handoff at tap time.
@@ -102,9 +112,20 @@ struct V46ProgressPracticeProjection: Equatable {
 /// The Progress head: what is becoming reliable, the honest tally, up to
 /// four trajectory days, up to three evidence rows, and one plan-review row.
 struct V46ProgressPresentation: Equatable {
+    let readStage: V46ProgressReadStage
+    /// Authored card eyebrow with the exact comparable depth represented.
+    let coachReadEyebrow: String
     let eyebrow: String
     let headline: String
+    /// Lever-specific headline used by the authored coach-read card. The
+    /// legacy bounded class above stays available for existing consumers.
+    let authoredHeadline: String
     let subtitle: String
+    /// Compact receipt values from this exact cohort, never global activity.
+    let evidenceValue: String
+    let evidenceLabel: String
+    /// The next observable behavior, derived from the represented lever.
+    let nextFocus: String
     let trajectory: [V46TrajectoryDay]
     let rows: [V46EvidenceRow]
     /// "Review this target — due now" / "Review this target Friday"; nil
@@ -152,14 +173,25 @@ struct V46ProgressPresentation: Equatable {
 
         let eyebrow = cohortLever.focusLabel.uppercased()
 
+        let readStage: V46ProgressReadStage
         let headline: String
         if tally >= 3, Double(holds) / Double(tally) >= 0.75 {
+            readStage = .reliable
             headline = "Becoming reliable."
         } else if tally >= 3 {
+            readStage = .forming
             headline = "Not yet steady."
         } else {
+            readStage = .early
             headline = "Early read."
         }
+
+        let repNoun = tally == 1 ? "rep" : "reps"
+        let coachReadEyebrow = "COACH READ \u{00B7} LAST \(tally) \(repNoun.uppercased())"
+        let authoredHeadline = Self.authoredHeadline(
+            lever: cohortLever,
+            stage: readStage
+        )
 
         let pressureHoldCount = comparableOutcomes.filter {
             guard let result = $0.transcriptRetryComparison?.result,
@@ -214,9 +246,15 @@ struct V46ProgressPresentation: Equatable {
         let chartSummary = "\(daysDescribed) comparable practice day\(daysDescribed == 1 ? "" : "s") shown \u{2014} held \(holds) of \(tally)\(pressureHoldCount > 0 ? ", including under pressure" : "")."
 
         return V46ProgressPresentation(
+            readStage: readStage,
+            coachReadEyebrow: coachReadEyebrow,
             eyebrow: eyebrow,
             headline: headline,
+            authoredHeadline: authoredHeadline,
             subtitle: subtitle,
+            evidenceValue: "\(holds) / \(tally)",
+            evidenceLabel: "\(cohortLever.focusLabel) held",
+            nextFocus: cohortLever.successMeasure,
             trajectory: Array(trajectory),
             rows: Array(rows),
             reviewRowTitle: reviewTitle,
@@ -231,6 +269,28 @@ struct V46ProgressPresentation: Equatable {
                 goal: latest.outcome.goal
             )
         )
+    }
+
+    private static func authoredHeadline(
+        lever: TranscriptPracticeLever,
+        stage: V46ProgressReadStage
+    ) -> String {
+        let subject: String
+        switch lever {
+        case .opening: subject = "Your opening"
+        case .closing: subject = "Your close"
+        case .structure: subject = "Your structure"
+        case .concise: subject = "Your concise delivery"
+        }
+
+        switch stage {
+        case .reliable:
+            return "\(subject) is becoming reliable."
+        case .forming:
+            return "\(subject) is not steady yet."
+        case .early:
+            return "An early read on \(subject.lowercased())."
+        }
     }
 
     private struct CohortMember {

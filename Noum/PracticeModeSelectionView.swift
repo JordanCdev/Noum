@@ -335,6 +335,46 @@ struct TrainRecommendationProjection {
     }
 }
 
+/// Truthful glance copy for the recommendation's quiet metadata strip. The
+/// UI never substitutes a Figma sample duration for the accepted demand.
+struct TrainRecommendationMeta: Equatable {
+    let line: String
+    let systemImage: String
+
+    static func make(
+        mode: PracticeMode,
+        prescribedDemand: PracticeSessionDemand?
+    ) -> Self {
+        let sessionShape: String
+        let systemImage: String
+        switch mode {
+        case .timed:
+            systemImage = "timer"
+            if let difficulty = prescribedDemand?.timedDifficulty {
+                sessionShape = difficulty.duration.map { "\($0) seconds" } ?? "Open clock"
+            } else {
+                sessionShape = "Timed rep"
+            }
+        case .suddenDeath:
+            // The recommendation owns no Pressure difficulty/duration, so do
+            // not collapse its existing 30–90s contract into a fake one-breath
+            // promise. Setup resolves the exact round shape after this tap.
+            sessionShape = "Pressure rep"
+            systemImage = "bolt.fill"
+        case .ahCounter:
+            sessionShape = "Filler-control rep"
+            systemImage = "waveform"
+        case .imConversation:
+            sessionShape = "Live exchange"
+            systemImage = "bubble.left.and.bubble.right.fill"
+        }
+        return Self(
+            line: "\(sessionShape) \u{00B7} one clear target",
+            systemImage: systemImage
+        )
+    }
+}
+
 #if canImport(SwiftUI)
 /// Start frame for the hero's morph-back entrance. The V4.6.1
 /// perceptibility budget requires the prescription to be readable within
@@ -525,8 +565,8 @@ struct PracticeModeSelectionView: View {
         // large dead strip under the browse list. The capsule clearance
         // lives on the floating CTA itself (see `safeAreaInset` below).
         return ReadingScreenScaffold(
-            title: "Train",
-            subtitle: "Your coach picked one focused rep.",
+            title: "Practice",
+            subtitle: "One recommendation for today.",
             bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
         ) {
             // Browsing collapses the prescription to one clickable line so
@@ -638,6 +678,12 @@ struct PracticeModeSelectionView: View {
             if case .destination = item.action { return true }
             return false
         }
+    }
+
+    /// Two high-value doors stay visible without turning Practice into a
+    /// dashboard. The complete catalogue remains one disclosure away.
+    private var featuredLibraryItems: [TrainLibraryItem] {
+        TrainLibraryItem.items.filter { ["roleplay", "lessons"].contains($0.id) }
     }
 
     /// Mirrors `showsFloatingStartCTA` (a body-local) for row builders: a
@@ -776,70 +822,44 @@ struct PracticeModeSelectionView: View {
             target: recommendation.target
         ) ?? option.instruction
         return NoumSurface(.standard) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(alignment: .top, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    Text("Recommended")
+                        .font(Typography.caption.weight(.bold))
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
+
+                    Spacer(minLength: Spacing.sm)
+
                     NoumWaveformMark(
                         state: .idle,
-                        tint: option.tint,
-                        size: 48
+                        tint: AppColor.coachingInk,
+                        size: 60
                     )
                     .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        // Use the high-contrast small-copy register: it keeps
-                        // this eyebrow legible on the plain dark card as well as
-                        // on the former tint-washed treatment.
-                        Text(PracticeModePrescriptionCopy.displayHeroEyebrow)
-                            .font(Typography.caption)
-                            .foregroundStyle(AppColor.brandBlueOnWash)
-
-                        Text(recommendation.title)
-                            .font(Typography.cardTitle)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                    Image(systemName: "scope")
-                        .font(Typography.caption.weight(.bold))
-                        .foregroundStyle(option.tint)
-                        .accessibilityHidden(true)
-
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(recommendation.title)
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(instruction)
-                        .font(Typography.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .font(Typography.body)
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Focus. \(instruction)")
+                .accessibilityLabel("\(recommendation.title). Focus. \(instruction)")
                 .accessibilityIdentifier("practiceModes.recommendedHero.focus")
 
-                if let difficulty = recommendation.prescribedDemand?.timedDifficulty {
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: "timer")
-                            .foregroundStyle(option.tint)
-                            .accessibilityHidden(true)
-                        Text(difficulty.compactDemandLabel)
-                            .foregroundStyle(AppColor.textPrimary)
-                    }
-                        .font(Typography.caption.weight(.semibold))
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, 8)
-                        .background(option.tint.opacity(0.09), in: Capsule())
-                        .accessibilityLabel("Recommended difficulty, \(difficulty.title)")
-                        .accessibilityValue(difficulty.subtitle)
-                        .accessibilityIdentifier("practiceModes.recommendedHero.timedDifficulty")
-                }
+                recommendationMetaStrip(recommendation, tint: option.tint)
 
                 if !showsFloatingStartCTA {
                     PrimaryCTA(
                         PracticeModePrescriptionCopy.beginLabel(
                             for: recommendation.title
                         ),
-                        tint: AppColor.recommendationActionFill,
-                        labelTint: AppColor.recommendationActionText
+                        tint: AppColor.coachingInk
                     ) {
                         // Commitment haptic (A2 register map) — the hero Begin
                         // commits to a rep exactly like the floating Start CTA,
@@ -856,50 +876,81 @@ struct PracticeModeSelectionView: View {
                         )
                     }
                     .accessibilityIdentifier("practiceModes.recommendedHero.begin")
+                    .accessibilityLabel("Start \(recommendation.title)")
                 }
 
                 recommendationReasonDisclosure(
                     recommendation.reason,
                     tint: option.tint
                 )
-
-                // Config access for the recommended mode WITHOUT losing the one-tap
-                // Begin above. The recommended mode has no row in "other ways", so
-                // this is its only setup entry point — navigate to the setup page
-                // (no arm()) for users who want to tweak theme / pace / tools before
-                // this rep. Restrained, mirrors the Impromptu redesign's gear-hidden
-                // settings rather than a second loud button.
-                Button {
-                    selectedMode = recommendation.mode
-                    crutchSelected = false
-                    paceSelected = false
-                    launchMode(
-                        recommendation.mode,
-                        recommendation: recommendation,
-                        quickStart: false,
-                        recordsRecommendationAcceptance: false
-                    )
-                } label: {
-                    Text(PracticeModePrescriptionCopy.adjustLabel)
-                        .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlueOnWash)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("practiceModes.recommendedHero.adjust")
             }
         }
-        .overlay(alignment: .leading) {
-            Capsule(style: .continuous)
-                .fill(option.tint)
-                .frame(width: 4)
-                .padding(.vertical, Spacing.lg)
-                .accessibilityHidden(true)
-        }
+        .shadow(color: AppColor.coachingInk.opacity(0.08), radius: Spacing.lg, y: Spacing.xs)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("practiceModes.recommendedHero")
         .accessibilityValue(recommendation.mode.displayLabel)
+    }
+
+    private func recommendationMetaStrip(
+        _ recommendation: TrainRecommendationProjection,
+        tint: Color
+    ) -> some View {
+        let meta = TrainRecommendationMeta.make(
+            mode: recommendation.mode,
+            prescribedDemand: recommendation.prescribedDemand
+        )
+        return HStack(spacing: Spacing.xs) {
+            Image(systemName: meta.systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+
+            if let difficulty = recommendation.prescribedDemand?.timedDifficulty {
+                Text(meta.line)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.coachingInkOnQuiet)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Recommended difficulty, \(difficulty.title)")
+                    .accessibilityValue(difficulty.subtitle)
+                    .accessibilityIdentifier("practiceModes.recommendedHero.timedDifficulty")
+            } else {
+                Text(meta.line)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.coachingInkOnQuiet)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Spacing.xxs)
+
+            // The recommendation is excluded from the full mode catalogue,
+            // so this remains its honest setup door without competing with
+            // the dominant Start action.
+            Button {
+                selectedMode = recommendation.mode
+                crutchSelected = false
+                paceSelected = false
+                launchMode(
+                    recommendation.mode,
+                    recommendation: recommendation,
+                    quickStart: false,
+                    recordsRecommendationAcceptance: false
+                )
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.coachingInkOnQuiet)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(PracticeModePrescriptionCopy.adjustLabel)
+            .accessibilityHint("Opens setup for this recommended rep.")
+            .accessibilityIdentifier("practiceModes.recommendedHero.adjust")
+        }
+        .padding(.leading, Spacing.sm)
+        .padding(.trailing, Spacing.xxs)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .background(AppColor.proQuietSurface, in: Capsule(style: .continuous))
     }
 
     private func recommendationReasonDisclosure(_ reason: String, tint: Color) -> some View {
@@ -924,7 +975,7 @@ struct PracticeModeSelectionView: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityIdentifier("practiceModes.recommendedHero.reasonToggle")
             .accessibilityLabel(showRecommendationReason ? "Hide why this rep was chosen" : "Show why this rep was chosen")
 
@@ -949,6 +1000,28 @@ struct PracticeModeSelectionView: View {
 
     private var freeSelectSection: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text(showOtherWays ? "Practice library" : "More practice")
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.textPrimary)
+
+                Spacer(minLength: Spacing.xs)
+
+                Text(showOtherWays ? "Choose one focus" : "Build your range")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(AppColor.coachingInkOnQuiet)
+                    .multilineTextAlignment(.trailing)
+            }
+
+            if !showOtherWays {
+                VStack(spacing: Spacing.sm) {
+                    ForEach(featuredLibraryItems) { item in
+                        featuredTrainLibraryRow(item)
+                    }
+                }
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            }
+
             Button {
                 // Direction-aware morph timing: expanding hands the screen
                 // to the catalogue on `listChange`; collapsing restores the
@@ -957,36 +1030,26 @@ struct PracticeModeSelectionView: View {
                     showOtherWays.toggle()
                 }
             } label: {
-                HStack(spacing: Spacing.md) {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(width: 36, height: 36)
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text(PracticeModePrescriptionCopy.alternateSectionTitle)
-                            .font(Typography.cardLabel)
-                            .foregroundStyle(.primary)
-                        Text("Browse exercises and learning paths.")
-                            .font(Typography.caption)
-                            .foregroundStyle(AppColor.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: Spacing.sm) {
+                    Text(showOtherWays ? "Hide full practice library" : "View all practice modes")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     Image(systemName: showOtherWays ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AppColor.textTertiary)
+                        .accessibilityHidden(true)
                 }
-                .padding(Spacing.md)
-                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                .padding(.horizontal, Spacing.md)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(
                     AppColor.innerSurface,
-                    in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                         .stroke(AppColor.subtleBorder, lineWidth: 1)
                 )
             }
@@ -1002,6 +1065,55 @@ struct PracticeModeSelectionView: View {
                         : .opacity.combined(with: .move(edge: .top)))
             }
         }
+    }
+
+    private func featuredTrainLibraryRow(_ item: TrainLibraryItem) -> some View {
+        Button {
+            if case .destination(let destination) = item.action {
+                navigationPath.append(destination)
+            }
+        } label: {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: item.systemImage)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(item.tint)
+                    .frame(width: 44, height: 44)
+                    .background(item.tint.opacity(0.09), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(item.title)
+                        .font(Typography.headline)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text(item.subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+            .background(
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.title). \(item.subtitle)")
+        .accessibilityHint("Opens \(item.title).")
+        .accessibilityIdentifier("train.library.\(item.id)")
     }
 
     private var practiceLibrary: some View {
@@ -1020,6 +1132,10 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Roleplay, lessons and longer programmes.",
                 tint: AppColor.pro
             ) {
+                // Expanded means the complete catalogue. The two authored
+                // preview rows collapse away above, then reappear here in the
+                // same source order so no destination is ever hidden by the
+                // presentation state.
                 ForEach(Array(destinationLibraryItems.enumerated()), id: \.element.id) { index, item in
                     if index > 0 {
                         Divider().padding(.leading, 48)

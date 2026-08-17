@@ -45,6 +45,61 @@ struct TodayRepMissionProgress: Equatable {
         let remaining = targetReps - completedReps
         return "\(completedReps) of \(targetReps) reps complete. \(remaining) remaining."
     }
+
+    /// The visible commitment stays about the user's small daily promise,
+    /// while the accessibility label on the button continues to name the
+    /// exact practice mode that will open.
+    var actionTitle: String {
+        if isComplete { return "Practice another rep" }
+        if targetReps == 1 { return "Start today's rep" }
+        return "Start rep \(currentRep) of \(targetReps)"
+    }
+}
+
+enum TodayMissionRepState: Equatable {
+    case complete
+    case current
+    case upcoming
+}
+
+/// Pure visual projection for the authored mission stack. It deliberately
+/// derives from `TodayRepMissionProgress` instead of owning another counter.
+struct TodayMissionRepPresentation: Identifiable, Equatable {
+    let rep: Int
+    let state: TodayMissionRepState
+
+    var id: Int { rep }
+    var title: String { "Rep \(rep)" }
+
+    var supporting: String {
+        switch state {
+        case .complete: return "Complete"
+        case .current: return "Ready now"
+        case .upcoming: return "After rep \(rep - 1)"
+        }
+    }
+
+    var status: String {
+        switch state {
+        case .complete: return "Done"
+        case .current: return "Now"
+        case .upcoming: return "Next"
+        }
+    }
+
+    static func items(for progress: TodayRepMissionProgress) -> [Self] {
+        (1...progress.targetReps).map { rep in
+            let state: TodayMissionRepState
+            if rep <= progress.completedReps {
+                state = .complete
+            } else if !progress.isComplete && rep == progress.currentRep {
+                state = .current
+            } else {
+                state = .upcoming
+            }
+            return Self(rep: rep, state: state)
+        }
+    }
 }
 
 // MARK: - Home Coach Card (M14)
@@ -419,10 +474,6 @@ struct HomeCoachCard: View {
     /// Reduce Motion sets both flags without animation (instant appear).
     @State private var heroTextSettled = false
     @State private var heroCTASettled = false
-    /// Real press state of the commit CTA — while held, the waveform responds
-    /// as the mission moves into its committed state.
-    @State private var commitCTAPressed = false
-
     /// Choreography beats: the headline settles first and the CTA follows
     /// at +120 ms — total well inside ScreenshotTour's 1.5 s post-
     /// `home.screen` wait. Offsets only; curves come from the shared
@@ -454,42 +505,35 @@ struct HomeCoachCard: View {
             .blueprintForRendering(coherentRecommendationBlueprint)
         let renderedBlueprint = renderedAvailability.resolving(sourceBlueprint)
         let renderedExposure = recommendationExposure(for: renderedBlueprint)
-        // V3 Today: one compact user-sized mission. Recommendation state,
-        // evidence and launch truth still come from the existing owners; the
-        // new layer only makes the next small commitment obvious.
-        return NoumSurface(.mission) {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                missionHeader(todayMissionProgress)
+        // Today is an editorial journey, not one giant gradient card. The
+        // warm canvas establishes calm; the violet coach stage supplies one
+        // moment of identity; truthful rep rows make the commitment tangible.
+        return VStack(alignment: .leading, spacing: Spacing.lg) {
+            missionHeader(todayMissionProgress)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .center, spacing: Spacing.lg) {
-                        missionHeadline(for: renderedBlueprint)
-                        Spacer(minLength: Spacing.sm)
-                        missionWaveform
-                    }
-
-                    VStack(alignment: .leading, spacing: Spacing.md) {
-                        missionWaveform
-                        missionHeadline(for: renderedBlueprint)
-                    }
-                }
+            missionHeadline(for: renderedBlueprint)
                 .heroEntrance(settled: heroTextSettled)
 
-                missionTarget(renderedExposure.target)
-                    .heroEntrance(settled: heroTextSettled)
+            coachFocusStage(
+                exposure: renderedExposure,
+                blueprint: renderedBlueprint
+            )
+            .heroEntrance(settled: heroTextSettled)
 
-                missionRepTrack(todayMissionProgress)
-                    .heroEntrance(settled: heroTextSettled)
+            missionRepTrack(todayMissionProgress)
+                .heroEntrance(settled: heroTextSettled)
 
-                heroActions(renderedExposure: renderedExposure)
+            heroActions(
+                progress: todayMissionProgress,
+                renderedExposure: renderedExposure
+            )
+            .heroEntrance(settled: heroCTASettled)
+
+            // A saved current-week phrase is concrete practice, not an
+            // additional recommendation. The broader plan stays hidden.
+            if showsPlanArc || currentPlannedPhrase != nil {
+                planArcRow
                     .heroEntrance(settled: heroCTASettled)
-
-                // A saved current-week phrase is concrete practice, not an
-                // additional recommendation. The broader plan stays hidden.
-                if showsPlanArc || currentPlannedPhrase != nil {
-                    planArcRow
-                        .heroEntrance(settled: heroCTASettled)
-                }
             }
         }
         .padding(.horizontal, Spacing.screenH)
@@ -560,7 +604,7 @@ struct HomeCoachCard: View {
     private var missionEyebrow: some View {
         Text("Today's mission")
             .font(Typography.caption)
-            .foregroundStyle(AppColor.homeHeroMetaText)
+            .foregroundStyle(AppColor.coachingInkOnQuiet)
             .textCase(.uppercase)
             .tracking(0.5)
             .accessibilityAddTraits(.isHeader)
@@ -571,12 +615,10 @@ struct HomeCoachCard: View {
     ) -> some View {
         Text(progress.compactLabel)
             .font(Typography.monoDigit(Typography.captionSmall))
-            .foregroundStyle(.white)
+            .foregroundStyle(AppColor.coachingInkOnQuiet)
             .padding(.horizontal, Spacing.sm)
             .frame(minHeight: 32)
-            // Keep the capsule at or below 12%: full-white caption copy then
-            // clears AA even over the gradient's lightest production stop.
-            .background(Color.white.opacity(0.12), in: Capsule())
+            .background(AppColor.proQuietSurface, in: Capsule())
             .accessibilityHidden(true)
     }
 
@@ -584,14 +626,9 @@ struct HomeCoachCard: View {
         for blueprint: RecommendationBiasBlueprint
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            if let earned = activeEarned {
-                earnedChip(earned.chipText)
-                    .transition(.opacity)
-            }
-
             Text(activeEarned?.headlineOverride ?? coachTitle(for: blueprint))
                 .font(Typography.figtree(size: 31, weight: .heavy, relativeTo: .largeTitle))
-                .foregroundStyle(AppColor.homeHeroTitleText)
+                .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
                 .accessibilityIdentifier("home.coachCard.title")
@@ -599,17 +636,12 @@ struct HomeCoachCard: View {
             if activeEarned == nil, let subtitle = coachSubtitle(for: blueprint) {
                 Text(subtitle)
                     .font(Typography.subheadline)
-                    .foregroundStyle(AppColor.homeHeroSubtitleText)
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
                     .accessibilityIdentifier("home.coachCard.subtitle")
             }
 
-            Text(activeEarned?.metaOverride ?? heroMetaText(for: blueprint))
-                .font(Typography.monoDigit(Typography.caption))
-                .foregroundStyle(AppColor.homeHeroMetaText)
-                .fixedSize(horizontal: false, vertical: true)
-                .contentTransition(.opacity)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -618,8 +650,8 @@ struct HomeCoachCard: View {
         NoumWaveformMark(
             state: activeEarned != nil
                 ? .earned
-                : (commitCTAPressed || heroHandoff ? .listening : .idle),
-            level: commitCTAPressed || heroHandoff ? 1 : 0,
+                : (heroHandoff ? .listening : .idle),
+            level: heroHandoff ? 1 : 0,
             tint: .white,
             size: 72
         )
@@ -631,57 +663,84 @@ struct HomeCoachCard: View {
         .accessibilityHidden(true)
     }
 
-    /// The exact observable target accepted by the primary action. This is
-    /// intentionally rendered from the same immutable exposure value passed to
-    /// `beginRecommendedRep`; the live view must never regenerate it.
-    private func missionTarget(_ target: String) -> some View {
+    /// The violet stage is reserved for the coach's exact prescription. It
+    /// carries the same immutable target that the launch handoff accepts.
+    private func coachFocusStage(
+        exposure: HomeCoachRecommendationExposure,
+        blueprint: RecommendationBiasBlueprint
+    ) -> some View {
+        NoumSurface(.mission) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                if let earned = activeEarned {
+                    earnedChip(earned.chipText)
+                        .transition(.opacity)
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: Spacing.lg) {
+                        missionWaveform
+                        coachFocusCopy(exposure)
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        missionWaveform
+                        coachFocusCopy(exposure)
+                    }
+                }
+
+                Text(activeEarned?.metaOverride ?? heroMetaText(for: blueprint))
+                    .font(Typography.monoDigit(Typography.captionSmall))
+                    .foregroundStyle(AppColor.homeHeroMetaText)
+                    .padding(.horizontal, Spacing.sm)
+                    .frame(minHeight: 30)
+                    .background(Color.white.opacity(0.12), in: Capsule())
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func coachFocusCopy(
+        _ exposure: HomeCoachRecommendationExposure
+    ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("One target")
-                .font(Typography.captionSmall.weight(.bold))
-                .foregroundStyle(Color.white.opacity(0.72))
-            Text(target)
+            Text("Your coach")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.homeHeroMetaText)
+
+            Text(exposure.focus)
                 .font(Typography.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.homeHeroTitleText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(exposure.target)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.homeHeroSubtitleText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(
-            cornerRadius: CornerRadius.medium,
-            style: .continuous
-        ))
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: CornerRadius.medium,
-                style: .continuous
-            )
-            .stroke(Color.white.opacity(0.12), lineWidth: 1)
-        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Today's practice target. \(target)")
+        .accessibilityLabel("Today's practice target. \(exposure.target)")
         .accessibilityIdentifier("home.coachCard.target")
     }
 
     private func missionRepTrack(
         _ progress: TodayRepMissionProgress
     ) -> some View {
-        HStack(spacing: 0) {
-            ForEach(1...progress.targetReps, id: \.self) { rep in
-                missionRepNode(rep, progress: progress)
-
-                if rep < progress.targetReps {
-                    Capsule(style: .continuous)
-                        .fill(
-                            Color.white.opacity(
-                                progress.completedReps > rep ? 0.90 : 0.22
-                            )
-                        )
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 3)
-                        .padding(.horizontal, Spacing.xs)
-                        .accessibilityHidden(true)
-                }
+        VStack(spacing: Spacing.xs) {
+            ForEach(TodayMissionRepPresentation.items(for: progress)) { item in
+                missionRepNode(item)
             }
+        }
+        .background(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(AppColor.subtleBorder)
+                .frame(width: 3)
+                .padding(.vertical, 32)
+                // The rep rows inset their 44pt nodes by `Spacing.md`; keep
+                // the connector through the node centres, not the card edge.
+                .offset(x: Spacing.md + 20.5)
+                .accessibilityHidden(true)
         }
         .animation(
             NoumMotion.animation(for: .earned, reduceMotion: reduceMotion),
@@ -696,49 +755,67 @@ struct HomeCoachCard: View {
     }
 
     private func missionRepNode(
-        _ rep: Int,
-        progress: TodayRepMissionProgress
+        _ item: TodayMissionRepPresentation
     ) -> some View {
-        let isComplete = rep <= progress.completedReps
-        let isCurrent = !progress.isComplete && rep == progress.currentRep
+        let isComplete = item.state == .complete
+        let isCurrent = item.state == .current
+        let tint: Color = isComplete
+            ? AppColor.positive
+            : isCurrent ? AppColor.coachingInk : AppColor.textTertiary
 
-        return ZStack {
-            Circle()
-                .fill(
-                    isComplete
-                        ? Color.white
-                        : Color.white.opacity(isCurrent ? 0.10 : 0.06)
-                )
-            Circle()
-                .stroke(
-                    Color.white.opacity(isCurrent ? 0.95 : 0.28),
-                    lineWidth: isCurrent ? 2 : 1
-                )
+        return HStack(spacing: Spacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(isCurrent ? AppColor.coachingInk : tint.opacity(isComplete ? 1 : 0.12))
 
-            if isComplete {
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.heavy))
-                    .foregroundStyle(AppColor.coachingInk)
-            } else {
-                Text("\(rep)")
-                    .font(Typography.monoDigit(Typography.caption))
-                    .foregroundStyle(Color.white)
+                if isComplete {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(.white)
+                } else {
+                    Text("\(item.rep)")
+                        .font(Typography.monoDigit(Typography.caption.weight(.bold)))
+                        .foregroundStyle(isCurrent ? Color.white : tint)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(item.title)
+                    .font(Typography.headline)
+                    .foregroundStyle(isCurrent ? AppColor.textPrimary : tint)
+                Text(item.supporting)
+                    .font(Typography.caption)
+                    .foregroundStyle(isCurrent ? AppColor.textSecondary : tint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(item.status)
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.xs)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .background(
+            isCurrent ? AppColor.proQuietSurface : Color.clear,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay {
+            if isCurrent {
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.coachAccent.opacity(0.18), lineWidth: 1)
             }
         }
-        .frame(width: 32, height: 32)
-        .scaleEffect(!reduceMotion && isCurrent ? 1.06 : 1)
-        .accessibilityHidden(true)
-    }
-
-    /// Label for the primary CTA. Keep it verb-led and natural rather than
-    /// joining implementation labels with punctuation.
-    private func beginCTAText(for mode: PracticeMode) -> String {
-        // No-signal (empty-state, brand-new user): name the moment, not
-        // the mode. This is the simplest door into the product.
-        guard hasSignal else {
-            return "Start your first rep"
-        }
-        return "Start \(mode.displayLabel)"
+        .shadow(
+            color: isCurrent ? AppColor.coachingInk.opacity(0.08) : .clear,
+            radius: isCurrent ? Spacing.sm : 0,
+            y: isCurrent ? Spacing.xs : 0
+        )
+        .scaleEffect(!reduceMotion && isCurrent ? 1.01 : 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(item.title). \(item.supporting). \(item.status).")
     }
 
     // MARK: - Coach copy
@@ -835,13 +912,14 @@ struct HomeCoachCard: View {
     /// upcoming moment" slot. Otherwise one Start pill, nothing else.
     @ViewBuilder
     private func heroActions(
+        progress: TodayRepMissionProgress,
         renderedExposure: HomeCoachRecommendationExposure
     ) -> some View {
         if let moment = bigMomentStore.activeMoment,
            let days = bigMomentStore.daysUntil(moment),
-           days >= 0 && days <= 14 {
+            days >= 0 && days <= 14 {
             VStack(spacing: Spacing.xs) {
-                ImmersiveCTA(title: "Continue prep", isPressed: $commitCTAPressed) {
+                PrimaryCTA("Continue prep", tint: AppColor.coachingInk) {
                     commitWithHandoff {
                         navigationPath.append(AppDestination.prepSession)
                     }
@@ -856,11 +934,7 @@ struct HomeCoachCard: View {
                 } label: {
                     Text("Start \(renderedExposure.mode.displayLabel) instead")
                         .font(Typography.captionSmall.weight(.semibold))
-                        // captionSmall on the gradient — the smallest text on
-                        // the hero gets the most headroom, not the least.
-                        .foregroundStyle(
-                            AppColor.homeHeroSecondaryActionText
-                        )
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(Rectangle())
                 }
@@ -868,13 +942,17 @@ struct HomeCoachCard: View {
                 .accessibilityIdentifier("home.coachCard.begin")
             }
         } else {
-            ImmersiveCTA(
-                title: activeEarned?.ctaOverride ?? beginCTAText(for: renderedExposure.mode),
-                isPressed: $commitCTAPressed
+            PrimaryCTA(
+                activeEarned?.ctaOverride ?? progress.actionTitle,
+                tint: AppColor.coachingInk
             ) {
                 beginRecommendedRep(renderedExposure: renderedExposure)
             }
             .accessibilityIdentifier("home.coachCard.begin")
+            // Preserve the route-readable label used by VoiceOver and the
+            // recommendation correlation UI suite. The visible copy names the
+            // small mission commitment; this label names the exact mode.
+            .accessibilityLabel("Start \(renderedExposure.mode.displayLabel)")
         }
     }
 
@@ -1021,22 +1099,27 @@ struct HomeCoachCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bookmark.fill")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
                         .accessibilityHidden(true)
                     Text("Week \(plannedPhrase.target.weekIndex) phrase \u{2014} practice your saved line")
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(AppColor.textTertiary)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, Spacing.sm)
+                .padding(.horizontal, Spacing.md)
                 .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.innerSurface,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(
                 Text("Week \(plannedPhrase.target.weekIndex) of your plan. Practice your saved phrase in Timed Practice.")
             )
@@ -1057,22 +1140,27 @@ struct HomeCoachCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
                         .accessibilityHidden(true)
                     Text(line)
                         .font(Typography.captionSmall.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(AppColor.textTertiary)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, Spacing.sm)
+                .padding(.horizontal, Spacing.md)
                 .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.innerSurface,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(Text("Your four-week plan. \(line). Opens the coach thread."))
             .accessibilityIdentifier("home.coachCard.planArc")
         }
@@ -1400,7 +1488,8 @@ private extension View {
         VStack(spacing: Spacing.cardGap) {
             HomeCoachCard(
                 navigationPath: .constant(NavigationPath()),
-                completedRepsToday: 1
+                completedRepsToday: 1,
+                targetRepsToday: 3
             )
         }
     }
@@ -1411,7 +1500,8 @@ private extension View {
     ScrollView {
         HomeCoachCard(
             navigationPath: .constant(NavigationPath()),
-            completedRepsToday: 2
+            completedRepsToday: 2,
+            targetRepsToday: 3
         )
     }
     .background(AppColor.screenBackground.ignoresSafeArea())

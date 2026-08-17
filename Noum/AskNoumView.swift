@@ -10,20 +10,16 @@ import os
 // by `CoachContextBuilder` at send-time.
 //
 // Layout (top to bottom):
-//   • Header: Noum's unboxed waveform mark + the coach's name. The same
-//     mark carries the in-thread processing state without a mascot or orb.
-//     Existing threads open compact by default; first contact gets the
-//     fuller identity moment.
+//   • Header: native navigation title and back behavior. The waveform lives
+//     with the current coach read instead of occupying a second custom bar.
 //   • Current focus strip: visible only when the thread has messages and the
 //     case file has an active target/focus.
 //   • Empty state (no messages): one recommended ask, with alternatives tucked
 //     into a menu. Removes first-message friction without a prompt tray.
 //   • Thread: alternating user (right-aligned brand-blue bubble) +
-//     coach (left-aligned full-width card) rows. The coach card carries
-//     NO per-bubble glyph (S4 removed the repeated orb the user flagged
-//     as noise) — left-alignment + the brand-purple stroke read as the
-//     coach, and the header carries identity. The in-flight bubble uses the
-//     shared processing waveform. A just-landed reply then REVEALS word by word
+//     coach (left-aligned) rows. Only the current coach read receives the
+//     authored card + waveform identity; older replies become quiet history.
+//     The in-flight bubble uses the shared processing waveform. A just-landed reply then REVEALS word by word
 //     (the coach reads as writing to you, not popping in fully formed) —
 //     view-only timing, the store still holds the full text, and
 //     reduce-motion lands it instantly.
@@ -133,21 +129,6 @@ enum AskNoumAvailabilityRecheckPolicy {
         case .debugProviderMissing: return "debugProviderMissing"
         case .service: return "service"
         }
-    }
-}
-
-// Reports the thread ScrollView's top offset so the header can collapse
-// as the user scrolls into the conversation. Same shape as
-// `HomeScrollOffsetKey` (ContentView.swift) — a zero-height probe at the
-// top of the scroll content publishes its `minY` in the named coordinate
-// space, and the view derives a compact flag from it. Kept private + file
-// scoped so it never collides with the home key.
-@available(iOS 17.0, macOS 12.0, *)
-private struct AskNoumScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
@@ -755,13 +736,6 @@ struct AskNoumView: View {
     /// outage to "Report issue".
     @State private var availabilityRecheckFailures = 0
 
-    // S4 — live top offset of the thread ScrollView, published by the
-    // zero-height probe inside it (`AskNoumScrollOffsetKey`). Drives the
-    // collapsing header so the ~25% pinned intro block shrinks the moment
-    // the user scrolls into the conversation. Resting value is 0 (top);
-    // it goes negative as content scrolls up.
-    @State private var scrollOffset: CGFloat = 0
-
     // Living-coach-presence (Pillar A) — progressive reply reveal. The store
     // holds the full reply text (source of truth); the view reveals it word by
     // word so the coach reads as *writing to you* rather than the reply popping
@@ -855,16 +829,6 @@ struct AskNoumView: View {
         )
     }
 
-    /// True once the thread has scrolled up past a small threshold. Collapses
-    /// the header to a compact bar (small badge + name, no subtitle) so the
-    /// conversation gets the screen back. The 24pt deadband keeps the header
-    /// from twitching on tiny rubber-band offsets at rest. Only meaningful
-    /// when there are messages to scroll — the empty state never scrolls far
-    /// enough to trip it, so the full header greets a first-time user.
-    private var isHeaderCompact: Bool {
-        (canDisplayPersistedThread && !store.messages.isEmpty) || scrollOffset < -24
-    }
-
     /// Bounded, honest read of what's currently feeding personalization —
     /// built fresh from the same read-only stores the reply pipeline uses.
     /// See `TrajectorySummaryBuilder` for the no-overclaim contract.
@@ -884,24 +848,9 @@ struct AskNoumView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
                 attachedContextCard
                 ScrollViewReader { proxy in
                     ScrollView {
-                        // Zero-height offset probe — publishes the scroll
-                        // position so the header can collapse. Placed as the
-                        // ScrollView's first child (before the padded content
-                        // VStack) so its resting `minY` is 0, exactly the home
-                        // screen's probe placement (ContentView.swift).
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(
-                                    key: AskNoumScrollOffsetKey.self,
-                                    value: geo.frame(in: .named("askNoumScroll")).minY
-                                )
-                        }
-                        .frame(height: 0)
-
                         VStack(spacing: Spacing.md) {
                             if isDayZero {
                                 // Persisted messages can outlive a profile/session reset.
@@ -976,11 +925,7 @@ struct AskNoumView: View {
                             value: store.messages.isEmpty
                         )
                     }
-                    .coordinateSpace(name: "askNoumScroll")
                     .scrollDismissesKeyboard(.interactively)
-                    .onPreferenceChange(AskNoumScrollOffsetKey.self) { value in
-                        scrollOffset = value
-                    }
                     .onChange(of: store.messages.count) { _, _ in
                         scrollToBottom(proxy: proxy)
                     }
@@ -1072,8 +1017,13 @@ struct AskNoumView: View {
                 }
             }
         }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Ask Noum")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                threadOptionsMenu
+            }
+        }
         .sheet(isPresented: $showTrajectorySheet) {
             TrajectoryView(snapshot: memoryTrajectorySnapshot)
         }
@@ -1224,56 +1174,6 @@ struct AskNoumView: View {
         }
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: Spacing.sm) {
-            // The mark floats on the canvas: no badge circle, character,
-            // speech box, or ambient loop. Awaiting state changes once into
-            // processing; landed state settles back to idle.
-            NoumWaveformMark(
-                state: store.isAwaitingReply ? .processing : .idle,
-                tint: AppColor.coachAccent,
-                size: isHeaderCompact ? 30 : 42
-            )
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Noum")
-                    // Hardcoded 22pt swapped for the shared type scale:
-                    // cardTitle (20) at rest, headline (18) when compact.
-                    .font(isHeaderCompact ? Typography.headline : Typography.cardTitle)
-                    // The thread's title. A rotor heading here is the only way
-                    // back to the top of a long conversation without swiping
-                    // through every bubble.
-                    .accessibilityAddTraits(.isHeader)
-                if !isHeaderCompact {
-                    Text(headerSubtitle)
-                        .font(Typography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                }
-            }
-            .layoutPriority(1)
-            Spacer(minLength: Spacing.sm)
-            threadOptionsMenu
-        }
-        .animation(
-            NoumMotion.animation(for: .calm, reduceMotion: reduceMotion),
-            value: isHeaderCompact
-        )
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.xs)
-        // T1 — the header no longer reads as a closed box. The old opaque
-        // `cardBackground.opacity(0.5)` bar + hard Divider fenced the coach
-        // off from the thread; now the header sits directly on
-        // `screenBackground` so the orb + name flow continuously into the
-        // conversation below. No hardcoded opacity — the screen background
-        // token carries the surface.
-        .background(AppColor.screenBackground)
-    }
-
     // MARK: - Attached context
 
     /// Glanceable, inspectable context receipt from the same stores the reply
@@ -1302,8 +1202,12 @@ struct AskNoumView: View {
                     .padding(.vertical, Spacing.xs)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        AppColor.pro.opacity(0.07),
+                        AppColor.innerSurface,
                         in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                            .stroke(AppColor.pro.opacity(0.14), lineWidth: 1)
                     )
                 } else {
                     HStack(alignment: .center, spacing: Spacing.xs) {
@@ -1316,7 +1220,8 @@ struct AskNoumView: View {
                     .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 6)
                     .frame(minHeight: 40)
-                    .background(AppColor.pro.opacity(0.07), in: Capsule())
+                    .background(AppColor.innerSurface, in: Capsule())
+                    .overlay(Capsule().stroke(AppColor.pro.opacity(0.14), lineWidth: 1))
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -1481,23 +1386,6 @@ struct AskNoumView: View {
         }
     }
 
-    private var headerSubtitle: String {
-        // "Reading your context…" earned the user's complaint by showing
-        // during EVERY pending reply — even after the first reply had
-        // landed and the context was clearly already read. That made the
-        // header read as stuck/stale. Now we only claim "reading context"
-        // before the first reply of the thread has hydrated; after that,
-        // pending replies show "Thinking…" which matches the actual
-        // mental model the user has of what the coach is doing.
-        if store.isAwaitingReply {
-            return store.hasLandedCoachReply ? "Thinking\u{2026}" : "Reading your context\u{2026}"
-        }
-        // Generic professional identity — the voice target is a training
-        // emphasis, not the coach's personality ("your warm and welcoming
-        // coach" read oddly as a persona claim).
-        return "Your personal communications coach."
-    }
-
     private var activeCaseSubtitle: String? {
         Self.currentFocusLine(caseFile: coachMemoryStore.currentMemory?.caseFile)
     }
@@ -1550,6 +1438,13 @@ struct AskNoumView: View {
     /// composer would otherwise be.
     private var dayZeroIntroCard: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: AppColor.coachAccent,
+                size: NoumControlMetric.minimumTouchTarget
+            )
+            .accessibilityHidden(true)
+
             Text(AskNoumDayZeroGreeting.headline)
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
@@ -1580,6 +1475,13 @@ struct AskNoumView: View {
 
     private var standardEmptyState: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: AppColor.coachAccent,
+                size: NoumControlMetric.minimumTouchTarget
+            )
+            .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(emptyStateHeadline)
                     .font(Typography.cardTitle)
@@ -2757,11 +2659,25 @@ struct AskNoumView: View {
     ) -> some View {
         let layout = Self.coachOptionLayout(for: chips)
         if launch != nil || layout.primary != nil {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Next move")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: Spacing.sm) {
+                    NoumWaveformMark(
+                        state: .idle,
+                        tint: AppColor.coachAccent,
+                        size: Spacing.xxl
+                    )
                     .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text("Next move")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.coachingInkOnQuiet)
+                        Text(launch == nil ? "Keep the coaching thread focused." : "Take this read back into one rep.")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 if let latest = store.messages.last,
                    latest.role == .coach,
@@ -2789,28 +2705,26 @@ struct AskNoumView: View {
                 } label: {
                     HStack(alignment: .center, spacing: 8) {
                         Image(systemName: launch == nil ? "arrow.up.right.circle.fill" : "play.circle.fill")
-                            .font(Typography.caption.weight(.bold))
-                            .foregroundStyle(AppColor.pro)
+                            .font(Typography.headline)
+                            .accessibilityHidden(true)
                         Text(primaryNextMoveLabel(launch: launch, fallback: layout.primary))
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .font(Typography.cardLabel)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
+                        Image(systemName: "arrow.right")
+                            .font(Typography.caption.weight(.bold))
+                            .accessibilityHidden(true)
                     }
+                    .foregroundStyle(.white)
                     .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: NoumControlMetric.minimumTouchTarget + Spacing.sm, alignment: .leading)
                     .background(
-                        AppColor.cardBackground,
-                        in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
+                        AppColor.coachingInk,
+                        in: Capsule(style: .continuous)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityIdentifier("askNoum.nextMove.primary")
                 .accessibilityLabel(primaryNextMoveAccessibilityLabel(launch: launch, fallback: layout.primary))
 
@@ -2822,18 +2736,25 @@ struct AskNoumView: View {
                             }
                         }
                     } label: {
-                        Label("Other directions", systemImage: "ellipsis.circle")
+                        Label("Other useful directions", systemImage: "ellipsis.circle")
                             .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.pro)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .foregroundStyle(AppColor.coachingInkOnQuiet)
+                            .frame(maxWidth: .infinity, minHeight: NoumControlMetric.minimumTouchTarget, alignment: .leading)
                     }
                     .accessibilityIdentifier("askNoum.nextMove.more")
                     .accessibilityLabel("Other directions")
                 }
             }
-            .padding(.top, 2)
-            .padding(.bottom, Spacing.xs)
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            .padding(Spacing.lg)
+            .background(
+                AppColor.proQuietSurface,
+                in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(AppColor.pro.opacity(0.16), lineWidth: 1)
+            )
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             .accessibilityIdentifier("askNoum.nextMovePanel")
         }
     }
@@ -2929,15 +2850,10 @@ struct AskNoumView: View {
     }
 
     private func coachBubble(message: CoachMessage) -> some View {
-        // No per-bubble inline glyph anymore. The user called the repeated
-        // orb beside every reply visual noise; left-alignment + the
-        // brand-purple stroke already read as "coach speaking", and the
-        // header (always visible, even compact) carries embodiment. The
-        // in-flight `pendingDots` keeps its own `.thinking` orb so the
-        // typing state still reads as the coach — that's the one place the
-        // orb earns its keep. The card spans full width, flush to the
-        // container's leading edge, so the ack / follow-up / proposal rows
-        // below align to it without the old 34pt inset.
+        // The waveform appears only on the current read. Older replies keep a
+        // slim leading rule, so a long thread does not become repeated brand
+        // chrome; the in-flight row owns the processing waveform until it
+        // resolves into the authored current-read card.
         //
         // LEGACY OFFLINE STATE: older builds could persist local fallback copy
         // as `.coach` rows with `isOffline`. New turns no longer create those
@@ -2948,9 +2864,10 @@ struct AskNoumView: View {
             ? message.text.trimmingCharacters(in: .whitespacesAndNewlines)
             : ""
         let showsProvisionalRead = message.isPending && !provisionalText.isEmpty
+        let isFeaturedReply = message.isPending || message.id == latestLandedCoachID
 
         return HStack(alignment: .top, spacing: 12) {
-            if !message.isPending || showsProvisionalRead {
+            if !isFeaturedReply && (!message.isPending || showsProvisionalRead) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(accent.opacity(message.isOffline ? 0.45 : 0.78))
                     .frame(width: 3)
@@ -2959,6 +2876,10 @@ struct AskNoumView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                if isFeaturedReply && !message.isPending {
+                    coachReplyIdentity(accent: accent)
+                }
+
                 if message.isPending {
                     if showsProvisionalRead {
                         provisionalCoachRead(message: message, accent: accent)
@@ -2989,12 +2910,27 @@ struct AskNoumView: View {
                 }
             }
         }
-        .padding(.horizontal, Spacing.sm)
-        .padding(.vertical, Spacing.sm)
+        .padding(isFeaturedReply ? Spacing.lg : Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            message.isOffline ? AppColor.innerSurface : Color.clear,
-            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        .background {
+            if isFeaturedReply {
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .fill(message.isOffline ? AppColor.innerSurface : AppColor.cardBackground)
+            } else if message.isOffline {
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .fill(AppColor.innerSurface)
+            }
+        }
+        .overlay {
+            if isFeaturedReply {
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(accent.opacity(message.isOffline ? 0.14 : 0.10), lineWidth: 1)
+            }
+        }
+        .shadow(
+            color: isFeaturedReply ? AppColor.coachingInk.opacity(0.05) : .clear,
+            radius: isFeaturedReply ? Spacing.sm : 0,
+            y: isFeaturedReply ? Spacing.xxs : 0
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
@@ -3006,6 +2942,26 @@ struct AskNoumView: View {
                     ? "Noum is preparing the full reply. Immediate coach read: \(AskNoumCoachVisibleText.displayText(for: message))"
                 : "Noum: \(AskNoumCoachVisibleText.displayText(for: message))"
         )
+    }
+
+    /// The newest coach response receives one authored identity line. Older
+    /// replies remain quiet transcript history, so a long thread has a clear
+    /// current read rather than a stack of visually identical chat cards.
+    private func coachReplyIdentity(accent: Color) -> some View {
+        HStack(spacing: Spacing.sm) {
+            NoumWaveformMark(
+                state: .idle,
+                tint: accent,
+                size: Spacing.xxl
+            )
+            .accessibilityHidden(true)
+
+            Text("Noum · coach read")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(accent)
+            Spacer(minLength: 0)
+        }
+        .accessibilityHidden(true)
     }
 
     /// Keeps the conversational reply primary. The selected professional move

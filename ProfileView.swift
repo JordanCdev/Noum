@@ -862,6 +862,25 @@ struct ProfileIdentityPresentation: Equatable {
     }
 }
 
+struct ProfilePracticeSummaryPresentation: Equatable {
+    let line: String
+
+    static func make(streak: Int, verifiedRepCount: Int) -> ProfilePracticeSummaryPresentation {
+        let reps = max(0, verifiedRepCount)
+        let safeStreak = max(0, streak)
+        if reps == 0 {
+            return ProfilePracticeSummaryPresentation(line: "No verified reps yet")
+        }
+        let repLabel = "\(reps) verified rep\(reps == 1 ? "" : "s")"
+        guard safeStreak > 0 else {
+            return ProfilePracticeSummaryPresentation(line: repLabel)
+        }
+        return ProfilePracticeSummaryPresentation(
+            line: "\(safeStreak)-day practice streak · \(repLabel)"
+        )
+    }
+}
+
 struct ProfileCoachReadContent: Equatable {
     let label: String
     let read: String
@@ -1673,6 +1692,7 @@ struct ProfileView: View {
                 }
 
                 profileEvidenceHub
+                    .cardEntrance(3)
             }
             .padding(.horizontal, Spacing.screenH)
             .padding(.top, Spacing.sm)
@@ -1855,44 +1875,62 @@ struct ProfileView: View {
             ).first
         )
 
+        let hasEvidence = presentation.evidenceCaption != nil
+        // Evidence authorizes a current read, not a success claim. Keep the
+        // header neutral unless this surface later binds the displayed
+        // observation to a specific verified proof moment.
+        let readTint = AppColor.coachingInkOnQuiet
+
         return NoumSurface(.standard) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkle.magnifyingglass")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.pro)
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                HStack(alignment: .center, spacing: Spacing.sm) {
+                    Text(hasEvidence ? "CURRENT COACH READ" : "STARTING DIRECTION")
+                        .font(Typography.micro.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(readTint)
+
+                    Spacer(minLength: Spacing.sm)
+
+                    Image(systemName: "waveform")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(readTint)
                         .accessibilityHidden(true)
-                    Text("Current focus")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.textSecondary)
                 }
 
                 Text(presentation.observation)
-                    .font(Typography.headline)
-                    .foregroundStyle(.primary)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: Spacing.sm) {
                     Image(systemName: "scope")
-                        .font(Typography.captionSmall.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .padding(.top, 3)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
+                        .frame(width: 28, height: 28)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Next rep")
-                            .font(Typography.captionSmall.weight(.semibold))
-                            .foregroundStyle(AppColor.textSecondary)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text("NEXT REP")
+                            .font(Typography.micro.weight(.bold))
+                            .tracking(0.7)
+                            .foregroundStyle(AppColor.coachingInkOnQuiet)
                         Text(presentation.nextMove)
-                            .font(Typography.caption)
+                            .font(Typography.body.weight(.semibold))
                             .foregroundStyle(AppColor.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .padding(Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.proQuietSurface,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
 
                 if let evidenceCaption = presentation.evidenceCaption {
                     Text(evidenceCaption)
                         .font(Typography.captionSmall)
-                        .foregroundStyle(AppColor.textTertiary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1994,34 +2032,43 @@ struct ProfileView: View {
 
     private var profileEvidenceHub: some View {
         return VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Your coaching library")
+                .font(Typography.headline)
+                .foregroundStyle(AppColor.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+
             Button {
                 toggleProfileEvidence()
             } label: {
-                HStack(spacing: Spacing.sm) {
+                HStack(spacing: Spacing.md) {
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(width: 40, height: 40)
-                        .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppColor.coachingInkOnQuiet)
+                        .frame(width: 32, height: 44)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text("Library")
-                            .font(Typography.subheadline.weight(.semibold))
+                        Text("Evidence, memory and history")
+                            .font(Typography.body.weight(.semibold))
                             .foregroundStyle(AppColor.textPrimary)
-                        Text("Evidence and history")
+                        Text(showProfileEvidence ? "Hide the full record" : "Open the full coaching record")
                             .font(Typography.captionSmall)
                             .foregroundStyle(AppColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Image(systemName: "chevron.down")
+                    Image(systemName: showProfileEvidence ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(showProfileEvidence ? 180 : 0))
+                        .foregroundStyle(AppColor.textTertiary)
                         .animation(reduceMotion ? nil : .standardSpring, value: showProfileEvidence)
                 }
-                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .padding(.horizontal, Spacing.md)
+                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                .background(
+                    AppColor.proQuietSurface,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.pressable)
@@ -2032,7 +2079,7 @@ struct ProfileView: View {
 
             if showProfileEvidence {
                 VStack(spacing: 0) {
-                    Divider()
+                    Divider().padding(.leading, 48)
 
                     ForEach(Array(profileLibraryPresentation.rows.enumerated()), id: \.element.rawValue) { index, row in
                         profileLibraryRow(row)
@@ -2605,52 +2652,92 @@ struct ProfileView: View {
 
     private var identityHeader: some View {
         let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
+        let practiceSummary = ProfilePracticeSummaryPresentation.make(
+            streak: currentStreak,
+            verifiedRepCount: totalProgressSessions
+        )
         let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
         // The waveform is Noum's identity; the optional small glyph remains
         // user-owned voice-goal metadata rather than a second brand mark.
-        return HStack(alignment: .center, spacing: Spacing.md) {
-            NoumWaveformMark(
-                state: .idle,
-                tint: AppColor.coachingInk,
-                size: 44
-            )
-            .accessibilityHidden(true)
+        return VStack(alignment: .leading, spacing: Spacing.lg) {
+            Text("You")
+                .font(Typography.screenTitle)
+                .foregroundStyle(AppColor.textPrimary)
+                .accessibilityAddTraits(.isHeader)
 
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                HStack(spacing: 8) {
-                    Text(displayName)
-                        .font(Typography.headline.weight(.bold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if premium.isPremium {
-                        Text("PRO")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(AppColor.pro, in: Capsule())
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Spacing.lg) {
+                    profileIdentityMark
+                    profileIdentityCopy(
+                        identity: identity,
+                        practiceSummary: practiceSummary,
+                        chosenVoice: chosenVoice
+                    )
                 }
 
-                HStack(spacing: 6) {
-                    if let chosenVoice {
-                        VoiceGoalIcon(goal: chosenVoice, size: 12)
-                    }
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    profileIdentityMark
+                    profileIdentityCopy(
+                        identity: identity,
+                        practiceSummary: practiceSummary,
+                        chosenVoice: chosenVoice
+                    )
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile.identity")
+    }
+
+    private var profileIdentityMark: some View {
+        NoumWaveformMark(
+            state: .idle,
+            tint: AppColor.textSecondary,
+            size: 64
+        )
+        .accessibilityHidden(true)
+    }
+
+    private func profileIdentityCopy(
+        identity: ProfileIdentityPresentation,
+        practiceSummary: ProfilePracticeSummaryPresentation,
+        chosenVoice: SpeakingStyleGoal?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Text(displayName)
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if premium.isPremium {
+                    Text("PRO")
+                        .font(Typography.micro.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(AppColor.pro, in: Capsule())
+                }
+            }
+
+            Text(practiceSummary.line)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let chosenVoice {
+                HStack(spacing: Spacing.xs) {
+                    VoiceGoalIcon(goal: chosenVoice, size: 12)
 
                     Text(identity.subtitle)
-                        .font(.subheadline.weight(.medium))
+                        .font(Typography.captionSmall)
                         .foregroundStyle(AppColor.textSecondary)
-                        .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, Spacing.xxs)
-        .padding(.vertical, Spacing.xs)
-        .accessibilityElement(children: .contain)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Quiet secondary row shown after the coaching value, never a second hero.

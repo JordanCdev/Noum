@@ -114,6 +114,12 @@ struct V46ProgressPresentationTests {
             now: now
         ))
         #expect(presentation.headline == "Becoming reliable.")
+        #expect(presentation.readStage == .reliable)
+        #expect(presentation.coachReadEyebrow == "COACH READ · LAST 4 REPS")
+        #expect(presentation.authoredHeadline == "Your opening is becoming reliable.")
+        #expect(presentation.evidenceValue == "3 / 4")
+        #expect(presentation.evidenceLabel == "opening directness held")
+        #expect(presentation.nextFocus == TranscriptPracticeLever.opening.successMeasure)
         #expect(presentation.subtitle.contains("Held in 3 of 4 comparable reps"))
         #expect(presentation.subtitle.contains("under pressure"))
         #expect(presentation.rows.count <= 3)
@@ -148,6 +154,9 @@ struct V46ProgressPresentationTests {
             now: now
         ))
         #expect(presentation.headline == "Early read.")
+        #expect(presentation.readStage == .early)
+        #expect(presentation.coachReadEyebrow == "COACH READ · LAST 1 REP")
+        #expect(presentation.authoredHeadline == "An early read on your opening.")
         #expect(presentation.subtitle.contains("more for a reliable read"))
     }
 
@@ -271,13 +280,15 @@ struct V46ProgressPresentationTests {
     @Test("Progress mounts one route-owned practice target action")
     func practiceActionUsesExistingOwnersOnce() throws {
         let source = try progressViewSource
-        #expect(source.components(separatedBy: "Text(\"Practice this target\")").count - 1 == 1)
+        #expect(source.components(separatedBy: "\"Practice this target\"").count - 1 == 1)
+        #expect(source.contains("PrimaryCTA("))
         #expect(source.contains("V46ProgressPracticeProjection.make("))
         #expect(source.contains("offerTranscriptRetryToken(prescription)"))
         #expect(source.contains("recommendationLearningStore.recordShown("))
         #expect(source.contains("recommendationLearningStore.markTapped(mode: .timed)"))
         #expect(source.contains("AppDestination.timedPracticePrompt(token: token)"))
         #expect(source.contains(".accessibilityIdentifier(\"progress.v46.practiceTarget\")"))
+        #expect(source.contains(".accessibilityIdentifier(\"progress.v46.evidenceDisclosure\")"))
     }
 
     @Test("Earned Today fires once per un-acknowledged evidence event")
