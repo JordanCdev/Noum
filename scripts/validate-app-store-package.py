@@ -33,6 +33,7 @@ from urllib.request import Request
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "AppStore"
+RELEASE_NOTES = ROOT / "docs" / "RELEASE_NOTES.md"
 RELEASE_ASSET_TEMPLATE = PACKAGE / "release-assets.template.json"
 ASO_EXPERIMENT_TEMPLATE = PACKAGE / "aso-experiment.template.json"
 
@@ -381,6 +382,38 @@ def validate_metadata(path: Path, public_origin: str) -> None:
     searchable = f"{name} {subtitle} {promotional} {description}".lower()
     for phrase in forbidden:
         require(phrase not in searchable, f"{path.name}: unsupported claim contains {phrase!r}")
+
+
+def validate_release_notes(path: Path) -> None:
+    notes = path.read_text(encoding="utf-8")
+    lowered = notes.lower()
+    require(notes.startswith("# What's new in Noum 1.1\n"),
+            f"{path.name}: release heading must match Noum 1.1")
+    require(0 < len(notes) <= 4_000,
+            f"{path.name}: release notes must be 1–4,000 characters")
+    retired_claims = (
+        "daily challenge",
+        "show every home card",
+        "character on home",
+        "five stages",
+        "path node",
+        "peak-rating wall",
+        "insights chip",
+        "word of the day",
+    )
+    for phrase in retired_claims:
+        require(phrase not in lowered,
+                f"{path.name}: retired or unverified feature claim contains {phrase!r}")
+    current_surface_markers = (
+        "today",
+        "post-rep",
+        "ask noum",
+        "progress",
+        "permission",
+        "beta-feedback",
+    )
+    require(all(marker in lowered for marker in current_surface_markers),
+            f"{path.name}: notes must cover the current 1.1 release surfaces")
 
 
 def validate_product_pages() -> dict:
@@ -995,6 +1028,7 @@ def main() -> None:
             "The launch package must contain exactly en-GB and en-US metadata")
     for path in metadata:
         validate_metadata(path, public_origin)
+    validate_release_notes(RELEASE_NOTES)
     validate_product_pages()
     validate_release_asset_manifest(RELEASE_ASSET_TEMPLATE, verify_files=False)
     validate_aso_experiment_manifest(ASO_EXPERIMENT_TEMPLATE, verify_results=False)

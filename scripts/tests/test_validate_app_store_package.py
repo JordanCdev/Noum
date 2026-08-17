@@ -69,6 +69,19 @@ class AppStorePackageValidatorTests(unittest.TestCase):
     def test_checked_in_contracts_validate_without_claiming_evidence(self) -> None:
         MODULE.validate_release_asset_manifest(MODULE.RELEASE_ASSET_TEMPLATE, verify_files=False)
         MODULE.validate_aso_experiment_manifest(MODULE.ASO_EXPERIMENT_TEMPLATE, verify_results=False)
+        MODULE.validate_release_notes(MODULE.RELEASE_NOTES)
+
+    def test_release_notes_reject_retired_or_unverified_feature_claims(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "RELEASE_NOTES.md"
+            source = MODULE.RELEASE_NOTES.read_text(encoding="utf-8")
+            path.write_text(
+                source + "\n- Three daily challenges rotate every day.\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(AssertionError, "retired or unverified"):
+                MODULE.validate_release_notes(path)
 
     def test_checked_in_metadata_stays_on_the_in_app_firebase_origin(self) -> None:
         origin = MODULE.active_public_origin()

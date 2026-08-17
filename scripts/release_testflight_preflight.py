@@ -76,6 +76,7 @@ FORBIDDEN_ARCHIVE_CONFIGS = {
 STOREKIT_PRODUCT_CONSTANTS = ("monthlyID", "annualID")
 SOURCE_COMMIT_INFO_KEY = "NoumSourceGitCommit"
 SOURCE_INFO_FILE_BUILD_SETTING = "NOUM_APP_INFOPLIST_FILE"
+REQUIRED_APP_URL_SCHEME = "noum"
 SOURCE_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 EXPECTED_INFO_PLIST_BY_TARGET = {
     "Noum": "Noum/Info.plist",
@@ -253,6 +254,41 @@ def _google_bundle_matches(repo_root: Path) -> bool:
     except (OSError, ValueError, plistlib.InvalidFileException):
         return False
     return google.get("BUNDLE_ID") == EXPECTED_TARGETS["Noum"]["bundle"]
+
+
+def _url_schemes(info: dict[str, Any]) -> frozenset[str]:
+    url_types = info.get("CFBundleURLTypes")
+    if not isinstance(url_types, list):
+        return frozenset()
+    return frozenset(
+        scheme
+        for item in url_types
+        if isinstance(item, dict)
+        for scheme in item.get("CFBundleURLSchemes", [])
+        if isinstance(scheme, str) and scheme
+    )
+
+
+def _required_app_url_schemes(repo_root: Path) -> frozenset[str] | None:
+    try:
+        google = _read_plist(repo_root / "Noum/GoogleService-Info.plist")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    reversed_client_id = google.get("REVERSED_CLIENT_ID")
+    if not isinstance(reversed_client_id, str) or not reversed_client_id:
+        return None
+    return frozenset({REQUIRED_APP_URL_SCHEME, reversed_client_id})
+
+
+def _source_url_schemes_are_valid(repo_root: Path) -> bool:
+    required = _required_app_url_schemes(repo_root)
+    if required is None:
+        return False
+    try:
+        info = _read_plist(repo_root / "Noum/Info.plist")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return False
+    return required.issubset(_url_schemes(info))
 
 
 def current_source_commit(repo_root: Path) -> str | None:
@@ -434,6 +470,20 @@ def archive_checks(
             bundle_shape,
             "main app plus Widget and Messages extensions" if bundle_shape else "product or bundle identifier mismatch",
             "Repair the source-controlled target/embed configuration; do not compensate with export-time overrides.",
+        )
+    )
+    required_url_schemes = _required_app_url_schemes(repo_root)
+    archived_url_schemes = _url_schemes(product_infos.get("Noum", {}))
+    archive_url_schemes_valid = bool(
+        required_url_schemes
+        and required_url_schemes.issubset(archived_url_schemes)
+    )
+    checks.append(
+        check(
+            "archiveAppURLSchemes",
+            archive_url_schemes_valid,
+            "app and Google callback URL schemes registered" if archive_url_schemes_valid else "required app URL scheme missing",
+            "Register both noum and the Firebase REVERSED_CLIENT_ID in the main app Info.plist, then rebuild the archive.",
         )
     )
     version_pairs = {
@@ -696,6 +746,12 @@ def repository_checks(
             _google_bundle_matches(repo_root),
             "Firebase client bundle matches main app" if _google_bundle_matches(repo_root) else "Firebase client bundle mismatch",
             "Use the production Firebase client plist registered to the release bundle identifier.",
+        ),
+        check(
+            "sourceAppURLSchemes",
+            _source_url_schemes_are_valid(repo_root),
+            "app and Google callback URL schemes registered" if _source_url_schemes_are_valid(repo_root) else "required app URL scheme missing",
+            "Register both noum and the Firebase REVERSED_CLIENT_ID in the protected main-app Info.plist.",
         ),
         check(
             "appStoreExportOptionsSafe",

@@ -29,6 +29,7 @@ TEST_DISTRIBUTION_CERTIFICATE = b"noum-test-distribution-certificate"
 TEST_DISTRIBUTION_FINGERPRINT = hashlib.sha1(TEST_DISTRIBUTION_CERTIFICATE).hexdigest().upper()
 TEST_DWARF_UUIDS = frozenset({("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "arm64")})
 TEST_SOURCE_COMMIT = "a" * 40
+TEST_REVERSED_CLIENT_ID = "com.googleusercontent.apps.test-client"
 
 
 def write_plist(path: Path, value: dict) -> None:
@@ -105,10 +106,24 @@ class PreflightTests(unittest.TestCase):
                 self.root / f"{target}/{target}.entitlements",
                 {"com.apple.security.application-groups": [release.EXPECTED_APP_GROUP]},
             )
-        write_plist(self.root / "Noum/Info.plist", {"fixture": True})
+        write_plist(
+            self.root / "Noum/Info.plist",
+            {
+                "fixture": True,
+                "CFBundleURLTypes": [{
+                    "CFBundleURLSchemes": [
+                        release.REQUIRED_APP_URL_SCHEME,
+                        TEST_REVERSED_CLIENT_ID,
+                    ],
+                }],
+            },
+        )
         write_plist(
             self.root / "Noum/GoogleService-Info.plist",
-            {"BUNDLE_ID": release.EXPECTED_TARGETS["Noum"]["bundle"]},
+            {
+                "BUNDLE_ID": release.EXPECTED_TARGETS["Noum"]["bundle"],
+                "REVERSED_CLIENT_ID": TEST_REVERSED_CLIENT_ID,
+            },
         )
         write_plist(
             self.root / "scripts/TestFlightExportOptions.plist",
@@ -193,6 +208,12 @@ _ = AppStore.sync()
             if target == "Noum":
                 info["ITSAppUsesNonExemptEncryption"] = False
                 info[release.SOURCE_COMMIT_INFO_KEY] = source_commit
+                info["CFBundleURLTypes"] = [{
+                    "CFBundleURLSchemes": [
+                        release.REQUIRED_APP_URL_SCHEME,
+                        TEST_REVERSED_CLIENT_ID,
+                    ],
+                }]
             write_plist(
                 archive / relative / "Info.plist",
                 info,
@@ -276,6 +297,41 @@ _ = AppStore.sync()
         (self.root / "Noum/GoogleService-Info.plist").unlink()
         checks = self._repository_checks()
         self.assertFalse(next(item for item in checks if item.key == "buildPlistsPresent").passed)
+
+    def test_source_info_requires_app_and_google_callback_url_schemes(self) -> None:
+        path = self.root / "Noum/Info.plist"
+        value = plistlib.loads(path.read_bytes())
+        value["CFBundleURLTypes"][0]["CFBundleURLSchemes"].remove(
+            release.REQUIRED_APP_URL_SCHEME
+        )
+        write_plist(path, value)
+
+        checks = self._repository_checks()
+
+        self.assertFalse(next(
+            item for item in checks if item.key == "sourceAppURLSchemes"
+        ).passed)
+
+    def test_archive_requires_app_and_google_callback_url_schemes(self) -> None:
+        path = self.archive / release.ARCHIVED_PRODUCTS["Noum"] / "Info.plist"
+        value = plistlib.loads(path.read_bytes())
+        value["CFBundleURLTypes"][0]["CFBundleURLSchemes"] = [
+            release.REQUIRED_APP_URL_SCHEME
+        ]
+        write_plist(path, value)
+
+        checks = release.archive_checks(
+            self.root,
+            self.archive,
+            scanner=lambda _: True,
+            expected_version=("1.1", "2"),
+            expected_source_commit=self.source_commit,
+            uuid_reader=lambda _: TEST_DWARF_UUIDS,
+        )
+
+        self.assertFalse(next(
+            item for item in checks if item.key == "archiveAppURLSchemes"
+        ).passed)
 
     def test_repository_contract_rejects_dirty_checkout_even_when_archive_commit_matches(self) -> None:
         (self.root / "untracked-release-source.txt").write_text(

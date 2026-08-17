@@ -1,35 +1,23 @@
 # What's new in Noum 1.1
 
-## A coach who's actually there
+## A clearer practice loop
 
-- Ask Noum is a persistent chat, reachable from Home, from any session summary, and from your goal on Profile. The coach knows your goal, your recent reps, and your trend.
-- Tap one line after a session to open the thread with a verdict-ready opener already waiting.
-- The character on Home now reacts to what you do, and grows through five stages as you put hours in.
-- Proof Moments quote your actual words back. When you hit a personal best or unlock a path node, the coach references a specific line you said.
+- Today gives you one focused mission and a direct route into a short spoken rep.
+- Practice keeps the prompt and next action clear while you speak.
 
-## A payoff on day one
+## Evidence you can use
 
-- A brand-new account opens to one coach card, one prompt, and a clear first rep.
-- The daily challenge, weekly insight, and journey card only appear once you have evidence to put on them. Toggle "Show every home card" in Settings to override.
-- The first rep ends with a celebration that names what you did.
+- The post-rep experience leads with what landed, one coaching win, and the next move.
+- When enough comparable evidence exists, you can review how an original attempt changed on retry.
+- Progress turns recent eligible reps into a bounded read and one practice focus.
 
-## Mode literacy
+## Coaching that stays connected
 
-- Each practice mode now carries a "What this trains" line. Tap to see the pressure type, what it surfaces, and how long a typical rep runs.
+- Ask Noum can use your goal and eligible practice evidence to continue the coaching conversation.
+- Review and Progress keep deeper evidence available without crowding the main practice path.
 
-## Goal-aware coaching
+## Safer recovery and feedback
 
-- Every live practice mode shows a brief voice anchor when you start. The in-session HUD lights up when a rhetorical move serves your stated goal.
-- The post-session debrief opens with how close that rep moved you to your goal. Drill picks read from the same source.
-- The Insights chip shows how many AI coaching reads you have banked this month.
-
-## Reasons to open the app
-
-- A new peak-rating wall surfaces your best in week, your best in your league, and your best ever. Reach it from Profile or the league screen.
-- Three daily challenges rotate at local midnight. A short rep clears one. An evening nudge fires only if something is still claimable.
-- Word of the day grew to a 142-word catalog of communication-grade words. The home strip shows a small mark when you have used today's.
-
-## Quality
-
-- Coach voice audit removed remaining filler exclamations from user-facing copy.
-- Expanded test coverage and stability work across the practice loop, summaries, and home.
+- Clear permission-recovery paths help you return to microphone, speech-recognition, camera, and notification setup.
+- Settings includes a beta-feedback route with inspectable, content-free diagnostics.
+- This release also includes accessibility, account-lifecycle, and reliability improvements across the core journey.

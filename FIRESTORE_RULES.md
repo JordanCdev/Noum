@@ -77,12 +77,14 @@ the marker. Rollback restores the original source and manifest inventory before
 removing quarantine and the journal. Legacy ratings, streaks, and league values
 are never promoted into trusted server state.
 
-Verification and deployment:
+Local verification:
 
 ```sh
-./scripts/test-coach-functions-emulator.sh
-npx -y firebase-tools@latest deploy --only firestore:rules --project noum-d0b6f
+./scripts/release-functions-emulator.sh
 ```
 
-Deployment is a deliberate release operation and is not performed by local
-implementation or test runs.
+Do not deploy Firestore rules separately. Production activation is a coordinated
+social-data migration plus rules/functions cutover and remains closed until every
+prerequisite in the **Protected Social Deployment Gate** section of
+`docs/PRODUCTION_READINESS_RUNBOOK.md` has passed. Local implementation and test
+runs never authorize a deployment.

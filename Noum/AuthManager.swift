@@ -47,6 +47,58 @@ enum FirebaseCredentialStrategy: Equatable {
     case preserveLocalGuest
 }
 
+#if canImport(Security)
+enum AppleSignInNonceError: LocalizedError, Equatable {
+    case invalidLength
+    case entropyUnavailable(OSStatus)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidLength:
+            return "Apple sign-in could not create a valid security request."
+        case .entropyUnavailable:
+            return "Apple sign-in could not create a secure request right now."
+        }
+    }
+}
+
+enum AppleSignInNonceGenerator {
+    private static let charset = Array(
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"
+    )
+
+    static func generate(length: Int = 32) throws -> String {
+        try generate(length: length) {
+            var random: UInt8 = 0
+            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
+            guard status == errSecSuccess else {
+                throw AppleSignInNonceError.entropyUnavailable(status)
+            }
+            return random
+        }
+    }
+
+    static func generate(
+        length: Int,
+        randomByte: () throws -> UInt8
+    ) throws -> String {
+        guard length > 0 else {
+            throw AppleSignInNonceError.invalidLength
+        }
+
+        var result = ""
+        var remainingLength = length
+        while remainingLength > 0 {
+            let random = try randomByte()
+            guard random < charset.count else { continue }
+            result.append(charset[Int(random)])
+            remainingLength -= 1
+        }
+        return result
+    }
+}
+#endif
+
 enum AccountUpgradeConflict: LocalizedError, Equatable, Identifiable {
     case credentialAlreadyInUse(AuthProvider)
     case localGuestMigrationRequired(AuthProvider)
@@ -646,10 +698,15 @@ class AuthManager: ObservableObject {
             return
         }
         request.requestedScopes = [.fullName]
-#if canImport(FirebaseAuth) && canImport(CryptoKit)
-        let nonce = randomNonceString()
-        currentNonce = nonce
-        request.nonce = sha256(nonce)
+#if canImport(FirebaseAuth) && canImport(CryptoKit) && canImport(Security)
+        do {
+            let nonce = try AppleSignInNonceGenerator.generate()
+            currentNonce = nonce
+            request.nonce = sha256(nonce)
+        } catch {
+            currentNonce = nil
+            signInError = "Apple sign-in is temporarily unavailable. Please try again."
+        }
 #endif
     }
 #endif
@@ -3641,36 +3698,6 @@ class AuthManager: ObservableObject {
 #endif
 
 #if canImport(CryptoKit)
-    private func randomNonceString(length: Int = 32) -> String {
-        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-        var result = ""
-        var remainingLength = length
-
-        while remainingLength > 0 {
-            let randoms: [UInt8] = (0..<16).map { _ in
-                var random: UInt8 = 0
-                let errorCode = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
-                if errorCode != errSecSuccess {
-                    fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
-                }
-                return random
-            }
-
-            randoms.forEach { random in
-                if remainingLength == 0 {
-                    return
-                }
-
-                if random < charset.count {
-                    result.append(charset[Int(random)])
-                    remainingLength -= 1
-                }
-            }
-        }
-
-        return result
-    }
-
     private func sha256(_ input: String) -> String {
         let inputData = Data(input.utf8)
         let hashedData = SHA256.hash(data: inputData)

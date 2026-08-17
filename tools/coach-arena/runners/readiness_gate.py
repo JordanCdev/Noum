@@ -4428,8 +4428,8 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "testFlightQAChecklist",
         all(
             phrase in qa_doc for phrase in [
-                "firebase deploy --only firestore:rules",
-                "firebase deploy --only hosting",
+                "rules-only Firebase deployment is never",
+                "scripts/deploy-hosting.mjs",
                 "https://noum-d0b6f.web.app/privacy",
                 "Live Activity",
                 "AI prompt latency",
@@ -4439,6 +4439,34 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "qaChecklistPresent" if qa_doc else "missing",
         "The release manager needs a hardware/TestFlight QA checklist.",
         "Restore docs/TESTFLIGHT_QA.md with deploy, privacy, and high-risk surface checks.",
+    )
+
+    firestore_operator_doc = file_text(root, "FIRESTORE_RULES.md") or ""
+    legacy_emulator_entry = file_text(root, "scripts/test-coach-functions-emulator.sh") or ""
+    operator_deployment_text = "\n".join((
+        qa_doc,
+        firestore_operator_doc,
+        legacy_emulator_entry,
+    ))
+    unsafe_operator_fragments = (
+        "firebase-tools@latest",
+        "firebase deploy --only firestore:rules",
+    )
+    operator_instructions_safe = (
+        "./scripts/release-functions-emulator.sh" in firestore_operator_doc
+        and "release-functions-emulator.sh" in legacy_emulator_entry
+        and not any(
+            fragment in operator_deployment_text
+            for fragment in unsafe_operator_fragments
+        )
+    )
+    add(
+        "operatorDeployInstructionsSafe",
+        "operatorDeployInstructionsSafe",
+        operator_instructions_safe,
+        "pinned emulator and coordinated deployment instructions" if operator_instructions_safe else "unsafe or stale Firebase operator instruction",
+        "Active operator paths must use pinned tooling and must not authorize a Firestore rules-only deployment.",
+        "Use the pinned release emulator and remove mutable-CLI or rules-only deployment commands from active operator instructions.",
     )
 
     failures = [check for check in checks if not check["passed"]]

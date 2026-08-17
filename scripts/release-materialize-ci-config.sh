@@ -108,6 +108,12 @@ if google["REVERSED_CLIENT_ID"] not in schemes:
         file=sys.stderr,
     )
     raise SystemExit(2)
+if "noum" not in schemes:
+    print(
+        "Info.plist does not include the required noum URL scheme.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
 
 temporaries = []
 for item in decoded.values():

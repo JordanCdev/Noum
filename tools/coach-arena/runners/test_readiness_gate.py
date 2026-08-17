@@ -195,13 +195,21 @@ static let coachingMethod = hostingOrigin.appendingPathComponent("how-noum-coach
     )
     (root / "docs/TESTFLIGHT_QA.md").write_text(
         """
-firebase deploy --only firestore:rules
-firebase deploy --only hosting
+rules-only Firebase deployment is never authorized
+scripts/deploy-hosting.mjs --execute
 https://noum-d0b6f.web.app/privacy
 Live Activity
 AI prompt latency
 Paywall
 """,
+        encoding="utf-8",
+    )
+    (root / "FIRESTORE_RULES.md").write_text(
+        "Local verification: ./scripts/release-functions-emulator.sh\n",
+        encoding="utf-8",
+    )
+    (root / "scripts/test-coach-functions-emulator.sh").write_text(
+        'exec "$repo_root/scripts/release-functions-emulator.sh" "$@"\n',
         encoding="utf-8",
     )
 
@@ -2748,6 +2756,28 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertEqual(preflight["failureCount"], 0)
         self.assertEqual(preflight["passCount"], preflight["checkCount"])
         self.assertIn("Static ops preflight", preflight["validationBoundary"])
+
+    def test_operational_static_preflight_rejects_unsafe_firebase_operator_text(self):
+        unsafe_fragments = (
+            "firebase-tools@latest",
+            "firebase deploy --only firestore:rules",
+        )
+        for fragment in unsafe_fragments:
+            with self.subTest(fragment=fragment), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                write_static_ops_repo(root)
+                path = root / "FIRESTORE_RULES.md"
+                path.write_text(
+                    path.read_text(encoding="utf-8") + fragment + "\n",
+                    encoding="utf-8",
+                )
+
+                preflight = gate.operational_static_preflight(root)
+
+                self.assertIn(
+                    "operatorDeployInstructionsSafe",
+                    [item["key"] for item in preflight["failures"]],
+                )
 
     def test_operational_static_preflight_accepts_display_name_only_profile_helper(self):
         with tempfile.TemporaryDirectory() as temp_dir:

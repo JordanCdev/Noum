@@ -44,9 +44,9 @@ they do not override an unchecked release blocker or signed-device test.
       stricter Codable-aligned write contract cannot strand an existing profile.
       Until then, league/challenge actions must remain
       unavailable rather than accepting client-authored ratings or results.
-      Only after that gate passes, the coordinated release includes
-      `firebase deploy --only firestore:rules`; this command is recorded here
-      for the approved cutover, not as authorization to run it now.
+      Only after that gate passes may the coordinated, source-bound social
+      rules/functions cutover run. A rules-only Firebase deployment is never
+      an authorized release path.
 - [x] **Firebase Hosting privacy page deployed** — verify
       `https://noum-d0b6f.web.app/privacy` returns a styled Noum policy. This
       checked item proves the live hosting endpoint exists; it does not prove
