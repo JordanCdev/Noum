@@ -227,11 +227,11 @@ struct FastLaneOnboardingView: View {
         VStack(spacing: Spacing.sm) {
             ForEach(options) { option in
                 let isSelected = selectedID == option.id
+                let presentation = choicePresentation(for: option)
                 Button {
                     CoachHaptic.selectionTap()
                     withCalmMotion { select(option) }
                 } label: {
-                    let presentation = choicePresentation(for: option)
                     HStack(spacing: Spacing.md) {
                         Image(systemName: presentation.symbol)
                             .font(.body.weight(.semibold))

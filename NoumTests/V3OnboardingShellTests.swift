@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import Noum
 
 @Suite("V3 onboarding and shell contracts")
 struct V3OnboardingShellTests {

@@ -1376,7 +1376,7 @@ struct TranscriptRetryComparisonCard: View {
         let rungFont = dominant
             ? Typography.body.weight(.semibold)
             : Typography.caption.weight(.medium)
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
+        return VStack(alignment: .leading, spacing: Spacing.xxs) {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: stage.graphicRole.systemName)
                     .font(.caption.weight(.bold))
@@ -1548,7 +1548,6 @@ struct TranscriptRetryComparisonCard: View {
         onContinue: {}
     )
     .environment(\.dynamicTypeSize, .accessibility3)
-    .environment(\.accessibilityReduceMotion, true)
     .preferredColorScheme(.dark)
 }
 #endif

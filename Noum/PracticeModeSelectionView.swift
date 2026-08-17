@@ -1152,7 +1152,7 @@ struct PracticeModeSelectionView: View {
         title: String,
         subtitle: String,
         tint: Color,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             VStack(alignment: .leading, spacing: Spacing.xxs) {

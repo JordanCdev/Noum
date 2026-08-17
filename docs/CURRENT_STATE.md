@@ -47,12 +47,19 @@ core journey/permission UI shards.
 
 Static readiness, release-script tests, Coach Arena, authored fixture
 validation, resource/workflow checks, and `git diff --check` pass in the Linux
-workspace. This is not native proof. The branch still requires a clean Xcode
-Release build and serialized tests, same-build simulator/physical-device
-accessibility and speech QA, live legal/support deployment, signing and
-TestFlight processing, StoreKit/auth/App Check verification, a current live-
-provider sweep, blinded professional-coach review, and longitudinal beta
-evidence. Production therefore remains correctly **NO-GO**.
+source workspace. A 2026-08-17 Mac pickup repaired five narrow compiler-error classes
+plus one missing test-module import; the Debug simulator app now builds on an
+iPhone 17 / iOS 26.4 destination. The complete serialized `NoumTests` target
+then reported **4,907 passed, 24 failed, one expected failure, and zero
+skipped**. The failures cover coach reliability and conversation contracts,
+V3 surface/path language, first-week and professional-loop expectations, and
+account-deletion ordering. This is useful native evidence, but not a green
+native gate. The branch still requires repair and revalidation of those tests,
+a clean Xcode Release build, same-build simulator/physical-device accessibility
+and speech QA, live legal/support deployment, signing and TestFlight processing,
+StoreKit/auth/App Check verification, a current live-provider sweep, blinded
+professional-coach review, and longitudinal beta evidence. Production therefore
+remains correctly **NO-GO**.
 
 The public-web source gate is now cutover-safe. In-app and App Store metadata
 share one active origin and remain on `noum-d0b6f.web.app` while `noum.app` is

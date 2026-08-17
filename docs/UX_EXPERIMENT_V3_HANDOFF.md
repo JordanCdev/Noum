@@ -7,9 +7,12 @@ Milestone: M14 — open the loop and earn TestFlight evidence
 ## Status
 
 The V3 product direction and its production-hardening source pass are complete
-for a private-beta candidate. The branch is source- and static-verified, but it
-is not yet a signed or device-proven TestFlight build. Do not merge to
-`ux-overhaul` or describe it as production-ready until the Mac, simulator,
+for an experiment branch. Static verification passed in the source workspace,
+and the 2026-08-17 Mac pickup now compiles as a Debug simulator app after the
+narrow Swift repairs recorded below. The complete serialized unit target is
+still red, so this is not yet a private-beta candidate, signed build, or
+device-proven TestFlight build. Do not merge to `ux-overhaul` or describe it as
+production-ready until the failing native tests and the simulator,
 physical-device, live-service, and human-coach gates below pass.
 
 ## Experience contract
@@ -214,14 +217,38 @@ evidence.
   source-contract audits: pass.
 - `git diff --check`: pass.
 
-This Linux environment has no Xcode, Swift compiler, CoreSimulator, signing
-identity, protected plists, or physical iPhone. Historical green results from
-another source revision do not prove this branch.
+The source handoff was produced in a Linux environment without Xcode, a Swift
+compiler, CoreSimulator, signing identity, protected plists, or a physical
+iPhone. Historical green results from another source revision do not prove
+this branch.
+
+## Native pickup verification — 2026-08-17
+
+- Imported bundle commit `0bfd8f654036f004933412f48a79160048e8a644` as a
+  19-commit fast-forward from `5cf3d3f898ca32769271d1c1257a94d9cd3a554e`.
+- Repaired five compiler-error classes without changing state ownership or
+  product behavior: two preview-only attempts to write a read-only Reduce Motion
+  environment value, a non-`Void` animation closure, a missing opaque-view
+  return, an out-of-scope accessibility presentation value, and a stored
+  `ViewBuilder` closure that needed escaping semantics.
+- Added the missing `@testable import Noum` to the bundled V3 onboarding shell
+  test file so the full test target can compile and report product failures.
+- Debug simulator build passes on iPhone 17 / iOS 26.4.
+- The serialized `NoumTests` run reports **4,907 passed, 24 failed, one expected
+  failure, and zero skipped**. Failures span coach quality/reliability fixtures,
+  secure-wire and corpus contracts, V3 coach-surface language, path/progression
+  naming, first-week coaching, professional-loop fields, and Apple account-
+  deletion ordering. The ephemeral local result bundle is
+  `/private/tmp/noum-ux-experiment-publish-units-20260817-r2.xcresult` on the
+  pickup Mac.
+- This evidence upgrades the branch from uncompiled source to a buildable UX
+  experiment. It does not clear the native test gate or production readiness.
 
 ## Required Mac and TestFlight gates
 
 1. Materialize the protected build configuration and bind the source commit.
-2. Run a clean Release build and the complete `NoumTests` target.
+2. Run a clean Release build, repair the 24 known unit failures, and rerun the
+   complete `NoumTests` target to green.
 3. Run the mandatory UI shard: onboarding → spoken rep → verified reward →
    Summary → return, plus beta feedback and microphone/Speech-denial recovery.
 4. Capture iPhone SE-size and current Pro-size screenshots, dark/light,
@@ -240,5 +267,5 @@ another source revision do not prove this branch.
 10. Run a 7-day concierge beta with baseline/retry audio and one real-world
    transfer check per tester.
 
-Until those gates pass, the correct release verdict is: **source-complete,
-private-beta candidate pending native proof**.
+Until those gates pass, the correct release verdict is: **buildable UX
+experiment; native test gate red; not a private-beta candidate**.

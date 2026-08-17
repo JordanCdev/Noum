@@ -4699,7 +4699,6 @@ struct TimedPracticeView: View {
         )
     }
     .environment(\.dynamicTypeSize, .accessibility3)
-    .environment(\.accessibilityReduceMotion, true)
     .preferredColorScheme(.dark)
 }
 #endif

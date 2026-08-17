@@ -1369,7 +1369,7 @@ struct SummaryView: View {
                     unlockedNextStep: currentRepUnlockedPathStep
                 ) {
                     withAnimation(reduceMotion ? .v46ReduceMotionFade : .v46Dissolve) {
-                        dismissedRetryMilestoneOutcomeIDs.insert(presentation.id)
+                        _ = dismissedRetryMilestoneOutcomeIDs.insert(presentation.id)
                     }
                 }
                 .id(presentation.id)
