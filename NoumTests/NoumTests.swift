@@ -9613,12 +9613,13 @@ struct ProgressionSpineNarrationTests {
         }
     }
 
-    @Test func ratedCrownsLineNamesLandmarksAndRating() {
+    @Test func ratedCrownsLineNamesPathStepsAndRating() {
         let line = LedgerRoleLines.crownsRole(hasRatedEvidence: true)
-        #expect(line.localizedCaseInsensitiveContains("landmark"))
+        #expect(line.localizedCaseInsensitiveContains("path"))
+        #expect(line.localizedCaseInsensitiveContains("steps"))
         #expect(line.localizedCaseInsensitiveContains("rating"))
         #expect(line.contains("rating measures"))
-        #expect(line.contains("passes unlock landmarks"))
+        #expect(line.contains("passes unlock steps on your path"))
     }
 
     @Test func ratedLandmarkLinePointsUpTheSpineNotAtAScore() {
@@ -9780,10 +9781,10 @@ struct RevampPathLivePresentationTests {
 
         #expect(abs(presentation.revealProgress - 0.275) < 0.0001)
         #expect(presentation.progressLabel == "27% complete")
-        #expect(presentation.summaryLine == "5 of 20 landmarks reached from real practice signals.")
-        #expect(presentation.explanationLine == "Landmark 6: Hold pressure")
+        #expect(presentation.summaryLine == "5 of 20 path steps reached from real practice signals.")
+        #expect(presentation.explanationLine == "Step 6: Hold pressure")
         #expect(presentation.nextMilestoneLabel == "Two reps from unlocked.")
-        #expect(presentation.homeGoalLine.contains("Landmark 6 of 20"))
+        #expect(presentation.homeGoalLine.contains("Step 6 of 20"))
         #expect(!presentation.summaryLine.contains("21 days"))
     }
 
@@ -9831,7 +9832,7 @@ struct RevampPathLivePresentationTests {
         #expect(presentation.revealProgress == 1)
         #expect(presentation.progressLabel == "100% complete")
         #expect(presentation.homeGoalShortLabel == "Cleared")
-        #expect(presentation.summaryLine.contains("All 20 landmarks"))
+        #expect(presentation.summaryLine.contains("All 20 path steps"))
     }
 
     // MARK: Why composer — provenance chain

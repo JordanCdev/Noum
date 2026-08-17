@@ -77,8 +77,9 @@ struct V3CoachSurfacesPresentationTests {
 
         let coachRead = try repositorySource("Noum/CoachReadCard.swift")
         #expect(coachRead.contains("role: .coachRead"))
-        #expect(coachRead.contains("state: .processing"))
-        #expect(!coachRead.contains("state: .idle"))
+        #expect(coachRead.contains("private var insightLoadingState"))
+        #expect(coachRead.contains("role: .progressTrajectory"))
+        #expect(!coachRead.contains("NoumWaveformMark("))
 
         let coachingPlan = try repositorySource("Noum/CoachingPlanCard.swift")
         #expect(coachingPlan.contains("role: .practicePlan"))

@@ -1077,7 +1077,10 @@ struct ProfileCoachBriefPresentation: Equatable {
             return ProfileCoachBriefPresentation(
                 observation: "Your current plan is working on \(sentenceFragment(focus)).",
                 nextMove: "\(intervention.mode.displayLabel): \(sentenceFragment(target)).",
-                evidenceCaption: evidenceCaption(for: max(0, memory?.evidenceCount ?? sessionCount))
+                evidenceCaption: evidenceCaption(for: supportedEvidenceCount(
+                    verifiedRepCount: sessionCount,
+                    memoryEvidenceCount: memory?.evidenceCount
+                ))
             )
         }
 
@@ -1099,7 +1102,10 @@ struct ProfileCoachBriefPresentation: Equatable {
             proof: proof,
             now: now
         )
-        let evidenceCount = max(0, memory?.evidenceCount ?? sessionCount)
+        let evidenceCount = supportedEvidenceCount(
+            verifiedRepCount: sessionCount,
+            memoryEvidenceCount: memory?.evidenceCount
+        )
 
         let observation: String
         if evidenceCount == 0 {
@@ -1132,6 +1138,21 @@ struct ProfileCoachBriefPresentation: Equatable {
         default:
             return "Repeated across \(evidenceCount) recent reps."
         }
+    }
+
+    /// Profile's `sessionCount` comes from
+    /// `PracticeSessionStore.progressEligibleSessions`, the same owner used by
+    /// the identity summary. Coach memory can make an evidence claim more
+    /// conservative, but it cannot authorize a caption for a rep that the
+    /// current verified-session ledger does not contain.
+    private static func supportedEvidenceCount(
+        verifiedRepCount: Int,
+        memoryEvidenceCount: Int?
+    ) -> Int {
+        let verified = max(0, verifiedRepCount)
+        guard verified > 0 else { return 0 }
+        guard let memoryEvidenceCount else { return verified }
+        return min(verified, max(0, memoryEvidenceCount))
     }
 
     static func plainLanguage(_ value: String) -> String {

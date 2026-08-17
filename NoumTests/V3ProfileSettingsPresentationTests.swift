@@ -12,6 +12,34 @@ struct V3ProfileSettingsPresentationTests {
         #expect(ProfilePracticeSummaryPresentation.make(streak: -2, verifiedRepCount: -8).line == "No verified reps yet")
     }
 
+    @Test("Profile coach attribution cannot outrun the verified-rep ledger")
+    func profileCoachAttributionFailsClosedWithoutVerifiedPractice() {
+        let rememberedRead = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 4,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Filler-word control may be the main focus."
+        )
+
+        let identity = ProfilePracticeSummaryPresentation.make(
+            streak: 3,
+            verifiedRepCount: 0
+        )
+        let coachRead = ProfileCoachBriefPresentation.make(
+            sessionCount: 0,
+            plan: nil,
+            memory: rememberedRead
+        )
+
+        #expect(identity.line == "No verified reps yet")
+        #expect(coachRead.observation == "One short rep gives Noum something real to read.")
+        #expect(coachRead.evidenceCaption == nil)
+    }
+
     @Test("Profile keeps metrics behind Library and uses one prompt slot")
     func profileNarrativeKeepsAFourSurfaceBudget() throws {
         let prompts = ProfileOptionalPromptPlan.make(
