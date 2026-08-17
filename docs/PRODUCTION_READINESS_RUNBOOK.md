@@ -420,6 +420,27 @@ contract. This probe does not prove installed-client compatibility, mixed-client
 behavior, or production rollback; capture those after the authorized backend-
 first deployment and before distributing the v2 client.
 
+### Account-deletion backend-first cutover
+
+The current iOS client sends account-deletion request schema 3. Its
+`appleAuthorizationRevoked` capability is set only after the exact Firebase UID
+has reauthenticated with a fresh Apple credential and Firebase has accepted the
+credential's authorization code for revocation. The callable reads linked
+providers from Firebase Admin rather than trusting the stored client provider.
+The matching local deletion fence is schema 3 and durably carries that
+capability. A legacy schema-2 fence is deliberately ambiguous and routes to
+deletion support; it is never treated as proof that revocation already ran.
+
+Deploy and read back the updated `deleteAccount` callable before distributing
+this build. The compatibility matrix must be proven against the deployed
+callable: schema-2 non-Apple deletion remains accepted; schema-2 Apple deletion
+is rejected before server deletion state is created; schema-3 Apple deletion is
+accepted only with the revocation capability; and schema-3 false/missing or
+extra-field payloads fail closed. Retain authenticated/App Check enforcement,
+recent `auth_time`, exact UID binding, and social-cutover preflight in every
+case. Do not deploy from this runbook without the existing backend release
+authorization and source/readback evidence.
+
 ### Additive coach-v2 scoped deployment
 
 The blanket backend lock remains authoritative for Firestore, social,

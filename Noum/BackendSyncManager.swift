@@ -47,17 +47,26 @@ enum BackendAccountDeletionError: Error, Equatable {
 }
 
 struct DeleteAccountCallableRequest: Codable, Sendable {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
     let schemaVersion: Int
     /// A request binding, never authority. The callable compares it with the
     /// verified `request.auth.uid` before performing any account work.
     let expectedAccountID: String
     let requestID: String
+    /// Versioned client capability. The server independently checks whether
+    /// Firebase still names Apple as a linked provider and rejects every
+    /// legacy or false capability before it creates deletion state.
+    let appleAuthorizationRevoked: Bool
 
-    init(expectedAccountID: String, requestID: UUID) {
+    init(
+        expectedAccountID: String,
+        requestID: UUID,
+        appleAuthorizationRevoked: Bool
+    ) {
         self.schemaVersion = Self.schemaVersion
         self.expectedAccountID = expectedAccountID
         self.requestID = requestID.uuidString
+        self.appleAuthorizationRevoked = appleAuthorizationRevoked
     }
 }
 
@@ -1432,12 +1441,14 @@ actor BackendSyncManager {
     func deleteAccount(
         accountID: String,
         providerRawValue: String,
+        appleAuthorizationRevoked: Bool,
         requestID: UUID = UUID()
     ) async throws -> BackendAccountDeletionOutcome {
         #if canImport(FirebaseCore) && canImport(FirebaseFunctions)
         if firebaseIsConfigured {
             return try await deleteFirebaseAccountThroughCallable(
                 expectedAccountID: accountID,
+                appleAuthorizationRevoked: appleAuthorizationRevoked,
                 requestID: requestID
             )
         }
@@ -1477,6 +1488,7 @@ actor BackendSyncManager {
     #if canImport(FirebaseCore) && canImport(FirebaseFunctions)
     private func deleteFirebaseAccountThroughCallable(
         expectedAccountID: String,
+        appleAuthorizationRevoked: Bool,
         requestID: UUID
     ) async throws -> BackendAccountDeletionOutcome {
         guard AuthManager.firebaseSDKSessionAccessAllowed(
@@ -1527,7 +1539,8 @@ actor BackendSyncManager {
         #endif
         let request = DeleteAccountCallableRequest(
             expectedAccountID: expectedAccountID,
-            requestID: requestID
+            requestID: requestID,
+            appleAuthorizationRevoked: appleAuthorizationRevoked
         )
         do {
             let functions = Functions.functions(region: Self.functionsRegion)

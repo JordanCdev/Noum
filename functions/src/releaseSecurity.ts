@@ -153,8 +153,10 @@ export function validateTranscriptionTokenRequest(data: unknown): void {
 
 /** Versioned destructive request bound to one expected authenticated UID. */
 export interface DeleteAccountRequest {
+  schemaVersion: 2 | 3;
   requestID: string;
   expectedAccountID: string;
+  appleAuthorizationRevoked: boolean;
 }
 
 /** Minimal server-owned marker retained beyond any stale Firebase ID token. */
@@ -305,22 +307,64 @@ export function pendingAccountDeletionReconciliationCandidate(
 export function validateDeleteAccountRequest(
   data: unknown
 ): DeleteAccountRequest {
-  if (!isRecord(data) || data.schemaVersion !== 2 ||
+  if (!isRecord(data) ||
+      (data.schemaVersion !== 2 && data.schemaVersion !== 3) ||
       typeof data.requestID !== "string" ||
       typeof data.expectedAccountID !== "string") {
+    throw new HttpsError("invalid-argument", "Invalid deletion request.");
+  }
+  const schemaVersion = data.schemaVersion;
+  const isCurrent = schemaVersion === 3;
+  if (isCurrent && typeof data.appleAuthorizationRevoked !== "boolean") {
     throw new HttpsError("invalid-argument", "Invalid deletion request.");
   }
   const requestID = data.requestID.trim();
   const expectedAccountID = data.expectedAccountID;
   const keys = Object.keys(data).sort();
-  if (keys.length !== 3 || keys[0] !== "expectedAccountID" ||
-      keys[1] !== "requestID" || keys[2] !== "schemaVersion" ||
+  const expectedKeys = isCurrent ? [
+    "appleAuthorizationRevoked",
+    "expectedAccountID",
+    "requestID",
+    "schemaVersion",
+  ] : ["expectedAccountID", "requestID", "schemaVersion"];
+  if (keys.length !== expectedKeys.length ||
+      !keys.every((key, index) => key === expectedKeys[index]) ||
       !UUID_PATTERN.test(requestID) || expectedAccountID.length < 1 ||
       expectedAccountID.length > 128 ||
       expectedAccountID !== expectedAccountID.trim()) {
     throw new HttpsError("invalid-argument", "Invalid deletion request.");
   }
-  return {requestID, expectedAccountID};
+  return {
+    schemaVersion,
+    requestID,
+    expectedAccountID,
+    appleAuthorizationRevoked:
+      isCurrent && data.appleAuthorizationRevoked === true,
+  };
+}
+
+/**
+ * Requires the current client capability after that client has completed
+ * Firebase's authorization-code revocation flow. This is not a cryptographic
+ * revocation receipt; it binds the versioned flow and prevents every legacy
+ * production client from bypassing the new Apple deletion gate.
+ * @param {string[]} providerIDs Server-read Firebase provider IDs.
+ * @param {DeleteAccountRequest} request Validated versioned request.
+ * @return {void}
+ */
+export function assertAppleRevocationAttested(
+  providerIDs: readonly string[],
+  request: DeleteAccountRequest
+): void {
+  if (providerIDs.includes("apple.com") &&
+      (request.schemaVersion !== 3 ||
+       request.appleAuthorizationRevoked !== true)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Sign in with Apple access must be revoked before account deletion.",
+      {reason: "apple-revocation-unavailable"}
+    );
+  }
 }
 
 /**
@@ -422,24 +466,6 @@ export function deletionAuthenticationTime(token: unknown): unknown {
     return token.iat;
   }
   return token.auth_time;
-}
-
-/**
- * Blocks Apple-linked deletion until a verified authorization-code revocation
- * flow exists. Failing before mutation is safer than claiming false success.
- * @param {string[]} providerIDs Firebase provider identifiers.
- * @return {void}
- */
-export function assertAppleRevocationSupported(
-  providerIDs: readonly string[]
-): void {
-  if (providerIDs.includes("apple.com")) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Sign in with Apple access must be revoked before account deletion.",
-      {reason: "apple-revocation-unavailable"}
-    );
-  }
 }
 
 /**

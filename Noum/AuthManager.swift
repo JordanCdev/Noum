@@ -426,6 +426,10 @@ class AuthManager: ObservableObject {
 #if canImport(FirebaseAuth)
     private var currentNonce: String?
 #endif
+#if canImport(AuthenticationServices) && canImport(CryptoKit) && canImport(Security) && canImport(UIKit)
+    private var activeAppleAccountDeletionAuthorizationRequest:
+        AppleAccountDeletionAuthorizationRequest?
+#endif
 
     private init() {
         let registry = AccountDataRegistry.production()
@@ -1330,12 +1334,47 @@ class AuthManager: ObservableObject {
             throw AccountDeletionError.noActiveAccount
         }
 
+        let deletionAuthorizationDisposition =
+            Self.appleDeletionAuthorizationDisposition(
+                fenceLookup: accountDeletionFenceRepository.lookup(
+                    for: accountID
+                ),
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            )
+        let appleAuthorizationRevoked: Bool
+        // Firebase does not retain Apple's authorization code. For every
+        // Apple-linked Firebase account, obtain a fresh credential,
+        // reauthenticate the exact current UID, and revoke Apple's grant
+        // before publishing the durable deletion fence. Any failure here is
+        // definitively pre-remote: the signed-in account and local data remain
+        // authoritative and provider work has not been suspended.
+        switch deletionAuthorizationDisposition {
+        case .acquireFresh:
+            do {
+                appleAuthorizationRevoked =
+                    try await revokeAppleAuthorizationForDeletionIfNeeded(
+                        expectedAccountID: accountID,
+                        providerRawValue: providerRawValue
+                    )
+            } catch let error as AppleAccountDeletionAuthorizationError {
+                let surfaced = Self.accountDeletionError(for: error)
+                accountDeletionState = .failed(surfaced)
+                throw surfaced
+            }
+        case .resumeVerifiedFence(let persistedRevocation):
+            appleAuthorizationRevoked = persistedRevocation
+        case .failClosed:
+            appleAuthorizationRevoked = false
+        }
+
         let admittedFence: AccountDeletionFence
         do {
             admittedFence = try accountDeletionFenceRepository
                 .beginOrResume(
                     for: accountID,
-                    providerRawValue: providerRawValue
+                    providerRawValue: providerRawValue,
+                    appleAuthorizationRevoked: appleAuthorizationRevoked
                 )
                 .get()
         } catch {
@@ -1419,6 +1458,8 @@ class AuthManager: ObservableObject {
                     let outcome = try await backendSync.deleteAccount(
                         accountID: accountID,
                         providerRawValue: providerRawValue,
+                        appleAuthorizationRevoked:
+                            fence.appleAuthorizationRevoked,
                         requestID: fence.requestID
                     )
                     if outcome == .dataDeleted {
@@ -1556,6 +1597,26 @@ class AuthManager: ObservableObject {
         }
     }
 
+    nonisolated static func appleDeletionAuthorizationDisposition(
+        fenceLookup: AccountDeletionFenceLookup,
+        accountID: String,
+        providerRawValue: String
+    ) -> AppleAccountDeletionAuthorizationDisposition {
+        switch fenceLookup {
+        case .missing:
+            return .acquireFresh
+        case .present(let fence)
+                where fence.accountID == accountID
+                    && fence.providerRawValue == providerRawValue:
+            return .resumeVerifiedFence(
+                appleAuthorizationRevoked:
+                    fence.appleAuthorizationRevoked
+            )
+        case .present, .ambiguous:
+            return .failClosed
+        }
+    }
+
     /// A valid durable phase is stronger recovery evidence than transient UI
     /// state. Pre-remote admission can safely retry; committed phases can run
     /// only local cleanup; only a remote-request phase has an unknown outcome.
@@ -1689,6 +1750,180 @@ class AuthManager: ObservableObject {
             return .remoteRejected
         }
     }
+
+    nonisolated static func accountDeletionError(
+        for error: AppleAccountDeletionAuthorizationError
+    ) -> AccountDeletionError {
+        switch error {
+        case .cancelled:
+            return .safeToRetry
+        case .missingIdentityToken,
+             .missingAuthorizationCode,
+             .providerMismatch,
+             .authorizationFailed,
+             .reauthenticationFailed,
+             .revocationFailed:
+            return .appleRevocationUnavailable
+        }
+    }
+
+    /// Apple-linked deletion authorization is deliberately owned by the
+    /// existing account lifecycle manager and runs before deletion admission.
+    /// The fresh credential both updates Firebase's recent-auth proof and
+    /// supplies the one-time code required by Firebase's Apple revocation API.
+    private func revokeAppleAuthorizationForDeletionIfNeeded(
+        expectedAccountID: String,
+        providerRawValue: String
+    ) async throws -> Bool {
+        #if canImport(FirebaseAuth)
+        guard Self.shouldSyncBackend(accountID: expectedAccountID) else {
+            return false
+        }
+        guard allowsFirebaseSDKSessionAccess, isFirebaseAuthConfigured else {
+            if providerRawValue == AuthProvider.apple.rawValue {
+                throw AppleAccountDeletionAuthorizationError
+                    .authorizationFailed
+            }
+            return false
+        }
+        guard let user = Auth.auth().currentUser else {
+            if providerRawValue == AuthProvider.apple.rawValue {
+                throw AppleAccountDeletionAuthorizationError
+                    .providerMismatch
+            }
+            return false
+        }
+        guard user.uid == expectedAccountID else {
+            throw AppleAccountDeletionAuthorizationError.providerMismatch
+        }
+
+        let linkedProviderIDs = user.providerData.map(\.providerID)
+        let isAppleLinked = AppleAccountDeletionAuthorizationGate.isRequired(
+            linkedProviderIDs: linkedProviderIDs
+        )
+        if providerRawValue == AuthProvider.apple.rawValue, !isAppleLinked {
+            throw AppleAccountDeletionAuthorizationError.providerMismatch
+        }
+        guard isAppleLinked else { return false }
+
+        #if canImport(AuthenticationServices) && canImport(CryptoKit) && canImport(Security) && canImport(UIKit)
+        guard activeAppleAccountDeletionAuthorizationRequest == nil else {
+            throw AppleAccountDeletionAuthorizationError
+                .authorizationFailed
+        }
+        guard let presentationAnchor =
+                AppleAccountDeletionAuthorizationRequest
+                    .activePresentationAnchor() else {
+            throw AppleAccountDeletionAuthorizationError
+                .authorizationFailed
+        }
+        let authorizationRequest = try AppleAccountDeletionAuthorizationRequest(
+            presentationAnchor: presentationAnchor
+        )
+        activeAppleAccountDeletionAuthorizationRequest = authorizationRequest
+        defer {
+            if activeAppleAccountDeletionAuthorizationRequest ===
+                authorizationRequest {
+                activeAppleAccountDeletionAuthorizationRequest = nil
+            }
+        }
+
+        try await AppleAccountDeletionAuthorizationGate.authorizeAndRevoke(
+            expectedAccountID: expectedAccountID,
+            linkedProviderIDs: linkedProviderIDs,
+            acquireCredential: {
+                try await authorizationRequest.credential()
+            },
+            reauthenticate: { credential in
+                guard Auth.auth().currentUser?.uid == expectedAccountID,
+                      let identityToken =
+                        AppleAccountDeletionAuthorizationGate
+                            .trimmedCredentialValue(credential.identityToken),
+                      let rawNonce =
+                        AppleAccountDeletionAuthorizationGate
+                            .trimmedCredentialValue(credential.rawNonce) else {
+                    throw AppleAccountDeletionAuthorizationError
+                        .providerMismatch
+                }
+                let firebaseCredential = OAuthProvider.appleCredential(
+                    withIDToken: identityToken,
+                    rawNonce: rawNonce,
+                    fullName: nil
+                )
+                do {
+                    return try await self.reauthenticateFirebaseAppleUser(
+                        user,
+                        credential: firebaseCredential
+                    )
+                } catch {
+                    if AuthErrorCode(rawValue: (error as NSError).code) ==
+                        .userMismatch {
+                        throw AppleAccountDeletionAuthorizationError
+                            .providerMismatch
+                    }
+                    throw error
+                }
+            },
+            revokeAuthorizationCode: { authorizationCode in
+                guard Auth.auth().currentUser?.uid == expectedAccountID else {
+                    throw AppleAccountDeletionAuthorizationError
+                        .providerMismatch
+                }
+                try await self.revokeFirebaseAppleAuthorization(
+                    authorizationCode: authorizationCode
+                )
+            }
+        )
+        return true
+        #else
+        throw AppleAccountDeletionAuthorizationError.authorizationFailed
+        #endif
+        #else
+        if providerRawValue == AuthProvider.apple.rawValue {
+            throw AppleAccountDeletionAuthorizationError.authorizationFailed
+        }
+        return false
+        #endif
+    }
+
+    #if canImport(FirebaseAuth)
+    private func reauthenticateFirebaseAppleUser(
+        _ user: FirebaseAuth.User,
+        credential: FirebaseAuth.AuthCredential
+    ) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            user.reauthenticate(with: credential) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let result {
+                    continuation.resume(returning: result.user.uid)
+                } else {
+                    continuation.resume(throwing:
+                        AppleAccountDeletionAuthorizationError
+                            .reauthenticationFailed
+                    )
+                }
+            }
+        }
+    }
+
+    private func revokeFirebaseAppleAuthorization(
+        authorizationCode: String
+    ) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            Auth.auth().revokeToken(
+                withAuthorizationCode: authorizationCode
+            ) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+    #endif
 
     private func deleteFirebaseUserIfNeeded(expectedAccountID: String) async throws {
         #if canImport(FirebaseAuth)

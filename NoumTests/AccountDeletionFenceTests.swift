@@ -13,10 +13,12 @@ struct AccountDeletionFenceTests {
 
         var fence = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
         #expect(fence.accountID == "alpha")
         #expect(fence.providerRawValue == "google")
+        #expect(!fence.appleAuthorizationRevoked)
         #expect(fence.requestID == requestID)
         #expect(fence.phase == .admissionClosed)
         #expect(repository.lookup(for: "alpha") == .present(fence))
@@ -35,6 +37,8 @@ struct AccountDeletionFenceTests {
         #expect(raw.contains("\"accountID\":\"alpha\""))
         #expect(raw.contains("\"requestID\":\"" + requestID.uuidString + "\""))
         #expect(raw.contains("\"phase\":\"localCleanupStarted\""))
+        #expect(raw.contains("\"schemaVersion\":3"))
+        #expect(raw.contains("\"appleAuthorizationRevoked\":false"))
     }
 
     @Test("A failed admission write returns no fence and does not progress")
@@ -45,7 +49,8 @@ struct AccountDeletionFenceTests {
 
         let result = repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         )
 
         #expect(result == .failure(.persistenceFailed))
@@ -63,12 +68,31 @@ struct AccountDeletionFenceTests {
 
         let result = repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         )
 
         #expect(result == .failure(.persistenceFailed))
         #expect(repository.lookup(for: "alpha") == .ambiguous)
         #expect(!repository.isProviderWorkAllowed(for: "alpha"))
+    }
+
+    @Test("A legacy schema-2 fence is ambiguous, never revocation proof")
+    func legacyFenceFailsClosed() {
+        let storage = MemoryFenceStorage()
+        storage.values[AccountDeletionFenceRepository.activeKey] = """
+        {"schemaVersion":2,"accountID":"alpha","providerRawValue":"apple","requestID":"\(requestID.uuidString)","phase":"admissionClosed"}
+        """
+        let repository = makeRepository(storage: storage)
+
+        #expect(repository.lookup(for: "alpha") == .ambiguous)
+        #expect(repository.pendingLookup() == .ambiguous)
+        #expect(!repository.isProviderWorkAllowed(for: "alpha"))
+        #expect(AuthManager.appleDeletionAuthorizationDisposition(
+            fenceLookup: repository.lookup(for: "alpha"),
+            accountID: "alpha",
+            providerRawValue: AuthProvider.apple.rawValue
+        ) == .failClosed)
     }
 
     @Test("A pending fence globally closes provider work")
@@ -77,7 +101,8 @@ struct AccountDeletionFenceTests {
         let repository = makeRepository(storage: storage)
         _ = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
 
         #expect(!repository.isProviderWorkAllowed(for: "alpha"))
@@ -94,7 +119,8 @@ struct AccountDeletionFenceTests {
         let firstRepository = makeRepository(storage: storage)
         let admitted = try firstRepository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
         let requested = try firstRepository.advance(
             admitted,
@@ -108,12 +134,14 @@ struct AccountDeletionFenceTests {
         )
         let resumed = try relaunchedRepository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: true
         ).get()
 
         #expect(resumed == requested)
         #expect(resumed.requestID == requestID)
         #expect(resumed.phase == .remoteRequested)
+        #expect(!resumed.appleAuthorizationRevoked)
         #expect(storage.writeCount == 2)
     }
 
@@ -123,16 +151,19 @@ struct AccountDeletionFenceTests {
         let repository = makeRepository(storage: storage)
         let pending = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
 
         #expect(repository.beginOrResume(
             for: "beta",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ) == .failure(.pendingAccountMismatch))
         #expect(repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "apple"
+            providerRawValue: "apple",
+            appleAuthorizationRevoked: true
         ) == .failure(.pendingAccountMismatch))
         #expect(repository.pendingLookup() == .present(pending))
         #expect(storage.writeCount == 1)
@@ -144,7 +175,8 @@ struct AccountDeletionFenceTests {
         let repository = makeRepository(storage: storage)
         let admitted = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
 
         #expect(repository.advance(admitted, to: .remoteCommitted)
@@ -160,11 +192,14 @@ struct AccountDeletionFenceTests {
         let repository = makeRepository(storage: storage)
         let admitted = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
         let stale = AccountDeletionFence(
             accountID: admitted.accountID,
             providerRawValue: admitted.providerRawValue,
+            appleAuthorizationRevoked:
+                admitted.appleAuthorizationRevoked,
             requestID: UUID(),
             phase: admitted.phase
         )
@@ -195,7 +230,8 @@ struct AccountDeletionFenceTests {
         let repository = makeRepository(storage: storage)
         let admitted = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
         let requested = try repository.advance(admitted, to: .remoteRequested).get()
 
@@ -213,7 +249,8 @@ struct AccountDeletionFenceTests {
         // account reauthenticates. It must recover, not replace, the request.
         let afterReauthentication = try afterSignOut.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: true
         ).get()
         #expect(afterReauthentication == requested)
     }
@@ -224,11 +261,13 @@ struct AccountDeletionFenceTests {
         let repository = makeRepository(storage: storage)
         let fence = try repository.beginOrResume(
             for: "alpha",
-            providerRawValue: "google"
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false
         ).get()
         let stale = AccountDeletionFence(
             accountID: "alpha",
             providerRawValue: "google",
+            appleAuthorizationRevoked: false,
             requestID: UUID(),
             phase: .admissionClosed
         )
@@ -248,12 +287,48 @@ struct AccountDeletionFenceTests {
     func callableUsesCallerRequestID() {
         let request = DeleteAccountCallableRequest(
             expectedAccountID: "alpha",
-            requestID: requestID
+            requestID: requestID,
+            appleAuthorizationRevoked: true
         )
 
-        #expect(request.schemaVersion == 2)
+        #expect(request.schemaVersion == 3)
         #expect(request.expectedAccountID == "alpha")
         #expect(request.requestID == requestID.uuidString)
+        #expect(request.appleAuthorizationRevoked)
+    }
+
+    @Test("Callable capability is sourced from the durable admitted fence")
+    func callableCapabilityComesFromFence() {
+        let appleFence = AccountDeletionFence(
+            accountID: "apple-account",
+            providerRawValue: "apple",
+            appleAuthorizationRevoked: true,
+            requestID: requestID,
+            phase: .remoteRequested
+        )
+        let appleRequest = DeleteAccountCallableRequest(
+            expectedAccountID: appleFence.accountID,
+            requestID: appleFence.requestID,
+            appleAuthorizationRevoked:
+                appleFence.appleAuthorizationRevoked
+        )
+
+        let nonAppleFence = AccountDeletionFence(
+            accountID: "google-account",
+            providerRawValue: "google",
+            appleAuthorizationRevoked: false,
+            requestID: UUID(),
+            phase: .remoteRequested
+        )
+        let nonAppleRequest = DeleteAccountCallableRequest(
+            expectedAccountID: nonAppleFence.accountID,
+            requestID: nonAppleFence.requestID,
+            appleAuthorizationRevoked:
+                nonAppleFence.appleAuthorizationRevoked
+        )
+
+        #expect(appleRequest.appleAuthorizationRevoked)
+        #expect(!nonAppleRequest.appleAuthorizationRevoked)
     }
 
     @Test("Ambiguous failures use honest fail-closed copy")

@@ -25,25 +25,31 @@ enum AccountDeletionFencePhase: String, Codable, CaseIterable, Equatable, Sendab
 }
 
 struct AccountDeletionFence: Codable, Equatable, Sendable {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
 
     let schemaVersion: Int
     let accountID: String
     /// Recovery identity only. The backend still derives authority from its
     /// verified Firebase token and compares that UID with the request binding.
     let providerRawValue: String
+    /// Durable request capability captured before this fence is first
+    /// published. Old schema-2 fences lack this evidence and decode as
+    /// ambiguous rather than being trusted after an app upgrade.
+    let appleAuthorizationRevoked: Bool
     let requestID: UUID
     let phase: AccountDeletionFencePhase
 
     init(
         accountID: String,
         providerRawValue: String,
+        appleAuthorizationRevoked: Bool,
         requestID: UUID,
         phase: AccountDeletionFencePhase
     ) {
         self.schemaVersion = Self.schemaVersion
         self.accountID = accountID
         self.providerRawValue = providerRawValue
+        self.appleAuthorizationRevoked = appleAuthorizationRevoked
         self.requestID = requestID
         self.phase = phase
     }
@@ -52,6 +58,7 @@ struct AccountDeletionFence: Codable, Equatable, Sendable {
         AccountDeletionFence(
             accountID: accountID,
             providerRawValue: providerRawValue,
+            appleAuthorizationRevoked: appleAuthorizationRevoked,
             requestID: requestID,
             phase: phase
         )
@@ -243,7 +250,8 @@ struct AccountDeletionFenceRepository {
     /// when the globally discoverable record is authoritatively absent.
     func beginOrResume(
         for accountID: String,
-        providerRawValue: String
+        providerRawValue: String,
+        appleAuthorizationRevoked: Bool
     ) -> Result<AccountDeletionFence, AccountDeletionFenceRepositoryError> {
         guard let accountID = Self.normalizedAccountID(accountID) else {
             return .failure(.invalidAccountID)
@@ -267,6 +275,7 @@ struct AccountDeletionFenceRepository {
             let fence = AccountDeletionFence(
                 accountID: accountID,
                 providerRawValue: providerRawValue,
+                appleAuthorizationRevoked: appleAuthorizationRevoked,
                 requestID: requestID,
                 phase: .admissionClosed
             )

@@ -10,7 +10,7 @@ import {
   type AccountDeletionWork,
   accountDeletionLogMetadata,
   accountDeletionStateAdmission,
-  assertAppleRevocationSupported,
+  assertAppleRevocationAttested,
   assertDeleteAccountRequestIdentity,
   assertRecentAuthentication,
   completedAccountDeletionTombstone,
@@ -52,29 +52,110 @@ test("transcription token input rejects client authority fields", () => {
 
 test("deletion input requires an exact versioned identity binding", () => {
   assert.deepEqual(validateDeleteAccountRequest({
+    schemaVersion: 3,
+    expectedAccountID: "account-alpha",
+    requestID,
+    appleAuthorizationRevoked: true,
+  }), {
+    schemaVersion: 3,
+    requestID,
+    expectedAccountID: "account-alpha",
+    appleAuthorizationRevoked: true,
+  });
+  assert.deepEqual(validateDeleteAccountRequest({
     schemaVersion: 2,
     expectedAccountID: "account-alpha",
     requestID,
-  }), {requestID, expectedAccountID: "account-alpha"});
+  }), {
+    schemaVersion: 2,
+    requestID,
+    expectedAccountID: "account-alpha",
+    appleAuthorizationRevoked: false,
+  });
   for (const value of [
     {schemaVersion: 1, expectedAccountID: "account-alpha", requestID},
-    {schemaVersion: 2},
+    {schemaVersion: 3},
     {
-      schemaVersion: 2,
+      schemaVersion: 3,
       expectedAccountID: "account-alpha",
       requestID: "not-a-uuid",
+      appleAuthorizationRevoked: true,
     },
-    {schemaVersion: 2, expectedAccountID: "", requestID},
-    {schemaVersion: 2, expectedAccountID: " account-alpha", requestID},
+    {
+      schemaVersion: 3,
+      expectedAccountID: "",
+      requestID,
+      appleAuthorizationRevoked: true,
+    },
+    {
+      schemaVersion: 3,
+      expectedAccountID: " account-alpha",
+      requestID,
+      appleAuthorizationRevoked: true,
+    },
+    {
+      schemaVersion: 3,
+      expectedAccountID: "account-alpha",
+      requestID,
+    },
+    {
+      schemaVersion: 3,
+      expectedAccountID: "account-alpha",
+      requestID,
+      appleAuthorizationRevoked: "yes",
+    },
+    {
+      schemaVersion: 3,
+      expectedAccountID: "account-alpha",
+      requestID,
+      appleAuthorizationRevoked: true,
+      accountID: "another-user",
+    },
     {
       schemaVersion: 2,
       expectedAccountID: "account-alpha",
       requestID,
-      accountID: "another-user",
+      appleAuthorizationRevoked: true,
     },
   ]) {
     assert.throws(() => validateDeleteAccountRequest(value));
   }
+});
+
+test("Apple-linked deletion rejects every legacy or false capability", () => {
+  const legacy = validateDeleteAccountRequest({
+    schemaVersion: 2,
+    expectedAccountID: "account-alpha",
+    requestID,
+  });
+  const currentFalse = validateDeleteAccountRequest({
+    schemaVersion: 3,
+    expectedAccountID: "account-alpha",
+    requestID,
+    appleAuthorizationRevoked: false,
+  });
+  const currentRevoked = validateDeleteAccountRequest({
+    schemaVersion: 3,
+    expectedAccountID: "account-alpha",
+    requestID,
+    appleAuthorizationRevoked: true,
+  });
+
+  for (const request of [legacy, currentFalse]) {
+    assert.throws(
+      () => assertAppleRevocationAttested(["google.com", "apple.com"], request),
+      (error: unknown) => (error as {details?: {reason?: string}})
+        .details?.reason === "apple-revocation-unavailable"
+    );
+  }
+  assert.doesNotThrow(() => assertAppleRevocationAttested(
+    ["google.com", "apple.com"],
+    currentRevoked
+  ));
+  assert.doesNotThrow(() => assertAppleRevocationAttested(
+    ["google.com"],
+    legacy
+  ));
 });
 
 test("deletion identity binding must equal verified callable auth", () => {
@@ -425,16 +506,12 @@ test(
   }
 );
 
-test("Apple-linked deletion is blocked before a plan can run", () => {
-  assert.doesNotThrow(() => assertAppleRevocationSupported([
-    "password",
-    "google.com",
-  ]));
-  assert.throws(
-    () => assertAppleRevocationSupported(["google.com", "apple.com"]),
-    (error: unknown) => (error as {details?: {reason?: string}})
-      .details?.reason === "apple-revocation-unavailable"
-  );
+test("Apple reauthentication remains bound to fresh auth_time", () => {
+  assert.equal(deletionAuthenticationTime({
+    auth_time: 300,
+    iat: 301,
+    firebase: {sign_in_provider: "apple.com"},
+  }), 300);
 });
 
 /**

@@ -59,7 +59,7 @@ import {
   type AccountDeletionWork,
   accountDeletionLogMetadata,
   accountDeletionStateAdmission,
-  assertAppleRevocationSupported,
+  assertAppleRevocationAttested,
   assertDeleteAccountRequestIdentity,
   assertRecentAuthentication,
   completedAccountDeletionTombstone,
@@ -4959,8 +4959,7 @@ async function executeAccountDeletion(
         );
       }
     }
-
-    assertAppleRevocationSupported(providerIDs);
+    assertAppleRevocationAttested(providerIDs, deletionRequest);
   } else {
     if (!reconciliation) {
       throw new Error("Missing account deletion reconciliation candidate.");
@@ -4982,16 +4981,13 @@ async function executeAccountDeletion(
           currentCandidate.requestID !== reconciliation.requestID) {
       return "stateChanged";
     }
-    let providerIDs: string[] = [];
     try {
-      const user = await auth.getUser(uid);
-      providerIDs = user.providerData.map((provider) => provider.providerId);
+      await auth.getUser(uid);
       authUserExists = true;
     } catch (error) {
       if (!isAuthUserNotFound(error)) throw error;
       authUserExists = false;
     }
-    assertAppleRevocationSupported(providerIDs);
   }
 
   const cutoverSnapshot = await firestore
