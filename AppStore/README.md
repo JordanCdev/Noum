@@ -62,7 +62,8 @@ Before submission, the release operator must complete and independently verify:
 
 1. StoreKit products, subscription group, trial eligibility, grace period,
    billing retry, restore, cancellation, refund, and expiry behavior.
-2. Support URL, privacy URL, App Privacy answers, and `noum.app` TLS/DNS.
+2. Exact support/privacy/marketing bodies at the active Firebase origin; then
+   direct `noum.app` TLS/DNS before the custom-domain switch.
 3. Signed archive, processed TestFlight build, physical purchase/restore flow,
    accessibility matrix, microphone/interruption behavior, and source binding.
 4. Live-provider evaluation, professional calibration, longitudinal beta, and
@@ -110,15 +111,26 @@ runs PPO tests for a Ready-for-Distribution live app, so this is a post-launch
 paid-acquisition/scale gate rather than a first-release prerequisite. See
 Apple's [PPO analytics definitions](https://developer.apple.com/help/app-store-connect-analytics/acquisition/product-page-optimization/).
 
-Before App Store submission, also run the production content gate:
+Before App Store submission, verify the active in-app/App Store origin:
 
 ```sh
 python3 scripts/validate-app-store-package.py --verify-live-urls
 ```
 
-The live gate must fail while `noum.app` still serves its placeholder lander;
-passing repository validation alone does not make the support/privacy URLs
-submission-ready.
+This reads at most 256 KiB per page and requires exact bytes for the homepage,
+privacy, support, and coaching-method pages. App and metadata remain on the
+Firebase origin while `noum.app` is parked. Once Firebase reports the custom
+domain connected with valid TLS, prove both direct origins before changing the
+single `NoumWebURLs.hostingOrigin` value and metadata:
+
+```sh
+python3 scripts/validate-app-store-package.py \
+  --verify-custom-domain-cutover
+```
+
+Cross-origin redirects, marker-only matches, stale bytes, and oversized bodies
+all fail. After the source switch, the normal live gate verifies `noum.app` as
+the active origin; retain the dual-origin run as rollback proof.
 
 After the first consented production aggregate and real App Store Connect
 Subscription Event Report are available, create the separately retained

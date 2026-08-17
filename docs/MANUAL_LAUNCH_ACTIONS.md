@@ -115,12 +115,20 @@ as Noum's production support or policy surface.
 
 - Provider/dashboard: Firebase Console → Hosting → Add custom domain; GoDaddy → Domain Portfolio → DNS for `noum.app`.
 - Values: use the exact TXT/A/AAAA records Firebase supplies. Do not copy records from another project. Preserve required email/MX records.
+- Required sequence: while the app and App Store metadata still use
+  `https://noum-d0b6f.web.app`, deploy only the reviewed Hosting source and run
+  `./scripts/release-live-web-probe.sh firebase`. Connect the custom domain and
+  wait for Firebase's connected status and public TLS. Then run
+  `python3 scripts/validate-app-store-package.py --verify-custom-domain-cutover`.
+  Only after all eight direct responses pass may a separate reviewed source
+  change switch `NoumWebURLs.hostingOrigin` and both metadata locales to
+  `https://noum.app`; rerun `--verify-live-urls` against that exact commit.
 - Required proof: DNS record screenshot/export, Firebase connected status,
-  valid public TLS certificate, and successful
-  `python3 scripts/validate-app-store-package.py --verify-live-urls` output
-  proving `/privacy`, `/support`, and `/how-noum-coaches` serve the reviewed
-  Noum bodies rather than a lander.
-- Pass: public DNS resolves to Firebase Hosting, HTTPS is valid without redirect/certificate warnings, and all three reviewed bodies match.
+  valid public TLS certificate, the dual-origin exact-body output, the source
+  cutover diff, and the post-cutover active-origin output. Each origin must
+  directly serve `/`, `/privacy`, `/support`, and `/how-noum-coaches` within
+  the 256 KiB bound and exactly match the reviewed source files.
+- Pass: public DNS resolves to Firebase Hosting, HTTPS is valid without redirect/certificate warnings, all four bodies match on both origins, and app plus App Store metadata share the verified active origin.
 - Fail: parked page, pending certificate, redirect-only proof, stale policy, or only `noum-d0b6f.web.app` verified.
 - Dependencies: approved current privacy disclosure; safe Firebase operator session.
 - Gate: blocks App Store launch/marketing claim; treat it as an operational TestFlight blocker if the candidate exposes `noum.app` as its user-facing policy URL.

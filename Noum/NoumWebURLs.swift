@@ -7,11 +7,16 @@ import Foundation
 // root. The hosting target is configured in `firebase.json`; deploy via
 // `firebase deploy --only hosting`.
 //
-// The privacy URL is the one the App Store privacy field expects — keep
-// it stable across releases. The marketing URL is the landing page
-// hit when the user taps "noum.app" anywhere in the app.
+// `hostingOrigin` is deliberately the verified Firebase origin while the
+// custom domain is parked. App Store metadata is source-checked against this
+// value. Switch this one origin only after both origins pass the four-page
+// exact-body gate and the custom domain has direct TLS (no cross-origin hop).
 
 enum NoumWebURLs {
+    /// Active public origin. The release validator permits only Noum's
+    /// Firebase Hosting origin or, after verified cutover, `https://noum.app`.
+    static let hostingOrigin = URL(string: "https://noum-d0b6f.web.app")!
+
     /// Monitored support inbox used for privacy and account-deletion help
     /// until the custom-domain mailbox is ready.
     static let supportEmail = "noumsupport@gmail.com"
@@ -108,24 +113,21 @@ enum NoumWebURLs {
         return components.url ?? supportMail
     }
 
-    /// Firebase Hosting default subdomain. The custom apex
-    /// (e.g., `noum.app`) redirects here once DNS is wired.
-    static let landing = URL(string: "https://noum-d0b6f.web.app")!
+    /// Public landing page at the currently verified hosting origin.
+    static let landing = hostingOrigin
 
-    /// Public privacy policy. Stable URL — App Store Connect, app
-    /// reviewer notes, and any "noum.app/privacy" links should all
-    /// resolve to this. Backed by `public/privacy.html` via the
+    /// Public privacy policy. Backed by `public/privacy.html` via the
     /// `firebase.json` rewrite `/privacy → /privacy.html`.
-    static let privacy = URL(string: "https://noum-d0b6f.web.app/privacy")!
+    static let privacy = hostingOrigin.appendingPathComponent("privacy")
 
     /// Public explanation of Noum's evidence boundaries. Keep this on the
     /// verified Firebase origin until the custom-domain DNS/TLS/body gate is
     /// complete; App Store metadata may move to `noum.app` only after that.
-    static let coachingMethod = URL(string: "https://noum-d0b6f.web.app/how-noum-coaches")!
+    static let coachingMethod = hostingOrigin.appendingPathComponent("how-noum-coaches")
 
     /// Browser-based support destination for App Store Connect and users who
     /// cannot open an email composer. The page links to the monitored inbox.
-    static let support = URL(string: "https://noum-d0b6f.web.app/support")!
+    static let support = hostingOrigin.appendingPathComponent("support")
 
     /// Apple's account-level subscription management surface. Account
     /// deletion never claims to cancel a StoreKit subscription automatically.

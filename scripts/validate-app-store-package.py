@@ -2,8 +2,9 @@
 """Fail closed when Noum's source-controlled App Store package drifts.
 
 Repository validation is the default. ``--verify-live-urls`` additionally
-checks that the production support, privacy, and coaching pages return real
-Noum content rather than a placeholder/lander response.
+checks that every page at the app's active public origin returns the exact
+reviewed source bytes. ``--verify-custom-domain-cutover`` checks both the
+Firebase origin and the eventual custom origin before or after source cutover.
 
 ``--verify-release-assets`` verifies a separately filled release-asset
 manifest, every bound file, image/video properties, and the clean Git binding.
@@ -34,6 +35,27 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "AppStore"
 RELEASE_ASSET_TEMPLATE = PACKAGE / "release-assets.template.json"
 ASO_EXPERIMENT_TEMPLATE = PACKAGE / "aso-experiment.template.json"
+
+# The shared module keeps network response diagnostics content-free and bounds
+# every body read. Add this script directory explicitly because unit tests load
+# this file through importlib rather than invoking it as a script.
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+from privacy_body_verifier import (  # noqa: E402
+    CUSTOM_HOSTING_ORIGIN,
+    FIREBASE_HOSTING_ORIGIN,
+    MAX_HOSTED_PAGE_BODY_BYTES,
+    verify_hosted_page_response,
+)
+
+PUBLIC_PAGE_SOURCES = {
+    "/": ROOT / "public" / "index.html",
+    "/privacy": ROOT / "public" / "privacy.html",
+    "/support": ROOT / "public" / "support.html",
+    "/how-noum-coaches": ROOT / "public" / "how-noum-coaches.html",
+}
+APPROVED_PUBLIC_ORIGINS = frozenset({FIREBASE_HOSTING_ORIGIN, CUSTOM_HOSTING_ORIGIN})
 
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -301,7 +323,30 @@ def validate_video(path: Path, expected_width: int, expected_height: int, minimu
             f"{path.name}: preview duration must be between {minimum} and {maximum} seconds")
 
 
-def validate_metadata(path: Path) -> None:
+def active_public_origin() -> str:
+    source_path = ROOT / "Noum" / "NoumWebURLs.swift"
+    source = source_path.read_text(encoding="utf-8")
+    matches = re.findall(
+        r'static let hostingOrigin = URL\(string: "(https://[^"/]+)"\)!',
+        source,
+    )
+    require(len(matches) == 1,
+            "NoumWebURLs.swift must declare exactly one literal hostingOrigin")
+    origin = matches[0]
+    require(origin in APPROVED_PUBLIC_ORIGINS,
+            "NoumWebURLs.hostingOrigin must remain on the approved Firebase or noum.app origin")
+    required_routes = (
+        'static let landing = hostingOrigin',
+        'static let privacy = hostingOrigin.appendingPathComponent("privacy")',
+        'static let support = hostingOrigin.appendingPathComponent("support")',
+        'static let coachingMethod = hostingOrigin.appendingPathComponent("how-noum-coaches")',
+    )
+    require(all(fragment in source for fragment in required_routes),
+            "NoumWebURLs public pages must all derive from the single hostingOrigin")
+    return origin
+
+
+def validate_metadata(path: Path, public_origin: str) -> None:
     value = load(path)
     name = value.get("name", "")
     subtitle = value.get("subtitle", "")
@@ -322,7 +367,7 @@ def validate_metadata(path: Path) -> None:
         ("privacyURL", "/privacy"),
         ("marketingURL", ""),
     ):
-        expected = f"https://noum.app{suffix}"
+        expected = f"{public_origin}{suffix}"
         require(value.get(key) == expected, f"{path.name}: {key} must be {expected}")
 
     forbidden = (
@@ -859,33 +904,56 @@ def validate_hosting_sources() -> None:
     }
     require(all(rewrites.get(source) == target for source, target in expected.items()),
             "Firebase Hosting rewrites are missing a required public launch page")
-    for target in expected.values():
-        require((ROOT / "public" / target.removeprefix("/")).is_file(),
-                f"Missing hosted source: public/{target.removeprefix('/')}")
+    for route, source in PUBLIC_PAGE_SOURCES.items():
+        require(source.is_file(), f"Missing hosted source for {route}: {display_path(source)}")
 
 
-def validate_live_urls() -> None:
-    expected_markers = {
-        "https://noum.app/privacy": ("Noum Privacy Policy", "speech"),
-        "https://noum.app/support": ("Noum Support", "contact"),
-        "https://noum.app/how-noum-coaches": ("How Noum coaches", "evidence"),
-    }
-    for url, markers in expected_markers.items():
+def validate_live_origin(origin: str) -> None:
+    require(origin in APPROVED_PUBLIC_ORIGINS,
+            f"{origin}: live verification accepts only approved Noum Hosting origins")
+    for route, source in PUBLIC_PAGE_SOURCES.items():
+        url = f"{origin}{route}"
         request = Request(url, headers={"User-Agent": "NoumReleaseValidator/1.0"})
         try:
             with urlopen(request, timeout=12) as response:
                 status = response.status
-                content_type = response.headers.get_content_type()
-                body = response.read(250_000).decode("utf-8", errors="replace")
-        except (HTTPError, URLError, TimeoutError) as error:
-            raise AssertionError(f"{url}: production page is unreachable ({error})") from error
-        require(status == 200, f"{url}: expected HTTP 200, received {status}")
-        require(content_type == "text/html", f"{url}: expected HTML, received {content_type}")
-        searchable = body.casefold()
-        require(
-            all(marker.casefold() in searchable for marker in markers),
-            f"{url}: response does not contain the expected Noum launch-page content",
+                content_type = response.headers.get("Content-Type", "")
+                final_url = response.geturl()
+                observed_body = response.read(MAX_HOSTED_PAGE_BODY_BYTES + 1)
+        except HTTPError as error:
+            status = error.code
+            content_type = error.headers.get("Content-Type", "") if error.headers else ""
+            final_url = error.geturl() or url
+            observed_body = error.read(MAX_HOSTED_PAGE_BODY_BYTES + 1)
+            error.close()
+        except (URLError, TimeoutError) as error:
+            raise AssertionError(
+                f"{url}: approved Hosting page is unreachable ({type(error).__name__})"
+            ) from error
+        observed_complete = len(observed_body) <= MAX_HOSTED_PAGE_BODY_BYTES
+        verification = verify_hosted_page_response(
+            expected_body=source.read_bytes(),
+            observed_body=observed_body,
+            requested_url=url,
+            final_url=final_url,
+            status=status,
+            content_type=content_type,
+            observed_complete=observed_complete,
+            observed_size=len(observed_body),
         )
+        require(
+            verification.passed,
+            f"{url}: exact-body verification failed ({','.join(verification.errors)}; "
+            f"{verification.safe_body_observation})",
+        )
+
+
+def validate_live_urls(public_origin: str, *, include_cutover_pair: bool = False) -> None:
+    origins = [public_origin]
+    if include_cutover_pair:
+        origins = [FIREBASE_HOSTING_ORIGIN, CUSTOM_HOSTING_ORIGIN]
+    for origin in dict.fromkeys(origins):
+        validate_live_origin(origin)
 
 
 def main() -> None:
@@ -893,7 +961,12 @@ def main() -> None:
     parser.add_argument(
         "--verify-live-urls",
         action="store_true",
-        help="Require production noum.app launch pages to return verified content",
+        help="Require all four pages at the app's active origin to match exact source bytes",
+    )
+    parser.add_argument(
+        "--verify-custom-domain-cutover",
+        action="store_true",
+        help="Require all four pages at both Firebase Hosting and noum.app to match exact source bytes",
     )
     parser.add_argument(
         "--verify-release-assets",
@@ -908,17 +981,21 @@ def main() -> None:
         help="Verify a filled App Store Connect product-page optimization result manifest",
     )
     arguments = parser.parse_args()
+    public_origin = active_public_origin()
     metadata = sorted((PACKAGE / "metadata").glob("*.json"))
     require({path.stem for path in metadata} == {"en-GB", "en-US"},
             "The launch package must contain exactly en-GB and en-US metadata")
     for path in metadata:
-        validate_metadata(path)
+        validate_metadata(path, public_origin)
     validate_product_pages()
     validate_release_asset_manifest(RELEASE_ASSET_TEMPLATE, verify_files=False)
     validate_aso_experiment_manifest(ASO_EXPERIMENT_TEMPLATE, verify_results=False)
     validate_hosting_sources()
-    if arguments.verify_live_urls:
-        validate_live_urls()
+    if arguments.verify_live_urls or arguments.verify_custom_domain_cutover:
+        validate_live_urls(
+            public_origin,
+            include_cutover_pair=arguments.verify_custom_domain_cutover,
+        )
     if arguments.verify_release_assets is not None:
         validate_release_asset_manifest(arguments.verify_release_assets.resolve(), verify_files=True)
     if arguments.verify_aso_experiment_results is not None:
@@ -927,7 +1004,9 @@ def main() -> None:
     require((PACKAGE / "launch-gates.md").is_file(), "Missing launch/growth gate contract")
     verified = []
     if arguments.verify_live_urls:
-        verified.append("live production URLs")
+        verified.append("active live public origin")
+    if arguments.verify_custom_domain_cutover:
+        verified.append("Firebase/custom-domain exact-body cutover")
     if arguments.verify_release_assets is not None:
         verified.append("release assets")
     if arguments.verify_aso_experiment_results is not None:

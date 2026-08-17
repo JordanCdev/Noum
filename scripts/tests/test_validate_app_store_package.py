@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from urllib.parse import urlparse
 from unittest import mock
 
 
@@ -40,6 +41,26 @@ def write_png(path: Path, width: int, height: int, color_type: int = 2) -> None:
     )
 
 
+class FakeHTTPResponse:
+    def __init__(self, url: str, body: bytes, *, final_url: str | None = None):
+        self.status = 200
+        self.headers = {"Content-Type": "text/html; charset=utf-8"}
+        self._url = final_url or url
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        return False
+
+    def geturl(self) -> str:
+        return self._url
+
+    def read(self, size: int) -> bytes:
+        return self._body[:size]
+
+
 class AppStorePackageValidatorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.release_template = json.loads(MODULE.RELEASE_ASSET_TEMPLATE.read_text(encoding="utf-8"))
@@ -48,6 +69,64 @@ class AppStorePackageValidatorTests(unittest.TestCase):
     def test_checked_in_contracts_validate_without_claiming_evidence(self) -> None:
         MODULE.validate_release_asset_manifest(MODULE.RELEASE_ASSET_TEMPLATE, verify_files=False)
         MODULE.validate_aso_experiment_manifest(MODULE.ASO_EXPERIMENT_TEMPLATE, verify_results=False)
+
+    def test_checked_in_metadata_stays_on_the_in_app_firebase_origin(self) -> None:
+        origin = MODULE.active_public_origin()
+
+        self.assertEqual(origin, MODULE.FIREBASE_HOSTING_ORIGIN)
+        for path in sorted((MODULE.PACKAGE / "metadata").glob("*.json")):
+            MODULE.validate_metadata(path, origin)
+
+    def test_in_app_public_routes_cannot_drift_from_the_active_origin(self) -> None:
+        source_path = MODULE.ROOT / "Noum" / "NoumWebURLs.swift"
+        drifted = source_path.read_text(encoding="utf-8").replace(
+            'static let support = hostingOrigin.appendingPathComponent("support")',
+            'static let support = URL(string: "https://noum.app/support")!',
+        )
+
+        with mock.patch.object(MODULE.Path, "read_text", return_value=drifted):
+            with self.assertRaisesRegex(AssertionError, "single hostingOrigin"):
+                MODULE.active_public_origin()
+
+    def live_response(self, request, timeout=0):
+        del timeout
+        url = request.full_url
+        route = urlparse(url).path or "/"
+        source = MODULE.PUBLIC_PAGE_SOURCES[route]
+        return FakeHTTPResponse(url, source.read_bytes())
+
+    def test_live_origin_requires_all_four_exact_bounded_bodies(self) -> None:
+        with mock.patch.object(MODULE, "urlopen", side_effect=self.live_response) as opener:
+            MODULE.validate_live_origin(MODULE.FIREBASE_HOSTING_ORIGIN)
+            MODULE.validate_live_origin(MODULE.CUSTOM_HOSTING_ORIGIN)
+
+        self.assertEqual(opener.call_count, 8)
+        for call in opener.call_args_list:
+            self.assertEqual(call.kwargs["timeout"], 12)
+
+    def test_marker_complete_stale_live_body_fails_exact_verification(self) -> None:
+        def stale_response(request, timeout=0):
+            response = self.live_response(request, timeout)
+            if urlparse(request.full_url).path == "/support":
+                response._body += b"\n<!-- stale but marker-complete -->\n"
+            return response
+
+        with mock.patch.object(MODULE, "urlopen", side_effect=stale_response):
+            with self.assertRaisesRegex(AssertionError, "bodyMismatch"):
+                MODULE.validate_live_origin(MODULE.FIREBASE_HOSTING_ORIGIN)
+
+    def test_live_body_read_is_bounded_and_oversize_fails_closed(self) -> None:
+        def oversized_response(request, timeout=0):
+            del timeout
+            url = request.full_url
+            return FakeHTTPResponse(
+                url,
+                b"x" * (MODULE.MAX_HOSTED_PAGE_BODY_BYTES + 50),
+            )
+
+        with mock.patch.object(MODULE, "urlopen", side_effect=oversized_response):
+            with self.assertRaisesRegex(AssertionError, "responseBodyOversize"):
+                MODULE.validate_live_origin(MODULE.FIREBASE_HOSTING_ORIGIN)
 
     def test_checked_in_release_template_cannot_pass_evidence_mode(self) -> None:
         with self.assertRaisesRegex(AssertionError, "status must be COLLECTED_RELEASE_ASSETS"):

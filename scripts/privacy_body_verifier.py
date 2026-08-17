@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Fail-closed verification for Noum's hosted privacy-policy response.
+"""Fail-closed verification for Noum's public Hosting responses.
 
 The caller owns transport. This module owns the shared response contract used
-by the shell operator probe and the Python production-readiness probe. It never
-returns or prints response text in diagnostics.
+by the shell operator probe and the App Store package validator. It never
+returns or prints response text in diagnostics. The legacy filename is retained
+because release automation imports it directly.
 """
 
 from __future__ import annotations
@@ -16,10 +17,19 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
-MAX_PRIVACY_BODY_BYTES = 256 * 1024
-APPROVED_PRIVACY_HTTPS_ORIGINS = frozenset({
+MAX_HOSTED_PAGE_BODY_BYTES = 256 * 1024
+# Compatibility for existing callers while the verifier now covers every
+# public launch page rather than privacy alone.
+MAX_PRIVACY_BODY_BYTES = MAX_HOSTED_PAGE_BODY_BYTES
+
+FIREBASE_HOSTING_ORIGIN = "https://noum-d0b6f.web.app"
+CUSTOM_HOSTING_ORIGIN = "https://noum.app"
+APPROVED_HOSTING_HTTPS_ORIGINS = frozenset({
     ("https", "noum-d0b6f.web.app", 443),
+    ("https", "noum.app", 443),
 })
+# Compatibility for tests and integrations that use the original name.
+APPROVED_PRIVACY_HTTPS_ORIGINS = APPROVED_HOSTING_HTTPS_ORIGINS
 
 
 def sha256_hex(value: bytes) -> str:
@@ -48,13 +58,13 @@ def approved_https_origin_matches(requested_url: str, final_url: str) -> bool:
     requested_origin = _https_origin(requested_url)
     final_origin = _https_origin(final_url)
     return (
-        requested_origin in APPROVED_PRIVACY_HTTPS_ORIGINS
+        requested_origin in APPROVED_HOSTING_HTTPS_ORIGINS
         and requested_origin == final_origin
     )
 
 
 @dataclass(frozen=True)
-class PrivacyBodyVerification:
+class HostedPageBodyVerification:
     errors: tuple[str, ...]
     expected_sha256: str
     observed_sha256: str | None
@@ -78,7 +88,7 @@ class PrivacyBodyVerification:
         )
 
 
-def verify_privacy_response(
+def verify_hosted_page_response(
     *,
     expected_body: bytes,
     observed_body: bytes,
@@ -86,10 +96,10 @@ def verify_privacy_response(
     final_url: str,
     status: int,
     content_type: str,
-    max_body_bytes: int = MAX_PRIVACY_BODY_BYTES,
+    max_body_bytes: int = MAX_HOSTED_PAGE_BODY_BYTES,
     observed_complete: bool = True,
     observed_size: int | None = None,
-) -> PrivacyBodyVerification:
+) -> HostedPageBodyVerification:
     """Verify response metadata and exact bytes without exposing body content."""
 
     if max_body_bytes <= 0:
@@ -98,11 +108,11 @@ def verify_privacy_response(
     errors: list[str] = []
     requested_origin = _https_origin(requested_url)
     final_origin = _https_origin(final_url)
-    if requested_origin not in APPROVED_PRIVACY_HTTPS_ORIGINS:
+    if requested_origin not in APPROVED_HOSTING_HTTPS_ORIGINS:
         errors.append("requestedURLNotApprovedHTTPS")
     if requested_origin != final_origin:
         errors.append("redirectOriginEscape")
-    if not isinstance(status, int) or not 200 <= status < 300:
+    if not isinstance(status, int) or status != 200:
         errors.append("httpStatusNotSuccessful")
 
     normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
@@ -129,7 +139,7 @@ def verify_privacy_response(
     if bodies_are_comparable and observed_body != expected_body:
         errors.append("bodyMismatch")
 
-    return PrivacyBodyVerification(
+    return HostedPageBodyVerification(
         errors=tuple(dict.fromkeys(errors)),
         expected_sha256=sha256_hex(expected_body),
         observed_sha256=sha256_hex(observed_body) if observed_complete else None,
@@ -137,6 +147,15 @@ def verify_privacy_response(
         observed_size=reported_observed_size,
         observed_complete=observed_complete,
     )
+
+
+# Compatibility aliases keep older release tooling source-compatible while all
+# new callers use the generic four-page contract.
+PrivacyBodyVerification = HostedPageBodyVerification
+
+
+def verify_privacy_response(**arguments) -> HostedPageBodyVerification:
+    return verify_hosted_page_response(**arguments)
 
 
 def _read_observed_file(path: Path, max_body_bytes: int) -> tuple[bytes, bool, int]:
@@ -149,7 +168,7 @@ def _read_observed_file(path: Path, max_body_bytes: int) -> tuple[bytes, bool, i
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Verify a hosted privacy response against the exact source body."
+        description="Verify a hosted launch page against its exact source body."
     )
     parser.add_argument("--print-max-body-bytes", action="store_true")
     parser.add_argument("--expected-body", type=Path)
@@ -158,6 +177,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--final-url")
     parser.add_argument("--status", type=int)
     parser.add_argument("--content-type")
+    parser.add_argument(
+        "--page-id",
+        choices=("homepage", "privacy", "support", "coaching-method"),
+        default="privacy",
+    )
     return parser
 
 
@@ -165,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
     if arguments.print_max_body_bytes:
-        print(MAX_PRIVACY_BODY_BYTES)
+        print(MAX_HOSTED_PAGE_BODY_BYTES)
         return 0
 
     required = {
@@ -184,16 +208,16 @@ def main(argv: list[str] | None = None) -> int:
         expected_body = arguments.expected_body.read_bytes()
         observed_body, observed_complete, observed_size = _read_observed_file(
             arguments.observed_body,
-            MAX_PRIVACY_BODY_BYTES,
+            MAX_HOSTED_PAGE_BODY_BYTES,
         )
     except OSError as error:
         print(
-            f"Privacy body verification could not read its source files: {type(error).__name__}",
+            f"Hosted page verification could not read its source files: {type(error).__name__}",
             file=sys.stderr,
         )
         return 2
 
-    verification = verify_privacy_response(
+    verification = verify_hosted_page_response(
         expected_body=expected_body,
         observed_body=observed_body,
         requested_url=arguments.requested_url,
@@ -203,13 +227,19 @@ def main(argv: list[str] | None = None) -> int:
         observed_complete=observed_complete,
         observed_size=observed_size,
     )
+    page_label = {
+        "homepage": "homepage",
+        "privacy": "privacy policy",
+        "support": "support page",
+        "coaching-method": "coaching-method page",
+    }[arguments.page_id]
     if verification.passed:
-        print("Live privacy policy exact-body verification passed.")
+        print(f"Live {page_label} exact-body verification passed.")
         print(verification.safe_body_observation)
         return 0
 
     print(
-        "Live privacy policy exact-body verification failed: "
+        f"Live {page_label} exact-body verification failed: "
         + ",".join(verification.errors),
         file=sys.stderr,
     )

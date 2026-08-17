@@ -140,7 +140,7 @@ performed with real speech on the candidate build and then reviewed by a human.
 | M14 gate | Status | Exact boundary |
 | --- | --- | --- |
 | Guarded social cutover | `EXTERNAL` | Source locks and runbooks exist; production backup/quarantine, migration, trusted producer, coordinated deploy, readback, and two-device smoke require an authorized operator. The social surface correctly remains unavailable. |
-| Hosted policy and custom domain | `PARTIAL` | The Firebase-hosted privacy page exists and disclosure generation is source controlled. `noum.app` DNS/TLS/body-match proof is absent. |
+| Public pages and custom domain | `PARTIAL` | Four-page exact-body gates and Firebase-first URL ownership are source controlled. The current Firebase deploy and `noum.app` DNS/TLS/direct-body proof are absent. |
 | Historical credential/session closure | `PARTIAL` | The known Deepgram/Google incident is documented as contained. Firebase CLI session revocation and residual AWS account inventory need owner-produced, independently reviewed evidence. |
 | Source-bound physical TestFlight 14-surface/84-check | `EXTERNAL` | Simulator builds/tests are not a signed archive or processed TestFlight build. Paid-team signing, upload, physical install, and exact checklist are absent. |
 | Current-source live-provider sweep | `EXTERNAL` | Local deterministic provider traces are complete; a `--probe-live` artifact for this candidate is absent. |

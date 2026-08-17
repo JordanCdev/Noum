@@ -10,12 +10,19 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from urllib.parse import urlparse
 from unittest import mock
 
 import readiness_gate as gate
 
 
 STATIC_PRIVACY_BODY = b"<title>Noum \xe2\x80\x94 Privacy Policy</title><main>Noum Privacy Policy</main>"
+STATIC_PUBLIC_PAGE_BODIES = {
+    "/": b"<title>Noum</title>",
+    "/privacy": STATIC_PRIVACY_BODY,
+    "/support": b"<title>Noum Support</title>",
+    "/how-noum-coaches": b"<title>How Noum coaches</title>",
+}
 
 
 def report_with_readiness(readiness, **local_overrides):
@@ -105,6 +112,8 @@ def write_static_ops_repo(root):
                 "public": "public",
                 "rewrites": [
                     {"source": "/privacy", "destination": "/privacy.html"},
+                    {"source": "/support", "destination": "/support.html"},
+                    {"source": "/how-noum-coaches", "destination": "/how-noum-coaches.html"},
                 ],
             },
         }),
@@ -137,7 +146,11 @@ service cloud.firestore {
         encoding="utf-8",
     )
     (root / "public/privacy.html").write_bytes(STATIC_PRIVACY_BODY)
-    (root / "public/index.html").write_text("<title>Noum</title>", encoding="utf-8")
+    (root / "public/index.html").write_bytes(STATIC_PUBLIC_PAGE_BODIES["/"])
+    (root / "public/support.html").write_bytes(STATIC_PUBLIC_PAGE_BODIES["/support"])
+    (root / "public/how-noum-coaches.html").write_bytes(
+        STATIC_PUBLIC_PAGE_BODIES["/how-noum-coaches"]
+    )
     (root / "Noum/PrivacyPolicy.md").write_text("# Privacy Policy\n", encoding="utf-8")
     (root / "Noum/PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps({
         "NSPrivacyTracking": False,
@@ -163,7 +176,13 @@ service cloud.firestore {
         "NSPrivacyAccessedAPITypes": [],
     }))
     (root / "Noum/NoumWebURLs.swift").write_text(
-        'static let privacy = URL(string: "https://noum-d0b6f.web.app/privacy")!',
+        """
+static let hostingOrigin = URL(string: "https://noum-d0b6f.web.app")!
+static let landing = hostingOrigin
+static let privacy = hostingOrigin.appendingPathComponent("privacy")
+static let support = hostingOrigin.appendingPathComponent("support")
+static let coachingMethod = hostingOrigin.appendingPathComponent("how-noum-coaches")
+""",
         encoding="utf-8",
     )
     (root / "Noum/PrivacyPolicyView.swift").write_text(
@@ -755,13 +774,15 @@ def accepting_release_evidence_validator(run_dir, repo_root):
 
 
 def successful_privacy_fetch(url):
+    route = urlparse(url).path or "/"
+    body = STATIC_PUBLIC_PAGE_BODIES[route]
     return {
         "status": 200,
         "finalURL": url,
         "contentType": "text/html; charset=utf-8",
-        "bodyBytes": STATIC_PRIVACY_BODY,
+        "bodyBytes": body,
         "bodyComplete": True,
-        "bodySize": len(STATIC_PRIVACY_BODY),
+        "bodySize": len(body),
     }
 
 
@@ -2921,6 +2942,30 @@ class ReadinessGateTests(unittest.TestCase):
             [item["key"] for item in preflight["failures"]],
         )
 
+    def test_operational_static_preflight_requires_every_public_route_and_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            config_path = root / "firebase.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["hosting"]["rewrites"] = [
+                item for item in config["hosting"]["rewrites"]
+                if item["source"] != "/support"
+            ]
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            (root / "public/how-noum-coaches.html").unlink()
+
+            preflight = gate.operational_static_preflight(root)
+
+        self.assertIn(
+            "hostingPublicPageRewrites",
+            [item["key"] for item in preflight["failures"]],
+        )
+        self.assertIn(
+            "hostedPublicPageSources",
+            [item["key"] for item in preflight["failures"]],
+        )
+
     def test_operational_static_preflight_requires_backend_deploy_locks_first(self):
         mutations = {
             "missingFunctionsLock": lambda config: config["functions"][0].pop("predeploy"),
@@ -2978,7 +3023,7 @@ class ReadinessGateTests(unittest.TestCase):
             probe = gate.operational_live_probe(root, successful_privacy_fetch)
 
         self.assertEqual(probe["failureCount"], 0)
-        self.assertEqual(probe["checkCount"], 5)
+        self.assertEqual(probe["checkCount"], 17)
         self.assertEqual(probe["passCount"], probe["checkCount"])
         self.assertIn("source-exact", probe["validationBoundary"])
 
@@ -2987,8 +3032,9 @@ class ReadinessGateTests(unittest.TestCase):
 
         def fetch_stale(url):
             result = successful_privacy_fetch(url)
-            result["bodyBytes"] += stale_marker
-            result["bodySize"] = len(result["bodyBytes"])
+            if urlparse(url).path == "/privacy":
+                result["bodyBytes"] += stale_marker
+                result["bodySize"] = len(result["bodyBytes"])
             return result
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3004,8 +3050,29 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertNotIn(stale_marker.decode(), json.dumps(probe))
         self.assertIn("expectedSHA256=", probe["failures"][0]["observed"])
 
+    def test_operational_live_probe_requires_non_privacy_pages_too(self):
+        def fetch_stale_support(url):
+            result = successful_privacy_fetch(url)
+            if urlparse(url).path == "/support":
+                result["bodyBytes"] += b"<!-- stale support -->"
+                result["bodySize"] = len(result["bodyBytes"])
+            return result
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+
+            probe = gate.operational_live_probe(root, fetch_stale_support)
+
+        self.assertEqual(
+            [item["key"] for item in probe["failures"]],
+            ["supportURLExactBody"],
+        )
+
     def test_operational_live_probe_rejects_oversize_body(self):
         def fetch_oversize(url):
+            if urlparse(url).path != "/privacy":
+                return successful_privacy_fetch(url)
             body = b"x" * (gate.MAX_PRIVACY_BODY_BYTES + 1)
             return {
                 "status": 200,
@@ -3031,7 +3098,8 @@ class ReadinessGateTests(unittest.TestCase):
     def test_operational_live_probe_rejects_wrong_mime_type(self):
         def fetch_plain_text(url):
             result = successful_privacy_fetch(url)
-            result["contentType"] = "text/plain; charset=utf-8"
+            if urlparse(url).path == "/privacy":
+                result["contentType"] = "text/plain; charset=utf-8"
             return result
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3048,7 +3116,8 @@ class ReadinessGateTests(unittest.TestCase):
     def test_operational_live_probe_rejects_redirect_origin_escape(self):
         def fetch_redirect_escape(url):
             result = successful_privacy_fetch(url)
-            result["finalURL"] = "https://lookalike.example/privacy"
+            if urlparse(url).path == "/privacy":
+                result["finalURL"] = "https://lookalike.example/privacy"
             return result
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3064,7 +3133,9 @@ class ReadinessGateTests(unittest.TestCase):
 
     def test_operational_live_probe_flags_privacy_url_404(self):
         def fetch_404(url):
-            raise gate.urllib.error.HTTPError(url, 404, "Not Found", None, None)
+            if urlparse(url).path == "/privacy":
+                raise gate.urllib.error.HTTPError(url, 404, "Not Found", None, None)
+            return successful_privacy_fetch(url)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -3088,7 +3159,9 @@ class ReadinessGateTests(unittest.TestCase):
         }
 
         def fetch_404(url):
-            raise gate.urllib.error.HTTPError(url, 404, "Not Found", None, None)
+            if urlparse(url).path == "/privacy":
+                raise gate.urllib.error.HTTPError(url, 404, "Not Found", None, None)
+            return successful_privacy_fetch(url)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -3185,7 +3258,7 @@ class ReadinessGateTests(unittest.TestCase):
         markdown = gate.render_markdown(status)
 
         self.assertIn("## Operational Live Probe", markdown)
-        self.assertIn("https://noum-d0b6f.web.app/privacy", markdown)
+        self.assertIn("https://noum-d0b6f.web.app", markdown)
 
     def test_markdown_names_local_gate_failures(self):
         readiness = {

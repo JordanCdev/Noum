@@ -20,9 +20,10 @@ below and has not run on macOS CI because the branch is not on the remote.
 Current critical path:
 
 1. Commit and push one immutable `ux-experiment` candidate SHA.
-2. Deploy the reviewed Firebase privacy/support/coaching pages and connect the
-   `noum.app` domain; the live Firebase support/coaching routes are 404 and the
-   custom domain is still a parked redirect.
+2. Deploy the four reviewed Firebase pages, pass their exact-body gate, then
+   connect and independently prove `noum.app` before changing the active origin;
+   the fresh Firebase homepage is stale (2,073 vs 2,246 source bytes), and the
+   custom domain still returns a 114-byte parking body.
 3. Pass the macOS Release build, serialized unit target, mandatory journey and
    permission UI shards, then archive/sign/upload that same SHA.
 4. Complete the same-build physical-device contract, current live-provider
@@ -149,13 +150,10 @@ the current dirty source.**
   `docs/SECURITY_deepgram_key_endpoint.md` remains open. The replacement path
   does not revoke the exposed legacy credentials, disable every legacy route,
   or provide the missing usage and billing audit.
-- `https://noum-d0b6f.web.app/privacy` is reachable, but the last live exact-
-  body probe targeted an older source body. Processor manifest v7 makes current
-  `public/privacy.html` 32,420 bytes /
-  `c4422d8260a3a4c92b6504d918fb2c46ceeb9c93a52254b25fa743932ebe2da2`, and no current-source live comparison
-  exists.
-  Treat hosted-policy equivalence as missing. After safe release authentication
-  is restored, redeploy the current body and require the exact-body probe to pass.
+- `https://noum-d0b6f.web.app/privacy` is reachable, but no current-source
+  four-page comparison exists. Treat every hosted page as unverified until the
+  bounded verifier computes current source sizes/digests and passes after an
+  independently authorized Hosting-only deploy.
   The custom `noum.app` domain is still parked at GoDaddy; it must not be
   described as connected to Firebase Hosting until DNS, TLS, and policy content
   are verified.
@@ -218,17 +216,17 @@ and the selected repo root passes static operational preflight:
 - `privacy/processors.json` exactly regenerates the in-app, hosted, and Swift
   processor disclosures; a material manifest version change invalidates earlier
   cloud consent
-- `public/privacy.html`, bundled `PrivacyPolicy.md`, Settings privacy entry,
-  and `NoumWebURLs.privacy` are present and aligned
+- all four `public/` launch pages, required rewrites, bundled
+  `PrivacyPolicy.md`, Settings privacy entry, and `NoumWebURLs.hostingOrigin`
+  are present and aligned
 - `docs/TESTFLIGHT_QA.md` covers deploy, privacy, and high-risk hardware surfaces
 
-When `--probe-live` is enabled, `readiness` also exits nonzero unless the
-configured hosted privacy URL resolves to the explicitly approved Firebase
-origin, returns a 2xx HTML response, and its bounded decompressed bytes exactly
-match `public/privacy.html`. The verifier logs only sizes and SHA-256 digests,
-not policy bodies. Keep this opt-in for offline CI; use it before any launch
-claim. A future custom domain must be explicitly added to the approved-origin
-contract before it can pass.
+When `--probe-live` is enabled, `readiness` exits nonzero unless the homepage,
+privacy, support, and coaching-method routes remain on the configured approved
+HTTPS origin, return HTTP 200 HTML, and match their checked-in bodies exactly within
+the 256 KiB bound. Diagnostics contain only sizes and SHA-256 values. Both the
+Firebase and custom origins are allowlisted, but `NoumWebURLs.hostingOrigin`
+remains Firebase until the separate dual-origin cutover gate passes.
 
 Use `./tools/coach-arena/run.sh readiness --no-fail` when you only want the
 human-readable report during an in-progress launch pass.
@@ -257,15 +255,11 @@ rules were deployed, the privacy URL is live, App Store privacy disclosures were
 reviewed, TestFlight was uploaded, or release bugs were triaged. Those remain
 the job of `coach-operational-launch-checklist-v2.json`.
 
-The operational live probe is narrower: it checks the public privacy URL only.
-It does not prove Firestore rule deployment, TestFlight upload, App Store privacy
-review, or release-blocking bug triage.
-
-At present, a successful privacy probe applies only to the approved Firebase
-Hosting `web.app` URL and proves exact equality with the checked-in generated
-policy at probe time. It does not prove processor runtime behavior, App Store
-privacy review, or that `noum.app` is serving Noum content while registrar DNS
-remains parked.
+The operational live probe covers only four public web bodies. It does not
+prove processor behavior, Firestore deployment, TestFlight upload, App Store
+review, DNS ownership, or release-bug triage. Before source cutover, run
+`./scripts/release-live-web-probe.sh both`; cross-origin redirects do not count
+as direct custom-domain proof.
 
 ## Apple signing and TestFlight preflight
 

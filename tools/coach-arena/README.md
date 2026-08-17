@@ -254,8 +254,9 @@ conversations), `extract <voice|--json>` (print the extracted system prompt),
 sidecar presence in `NOUM_COACH_EVAL_DUMP_DIR` or `--dump-dir`, plus static
 Firebase/privacy/TestFlight-QA repo wiring via `--repo-root`; pass
 `--release-evidence-run` for the validated attachment-backed run that promoted
-the four managed external artifacts, and `--probe-live` to hard-block on public
-privacy URL reachability/content), and
+the four managed external artifacts, and `--probe-live` to hard-block on
+bounded, source-exact homepage/privacy/support/coaching responses at the app's
+active Hosting origin), and
 `python` (direct access to the legacy engine; do not use it for app-path
 readiness unless you pass `--app-path-report`, otherwise it grades reference
 examples).

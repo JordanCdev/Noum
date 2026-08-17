@@ -54,6 +54,16 @@ TestFlight processing, StoreKit/auth/App Check verification, a current live-
 provider sweep, blinded professional-coach review, and longitudinal beta
 evidence. Production therefore remains correctly **NO-GO**.
 
+The public-web source gate is now cutover-safe. In-app and App Store metadata
+share one active origin and remain on `noum-d0b6f.web.app` while `noum.app` is
+parked. Homepage, privacy, support, and coaching-method probes read bounded
+responses and require exact source bytes, HTTP 200 HTML, and no cross-origin redirect.
+Both origins can be proved together before a separate source switch; neither
+marker text nor a redirect to Firebase counts as custom-domain readiness. No
+Hosting deploy or DNS change was performed in this source pass. Fresh read-only
+probes fail honestly at the homepage: Firebase serves 2,073 bytes versus the
+2,246-byte source, while `noum.app` serves a 114-byte parking body.
+
 ## 2026-07-29 — Accessibility and UI-suite closure; external launch gates remain NO-GO
 
 The handover's app-side accessibility work now preserves the existing account,

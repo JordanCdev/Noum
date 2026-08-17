@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -22,9 +23,20 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from privacy_body_verifier import (  # noqa: E402
-    MAX_PRIVACY_BODY_BYTES,
+    MAX_HOSTED_PAGE_BODY_BYTES,
     approved_https_origin_matches,
-    verify_privacy_response,
+    verify_hosted_page_response,
+)
+
+# Compatibility for existing callers/tests while the live probe now covers all
+# release-critical public pages.
+MAX_PRIVACY_BODY_BYTES = MAX_HOSTED_PAGE_BODY_BYTES
+
+PUBLIC_LIVE_PAGE_SPECS = (
+    ("homepageURL", "/", "public/index.html"),
+    ("privacyURL", "/privacy", "public/privacy.html"),
+    ("supportURL", "/support", "public/support.html"),
+    ("coachingMethodURL", "/how-noum-coaches", "public/how-noum-coaches.html"),
 )
 
 DEFAULT_REPORT = ARENA_ROOT / "reports" / "app-path" / "latest.json"
@@ -3687,14 +3699,24 @@ def noum_target_membership_exceptions(repo_root=REPO_ROOT):
     }
 
 
-def privacy_url_from_repo(repo_root=REPO_ROOT):
+def hosting_origin_from_repo(repo_root=REPO_ROOT):
     web_urls = file_text(repo_root, "Noum/NoumWebURLs.swift") or ""
-    match = re.search(r"static\s+let\s+privacy\s*=\s*URL\(string:\s*\"([^\"]+)\"\)", web_urls)
+    match = re.search(
+        r"static\s+let\s+hostingOrigin\s*=\s*URL\(string:\s*\"(https://[^\"/]+)\"\)!",
+        web_urls,
+    )
     if match:
         return match.group(1)
-    if "https://noum-d0b6f.web.app/privacy" in web_urls:
-        return "https://noum-d0b6f.web.app/privacy"
-    return None
+    legacy = re.search(
+        r"static\s+let\s+privacy\s*=\s*URL\(string:\s*\"(https://[^\"/]+)/privacy\"\)",
+        web_urls,
+    )
+    return legacy.group(1) if legacy else None
+
+
+def privacy_url_from_repo(repo_root=REPO_ROOT):
+    origin = hosting_origin_from_repo(repo_root)
+    return f"{origin}/privacy" if origin else None
 
 
 def default_fetch_url(url, timeout=10):
@@ -3708,194 +3730,169 @@ def default_fetch_url(url, timeout=10):
     with urllib.request.urlopen(request, timeout=timeout) as response:
         content_encoding = (response.headers.get("Content-Encoding") or "identity").lower()
         if content_encoding in ("", "identity"):
-            body = response.read(MAX_PRIVACY_BODY_BYTES + 1)
+            body = response.read(MAX_HOSTED_PAGE_BODY_BYTES + 1)
         elif content_encoding == "gzip":
             with gzip.GzipFile(fileobj=response, mode="rb") as decompressed:
-                body = decompressed.read(MAX_PRIVACY_BODY_BYTES + 1)
+                body = decompressed.read(MAX_HOSTED_PAGE_BODY_BYTES + 1)
         else:
-            raise ValueError("unsupportedPrivacyContentEncoding")
+            raise ValueError("unsupportedHostedPageContentEncoding")
         return {
             "status": getattr(response, "status", response.getcode()),
             "finalURL": response.geturl(),
             "contentType": response.headers.get("Content-Type") or "",
             "bodyBytes": body,
-            "bodyComplete": len(body) <= MAX_PRIVACY_BODY_BYTES,
+            "bodyComplete": len(body) <= MAX_HOSTED_PAGE_BODY_BYTES,
             "bodySize": len(body),
         }
 
 
 def operational_live_probe(repo_root=REPO_ROOT, fetch_url=default_fetch_url):
-    privacy_url = privacy_url_from_repo(repo_root)
-    expected_body_path = Path(repo_root) / "public" / "privacy.html"
-    expected_body_error = None
-    try:
-        expected_body = expected_body_path.read_bytes()
-    except OSError as exc:
-        expected_body = b""
-        expected_body_error = type(exc).__name__
+    hosting_origin = hosting_origin_from_repo(repo_root)
     checks = []
 
-    def add(key, label, passed, observed, gate, next_step):
+    def add(key, passed, observed, gate, next_step):
         checks.append({
             "key": key,
-            "label": label,
+            "label": key,
             "passed": bool(passed),
             "observed": observed,
             "gate": gate,
             "nextStep": next_step,
         })
 
-    def add_response_checks(verification, status, content_type):
+    def add_response_checks(prefix, source_path, source_error, verification, status):
         error_set = set(verification.errors)
-        http_passed = "httpStatusNotSuccessful" not in error_set
-        origin_passed = not error_set.intersection({
-            "requestedURLNotApprovedHTTPS",
-            "redirectOriginEscape",
-        })
-        content_type_passed = "contentTypeNotHTML" not in error_set
-        body_errors = {
-            "expectedBodyOversize",
-            "responseBodyOversize",
-            "bodyMismatch",
-        }
-        exact_body_passed = (
-            expected_body_error is None
-            and not error_set.intersection(body_errors)
-        )
-        add(
-            "privacyURLHTTP",
-            "privacyURLHTTP",
-            http_passed,
-            status,
-            "The hosted privacy URL must return a successful HTTP status.",
-            "Deploy Firebase Hosting or repair the privacy URL.",
-        )
-        add(
-            "privacyURLOrigin",
-            "privacyURLOrigin",
-            origin_passed,
-            "sameApprovedHTTPSOrigin" if origin_passed else "originNotVerified",
-            "The hosted privacy response must remain on the requested HTTPS origin.",
-            "Remove cross-origin redirects and restore the approved hosted-policy URL.",
-        )
-        add(
-            "privacyURLContentType",
-            "privacyURLContentType",
-            content_type_passed,
-            "textHTML" if content_type_passed else "notTextHTML",
-            "The hosted privacy response must be served as text/html.",
-            "Repair the Firebase Hosting content type for the privacy policy.",
-        )
-        add(
-            "privacyURLExactBody",
-            "privacyURLExactBody",
-            exact_body_passed,
+        origin_errors = {"requestedURLNotApprovedHTTPS", "redirectOriginEscape"}
+        body_errors = {"expectedBodyOversize", "responseBodyOversize", "bodyMismatch"}
+        outcomes = (
             (
-                verification.safe_body_observation
-                if expected_body_error is None
-                else f"expectedSourceUnavailable:{expected_body_error}"
+                f"{prefix}HTTP",
+                "httpStatusNotSuccessful" not in error_set,
+                status,
+                "Every hosted launch page must return a successful HTTP status.",
+                "Deploy Firebase Hosting or repair the named launch page.",
             ),
-            "The hosted privacy response must exactly match public/privacy.html.",
-            "Deploy the current generated privacy disclosure and rerun the live probe.",
+            (
+                f"{prefix}Origin",
+                not error_set.intersection(origin_errors),
+                (
+                    "sameApprovedHTTPSOrigin"
+                    if not error_set.intersection(origin_errors)
+                    else "originNotVerified"
+                ),
+                "Each hosted response must remain on its requested approved HTTPS origin.",
+                "Remove cross-origin redirects and restore the approved Hosting origin.",
+            ),
+            (
+                f"{prefix}ContentType",
+                "contentTypeNotHTML" not in error_set,
+                "textHTML" if "contentTypeNotHTML" not in error_set else "notTextHTML",
+                "Every hosted launch page must be served as text/html.",
+                "Repair the Firebase Hosting content type for the named page.",
+            ),
+            (
+                f"{prefix}ExactBody",
+                source_error is None and not error_set.intersection(body_errors),
+                (
+                    verification.safe_body_observation
+                    if source_error is None
+                    else f"expectedSourceUnavailable:{source_error}"
+                ),
+                f"The hosted response must exactly match {source_path}.",
+                "Deploy the reviewed public sources and rerun the live probe.",
+            ),
+        )
+        for outcome in outcomes:
+            add(*outcome)
+
+    def unavailable_response_checks(prefix, source_path, observed):
+        add(
+            f"{prefix}HTTP", False, observed,
+            "Every hosted launch page must return a successful HTTP status.",
+            "Deploy Firebase Hosting or repair the named launch page.",
+        )
+        add(
+            f"{prefix}Origin", False, "notVerified",
+            "Each hosted response must remain on its requested approved HTTPS origin.",
+            "Remove cross-origin redirects and restore the approved Hosting origin.",
+        )
+        add(
+            f"{prefix}ContentType", False, "notVerified",
+            "Every hosted launch page must be served as text/html.",
+            "Repair the Firebase Hosting content type for the named page.",
+        )
+        add(
+            f"{prefix}ExactBody", False, "notVerified",
+            f"The hosted response must exactly match {source_path}.",
+            "Deploy the reviewed public sources and rerun the live probe.",
         )
 
-    def unavailable_response_checks(observed):
-        add(
-            "privacyURLHTTP",
-            "privacyURLHTTP",
-            False,
-            observed,
-            "The hosted privacy URL must return a successful HTTP status.",
-            "Deploy Firebase Hosting or repair the privacy URL.",
-        )
-        add(
-            "privacyURLOrigin",
-            "privacyURLOrigin",
-            False,
-            "notVerified",
-            "The hosted privacy response must remain on the requested HTTPS origin.",
-            "Remove cross-origin redirects and restore the approved hosted-policy URL.",
-        )
-        add(
-            "privacyURLContentType",
-            "privacyURLContentType",
-            False,
-            "notVerified",
-            "The hosted privacy response must be served as text/html.",
-            "Repair the Firebase Hosting content type for the privacy policy.",
-        )
-        add(
-            "privacyURLExactBody",
-            "privacyURLExactBody",
-            False,
-            "notVerified",
-            "The hosted privacy response must exactly match public/privacy.html.",
-            "Deploy the current generated privacy disclosure and rerun the live probe.",
-        )
+    configured = bool(
+        hosting_origin
+        and approved_https_origin_matches(hosting_origin, hosting_origin)
+    )
+    add(
+        "publicWebOriginConfigured",
+        configured,
+        hosting_origin or "missing",
+        "NoumWebURLs.hostingOrigin must be an approved direct HTTPS Hosting origin.",
+        "Restore Firebase Hosting until the custom-domain exact-body gate passes.",
+    )
 
-    if not privacy_url:
-        add(
-            "privacyURLConfigured",
-            "privacyURLConfigured",
-            False,
-            "missing",
-            "NoumWebURLs.privacy must point at a public privacy URL.",
-            "Restore NoumWebURLs.privacy before probing the hosted policy.",
-        )
+    if not configured:
+        for prefix, _, source_path in PUBLIC_LIVE_PAGE_SPECS:
+            unavailable_response_checks(prefix, source_path, "invalidConfiguredOrigin")
     else:
-        add(
-            "privacyURLConfigured",
-            "privacyURLConfigured",
-            True,
-            privacy_url,
-            "NoumWebURLs.privacy must point at a public privacy URL.",
-            "Restore NoumWebURLs.privacy before probing the hosted policy.",
-        )
-        if not approved_https_origin_matches(privacy_url, privacy_url):
-            unavailable_response_checks("invalidConfiguredURL")
-        else:
+        for prefix, route, source_path in PUBLIC_LIVE_PAGE_SPECS:
+            source_error = None
             try:
-                response = fetch_url(privacy_url)
+                expected_body = (Path(repo_root) / source_path).read_bytes()
+            except OSError as exc:
+                expected_body = b""
+                source_error = type(exc).__name__
+            requested_url = f"{hosting_origin}{route}"
+            try:
+                response = fetch_url(requested_url)
                 status = response.get("status")
                 content_type = response.get("contentType") or ""
                 body = response.get("bodyBytes")
                 if not isinstance(body, bytes):
-                    raise ValueError("privacyResponseBodyBytesMissing")
-                verification = verify_privacy_response(
+                    raise ValueError("hostedPageResponseBodyBytesMissing")
+                verification = verify_hosted_page_response(
                     expected_body=expected_body,
                     observed_body=body,
-                    requested_url=privacy_url,
+                    requested_url=requested_url,
                     final_url=response.get("finalURL") or "",
                     status=status,
                     content_type=content_type,
                     observed_complete=response.get("bodyComplete") is True,
                     observed_size=response.get("bodySize") or len(body),
                 )
-                add_response_checks(verification, status, content_type)
+                add_response_checks(prefix, source_path, source_error, verification, status)
             except urllib.error.HTTPError as exc:
                 content_type = exc.headers.get("Content-Type") if exc.headers else ""
-                verification = verify_privacy_response(
+                verification = verify_hosted_page_response(
                     expected_body=expected_body,
                     observed_body=b"",
-                    requested_url=privacy_url,
-                    final_url=exc.geturl() or privacy_url,
+                    requested_url=requested_url,
+                    final_url=exc.geturl() or requested_url,
                     status=exc.code,
                     content_type=content_type or "",
                 )
-                add_response_checks(verification, exc.code, content_type or "")
+                add_response_checks(prefix, source_path, source_error, verification, exc.code)
                 try:
                     exc.close()
                 except Exception:
                     pass
             except Exception as exc:
-                unavailable_response_checks(type(exc).__name__)
+                unavailable_response_checks(prefix, source_path, type(exc).__name__)
 
     failures = [check for check in checks if not check["passed"]]
     return {
         "validationBoundary": (
-            "Live ops probe checks public URL reachability and source-exact hosted "
-            "privacy bytes; it does not prove "
-            "Firestore rules deployment, App Store privacy disclosure review, "
+            "Live ops probe checks all four public launch pages for bounded, "
+            "source-exact bytes on the app's approved direct Hosting origin; it "
+            "does not prove Firestore rules deployment, App Store privacy review, "
             "TestFlight upload, or release-blocking bug triage."
         ),
         "checkCount": len(checks),
@@ -4244,6 +4241,28 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "Firebase Hosting must rewrite /privacy to /privacy.html.",
         "Add the /privacy -> /privacy.html rewrite to firebase.json.",
     )
+    required_public_rewrites = {
+        "/privacy": "/privacy.html",
+        "/support": "/support.html",
+        "/how-noum-coaches": "/how-noum-coaches.html",
+    }
+    observed_public_rewrites = {
+        item.get("source"): item.get("destination")
+        for item in hosting_config.get("rewrites", [])
+        if isinstance(item, dict)
+    }
+    public_rewrites_complete = all(
+        observed_public_rewrites.get(source) == destination
+        for source, destination in required_public_rewrites.items()
+    )
+    add(
+        "hostingPublicPageRewrites",
+        "hostingPublicPageRewrites",
+        public_rewrites_complete,
+        "complete" if public_rewrites_complete else "missingOrDrifted",
+        "Firebase Hosting must route every reviewed public launch page.",
+        "Restore the privacy, support, and coaching-method rewrites.",
+    )
 
     firestore_rules = file_text(root, "firestore.rules")
     add(
@@ -4327,6 +4346,19 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         "Firebase Hosting should have a landing page beside privacy.html.",
         "Restore public/index.html.",
     )
+    public_source_paths = [
+        root / source_path
+        for _, _, source_path in PUBLIC_LIVE_PAGE_SPECS
+    ]
+    all_public_sources_present = all(path.is_file() for path in public_source_paths)
+    add(
+        "hostedPublicPageSources",
+        "hostedPublicPageSources",
+        all_public_sources_present,
+        "allFourPresent" if all_public_sources_present else "oneOrMoreMissing",
+        "All four exact-body launch sources must exist before Hosting deploy.",
+        "Restore index, privacy, support, and how-noum-coaches HTML sources.",
+    )
     add(
         "bundledPrivacyPolicy",
         "bundledPrivacyPolicy",
@@ -4337,13 +4369,26 @@ def operational_static_preflight(repo_root=REPO_ROOT):
     )
 
     web_urls = file_text(root, "Noum/NoumWebURLs.swift") or ""
+    configured_privacy_url = privacy_url_from_repo(root)
+    configured_origin = hosting_origin_from_repo(root)
+    required_web_url_fragments = (
+        "static let landing = hostingOrigin",
+        'static let privacy = hostingOrigin.appendingPathComponent("privacy")',
+        'static let support = hostingOrigin.appendingPathComponent("support")',
+        'static let coachingMethod = hostingOrigin.appendingPathComponent("how-noum-coaches")',
+    )
+    app_web_origin_approved = bool(
+        configured_origin
+        and approved_https_origin_matches(configured_origin, configured_origin)
+        and all(fragment in web_urls for fragment in required_web_url_fragments)
+    )
     add(
         "appPrivacyURLConstant",
         "appPrivacyURLConstant",
-        "https://noum-d0b6f.web.app/privacy" in web_urls,
-        "https://noum-d0b6f.web.app/privacy" if "https://noum-d0b6f.web.app/privacy" in web_urls else "missing",
-        "The app must point reviewers and users at the staged privacy URL.",
-        "Update NoumWebURLs.privacy to the deployed privacy URL.",
+        app_web_origin_approved,
+        configured_privacy_url or "missing",
+        "The app must derive public pages from an approved direct Hosting origin.",
+        "Restore NoumWebURLs.hostingOrigin to verified Firebase Hosting.",
     )
 
     privacy_view = file_text(root, "Noum/PrivacyPolicyView.swift") or ""
@@ -4752,15 +4797,15 @@ def render_markdown(status):
             "",
             f"- Checks passing: `{ops_live_probe.get('passCount')}/{ops_live_probe.get('checkCount')}`",
         ])
-        configured_url = next(
+        configured_origin = next(
             (
                 item.get("observed") for item in ops_live_probe.get("checks", [])
-                if item.get("key") == "privacyURLConfigured"
+                if item.get("key") == "publicWebOriginConfigured"
             ),
             None,
         )
-        if configured_url:
-            lines.append(f"- Privacy URL: `{configured_url}`")
+        if configured_origin:
+            lines.append(f"- Public origin: `{configured_origin}`")
         if ops_live_probe.get("validationBoundary"):
             lines.append(f"- Boundary: {ops_live_probe['validationBoundary']}")
         failures = ops_live_probe.get("failures") or []

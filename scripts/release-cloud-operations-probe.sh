@@ -225,7 +225,7 @@ python3 "$runtime_validator" \
   --app-store-app-apple-id "$app_store_app_apple_id" \
   --app-store-notification-phase "$app_store_notification_phase"
 
-"$(cd "$(dirname "$0")" && pwd)/release-live-privacy-probe.sh"
+"$(cd "$(dirname "$0")" && pwd)/release-live-web-probe.sh" firebase
 
 callable_names="$(python3 "$runtime_validator" --print-callable-names)"
 for function_name in $callable_names; do
