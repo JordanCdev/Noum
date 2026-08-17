@@ -345,6 +345,10 @@ enum HomeSupportSurface: Equatable {
         // A due coaching step changes what the user should do next. A passive
         // earned receipt can wait in the same existing ledger until that step
         // is completed or acknowledged; no second row is introduced.
+        // When first-week guidance and unfinished profile setup both qualify,
+        // keep the explicit setup-resume promise reachable. This resolves only
+        // that conflict; the surrounding support priority remains unchanged.
+        if hasFirstWeekEntry, hasDeferredSetup { return .deferredSetup }
         if hasFirstWeekEntry { return .firstWeek }
         if hasProgressReceipt { return .progressReceipt }
         if hasDeferredSetup { return .deferredSetup }

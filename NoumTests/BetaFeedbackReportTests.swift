@@ -132,4 +132,32 @@ struct BetaFeedbackReportTests {
         #expect(source.contains("Send beta feedback"))
         #expect(source.contains("settings.betaFeedback"))
     }
+
+    @Test("Diagnostics contain children without replacing the redaction notice identity")
+    func diagnosticsPreserveRedactionNoticeAccessibilityIdentity() throws {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let repositoryRoot = testsDirectory.deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/BetaFeedbackView.swift"),
+            encoding: .utf8
+        )
+        let cardStart = try #require(source.range(of: "private var diagnosticsCard: some View"))
+        let actionsStart = try #require(
+            source.range(
+                of: "private var actions: some View",
+                range: cardStart.upperBound..<source.endIndex
+            )
+        )
+        let card = String(source[cardStart.lowerBound..<actionsStart.lowerBound])
+        let containment = try #require(
+            card.range(of: ".accessibilityElement(children: .contain)")
+        )
+        let rootIdentifier = try #require(
+            card.range(of: ".accessibilityIdentifier(\"betaFeedback.diagnostics\")")
+        )
+
+        #expect(card.contains(".accessibilityIdentifier(\"betaFeedback.redactionNotice\")"))
+        #expect(containment.lowerBound < rootIdentifier.lowerBound)
+        #expect(!card.contains(".accessibilityElement(children: .combine)"))
+    }
 }

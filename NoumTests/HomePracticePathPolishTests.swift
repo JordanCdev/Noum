@@ -91,4 +91,50 @@ struct HomePracticePathPolishTests {
         #expect(PathLandscapeSizing.treePerspectiveScale(depthInField: -1) == 1)
         #expect(abs(PathLandscapeSizing.treePerspectiveScale(depthInField: 2) - 1.58) < 0.0001)
     }
+
+    @Test("Terminal permission cards keep copy and recovery controls separately reachable")
+    func permissionIssueCardsContainAccessibleChildren() throws {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let repositoryRoot = testsDirectory.deletingLastPathComponent()
+        let fillerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/AhCounterView.swift"),
+            encoding: .utf8
+        )
+        let scaffoldSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/FocusedPracticeScaffold.swift"),
+            encoding: .utf8
+        )
+        let fillerStart = try #require(
+            fillerSource.range(of: "private func recordingIssueStatus")
+        )
+        let fillerEnd = try #require(
+            fillerSource.range(
+                of: "private func recordingIssueAction",
+                range: fillerStart.upperBound..<fillerSource.endIndex
+            )
+        )
+        let fillerCard = String(fillerSource[fillerStart.lowerBound..<fillerEnd.lowerBound])
+        let scaffoldStart = try #require(
+            scaffoldSource.range(of: "struct FocusedPracticePermissionIssueStatus")
+        )
+        let scaffoldEnd = try #require(
+            scaffoldSource.range(
+                of: "struct FocusedPracticeScaffold",
+                range: scaffoldStart.upperBound..<scaffoldSource.endIndex
+            )
+        )
+        let scaffoldCard = String(
+            scaffoldSource[scaffoldStart.lowerBound..<scaffoldEnd.lowerBound]
+        )
+
+        #expect(fillerCard.contains("Label(presentation.title"))
+        #expect(scaffoldCard.contains("Text(presentation.title)"))
+        for card in [fillerCard, scaffoldCard] {
+            #expect(card.contains("Text(presentation.detail)"))
+            #expect(card.contains(".accessibilityElement(children: .contain)"))
+            #expect(!card.contains(".accessibilityElement(children: .combine)"))
+        }
+        #expect(fillerCard.contains("ahCounter.recordingIssue.openSettings"))
+        #expect(scaffoldCard.contains("settingsButtonIdentifier"))
+    }
 }

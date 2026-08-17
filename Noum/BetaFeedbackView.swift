@@ -266,6 +266,7 @@ struct BetaFeedbackView: View {
                     .accessibilityIdentifier("betaFeedback.redactionNotice")
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("betaFeedback.diagnostics")
     }
 

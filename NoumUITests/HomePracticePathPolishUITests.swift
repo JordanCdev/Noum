@@ -83,14 +83,25 @@ final class HomePracticePathPolishUITests: XCTestCase {
             issue.waitForExistence(timeout: 15),
             "The typed unsupported-locale failure should reach a named issue surface."
         )
-        XCTAssertTrue(issue.label.contains("This language isn't available offline"))
-        XCTAssertTrue(issue.label.contains("en-US"))
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)["This language isn't available offline"]
+                .waitForExistence(timeout: 5)
+        )
+        let unsupportedDetail = issue.descendants(matching: .staticText)
+            .matching(NSPredicate(
+                format: "label == %@",
+                "On-device transcription isn't available for en-US on this device. Choose another Practice language in Settings or continue on a device that supports it."
+            ))
+            .firstMatch
+        XCTAssertTrue(unsupportedDetail.waitForExistence(timeout: 5))
 
         // Start can never succeed for this cause, so it must not be the
         // offered recovery. Leaving the rep is the only honest action.
-        XCTAssertFalse(app.buttons["Start Filler Control"].exists)
+        XCTAssertFalse(app.buttons["ahCounter.start"].exists)
         let back = app.buttons["ahCounter.recordingIssue.backToSetup"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
+        scrollUntilHittable(back, in: app, attempts: 5)
+        XCTAssertEqual(back.label, "Back to practice")
         XCTAssertTrue(back.isHittable)
         attachScreenshot(named: "filler-unsupported-locale", app: app)
     }
@@ -118,11 +129,21 @@ final class HomePracticePathPolishUITests: XCTestCase {
 
         let issue = app.descendants(matching: .any)["ahCounter.recordingIssue"]
         XCTAssertTrue(issue.waitForExistence(timeout: 15))
-        XCTAssertTrue(issue.label.contains("Speech Recognition is off"))
-        XCTAssertFalse(app.buttons["Start Filler Control"].exists)
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)["Speech Recognition is off"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)[
+                "Speech recognition access is off. Allow Speech Recognition in Settings to practice offline."
+            ].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.buttons["ahCounter.start"].exists)
 
         let settings = app.buttons["ahCounter.recordingIssue.openSettings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        scrollUntilHittable(settings, in: app, attempts: 5)
+        XCTAssertEqual(settings.label, "Open Settings")
         XCTAssertTrue(settings.isHittable)
     }
 
@@ -151,12 +172,21 @@ final class HomePracticePathPolishUITests: XCTestCase {
             issue.waitForExistence(timeout: 15),
             "A denied microphone must resolve to a typed recovery surface."
         )
-        XCTAssertTrue(issue.label.contains("Microphone access is off"))
-        XCTAssertTrue(issue.label.contains("Open iOS Settings"))
-        XCTAssertFalse(app.buttons["Start Filler Control"].exists)
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)["Microphone access is off"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)[
+                "Microphone access is blocked. Open iOS Settings and allow Noum to use the microphone, then start the rep again."
+            ].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.buttons["ahCounter.start"].exists)
 
         let settings = app.buttons["ahCounter.recordingIssue.openSettings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        scrollUntilHittable(settings, in: app, attempts: 5)
+        XCTAssertEqual(settings.label, "Open Settings")
         XCTAssertTrue(settings.isHittable)
     }
 
@@ -179,6 +209,7 @@ final class HomePracticePathPolishUITests: XCTestCase {
         )
         let start = app.buttons["paceTraining.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 3))
+        XCTAssertEqual(start.label, "Start pace training")
         start.tap()
 
         let issue = app.descendants(matching: .any)["paceTraining.recordingIssue"]
@@ -186,13 +217,21 @@ final class HomePracticePathPolishUITests: XCTestCase {
             issue.waitForExistence(timeout: 15),
             "Pace Training must not turn a denied microphone into a retry loop."
         )
-        XCTAssertTrue(issue.label.contains("Microphone access is off"))
-        XCTAssertTrue(issue.label.contains("Open iOS Settings"))
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)["Microphone access is off"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            issue.descendants(matching: .staticText)[
+                "Microphone access is blocked. Open iOS Settings and allow Noum to use the microphone, then start the rep again."
+            ].waitForExistence(timeout: 5)
+        )
         XCTAssertFalse(app.buttons["paceTraining.start"].exists)
 
         let settings = app.buttons["paceTraining.recordingIssue.openSettings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         scrollUntilHittable(settings, in: app, attempts: 5)
+        XCTAssertEqual(settings.label, "Open Settings")
         XCTAssertTrue(settings.isHittable)
     }
 

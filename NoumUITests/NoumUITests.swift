@@ -399,8 +399,8 @@ final class NoumUITests: XCTestCase {
         )
         XCTAssertEqual(
             restoredRecommendation.label,
-            "Start your first rep",
-            "A restored profile with no completed rep should keep the honest cold-start CTA."
+            "Start Filler Control",
+            "A restored filler-focused profile should expose its exact recommendation route."
         )
         restoredRecommendation.tap()
         XCTAssertTrue(

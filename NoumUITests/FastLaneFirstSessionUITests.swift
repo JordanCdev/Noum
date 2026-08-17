@@ -343,7 +343,8 @@ final class FastLaneFirstSessionUITests: XCTestCase {
             "The observation should stay bounded to what this one rep proves."
         )
         XCTAssertTrue(
-            app.descendants(matching: .any)["summary.fix.card"].waitForExistence(timeout: 5),
+            app.descendants(matching: .any)["summary.exitPanel.drill"]
+                .waitForExistence(timeout: 5),
             "Day 0 must prescribe one concrete next action."
         )
 

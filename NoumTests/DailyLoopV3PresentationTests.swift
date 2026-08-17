@@ -99,7 +99,7 @@ struct DailyLoopV3PresentationTests {
             hasFirstWeekEntry: true,
             hasDeferredSetup: true,
             hasRatingReview: true
-        ) == .firstWeek)
+        ) == .deferredSetup)
 
         #expect(HomeSupportSurface.resolve(
             hasOutcomeAcknowledgement: false,
@@ -117,7 +117,7 @@ struct DailyLoopV3PresentationTests {
             hasFirstWeekEntry: true,
             hasDeferredSetup: true,
             hasRatingReview: true
-        ) == .firstWeek)
+        ) == .deferredSetup)
 
         #expect(HomeSupportSurface.resolve(
             hasOutcomeAcknowledgement: false,
@@ -127,6 +127,36 @@ struct DailyLoopV3PresentationTests {
             hasDeferredSetup: false,
             hasRatingReview: false
         ) == nil)
+    }
+
+    @Test("Deferred setup wins only its conflict with first-week guidance")
+    func deferredSetupRemainsReachableWithoutReorderingOtherSupport() {
+        #expect(HomeSupportSurface.resolve(
+            hasOutcomeAcknowledgement: false,
+            hasGoalReview: false,
+            hasProgressReceipt: false,
+            hasFirstWeekEntry: true,
+            hasDeferredSetup: true,
+            hasRatingReview: false
+        ) == .deferredSetup)
+
+        #expect(HomeSupportSurface.resolve(
+            hasOutcomeAcknowledgement: false,
+            hasGoalReview: false,
+            hasProgressReceipt: false,
+            hasFirstWeekEntry: true,
+            hasDeferredSetup: false,
+            hasRatingReview: false
+        ) == .firstWeek)
+
+        #expect(HomeSupportSurface.resolve(
+            hasOutcomeAcknowledgement: false,
+            hasGoalReview: false,
+            hasProgressReceipt: true,
+            hasFirstWeekEntry: false,
+            hasDeferredSetup: true,
+            hasRatingReview: false
+        ) == .progressReceipt)
     }
 
     @Test("The populated Today screen stays within three surfaces")
