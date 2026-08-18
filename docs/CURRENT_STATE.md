@@ -1,6 +1,6 @@
 # Noum — Current state
 
-## 2026-08-17 — V3 production-UX hardening complete in source; native and external gates remain NO-GO
+## 2026-08-18 — V3 local unit/UI/Release gates green; external release gates remain NO-GO
 
 The `ux-experiment` branch now has one coherent adult coaching language across
 activation, Today, practice, evidence, reward, Ask Noum, Progress, Profile,
@@ -45,21 +45,33 @@ audited spoken-practice surfaces to Settings. Beta feedback has a content-free
 coach-quality category, and release CI now owns deterministic Coach Arena plus
 core journey/permission UI shards.
 
-Static readiness, release-script tests, Coach Arena, authored fixture
-validation, resource/workflow checks, and `git diff --check` pass in the Linux
-source workspace. A 2026-08-17 Mac pickup repaired five narrow compiler-error classes
-plus one missing test-module import; the Debug simulator app now builds on an
-iPhone 17 / iOS 26.4 destination. The complete serialized `NoumTests` target
-then reported **4,907 passed, 24 failed, one expected failure, and zero
-skipped**. The failures cover coach reliability and conversation contracts,
-V3 surface/path language, first-week and professional-loop expectations, and
-account-deletion ordering. This is useful native evidence, but not a green
-native gate. The branch still requires repair and revalidation of those tests,
-a clean Xcode Release build, same-build simulator/physical-device accessibility
-and speech QA, live legal/support deployment, signing and TestFlight processing,
-StoreKit/auth/App Check verification, a current live-provider sweep, blinded
-professional-coach review, and longitudinal beta evidence. Production therefore
-remains correctly **NO-GO**.
+The 2026-08-17–18 Mac pickup repaired the bundled compile failures and closed
+the subsequent product-contract regressions without relaxing fail-closed
+evidence, deletion, coaching, permission, or accessibility boundaries. At
+source commit `f153bf691`, the Xcode ad hoc-signed Debug simulator build passes
+on iPhone 17 / iOS 26.4 with simulator test-host entitlements preserved; the
+complete serialized `NoumTests` target reports
+**4,963 logical tests, 4,962 passed, one expected failure, zero unexpected
+failures, and zero skipped**; and the complete serialized `NoumUITests` target
+reports **94/94 passed with zero failures or skips**. A fresh ad hoc-signed
+Release simulator build succeeds with zero warnings/errors, passes simulator
+signature verification, and clears the release-bundle scan. Static readiness
+is **25/25**, release-script tests are **165/165**, and Functions tests are
+**209/209**. The five-surface capture sweep in dark/system appearance also
+renders coherently.
+
+This clears the complete local unit/UI and Release-simulator gates plus the
+default-size five-tab dark/system sweep, not the remaining simulator visual
+matrix or the release gate. The current Mac lacks usable Apple Development and
+Distribution authority and matching physical-device profiles, so the target
+iPhone 13 Pro has not installed this candidate and no distribution archive or
+TestFlight build exists. Live legal/support deployment, StoreKit/auth/App Check
+verification, a current
+live-provider sweep, blinded professional-coach review, and longitudinal beta
+evidence also remain open. The current readiness rerun remains capped at
+**20/100** with claim `localEvaluationSubstrateOnly` because its app-path
+evidence is stale and all five managed external artifacts are missing.
+Production therefore remains correctly **NO-GO**.
 
 The public-web source gate is now cutover-safe. In-app and App Store metadata
 share one active origin and remain on `noum-d0b6f.web.app` while `noum.app` is

@@ -8,24 +8,35 @@ TestFlight, and proof that Chat with Noum is ready for production use. A green
 local eval or smoke flow is evidence, but it is not enough to claim production
 readiness.
 
-## Current Release Status (2026-08-17)
+## Current Release Status (2026-08-18)
 
 **Release verdict: NO-GO for external TestFlight or App Store release.** The
-executable readiness validator currently reports **20/100** and fails closed on
-stale app-path evidence plus missing live-provider, professional-calibration,
-real-device, longitudinal-transfer, and operational-signoff artifacts. The
-`ux-experiment` source/static candidate is materially newer than the evidence
-below and has not run on macOS CI because the branch is not on the remote.
+2026-08-18 executable readiness rerun reports **20/100** (local target-shape
+**90/100**, maximum allowed **20/100**, claim
+`localEvaluationSubstrateOnly`) and fails closed on stale app-path evidence
+plus missing live-provider, professional-calibration, real-device,
+longitudinal-transfer, and operational-signoff artifacts. A local
+`origin/ux-experiment` tracking ref exists, but tested app source `f153bf691`
+was nine commits ahead of that last-fetched ref when this local evidence was
+captured. Its ad hoc-signed simulator unit/UI, clean Release simulator, bundle,
+static, and local Functions/source-contract tests are green. Those results are
+not distribution, physical-device, TestFlight, live-service, or outcome
+evidence.
 
 Current critical path:
 
-1. Commit and push one immutable `ux-experiment` candidate SHA.
+1. Publish, freeze, and record one immutable `ux-experiment` candidate SHA,
+   confirm the remote resolves to it, then bind macOS CI, archive, upload, and
+   every external artifact to it.
 2. Deploy the four reviewed Firebase pages, pass their exact-body gate, then
    connect and independently prove `noum.app` before changing the active origin;
    the fresh Firebase homepage is stale (2,073 vs 2,246 source bytes), and the
    custom domain still returns a 114-byte parking body.
-3. Pass the macOS Release build, serialized unit target, mandatory journey and
-   permission UI shards, then archive/sign/upload that same SHA.
+3. Restore a valid Apple Development identity plus development profiles for
+   direct-device installation, and an Apple Distribution identity plus App
+   Store profiles for archive/TestFlight. Then archive, sign, and upload that
+   same SHA. Local ad hoc simulator Release, serialized unit, and complete UI
+   gates are green; Apple-authorized distribution authority is not.
 4. Complete the same-build physical-device contract, current live-provider
    sweep, blinded professional-coach calibration, longitudinal beta, and
    attachment-backed operational checklist.

@@ -1,3 +1,8 @@
+> **Archived.** This M24/`Redesign` round-51 log is superseded and is not a
+> release-status source. See
+> [`docs/UX_EXPERIMENT_V3_HANDOFF.md`](docs/UX_EXPERIMENT_V3_HANDOFF.md) for the
+> active UX-experiment handoff.
+
 # HANDOFF — M24 deferred slate (round 51): helper-level nil-progress / nil-resolved assertions on the round-46 thin-A fixtures — three new `@Test` methods drive each thin-just-finished fixture (thin-A + parallel-slipping-B, thin-A + parallel-recovering-B, thin-A + parallel-prior-crossing-C) through `MomentumComputer.imToneDrillNoteFields(forJustFinished:in:)` and assert the helper output directly: `fields.progress == nil`, `fields.resolved == nil`, `fields.resolvedScenarioTitle == nil`, `fields.resolvedToneTitle == nil`, AND the round-43 anchoring titles (`fields.scenarioTitle == "Networking"`, `fields.toneTitle == "Confident"`) are still derived from the just-finished rep's `imConversationDetails.setup` unconditionally. Round 51 closes the remaining leg of future move #29 from round 50's HANDOFF (the thin-A leg of the helper-output assertion that rounds 49 + 50 covered for the stalled / recovering / slipping / crossing corners) and completes the helper-boundary defensive belt on the fifth structural corner of the direction × locus matrix (recovering / slipping / crossing / stalled / thin) — the two-layer regression net (surface + helper) is now structurally complete on all five corners in lockstep with the round-46 surface tests. Pure test addition; no production code change; no engine state change; no schema bump; no migration; no new view inputs.
 
 ## Scope

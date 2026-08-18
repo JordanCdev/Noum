@@ -1,19 +1,22 @@
 # Noum V3 UX Experiment — handoff
 
-Date: 2026-08-17
+Date: 2026-08-18
 Branch: `ux-experiment`
 Milestone: M14 — open the loop and earn TestFlight evidence
 
 ## Status
 
-The V3 product direction and its production-hardening source pass are complete
-for an experiment branch. Static verification passed in the source workspace,
-and the 2026-08-17 Mac pickup now compiles as a Debug simulator app after the
-narrow Swift repairs recorded below. The complete serialized unit target is
-still red, so this is not yet a private-beta candidate, signed build, or
-device-proven TestFlight build. Do not merge to `ux-overhaul` or describe it as
-production-ready until the failing native tests and the simulator,
-physical-device, live-service, and human-coach gates below pass.
+The current V3 source-hardening pass has landed for the experiment branch. At
+source commit `f153bf691`, static verification, ad hoc-signed Debug and clean
+Release simulator builds, the complete serialized unit and UI targets, and a
+five-tab default-size dark/system screenshot sweep are green on iPhone 17 /
+iOS 26.4. Simulator test-host entitlements were preserved. This is local
+simulator evidence only: no Apple Distribution archive, current
+physical-device install, TestFlight build, live-service verification, or
+professional-coach calibration exists for this candidate. It is therefore not
+a private-beta candidate or production-ready. Do not merge to `ux-overhaul`
+until the physical-device, distribution, live-service, operational, and
+human-coach gates below pass.
 
 ## Experience contract
 
@@ -195,15 +198,16 @@ pass rule, transfer test, and last-three novelty.
 
 Legitimate information questions have a separate answer-only posture. Generic
 benchmarks are request-bound, ranged, and caveated; they never authorize claims
-about the user's telemetry. Reliability gates fail closed on wrong-question
-answers, report voice, repeated interventions, omitted demonstrations,
-non-answers, scaffold leakage, and unsupported benchmark certainty.
+about the user's telemetry. In the covered fixture, wire, corpus, and pipeline
+cases, reliability gates fail closed on wrong-question answers, report voice,
+repeated interventions, omitted demonstrations, non-answers, scaffold leakage,
+and unsupported benchmark certainty.
 
 Professional-coach parity is still an outcome claim, not a source-code claim.
 It requires blinded coach calibration, audio review, and longitudinal transfer
 evidence.
 
-## Verification completed here
+## Historical source-only verification from the bundle
 
 - Operational static readiness: 22/22.
 - App Store package validator: pass.
@@ -222,35 +226,53 @@ compiler, CoreSimulator, signing identity, protected plists, or a physical
 iPhone. Historical green results from another source revision do not prove
 this branch.
 
-## Native pickup verification — 2026-08-17
+## Final local publication verification — 2026-08-17–18
 
 - Imported bundle commit `0bfd8f654036f004933412f48a79160048e8a644` as a
   19-commit fast-forward from `5cf3d3f898ca32769271d1c1257a94d9cd3a554e`.
-- Repaired five compiler-error classes without changing state ownership or
-  product behavior: two preview-only attempts to write a read-only Reduce Motion
-  environment value, a non-`Void` animation closure, a missing opaque-view
-  return, an out-of-scope accessibility presentation value, and a stored
-  `ViewBuilder` closure that needed escaping semantics.
-- Added the missing `@testable import Noum` to the bundled V3 onboarding shell
-  test file so the full test target can compile and report product failures.
-- Debug simulator build passes on iPhone 17 / iOS 26.4.
-- The serialized `NoumTests` run reports **4,907 passed, 24 failed, one expected
-  failure, and zero skipped**. Failures span coach quality/reliability fixtures,
-  secure-wire and corpus contracts, V3 coach-surface language, path/progression
-  naming, first-week coaching, professional-loop fields, and Apple account-
-  deletion ordering. The ephemeral local result bundle is
-  `/private/tmp/noum-ux-experiment-publish-units-20260817-r2.xcresult` on the
-  pickup Mac.
-- This evidence upgrades the branch from uncompiled source to a buildable UX
-  experiment. It does not clear the native test gate or production readiness.
+- Repaired the bundled compiler errors, then closed the product-contract
+  failures without weakening evidence, deletion, first-week, coaching,
+  accessibility, or permission-recovery boundaries.
+- Source commit `f153bf691` builds as an Xcode ad hoc-signed Debug simulator app
+  on iPhone 17 / iOS 26.4 with simulator test-host entitlements preserved.
+- The complete serialized `NoumTests` target passes: **4,963 logical tests;
+  4,962 passed, one expected failure, zero unexpected failures, and zero
+  skipped**.
+- The complete serialized `NoumUITests` target passes: **94/94 logical tests,
+  zero failures, and zero skipped**. Historical R1 (64/94) and R2 (93/94) were
+  diagnostic; R2's sole failure was a test helper overscrolling a noninteractive
+  trace event that already existed, and the corrected current-candidate R3 is
+  the authoritative full result.
+- A clean ad hoc-signed Release simulator build succeeds with zero errors or
+  warnings; simulator signature verification and the release-bundle scan pass.
+- Static readiness passes **25/25**, including **35/35** embedded contracts;
+  release-script tests pass **165/165**; Functions tests pass **209/209**; the
+  App Store package validator and four release-runner syntax checks pass.
+- The current readiness rerun remains correctly capped at **20/100** despite a
+  **90/100** local target shape. Its claim is
+  `localEvaluationSubstrateOnly`; stale app-path evidence and all five managed
+  external artifacts keep launch readiness false.
+- The configured five-surface capture sweep (screenshot skill depth: `light`)
+  renders Today, Practice, Progress, Profile, and Settings in the simulator's
+  dark/system appearance without a blank launch, splash stall, crash surface,
+  or obvious default-size text collision. Its handoff is under
+  `.screenshots/2026-08-18_ux-experiment-final-local-gates/`.
+- Result bundles live only on the verification Mac and are ephemeral runner
+  diagnostics, not durable branch artifacts. The source SHA and summarized
+  counts above are a handoff summary, not an uploaded CI evidence artifact.
+- No distribution archive, physical-device install, TestFlight upload/install,
+  live-provider sweep, or professional-coach calibration was produced. Those
+  remain release blockers rather than local code failures.
 
 ## Required Mac and TestFlight gates
 
-1. Materialize the protected build configuration and bind the source commit.
-2. Run a clean Release build, repair the 24 known unit failures, and rerun the
-   complete `NoumTests` target to green.
-3. Run the mandatory UI shard: onboarding → spoken rep → verified reward →
-   Summary → return, plus beta feedback and microphone/Speech-denial recovery.
+1. Freeze and publish one immutable candidate SHA, then bind every CI, archive,
+   and external-evidence artifact to that source.
+2. Restore an authorized Apple Development and Distribution identity plus
+   matching app, extension, and capability profiles. The target iPhone 13
+   Pro cannot currently install this candidate with the available authority.
+3. Produce a clean distribution archive, upload it, wait for TestFlight
+   processing, and install that exact build.
 4. Capture iPhone SE-size and current Pro-size screenshots, dark/light,
    Accessibility XXXL, Reduce Motion, and interruption/background states.
 5. Complete a physical VoiceOver pass and real microphone/Bluetooth/offline
@@ -260,12 +282,16 @@ this branch.
 7. Deploy the reviewed privacy/support/coaching-trust pages and bind
    `noum.app` DNS/TLS. The currently live support/coaching routes and parked
    custom domain are not a releasable legal/support surface.
-8. Archive, upload, wait for TestFlight processing, and install that exact
-   build.
-9. Run 10–20 varied live-provider reps, then a blinded professional-coach
-   review before widening the beta.
-10. Run a 7-day concierge beta with baseline/retry audio and one real-world
-   transfer check per tester.
+8. Complete the named current-source live-provider evaluation and blinded
+   professional-coach calibration artifacts. A 10–20-rep smoke is preliminary
+   evidence only and cannot replace those gates.
+9. Complete the canonical four-week longitudinal-transfer gate in the
+   production runbook, including 30 qualified qualitative participants and 200
+   D1/D7-eligible installs; a seven-day concierge pilot is preliminary only.
 
-Until those gates pass, the correct release verdict is: **buildable UX
-experiment; native test gate red; not a private-beta candidate**.
+Until those gates pass, the correct release verdict is: **locally hardened,
+buildable UX experiment with green simulator unit, UI, Release, static, and
+five-tab default-size dark/system sweep; the remaining simulator visual matrix,
+physical-device, distribution/TestFlight, live-service, operational,
+professional-coach, and longitudinal gates remain open; not a private-beta
+candidate**.
