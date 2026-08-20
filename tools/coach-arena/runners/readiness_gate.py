@@ -943,7 +943,9 @@ def current_git_commit(repo_root):
 
 
 def generated_evidence_output_path(path):
-    normalized = str(path).replace("\\", "/")
+    normalized = str(path)
+    if "\\" in normalized:
+        return False
     if normalized.startswith("./"):
         normalized = normalized[2:]
     return normalized in GENERATED_EVIDENCE_OUTPUT_FILES
@@ -1027,7 +1029,9 @@ def git_commit_is_ancestor(repo_root, ancestor, descendant):
 
 
 def clean_ancestor_documentation_path(path):
-    normalized = str(path).replace("\\", "/")
+    normalized = str(path)
+    if "\\" in normalized:
+        return False
     if normalized.startswith("./"):
         normalized = normalized[2:]
     if normalized in CLEAN_ANCESTOR_DOCUMENTATION_FILES:
@@ -1098,7 +1102,7 @@ def clean_ancestor_descendant_audit(repo_root, ancestor, descendant):
     changed_paths = sorted(set(paths))
     behavior_paths = [
         path for path in changed_paths
-        if not clean_ancestor_documentation_path(path)
+        if dirty_behavior_source_path(path)
     ]
     result["changedPaths"] = changed_paths
     result["behaviorSourcePaths"] = behavior_paths

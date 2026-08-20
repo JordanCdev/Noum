@@ -2392,6 +2392,70 @@ class ReadinessGateTests(unittest.TestCase):
             self.assertTrue(docs_audit["passes"])
             self.assertEqual(docs_audit["behaviorSourcePaths"], [])
 
+            generated_report = root / "tools/coach-arena/reports/app-path/latest.json"
+            generated_report.parent.mkdir(parents=True)
+            generated_report.write_text("{}\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", root, "add", str(generated_report.relative_to(root))],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", root, "commit", "-qm", "generated evidence"],
+                check=True,
+            )
+            generated_commit = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+
+            generated_audit = gate.clean_ancestor_descendant_audit(
+                root,
+                docs_commit,
+                generated_commit,
+            )
+            self.assertTrue(generated_audit["passes"])
+            self.assertEqual(
+                generated_audit["changedPaths"],
+                ["tools/coach-arena/reports/app-path/latest.json"],
+            )
+            self.assertEqual(generated_audit["behaviorSourcePaths"], [])
+
+            generated_alias = root / r"tools\coach-arena\reports\app-path\latest.json"
+            docs_alias = root / r"docs\CURRENT_STATE.md"
+            generated_alias.write_text("{}\n", encoding="utf-8")
+            docs_alias.write_text("not documentation\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    "git", "-C", root, "add",
+                    str(generated_alias.relative_to(root)),
+                    str(docs_alias.relative_to(root)),
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", root, "commit", "-qm", "backslash aliases"],
+                check=True,
+            )
+            alias_commit = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+
+            alias_audit = gate.clean_ancestor_descendant_audit(
+                root,
+                generated_commit,
+                alias_commit,
+            )
+            self.assertFalse(alias_audit["passes"])
+            self.assertEqual(
+                alias_audit["behaviorSourcePaths"],
+                [r"docs\CURRENT_STATE.md", r"tools\coach-arena\reports\app-path\latest.json"],
+            )
+
             (root / "Noum").mkdir()
             (root / "Noum/PracticeSupport.swift").write_text("let changed = true\n", encoding="utf-8")
             subprocess.run(["git", "-C", root, "add", "Noum/PracticeSupport.swift"], check=True)
@@ -2405,7 +2469,7 @@ class ReadinessGateTests(unittest.TestCase):
 
             behavior_audit = gate.clean_ancestor_descendant_audit(
                 root,
-                docs_commit,
+                alias_commit,
                 behavior_commit,
             )
             self.assertFalse(behavior_audit["passes"])
@@ -2451,6 +2515,8 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertFalse(gate.clean_ancestor_documentation_path("Noum/PrivacyPolicy.md"))
         self.assertFalse(gate.clean_ancestor_documentation_path("tools/coach-arena/judges/rubric-judge.md"))
         self.assertFalse(gate.clean_ancestor_documentation_path("tools/coach-arena/reports/app-path/latest.json"))
+        self.assertFalse(gate.clean_ancestor_documentation_path(r"docs\CURRENT_STATE.md"))
+        self.assertFalse(gate.generated_evidence_output_path(r"tools\coach-arena\reports\app-path\latest.json"))
 
         invalid = gate.clean_ancestor_descendant_audit(
             Path(__file__).resolve().parents[3],
