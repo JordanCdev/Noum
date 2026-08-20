@@ -44,6 +44,23 @@ LottieView(animation: .named("noum-reward-stamp"))
 
 ## Sound kit — `Noum/Resources/Sounds/`
 
+> **Unwired, and it conflicts with the shipping audio architecture — read this
+> before bundling it.** The app already synthesizes its interaction cues at
+> runtime: `Noum/InteractionSoundEngine.swift` renders every cue procedurally
+> through an `AVAudioSourceNode`, with a mic-suppression gate, a user toggle,
+> an `.ambient` session so the silent switch wins, and unit-tested envelope
+> budgets. `SoundscapeEngine` does the same for ambience. Zero asset weight,
+> no licensing surface. Bundling ~500 KB of WAVs would be a second, parallel
+> audio path with none of those gates — precisely the fragmented ownership
+> the architecture rules forbid.
+>
+> The generated kit is committed because the *sound design* in it is worth
+> keeping (pitch envelopes, layered transient/body/sub, 3 variants per
+> repeated cue). The likely right move is to port those envelopes into
+> `InteractionCueSynth` as new `InteractionCue` cases rather than ship the
+> files. Decide that before adding anything here to a resource build phase.
+
+
 Dry and matte to match the material. The glossy kit's reverb tails were removed: a sticker
 landing on paper has almost no ring.
 
