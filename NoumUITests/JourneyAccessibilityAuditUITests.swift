@@ -233,6 +233,42 @@ final class JourneyAccessibilityAuditUITests: XCTestCase {
     }
 
     @MainActor
+    func testLiveCoachCallAtAccessibilityXXXLPassesNativeAudit() throws {
+        // The live call is the coach's DEFAULT door and the last major
+        // journey surface with no rendered audit: white-on-gradient glass,
+        // a status line that changes with the turn, and circular controls
+        // that carry their meaning in a glyph. The typed coach is covered by
+        // `testContextualAskAtAccessibilityXXXLPassesNativeAudit`.
+        //
+        // `UI_TESTING_FORCE_LIVE_COACH` is required: `CoachSessionView`
+        // deliberately routes to the typed surface whenever speech/mic access
+        // is not granted, which is every simulator run.
+        let app = launch(arguments: [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE",
+            "improvingIntermediate",
+            "UI_TESTING_AUTHENTICATED_COACH",
+            "UI_TESTING_CLEAR_ASK_NOUM",
+            "UI_TESTING_FORCE_LIVE_COACH",
+            "-DeepLink",
+            "noum://ask",
+        ])
+        defer { app.terminate() }
+
+        // Anchor on a control that is unconditionally present. The status
+        // line only renders when there is an honest problem to report, and
+        // the caption only after a turn — neither is a render signal.
+        XCTAssertTrue(
+            app.buttons["Leave the call"].waitForExistence(timeout: 20),
+            "The forced live coach call must render before it is audited"
+        )
+        XCTAssertTrue(app.buttons["Talk to coach"].exists)
+        // The call owns the full screen — no tab capsule is drawn over it.
+        try performVisibleAccessibilityAudit(in: app)
+    }
+
+    @MainActor
     func testTranscriptLadderAtAccessibilityXXXLPassesNativeAudit() throws {
         let app = launch(arguments: [
             "UI_TESTING",

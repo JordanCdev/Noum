@@ -77,6 +77,7 @@ struct LiveCoachCallView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// A call session is engaged (silence auto-SEND while recording stays;
     /// the mic re-opens only on an explicit Talk tap — push-to-talk, never
@@ -382,7 +383,7 @@ struct LiveCoachCallView: View {
             if let stateLine {
                 Text(stateLine)
                     .font(Typography.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(AppColor.focusedTextSecondary)
                     .multilineTextAlignment(.center)
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stateLine)
             }
@@ -390,9 +391,15 @@ struct LiveCoachCallView: View {
             // problems, and the honest "who is listening" engine label all
             // surface here instead of being buried in debug fields.
             if let status = honestStatusLine {
+                // The honest status line reports mic and voice-output
+                // failures — the one place the call admits a dead state.
+                // At 45% white it was the least readable text on the screen,
+                // which is exactly backwards. Hierarchy below the live pill
+                // now comes from weight and placement, not from fading the
+                // text past AA.
                 Text(status)
                     .font(Typography.caption)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(AppColor.focusedTextSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("askNoum.live.statusLine")
@@ -419,10 +426,15 @@ struct LiveCoachCallView: View {
         if let caption = visibleCaption {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    // Who is speaking, and the OFFLINE truth marker below it,
+                    // are both attribution — a reader who cannot resolve them
+                    // cannot tell the live coach from a stale local reply.
+                    // 40% white on this gradient did not clear AA; hierarchy
+                    // stays in the micro/bold/tracked treatment.
                     Text(captionSpeaker)
                         .font(Typography.micro.weight(.bold))
                         .tracking(1)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppColor.focusedTextSecondary)
                     // Legacy offline rows are marked in the live caption too,
                     // so old local copy is never read as the live coach speaking.
                     if captionIsOffline {
@@ -432,7 +444,7 @@ struct LiveCoachCallView: View {
                         }
                         .font(Typography.micro.weight(.bold))
                         .tracking(1)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppColor.focusedTextSecondary)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Offline reply. Reconnect for a full read from your coach.")
                     }
@@ -589,64 +601,99 @@ struct LiveCoachCallView: View {
         // as "Send" (submit the captured turn), never "Stop" (which users misread
         // as cancel and lost their utterance). Otherwise it's the Talk affordance.
         let onFloor = loopActive && voiceInput.state == .recording
-        return HStack(spacing: Spacing.lg) {
-            callButton(
-                glyph: onFloor ? "arrow.up.circle.fill" : "mic.fill",
-                label: onFloor ? "Send" : "Talk",
-                fill: onFloor ? AppColor.pro : Color.white.opacity(0.12),
-                ring: voiceInput.state == .recording,
-                disabled: !voiceInput.isAvailable,
-                accessibilityLabel: onFloor ? "Send to coach" : "Talk to coach"
-            ) { micTapped() }
-
-            // V1 — this control mutes/unmutes the coach's spoken replies, so it
-            // reads as "Mute" (not the vague "Aloud"). Glyph + label flip with
-            // the actual state: speaker.wave when voice is ON (tap to Mute),
-            // speaker.slash when already muted (label "Muted"). a11y label spells
-            // out the *action* the tap performs so VoiceOver users aren't guessing.
-            callButton(
-                glyph: voiceSettings.askNoumSpokenRepliesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill",
-                label: voiceSettings.askNoumSpokenRepliesEnabled ? "Mute" : "Muted",
-                fill: Color.white.opacity(0.12),
-                tint: voiceSettings.askNoumSpokenRepliesEnabled ? AppColor.positive : .white,
-                accessibilityLabel: voiceSettings.askNoumSpokenRepliesEnabled
-                    ? "Mute coach voice"
-                    : "Unmute coach voice"
-            ) { toggleAloud() }
-
-            // "Type" alone doesn't say the call ends — a VoiceOver user has no
-            // way to know this control leaves the live surface rather than
-            // opening a keyboard on top of it. The hint names the consequence.
-            callButton(
-                glyph: "keyboard",
-                label: "Type",
-                fill: Color.white.opacity(0.12),
-                accessibilityHint: "Ends the call and opens the typed chat."
-            ) {
-                endLoop(); onSwitchToType()
-            }
-
-            // V6 — Leave is de-emphasized so it never reads as the "proceed /
-            // get my response" button. The owner watched users tap a bright-red
-            // Leave to advance and end the call before the reply landed. The
-            // turn already completes regardless of Leave (handleUtterance runs
-            // a detached Task into the shared store and re-arms on its own), so
-            // the real fix is clarity: a quiet ghost treatment keeps the active
-            // Talk/Send control visually primary and signals "exit", not "next".
-            callButton(
-                glyph: "xmark",
-                label: "Leave",
-                fill: Color.white.opacity(0.12),
-                tint: Color.red.opacity(0.85),
-                accessibilityLabel: "Leave the call"
-            ) {
-                endLoop(); onLeave()
+        // At accessibility text sizes four fixed 52pt controls plus their
+        // captions cannot share one row — the AX XXXL audit reported "Talk",
+        // "Mute" and "Leave" as clipped. The branch's Dynamic Type rule is
+        // "wrap to a second row at AX sizes" (docs/UX_V5_ALIVE_HANDOFF.md §9),
+        // so the strip becomes 2x2 rather than shrinking the touch targets or
+        // capping the type. Reading order — Talk, Mute, Type, Leave — is
+        // identical in both layouts, so VoiceOver traversal does not change.
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: Spacing.md) {
+                    HStack(spacing: Spacing.lg) {
+                        talkControl(onFloor: onFloor)
+                        muteControl
+                    }
+                    HStack(spacing: Spacing.lg) {
+                        typeControl
+                        leaveControl
+                    }
+                }
+            } else {
+                HStack(spacing: Spacing.lg) {
+                    talkControl(onFloor: onFloor)
+                    muteControl
+                    typeControl
+                    leaveControl
+                }
             }
         }
         .padding(.vertical, Spacing.md)
         .padding(.horizontal, Spacing.lg)
         .frame(maxWidth: .infinity)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    private func talkControl(onFloor: Bool) -> some View {
+        callButton(
+                glyph: onFloor ? "arrow.up.circle.fill" : "mic.fill",
+                label: onFloor ? "Send" : "Talk",
+                fill: onFloor ? AppColor.pro : Color.white.opacity(0.12),
+                ring: voiceInput.state == .recording,
+                disabled: !voiceInput.isAvailable,
+                accessibilityLabel: onFloor ? "Send to coach" : "Talk to coach"
+        ) { micTapped() }
+    }
+
+    private var muteControl: some View {
+        // V1 — this control mutes/unmutes the coach's spoken replies, so it
+            // reads as "Mute" (not the vague "Aloud"). Glyph + label flip with
+            // the actual state: speaker.wave when voice is ON (tap to Mute),
+            // speaker.slash when already muted (label "Muted"). a11y label spells
+            // out the *action* the tap performs so VoiceOver users aren't guessing.
+        callButton(
+            glyph: voiceSettings.askNoumSpokenRepliesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill",
+            label: voiceSettings.askNoumSpokenRepliesEnabled ? "Mute" : "Muted",
+            fill: Color.white.opacity(0.12),
+            tint: voiceSettings.askNoumSpokenRepliesEnabled ? AppColor.positive : .white,
+            accessibilityLabel: voiceSettings.askNoumSpokenRepliesEnabled
+                ? "Mute coach voice"
+                : "Unmute coach voice"
+        ) { toggleAloud() }
+    }
+
+    private var typeControl: some View {
+        // "Type" alone doesn't say the call ends — a VoiceOver user has no
+            // way to know this control leaves the live surface rather than
+            // opening a keyboard on top of it. The hint names the consequence.
+        callButton(
+            glyph: "keyboard",
+            label: "Type",
+            fill: Color.white.opacity(0.12),
+            accessibilityHint: "Ends the call and opens the typed chat."
+        ) {
+            endLoop(); onSwitchToType()
+        }
+    }
+
+    private var leaveControl: some View {
+        // V6 — Leave is de-emphasized so it never reads as the "proceed /
+            // get my response" button. The owner watched users tap a bright-red
+            // Leave to advance and end the call before the reply landed. The
+            // turn already completes regardless of Leave (handleUtterance runs
+            // a detached Task into the shared store and re-arms on its own), so
+            // the real fix is clarity: a quiet ghost treatment keeps the active
+            // Talk/Send control visually primary and signals "exit", not "next".
+        callButton(
+            glyph: "xmark",
+            label: "Leave",
+            fill: Color.white.opacity(0.12),
+            tint: Color.red.opacity(0.85),
+            accessibilityLabel: "Leave the call"
+        ) {
+            endLoop(); onLeave()
+        }
     }
 
     @ViewBuilder
@@ -678,9 +725,20 @@ struct LiveCoachCallView: View {
             .opacity(disabled ? 0.4 : 1)
             .accessibilityLabel(accessibilityLabel ?? label)
             .accessibilityHint(accessibilityHint)
+            // 60% white on the call gradient is the contrast the AX XXXL
+            // audit failed. `focusedTextSecondary` is the token every other
+            // dark practice canvas already uses for secondary copy, so this
+            // is a consistency fix as much as a contrast one. The caption
+            // stays accessibilityHidden — the button owns the spoken label —
+            // but it is a sighted low-vision affordance, so it must wrap
+            // rather than truncate.
             Text(label)
                 .font(Typography.caption)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(AppColor.focusedTextSecondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityHidden(true)
         }
     }
