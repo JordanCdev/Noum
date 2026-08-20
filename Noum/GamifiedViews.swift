@@ -74,20 +74,29 @@ struct ShimmerProgressBar: View {
         .onAppear { displayedProgress = progress }
         .onChange(of: progress) { oldValue, newValue in
             if newValue > oldValue && !reduceMotion {
-                withAnimation(.progressFill) { displayedProgress = newValue }
-                // One dry tick as the fill settles — the number landed.
-                // Fires once per genuine increase, never per frame.
+                // One dry tick + its light tap as the fill settles — the
+                // number landed. Fires once per genuine increase, never per
+                // frame. Bound to the animation's own completion rather than
+                // a parallel wall-clock timer: the V6.1 motion contract
+                // requires both channels to hang off the same state change,
+                // and a dropped-frame stretch used to slide the tick off the
+                // visual settle.
                 if settleCue {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Animation.progressFillDuration) {
-                        InteractionSoundEngine.cue(.countSettle)
+                    withAnimation(.progressFill, completionCriteria: .logicallyComplete) {
+                        displayedProgress = newValue
+                    } completion: {
+                        NoumMoment.earnedProgressSettled.land()
                     }
+                } else {
+                    withAnimation(.progressFill) { displayedProgress = newValue }
                 }
             } else {
                 displayedProgress = newValue
                 // Reduce Motion snaps the fill but the increase is just
-                // as real — the tick marks it immediately (sound ≠ motion).
+                // as real — the moment lands immediately, both channels
+                // together (sound and haptics are not motion).
                 if settleCue && newValue > oldValue {
-                    InteractionSoundEngine.cue(.countSettle)
+                    NoumMoment.earnedProgressSettled.land()
                 }
             }
         }

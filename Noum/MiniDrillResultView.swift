@@ -194,12 +194,12 @@ struct MiniDrillResultView: View {
         guard !hasRunEntrance else { return }
         hasRunEntrance = true
         // Phase 1: Icon (0s) — the drill verdict resolves here, so the
-        // soft brush lands with the icon pop (the haptic verdict already
-        // fired at stop in `MiniDrillView.finishDrill`). Success is the
-        // brighter brush; incomplete is duller, never a fail-buzzer.
-        InteractionSoundEngine.cue(
-            outcome.succeeded ? .drillCompleteSuccess : .drillCompleteIncomplete
-        )
+        // soft brush lands with the icon pop. The moment's haptic partner is
+        // `.deliveredAtDrillVerdict`: it already fired at stop in
+        // `MiniDrillView.finishDrill`, on the frame the verdict was computed.
+        // Success is the brighter brush; incomplete is duller, never a
+        // fail-buzzer.
+        NoumMoment.drillResolved(succeeded: outcome.succeeded).land()
         if reduceMotion {
             phase = 5
             CoachHaptic.xpEarned()

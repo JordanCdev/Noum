@@ -1680,16 +1680,14 @@ struct SummaryView: View {
         if reduceMotion {
             scoreCardSettled = true
             guard !isMinimalEffort else { return }
-            CoachHaptic.scoreReveal()
-            InteractionSoundEngine.cue(.verdictReveal)
+            NoumMoment.verdictLanded.land()
             return
         }
         withAnimation(.payoffReveal, completionCriteria: .logicallyComplete) {
             scoreCardSettled = true
         } completion: {
             guard !isMinimalEffort else { return }
-            CoachHaptic.scoreReveal()
-            InteractionSoundEngine.cue(.verdictReveal)
+            NoumMoment.verdictLanded.land()
         }
     }
 

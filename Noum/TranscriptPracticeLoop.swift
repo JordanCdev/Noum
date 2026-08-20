@@ -860,8 +860,7 @@ struct TranscriptRetryMilestoneView: View {
     private func fireEvidenceFeedbackIfNeeded() {
         guard !didFireEvidenceFeedback else { return }
         didFireEvidenceFeedback = true
-        CoachHaptic.earnedEvidence()
-        InteractionSoundEngine.cue(.verdictReveal)
+        NoumMoment.earnedEvidenceLanded.land()
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {
