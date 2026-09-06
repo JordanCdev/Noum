@@ -60,8 +60,15 @@ class ReleaseMaterializeCIConfigTests(unittest.TestCase):
         completed, root = self.run_materializer(["noum", REVERSED_CLIENT_ID])
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertTrue((root / "Noum/Info.plist").is_file())
+        info_path = root / "Noum/Info.plist"
+        self.assertTrue(info_path.is_file())
         self.assertTrue((root / "Noum/GoogleService-Info.plist").is_file())
+        with info_path.open("rb") as handle:
+            materialized_info = plistlib.load(handle)
+        self.assertEqual(
+            materialized_info["UILaunchScreen"],
+            {"UIColorName": "LaunchBackground"},
+        )
 
     def test_missing_app_url_scheme_fails_before_writing_plists(self) -> None:
         completed, root = self.run_materializer([REVERSED_CLIENT_ID])

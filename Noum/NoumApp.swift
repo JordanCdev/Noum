@@ -106,6 +106,7 @@ struct NoumApp: App {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
+    @State private var splashFinished = false
     @State private var showFirstRepCloudProcessingConsent = false
     @State private var firstRunPostValueChoice: FirstRunOnboardingGate.PostValueChoice?
     @State private var holdsFastLaneResult = false
@@ -274,7 +275,19 @@ struct NoumApp: App {
 
     @ViewBuilder
     private var rootView: some View {
-        rootContent
+        ZStack {
+            if shouldPresentSplash {
+                SplashScreenView {
+                    withAnimation(.easeInOut(duration: SplashTimeline.homeTransition)) {
+                        splashFinished = true
+                    }
+                }
+                .transition(.opacity)
+            } else {
+                rootContent
+                    .transition(.opacity)
+            }
+        }
         // V4.6: the semantic theme is now trait-resolving (AppColor dynamic
         // tokens per the frozen dark contract), so the app follows the
         // system appearance instead of pinning light.
@@ -433,6 +446,13 @@ struct NoumApp: App {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
+    }
+
+    private var shouldPresentSplash: Bool {
+        !splashFinished
+            && SplashLaunchPolicy.shouldPresent(
+                arguments: ProcessInfo.processInfo.arguments
+            )
     }
 
     @ViewBuilder

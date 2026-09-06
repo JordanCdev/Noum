@@ -39,6 +39,10 @@ enum Typography {
 
     /// 42 / bold / rounded — splash "Noum"
     static let display = Typography.figtree(size: 42, weight: .bold, relativeTo: .largeTitle)
+    /// 120 / extra-bold / rounded — fixed-size brand artwork. The splash is
+    /// exposed to assistive technology as one labelled image, so scaling this
+    /// decorative wordmark with Dynamic Type would only make it truncate.
+    static let splashWordmark = Font.custom(Family.display, fixedSize: 120).weight(.heavy)
     /// 40 / bold / rounded — login hero
     static let hero = Typography.figtree(size: 40, weight: .bold, relativeTo: .largeTitle)
     /// 30 / bold / rounded — screen titles ("Choose your next rep")

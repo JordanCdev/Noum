@@ -145,6 +145,18 @@ enum AppColor {
         dark: (0.26, 0.63, 1.00)
     )
 
+    /// App-icon identity colours used by the cold-launch mark. They are kept
+    /// separate from pressure-mode amber so brand identity never inherits a
+    /// coaching-state semantic.
+    static let splashOrange = Color(red: 0.992, green: 0.298, blue: 0.012)
+    static let splashOrangeHighlight = Color(red: 0.992, green: 0.396, blue: 0.024)
+    static let splashOrangeShadow = Color(red: 0.929, green: 0.137, blue: 0.008)
+    static let splashYellow = Color(red: 0.992, green: 0.737, blue: 0.024)
+    static let splashYellowHighlight = Color(red: 1.00, green: 0.918, blue: 0.475)
+    static let splashYellowShadow = Color(red: 0.969, green: 0.545, blue: 0.004)
+    static let splashFaceYellow = Color(red: 1.00, green: 0.839, blue: 0.031)
+    static let splashInk = Color(red: 0.663, green: 0.173, blue: 0.008)
+
     /// High-contrast foreground for the light blue-to-cyan coaching hero.
     /// The darkest raw hero stop still clears WCAG AA for body copy, while
     /// the navy register keeps the screen calm and visibly coach-led.

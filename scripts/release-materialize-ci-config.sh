@@ -115,6 +115,19 @@ if "noum" not in schemes:
     )
     raise SystemExit(2)
 
+# The source Info.plist is supplied as a CI secret, so launch-screen product
+# defaults must be applied here rather than relying on an untracked local file.
+launch_screen = info.get("UILaunchScreen")
+if not isinstance(launch_screen, dict):
+    launch_screen = {}
+launch_screen["UIColorName"] = "LaunchBackground"
+info["UILaunchScreen"] = launch_screen
+decoded["NOUM_INFO_PLIST_BASE64"]["raw"] = plistlib.dumps(
+    info,
+    fmt=plistlib.FMT_XML,
+    sort_keys=False,
+)
+
 temporaries = []
 for item in decoded.values():
     path = item["path"]
